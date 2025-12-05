@@ -162,6 +162,8 @@
   - [DockedSearchBar Component](#dockedsearchbar-component)
     - [DockedSearchBar with Custom Input Field](#dockedsearchbar-with-custom-input-field)
     - [DockedSearchBar Parameters](#dockedsearchbar-parameters)
+  - [ExpandedDockedSearchBarWithGap Component](#expandeddockedsearchbarwithgap-component)
+    - [ExpandedDockedSearchBarWithGap Example](#expandeddockedsearchbarwithgap-example)
   - [DropdownMenu Component](#dropdownmenu-component)
     - [Basic DropdownMenu Example](#basic-dropdownmenu-example)
     - [DropdownMenu with Scroll Control](#dropdownmenu-with-scroll-control)
@@ -193,6 +195,9 @@
   - [ExpandedDockedSearchBar Component](#expandeddockedsearchbar-component)
     - [ExpandedDockedSearchBar Example](#expandeddockedsearchbar-example)
     - [ExpandedDockedSearchBar Parameters](#expandeddockedsearchbar-parameters)
+  - [ExpandedDockedSearchBarWithGap Component](#expandeddockedsearchbarwithgap-component)
+    - [Overview](#expandeddockedsearchbarwithgap-overview)
+    - [API Signature](#expandeddockedsearchbarwithgap-api-signature)
   - [ExpandedFullScreenSearchBar Component](#expandedfullscreensearchbar-component)
     - [ExpandedFullScreenSearchBar Example](#expandedfullscreensearchbar-example)
     - [ExpandedFullScreenSearchBar Parameters](#expandedfullscreensearchbar-parameters)
@@ -671,7 +676,7 @@ To start using Material Design 3 Expressive, ensure you're using the latest vers
 
 ```kotlin
 dependencies {
-    implementation("androidx.compose.material3:material3:1.5.0-alpha08")
+    implementation("androidx.compose.material3:material3:1.5.0-alpha10")
 }
 ```
 
@@ -1136,6 +1141,71 @@ Provide important prompts in a user flow:
 
 #### Carousel
 Shows a collection of items that can be scrolled on and off the screen.
+
+**Types:**
+- `HorizontalMultiBrowseCarousel` - For browsing many items with mixed aspect ratios.
+- `HorizontalUncontainedCarousel` - For browsing items of consistent size.
+
+### HorizontalMultiBrowseCarousel
+Ideal for browsing a large collection of items (like a photo gallery) where items can have different aspect ratios.
+
+**API Signature:**
+```kotlin
+@ExperimentalMaterial3ExpressiveApi
+@Composable
+fun HorizontalMultiBrowseCarousel(
+    state: CarouselState,
+    preferredItemWidth: Dp,
+    modifier: Modifier = Modifier,
+    itemSpacing: Dp = 0.dp,
+    contentPadding: PaddingValues = PaddingValues(0.dp),
+    minSmallItemWidth: Dp = ...,
+    maxSmallItemWidth: Dp = ...,
+    content: @Composable CarouselItemScope.(itemIndex: Int) -> Unit
+)
+```
+
+**Usage Example:**
+```kotlin
+val state = rememberCarouselState { items.count() }
+HorizontalMultiBrowseCarousel(
+    state = state,
+    preferredItemWidth = 200.dp,
+    itemSpacing = 8.dp,
+    contentPadding = PaddingValues(horizontal = 16.dp)
+) { index ->
+    AsyncImage(
+        model = items[index].imageUrl,
+        contentDescription = null,
+        modifier = Modifier
+            .height(200.dp)
+            .maskClip(MaterialTheme.shapes.medium)
+    )
+}
+```
+
+### HorizontalUncontainedCarousel
+Displays items of consistent size, usually with the last visible item partially cut off to encourage scrolling.
+
+**API Signature:**
+```kotlin
+@ExperimentalMaterial3ExpressiveApi
+@Composable
+fun HorizontalUncontainedCarousel(
+    state: CarouselState,
+    itemWidth: Dp,
+    modifier: Modifier = Modifier,
+    itemSpacing: Dp = 0.dp,
+    contentPadding: PaddingValues = PaddingValues(0.dp),
+    content: @Composable CarouselItemScope.(itemIndex: Int) -> Unit
+)
+```
+
+**Expressive Menu Updates (since alpha09):**
+- `DropdownMenuItem` - Standard menu item.
+- `ToggleableMenuItem` - Menu item that acts like a checkbox.
+- `SelectableMenuItem` - Menu item that acts like a radio button.
+- `ExpandedDockedSearchBarWithGap` - Search bar with a visual gap.
 
 ### 4.3 Communication Components
 
@@ -2121,8 +2191,10 @@ fun AnimatedTextComponent() {
 
 ### 8.5 Version History
 
-- **1.5.0-alpha08** - Latest alpha release with Material 3 Expressive features
-- **1.4.0** - Stable release (Expressive features not included)
+- **1.5.0-alpha10** - Latest alpha release. Added Multi-aspect Carousel, updated Checkbox flags.
+- **1.5.0-alpha09** - Added Expressive menu updates (toggleable items, menu groups).
+- **1.5.0-alpha08** - Initial public preview of some Expressive features.
+- **1.4.0** - Stable release (Expressive features not included).
 - Future: **1.5.0** - Planned stable release for Expressive APIs
 
 ---
@@ -13826,11 +13898,11 @@ The following CompositionLocals allow overriding default component implementatio
 
 **Property:**
 ```kotlin
-@ExperimentalMaterial3Api
-var isCheckboxStylingFixEnabled: Boolean
+// Accessed via ComposeMaterial3Flags
+ComposeMaterial3Flags.isCheckboxStylingFixEnabled = true
 ```
 
-**Description:** Flag controlling checkbox styling. When true, uses Material Design 3 styling (updated colors and container sizing). When false, uses Material Design 2 styling. Intended for temporary use during migration.
+**Description:** Flag controlling checkbox styling. When true, uses Material Design 3 styling (updated colors and container sizing). Now provided through `ComposeMaterial3Flags` object (changed in alpha10).
 
 
 ## 8.6 Component and API Index

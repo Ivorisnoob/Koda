@@ -40,6 +40,11 @@ import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationItemIconPosition
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.carousel.HorizontalMultiBrowseCarousel
+import androidx.compose.material3.carousel.HorizontalUncontainedCarousel
+import androidx.compose.material3.carousel.rememberCarouselState
+import androidx.compose.material3.carousel.CarouselState
+import androidx.compose.material3.carousel.CarouselDefaults
 import androidx.compose.material3.ShortNavigationBar
 import androidx.compose.material3.ShortNavigationBarItem
 import androidx.compose.material3.Text
@@ -184,6 +189,14 @@ fun YourMixContent(
                 if (songs.isNotEmpty()) {
                     OrganicSongLayout(songs = songs, onSongClick = onSongClick)
                 }
+            }
+            item {
+                Spacer(modifier = Modifier.height(32.dp))
+                RecentAlbumsSection(songs = songs, onSongClick = onSongClick)
+            }
+            item {
+                Spacer(modifier = Modifier.height(24.dp))
+                QuickPicksSection(songs = songs, onSongClick = onSongClick)
             }
         }
     }
@@ -390,18 +403,7 @@ fun OrganicSongLayout(
             )
         }
         
-        // Bottom strip image - full width at bottom
-        if (songs.size > 4) {
-            SongStripCard(
-                song = songs[4],
-                onClick = { onSongClick(songs[4]) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(60.dp)
-                    .align(Alignment.BottomCenter)
-                    .padding(horizontal = 16.dp)
-            )
-        }
+
     }
 }
 
@@ -582,6 +584,145 @@ fun SearchContent(contentPadding: PaddingValues) {
     }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+fun RecentAlbumsSection(
+    songs: List<Song>,
+    onSongClick: (Song) -> Unit
+) {
+    if (songs.isEmpty()) return
+    
+    // We need at least one large, one medium, one small for full effect,
+    // but the component handles fewer items gracefully.
+    val state = rememberCarouselState { songs.size }
+    
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = "Recent Albums",
+            style = MaterialTheme.typography.headlineSmall,
+            color = Color.White,
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
+        )
+        
+        HorizontalMultiBrowseCarousel(
+            state = state,
+            preferredItemWidth = 200.dp,
+            itemSpacing = 8.dp,
+            contentPadding = PaddingValues(horizontal = 20.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(240.dp)
+        ) { index ->
+            val song = songs[index]
+            Box(
+                modifier = Modifier
+                    .maskClip(MaterialTheme.shapes.medium)
+                    .background(Color(0xFF2A2A2A))
+                    .clickable { onSongClick(song) }
+            ) {
+                if (song.albumArtUri != null) {
+                    AsyncImage(
+                        model = song.albumArtUri,
+                        contentDescription = song.title,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                         Icon(
+                            imageVector = Icons.Rounded.MusicNote,
+                            contentDescription = null,
+                            tint = Color.Gray,
+                            modifier = Modifier.size(32.dp)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+fun QuickPicksSection(
+    songs: List<Song>,
+    onSongClick: (Song) -> Unit
+) {
+    if (songs.isEmpty()) return
+    
+    val state = rememberCarouselState { songs.size }
+    
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = "Quick Picks",
+            style = MaterialTheme.typography.headlineSmall, // Uses our new Expressive style
+            color = Color.White,
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
+        )
+        
+        HorizontalUncontainedCarousel(
+            state = state,
+            itemWidth = 140.dp,
+            itemSpacing = 12.dp,
+            contentPadding = PaddingValues(horizontal = 20.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(180.dp)
+        ) { index ->
+            val song = songs[index]
+            Column(
+                 modifier = Modifier
+                    .width(140.dp)
+                    .maskClip(MaterialTheme.shapes.medium)
+                    .clickable { onSongClick(song) }
+            ) {
+                // Song Image
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(140.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(Color(0xFF2A2A2A))
+                ) {
+                      if (song.albumArtUri != null) {
+                        AsyncImage(
+                            model = song.albumArtUri,
+                            contentDescription = song.title,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                             Icon(
+                                imageVector = Icons.Rounded.MusicNote,
+                                contentDescription = null,
+                                tint = Color.Gray,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                // Song Title
+                Text(
+                    text = song.title,
+                    maxLines = 1,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = Color.White
+                )
+                  Text(
+                    text = song.artist,
+                    maxLines = 1,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Color.Gray
+                )
+            }
+        }
+    }
+}
+
 @Composable
 fun LibraryContent(contentPadding: PaddingValues) {
     Box(
@@ -591,9 +732,8 @@ fun LibraryContent(contentPadding: PaddingValues) {
             .padding(contentPadding),
         contentAlignment = Alignment.Center
     ) {
-        Text(
-            "Library - Coming Soon",
-            style = MaterialTheme.typography.headlineSmall,
+        androidx.compose.material3.Text(
+            "Library",
             color = Color.White
         )
     }
