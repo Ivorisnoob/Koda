@@ -22,9 +22,12 @@ class SessionManager(context: Context) {
         EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
     )
 
-    companion object {
-        private const val KEY_COOKIES = "session_cookies"
-        private const val KEY_USER_NAME = "user_name"
+    fun saveUserAvatar(url: String) {
+        prefs.edit().putString(KEY_USER_AVATAR, url).apply()
+    }
+
+    fun getUserAvatar(): String? {
+        return prefs.getString(KEY_USER_AVATAR, null)
     }
 
     /**
@@ -61,5 +64,11 @@ class SessionManager(context: Context) {
     
     fun getUserName(): String? {
         return prefs.getString(KEY_USER_NAME, null)
+    }
+
+    companion object {
+        private const val KEY_COOKIES = "session_cookies"
+        private const val KEY_USER_NAME = "user_name"
+        private const val KEY_USER_AVATAR = "user_avatar"
     }
 }

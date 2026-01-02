@@ -74,21 +74,33 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     }
 
     fun playSong(song: Song) {
-        if (_currentSong.value?.id == song.id) {
-            togglePlayPause()
-            return
-        }
+        playQueue(listOf(song))
+    }
 
-        _currentSong.value = song
+    fun playQueue(songs: List<Song>) {
+        if (songs.isEmpty()) return
+        
+        // Update current song to the first one immediately for UI responsiveness
+        _currentSong.value = songs.first()
+        
         controller?.let {
-            val mediaItem = if (song.source == com.ivor.ivormusic.data.SongSource.LOCAL && song.uri != null) {
-                MediaItem.fromUri(song.uri)
-            } else {
-                MediaItem.Builder()
-                    .setMediaId(song.id)
-                    .build()
+            val mediaItems = songs.map { song ->
+                if (song.source == com.ivor.ivormusic.data.SongSource.LOCAL && song.uri != null) {
+                    MediaItem.fromUri(song.uri)
+                } else {
+                    MediaItem.Builder()
+                        .setMediaId(song.id) // This ID is used by Service to fetch stream
+                         .setMediaMetadata(
+                            androidx.media3.common.MediaMetadata.Builder()
+                                .setTitle(song.title)
+                                .setArtist(song.artist)
+                                .setArtworkUri(android.net.Uri.parse(song.thumbnailUrl ?: ""))
+                                .build()
+                        )
+                        .build()
+                }
             }
-            it.setMediaItem(mediaItem)
+            it.setMediaItems(mediaItems)
             it.prepare()
             it.play()
         }

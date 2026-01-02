@@ -239,29 +239,71 @@ class YouTubeRepository(private val context: Context) {
         }
     }
 
+    suspend fun fetchAccountInfo() = withContext(Dispatchers.IO) {
+        if (!sessionManager.isLoggedIn()) return@withContext
+
+        try {
+            val jsonResponse = fetchInternalApi("account/account_menu")
+            
+            // Basic parsing for avatar
+            // Pattern: "thumbnail":{"thumbnails":[{"url":"..."
+            val thumbRegex = """"thumbnails":\[\{"url":"([^"]+)"""".toRegex()
+            val match = thumbRegex.find(jsonResponse)
+            
+            match?.groupValues?.get(1)?.let { url ->
+                // Ensure high res
+                val avatarUrl = url.replace("s88", "s1080").replace("s48", "s1080")
+                sessionManager.saveUserAvatar(avatarUrl)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
     // --- Internal API Helper ---
 
-    private fun fetchInternalApi(browseId: String): String {
+    private fun fetchInternalApi(endpoint: String): String {
         val cookies = sessionManager.getCookies() ?: return ""
-        val url = "https://music.youtube.com/youtubei/v1/browse"
+        val isBrowse = !endpoint.contains("/") // simple check: browseId vs endpoint path
+        
+        val url = if (isBrowse) {
+            "https://music.youtube.com/youtubei/v1/browse"
+        } else {
+            "https://music.youtube.com/youtubei/v1/$endpoint"
+        }
         
         // Generate the required Authorization header (SAPISIDHASH)
         val authHeader = YouTubeAuthUtils.getAuthorizationHeader(cookies) ?: ""
 
         // Construct complete JSON body for WEB_REMIX client
-        val jsonBody = """
-            {
-                "context": {
-                    "client": {
-                        "clientName": "WEB_REMIX",
-                        "clientVersion": "1.20230102.01.00",
-                        "hl": "en",
-                        "gl": "US"
+        val jsonBody = if (isBrowse) {
+            """
+                {
+                    "context": {
+                        "client": {
+                            "clientName": "WEB_REMIX",
+                            "clientVersion": "1.20230102.01.00",
+                            "hl": "en",
+                            "gl": "US"
+                        }
+                    },
+                    "browseId": "$endpoint"
+                }
+            """.trimIndent()
+        } else {
+             """
+                {
+                    "context": {
+                        "client": {
+                            "clientName": "WEB_REMIX",
+                            "clientVersion": "1.20230102.01.00",
+                            "hl": "en",
+                            "gl": "US"
+                        }
                     }
-                },
-                "browseId": "$browseId"
-            }
-        """.trimIndent()
+                }
+            """.trimIndent()
+        }
 
         val request = okhttp3.Request.Builder()
             .url(url)
@@ -283,64 +325,159 @@ class YouTubeRepository(private val context: Context) {
     }
 
     private fun parseSongsFromInternalJson(json: String): List<Song> {
-        // Quick & Dirty parsing to find songs properly without huge JSON lib complexity
-        // We look for "musicResponsiveListItemRenderer" which contains song data
         val songs = mutableListOf<Song>()
-        
-        // This is a naive regex approach given we don't have a JSON parser like Gson set up with full models.
-        // Ideally we'd use parsing.
-        // Looking for videoId pattern inside the JSON dump
-        val videoIdRegex = """"videoId":"([a-zA-Z0-9_-]+)"""".toRegex()
-        val titleRegex = """"title":\{"runs":\[\{"text":"([^"]+)"""".toRegex() // Rough title matcher
-        
-        // We will just find all videoIds and try to fetch their metadata via parsing? 
-        // Or simpler: Just get videoIds and use parse their surrounding text?
-        // Let's rely on finding `videoId` and simple parsing for now. 
-        // This is fragile but confirms the "Cookie Bridge" works.
-        
-        val matches = videoIdRegex.findAll(json)
-        // Taking first 20 valid IDs that form a set
-        val uniqueIds = matches.map { it.groupValues[1] }.toSet().take(20)
-        
-        uniqueIds.forEach { id ->
-            // Construct a basic song. We might lack title/artist with just regex on full body 
-            // without context, but obtaining the ID proves it works.
-            // As a fallback, we fetch metadata for this ID via NewPipe? No, strict rate limit.
-            // Let's try to extract title from text near the videoID
-            
-            // NOTE: A proper implementation requires Gson/serialization.
-            // For this quick fix, we return "Recommended Song" + ID if we can't parse title.
-            songs.add(Song.fromYouTube(
-                videoId = id,
-                title = "Recommended Track", 
-                artist = "YouTube Music",
-                album = "Recommendations",
-                duration = 0L,
-                thumbnailUrl = "https://img.youtube.com/vi/$id/0.jpg"
-            )!!)
-        }
+        try {
+            val root = org.json.JSONObject(json)
+            val items = mutableListOf<org.json.JSONObject>()
+            // Recursively find all "musicResponsiveListItemRenderer"
+            findAllObjects(root, "musicResponsiveListItemRenderer", items)
 
+            items.forEach { item ->
+                try {
+                    // Extract Video ID
+                    val videoId = extractValueFromRuns(item, "videoId") ?: return@forEach
+                    
+                    // Extract Title
+                    val titleFormatted = item.optJSONObject("flexColumns")
+                        ?.optJSONArray("0")?.optJSONObject(0)
+                        ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
+                        ?.optJSONObject("text")
+                    val title = getRunText(titleFormatted) ?: "Unknown Title"
+
+                    // Extract Artist and Album
+                    val subtitleFormatted = item.optJSONObject("flexColumns")
+                        ?.optJSONArray("1")?.optJSONObject(0)
+                        ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
+                        ?.optJSONObject("text")
+                    
+                    val subtitleRuns = subtitleFormatted?.optJSONArray("runs")
+                    var artist = "Unknown Artist"
+                    var album = "Unknown Album"
+                    
+                    if (subtitleRuns != null && subtitleRuns.length() > 0) {
+                        artist = subtitleRuns.optJSONObject(0)?.optString("text") ?: artist
+                        if (subtitleRuns.length() > 2) {
+                            album = subtitleRuns.optJSONObject(2)?.optString("text") ?: album
+                        }
+                    }
+
+                    // Extract Thumbnail
+                    val thumbnails = item.optJSONObject("thumbnail")
+                        ?.optJSONObject("musicThumbnailRenderer")
+                        ?.optJSONObject("thumbnail")
+                        ?.optJSONArray("thumbnails")
+                    
+                    val thumbnailUrl = thumbnails?.let {
+                        // Get the last (usually largest) thumbnail
+                        it.optJSONObject(it.length() - 1)?.optString("url")
+                    }
+
+                    songs.add(Song.fromYouTube(
+                        videoId = videoId,
+                        title = title,
+                        artist = artist,
+                        album = album,
+                        duration = 0L, // Duration is harder to extract from list view usually
+                        thumbnailUrl = thumbnailUrl
+                    )!!)
+                } catch (e: Exception) {
+                    // Skip malformed item
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
         return songs
     }
     
     private fun parsePlaylistsFromInternalJson(json: String): List<PlaylistDisplayItem> {
-        // Similar regex approach for playlists
         val playlists = mutableListOf<PlaylistDisplayItem>()
-        // Browse ID for playlists usually starts with VL or PL
-        val playlistIdRegex = """"browseId":"(VLPL[a-zA-Z0-9_-]+|PL[a-zA-Z0-9_-]+)"""".toRegex()
-        
-        val matches = playlistIdRegex.findAll(json)
-        val uniqueIds = matches.map { it.groupValues[1] }.toSet().take(10)
-        
-        uniqueIds.forEach { id ->
-             playlists.add(PlaylistDisplayItem(
-                 name = "Playlist",
-                 url = "https://music.youtube.com/playlist?list=${id.removePrefix("VL")}",
-                 uploaderName = "User",
-                 thumbnailUrl = null
-             ))
+        try {
+            val root = org.json.JSONObject(json)
+            val items = mutableListOf<org.json.JSONObject>()
+            // Playlists are usually in "musicTwoRowItemRenderer" or "gridPlaylistRenderer"
+            // For "likedsongs" endpoint, it might be different, but library usually uses TwoRow
+            findAllObjects(root, "musicTwoRowItemRenderer", items)
+            
+            items.forEach { item ->
+                 try {
+                     // Extract ID
+                     val navigationEndpoint = item.optJSONObject("navigationEndpoint")
+                     val browseId = navigationEndpoint?.optJSONObject("browseEndpoint")?.optString("browseId")
+                     
+                     // Ensure it's a playlist
+                     if (browseId != null && (browseId.startsWith("VL") || browseId.startsWith("PL"))) {
+                         val cleanId = browseId.removePrefix("VL")
+                         
+                         // Extract Title
+                         val title = getRunText(item.optJSONObject("title")) ?: "Unknown Playlist"
+                         
+                         // Extract Subtitle (Uploader / Count)
+                         val subtitle = getRunText(item.optJSONObject("subtitle")) ?: "Unknown"
+                         
+                         // Extract Thumbnail
+                         val thumbnails = item.optJSONObject("thumbnailRenderer")
+                            ?.optJSONObject("musicThumbnailRenderer")
+                            ?.optJSONObject("thumbnail")
+                            ?.optJSONArray("thumbnails")
+                         
+                         val thumbnailUrl = thumbnails?.let {
+                             it.optJSONObject(it.length() - 1)?.optString("url")
+                         }
+
+                         playlists.add(PlaylistDisplayItem(
+                             name = title,
+                             url = "https://music.youtube.com/playlist?list=$cleanId",
+                             uploaderName = subtitle,
+                             thumbnailUrl = thumbnailUrl
+                         ))
+                     }
+                 } catch (e: Exception) {
+                     // Skip
+                 }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
         return playlists 
+    }
+
+    // --- JSON Helpers ---
+
+    private fun findAllObjects(node: Any, key: String, results: MutableList<org.json.JSONObject>) {
+        if (node is org.json.JSONObject) {
+            if (node.has(key)) {
+                results.add(node.getJSONObject(key))
+            }
+            // Recurse keys
+            val keys = node.keys()
+            while (keys.hasNext()) {
+                val nextKey = keys.next()
+                findAllObjects(node.get(nextKey), key, results)
+            }
+        } else if (node is org.json.JSONArray) {
+            for (i in 0 until node.length()) {
+                findAllObjects(node.get(i), key, results)
+            }
+        }
+    }
+
+    private fun getRunText(formattedString: org.json.JSONObject?): String? {
+        val runs = formattedString?.optJSONArray("runs") ?: return null
+        val sb = StringBuilder()
+        for (i in 0 until runs.length()) {
+            sb.append(runs.optJSONObject(i)?.optString("text") ?: "")
+        }
+        return sb.toString()
+    }
+
+    private fun extractValueFromRuns(item: org.json.JSONObject, key: String): String? {
+        // Recursive search for a specific key value pair in a small subtree is expensive 
+        // but for videoId it usually lives in navigationEndpoint -> watchEndpoint -> videoId
+        // Let's try to find navigationEndpoint recursively in the item
+        val endpoints = mutableListOf<org.json.JSONObject>()
+        findAllObjects(item, "watchEndpoint", endpoints)
+        return endpoints.firstOrNull()?.optString("videoId")
     }
 
 

@@ -154,7 +154,7 @@ fun MiniPlayer(
                     ) {
                         if (currentSong?.albumArtUri != null || currentSong?.thumbnailUrl != null) {
                             AsyncImage(
-                                model = currentSong?.albumArtUri ?: currentSong?.thumbnailUrl,
+                                model = currentSong?.highResThumbnailUrl ?: currentSong?.albumArtUri,
                                 contentDescription = "Album Art",
                                 modifier = Modifier.size(44.dp),
                                 contentScale = ContentScale.Crop

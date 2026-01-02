@@ -87,22 +87,16 @@ fun PlayerSheetContent(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
+                .padding(vertical = 16.dp),
+            horizontalArrangement = Arrangement.Start, // Adjusted to start since we removed the right icon
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onCollapse) {
                 Icon(
                     Icons.Default.KeyboardArrowDown,
                     contentDescription = "Collapse",
-                    tint = Color.White
-                )
-            }
-            IconButton(onClick = { /* More options */ }) {
-                Icon(
-                    Icons.Default.MoreVert,
-                    contentDescription = "More",
-                    tint = Color.White
+                    tint = Color.White,
+                    modifier = Modifier.size(32.dp)
                 )
             }
         }
@@ -114,34 +108,28 @@ fun PlayerSheetContent(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(1f)
-                .clip(RoundedCornerShape(28.dp)),
+                .clip(RoundedCornerShape(24.dp))
+                .background(Color(0xFF1A1A1A)),
             contentAlignment = Alignment.Center
         ) {
             if (currentSong?.albumArtUri != null || currentSong?.thumbnailUrl != null) {
                 AsyncImage(
-                    model = currentSong?.albumArtUri ?: currentSong?.thumbnailUrl,
+                    model = currentSong?.highResThumbnailUrl ?: currentSong?.albumArtUri,
                     contentDescription = "Album Art",
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop
                 )
             } else {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color(0xFF2A2A2A)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.MusicNote,
-                        contentDescription = null,
-                        modifier = Modifier.size(120.dp),
-                        tint = Color(0xFF666666)
-                    )
-                }
+                Icon(
+                    imageVector = Icons.Rounded.MusicNote,
+                    contentDescription = null,
+                    modifier = Modifier.size(120.dp),
+                    tint = Color(0xFF333333)
+                )
             }
         }
 
-        Spacer(modifier = Modifier.height(32.dp))
+        Spacer(modifier = Modifier.height(48.dp))
 
         // Song Info with Favorite
         Row(
@@ -152,12 +140,12 @@ fun PlayerSheetContent(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = currentSong?.title ?: "No Song Playing",
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
                     color = Color.White,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
+                Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = currentSong?.artist ?: "Unknown Artist",
                     style = MaterialTheme.typography.titleMedium,
@@ -167,19 +155,14 @@ fun PlayerSheetContent(
                 )
             }
             
-            IconToggleButton(
-                checked = isFavorite,
-                onCheckedChange = { isFavorite = it }
-            ) {
-                Icon(
-                    imageVector = if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                    contentDescription = "Favorite",
-                    tint = if (isFavorite) Color(0xFFFF6B6B) else Color.White
-                )
-            }
+            // Keeps layout balanced if we add favorite back later, 
+            // but user said "only functional buttons". 
+            // Favorite is local state only, so let's hide it to be safe 
+            // or keep it if we want to imply future functionality. 
+            // I'll remove it for strict "only functional" compliance.
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(32.dp))
 
         // Wavy Progress Bar
         Column(modifier = Modifier.fillMaxWidth()) {
@@ -190,7 +173,7 @@ fun PlayerSheetContent(
                 label = "Progress"
             )
             
-            val thickStrokeWidth = with(LocalDensity.current) { 4.dp.toPx() }
+            val thickStrokeWidth = with(LocalDensity.current) { 6.dp.toPx() } // Thicker for premium feel
             val thickStroke = Stroke(width = thickStrokeWidth, cap = StrokeCap.Round)
 
             Box(contentAlignment = Alignment.Center) {
@@ -198,7 +181,7 @@ fun PlayerSheetContent(
                     progress = { animatedProgress },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(10.dp),
+                        .height(12.dp),
                     color = Color(0xFFB8D4FF),
                     trackColor = Color(0xFF333333),
                     stroke = thickStroke,
@@ -222,7 +205,7 @@ fun PlayerSheetContent(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 4.dp),
+                    .padding(top = 8.dp),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
@@ -238,32 +221,32 @@ fun PlayerSheetContent(
             }
         }
 
-        Spacer(modifier = Modifier.height(32.dp))
+        Spacer(modifier = Modifier.height(48.dp))
 
-        // Main Playback Controls with bouncy shape-morphing buttons
+        // Main Playback Controls
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Previous button with shape morphing
+            // Previous button
             FilledIconButton(
                 onClick = { viewModel.skipToPrevious() },
-                modifier = Modifier.size(56.dp),
-                shapes = IconButtonDefaults.shapes(), // Enables bouncy shape morphing
+                modifier = Modifier.size(64.dp),
+                shapes = IconButtonDefaults.shapes(), 
                 colors = IconButtonDefaults.filledIconButtonColors(
-                    containerColor = Color(0xFF2A2A2A),
+                    containerColor = Color(0xFF1E1E1E),
                     contentColor = Color.White
                 )
             ) {
                 Icon(Icons.Default.SkipPrevious, contentDescription = "Previous", modifier = Modifier.size(32.dp))
             }
 
-            // Play/Pause button - larger with shape morphing
+            // Play/Pause button - Larger
             FilledIconButton(
                 onClick = { viewModel.togglePlayPause() },
-                modifier = Modifier.size(80.dp),
-                shapes = IconButtonDefaults.shapes(), // Bouncy animation on press
+                modifier = Modifier.size(96.dp),
+                shapes = IconButtonDefaults.shapes(),
                 colors = IconButtonDefaults.filledIconButtonColors(
                     containerColor = Color(0xFFB8D4FF),
                     contentColor = Color.Black
@@ -272,55 +255,25 @@ fun PlayerSheetContent(
                 Icon(
                     imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                     contentDescription = if (isPlaying) "Pause" else "Play",
-                    modifier = Modifier.size(40.dp)
+                    modifier = Modifier.size(48.dp)
                 )
             }
 
-            // Next button with shape morphing
+            // Next button
             FilledIconButton(
                 onClick = { viewModel.skipToNext() },
-                modifier = Modifier.size(56.dp),
+                modifier = Modifier.size(64.dp),
                 shapes = IconButtonDefaults.shapes(),
                 colors = IconButtonDefaults.filledIconButtonColors(
-                    containerColor = Color(0xFF2A2A2A),
+                    containerColor = Color(0xFF1E1E1E),
                     contentColor = Color.White
                 )
             ) {
                 Icon(Icons.Default.SkipNext, contentDescription = "Next", modifier = Modifier.size(32.dp))
             }
         }
-
-        Spacer(modifier = Modifier.height(32.dp))
-
-        // Secondary Controls (Shuffle & Repeat)
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceEvenly
-        ) {
-            IconToggleButton(
-                checked = isShuffleOn,
-                onCheckedChange = { isShuffleOn = it }
-            ) {
-                Icon(
-                    Icons.Default.Shuffle,
-                    contentDescription = "Shuffle",
-                    tint = if (isShuffleOn) Color(0xFFB8D4FF) else Color(0xFFB3B3B3)
-                )
-            }
-            
-            IconToggleButton(
-                checked = isRepeatOn,
-                onCheckedChange = { isRepeatOn = it }
-            ) {
-                Icon(
-                    Icons.Default.Repeat,
-                    contentDescription = "Repeat",
-                    tint = if (isRepeatOn) Color(0xFFB8D4FF) else Color(0xFFB3B3B3)
-                )
-            }
-        }
         
-        Spacer(modifier = Modifier.height(48.dp))
+        Spacer(modifier = Modifier.weight(1f))
     }
 }
 

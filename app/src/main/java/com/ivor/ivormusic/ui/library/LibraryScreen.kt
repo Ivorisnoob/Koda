@@ -74,10 +74,12 @@ import com.ivor.ivormusic.ui.home.HomeViewModel
  * - Quick access cards
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
+
 @Composable
 fun LibraryScreen(
     songs: List<Song>,
     onSongClick: (Song) -> Unit,
+    onPlaylistClick: (com.ivor.ivormusic.data.PlaylistDisplayItem) -> Unit = {},
     contentPadding: PaddingValues,
     viewModel: HomeViewModel,
     isDarkMode: Boolean,
@@ -179,150 +181,107 @@ fun LibraryScreen(
         ) {
             when (tabs[selectedTab]) {
                 "All" -> {
-                    // Quick Access Cards
-                    item {
-                        Text(
-                            "Quick Access",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = textColor
-                        )
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            QuickAccessCard(
-                                title = "Liked Songs",
-                                subtitle = if (isYouTubeConnected) "${likedSongs.size} songs" else "Sign in required",
-                                icon = Icons.Rounded.Favorite,
-                                gradientColors = listOf(Color(0xFFE91E63), Color(0xFFAD1457)),
-                                onClick = { selectedTab = 1 }, // Switch to Songs
-                                modifier = Modifier.weight(1f)
-                            )
-                            QuickAccessCard(
-                                title = "Recently Played",
-                                subtitle = "${songs.take(10).size} songs",
-                                icon = Icons.Rounded.History,
-                                gradientColors = listOf(Color(0xFF00BCD4), Color(0xFF0097A7)),
-                                onClick = { },
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-                    }
-                    
-                    // Downloaded section
-                    item {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            QuickAccessCard(
-                                title = "Downloads",
-                                subtitle = "${songs.size} songs",
-                                icon = Icons.Rounded.CloudDownload,
-                                gradientColors = listOf(Color(0xFF4CAF50), Color(0xFF2E7D32)),
-                                onClick = { },
-                                modifier = Modifier.weight(1f)
-                            )
-                            QuickAccessCard(
-                                title = "Playlists",
-                                subtitle = if (userPlaylists.isNotEmpty()) "${userPlaylists.size} playlists" else "Create new",
-                                icon = Icons.Rounded.PlaylistPlay,
-                                gradientColors = listOf(Color(0xFF9C27B0), Color(0xFF6A1B9A)),
-                                onClick = { selectedTab = 2 }, // Switch to Playlists
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-                    }
-
-                    // YouTube Liked Songs Section
-                    if (isYouTubeConnected && likedSongs.isNotEmpty()) {
+                    if (isLoadingLiked) {
                         item {
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                            Box(
+                                modifier = Modifier.fillMaxWidth().height(200.dp),
+                                contentAlignment = Alignment.Center
                             ) {
-                                Column {
-                                    Text(
-                                        "Liked on YouTube Music",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold,
-                                        color = textColor
-                                    )
-                                    Text(
-                                        "${likedSongs.size} songs",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = secondaryTextColor
-                                    )
-                                }
-                                Surface(
-                                    shape = RoundedCornerShape(12.dp),
-                                    color = Color(0xFFFF0000).copy(alpha = 0.15f),
-                                    modifier = Modifier.clickable { /* Play all logic */ }
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Icon(
-                                            Icons.Rounded.PlayArrow,
-                                            contentDescription = null,
-                                            tint = Color(0xFFFF0000),
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text(
-                                            "Play All",
-                                            style = MaterialTheme.typography.labelMedium,
-                                            color = Color(0xFFFF0000),
-                                            fontWeight = FontWeight.SemiBold
-                                        )
-                                    }
-                                }
+                                LoadingIndicator(
+                                    modifier = Modifier.size(48.dp),
+                                    color = accentColor
+                                )
                             }
                         }
-                        
-                        items(likedSongs.take(5)) { song ->
-                            LibrarySongCard(
-                                song = song,
-                                onClick = { onSongClick(song) },
-                                cardColor = cardColor,
-                                textColor = textColor,
-                                secondaryTextColor = secondaryTextColor,
-                                accentColor = accentColor,
-                                isYouTube = true
-                            )
-                        }
-                    }
-
-                    // Local Library Section
-                    item {
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text(
-                            "Local Library",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = textColor
-                        )
-                    }
-                    if (songs.isNotEmpty()) {
-                        items(songs.take(10)) { song ->
-                            LibrarySongCard(
-                                song = song,
-                                onClick = { onSongClick(song) },
-                                cardColor = cardColor,
-                                textColor = textColor,
-                                secondaryTextColor = secondaryTextColor,
-                                accentColor = accentColor
-                            )
-                        }
                     } else {
+                        // YouTube Liked Songs Section
+                        if (isYouTubeConnected && likedSongs.isNotEmpty()) {
+                            item {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column {
+                                        Text(
+                                            "Liked on YouTube Music",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = textColor
+                                        )
+                                        Text(
+                                            "${likedSongs.size} songs",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = secondaryTextColor
+                                        )
+                                    }
+                                    Surface(
+                                        shape = RoundedCornerShape(12.dp),
+                                        color = Color(0xFFFF0000).copy(alpha = 0.15f),
+                                        modifier = Modifier.clickable { /* Play all logic */ }
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(
+                                                Icons.Rounded.PlayArrow,
+                                                contentDescription = null,
+                                                tint = Color(0xFFFF0000),
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text(
+                                                "Play All",
+                                                style = MaterialTheme.typography.labelMedium,
+                                                color = Color(0xFFFF0000),
+                                                fontWeight = FontWeight.SemiBold
+                                            )
+                                        }
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(16.dp))
+                            }
+                            
+                            items(likedSongs.take(5)) { song ->
+                                LibrarySongCard(
+                                    song = song,
+                                    onClick = { onSongClick(song) },
+                                    cardColor = cardColor,
+                                    textColor = textColor,
+                                    secondaryTextColor = secondaryTextColor,
+                                    accentColor = accentColor,
+                                    isYouTube = true
+                                )
+                            }
+                        }
+
+                        // Local Library Section
                         item {
-                             Text("No local songs found", color = secondaryTextColor)
+                            Spacer(modifier = Modifier.height(24.dp))
+                            Text(
+                                "Local Library",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = textColor
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                        }
+                        if (songs.isNotEmpty()) {
+                            items(songs.take(10)) { song ->
+                                LibrarySongCard(
+                                    song = song,
+                                    onClick = { onSongClick(song) },
+                                    cardColor = cardColor,
+                                    textColor = textColor,
+                                    secondaryTextColor = secondaryTextColor,
+                                    accentColor = accentColor
+                                )
+                            }
+                        } else {
+                            item {
+                                 Text("No local songs found", color = secondaryTextColor)
+                            }
                         }
                     }
                 }
@@ -376,7 +335,9 @@ fun LibraryScreen(
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(12.dp))
                                     .background(cardColor)
-                                    .clickable { /* Handle playlist click */ }
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(cardColor)
+                                    .clickable { onPlaylistClick(playlist) }
                                     .padding(8.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
@@ -581,7 +542,7 @@ private fun LibrarySongCard(
                     .padding(horizontal = 14.dp)
             ) {
                 Text(
-                    song.title,
+                    text = song.title.takeIf { it.isNotBlank() && it != "Unknown" } ?: "Untitled Song",
                     color = textColor,
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.Medium,
@@ -606,7 +567,7 @@ private fun LibrarySongCard(
                         Spacer(modifier = Modifier.width(6.dp))
                     }
                     Text(
-                        song.artist,
+                        text = song.artist.takeIf { it.isNotBlank() && it != "Unknown Artist" } ?: "Unknown Artist",
                         color = secondaryTextColor,
                         style = MaterialTheme.typography.bodySmall,
                         maxLines = 1,

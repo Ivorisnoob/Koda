@@ -24,6 +24,24 @@ data class Song(
     val thumbnailUrl: String? = null, // YouTube thumbnail URL
     val source: SongSource = SongSource.LOCAL
 ) {
+    val highResThumbnailUrl: String?
+        get() = thumbnailUrl?.let { url ->
+            when {
+                url.contains("googleusercontent.com") -> {
+                    // Replace size params like w120-h120 with w1080-h1080
+                    url.replace(Regex("w\\d+-h\\d+"), "w1080-h1080")
+                        .replace(Regex("s\\d+"), "s1080")
+                }
+                url.contains("ytimg.com") || url.contains("youtube.com") -> {
+                    // Replace low res filenames with max res
+                    url.replace("mqdefault", "maxresdefault")
+                       .replace("hqdefault", "maxresdefault")
+                       .replace("sddefault", "maxresdefault")
+                }
+                else -> url
+            }
+        }
+
     companion object {
         /**
          * Creates a Song from local MediaStore data.

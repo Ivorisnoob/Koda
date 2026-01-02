@@ -43,6 +43,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.FilledIconButton
@@ -98,10 +99,13 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.graphics.shapes.RoundedPolygon
 import androidx.graphics.shapes.toPath
 import androidx.compose.material3.MaterialShapes
+import androidx.compose.animation.with
 import kotlinx.coroutines.launch
 
 
-@OptIn(ExperimentalPermissionsApi::class, ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class)
+import androidx.compose.animation.ExperimentalAnimationApi
+
+@OptIn(ExperimentalPermissionsApi::class, ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class, ExperimentalAnimationApi::class)
 @Composable
 fun HomeScreen(
     onSongClick: (Song) -> Unit,
@@ -167,6 +171,10 @@ fun HomeScreen(
 
     val backgroundColor = if (isDarkMode) Color.Black else Color(0xFFF8F8F8)
     
+    // Loading state for playlist fetch
+    var isPlaylistLoading by remember { mutableStateOf(false) }
+    val isLoading by viewModel.isLoading.collectAsState()
+
     // Use Box overlay instead of Scaffold for truly floating navbar
     Box(
         modifier = Modifier
@@ -175,34 +183,72 @@ fun HomeScreen(
     ) {
         // Main content
         if (permissionState.status.isGranted) {
-            when (selectedTab) {
-                0 -> YourMixContent(
-                    songs = songs,
-                    onSongClick = onSongClick,
-                    onPlayClick = {
-                        if (songs.isNotEmpty()) {
-                            onSongClick(songs[0])
+            androidx.compose.animation.AnimatedContent(
+                targetState = selectedTab,
+                label = "TabTransition",
+                transitionSpec = {
+                    (androidx.compose.animation.fadeIn(animationSpec = androidx.compose.animation.core.tween(300)) +
+                            androidx.compose.animation.slideInHorizontally(animationSpec = androidx.compose.animation.core.tween(300)) { width -> width / 3 }) with
+                            (androidx.compose.animation.fadeOut(animationSpec = androidx.compose.animation.core.tween(300)) +
+                                    androidx.compose.animation.slideOutHorizontally(animationSpec = androidx.compose.animation.core.tween(300)) { width -> -width / 3 })
+                }
+            ) { targetTab ->
+                when (targetTab) {
+                    0 -> {
+                        if (isLoading && songs.isEmpty()) {
+                             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                LoadingIndicator(
+                                    modifier = Modifier.size(48.dp),
+                                    color = if (isDarkMode) Color.White else Color.Black
+                                )
+                            }
+                        } else {
+                            YourMixContent(
+                                songs = songs,
+                                onSongClick = onSongClick,
+                                onPlayClick = {
+                                    if (songs.isNotEmpty()) {
+                                        onSongClick(songs[0])
+                                    }
+                                },
+                                onProfileClick = { showAuthDialog = true },
+                                onSettingsClick = onNavigateToSettings,
+                                isDarkMode = isDarkMode,
+                                contentPadding = PaddingValues(bottom = 160.dp), // Space for navbar + miniplayer
+                                viewModel = viewModel
+                            )
                         }
-                    },
-                    onProfileClick = { showAuthDialog = true },
-                    onSettingsClick = onNavigateToSettings,
-                    isDarkMode = isDarkMode,
-                    contentPadding = PaddingValues(bottom = 160.dp) // Space for navbar + miniplayer
-                )
-                1 -> SearchContent(
-                    songs = songs,
-                    onSongClick = onSongClick,
-                    contentPadding = PaddingValues(bottom = 160.dp),
-                    viewModel = viewModel,
-                    isDarkMode = isDarkMode
-                )
-                2 -> LibraryContent(
-                    songs = songs,
-                    onSongClick = onSongClick,
-                    contentPadding = PaddingValues(bottom = 160.dp),
-                    viewModel = viewModel,
-                    isDarkMode = isDarkMode
-                )
+                    }
+                    1 -> SearchContent(
+                        songs = songs,
+                        onSongClick = onSongClick,
+                        contentPadding = PaddingValues(bottom = 160.dp),
+                        viewModel = viewModel,
+                        isDarkMode = isDarkMode
+                    )
+                    2 -> LibraryContent(
+                        songs = songs,
+                        onSongClick = onSongClick,
+                        onPlaylistClick = { playlist ->
+                             scope.launch {
+                                 isPlaylistLoading = true
+                                 val url = playlist.url ?: ""
+                                 val listId = if (url.contains("list=")) url.substringAfter("list=") else ""
+                                 if (listId.isNotEmpty()) {
+                                     val playlistSongs = viewModel.fetchPlaylistSongs(listId)
+                                     if (playlistSongs.isNotEmpty()) {
+                                         playerViewModel.playQueue(playlistSongs)
+                                         showPlayerSheet = true
+                                     }
+                                 }
+                                 isPlaylistLoading = false
+                             }
+                        },
+                        contentPadding = PaddingValues(bottom = 160.dp),
+                        viewModel = viewModel,
+                        isDarkMode = isDarkMode
+                    )
+                }
             }
         } else {
             Box(
@@ -216,6 +262,22 @@ fun HomeScreen(
                         Text("Grant Permission")
                     }
                 }
+            }
+        }
+        
+        // Playlist Loading Overlay
+        if (isPlaylistLoading) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.5f))
+                    .clickable(enabled = false) {}, // Block clicks
+                contentAlignment = Alignment.Center
+            ) {
+                LoadingIndicator(
+                    modifier = Modifier.size(48.dp),
+                    color = Color.White
+                )
             }
         }
         
@@ -288,7 +350,8 @@ fun YourMixContent(
     onProfileClick: () -> Unit,
     onSettingsClick: () -> Unit,
     isDarkMode: Boolean,
-    contentPadding: PaddingValues
+    contentPadding: PaddingValues,
+    viewModel: HomeViewModel
 ) {
     val backgroundColor = if (isDarkMode) Color.Black else Color(0xFFF8F8F8)
     val textColor = if (isDarkMode) Color.White else Color.Black
@@ -300,7 +363,7 @@ fun YourMixContent(
             .windowInsetsPadding(WindowInsets.statusBars),
         contentPadding = PaddingValues(bottom = contentPadding.calculateBottomPadding())
     ) {
-        item { TopBarSection(onProfileClick = onProfileClick, onSettingsClick = onSettingsClick, isDarkMode = isDarkMode) }
+        item { TopBarSection(onProfileClick = onProfileClick, onSettingsClick = onSettingsClick, isDarkMode = isDarkMode, viewModel = viewModel) }
         item { HeroSection(songs = songs, onPlayClick = onPlayClick, isDarkMode = isDarkMode) }
         item {
             if (songs.isNotEmpty()) {
@@ -324,11 +387,14 @@ fun YourMixContent(
 fun TopBarSection(
     onProfileClick: () -> Unit,
     onSettingsClick: () -> Unit,
-    isDarkMode: Boolean
+    isDarkMode: Boolean,
+    viewModel: HomeViewModel
 ) {
     val surfaceColor = if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFE0E0E0)
     val iconColor = if (isDarkMode) Color.White else Color.Black
     val containerColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFF0F0F0)
+    
+    val userAvatar by viewModel.userAvatar.collectAsState()
     
     Row(
         modifier = Modifier
@@ -346,12 +412,21 @@ fun TopBarSection(
                 .clickable(onClick = onProfileClick),
             contentAlignment = Alignment.Center
         ) {
-            Icon(
-                imageVector = Icons.Default.Person,
-                contentDescription = "Profile",
-                tint = iconColor,
-                modifier = Modifier.size(26.dp)
-            )
+            if (userAvatar != null) {
+                AsyncImage(
+                    model = userAvatar,
+                    contentDescription = "Profile",
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
+            } else {
+                Icon(
+                    imageVector = Icons.Default.Person,
+                    contentDescription = "Profile",
+                    tint = iconColor,
+                    modifier = Modifier.size(26.dp)
+                )
+            }
         }
         
         // Right side icons with shape morphing
@@ -774,6 +849,7 @@ fun QuickPicksSection(
 fun LibraryContent(
     songs: List<Song>,
     onSongClick: (Song) -> Unit,
+    onPlaylistClick: (com.ivor.ivormusic.data.PlaylistDisplayItem) -> Unit,
     contentPadding: PaddingValues,
     viewModel: HomeViewModel,
     isDarkMode: Boolean
@@ -781,6 +857,7 @@ fun LibraryContent(
     com.ivor.ivormusic.ui.library.LibraryScreen(
         songs = songs,
         onSongClick = onSongClick,
+        onPlaylistClick = onPlaylistClick,
         contentPadding = contentPadding,
         viewModel = viewModel,
         isDarkMode = isDarkMode

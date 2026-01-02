@@ -29,6 +29,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
+    private val _userAvatar = MutableStateFlow<String?>(sessionManager.getUserAvatar())
+    val userAvatar: StateFlow<String?> = _userAvatar.asStateFlow()
+
     init {
         checkYouTubeConnection()
     }
@@ -40,7 +43,13 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun checkYouTubeConnection() {
-        _isYouTubeConnected.value = sessionManager.isLoggedIn()
+        viewModelScope.launch {
+            _isYouTubeConnected.value = sessionManager.isLoggedIn()
+            if (_isYouTubeConnected.value) {
+                youtubeRepository.fetchAccountInfo()
+                _userAvatar.value = sessionManager.getUserAvatar()
+            }
+        }
     }
 
     fun loadYouTubeRecommendations() {
@@ -78,6 +87,14 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     suspend fun getUserPlaylists(): List<com.ivor.ivormusic.data.PlaylistDisplayItem> {
         return try {
             youtubeRepository.getUserPlaylists()
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    suspend fun fetchPlaylistSongs(playlistId: String): List<Song> {
+        return try {
+            youtubeRepository.getPlaylist(playlistId)
         } catch (e: Exception) {
             emptyList()
         }
