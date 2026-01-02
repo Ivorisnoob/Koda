@@ -410,7 +410,7 @@ class YouTubeRepository(private val context: Context) {
         } catch (e: Exception) {
             e.printStackTrace()
         }
-        return songs
+        return songs.distinctBy { it.id }
     }
     
     private fun parsePlaylistsFromInternalJson(json: String): List<PlaylistDisplayItem> {

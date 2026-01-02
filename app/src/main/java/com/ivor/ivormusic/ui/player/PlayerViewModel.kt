@@ -39,6 +39,8 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     private val _isBuffering = MutableStateFlow(false)
     val isBuffering: StateFlow<Boolean> = _isBuffering.asStateFlow()
 
+    private var currentQueue: List<Song> = emptyList()
+
     init {
         initializeController()
         startProgressUpdates()
@@ -58,6 +60,15 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                     _isBuffering.value = playbackState == Player.STATE_BUFFERING
                     if (playbackState == Player.STATE_READY) {
                         _duration.value = controller?.duration ?: 0L
+                    }
+                }
+
+                override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                    controller?.let {
+                        val index = it.currentMediaItemIndex
+                        if (index in currentQueue.indices) {
+                            _currentSong.value = currentQueue[index]
+                        }
                     }
                 }
             })
@@ -84,6 +95,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     fun playQueue(songs: List<Song>) {
         if (songs.isEmpty()) return
         
+        currentQueue = songs
         // Update current song to the first one immediately for UI responsiveness
         _currentSong.value = songs.first()
         
@@ -98,7 +110,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                             androidx.media3.common.MediaMetadata.Builder()
                                 .setTitle(song.title)
                                 .setArtist(song.artist)
-                                .setArtworkUri(android.net.Uri.parse(song.thumbnailUrl ?: ""))
+                                .setArtworkUri(android.net.Uri.parse(song.highResThumbnailUrl ?: song.thumbnailUrl ?: ""))
                                 .build()
                         )
                         .build()

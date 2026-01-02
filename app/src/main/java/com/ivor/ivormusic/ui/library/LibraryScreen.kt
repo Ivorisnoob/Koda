@@ -57,6 +57,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
+import androidx.activity.compose.BackHandler
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -101,27 +104,15 @@ fun LibraryScreen(
     // YouTube connection status
     val isYouTubeConnected by viewModel.isYouTubeConnected.collectAsState()
     
-    // YouTube playlists
-    var userPlaylists by remember { mutableStateOf<List<com.ivor.ivormusic.data.PlaylistDisplayItem>>(emptyList()) }
-
-    // Liked songs from YouTube
-    var likedSongs by remember { mutableStateOf<List<Song>>(emptyList()) }
-    var isLoadingLiked by remember { mutableStateOf(false) }
+    // YouTube playlists and liked songs from ViewModel
+    val userPlaylists by viewModel.userPlaylists.collectAsState()
+    val likedSongs by viewModel.likedSongs.collectAsState()
+    val isLoading by viewModel.isLoading.collectAsState()
     
     // Tab state
     var selectedTab by remember { mutableIntStateOf(0) }
     val tabs = listOf("All", "Songs", "Playlists", "Artists", "Albums")
     
-    // Load liked songs and playlists when YouTube is connected
-    LaunchedEffect(isYouTubeConnected) {
-        if (isYouTubeConnected) {
-            isLoadingLiked = true
-            likedSongs = viewModel.getLikedMusic()
-            userPlaylists = viewModel.getUserPlaylists()
-            isLoadingLiked = false
-        }
-    }
-
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -173,19 +164,24 @@ fun LibraryScreen(
         
         Spacer(modifier = Modifier.height(20.dp))
 
-        // Main Content
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(
-                start = 20.dp,
-                end = 20.dp,
-                bottom = contentPadding.calculateBottomPadding()
-            ),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+        // Main Content with PullToRefresh
+        PullToRefreshBox(
+            isRefreshing = isLoading,
+            onRefresh = { viewModel.refresh() },
+            modifier = Modifier.fillMaxSize()
         ) {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(
+                    start = 20.dp,
+                    end = 20.dp,
+                    bottom = contentPadding.calculateBottomPadding()
+                ),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
             when (tabs[selectedTab]) {
                 "All" -> {
-                    if (isLoadingLiked) {
+                    if (isLoading && likedSongs.isEmpty()) {
                         item {
                             Box(
                                 modifier = Modifier.fillMaxWidth().height(200.dp),
@@ -428,6 +424,7 @@ fun LibraryScreen(
         }
     }
 }
+}
 
 @Composable
 private fun QuickAccessCard(
@@ -514,7 +511,7 @@ private fun LibrarySongCard(
             ) {
                 if (song.albumArtUri != null || song.thumbnailUrl != null) {
                     AsyncImage(
-                        model = song.albumArtUri ?: song.thumbnailUrl,
+                        model = song.highResThumbnailUrl ?: song.albumArtUri ?: song.thumbnailUrl,
                         contentDescription = null,
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop

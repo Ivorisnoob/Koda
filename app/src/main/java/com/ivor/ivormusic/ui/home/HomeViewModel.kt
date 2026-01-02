@@ -29,6 +29,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
+    private val _likedSongs = MutableStateFlow<List<Song>>(emptyList())
+    val likedSongs: StateFlow<List<Song>> = _likedSongs.asStateFlow()
+
+    private val _userPlaylists = MutableStateFlow<List<com.ivor.ivormusic.data.PlaylistDisplayItem>>(emptyList())
+    val userPlaylists: StateFlow<List<com.ivor.ivormusic.data.PlaylistDisplayItem>> = _userPlaylists.asStateFlow()
+
     private val _userAvatar = MutableStateFlow<String?>(sessionManager.getUserAvatar())
     val userAvatar: StateFlow<String?> = _userAvatar.asStateFlow()
 
@@ -48,7 +54,17 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             if (_isYouTubeConnected.value) {
                 youtubeRepository.fetchAccountInfo()
                 _userAvatar.value = sessionManager.getUserAvatar()
+                loadLibraryData()
             }
+        }
+    }
+
+    private fun loadLibraryData() {
+        viewModelScope.launch {
+            try {
+                _likedSongs.value = youtubeRepository.getLikedMusic()
+                _userPlaylists.value = youtubeRepository.getUserPlaylists()
+            } catch (e: Exception) { }
         }
     }
 
@@ -58,7 +74,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _isLoading.value = true
             try {
-                _youtubeSongs.value = youtubeRepository.getRecommendations()
+                val recs = youtubeRepository.getRecommendations()
+                if (recs.isNotEmpty()) {
+                    _youtubeSongs.value = recs.shuffled()
+                }
             } catch (e: Exception) {
                 // Handle error silently for now
             } finally {
@@ -77,19 +96,11 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     suspend fun getLikedMusic(): List<Song> {
-        return try {
-            youtubeRepository.getLikedMusic()
-        } catch (e: Exception) {
-            emptyList()
-        }
+        return _likedSongs.value
     }
 
     suspend fun getUserPlaylists(): List<com.ivor.ivormusic.data.PlaylistDisplayItem> {
-        return try {
-            youtubeRepository.getUserPlaylists()
-        } catch (e: Exception) {
-            emptyList()
-        }
+        return _userPlaylists.value
     }
 
     suspend fun fetchPlaylistSongs(playlistId: String): List<Song> {
@@ -104,5 +115,37 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         sessionManager.clearSession()
         _isYouTubeConnected.value = false
         _youtubeSongs.value = emptyList()
+        _likedSongs.value = emptyList()
+        _userPlaylists.value = emptyList()
+    }
+
+    fun refresh() {
+        viewModelScope.launch {
+            _isLoading.value = true
+            try {
+                _isYouTubeConnected.value = sessionManager.isLoggedIn()
+                if (_isYouTubeConnected.value) {
+                    // Fetch account info and avatar sync
+                    youtubeRepository.fetchAccountInfo()
+                    _userAvatar.value = sessionManager.getUserAvatar()
+                    
+                    // Fetch recommendations and shuffle them to ensure the UI looks "fresh"
+                    val recs = youtubeRepository.getRecommendations()
+                    if (recs.isNotEmpty()) {
+                        _youtubeSongs.value = recs.shuffled()
+                    }
+                    
+                    // Update library data
+                    _likedSongs.value = youtubeRepository.getLikedMusic()
+                    _userPlaylists.value = youtubeRepository.getUserPlaylists()
+                }
+                // Reload local songs
+                _songs.value = localRepository.getSongs()
+            } catch (e: Exception) {
+                // Silently fail
+            } finally {
+                _isLoading.value = false
+            }
+        }
     }
 }

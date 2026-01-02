@@ -57,6 +57,9 @@ import androidx.compose.material3.carousel.HorizontalMultiBrowseCarousel
 import androidx.compose.material3.carousel.HorizontalUncontainedCarousel
 import androidx.compose.material3.carousel.rememberCarouselState
 import androidx.compose.material3.carousel.CarouselState
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
+import androidx.activity.compose.BackHandler
 import androidx.compose.material3.carousel.CarouselDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.ShortNavigationBar
@@ -166,6 +169,11 @@ fun HomeScreen(
     }
 
     var selectedTab by remember { mutableIntStateOf(0) }
+
+    // Handle back button to return to Home tab if on Search or Library
+    BackHandler(enabled = selectedTab != 0) {
+        selectedTab = 0
+    }
 
     // Auth Dialog State
     var showAuthDialog by remember { mutableStateOf(false) }
@@ -347,29 +355,35 @@ fun YourMixContent(
     val backgroundColor = if (isDarkMode) Color.Black else Color(0xFFF8F8F8)
     val textColor = if (isDarkMode) Color.White else Color.Black
     
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(backgroundColor)
-            .windowInsetsPadding(WindowInsets.statusBars),
-        contentPadding = PaddingValues(bottom = contentPadding.calculateBottomPadding())
+    PullToRefreshBox(
+        isRefreshing = viewModel.isLoading.collectAsState().value,
+        onRefresh = { viewModel.refresh() },
+        modifier = Modifier.fillMaxSize()
     ) {
-        item { TopBarSection(onProfileClick = onProfileClick, onSettingsClick = onSettingsClick, isDarkMode = isDarkMode, viewModel = viewModel) }
-        item { HeroSection(songs = songs, onPlayClick = onPlayClick, isDarkMode = isDarkMode) }
-        item {
-            if (songs.isNotEmpty()) {
-                OrganicSongLayout(songs = songs, onSongClick = onSongClick)
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(backgroundColor)
+                .windowInsetsPadding(WindowInsets.statusBars),
+            contentPadding = PaddingValues(bottom = contentPadding.calculateBottomPadding())
+        ) {
+            item { TopBarSection(onProfileClick = onProfileClick, onSettingsClick = onSettingsClick, isDarkMode = isDarkMode, viewModel = viewModel) }
+            item { HeroSection(songs = songs, onPlayClick = onPlayClick, isDarkMode = isDarkMode) }
+            item {
+                if (songs.isNotEmpty()) {
+                    OrganicSongLayout(songs = songs, onSongClick = onSongClick)
+                }
             }
+            item {
+                Spacer(modifier = Modifier.height(32.dp))
+                RecentAlbumsSection(songs = songs, onSongClick = onSongClick, isDarkMode = isDarkMode)
+            }
+            item {
+                Spacer(modifier = Modifier.height(24.dp))
+                QuickPicksSection(songs = songs, onSongClick = onSongClick, isDarkMode = isDarkMode)
+            }
+            item { Spacer(modifier = Modifier.height(32.dp)) }
         }
-        item {
-            Spacer(modifier = Modifier.height(32.dp))
-            RecentAlbumsSection(songs = songs, onSongClick = onSongClick, isDarkMode = isDarkMode)
-        }
-        item {
-            Spacer(modifier = Modifier.height(24.dp))
-            QuickPicksSection(songs = songs, onSongClick = onSongClick, isDarkMode = isDarkMode)
-        }
-        item { Spacer(modifier = Modifier.height(32.dp)) }
     }
 }
 
@@ -560,7 +574,7 @@ fun OrganicSongLayout(
             ) {
                 if (songs[0].albumArtUri != null || songs[0].thumbnailUrl != null) {
                     AsyncImage(
-                        model = songs[0].albumArtUri ?: songs[0].thumbnailUrl,
+                        model = songs[0].highResThumbnailUrl ?: songs[0].albumArtUri ?: songs[0].thumbnailUrl,
                         contentDescription = songs[0].title,
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop
@@ -591,7 +605,7 @@ fun OrganicSongLayout(
             ) {
                 if (songs[1].albumArtUri != null || songs[1].thumbnailUrl != null) {
                     AsyncImage(
-                        model = songs[1].albumArtUri ?: songs[1].thumbnailUrl,
+                        model = songs[1].highResThumbnailUrl ?: songs[1].albumArtUri ?: songs[1].thumbnailUrl,
                         contentDescription = songs[1].title,
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop
@@ -622,7 +636,7 @@ fun OrganicSongLayout(
             ) {
                 if (songs[2].albumArtUri != null || songs[2].thumbnailUrl != null) {
                     AsyncImage(
-                        model = songs[2].albumArtUri ?: songs[2].thumbnailUrl,
+                        model = songs[2].highResThumbnailUrl ?: songs[2].albumArtUri ?: songs[2].thumbnailUrl,
                         contentDescription = songs[2].title,
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop
@@ -655,7 +669,7 @@ fun SongStripCard(
     ) {
         if (song.albumArtUri != null || song.thumbnailUrl != null) {
             AsyncImage(
-                model = song.albumArtUri ?: song.thumbnailUrl,
+                model = song.highResThumbnailUrl ?: song.albumArtUri ?: song.thumbnailUrl,
                 contentDescription = song.title,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop
@@ -730,7 +744,7 @@ fun RecentAlbumsSection(
             ) {
                 if (song.albumArtUri != null || song.thumbnailUrl != null) {
                     AsyncImage(
-                        model = song.albumArtUri ?: song.thumbnailUrl,
+                        model = song.highResThumbnailUrl ?: song.albumArtUri ?: song.thumbnailUrl,
                         contentDescription = song.title,
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop
@@ -799,7 +813,7 @@ fun QuickPicksSection(
                 ) {
                       if (song.albumArtUri != null || song.thumbnailUrl != null) {
                         AsyncImage(
-                            model = song.albumArtUri ?: song.thumbnailUrl,
+                            model = song.highResThumbnailUrl ?: song.albumArtUri ?: song.thumbnailUrl,
                             contentDescription = song.title,
                             modifier = Modifier.fillMaxSize(),
                             contentScale = ContentScale.Crop
@@ -846,6 +860,11 @@ fun LibraryContent(
     isDarkMode: Boolean
 ) {
     var viewedPlaylist by remember { mutableStateOf<com.ivor.ivormusic.data.PlaylistDisplayItem?>(null) }
+    
+    // Handle system back button when a playlist is viewed
+    BackHandler(enabled = viewedPlaylist != null) {
+        viewedPlaylist = null
+    }
     
     androidx.compose.animation.AnimatedContent(targetState = viewedPlaylist, label = "LibraryNav") { playlist ->
         if (playlist == null) {

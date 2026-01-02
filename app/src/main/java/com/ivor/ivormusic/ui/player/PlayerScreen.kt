@@ -252,7 +252,7 @@ fun PlayerScreen(
                     shape = RoundedCornerShape(24.dp)
                 ) {
                     if (isBuffering) {
-                        androidx.compose.material3.CircularProgressIndicator(
+                        androidx.compose.material3.LoadingIndicator(
                             modifier = Modifier.size(40.dp),
                             color = MaterialTheme.colorScheme.onSurface 
                         )

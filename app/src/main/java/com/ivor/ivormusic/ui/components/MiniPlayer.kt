@@ -26,7 +26,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
@@ -159,7 +159,7 @@ fun MiniPlayer(
                     ) {
                         if (currentSong?.albumArtUri != null || currentSong?.thumbnailUrl != null) {
                             AsyncImage(
-                                model = currentSong?.highResThumbnailUrl ?: currentSong?.albumArtUri,
+                                model = currentSong?.highResThumbnailUrl ?: currentSong?.albumArtUri ?: currentSong?.thumbnailUrl,
                                 contentDescription = "Album Art",
                                 modifier = Modifier.size(44.dp),
                                 contentScale = ContentScale.Crop
@@ -208,10 +208,9 @@ fun MiniPlayer(
                         modifier = Modifier.size(44.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        CircularProgressIndicator(
+                        LoadingIndicator(
                             modifier = Modifier.size(24.dp),
-                            color = MaterialTheme.colorScheme.primary,
-                            strokeWidth = 2.dp
+                            color = MaterialTheme.colorScheme.primary
                         )
                     }
                 } else {
