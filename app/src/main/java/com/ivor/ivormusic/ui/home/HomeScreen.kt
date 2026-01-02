@@ -32,7 +32,12 @@ import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.People
+import androidx.compose.material.icons.rounded.Home
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -81,6 +86,7 @@ import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberPermissionState
 import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.ui.components.MiniPlayer
+import com.ivor.ivormusic.ui.components.FloatingPillNavBar
 import com.ivor.ivormusic.ui.player.PlayerViewModel
 import com.ivor.ivormusic.ui.player.PlayerSheetContent
 import androidx.compose.ui.graphics.Outline
@@ -100,7 +106,10 @@ import kotlinx.coroutines.launch
 fun HomeScreen(
     onSongClick: (Song) -> Unit,
     playerViewModel: PlayerViewModel,
-    viewModel: HomeViewModel = viewModel()
+    viewModel: HomeViewModel = viewModel(),
+    isDarkMode: Boolean = true,
+    onThemeToggle: (Boolean) -> Unit = {},
+    onNavigateToSettings: () -> Unit = {}
 ) {
     val songs by viewModel.songs.collectAsState()
     val currentSong by playerViewModel.currentSong.collectAsState()
@@ -139,60 +148,55 @@ fun HomeScreen(
 
     var selectedTab by remember { mutableIntStateOf(0) }
 
-    Scaffold(
-        containerColor = Color.Black,
-        bottomBar = {
-            // Use Box to layer floating MiniPlayer above NavigationBar with system bar padding
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .navigationBarsPadding()
-            ) {
-                // Floating Navigation bar
-                ExpressiveNavigationBar(
-                    selectedTab = selectedTab,
-                    onTabSelected = { selectedTab = it },
-                    modifier = Modifier.align(Alignment.BottomCenter)
-                )
-                
-                // Floating MiniPlayer positioned above the nav bar
-                MiniPlayer(
-                    currentSong = currentSong,
-                    isPlaying = isPlaying,
-                    progress = progressFraction,
-                    onPlayPauseClick = { playerViewModel.togglePlayPause() },
-                    onNextClick = { playerViewModel.skipToNext() },
-                    onClick = { showPlayerSheet = true },
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(bottom = 96.dp) // Spacing above the floating nav bar
-                )
-            }
-        }
-    ) { innerPadding ->
+    // Auth Dialog State
+    var showAuthDialog by remember { mutableStateOf(false) }
 
+    val backgroundColor = if (isDarkMode) Color.Black else Color(0xFFF8F8F8)
+    
+    // Use Box overlay instead of Scaffold for truly floating navbar
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(backgroundColor)
+    ) {
+        // Main content
         if (permissionState.status.isGranted) {
             when (selectedTab) {
                 0 -> YourMixContent(
                     songs = songs,
                     onSongClick = onSongClick,
                     onPlayClick = {
-                        songs.firstOrNull()?.let { playerViewModel.playSong(it) }
+                        if (songs.isNotEmpty()) {
+                            onSongClick(songs[0])
+                        }
                     },
-                    contentPadding = innerPadding
+                    onProfileClick = { showAuthDialog = true },
+                    onSettingsClick = onNavigateToSettings,
+                    isDarkMode = isDarkMode,
+                    contentPadding = PaddingValues(bottom = 160.dp) // Space for navbar + miniplayer
                 )
-                1 -> SearchContent(innerPadding)
-                2 -> LibraryContent(innerPadding)
+                1 -> SearchContent(
+                    songs = songs,
+                    onSongClick = onSongClick,
+                    contentPadding = PaddingValues(bottom = 160.dp),
+                    viewModel = viewModel,
+                    isDarkMode = isDarkMode
+                )
+                2 -> LibraryContent(
+                    songs = songs,
+                    onSongClick = onSongClick,
+                    contentPadding = PaddingValues(bottom = 160.dp),
+                    viewModel = viewModel,
+                    isDarkMode = isDarkMode
+                )
             }
         } else {
             Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding),
+                modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Permission required to load songs", color = Color.White)
+                    Text("Permission required to load songs", color = if (isDarkMode) Color.White else Color.Black)
                     Spacer(modifier = Modifier.height(16.dp))
                     Button(onClick = { permissionState.launchPermissionRequest() }) {
                         Text("Grant Permission")
@@ -200,9 +204,41 @@ fun HomeScreen(
                 }
             }
         }
+        
+        // Floating MiniPlayer - positioned above navbar
+        MiniPlayer(
+            currentSong = currentSong,
+            isPlaying = isPlaying,
+            progress = progressFraction,
+            onPlayPauseClick = { playerViewModel.togglePlayPause() },
+            onNextClick = { playerViewModel.skipToNext() },
+            onClick = { showPlayerSheet = true },
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 100.dp)
+                .navigationBarsPadding()
+        )
+        
+        // Floating Navigation bar - truly floating overlay
+        FloatingPillNavBar(
+            selectedTab = selectedTab,
+            onTabSelected = { selectedTab = it },
+            isDarkMode = isDarkMode,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+        )
     }
     
-    // Swipe-up Player Bottom Sheet with M3 Expressive spring animations
+    // Auth Dialog welp i guess we are doing it then
+    if (showAuthDialog) {
+        com.ivor.ivormusic.ui.auth.YouTubeAuthDialog(
+            onDismiss = { showAuthDialog = false },
+            onAuthSuccess = { showAuthDialog = false }
+        )
+    }
+    
+    // Swipe-up Player Bottom Sheet with M3 Expressive spring animations Cause i fucking Love it 
     if (showPlayerSheet) {
         ModalBottomSheet(
             onDismissRequest = { showPlayerSheet = false },
@@ -235,40 +271,51 @@ fun YourMixContent(
     songs: List<Song>,
     onSongClick: (Song) -> Unit,
     onPlayClick: () -> Unit,
+    onProfileClick: () -> Unit,
+    onSettingsClick: () -> Unit,
+    isDarkMode: Boolean,
     contentPadding: PaddingValues
 ) {
-    Box(
+    val backgroundColor = if (isDarkMode) Color.Black else Color(0xFFF8F8F8)
+    val textColor = if (isDarkMode) Color.White else Color.Black
+    
+    LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black)
-            .padding(contentPadding)
+            .background(backgroundColor)
+            .windowInsetsPadding(WindowInsets.statusBars),
+        contentPadding = PaddingValues(bottom = contentPadding.calculateBottomPadding())
     ) {
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(bottom = 16.dp)
-        ) {
-            item { TopBarSection() }
-            item { HeroSection(songs = songs, onPlayClick = onPlayClick) }
-            item {
-                if (songs.isNotEmpty()) {
-                    OrganicSongLayout(songs = songs, onSongClick = onSongClick)
-                }
-            }
-            item {
-                Spacer(modifier = Modifier.height(32.dp))
-                RecentAlbumsSection(songs = songs, onSongClick = onSongClick)
-            }
-            item {
-                Spacer(modifier = Modifier.height(24.dp))
-                QuickPicksSection(songs = songs, onSongClick = onSongClick)
+        item { TopBarSection(onProfileClick = onProfileClick, onSettingsClick = onSettingsClick, isDarkMode = isDarkMode) }
+        item { HeroSection(songs = songs, onPlayClick = onPlayClick, isDarkMode = isDarkMode) }
+        item {
+            if (songs.isNotEmpty()) {
+                OrganicSongLayout(songs = songs, onSongClick = onSongClick)
             }
         }
+        item {
+            Spacer(modifier = Modifier.height(32.dp))
+            RecentAlbumsSection(songs = songs, onSongClick = onSongClick, isDarkMode = isDarkMode)
+        }
+        item {
+            Spacer(modifier = Modifier.height(24.dp))
+            QuickPicksSection(songs = songs, onSongClick = onSongClick, isDarkMode = isDarkMode)
+        }
+        item { Spacer(modifier = Modifier.height(32.dp)) }
     }
 }
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-fun TopBarSection() {
+fun TopBarSection(
+    onProfileClick: () -> Unit,
+    onSettingsClick: () -> Unit,
+    isDarkMode: Boolean
+) {
+    val surfaceColor = if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFE0E0E0)
+    val iconColor = if (isDarkMode) Color.White else Color.Black
+    val containerColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFF0F0F0)
+    
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -281,13 +328,14 @@ fun TopBarSection() {
             modifier = Modifier
                 .size(44.dp)
                 .clip(CircleShape)
-                .background(Color(0xFF2A2A2A)),
+                .background(surfaceColor)
+                .clickable(onClick = onProfileClick),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 imageVector = Icons.Default.Person,
                 contentDescription = "Profile",
-                tint = Color.White,
+                tint = iconColor,
                 modifier = Modifier.size(26.dp)
             )
         }
@@ -301,8 +349,8 @@ fun TopBarSection() {
                 onClick = { },
                 shapes = IconButtonDefaults.shapes(),
                 colors = IconButtonDefaults.iconButtonColors(
-                    containerColor = Color(0xFF1E1E1E),
-                    contentColor = Color.White
+                    containerColor = containerColor,
+                    contentColor = iconColor
                 ),
                 modifier = Modifier.size(44.dp)
             ) {
@@ -313,11 +361,11 @@ fun TopBarSection() {
                 )
             }
             IconButton(
-                onClick = { },
+                onClick = onSettingsClick,
                 shapes = IconButtonDefaults.shapes(),
                 colors = IconButtonDefaults.iconButtonColors(
-                    containerColor = Color(0xFF1E1E1E),
-                    contentColor = Color.White
+                    containerColor = containerColor,
+                    contentColor = iconColor
                 ),
                 modifier = Modifier.size(44.dp)
             ) {
@@ -336,10 +384,13 @@ fun TopBarSection() {
 @Composable
 fun HeroSection(
     songs: List<Song>,
-    onPlayClick: () -> Unit
+    onPlayClick: () -> Unit,
+    isDarkMode: Boolean = true
 ) {
     val firstSong = songs.firstOrNull()
     val secondSong = songs.getOrNull(1)
+    val textColor = if (isDarkMode) Color.White else Color.Black
+    val secondaryTextColor = if (isDarkMode) Color(0xFFB3B3B3) else Color(0xFF666666)
     
     Row(
         modifier = Modifier
@@ -354,12 +405,12 @@ fun HeroSection(
             Text(
                 text = "Your",
                 style = MaterialTheme.typography.displayLarge,
-                color = Color.White
+                color = textColor
             )
             Text(
                 text = "Mix",
                 style = MaterialTheme.typography.displayLarge,
-                color = Color.White
+                color = textColor
             )
             
             Spacer(modifier = Modifier.height(8.dp))
@@ -369,7 +420,7 @@ fun HeroSection(
                     secondSong?.artist?.let { "$artist, $it" } ?: artist
                 } ?: "Traveler, Water Houses",
                 style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
-                color = Color(0xFFB3B3B3),
+                color = secondaryTextColor,
                 maxLines = 1,
                 overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
             )
@@ -382,8 +433,8 @@ fun HeroSection(
                 modifier = Modifier.size(IconButtonDefaults.largeContainerSize()),
                 shapes = IconButtonDefaults.shapes(), // Enables shape morphing on press
                 colors = IconButtonDefaults.filledIconButtonColors(
-                    containerColor = Color(0xFFB8D4FF),
-                    contentColor = Color.Black
+                    containerColor = if (isDarkMode) Color(0xFFB8D4FF) else Color(0xFF6200EE),
+                    contentColor = if (isDarkMode) Color.Black else Color.White
                 )
             ) {
                 Icon(
@@ -540,93 +591,34 @@ fun SongStripCard(
 }
 
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-fun ExpressiveNavigationBar(
-    selectedTab: Int,
-    onTabSelected: (Int) -> Unit,
-    modifier: Modifier = Modifier
+fun SearchContent(
+    songs: List<Song>,
+    onSongClick: (Song) -> Unit,
+    contentPadding: PaddingValues,
+    viewModel: HomeViewModel,
+    isDarkMode: Boolean
 ) {
-    Surface(
-        modifier = modifier
-            .padding(horizontal = 24.dp, vertical = 12.dp)
-            .height(80.dp)
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(40.dp)),
-        color = Color(0xFF1E1E1E),
-        tonalElevation = 8.dp,
-        shadowElevation = 12.dp
-    ) {
-        ShortNavigationBar(
-            containerColor = Color.Transparent,
-            contentColor = Color.White,
-            modifier = Modifier.fillMaxSize()
-        ) {
-            ShortNavigationBarItem(
-                selected = selectedTab == 0,
-                onClick = { onTabSelected(0) },
-                icon = {
-                    Icon(
-                        imageVector = Icons.Rounded.People,
-                        contentDescription = null
-                    )
-                },
-                label = { Text("Your Mix", fontSize = 12.sp) },
-                iconPosition = NavigationItemIconPosition.Top
-            )
-            ShortNavigationBarItem(
-                selected = selectedTab == 1,
-                onClick = { onTabSelected(1) },
-                icon = {
-                    Icon(
-                        imageVector = if (selectedTab == 1) Icons.Filled.Search else Icons.Outlined.Search,
-                        contentDescription = null
-                    )
-                },
-                label = { Text("Search", fontSize = 12.sp) },
-                iconPosition = NavigationItemIconPosition.Top
-            )
-            ShortNavigationBarItem(
-                selected = selectedTab == 2,
-                onClick = { onTabSelected(2) },
-                icon = {
-                    Icon(
-                        imageVector = if (selectedTab == 2) Icons.Filled.LibraryMusic else Icons.Outlined.LibraryMusic,
-                        contentDescription = null
-                    )
-                },
-                label = { Text("Library", fontSize = 12.sp) },
-                iconPosition = NavigationItemIconPosition.Top
-            )
-        }
-    }
-}
-
-
-@Composable
-fun SearchContent(contentPadding: PaddingValues) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black)
-            .padding(contentPadding),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            "Search - Coming Soon",
-            style = MaterialTheme.typography.headlineSmall,
-            color = Color.White
-        )
-    }
+    com.ivor.ivormusic.ui.search.SearchScreen(
+        songs = songs,
+        onSongClick = onSongClick,
+        contentPadding = contentPadding,
+        viewModel = viewModel,
+        isDarkMode = isDarkMode
+    )
 }
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun RecentAlbumsSection(
     songs: List<Song>,
-    onSongClick: (Song) -> Unit
+    onSongClick: (Song) -> Unit,
+    isDarkMode: Boolean = true
 ) {
     if (songs.isEmpty()) return
+    
+    val textColor = if (isDarkMode) Color.White else Color.Black
+    val cardBgColor = if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFE8E8E8)
     
     // We need at least one large, one medium, one small for full effect,
     // but the component handles fewer items gracefully.
@@ -636,7 +628,7 @@ fun RecentAlbumsSection(
         Text(
             text = "Recent Albums",
             style = MaterialTheme.typography.headlineSmall,
-            color = Color.White,
+            color = textColor,
             modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
         )
         
@@ -653,7 +645,7 @@ fun RecentAlbumsSection(
             Box(
                 modifier = Modifier
                     .maskClip(MaterialTheme.shapes.medium)
-                    .background(Color(0xFF2A2A2A))
+                    .background(cardBgColor)
                     .clickable { onSongClick(song) }
             ) {
                 if (song.albumArtUri != null) {
@@ -682,17 +674,22 @@ fun RecentAlbumsSection(
 @Composable
 fun QuickPicksSection(
     songs: List<Song>,
-    onSongClick: (Song) -> Unit
+    onSongClick: (Song) -> Unit,
+    isDarkMode: Boolean = true
 ) {
     if (songs.isEmpty()) return
+    
+    val textColor = if (isDarkMode) Color.White else Color.Black
+    val secondaryTextColor = if (isDarkMode) Color.Gray else Color(0xFF666666)
+    val cardBgColor = if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFE8E8E8)
     
     val state = rememberCarouselState { songs.size }
     
     Column(modifier = Modifier.fillMaxWidth()) {
         Text(
             text = "Quick Picks",
-            style = MaterialTheme.typography.headlineSmall, // Uses our new Expressive style
-            color = Color.White,
+            style = MaterialTheme.typography.headlineSmall,
+            color = textColor,
             modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
         )
         
@@ -718,7 +715,7 @@ fun QuickPicksSection(
                         .fillMaxWidth()
                         .height(140.dp)
                         .clip(RoundedCornerShape(16.dp))
-                        .background(Color(0xFF2A2A2A))
+                        .background(cardBgColor)
                 ) {
                       if (song.albumArtUri != null) {
                         AsyncImage(
@@ -746,13 +743,13 @@ fun QuickPicksSection(
                     text = song.title,
                     maxLines = 1,
                     style = MaterialTheme.typography.bodyLarge,
-                    color = Color.White
+                    color = textColor
                 )
                   Text(
                     text = song.artist,
                     maxLines = 1,
                     style = MaterialTheme.typography.labelMedium,
-                    color = Color.Gray
+                    color = secondaryTextColor
                 )
             }
         }
@@ -760,17 +757,19 @@ fun QuickPicksSection(
 }
 
 @Composable
-fun LibraryContent(contentPadding: PaddingValues) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black)
-            .padding(contentPadding),
-        contentAlignment = Alignment.Center
-    ) {
-        androidx.compose.material3.Text(
-            "Library",
-            color = Color.White
-        )
-    }
+fun LibraryContent(
+    songs: List<Song>,
+    onSongClick: (Song) -> Unit,
+    contentPadding: PaddingValues,
+    viewModel: HomeViewModel,
+    isDarkMode: Boolean
+) {
+    com.ivor.ivormusic.ui.library.LibraryScreen(
+        songs = songs,
+        onSongClick = onSongClick,
+        contentPadding = contentPadding,
+        viewModel = viewModel,
+        isDarkMode = isDarkMode
+    )
 }
+

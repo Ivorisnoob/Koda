@@ -5,6 +5,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
@@ -14,21 +16,31 @@ import com.ivor.ivormusic.ui.home.HomeScreen
 import com.ivor.ivormusic.ui.home.HomeViewModel
 import com.ivor.ivormusic.ui.player.PlayerViewModel
 import com.ivor.ivormusic.ui.theme.IvorMusicTheme
+import com.ivor.ivormusic.ui.theme.ThemeViewModel
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            IvorMusicTheme {
-                MusicApp()
+            val themeViewModel: ThemeViewModel = viewModel()
+            val isDarkMode by themeViewModel.isDarkMode.collectAsState()
+            
+            IvorMusicTheme(darkTheme = isDarkMode) {
+                MusicApp(
+                    isDarkMode = isDarkMode,
+                    onThemeToggle = { themeViewModel.setDarkMode(it) }
+                )
             }
         }
     }
 }
 
 @Composable
-fun MusicApp() {
+fun MusicApp(
+    isDarkMode: Boolean,
+    onThemeToggle: (Boolean) -> Unit
+) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val navController = rememberNavController()
     val playerViewModel: PlayerViewModel = remember { PlayerViewModel(context) }
@@ -41,10 +53,21 @@ fun MusicApp() {
                     playerViewModel.playSong(song)
                 },
                 playerViewModel = playerViewModel,
-                viewModel = homeViewModel
+                viewModel = homeViewModel,
+                isDarkMode = isDarkMode,
+                onThemeToggle = onThemeToggle,
+                onNavigateToSettings = { navController.navigate("settings") }
             )
         }
-        // Player is now handled via ModalBottomSheet inside HomeScreen
-        // Navigation routes for other screens can be added here
+        composable("settings") {
+            com.ivor.ivormusic.ui.settings.SettingsScreen(
+                isDarkMode = isDarkMode,
+                onThemeToggle = onThemeToggle,
+                onLogoutClick = { 
+                    homeViewModel.logout()
+                },
+                onBackClick = { navController.popBackStack() }
+            )
+        }
     }
 }

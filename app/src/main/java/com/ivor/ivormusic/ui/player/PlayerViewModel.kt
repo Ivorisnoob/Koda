@@ -81,7 +81,13 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
 
         _currentSong.value = song
         controller?.let {
-            val mediaItem = MediaItem.fromUri(song.uri)
+            val mediaItem = if (song.source == com.ivor.ivormusic.data.SongSource.LOCAL && song.uri != null) {
+                MediaItem.fromUri(song.uri)
+            } else {
+                MediaItem.Builder()
+                    .setMediaId(song.id)
+                    .build()
+            }
             it.setMediaItem(mediaItem)
             it.prepare()
             it.play()

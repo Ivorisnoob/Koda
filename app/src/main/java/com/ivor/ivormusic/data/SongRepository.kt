@@ -61,7 +61,7 @@ class SongRepository(private val context: Context) {
                     albumId
                 )
 
-                songs.add(Song(id, title, artist, album, duration, contentUri, albumArtUri))
+                songs.add(Song.fromLocal(id, title, artist, album, duration, contentUri, albumArtUri))
             }
         }
         songs

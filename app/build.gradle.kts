@@ -62,6 +62,15 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.androidx.graphics.shapes)
     implementation(libs.androidx.ui.text.google.fonts)
+    
+    // YouTube Music Integration
+    implementation(libs.newpipe.extractor)
+    implementation(libs.okhttp)
+    implementation(libs.ktor.client.okhttp)
+    implementation(libs.ktor.client.content.negotiation)
+    implementation(libs.ktor.serialization.kotlinx.json)
+    implementation(libs.androidx.security.crypto)
+    implementation(libs.kotlinx.coroutines.guava)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

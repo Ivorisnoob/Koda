@@ -8,13 +8,18 @@ espressoCore = "3.7.0"
 lifecycleRuntimeKtx = "2.9.4"
 activityCompose = "1.11.0"
 composeBom = "2024.09.00"
-material3 = "1.5.0-alpha10" # Alpha version with Material 3 Expressive components
+material3 = "1.5.0-alpha10"
 media3 = "1.5.0"
 accompanist = "0.36.0"
 coil = "2.7.0"
 navigationCompose = "2.8.5"
 lifecycleViewModelCompose = "2.8.7"
 graphicsShapes = "1.0.1"
+newpipeExtractor = "v0.24.8"
+okhttp = "4.12.0"
+ktorClient = "2.3.7"
+securityCrypto = "1.1.0-alpha06"
+coroutinesGuava = "1.10.1"
 
 
 [libraries]
@@ -42,6 +47,13 @@ androidx-compose-material-icons-extended = { group = "androidx.compose.material"
 coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coil" }
 androidx-graphics-shapes = { group = "androidx.graphics", name = "graphics-shapes", version.ref = "graphicsShapes" }
 androidx-ui-text-google-fonts = { group = "androidx.compose.ui", name = "ui-text-google-fonts", version = "1.7.5" }
+newpipe-extractor = { group = "com.github.TeamNewPipe", name = "NewPipeExtractor", version.ref = "newpipeExtractor" }
+okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
+ktor-client-okhttp = { group = "io.ktor", name = "ktor-client-okhttp", version.ref = "ktorClient" }
+ktor-client-content-negotiation = { group = "io.ktor", name = "ktor-client-content-negotiation", version.ref = "ktorClient" }
+ktor-serialization-kotlinx-json = { group = "io.ktor", name = "ktor-serialization-kotlinx-json", version.ref = "ktorClient" }
+androidx-security-crypto = { group = "androidx.security", name = "security-crypto", version.ref = "securityCrypto" }
+kotlinx-coroutines-guava = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-guava", version.ref = "coroutinesGuava" }
 
 
 [plugins]
