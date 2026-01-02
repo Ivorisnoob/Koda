@@ -109,9 +109,16 @@ fun HomeScreen(
     viewModel: HomeViewModel = viewModel(),
     isDarkMode: Boolean = true,
     onThemeToggle: (Boolean) -> Unit = {},
-    onNavigateToSettings: () -> Unit = {}
+    onNavigateToSettings: () -> Unit = {},
+    loadLocalSongs: Boolean = true
 ) {
-    val songs by viewModel.songs.collectAsState()
+    val localSongs by viewModel.songs.collectAsState()
+    val youtubeSongs by viewModel.youtubeSongs.collectAsState()
+    val isYouTubeConnected by viewModel.isYouTubeConnected.collectAsState()
+    
+    // Use local songs or YouTube songs based on setting
+    val songs = if (loadLocalSongs) localSongs else youtubeSongs
+    
     val currentSong by playerViewModel.currentSong.collectAsState()
     val isPlaying by playerViewModel.isPlaying.collectAsState()
     val progress by playerViewModel.progress.collectAsState()
@@ -132,16 +139,23 @@ fun HomeScreen(
         }
     )
 
-    LaunchedEffect(Unit) {
-        if (!permissionState.status.isGranted) {
-            permissionState.launchPermissionRequest()
+    // Load songs based on setting
+    LaunchedEffect(Unit, loadLocalSongs) {
+        viewModel.checkYouTubeConnection()
+        if (loadLocalSongs) {
+            if (!permissionState.status.isGranted) {
+                permissionState.launchPermissionRequest()
+            } else {
+                viewModel.loadSongs()
+            }
         } else {
-            viewModel.loadSongs()
+            // Load YouTube recommendations when not using local songs
+            viewModel.loadYouTubeRecommendations()
         }
     }
 
-    LaunchedEffect(permissionState.status.isGranted) {
-        if (permissionState.status.isGranted) {
+    LaunchedEffect(permissionState.status.isGranted, loadLocalSongs) {
+        if (permissionState.status.isGranted && loadLocalSongs) {
             viewModel.loadSongs()
         }
     }
@@ -478,9 +492,9 @@ fun OrganicSongLayout(
                     .clickable { onSongClick(songs[0]) },
                 contentAlignment = Alignment.Center
             ) {
-                if (songs[0].albumArtUri != null) {
+                if (songs[0].albumArtUri != null || songs[0].thumbnailUrl != null) {
                     AsyncImage(
-                        model = songs[0].albumArtUri,
+                        model = songs[0].albumArtUri ?: songs[0].thumbnailUrl,
                         contentDescription = songs[0].title,
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop
@@ -509,9 +523,9 @@ fun OrganicSongLayout(
                     .clickable { onSongClick(songs[1]) },
                 contentAlignment = Alignment.Center
             ) {
-                if (songs[1].albumArtUri != null) {
+                if (songs[1].albumArtUri != null || songs[1].thumbnailUrl != null) {
                     AsyncImage(
-                        model = songs[1].albumArtUri,
+                        model = songs[1].albumArtUri ?: songs[1].thumbnailUrl,
                         contentDescription = songs[1].title,
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop
@@ -540,9 +554,9 @@ fun OrganicSongLayout(
                     .clickable { onSongClick(songs[2]) },
                 contentAlignment = Alignment.Center
             ) {
-                if (songs[2].albumArtUri != null) {
+                if (songs[2].albumArtUri != null || songs[2].thumbnailUrl != null) {
                     AsyncImage(
-                        model = songs[2].albumArtUri,
+                        model = songs[2].albumArtUri ?: songs[2].thumbnailUrl,
                         contentDescription = songs[2].title,
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop
@@ -573,9 +587,9 @@ fun SongStripCard(
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
-        if (song.albumArtUri != null) {
+        if (song.albumArtUri != null || song.thumbnailUrl != null) {
             AsyncImage(
-                model = song.albumArtUri,
+                model = song.albumArtUri ?: song.thumbnailUrl,
                 contentDescription = song.title,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop
@@ -648,9 +662,9 @@ fun RecentAlbumsSection(
                     .background(cardBgColor)
                     .clickable { onSongClick(song) }
             ) {
-                if (song.albumArtUri != null) {
+                if (song.albumArtUri != null || song.thumbnailUrl != null) {
                     AsyncImage(
-                        model = song.albumArtUri,
+                        model = song.albumArtUri ?: song.thumbnailUrl,
                         contentDescription = song.title,
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop
@@ -717,9 +731,9 @@ fun QuickPicksSection(
                         .clip(RoundedCornerShape(16.dp))
                         .background(cardBgColor)
                 ) {
-                      if (song.albumArtUri != null) {
+                      if (song.albumArtUri != null || song.thumbnailUrl != null) {
                         AsyncImage(
-                            model = song.albumArtUri,
+                            model = song.albumArtUri ?: song.thumbnailUrl,
                             contentDescription = song.title,
                             modifier = Modifier.fillMaxSize(),
                             contentScale = ContentScale.Crop

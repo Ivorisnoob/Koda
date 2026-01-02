@@ -6,13 +6,14 @@ import com.ivor.ivormusic.data.ThemePreferences
 import kotlinx.coroutines.flow.StateFlow
 
 /**
- * ViewModel for managing theme state across the app.
+ * ViewModel for managing theme and app settings state across the app.
  */
 class ThemeViewModel(application: Application) : AndroidViewModel(application) {
 
     private val themePreferences = ThemePreferences(application)
 
     val isDarkMode: StateFlow<Boolean> = themePreferences.isDarkMode
+    val loadLocalSongs: StateFlow<Boolean> = themePreferences.loadLocalSongs
 
     fun setDarkMode(isDark: Boolean) {
         themePreferences.setDarkMode(isDark)
@@ -20,5 +21,13 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun toggleDarkMode() {
         themePreferences.toggleDarkMode()
+    }
+
+    fun setLoadLocalSongs(load: Boolean) {
+        themePreferences.setLoadLocalSongs(load)
+    }
+
+    fun toggleLoadLocalSongs() {
+        themePreferences.toggleLoadLocalSongs()
     }
 }

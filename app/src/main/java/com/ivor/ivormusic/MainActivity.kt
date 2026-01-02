@@ -25,11 +25,14 @@ class MainActivity : ComponentActivity() {
         setContent {
             val themeViewModel: ThemeViewModel = viewModel()
             val isDarkMode by themeViewModel.isDarkMode.collectAsState()
+            val loadLocalSongs by themeViewModel.loadLocalSongs.collectAsState()
             
             IvorMusicTheme(darkTheme = isDarkMode) {
                 MusicApp(
                     isDarkMode = isDarkMode,
-                    onThemeToggle = { themeViewModel.setDarkMode(it) }
+                    onThemeToggle = { themeViewModel.setDarkMode(it) },
+                    loadLocalSongs = loadLocalSongs,
+                    onLoadLocalSongsToggle = { themeViewModel.setLoadLocalSongs(it) }
                 )
             }
         }
@@ -39,7 +42,9 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun MusicApp(
     isDarkMode: Boolean,
-    onThemeToggle: (Boolean) -> Unit
+    onThemeToggle: (Boolean) -> Unit,
+    loadLocalSongs: Boolean,
+    onLoadLocalSongsToggle: (Boolean) -> Unit
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val navController = rememberNavController()
@@ -56,13 +61,16 @@ fun MusicApp(
                 viewModel = homeViewModel,
                 isDarkMode = isDarkMode,
                 onThemeToggle = onThemeToggle,
-                onNavigateToSettings = { navController.navigate("settings") }
+                onNavigateToSettings = { navController.navigate("settings") },
+                loadLocalSongs = loadLocalSongs
             )
         }
         composable("settings") {
             com.ivor.ivormusic.ui.settings.SettingsScreen(
                 isDarkMode = isDarkMode,
                 onThemeToggle = onThemeToggle,
+                loadLocalSongs = loadLocalSongs,
+                onLoadLocalSongsToggle = onLoadLocalSongsToggle,
                 onLogoutClick = { 
                     homeViewModel.logout()
                 },

@@ -74,6 +74,14 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             emptyList()
         }
     }
+
+    suspend fun getUserPlaylists(): List<com.ivor.ivormusic.data.PlaylistDisplayItem> {
+        return try {
+            youtubeRepository.getUserPlaylists()
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
     
     fun logout() {
         sessionManager.clearSession()

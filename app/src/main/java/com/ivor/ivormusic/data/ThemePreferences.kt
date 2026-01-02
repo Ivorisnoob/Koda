@@ -7,7 +7,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
- * Manages theme preferences (light/dark mode).
+ * Manages app preferences (theme, local songs toggle, etc.).
  */
 class ThemePreferences(context: Context) {
 
@@ -18,9 +18,13 @@ class ThemePreferences(context: Context) {
     private val _isDarkMode = MutableStateFlow(getDarkModePreference())
     val isDarkMode: StateFlow<Boolean> = _isDarkMode.asStateFlow()
 
+    private val _loadLocalSongs = MutableStateFlow(getLoadLocalSongsPreference())
+    val loadLocalSongs: StateFlow<Boolean> = _loadLocalSongs.asStateFlow()
+
     companion object {
         private const val PREFS_NAME = "ivor_music_theme_prefs"
         private const val KEY_DARK_MODE = "dark_mode"
+        private const val KEY_LOAD_LOCAL_SONGS = "load_local_songs"
     }
 
     /**
@@ -28,6 +32,13 @@ class ThemePreferences(context: Context) {
      */
     private fun getDarkModePreference(): Boolean {
         return prefs.getBoolean(KEY_DARK_MODE, true)
+    }
+
+    /**
+     * Get the stored load local songs preference. Defaults to true.
+     */
+    private fun getLoadLocalSongsPreference(): Boolean {
+        return prefs.getBoolean(KEY_LOAD_LOCAL_SONGS, true)
     }
 
     /**
@@ -43,5 +54,20 @@ class ThemePreferences(context: Context) {
      */
     fun toggleDarkMode() {
         setDarkMode(!_isDarkMode.value)
+    }
+
+    /**
+     * Save load local songs preference and update the flow.
+     */
+    fun setLoadLocalSongs(load: Boolean) {
+        prefs.edit().putBoolean(KEY_LOAD_LOCAL_SONGS, load).apply()
+        _loadLocalSongs.value = load
+    }
+
+    /**
+     * Toggle load local songs setting.
+     */
+    fun toggleLoadLocalSongs() {
+        setLoadLocalSongs(!_loadLocalSongs.value)
     }
 }

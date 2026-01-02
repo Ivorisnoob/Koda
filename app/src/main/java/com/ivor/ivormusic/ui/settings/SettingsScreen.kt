@@ -23,6 +23,7 @@ import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.DarkMode
+import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -56,6 +57,8 @@ import com.ivor.ivormusic.ui.auth.YouTubeAuthDialog
 fun SettingsScreen(
     isDarkMode: Boolean,
     onThemeToggle: (Boolean) -> Unit,
+    loadLocalSongs: Boolean,
+    onLoadLocalSongsToggle: (Boolean) -> Unit,
     onLogoutClick: () -> Unit,
     onBackClick: () -> Unit,
     contentPadding: PaddingValues = PaddingValues()
@@ -166,6 +169,21 @@ fun SettingsScreen(
                                 showChevron = true
                             )
                         }
+                    }
+                }
+            }
+
+            // Library Section
+            item {
+                SettingsSection(title = "Library", textColor = secondaryTextColor) {
+                    SettingsCard(surfaceColor = surfaceColor) {
+                        LocalSongsToggleItem(
+                            loadLocalSongs = loadLocalSongs,
+                            onToggle = onLoadLocalSongsToggle,
+                            textColor = textColor,
+                            secondaryTextColor = secondaryTextColor,
+                            accentColor = accentColor
+                        )
                     }
                 }
             }
@@ -373,4 +391,65 @@ private fun SettingsDivider(isDarkMode: Boolean) {
             .height(1.dp)
             .background(if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFEEEEEE))
     )
+}
+
+@Composable
+private fun LocalSongsToggleItem(
+    loadLocalSongs: Boolean,
+    onToggle: (Boolean) -> Unit,
+    textColor: Color,
+    secondaryTextColor: Color,
+    accentColor: Color
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Icon
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(accentColor.copy(alpha = 0.15f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Folder,
+                contentDescription = null,
+                tint = accentColor,
+                modifier = Modifier.size(22.dp)
+            )
+        }
+
+        Spacer(modifier = Modifier.width(16.dp))
+
+        // Text
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "Load Local Songs",
+                color = textColor,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Medium
+            )
+            Text(
+                text = if (loadLocalSongs) "Shows songs from your device" else "YouTube Music only",
+                color = secondaryTextColor,
+                fontSize = 13.sp
+            )
+        }
+
+        // Switch
+        Switch(
+            checked = loadLocalSongs,
+            onCheckedChange = onToggle,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Color.White,
+                checkedTrackColor = accentColor,
+                uncheckedThumbColor = Color.White,
+                uncheckedTrackColor = secondaryTextColor.copy(alpha = 0.3f)
+            )
+        )
+    }
 }
