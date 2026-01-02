@@ -32,21 +32,27 @@ import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.People
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.NavigationItemIconPosition
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.carousel.HorizontalMultiBrowseCarousel
 import androidx.compose.material3.carousel.HorizontalUncontainedCarousel
 import androidx.compose.material3.carousel.rememberCarouselState
 import androidx.compose.material3.carousel.CarouselState
 import androidx.compose.material3.carousel.CarouselDefaults
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.ShortNavigationBar
 import androidx.compose.material3.ShortNavigationBarItem
 import androidx.compose.material3.Text
@@ -55,7 +61,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -74,6 +82,7 @@ import com.google.accompanist.permissions.rememberPermissionState
 import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.ui.components.MiniPlayer
 import com.ivor.ivormusic.ui.player.PlayerViewModel
+import com.ivor.ivormusic.ui.player.PlayerSheetContent
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.asComposePath
@@ -83,13 +92,13 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.graphics.shapes.RoundedPolygon
 import androidx.graphics.shapes.toPath
 import androidx.compose.material3.MaterialShapes
+import kotlinx.coroutines.launch
 
 
-@OptIn(ExperimentalPermissionsApi::class, ExperimentalMaterial3ExpressiveApi::class)
+@OptIn(ExperimentalPermissionsApi::class, ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     onSongClick: (Song) -> Unit,
-    onPlayerExpand: () -> Unit,
     playerViewModel: PlayerViewModel,
     viewModel: HomeViewModel = viewModel()
 ) {
@@ -100,6 +109,11 @@ fun HomeScreen(
     val duration by playerViewModel.duration.collectAsState()
     
     val progressFraction = if (duration > 0) progress.toFloat() / duration.toFloat() else 0f
+    
+    // Bottom sheet state for player - skip partial expand for direct full-screen
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var showPlayerSheet by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
     
     val permissionState = rememberPermissionState(
         permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -128,23 +142,35 @@ fun HomeScreen(
     Scaffold(
         containerColor = Color.Black,
         bottomBar = {
-            Column {
+            // Use Box to layer floating MiniPlayer above NavigationBar with system bar padding
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+            ) {
+                // Floating Navigation bar
+                ExpressiveNavigationBar(
+                    selectedTab = selectedTab,
+                    onTabSelected = { selectedTab = it },
+                    modifier = Modifier.align(Alignment.BottomCenter)
+                )
+                
+                // Floating MiniPlayer positioned above the nav bar
                 MiniPlayer(
                     currentSong = currentSong,
                     isPlaying = isPlaying,
                     progress = progressFraction,
                     onPlayPauseClick = { playerViewModel.togglePlayPause() },
                     onNextClick = { playerViewModel.skipToNext() },
-                    onClick = onPlayerExpand
-                )
-                
-                ExpressiveNavigationBar(
-                    selectedTab = selectedTab,
-                    onTabSelected = { selectedTab = it }
+                    onClick = { showPlayerSheet = true },
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 96.dp) // Spacing above the floating nav bar
                 )
             }
         }
     ) { innerPadding ->
+
         if (permissionState.status.isGranted) {
             when (selectedTab) {
                 0 -> YourMixContent(
@@ -173,6 +199,32 @@ fun HomeScreen(
                     }
                 }
             }
+        }
+    }
+    
+    // Swipe-up Player Bottom Sheet with M3 Expressive spring animations
+    if (showPlayerSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showPlayerSheet = false },
+            sheetState = sheetState,
+            containerColor = Color.Black,
+            contentColor = Color.White,
+            dragHandle = {
+                BottomSheetDefaults.DragHandle(
+                    color = Color.White.copy(alpha = 0.4f)
+                )
+            },
+            scrimColor = Color.Black.copy(alpha = 0.5f)
+        ) {
+            PlayerSheetContent(
+                viewModel = playerViewModel,
+                onCollapse = {
+                    scope.launch {
+                        sheetState.hide()
+                        showPlayerSheet = false
+                    }
+                }
+            )
         }
     }
 }
@@ -492,50 +544,64 @@ fun SongStripCard(
 @Composable
 fun ExpressiveNavigationBar(
     selectedTab: Int,
-    onTabSelected: (Int) -> Unit
+    onTabSelected: (Int) -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    ShortNavigationBar(
-        containerColor = Color(0xFF1A1A1A),
-        contentColor = Color.White
+    Surface(
+        modifier = modifier
+            .padding(horizontal = 24.dp, vertical = 12.dp)
+            .height(80.dp)
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(40.dp)),
+        color = Color(0xFF1E1E1E),
+        tonalElevation = 8.dp,
+        shadowElevation = 12.dp
     ) {
-        ShortNavigationBarItem(
-            selected = selectedTab == 0,
-            onClick = { onTabSelected(0) },
-            icon = {
-                Icon(
-                    imageVector = Icons.Rounded.People,
-                    contentDescription = null
-                )
-            },
-            label = { Text("Your Mix", fontSize = 12.sp) },
-            iconPosition = NavigationItemIconPosition.Top
-        )
-        ShortNavigationBarItem(
-            selected = selectedTab == 1,
-            onClick = { onTabSelected(1) },
-            icon = {
-                Icon(
-                    imageVector = if (selectedTab == 1) Icons.Filled.Search else Icons.Outlined.Search,
-                    contentDescription = null
-                )
-            },
-            label = { Text("Search", fontSize = 12.sp) },
-            iconPosition = NavigationItemIconPosition.Top
-        )
-        ShortNavigationBarItem(
-            selected = selectedTab == 2,
-            onClick = { onTabSelected(2) },
-            icon = {
-                Icon(
-                    imageVector = if (selectedTab == 2) Icons.Filled.LibraryMusic else Icons.Outlined.LibraryMusic,
-                    contentDescription = null
-                )
-            },
-            label = { Text("Library", fontSize = 12.sp) },
-            iconPosition = NavigationItemIconPosition.Top
-        )
+        ShortNavigationBar(
+            containerColor = Color.Transparent,
+            contentColor = Color.White,
+            modifier = Modifier.fillMaxSize()
+        ) {
+            ShortNavigationBarItem(
+                selected = selectedTab == 0,
+                onClick = { onTabSelected(0) },
+                icon = {
+                    Icon(
+                        imageVector = Icons.Rounded.People,
+                        contentDescription = null
+                    )
+                },
+                label = { Text("Your Mix", fontSize = 12.sp) },
+                iconPosition = NavigationItemIconPosition.Top
+            )
+            ShortNavigationBarItem(
+                selected = selectedTab == 1,
+                onClick = { onTabSelected(1) },
+                icon = {
+                    Icon(
+                        imageVector = if (selectedTab == 1) Icons.Filled.Search else Icons.Outlined.Search,
+                        contentDescription = null
+                    )
+                },
+                label = { Text("Search", fontSize = 12.sp) },
+                iconPosition = NavigationItemIconPosition.Top
+            )
+            ShortNavigationBarItem(
+                selected = selectedTab == 2,
+                onClick = { onTabSelected(2) },
+                icon = {
+                    Icon(
+                        imageVector = if (selectedTab == 2) Icons.Filled.LibraryMusic else Icons.Outlined.LibraryMusic,
+                        contentDescription = null
+                    )
+                },
+                label = { Text("Library", fontSize = 12.sp) },
+                iconPosition = NavigationItemIconPosition.Top
+            )
+        }
     }
 }
+
 
 @Composable
 fun SearchContent(contentPadding: PaddingValues) {

@@ -12,7 +12,6 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.ivor.ivormusic.ui.home.HomeScreen
 import com.ivor.ivormusic.ui.home.HomeViewModel
-import com.ivor.ivormusic.ui.player.PlayerScreen
 import com.ivor.ivormusic.ui.player.PlayerViewModel
 import com.ivor.ivormusic.ui.theme.IvorMusicTheme
 
@@ -41,16 +40,11 @@ fun MusicApp() {
                 onSongClick = { song ->
                     playerViewModel.playSong(song)
                 },
-                onPlayerExpand = { navController.navigate("player") },
                 playerViewModel = playerViewModel,
                 viewModel = homeViewModel
             )
         }
-        composable("player") {
-            PlayerScreen(
-                onBackClick = { navController.popBackStack() },
-                viewModel = playerViewModel
-            )
-        }
+        // Player is now handled via ModalBottomSheet inside HomeScreen
+        // Navigation routes for other screens can be added here
     }
 }
