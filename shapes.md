@@ -192,12 +192,44 @@ fun ShapeMorphingDemo() {
 }
 ```
 
-### Summary of New Shapes
+### 5. Full MaterialShapes Reference
 
-| Shape Name | Description | Best Use Case |
-| :--- | :--- | :--- |
-| **`RoundedCornerShape`** | Standard corners, but M3 Expressive uses larger radii (e.g., 20dp+). | Buttons, Cards, Dialogs |
-| **`MaterialShapes.SoftBurst`** | A soft, star-like shape with rounded points. | Stickers, badged icons, loading |
-| **`MaterialShapes.Cookie9Sided`** | A wavy/scalloped circle. | Avatars, decorative containers |
-| **`MaterialShapes.Pill`** | A classic stadium/lozenge shape. | Chips, Toggles, Indicators |
-| **`MaterialShapes.Sunny`** | Sharp, sun-like spikes. | Attention-grabbing icons, alerts |
+The `MaterialShapes` class (added in `1.5.0-alpha10`) provides a wide range of predefined `RoundedPolygon` shapes:
+
+| Shape Name | Description |
+| :--- | :--- |
+| **`MaterialShapes.Arch`** | An arch shape. |
+| **`MaterialShapes.Arrow`** | An arrow shape. |
+| **`MaterialShapes.Boom`** | A boom shape. |
+| **`MaterialShapes.Bun`** | A bun shape. |
+| **`MaterialShapes.Burst`** | A burst shape. |
+| **`MaterialShapes.Circle`** | A circle shape. |
+| **`MaterialShapes.ClamShell`** | A clam-shell shape. |
+| **`MaterialShapes.Clover4Leaf`** | A 4-leaf clover shape. |
+| **`MaterialShapes.Clover8Leaf`** | An 8-leaf clover shape. |
+| **`MaterialShapes.Cookie12Sided`** | A 12-sided cookie shape. |
+| **`MaterialShapes.Cookie4Sided`** | A 4-sided cookie shape. |
+| **`MaterialShapes.Cookie6Sided`** | A 6-sided cookie shape. |
+| **`MaterialShapes.Cookie7Sided`** | A 7-sided cookie shape. |
+| **`MaterialShapes.Cookie9Sided`** | A 9-sided cookie shape. |
+| **`MaterialShapes.Diamond`** | A diamond shape. |
+| **`MaterialShapes.Fan`** | A fan shape. |
+| **`MaterialShapes.Flower`** | A flower shape. |
+| **`MaterialShapes.Gem`** | A gem shape. |
+| **`MaterialShapes.Ghostish`** | A ghost-ish shape. |
+| **`MaterialShapes.Heart`** | A heart shape. |
+| **`MaterialShapes.Oval`** | An oval shape. |
+| **`MaterialShapes.Pentagon`** | A pentagon shape. |
+| **`MaterialShapes.Pill`** | A pill shape. |
+| **`MaterialShapes.PixelCircle`** | A pixel-circle shape. |
+| **`MaterialShapes.PixelTriangle`** | A pixel-triangle shape. |
+| **`MaterialShapes.Puffy`** | A puffy shape. |
+| **`MaterialShapes.PuffyDiamond`** | A puffy-diamond shape. |
+| **`MaterialShapes.SemiCircle`** | A semi-circle shape. |
+| **`MaterialShapes.Slanted`** | A slanted square shape. |
+| **`MaterialShapes.SoftBoom`** | A soft-boom shape. |
+| **`MaterialShapes.SoftBurst`** | A soft-burst shape. |
+| **`MaterialShapes.Square`** | A rounded square shape. |
+| **`MaterialShapes.Sunny`** | A sunny shape. |
+| **`MaterialShapes.Triangle`** | A rounded triangle shape. |
+| **`MaterialShapes.VerySunny`** | A very-sunny shape. |

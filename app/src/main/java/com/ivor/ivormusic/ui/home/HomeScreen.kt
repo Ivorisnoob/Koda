@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -36,6 +37,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationItemIconPosition
@@ -72,6 +74,15 @@ import com.google.accompanist.permissions.rememberPermissionState
 import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.ui.components.MiniPlayer
 import com.ivor.ivormusic.ui.player.PlayerViewModel
+import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.asComposePath
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.graphics.shapes.RoundedPolygon
+import androidx.graphics.shapes.toPath
+import androidx.compose.material3.MaterialShapes
 
 
 @OptIn(ExperimentalPermissionsApi::class, ExperimentalMaterial3ExpressiveApi::class)
@@ -306,26 +317,27 @@ fun HeroSection(
                     secondSong?.artist?.let { "$artist, $it" } ?: artist
                 } ?: "Traveler, Water Houses",
                 style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
-                color = Color(0xFFB3B3B3)
+                color = Color(0xFFB3B3B3),
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
             )
         }
         
-        // Right side - Play button with notch effect (using shape morphing)
+        // Right side - Large Play button with shape morphing
         Box(modifier = Modifier.padding(top = 32.dp)) {
-            Button(
+            FilledIconButton(
                 onClick = onPlayClick,
-                shapes = ButtonDefaults.shapes(),
-                colors = ButtonDefaults.buttonColors(
+                modifier = Modifier.size(IconButtonDefaults.largeContainerSize()),
+                shapes = IconButtonDefaults.shapes(), // Enables shape morphing on press
+                colors = IconButtonDefaults.filledIconButtonColors(
                     containerColor = Color(0xFFB8D4FF),
                     contentColor = Color.Black
-                ),
-                modifier = Modifier.size(76.dp),
-                contentPadding = PaddingValues(0.dp)
+                )
             ) {
                 Icon(
                     imageVector = Icons.Default.PlayArrow,
                     contentDescription = "Play",
-                    modifier = Modifier.size(32.dp)
+                    modifier = Modifier.size(IconButtonDefaults.largeIconSize)
                 )
             }
         }
@@ -337,144 +349,109 @@ fun OrganicSongLayout(
     songs: List<Song>,
     onSongClick: (Song) -> Unit
 ) {
-    Box(
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxWidth()
             .height(480.dp)
-            .padding(horizontal = 8.dp)
     ) {
-        // Small circular image - top left, rotated
-        if (songs.size > 2) {
-            SongCircleCard(
-                song = songs[2],
-                onClick = { onSongClick(songs[2]) },
-                rotation = -10f,
-                modifier = Modifier
-                    .size(85.dp)
-                    .align(Alignment.TopStart)
-                    .offset(x = 16.dp, y = 30.dp)
-            )
-        }
+        val boxWidth = maxWidth
+        val boxHeight = maxHeight
         
-        // Main large pill shape - center right, ROTATED DIAGONALLY
+        // Circle sizes - percentage of screen width
+        val circle1Size = boxWidth * 0.28f  // Top-left circle
+        val circle2Size = boxWidth * 0.24f  // Bottom-right circle
+        
+        // Main: Large Pill shape - rotated diagonally right-to-left
         if (songs.isNotEmpty()) {
-            SongPillCard(
-                song = songs[0],
-                onClick = { onSongClick(songs[0]) },
-                rotation = 15f, // Diagonal rotation like in the design
-                modifier = Modifier
-                    .width(180.dp)
-                    .height(280.dp)
-                    .align(Alignment.TopEnd)
-                    .offset(x = (-24).dp, y = 10.dp)
-            )
-        }
-        
-        // Medium circular image - left side, rotated
-        if (songs.size > 3) {
-            SongCircleCard(
-                song = songs[3],
-                onClick = { onSongClick(songs[3]) },
-                rotation = 5f,
-                modifier = Modifier
-                    .size(70.dp)
-                    .align(Alignment.CenterStart)
-                    .offset(x = 8.dp, y = 80.dp)
-            )
-        }
-        
-        // Large circular image - bottom right
-        if (songs.size > 1) {
-            SongCircleCard(
-                song = songs[1],
-                onClick = { onSongClick(songs[1]) },
-                rotation = -8f,
-                modifier = Modifier
-                    .size(110.dp)
-                    .align(Alignment.BottomEnd)
-                    .offset(x = (-24).dp, y = (-30).dp)
-            )
-        }
-        
-
-    }
-}
-
-@Composable
-fun SongPillCard(
-    song: Song,
-    onClick: () -> Unit,
-    rotation: Float = 0f,
-    modifier: Modifier = Modifier
-) {
-    Box(
-        modifier = modifier
-            .graphicsLayer { rotationZ = rotation }
-            .clip(RoundedCornerShape(50))
-            .background(Color(0xFFE8E8E8))
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) {
-        if (song.albumArtUri != null) {
-            AsyncImage(
-                model = song.albumArtUri,
-                contentDescription = song.title,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop
-            )
-        } else {
             Box(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color(0xFFF0F0F0)),
+                    .width(260.dp)
+                    .height(500.dp)
+                    .align(Alignment.Center)
+                    .offset(x = 0.dp, y = 30.dp)
+                    .graphicsLayer { rotationZ = 30f }
+                    .clip(RoundedCornerShape(50))
+                    .background(Color(0xFFE8E8E8))
+                    .clickable { onSongClick(songs[0]) },
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    imageVector = Icons.Rounded.MusicNote,
-                    contentDescription = null,
-                    modifier = Modifier.size(56.dp),
-                    tint = Color(0xFF666666)
-                )
+                if (songs[0].albumArtUri != null) {
+                    AsyncImage(
+                        model = songs[0].albumArtUri,
+                        contentDescription = songs[0].title,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Rounded.MusicNote,
+                        contentDescription = null,
+                        modifier = Modifier.size(48.dp),
+                        tint = Color(0xFF666666)
+                    )
+                }
             }
         }
-    }
-}
-
-@Composable
-fun SongCircleCard(
-    song: Song,
-    onClick: () -> Unit,
-    rotation: Float = 0f,
-    modifier: Modifier = Modifier
-) {
-    Box(
-        modifier = modifier
-            .graphicsLayer { rotationZ = rotation }
-            .clip(CircleShape)
-            .background(Color(0xFF3A3A3A))
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) {
-        if (song.albumArtUri != null) {
-            AsyncImage(
-                model = song.albumArtUri,
-                contentDescription = song.title,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop
-            )
-        } else {
+        
+        // Circle 1 - Top Left (responsive size)
+        if (songs.size > 1) {
             Box(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color(0xFF3A3A3A)),
+                    .size(circle1Size)
+                    .align(Alignment.TopStart)
+                    .offset(x = boxWidth * 0.04f, y = boxHeight * 0.05f)
+                    .graphicsLayer { rotationZ = -10f }
+                    .clip(CircleShape)
+                    .background(Color(0xFF3A3A3A))
+                    .clickable { onSongClick(songs[1]) },
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    imageVector = Icons.Rounded.MusicNote,
-                    contentDescription = null,
-                    modifier = Modifier.size(24.dp),
-                    tint = Color(0xFF888888)
-                )
+                if (songs[1].albumArtUri != null) {
+                    AsyncImage(
+                        model = songs[1].albumArtUri,
+                        contentDescription = songs[1].title,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Rounded.MusicNote,
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp),
+                        tint = Color(0xFF888888)
+                    )
+                }
+            }
+        }
+        
+        // Circle 2 - Bottom Right (responsive size)
+        if (songs.size > 2) {
+            Box(
+                modifier = Modifier
+                    .size(circle2Size)
+                    .align(Alignment.BottomEnd)
+                    .offset(x = boxWidth * (-0.05f), y = boxHeight * (-0.06f))
+                    .graphicsLayer { rotationZ = 5f }
+                    .clip(CircleShape)
+                    .background(Color(0xFF3A3A3A))
+                    .clickable { onSongClick(songs[2]) },
+                contentAlignment = Alignment.Center
+            ) {
+                if (songs[2].albumArtUri != null) {
+                    AsyncImage(
+                        model = songs[2].albumArtUri,
+                        contentDescription = songs[2].title,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Rounded.MusicNote,
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp),
+                        tint = Color(0xFF888888)
+                    )
+                }
             }
         }
     }
