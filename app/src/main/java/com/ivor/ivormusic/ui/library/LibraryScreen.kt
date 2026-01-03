@@ -213,8 +213,8 @@ fun LibraryScreen(
                             }
                         }
                     } else {
-                        // YouTube Liked Songs Section
-                        if (isYouTubeConnected && likedSongs.isNotEmpty()) {
+                        // Liked Songs Section (Local + YouTube)
+                        if (likedSongs.isNotEmpty()) {
                             item {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
@@ -223,7 +223,7 @@ fun LibraryScreen(
                                 ) {
                                     Column {
                                         Text(
-                                            "Liked on YouTube Music",
+                                            "Liked Songs",
                                             style = MaterialTheme.typography.titleMedium,
                                             fontWeight = FontWeight.Bold,
                                             color = textColor
@@ -352,7 +352,10 @@ fun LibraryScreen(
                 }
                 
                 "Playlists" -> {
-                    if (userPlaylists.isEmpty()) {
+                    val hasLikedSongs = likedSongs.isNotEmpty()
+                    val totalItems = (if (hasLikedSongs) 1 else 0) + userPlaylists.size
+                    
+                    if (totalItems == 0) {
                         item {
                             EmptyStateCard(
                                 title = "No Playlists Found",
@@ -364,9 +367,87 @@ fun LibraryScreen(
                             )
                         }
                     } else {
+                        // 1. Liked Songs Playlist Card (if exists)
+                        if (hasLikedSongs) {
+                            item {
+                                val shape = getSegmentedShape(0, totalItems)
+                                Surface(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(shape)
+                                        .clickable { onPlayQueue(likedSongs, null) },
+                                    shape = shape,
+                                    color = cardColor,
+                                    tonalElevation = 1.dp
+                                ) {
+                                    ListItem(
+                                        headlineContent = {
+                                            Text(
+                                                text = "Liked Songs",
+                                                style = MaterialTheme.typography.bodyLarge,
+                                                fontWeight = FontWeight.Bold,
+                                                color = textColor
+                                            )
+                                        },
+                                        supportingContent = {
+                                            Text(
+                                                text = "${likedSongs.size} songs • Auto-playlist",
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = secondaryTextColor
+                                            )
+                                        },
+                                        leadingContent = {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(56.dp)
+                                                    .clip(RoundedCornerShape(14.dp))
+                                                    .background(
+                                                        Brush.linearGradient(
+                                                            listOf(
+                                                                Color(0xFFE91E63),
+                                                                Color(0xFFFF5252)
+                                                            )
+                                                        )
+                                                    ),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    Icons.Rounded.Favorite,
+                                                    contentDescription = null,
+                                                    tint = Color.White,
+                                                    modifier = Modifier.size(24.dp)
+                                                )
+                                            }
+                                        },
+                                        trailingContent = {
+                                            Icon(
+                                                Icons.Rounded.PlayArrow,
+                                                contentDescription = null,
+                                                tint = accentColor,
+                                                modifier = Modifier.size(24.dp)
+                                            )
+                                        },
+                                        colors = ListItemDefaults.colors(
+                                            containerColor = Color.Transparent
+                                        )
+                                    )
+                                }
+                                if (userPlaylists.isNotEmpty()) {
+                                    HorizontalDivider(
+                                        modifier = Modifier.padding(horizontal = 24.dp),
+                                        color = textColor.copy(alpha = 0.08f)
+                                    )
+                                }
+                            }
+                        }
+
+                        // 2. User Playlists
                         itemsIndexed(userPlaylists) { index, playlist ->
                             // Custom Playlist Card
-                            val shape = getSegmentedShape(index, userPlaylists.size)
+                            // Adjust index if we have Liked Songs
+                            val displayIndex = index + (if (hasLikedSongs) 1 else 0)
+                            val shape = getSegmentedShape(displayIndex, totalItems)
+                            
                             Surface(
                                 modifier = Modifier
                                     .fillMaxWidth()

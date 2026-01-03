@@ -68,8 +68,8 @@ fun PlayerSheetContent(
     val repeatMode by viewModel.repeatMode.collectAsState()
     val currentQueue by viewModel.currentQueue.collectAsState()
     val playWhenReady by viewModel.playWhenReady.collectAsState()
+    val isFavorite by viewModel.isCurrentSongLiked.collectAsState()
     
-    var isFavorite by remember { mutableStateOf(false) }
     var showQueue by remember { mutableStateOf(false) }
 
     // Theme colors
@@ -110,7 +110,7 @@ fun PlayerSheetContent(
                     shuffleModeEnabled = shuffleModeEnabled,
                     repeatMode = repeatMode,
                     isFavorite = isFavorite,
-                    onFavoriteToggle = { isFavorite = it },
+                    onFavoriteToggle = { viewModel.toggleCurrentSongLike() },
                     onCollapse = onCollapse,
                     onShowQueue = { showQueue = true },
                     viewModel = viewModel,

@@ -7,9 +7,12 @@ import com.ivor.ivormusic.data.SessionManager
 import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.data.SongRepository
 import com.ivor.ivormusic.data.YouTubeRepository
+import com.ivor.ivormusic.data.LikedSongsRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 class HomeViewModel(application: Application) : AndroidViewModel(application) {
@@ -30,7 +33,21 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
     private val _likedSongs = MutableStateFlow<List<Song>>(emptyList())
-    val likedSongs: StateFlow<List<Song>> = _likedSongs.asStateFlow()
+    // Combine YouTube liked songs with manually liked songs (local or YT)
+    private val likedSongsRepository = LikedSongsRepository(application)
+    
+    // We can filter local songs by liked IDs
+    // But ideally we should have a single source. For now, let's expose a combined list.
+    val likedSongs: StateFlow<List<Song>> = combine(
+        _likedSongs, // YouTube Liked (from API)
+        _songs,      // Local Songs
+        likedSongsRepository.likedSongIds // Manually liked IDs
+    ) { ytLiked, localSongs, manuallyLikedIds ->
+        val manuallyLikedLocalSongs = localSongs.filter { it.id in manuallyLikedIds }
+        // Note: We can't easily reconstruct YouTube songs from just ID without querying
+        // So for now, we show YouTube Liked (API) + Manually Liked Local Songs
+        (ytLiked + manuallyLikedLocalSongs).distinctBy { it.id }
+    }.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000), emptyList())
 
     private val _userPlaylists = MutableStateFlow<List<com.ivor.ivormusic.data.PlaylistDisplayItem>>(emptyList())
     val userPlaylists: StateFlow<List<com.ivor.ivormusic.data.PlaylistDisplayItem>> = _userPlaylists.asStateFlow()

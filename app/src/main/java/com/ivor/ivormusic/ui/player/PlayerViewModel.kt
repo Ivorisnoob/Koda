@@ -11,6 +11,7 @@ import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
 import com.ivor.ivormusic.data.Song
+import com.ivor.ivormusic.data.LikedSongsRepository
 import com.ivor.ivormusic.service.MusicService
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -50,6 +51,14 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
 
     private val _currentQueue = MutableStateFlow<List<Song>>(emptyList())
     val currentQueue: StateFlow<List<Song>> = _currentQueue.asStateFlow()
+
+    // Liked songs functionality
+    private val likedSongsRepository = LikedSongsRepository(context)
+    
+    private val _isCurrentSongLiked = MutableStateFlow(false)
+    val isCurrentSongLiked: StateFlow<Boolean> = _isCurrentSongLiked.asStateFlow()
+    
+    val likedSongIds: StateFlow<Set<String>> = likedSongsRepository.likedSongIds
 
     init {
         initializeController()
@@ -91,6 +100,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                         val index = it.currentMediaItemIndex
                         if (index in _currentQueue.value.indices) {
                             _currentSong.value = _currentQueue.value[index]
+                            updateCurrentSongLikedStatus()
                         }
                     }
                 }
@@ -124,6 +134,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         // Update current song immediately for UI responsiveness
         val currentSong = songs[startIndex]
         _currentSong.value = currentSong
+        updateCurrentSongLikedStatus()
         
         controller?.let { player ->
             // 1. Play the target song immediately to be responsive
@@ -219,6 +230,34 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
 
     fun skipToPrevious() {
         controller?.seekToPrevious()
+    }
+
+    /**
+     * Toggle the like status of the current song.
+     */
+    fun toggleCurrentSongLike() {
+        val songId = _currentSong.value?.id ?: return
+        val isNowLiked = likedSongsRepository.toggleLike(songId)
+        _isCurrentSongLiked.value = isNowLiked
+    }
+
+    /**
+     * Check if a specific song is liked.
+     */
+    fun isSongLiked(songId: String): Boolean {
+        return likedSongsRepository.isLiked(songId)
+    }
+
+    /**
+     * Update the liked status for the current song (called when song changes).
+     */
+    private fun updateCurrentSongLikedStatus() {
+        val songId = _currentSong.value?.id
+        _isCurrentSongLiked.value = if (songId != null) {
+            likedSongsRepository.isLiked(songId)
+        } else {
+            false
+        }
     }
 
     override fun onCleared() {
