@@ -1,6 +1,8 @@
-# IvorMusic
+# The Music App
 
-IvorMusic is an Android-based music player application built using Kotlin and Jetpack Compose. It serves as a unified interface for streaming music from YouTube Music without requiring official API keys, utilizing the NewPipe Extractor and internal YouTube Music APIs. The application is designed with a focus on modern aesthetics, leveraging Material 3 Expressive design principles to offer a seamless and visually appealing user experience.
+The Music App is an Android-based music player application built using Kotlin and Jetpack Compose. It serves as a unified interface for streaming music from YouTube Music without requiring official API keys, utilizing the NewPipe Extractor and internal YouTube Music APIs. The application is designed with a focus on modern aesthetics, leveraging Material 3 Expressive design principles to offer a seamless and visually appealing user experience.
+
+*Note: The project repository is named `IvorMusic`.*
 
 ## key Features
 

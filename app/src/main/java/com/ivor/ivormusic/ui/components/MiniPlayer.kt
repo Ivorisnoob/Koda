@@ -87,169 +87,199 @@ fun MiniPlayer(
         exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
         modifier = modifier.padding(horizontal = 16.dp, vertical = 8.dp)
     ) {
-        Surface(
+        MiniPlayerContent(
+            currentSong = currentSong!!,
+            isPlaying = isPlaying,
+            isBuffering = isBuffering,
+            playWhenReady = playWhenReady,
+            progress = animatedProgress,
+            onPlayPauseClick = onPlayPauseClick,
+            onNextClick = onNextClick,
+            onClick = onClick,
+            dragOffset = dragOffset,
+            swipeThreshold = swipeThreshold,
+            onDragOffsetChange = { dragOffset = it }
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+fun MiniPlayerContent(
+    currentSong: Song,
+    isPlaying: Boolean,
+    isBuffering: Boolean,
+    playWhenReady: Boolean,
+    progress: Float,
+    onPlayPauseClick: () -> Unit,
+    onNextClick: () -> Unit,
+    onClick: () -> Unit,
+    dragOffset: Float = 0f,
+    swipeThreshold: Float = -50f,
+    onDragOffsetChange: (Float) -> Unit = {}
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .pointerInput(Unit) {
+                detectVerticalDragGestures(
+                    onDragStart = { onDragOffsetChange(0f) },
+                    onDragEnd = {
+                        if (dragOffset < swipeThreshold) {
+                            onClick()
+                        }
+                        onDragOffsetChange(0f)
+                    },
+                    onDragCancel = { onDragOffsetChange(0f) },
+                    onVerticalDrag = { change, dragAmount ->
+                        change.consume()
+                        onDragOffsetChange(dragOffset + dragAmount)
+                    }
+                )
+            },
+        onClick = onClick,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = RoundedCornerShape(50), // Full pill shape
+        shadowElevation = 8.dp,
+        tonalElevation = 4.dp
+    ) {
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .pointerInput(Unit) {
-                    detectVerticalDragGestures(
-                        onDragStart = { dragOffset = 0f },
-                        onDragEnd = {
-                            if (dragOffset < swipeThreshold) {
-                                onClick()
-                            }
-                            dragOffset = 0f
-                        },
-                        onDragCancel = { dragOffset = 0f },
-                        onVerticalDrag = { change, dragAmount ->
-                            change.consume()
-                            dragOffset += dragAmount
-                        }
-                    )
-                },
-            onClick = onClick,
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            shape = RoundedCornerShape(50), // Full pill shape
-            shadowElevation = 8.dp,
-            tonalElevation = 4.dp
+                .padding(8.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(8.dp),
-                verticalAlignment = Alignment.CenterVertically
+            // Album Art with Circular Progress Ring
+            Box(
+                modifier = Modifier.size(52.dp),
+                contentAlignment = Alignment.Center
             ) {
-                // Album Art with Circular Progress Ring
+                val trackColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f)
+                val progressColor = MaterialTheme.colorScheme.primary
+
+                // Progress ring behind the album art
+                Canvas(modifier = Modifier.size(52.dp)) {
+                    val strokeWidth = 3.dp.toPx()
+                    val radius = (size.minDimension - strokeWidth) / 2
+                    
+                    // Track (background ring)
+                    drawCircle(
+                        color = trackColor,
+                        radius = radius,
+                        style = Stroke(width = strokeWidth)
+                    )
+                    
+                    // Progress arc
+                    drawArc(
+                        color = progressColor,
+                        startAngle = -90f,
+                        sweepAngle = 360f * progress,
+                        useCenter = false,
+                        style = Stroke(
+                            width = strokeWidth,
+                            cap = StrokeCap.Round
+                        )
+                    )
+                }
+                
+                // Album art thumbnail (slightly smaller to fit inside ring)
                 Box(
-                    modifier = Modifier.size(52.dp),
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
-                    val trackColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f)
-                    val progressColor = MaterialTheme.colorScheme.primary
-
-                    // Progress ring behind the album art
-                    Canvas(modifier = Modifier.size(52.dp)) {
-                        val strokeWidth = 3.dp.toPx()
-                        val radius = (size.minDimension - strokeWidth) / 2
-                        
-                        // Track (background ring)
-                        drawCircle(
-                            color = trackColor,
-                            radius = radius,
-                            style = Stroke(width = strokeWidth)
+                    if (currentSong.albumArtUri != null || currentSong.thumbnailUrl != null) {
+                        AsyncImage(
+                            model = currentSong.highResThumbnailUrl ?: currentSong.albumArtUri ?: currentSong.thumbnailUrl,
+                            contentDescription = "Album Art",
+                            modifier = Modifier.size(44.dp),
+                            contentScale = ContentScale.Crop
                         )
-                        
-                        // Progress arc
-                        drawArc(
-                            color = progressColor,
-                            startAngle = -90f,
-                            sweepAngle = 360f * animatedProgress,
-                            useCenter = false,
-                            style = Stroke(
-                                width = strokeWidth,
-                                cap = StrokeCap.Round
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .size(44.dp)
+                                .background(MaterialTheme.colorScheme.surfaceVariant),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.MusicNote,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                        )
-                    }
-                    
-                    // Album art thumbnail (slightly smaller to fit inside ring)
-                    Box(
-                        modifier = Modifier
-                            .size(44.dp)
-                            .clip(CircleShape),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (currentSong?.albumArtUri != null || currentSong?.thumbnailUrl != null) {
-                            AsyncImage(
-                                model = currentSong?.highResThumbnailUrl ?: currentSong?.albumArtUri ?: currentSong?.thumbnailUrl,
-                                contentDescription = "Album Art",
-                                modifier = Modifier.size(44.dp),
-                                contentScale = ContentScale.Crop
-                            )
-                        } else {
-                            Box(
-                                modifier = Modifier
-                                    .size(44.dp)
-                                    .background(MaterialTheme.colorScheme.surfaceVariant),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.MusicNote,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(20.dp),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
                         }
                     }
                 }
+            }
 
-                Spacer(modifier = Modifier.width(12.dp))
+            Spacer(modifier = Modifier.width(12.dp))
 
-                // Song Info
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = currentSong?.title ?: "",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = currentSong?.artist ?: "",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
+            // Song Info
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = currentSong.title,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = currentSong.artist,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
 
-                // Play/Pause Button with shape morphing or Loading
-                if (isBuffering && playWhenReady) {
-                    Box(
-                        modifier = Modifier.size(44.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        LoadingIndicator(
-                            modifier = Modifier.size(24.dp),
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                } else {
-                    FilledIconButton(
-                        onClick = onPlayPauseClick,
-                        modifier = Modifier.size(44.dp),
-                        shapes = IconButtonDefaults.shapes(), // Bouncy shape morphing
-                        colors = IconButtonDefaults.filledIconButtonColors(
-                            containerColor = MaterialTheme.colorScheme.primaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                    ) {
-                        Icon(
-                            imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                            contentDescription = if (isPlaying) "Pause" else "Play",
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.width(8.dp))
-
-                // Next Button with shape morphing
-                FilledIconButton(
-                    onClick = onNextClick,
+            // Play/Pause Button with shape morphing or Loading
+            if (isBuffering && playWhenReady) {
+                Box(
                     modifier = Modifier.size(44.dp),
-                    shapes = IconButtonDefaults.shapes(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    LoadingIndicator(
+                        modifier = Modifier.size(24.dp),
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            } else {
+                FilledIconButton(
+                    onClick = onPlayPauseClick,
+                    modifier = Modifier.size(44.dp),
+                    shapes = IconButtonDefaults.shapes(), // Bouncy shape morphing
                     colors = IconButtonDefaults.filledIconButtonColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer
                     )
                 ) {
                     Icon(
-                        imageVector = Icons.Default.SkipNext,
-                        contentDescription = "Next",
+                        imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                        contentDescription = if (isPlaying) "Pause" else "Play",
                         modifier = Modifier.size(24.dp)
                     )
                 }
+            }
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            // Next Button with shape morphing
+            FilledIconButton(
+                onClick = onNextClick,
+                modifier = Modifier.size(44.dp),
+                shapes = IconButtonDefaults.shapes(),
+                colors = IconButtonDefaults.filledIconButtonColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            ) {
+                Icon(
+                    imageVector = Icons.Default.SkipNext,
+                    contentDescription = "Next",
+                    modifier = Modifier.size(24.dp)
+                )
             }
         }
     }

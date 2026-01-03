@@ -44,6 +44,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.Button
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
@@ -233,29 +234,25 @@ fun LibraryScreen(
                                             color = secondaryTextColor
                                         )
                                     }
-                                    Surface(
-                                        shape = RoundedCornerShape(12.dp),
-                                        color = Color(0xFFFF0000).copy(alpha = 0.15f),
-                                      modifier = Modifier.clickable { onPlayQueue(likedSongs, null) }
-                                  ) {
-                                        Row(
-                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Icon(
-                                                Icons.Rounded.PlayArrow,
-                                                contentDescription = null,
-                                                tint = Color(0xFFFF0000),
-                                                modifier = Modifier.size(16.dp)
-                                            )
-                                            Spacer(modifier = Modifier.width(4.dp))
-                                            Text(
-                                                "Play All",
-                                                style = MaterialTheme.typography.labelMedium,
-                                                color = Color(0xFFFF0000),
-                                                fontWeight = FontWeight.SemiBold
-                                            )
-                                        }
+                                    FilledTonalButton(
+                                        onClick = { onPlayQueue(likedSongs, null) },
+                                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                                        colors = ButtonDefaults.filledTonalButtonColors(
+                                            containerColor = Color(0xFFFF0000).copy(alpha = 0.1f),
+                                            contentColor = Color(0xFFFF0000)
+                                        )
+                                    ) {
+                                        Icon(
+                                            Icons.Rounded.PlayArrow,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            "Play All",
+                                            style = MaterialTheme.typography.labelLarge,
+                                            fontWeight = FontWeight.Bold
+                                        )
                                     }
                                 }
                                 Spacer(modifier = Modifier.height(16.dp))

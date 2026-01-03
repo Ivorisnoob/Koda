@@ -92,6 +92,7 @@ import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.ui.components.MiniPlayer
 import com.ivor.ivormusic.ui.components.FloatingPillNavBar
 import com.ivor.ivormusic.ui.player.PlayerViewModel
+import com.ivor.ivormusic.ui.player.ExpandablePlayer
 import com.ivor.ivormusic.ui.player.PlayerSheetContent
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Shape
@@ -294,22 +295,6 @@ fun HomeScreen(
             }
         }
         
-        // Floating MiniPlayer - positioned above navbar
-        MiniPlayer(
-            currentSong = currentSong,
-            isPlaying = isPlaying,
-            isBuffering = isBuffering,
-            playWhenReady = playWhenReady,
-            progress = progressFraction,
-            onPlayPauseClick = { playerViewModel.togglePlayPause() },
-            onNextClick = { playerViewModel.skipToNext() },
-            onClick = { showPlayerSheet = true },
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = 100.dp)
-                .navigationBarsPadding()
-        )
-        
         // Floating Navigation bar - truly floating overlay
         FloatingPillNavBar(
             selectedTab = selectedTab,
@@ -319,6 +304,22 @@ fun HomeScreen(
                 .align(Alignment.BottomCenter)
                 .navigationBarsPadding()
         )
+
+        // Expandable Player (Mini <-> Full Screen)
+        ExpandablePlayer(
+            isExpanded = showPlayerSheet,
+            onExpandChange = { showPlayerSheet = it },
+            currentSong = currentSong,
+            isPlaying = isPlaying,
+            isBuffering = isBuffering,
+            playWhenReady = playWhenReady,
+            progress = progressFraction,
+            duration = playerViewModel.duration.collectAsState().value,
+            onPlayPauseClick = { playerViewModel.togglePlayPause() },
+            onNextClick = { playerViewModel.skipToNext() },
+            viewModel = playerViewModel,
+            modifier = Modifier.align(Alignment.BottomCenter)
+        )
     }
     
     // Auth Dialog welp i guess we are doing it then
@@ -327,44 +328,6 @@ fun HomeScreen(
             onDismiss = { showAuthDialog = false },
             onAuthSuccess = { showAuthDialog = false }
         )
-    }
-    
-    // Swipe-up Player Bottom Sheet with M3 Expressive spring animations Cause i fucking Love it 
-    if (showPlayerSheet) {
-        ModalBottomSheet(
-            onDismissRequest = { showPlayerSheet = false },
-            sheetState = sheetState,
-            containerColor = MaterialTheme.colorScheme.surface,
-            contentColor = MaterialTheme.colorScheme.onSurface,
-            dragHandle = {
-                BottomSheetDefaults.DragHandle(
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            },
-            scrimColor = MaterialTheme.colorScheme.scrim.copy(alpha = 0.6f)
-        ) {
-            PlayerSheetContent(
-                viewModel = playerViewModel,
-                onCollapse = {
-                    scope.launch {
-                        sheetState.hide()
-                        showPlayerSheet = false
-                    }
-                },
-                onLoadMore = {
-                    val current = playerViewModel.currentSong.value
-                    if (current != null) {
-                        scope.launch {
-                            // Simple "radio" logic: search for similar songs
-                            val query = "${current.title} ${current.artist}"
-                            val similarSongs = viewModel.searchYouTube(query)
-                            val newSongs = similarSongs.filter { it.id != current.id }
-                            playerViewModel.addToQueue(newSongs)
-                        }
-                    }
-                }
-            )
-        }
     }
 }
 

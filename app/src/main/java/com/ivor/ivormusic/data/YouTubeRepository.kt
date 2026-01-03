@@ -358,56 +358,95 @@ class YouTubeRepository(private val context: Context) {
         try {
             val root = org.json.JSONObject(json)
             val items = mutableListOf<org.json.JSONObject>()
-            // Recursively find all "musicResponsiveListItemRenderer"
+            // Recursively find all "musicResponsiveListItemRenderer" (Lists)
             findAllObjects(root, "musicResponsiveListItemRenderer", items)
+            // Also find "musicTwoRowItemRenderer" (Shelves/Cards)
+            findAllObjects(root, "musicTwoRowItemRenderer", items)
 
             items.forEach { item ->
                 try {
-                    // Extract Video ID
-                    val videoId = extractValueFromRuns(item, "videoId") ?: return@forEach
-                    
-                    // Extract Title
-                    val flexColumns = item.optJSONArray("flexColumns")
-                    val titleFormatted = flexColumns?.optJSONObject(0)
-                        ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
-                        ?.optJSONObject("text")
-                    val title = getRunText(titleFormatted) ?: "Unknown Title"
+                    // Strategy 1: musicResponsiveListItemRenderer (Flex Columns)
+                    if (item.has("flexColumns")) {
+                        // Extract Video ID
+                        val videoId = extractValueFromRuns(item, "videoId") ?: return@forEach
+                        
+                        // Extract Title
+                        val flexColumns = item.optJSONArray("flexColumns")
+                        val titleFormatted = flexColumns?.optJSONObject(0)
+                            ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
+                            ?.optJSONObject("text")
+                        val title = getRunText(titleFormatted) ?: "Unknown Title"
 
-                    // Extract Artist and Album
-                    val subtitleFormatted = flexColumns?.optJSONObject(1)
-                        ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
-                        ?.optJSONObject("text")
-                    
-                    val subtitleRuns = subtitleFormatted?.optJSONArray("runs")
-                    var artist = "Unknown Artist"
-                    var album = "Unknown Album"
-                    
-                    if (subtitleRuns != null && subtitleRuns.length() > 0) {
-                        artist = subtitleRuns.optJSONObject(0)?.optString("text") ?: artist
-                        if (subtitleRuns.length() > 2) {
-                            album = subtitleRuns.optJSONObject(2)?.optString("text") ?: album
+                        // Extract Artist and Album
+                        val subtitleFormatted = flexColumns?.optJSONObject(1)
+                            ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
+                            ?.optJSONObject("text")
+                        
+                        val subtitleRuns = subtitleFormatted?.optJSONArray("runs")
+                        var artist = "Unknown Artist"
+                        var album = "Unknown Album"
+                        
+                        if (subtitleRuns != null && subtitleRuns.length() > 0) {
+                            artist = subtitleRuns.optJSONObject(0)?.optString("text") ?: artist
+                            if (subtitleRuns.length() > 2) {
+                                album = subtitleRuns.optJSONObject(2)?.optString("text") ?: album
+                            }
+                        }
+
+                        // Extract Thumbnail
+                        val thumbnails = item.optJSONObject("thumbnail")
+                            ?.optJSONObject("musicThumbnailRenderer")
+                            ?.optJSONObject("thumbnail")
+                            ?.optJSONArray("thumbnails")
+                        
+                        val thumbnailUrl = thumbnails?.let {
+                            it.optJSONObject(it.length() - 1)?.optString("url")
+                        }
+
+                        songs.add(Song.fromYouTube(
+                            videoId = videoId,
+                            title = title,
+                            artist = artist,
+                            album = album,
+                            duration = 0L,
+                            thumbnailUrl = thumbnailUrl
+                        )!!)
+                    }
+                    // Strategy 2: musicTwoRowItemRenderer (Title/Subtitle)
+                    else if (item.has("title")) { // Basic check for TwoRow
+                        // Check if it's a song/video (has videoId in navigation)
+                        val videoId = extractValueFromRuns(item, "videoId")
+                        if (videoId != null) {
+                            val title = getRunText(item.optJSONObject("title")) ?: "Unknown"
+                            val subtitleFormatted = item.optJSONObject("subtitle")
+                            val subtitleRuns = subtitleFormatted?.optJSONArray("runs")
+                             
+                            var artist = "Unknown Artist"
+                            var album = "Unknown"
+                            
+                            if (subtitleRuns != null && subtitleRuns.length() > 0) {
+                                artist = subtitleRuns.optJSONObject(0)?.optString("text") ?: artist
+                            }
+                            
+                             val thumbnails = item.optJSONObject("thumbnailRenderer")
+                                ?.optJSONObject("musicThumbnailRenderer")
+                                ?.optJSONObject("thumbnail")
+                                ?.optJSONArray("thumbnails")
+                            
+                            val thumbnailUrl = thumbnails?.let {
+                                it.optJSONObject(it.length() - 1)?.optString("url")
+                            }
+
+                            songs.add(Song.fromYouTube(
+                                videoId = videoId,
+                                title = title,
+                                artist = artist,
+                                album = album,
+                                duration = 0L,
+                                thumbnailUrl = thumbnailUrl
+                            )!!)
                         }
                     }
-
-                    // Extract Thumbnail
-                    val thumbnails = item.optJSONObject("thumbnail")
-                        ?.optJSONObject("musicThumbnailRenderer")
-                        ?.optJSONObject("thumbnail")
-                        ?.optJSONArray("thumbnails")
-                    
-                    val thumbnailUrl = thumbnails?.let {
-                        // Get the last (usually largest) thumbnail
-                        it.optJSONObject(it.length() - 1)?.optString("url")
-                    }
-
-                    songs.add(Song.fromYouTube(
-                        videoId = videoId,
-                        title = title,
-                        artist = artist,
-                        album = album,
-                        duration = 0L, // Duration is harder to extract from list view usually
-                        thumbnailUrl = thumbnailUrl
-                    )!!)
                 } catch (e: Exception) {
                     // Skip malformed item
                 }

@@ -9,7 +9,7 @@ To use these features, you need the latest Material 3 alpha and the **graphics-s
 ```kotlin
 dependencies {
     // Latest Material 3 Alpha (Expressive features)
-    implementation("androidx.compose.material3:material3:1.4.0-alpha04")
+    implementation("androidx.compose.material3:material3:1.5.0-alpha10")
     
     // Required for Expressive Polygon shapes (Cookie, Burst, etc.)
     implementation("androidx.graphics:graphics-shapes:1.0.1") 
