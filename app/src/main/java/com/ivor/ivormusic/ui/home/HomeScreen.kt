@@ -89,7 +89,6 @@ import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberPermissionState
 import com.ivor.ivormusic.data.Song
-import com.ivor.ivormusic.ui.components.MiniPlayer
 import com.ivor.ivormusic.ui.components.FloatingPillNavBar
 import com.ivor.ivormusic.ui.player.PlayerViewModel
 import com.ivor.ivormusic.ui.player.ExpandablePlayer

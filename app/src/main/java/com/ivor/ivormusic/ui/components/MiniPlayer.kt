@@ -30,6 +30,7 @@ import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -51,57 +52,7 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.ivor.ivormusic.data.Song
 
-/**
- * Floating pill-shaped MiniPlayer with circular progress around album art.
- * - Swipe up to expand full player
- * - Tap anywhere to expand
- * - Progress shown as ring around album thumbnail
- */
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
-@Composable
-fun MiniPlayer(
-    currentSong: Song?,
-    isPlaying: Boolean,
-    isBuffering: Boolean,
-    playWhenReady: Boolean,
-    progress: Float,
-    onPlayPauseClick: () -> Unit,
-    onNextClick: () -> Unit,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    // Track swipe gestures
-    var dragOffset by remember { mutableFloatStateOf(0f) }
-    val swipeThreshold = -50f
-    
-    // Animate progress smoothly
-    val animatedProgress by animateFloatAsState(
-        targetValue = progress,
-        animationSpec = spring(stiffness = 100f),
-        label = "progress"
-    )
-    
-    AnimatedVisibility(
-        visible = currentSong != null,
-        enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
-        exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
-        modifier = modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-    ) {
-        MiniPlayerContent(
-            currentSong = currentSong!!,
-            isPlaying = isPlaying,
-            isBuffering = isBuffering,
-            playWhenReady = playWhenReady,
-            progress = animatedProgress,
-            onPlayPauseClick = onPlayPauseClick,
-            onNextClick = onNextClick,
-            onClick = onClick,
-            dragOffset = dragOffset,
-            swipeThreshold = swipeThreshold,
-            onDragOffsetChange = { dragOffset = it }
-        )
-    }
-}
+
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -240,9 +191,16 @@ fun MiniPlayerContent(
                     modifier = Modifier.size(44.dp),
                     contentAlignment = Alignment.Center
                 ) {
+                    // 🌟 Organic morphing loading with MaterialShapes
                     LoadingIndicator(
                         modifier = Modifier.size(24.dp),
-                        color = MaterialTheme.colorScheme.primary
+                        color = MaterialTheme.colorScheme.primary,
+                        polygons = listOf(
+                            MaterialShapes.SoftBurst,
+                            MaterialShapes.Cookie9Sided,
+                            MaterialShapes.Pill,
+                            MaterialShapes.Sunny
+                        )
                     )
                 }
             } else {

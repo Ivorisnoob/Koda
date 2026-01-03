@@ -24,7 +24,6 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import com.ivor.ivormusic.data.Song
-import com.ivor.ivormusic.ui.components.MiniPlayer
 import com.ivor.ivormusic.ui.components.MiniPlayerContent
 
 /**
@@ -98,7 +97,7 @@ fun ExpandablePlayer(
         contentAlignment = Alignment.BottomCenter
     ) {
         // Enforce padding via Box content alignment and absolute offset or padding
-        // Using padding on the box itself might clip content if we aren't careful?
+        // Using padding on the box itself might clip content if we aren't careful? and this caused some crashes lmao here and there as expected
         // Let's stick to the previous structure but ensure correct Z-index/HitTest
         
         Surface(
