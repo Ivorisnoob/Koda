@@ -93,7 +93,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 val recs = youtubeRepository.getRecommendations()
                 if (recs.isNotEmpty()) {
-                    _youtubeSongs.value = recs.shuffled()
+                    _youtubeSongs.value = recs
                 }
             } catch (e: Exception) {
                 // Handle error silently for now
@@ -146,10 +146,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     youtubeRepository.fetchAccountInfo()
                     _userAvatar.value = sessionManager.getUserAvatar()
                     
-                    // Fetch recommendations and shuffle them to ensure the UI looks "fresh"
+                    // Fetch personalized recommendations (order preserved from YTM)
                     val recs = youtubeRepository.getRecommendations()
                     if (recs.isNotEmpty()) {
-                        _youtubeSongs.value = recs.shuffled()
+                        _youtubeSongs.value = recs
                     }
                     
                     // Update library data

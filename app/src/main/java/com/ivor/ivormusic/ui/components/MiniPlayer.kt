@@ -52,8 +52,6 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.ivor.ivormusic.data.Song
 
-
-
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun MiniPlayerContent(
@@ -191,7 +189,7 @@ fun MiniPlayerContent(
                     modifier = Modifier.size(44.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    // 🌟 Organic morphing loading with MaterialShapes
+                    //Organic morphing loading with MaterialShapes
                     LoadingIndicator(
                         modifier = Modifier.size(24.dp),
                         color = MaterialTheme.colorScheme.primary,

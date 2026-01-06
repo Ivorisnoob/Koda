@@ -140,28 +140,47 @@ class YouTubeRepository(private val context: Context) {
 
     /**
      * Get personalized recommendations (Quick Picks / Home).
-     * Uses Internal YTM API with Cookies.
+     * Uses Internal YTM API with Cookies for personalized content.
      */
     suspend fun getRecommendations(): List<Song> = withContext(Dispatchers.IO) {
         if (!sessionManager.isLoggedIn()) {
-            return@withContext search("popular hits 2024", FILTER_SONGS)
+            android.util.Log.d("YouTubeRepo", "Not logged in, falling back to popular search")
+            return@withContext search("trending music 2026", FILTER_SONGS)
         }
 
         try {
-            // We use the Internal YouTube Music API for recommendations
+            // Fetch personalized home page content
+            android.util.Log.d("YouTubeRepo", "Fetching personalized recommendations from FEmusic_home")
             val jsonResponse = fetchInternalApi("FEmusic_home")
             
-            // Basic regex-based parsing to avoid heavy JSON library setup for now
-            // We look for videoIds and titles in the messy JSON
+            if (jsonResponse.isEmpty()) {
+                android.util.Log.e("YouTubeRepo", "Empty response from FEmusic_home")
+                // Try liked music as fallback
+                val likedSongs = getLikedMusic()
+                if (likedSongs.isNotEmpty()) return@withContext likedSongs
+                return@withContext search("trending music 2024", FILTER_SONGS)
+            }
+            
+            // Parse songs from the home page response
             val items = parseSongsFromInternalJson(jsonResponse)
+            android.util.Log.d("YouTubeRepo", "Parsed ${items.size} songs from recommendations")
             
             if (items.isNotEmpty()) return@withContext items
             
-            // Fallback
-            getLikedMusic()
+            // Fallback to liked music if home parsing failed
+            android.util.Log.d("YouTubeRepo", "Recommendations empty, trying liked music")
+            val likedSongs = getLikedMusic()
+            if (likedSongs.isNotEmpty()) return@withContext likedSongs
+            
+            // Last resort: search
+            search("trending music 2026", FILTER_SONGS)
         } catch (e: Exception) {
-            e.printStackTrace()
-            search("popular hits 2024", FILTER_SONGS)
+            android.util.Log.e("YouTubeRepo", "Error fetching recommendations", e)
+            try {
+                getLikedMusic()
+            } catch (e2: Exception) {
+                search("trending music 2026", FILTER_SONGS)
+            }
         }
     }
 
