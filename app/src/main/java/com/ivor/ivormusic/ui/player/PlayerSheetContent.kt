@@ -790,9 +790,9 @@ private fun ExpressiveQueueView(
                         Surface(
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(24.dp),
-                            color = if (isCurrent) primaryContainerColor.copy(alpha = 0.3f) 
-                                   else MaterialTheme.colorScheme.surfaceContainerLow,
-                            shadowElevation = if (isCurrent) 4.dp else 0.dp,
+                            color = if (isCurrent) primaryContainerColor.copy(alpha = 0.15f) 
+                                   else Color.Transparent,
+                            shadowElevation = if (isCurrent) 2.dp else 0.dp,
                             onClick = { onSongClick(song) }
                         ) {
                             Row(
