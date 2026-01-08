@@ -43,6 +43,7 @@ fun ExpandablePlayer(
     onPlayPauseClick: () -> Unit,
     onNextClick: () -> Unit,
     viewModel: PlayerViewModel,
+    ambientBackground: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     if (currentSong == null) return
@@ -137,6 +138,7 @@ fun ExpandablePlayer(
                     Box(modifier = Modifier.fillMaxSize()) {
                         PlayerSheetContent(
                             viewModel = viewModel,
+                            ambientBackground = ambientBackground,
                             onCollapse = { onExpandChange(false) },
                             onLoadMore = {
                                 viewModel.loadMoreRecommendations()

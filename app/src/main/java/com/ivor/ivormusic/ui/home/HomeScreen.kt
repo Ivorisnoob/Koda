@@ -124,7 +124,8 @@ fun HomeScreen(
     onThemeToggle: (Boolean) -> Unit = {},
     onNavigateToSettings: () -> Unit = {},
     onNavigateToDownloads: () -> Unit = {},
-    loadLocalSongs: Boolean = true
+    loadLocalSongs: Boolean = true,
+    ambientBackground: Boolean = true
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val localSongs by viewModel.songs.collectAsState()
@@ -340,6 +341,7 @@ fun HomeScreen(
             onPlayPauseClick = { playerViewModel.togglePlayPause() },
             onNextClick = { playerViewModel.skipToNext() },
             viewModel = playerViewModel,
+            ambientBackground = ambientBackground,
             modifier = Modifier.align(Alignment.BottomCenter)
         )
         

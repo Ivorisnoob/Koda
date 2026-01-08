@@ -142,6 +142,15 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    suspend fun loadMoreResults(query: String): List<Song> {
+        if (query.isBlank()) return emptyList()
+        return try {
+            youtubeRepository.searchNext(query)
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
     suspend fun getLikedMusic(): List<Song> {
         return _likedSongs.value
     }

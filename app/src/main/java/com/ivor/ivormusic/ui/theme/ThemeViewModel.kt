@@ -14,6 +14,7 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
 
     val themeMode: StateFlow<ThemeMode> = themePreferences.themeMode
     val loadLocalSongs: StateFlow<Boolean> = themePreferences.loadLocalSongs
+    val ambientBackground: StateFlow<Boolean> = themePreferences.ambientBackground
 
     fun setThemeMode(mode: ThemeMode) {
         themePreferences.setThemeMode(mode)
@@ -25,5 +26,13 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun toggleLoadLocalSongs() {
         themePreferences.toggleLoadLocalSongs()
+    }
+    
+    fun setAmbientBackground(enabled: Boolean) {
+        themePreferences.setAmbientBackground(enabled)
+    }
+    
+    fun toggleAmbientBackground() {
+        themePreferences.toggleAmbientBackground()
     }
 }

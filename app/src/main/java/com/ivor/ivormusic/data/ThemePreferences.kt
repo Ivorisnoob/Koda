@@ -21,12 +21,16 @@ class ThemePreferences(context: Context) {
 
     private val _loadLocalSongs = MutableStateFlow(getLoadLocalSongsPreference())
     val loadLocalSongs: StateFlow<Boolean> = _loadLocalSongs.asStateFlow()
+    
+    private val _ambientBackground = MutableStateFlow(getAmbientBackgroundPreference())
+    val ambientBackground: StateFlow<Boolean> = _ambientBackground.asStateFlow()
 
     companion object {
         private const val PREFS_NAME = "ivor_music_theme_prefs"
         private const val KEY_THEME_MODE = "theme_mode_enum"
         private const val KEY_OLD_DARK_MODE = "dark_mode" // For migration
         private const val KEY_LOAD_LOCAL_SONGS = "load_local_songs"
+        private const val KEY_AMBIENT_BACKGROUND = "ambient_background"
     }
 
     /**
@@ -59,6 +63,13 @@ class ThemePreferences(context: Context) {
     private fun getLoadLocalSongsPreference(): Boolean {
         return prefs.getBoolean(KEY_LOAD_LOCAL_SONGS, true)
     }
+    
+    /**
+     * Get the stored ambient background preference. Defaults to true.
+     */
+    private fun getAmbientBackgroundPreference(): Boolean {
+        return prefs.getBoolean(KEY_AMBIENT_BACKGROUND, true)
+    }
 
     /**
      * Save theme mode preference and update the flow.
@@ -81,5 +92,20 @@ class ThemePreferences(context: Context) {
      */
     fun toggleLoadLocalSongs() {
         setLoadLocalSongs(!_loadLocalSongs.value)
+    }
+    
+    /**
+     * Save ambient background preference and update the flow.
+     */
+    fun setAmbientBackground(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_AMBIENT_BACKGROUND, enabled).apply()
+        _ambientBackground.value = enabled
+    }
+    
+    /**
+     * Toggle ambient background setting.
+     */
+    fun toggleAmbientBackground() {
+        setAmbientBackground(!_ambientBackground.value)
     }
 }

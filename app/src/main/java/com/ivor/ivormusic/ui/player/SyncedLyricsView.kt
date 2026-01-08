@@ -46,6 +46,7 @@ fun SyncedLyricsView(
     lyricsResult: LyricsResult,
     currentPositionMs: Long,
     onSeekTo: (Long) -> Unit,
+    ambientBackground: Boolean = false,
     modifier: Modifier = Modifier,
     primaryColor: Color = MaterialTheme.colorScheme.primary,
     onSurfaceColor: Color = MaterialTheme.colorScheme.onSurface,
@@ -70,6 +71,7 @@ fun SyncedLyricsView(
                     lines = lyricsResult.lines,
                     currentPositionMs = currentPositionMs,
                     onSeekTo = onSeekTo,
+                    ambientBackground = ambientBackground,
                     primaryColor = primaryColor,
                     onSurfaceColor = onSurfaceColor,
                     onSurfaceVariantColor = onSurfaceVariantColor
@@ -84,6 +86,7 @@ private fun LyricsContent(
     lines: List<LrcLine>,
     currentPositionMs: Long,
     onSeekTo: (Long) -> Unit,
+    ambientBackground: Boolean,
     primaryColor: Color,
     onSurfaceColor: Color,
     onSurfaceVariantColor: Color
@@ -129,37 +132,41 @@ private fun LyricsContent(
             }
         }
         
-        // Top fade gradient
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(80.dp)
-                .align(Alignment.TopCenter)
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(
-                            MaterialTheme.colorScheme.background,
-                            MaterialTheme.colorScheme.background.copy(alpha = 0f)
-                        )
-                    )
-                )
-        )
+
         
-        // Bottom fade gradient
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(80.dp)
-                .align(Alignment.BottomCenter)
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(
-                            MaterialTheme.colorScheme.background.copy(alpha = 0f),
-                            MaterialTheme.colorScheme.background
+        // Top fade gradient - only show if NOT using ambient background
+        if (!ambientBackground) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(80.dp)
+                    .align(Alignment.TopCenter)
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                MaterialTheme.colorScheme.background,
+                                MaterialTheme.colorScheme.background.copy(alpha = 0f)
+                            )
                         )
                     )
-                )
-        )
+            )
+            
+            // Bottom fade gradient
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(80.dp)
+                    .align(Alignment.BottomCenter)
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                MaterialTheme.colorScheme.background.copy(alpha = 0f),
+                                MaterialTheme.colorScheme.background
+                            )
+                        )
+                    )
+            )
+        }
     }
 }
 

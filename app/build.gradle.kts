@@ -89,6 +89,7 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.androidx.graphics.shapes)
     implementation(libs.androidx.ui.text.google.fonts)
+    implementation("androidx.palette:palette-ktx:1.0.0")
     
     // YouTube Music Integration
     implementation(libs.newpipe.extractor)
