@@ -60,7 +60,14 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
+}
+
+// Build info available via BuildConfig
+android.defaultConfig.apply {
+    buildConfigField("String", "GITHUB_REPO", "\"ivorisnoob/TheMusicApp\"")
+    buildConfigField("String", "GITHUB_USERNAME", "\"ivorisnoob\"")
 }
 
 dependencies {
