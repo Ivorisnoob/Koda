@@ -12,6 +12,8 @@ import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
 import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.data.LikedSongsRepository
+import com.ivor.ivormusic.data.LyricsRepository
+import com.ivor.ivormusic.data.LyricsResult
 import com.ivor.ivormusic.service.MusicService
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -72,6 +74,12 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     // Loading state for "Load More" button
     private val _isLoadingMore = MutableStateFlow(false)
     val isLoadingMore: StateFlow<Boolean> = _isLoadingMore.asStateFlow()
+    
+    // Lyrics Repository and State
+    private val lyricsRepository = LyricsRepository()
+    
+    private val _lyricsResult = MutableStateFlow<LyricsResult>(LyricsResult.Loading)
+    val lyricsResult: StateFlow<LyricsResult> = _lyricsResult.asStateFlow()
 
     init {
         initializeController()
@@ -86,6 +94,10 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
             controller?.addListener(object : Player.Listener {
                 override fun onIsPlayingChanged(isPlaying: Boolean) {
                     _isPlaying.value = isPlaying
+                    // Clear buffering state when playback actually starts
+                    if (isPlaying) {
+                        _isBuffering.value = false
+                    }
                 }
 
                 override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
@@ -109,14 +121,27 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                 }
 
                 override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-                    // Update current song based on Media ID (more robust than index match)
+                    // Update current song based on Media ID
                     val id = mediaItem?.mediaId
-                    if (id != null) {
-                       val song = _currentQueue.value.find { it.id == id }
-                       if (song != null) {
-                           _currentSong.value = song
-                           updateCurrentSongLikedStatus()
-                       }
+                    var song: Song? = null
+                    
+                    // Try to find song by mediaId first
+                    if (!id.isNullOrEmpty()) {
+                        song = _currentQueue.value.find { it.id == id }
+                    }
+                    
+                    // Fallback to index-based lookup if mediaId lookup fails
+                    if (song == null) {
+                        val currentIndex = controller?.currentMediaItemIndex ?: -1
+                        if (currentIndex >= 0 && currentIndex < _currentQueue.value.size) {
+                            song = _currentQueue.value.getOrNull(currentIndex)
+                        }
+                    }
+                    
+                    song?.let {
+                        _currentSong.value = it
+                        updateCurrentSongLikedStatus()
+                        fetchLyrics(it)
                     }
                 }
             })
@@ -150,6 +175,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         val currentSong = songs[startIndex]
         _currentSong.value = currentSong
         updateCurrentSongLikedStatus()
+        fetchLyrics(currentSong)
         
         controller?.let { player ->
             // 1. Play the target song immediately to be responsive
@@ -218,7 +244,18 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
 
     private fun createMediaItem(song: Song): MediaItem {
         return if (song.source == com.ivor.ivormusic.data.SongSource.LOCAL && song.uri != null) {
-            MediaItem.fromUri(song.uri)
+            // For local songs, we still need to set mediaId for proper tracking
+            MediaItem.Builder()
+                .setUri(song.uri)
+                .setMediaId(song.id)
+                .setMediaMetadata(
+                    androidx.media3.common.MediaMetadata.Builder()
+                        .setTitle(song.title)
+                        .setArtist(song.artist)
+                        .setArtworkUri(song.albumArtUri)
+                        .build()
+                )
+                .build()
         } else {
             MediaItem.Builder()
             .setMediaId(song.id)
@@ -338,6 +375,25 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     
     fun deleteDownload(songId: String) {
         downloadRepository.deleteDownload(songId)
+    }
+    
+    // --- Lyrics Actions ---
+    
+    /**
+     * Fetch synced lyrics for the given song.
+     */
+    private fun fetchLyrics(song: Song) {
+        _lyricsResult.value = LyricsResult.Loading
+        
+        viewModelScope.launch {
+            val result = lyricsRepository.fetchLyrics(
+                songId = song.id,
+                title = song.title,
+                artist = song.artist,
+                durationMs = song.duration
+            )
+            _lyricsResult.value = result
+        }
     }
 
     override fun onCleared() {
