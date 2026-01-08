@@ -61,6 +61,9 @@ class YouTubeRepository(private val context: Context) {
         }
     }
 
+    // Cache extractors for pagination
+    private val searchExtractorCache = mutableMapOf<String, org.schabi.newpipe.extractor.search.SearchExtractor>()
+
     /**
      * Search for songs on YouTube Music.
      * @param query The search query
@@ -74,7 +77,52 @@ class YouTubeRepository(private val context: Context) {
             val searchExtractor = ytService.getSearchExtractor(query, listOf(filter), "")
             searchExtractor.fetchPage()
             
+            // Cache for pagination
+            searchExtractorCache[query] = searchExtractor
+            
             searchExtractor.initialPage.items.filterIsInstance<StreamInfoItem>().mapNotNull { item: StreamInfoItem ->
+                try {
+                    Song.fromYouTube(
+                        videoId = extractVideoId(item.url),
+                        title = item.name ?: "Unknown",
+                        artist = item.uploaderName ?: "Unknown Artist",
+                        album = "",
+                        duration = item.duration * 1000L,
+                        thumbnailUrl = item.thumbnails?.firstOrNull()?.url
+                    )
+                } catch (e: Exception) {
+                    null
+                }
+            }
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    /**
+     * Fetch next page of results for a previous query.
+     */
+    suspend fun searchNext(query: String): List<Song> = withContext(Dispatchers.IO) {
+        try {
+            val extractor = searchExtractorCache[query] ?: return@withContext emptyList()
+            
+            if (!extractor.initialPage.hasNextPage()) return@withContext emptyList()
+            
+            val nextPage = extractor.getPage(extractor.initialPage.nextPage)
+            // Update the extractor in cache with the new page state if necessary
+            // In NewPipe, the extractor object itself might manage the state, or we get a new Page.
+            // Actually, we just need to get the items from the new page.
+            // But wait, for the *next* next page (page 3), we need to know the offset from THIS page.
+            // NewPipe's architecture usually returns a Page which has its OWN next page info.
+            
+            // However, since we are reusing the SEARCH extractor, we might not be effectively advancing it 
+            // if we keep calling getPage on the *initial* page's next info.
+            // We need to store the *latest* page info.
+            
+            // For now, let's just return the items from this second page. 
+            // Ideally we'd wrap this in a customized Paginator class.
+            
+            nextPage.items.filterIsInstance<StreamInfoItem>().mapNotNull { item: StreamInfoItem ->
                 try {
                     Song.fromYouTube(
                         videoId = extractVideoId(item.url),

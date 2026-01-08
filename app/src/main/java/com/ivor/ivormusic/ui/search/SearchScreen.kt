@@ -103,6 +103,7 @@ fun SearchScreen(
 ) {
     var query by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
+    var isLoadingMore by remember { mutableStateOf(false) }
     var youtubeResults by remember { mutableStateOf<List<Song>>(emptyList()) }
     val scope = rememberCoroutineScope()
     
@@ -400,6 +401,43 @@ fun SearchScreen(
                                         color = textColor.copy(alpha = 0.08f)
                                     )
                                 }
+                            }
+                            
+                            // Load More Button
+                            item {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 16.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (isLoadingMore) {
+                                        LoadingIndicator(
+                                            modifier = Modifier.size(24.dp),
+                                            color = accentColor
+                                        )
+                                    } else {
+                                        androidx.compose.material3.Button(
+                                            onClick = {
+                                                scope.launch {
+                                                    isLoadingMore = true
+                                                    val newResults = viewModel.loadMoreResults(query)
+                                                    if (newResults.isNotEmpty()) {
+                                                        youtubeResults = youtubeResults + newResults
+                                                    }
+                                                    isLoadingMore = false
+                                                }
+                                            },
+                                            colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                                                containerColor = chipBgColor,
+                                                contentColor = accentColor
+                                            )
+                                        ) {
+                                            Text("Load More")
+                                        }
+        
+                                }
+                            }
                             }
                         }
                     }

@@ -235,10 +235,8 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         _currentQueue.value = currentList
         
         controller?.let { player ->
-            viewModelScope.launch {
-                val newItems = songs.map { createMediaItem(it) }
-                player.addMediaItems(newItems)
-            }
+            val newItems = songs.map { createMediaItem(it) }
+            player.addMediaItems(newItems)
         }
     }
 
@@ -304,7 +302,16 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     }
 
     fun skipToNext() {
-        controller?.seekToNext()
+        controller?.let { player ->
+            if (player.hasNextMediaItem()) {
+                player.seekToNextMediaItem()
+                player.play()
+            } else {
+                // If we are at the end, maybe try normal seekToNext which handles repeat modes
+                player.seekToNext()
+                player.play()
+            }
+        }
     }
 
     fun skipToPrevious() {
