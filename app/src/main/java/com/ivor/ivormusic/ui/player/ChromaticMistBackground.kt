@@ -1,12 +1,25 @@
 package com.ivor.ivormusic.ui.player
 
-import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
-import androidx.compose.animation.core.*
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.runtime.*
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.BlendMode
@@ -14,8 +27,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.unit.dp
 import androidx.palette.graphics.Palette
 import coil.ImageLoader
 import coil.request.ImageRequest
@@ -39,6 +50,7 @@ import kotlin.math.sin
  * - Organic, Perlin-noise-like movement patterns
  * - Smooth color transitions when songs change
  * - Breathing/pulsing effect for a living feel
+ * - Full Material 3 theme support
  */
 
 data class ColorCloud(
@@ -53,45 +65,49 @@ data class ColorCloud(
 fun ChromaticMistBackground(
     albumArtUrl: String?,
     enabled: Boolean = true,
-    fallbackColor: Color = Color.Black,
+    fallbackColor: Color? = null, // null = use MaterialTheme.colorScheme.background
     modifier: Modifier = Modifier
 ) {
-    // If disabled or no album art, show simple fallback
+    // Get M3 theme colors
+    val themeBackground = MaterialTheme.colorScheme.background
+    val backgroundColor = fallbackColor ?: themeBackground
+    val surfaceColor = MaterialTheme.colorScheme.surfaceContainerLowest
+    val surfaceContainer = MaterialTheme.colorScheme.surfaceContainer
+    val surfaceContainerHigh = MaterialTheme.colorScheme.surfaceContainerHigh
+    val primaryColor = MaterialTheme.colorScheme.primary
+    
+    // If disabled or no album art, show simple fallback with M3 colors
     if (!enabled || albumArtUrl == null) {
         Box(
             modifier = modifier
                 .fillMaxSize()
-                .background(fallbackColor)
+                .background(backgroundColor)
         )
         return
     }
     
     val context = LocalContext.current
     
-    // Extracted colors state - starts with subtle defaults
-    var colorPalette by remember { 
-        mutableStateOf(
-            listOf(
-                Color(0xFF1a1a2e),
-                Color(0xFF16213e),
-                Color(0xFF0f3460),
-                Color(0xFF533483)
-            )
-        )
-    }
+    // Extracted colors state - starts with theme-aware defaults
+    val defaultColors = listOf(
+        surfaceColor,
+        surfaceContainer,
+        surfaceContainerHigh,
+        primaryColor.copy(alpha = 0.3f)
+    )
+    
+    var colorPalette by remember { mutableStateOf(defaultColors) }
     
     // Extract colors from album art
     LaunchedEffect(albumArtUrl) {
-        if (albumArtUrl != null) {
-            val colors = extractColorsFromUrl(context, albumArtUrl)
-            if (colors.isNotEmpty()) {
-                colorPalette = colors
-            }
+        val colors = extractColorsFromUrl(context, albumArtUrl)
+        if (colors.isNotEmpty()) {
+            colorPalette = colors
         }
     }
     
     // Animate color transitions smoothly
-    val animatedColors = colorPalette.mapIndexed { index, targetColor ->
+    val animatedColors = colorPalette.mapIndexed { index: Int, targetColor: Color ->
         animateColorAsState(
             targetValue = targetColor,
             animationSpec = tween(
@@ -107,7 +123,7 @@ fun ChromaticMistBackground(
         listOf(
             // Large dominant color cloud - top left
             ColorCloud(
-                color = animatedColors.getOrElse(0) { Color.DarkGray }.copy(alpha = 0.6f),
+                color = animatedColors.getOrElse(0) { surfaceColor }.copy(alpha = 0.6f),
                 baseOffset = Offset(0.2f, 0.15f),
                 radiusMultiplier = 0.9f,
                 phaseOffset = 0f,
@@ -115,7 +131,7 @@ fun ChromaticMistBackground(
             ),
             // Secondary color - bottom right
             ColorCloud(
-                color = animatedColors.getOrElse(1) { Color.DarkGray }.copy(alpha = 0.5f),
+                color = animatedColors.getOrElse(1) { surfaceColor }.copy(alpha = 0.5f),
                 baseOffset = Offset(0.8f, 0.85f),
                 radiusMultiplier = 0.85f,
                 phaseOffset = PI.toFloat() * 0.5f,
@@ -123,7 +139,7 @@ fun ChromaticMistBackground(
             ),
             // Accent color - center right
             ColorCloud(
-                color = animatedColors.getOrElse(2) { Color.DarkGray }.copy(alpha = 0.4f),
+                color = animatedColors.getOrElse(2) { surfaceColor }.copy(alpha = 0.4f),
                 baseOffset = Offset(0.75f, 0.3f),
                 radiusMultiplier = 0.7f,
                 phaseOffset = PI.toFloat(),
@@ -131,7 +147,7 @@ fun ChromaticMistBackground(
             ),
             // Fourth color - bottom left
             ColorCloud(
-                color = animatedColors.getOrElse(3) { Color.DarkGray }.copy(alpha = 0.35f),
+                color = animatedColors.getOrElse(3) { surfaceColor }.copy(alpha = 0.35f),
                 baseOffset = Offset(0.25f, 0.7f),
                 radiusMultiplier = 0.65f,
                 phaseOffset = PI.toFloat() * 1.5f,
@@ -148,7 +164,7 @@ fun ChromaticMistBackground(
         initialValue = 0f,
         targetValue = 2f * PI.toFloat(),
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 30000, easing = LinearEasing),
+            animation = tween(durationMillis = 14000, easing = LinearEasing),
             repeatMode = RepeatMode.Restart
         ),
         label = "PrimaryPhase"
@@ -159,7 +175,7 @@ fun ChromaticMistBackground(
         initialValue = 0f,
         targetValue = 2f * PI.toFloat(),
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 45000, easing = LinearEasing),
+            animation = tween(durationMillis = 19000, easing = LinearEasing),
             repeatMode = RepeatMode.Restart
         ),
         label = "SecondaryPhase"
@@ -167,26 +183,30 @@ fun ChromaticMistBackground(
     
     // Breathing effect - subtle scale pulsing
     val breathingScale by infiniteTransition.animateFloat(
-        initialValue = 0.98f,
-        targetValue = 1.02f,
+        initialValue = 0.95f,
+        targetValue = 1.05f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 8000, easing = FastOutSlowInEasing),
+            animation = tween(durationMillis = 7000, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
         ),
         label = "Breathing"
     )
     
+    // Capture colors for use in Canvas (can't access MaterialTheme inside DrawScope)
+    val baseBackgroundColor = backgroundColor
+    val dominantTint = animatedColors.getOrElse(0) { surfaceColor }
+    
     Box(modifier = modifier.fillMaxSize()) {
-        // Dark base layer
+        // M3-themed base layer
         Canvas(modifier = Modifier.fillMaxSize()) {
-            // Deep dark base with subtle color tint
+            // Use theme background with subtle color tint from album
             drawRect(
                 brush = Brush.verticalGradient(
                     colors = listOf(
-                        Color.Black,
-                        animatedColors.getOrElse(0) { Color.DarkGray }
+                        baseBackgroundColor,
+                        dominantTint
                             .copy(alpha = 0.15f)
-                            .compositeOver(Color.Black)
+                            .compositeOver(baseBackgroundColor)
                     )
                 )
             )
@@ -201,12 +221,12 @@ fun ChromaticMistBackground(
                 )
             }
             
-            // Subtle vignette overlay for depth
+            // Subtle vignette overlay for depth (theme-aware)
             drawRect(
                 brush = Brush.radialGradient(
                     colors = listOf(
                         Color.Transparent,
-                        Color.Black.copy(alpha = 0.3f)
+                        baseBackgroundColor.copy(alpha = 0.4f)
                     ),
                     center = Offset(size.width * 0.5f, size.height * 0.4f),
                     radius = size.maxDimension * 0.8f
@@ -229,17 +249,17 @@ private fun DrawScope.drawColorCloud(
     val phase = primaryPhase * cloud.speedMultiplier + cloud.phaseOffset
     val secondPhase = secondaryPhase * cloud.speedMultiplier * 0.7f + cloud.phaseOffset
     
-    // Multi-frequency movement for natural feel
+    // Multi-frequency movement for natural feel - Increased amplitude for more movement
     val xOffset = (
-        sin(phase) * 0.05f +                    // Primary movement
-        sin(phase * 1.7f + 0.3f) * 0.03f +      // Secondary frequency
-        sin(secondPhase * 0.5f) * 0.02f         // Tertiary slow drift
+        sin(phase) * 0.15f +                    // Primary movement
+        sin(phase * 1.7f + 0.3f) * 0.08f +      // Secondary frequency
+        sin(secondPhase * 0.5f) * 0.05f         // Tertiary slow drift
     )
     
     val yOffset = (
-        cos(phase * 0.8f) * 0.04f +             // Primary movement (different rate)
-        cos(phase * 1.3f + 0.7f) * 0.025f +     // Secondary frequency
-        cos(secondPhase * 0.6f + 0.5f) * 0.015f // Tertiary slow drift
+        cos(phase * 0.8f) * 0.12f +             // Primary movement (different rate)
+        cos(phase * 1.3f + 0.7f) * 0.08f +      // Secondary frequency
+        cos(secondPhase * 0.6f + 0.5f) * 0.05f  // Tertiary slow drift
     )
     
     val centerX = size.width * (cloud.baseOffset.x + xOffset)
@@ -287,20 +307,12 @@ private suspend fun extractColorsFromUrl(
                 
                 // Extract colors in priority order
                 listOfNotNull(
-                    palette.darkVibrantSwatch?.rgb?.let { Color(it) },
-                    palette.vibrantSwatch?.rgb?.let { Color(it) },
-                    palette.darkMutedSwatch?.rgb?.let { Color(it) },
-                    palette.mutedSwatch?.rgb?.let { Color(it) },
-                    palette.dominantSwatch?.rgb?.let { Color(it) }
-                ).take(4).ifEmpty {
-                    // Fallback colors if extraction fails
-                    listOf(
-                        Color(0xFF1a1a2e),
-                        Color(0xFF16213e),
-                        Color(0xFF0f3460),
-                        Color(0xFF533483)
-                    )
-                }
+                    palette.darkVibrantSwatch?.rgb?.let { rgb -> Color(rgb) },
+                    palette.vibrantSwatch?.rgb?.let { rgb -> Color(rgb) },
+                    palette.darkMutedSwatch?.rgb?.let { rgb -> Color(rgb) },
+                    palette.mutedSwatch?.rgb?.let { rgb -> Color(rgb) },
+                    palette.dominantSwatch?.rgb?.let { rgb -> Color(rgb) }
+                ).take(4)
             } else {
                 emptyList()
             }

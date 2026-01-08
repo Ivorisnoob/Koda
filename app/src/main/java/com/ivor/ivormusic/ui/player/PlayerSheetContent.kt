@@ -43,7 +43,7 @@ import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.data.LyricsResult
 
 /**
- * 🌟 Material 3 Expressive Music Player
+ *  Material 3 Expressive Music Player
  * 
  * Design Philosophy:
  * - Bold, organic shapes with fluid animations
@@ -212,7 +212,6 @@ private fun ExpressiveNowPlayingView(
         ChromaticMistBackground(
             albumArtUrl = albumArtUrl,
             enabled = ambientBackground,
-            fallbackColor = MaterialTheme.colorScheme.background,
             modifier = Modifier.fillMaxSize()
         )
         
@@ -313,6 +312,7 @@ private fun ExpressiveNowPlayingView(
                         lyricsResult = lyricsResult,
                         currentPositionMs = progress,
                         onSeekTo = onSeekTo,
+                        ambientBackground = ambientBackground,
                         primaryColor = primaryColor,
                         onSurfaceColor = onSurfaceColor,
                         onSurfaceVariantColor = onSurfaceVariantColor
@@ -341,7 +341,6 @@ private fun ExpressiveNowPlayingView(
                             Surface(
                                 modifier = Modifier.size(albumSize),
                                 shape = RoundedCornerShape(cornerRadius),
-                                shadowElevation = 16.dp,
                                 color = MaterialTheme.colorScheme.surfaceContainerHigh
                             ) {
                                 Box(modifier = Modifier.fillMaxSize()) {
