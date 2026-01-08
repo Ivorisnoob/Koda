@@ -22,6 +22,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Person
@@ -108,7 +109,10 @@ import kotlinx.coroutines.launch
 
 
 import androidx.compose.animation.ExperimentalAnimationApi
+import com.ivor.ivormusic.BuildConfig
 import com.ivor.ivormusic.R
+import com.ivor.ivormusic.data.UpdateRepository
+import com.ivor.ivormusic.data.UpdateResult
 
 @OptIn(ExperimentalPermissionsApi::class, ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class, ExperimentalAnimationApi::class)
 @Composable
@@ -122,6 +126,7 @@ fun HomeScreen(
     onNavigateToDownloads: () -> Unit = {},
     loadLocalSongs: Boolean = true
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val localSongs by viewModel.songs.collectAsState()
     val youtubeSongs by viewModel.youtubeSongs.collectAsState()
     val isYouTubeConnected by viewModel.isYouTubeConnected.collectAsState()
@@ -187,6 +192,21 @@ fun HomeScreen(
     // Loading state for playlist fetch
     var isPlaylistLoading by remember { mutableStateOf(false) }
     val isLoading by viewModel.isLoading.collectAsState()
+    
+    // Update check state
+    val updateRepository = remember { UpdateRepository() }
+    var updateResult by remember { mutableStateOf<UpdateResult?>(null) }
+    var showUpdateBanner by remember { mutableStateOf(true) }
+    
+    // Check for updates on app launch (only for release builds)
+    LaunchedEffect(Unit) {
+        if (!BuildConfig.DEBUG) {
+            updateResult = updateRepository.checkForUpdate(
+                repoPath = BuildConfig.GITHUB_REPO,
+                currentVersion = BuildConfig.VERSION_NAME
+            )
+        }
+    }
 
     // Use Box overlay instead of Scaffold for truly floating navbar
     Box(
@@ -322,6 +342,69 @@ fun HomeScreen(
             viewModel = playerViewModel,
             modifier = Modifier.align(Alignment.BottomCenter)
         )
+        
+        // Update available banner - only show when there's actually an update
+        if (showUpdateBanner && updateResult is UpdateResult.UpdateAvailable) {
+            val update = updateResult as UpdateResult.UpdateAvailable
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .padding(top = 60.dp)
+                    .align(Alignment.TopCenter)
+                    .clickable {
+                        val intent = android.content.Intent(
+                            android.content.Intent.ACTION_VIEW,
+                            android.net.Uri.parse(update.htmlUrl)
+                        )
+                        androidx.core.content.ContextCompat.startActivity(
+                            context,
+                            intent,
+                            null
+                        )
+                    },
+                shape = RoundedCornerShape(16.dp),
+                color = Color(0xFF4CAF50),
+                shadowElevation = 4.dp
+            ) {
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Download,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Update Available: v${update.latestVersion}",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                        Text(
+                            text = "Tap to download the latest version",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.White.copy(alpha = 0.9f)
+                        )
+                    }
+                    IconButton(
+                        onClick = { showUpdateBanner = false },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Dismiss",
+                            tint = Color.White,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+            }
+        }
     }
     
     // Auth Dialog welp i guess we are doing it then

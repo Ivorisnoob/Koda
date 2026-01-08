@@ -39,6 +39,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.rounded.AccountCircle
+import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.Download
@@ -49,6 +50,7 @@ import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
@@ -100,6 +102,8 @@ import androidx.graphics.shapes.toPath
 import coil.compose.AsyncImage
 import com.ivor.ivormusic.BuildConfig
 import com.ivor.ivormusic.data.SessionManager
+import com.ivor.ivormusic.data.UpdateRepository
+import com.ivor.ivormusic.data.UpdateResult
 import com.ivor.ivormusic.ui.auth.YouTubeAuthDialog
 import com.ivor.ivormusic.ui.theme.ThemeMode
 import kotlinx.coroutines.delay
@@ -670,6 +674,18 @@ private fun ExpressiveAboutDialog(
     val githubReleasesUrl = "https://github.com/${BuildConfig.GITHUB_REPO}/releases/latest"
     val developerAvatarUrl = "https://github.com/${BuildConfig.GITHUB_USERNAME}.png"
     
+    // Update check state
+    val updateRepository = remember { UpdateRepository() }
+    var updateResult by remember { mutableStateOf<UpdateResult>(UpdateResult.Checking) }
+    
+    // Check for updates on dialog open
+    LaunchedEffect(Unit) {
+        updateResult = updateRepository.checkForUpdate(
+            repoPath = BuildConfig.GITHUB_REPO,
+            currentVersion = BuildConfig.VERSION_NAME
+        )
+    }
+    
     // Dialog entry animation
     var dialogVisible by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
@@ -746,8 +762,89 @@ private fun ExpressiveAboutDialog(
                         fontSize = 14.sp,
                         textAlign = TextAlign.Center,
                         lineHeight = 20.sp,
-                        modifier = Modifier.padding(bottom = 20.dp)
+                        modifier = Modifier.padding(bottom = 16.dp)
                     )
+                    
+                    // Update status indicator
+                    when (val result = updateResult) {
+                        is UpdateResult.Checking -> {
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = secondaryTextColor.copy(alpha = 0.1f),
+                                modifier = Modifier.padding(bottom = 16.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(16.dp),
+                                        strokeWidth = 2.dp,
+                                        color = secondaryTextColor
+                                    )
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Text(
+                                        text = "Checking for updates...",
+                                        color = secondaryTextColor,
+                                        fontSize = 13.sp
+                                    )
+                                }
+                            }
+                        }
+                        is UpdateResult.UpdateAvailable -> {
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = Color(0xFF4CAF50).copy(alpha = 0.15f),
+                                modifier = Modifier.padding(bottom = 16.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Download,
+                                        contentDescription = null,
+                                        tint = Color(0xFF4CAF50),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Text(
+                                        text = "Update available: v${result.latestVersion}",
+                                        color = Color(0xFF4CAF50),
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            }
+                        }
+                        is UpdateResult.UpToDate -> {
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = primaryColor.copy(alpha = 0.1f),
+                                modifier = Modifier.padding(bottom = 16.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.CheckCircle,
+                                        contentDescription = null,
+                                        tint = primaryColor,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Text(
+                                        text = "You're up to date!",
+                                        color = primaryColor,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            }
+                        }
+                        else -> { /* NoReleases or Error - don't show anything */ }
+                    }
                     
                     // Version details card
                     Surface(
