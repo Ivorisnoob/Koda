@@ -531,9 +531,11 @@ private fun ExpressiveNowPlayingView(
 }
 
 /**
- * � Expressive Queue View
+ * 📋 Expressive Queue View
  * 
  * Features:
+ * - Matches the player's visual design language
+ * - Featured "Now Playing" card with large album art
  * - Animated queue items with spring physics
  * - Currently playing indicator with expressive icon
  * - Load more button with shape morphing
@@ -552,161 +554,356 @@ private fun ExpressiveQueueView(
     onSurfaceColor: Color,
     onSurfaceVariantColor: Color
 ) {
-    Column(
+    val primaryContainerColor = MaterialTheme.colorScheme.primaryContainer
+    
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 24.dp)
+            .background(MaterialTheme.colorScheme.background)
     ) {
-        // Top bar for Queue
+        // ========== 1. TOP BAR (Matching Player Style) ==========
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 16.dp),
+                .padding(horizontal = 16.dp, vertical = 48.dp)
+                .align(Alignment.TopCenter),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // Collapse button with shape morphing
             FilledIconButton(
                 onClick = onCollapse,
                 shapes = IconButtonDefaults.shapes(),
-                modifier = Modifier.size(44.dp)
+                colors = IconButtonDefaults.filledIconButtonColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    contentColor = MaterialTheme.colorScheme.onSurface
+                ),
+                modifier = Modifier.size(48.dp)
             ) {
-                Icon(
-                    imageVector = Icons.Default.KeyboardArrowDown,
-                    contentDescription = "Collapse",
-                    modifier = Modifier.size(28.dp)
-                )
+                Icon(Icons.Default.KeyboardArrowDown, "Collapse", modifier = Modifier.size(28.dp))
             }
             
-            Text(
-                text = "Up Next",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                color = onSurfaceColor
-            )
+            // Queue title pill (matching player's "Now Playing" pill)
+            Surface(
+                shape = RoundedCornerShape(24.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.QueueMusic, 
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Up Next",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            }
             
-            FilledTonalIconButton(
+            // Back to player button with shape morphing
+            FilledIconButton(
                 onClick = onBackToPlayer,
                 shapes = IconButtonDefaults.shapes(),
-                modifier = Modifier.size(44.dp)
+                colors = IconButtonDefaults.filledIconButtonColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    contentColor = MaterialTheme.colorScheme.onSurface
+                ),
+                modifier = Modifier.size(48.dp)
             ) {
-                Icon(
-                    imageVector = Icons.Rounded.MusicNote,
-                    contentDescription = "Now Playing",
-                    tint = primaryColor,
-                    modifier = Modifier.size(24.dp)
-                )
+                Icon(Icons.Rounded.MusicNote, "Now Playing", modifier = Modifier.size(24.dp))
             }
         }
         
-        if (queue.isEmpty()) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(
-                    "Queue is empty",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = onSurfaceVariantColor
-                )
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = 32.dp)
-            ) {
-                itemsIndexed(queue, key = { _, song -> song.id }) { index, song ->
-                    val isCurrent = song.id == currentSong?.id
-                    
-                    Surface(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp),
-                        shape = RoundedCornerShape(16.dp),
-                        color = if (isCurrent) primaryColor.copy(alpha = 0.12f) else Color.Transparent,
-                        onClick = { onSongClick(song) }
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // Thumbnail
-                            Surface(
-                                modifier = Modifier.size(52.dp),
-                                shape = RoundedCornerShape(12.dp),
-                                color = MaterialTheme.colorScheme.surfaceVariant
+        // ========== 2. MAIN CONTENT ==========
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(top = 120.dp)
+                .padding(horizontal = 24.dp)
+        ) {
+            if (queue.isEmpty()) {
+                Box(
+                    modifier = Modifier.fillMaxSize(), 
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                            contentDescription = null,
+                            modifier = Modifier.size(80.dp),
+                            tint = onSurfaceVariantColor.copy(alpha = 0.3f)
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            "Queue is empty",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = onSurfaceVariantColor
+                        )
+                    }
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(bottom = 32.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // ========== FEATURED NOW PLAYING CARD ==========
+                    currentSong?.let { song ->
+                        item(key = "now_playing_header") {
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalAlignment = Alignment.CenterHorizontally
                             ) {
-                                AsyncImage(
-                                    model = song.thumbnailUrl ?: song.albumArtUri,
-                                    contentDescription = null,
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentScale = ContentScale.Crop
-                                )
-                            }
-                            
-                            Spacer(modifier = Modifier.width(16.dp))
-                            
-                            Column(modifier = Modifier.weight(1f)) {
+                                // Featured album art (matching player style but smaller)
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(bottom = 16.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    // Shadow layer
+                                    Surface(
+                                        modifier = Modifier
+                                            .size(160.dp)
+                                            .offset(y = 4.dp),
+                                        shape = RoundedCornerShape(32.dp),
+                                        color = primaryContainerColor.copy(alpha = 0.3f),
+                                        shadowElevation = 16.dp
+                                    ) {}
+                                    
+                                    // Main album art container
+                                    Surface(
+                                        modifier = Modifier
+                                            .size(160.dp)
+                                            .clickable { onBackToPlayer() },
+                                        shape = RoundedCornerShape(32.dp),
+                                        shadowElevation = 8.dp,
+                                        color = MaterialTheme.colorScheme.surfaceContainerHigh
+                                    ) {
+                                        Box(modifier = Modifier.fillMaxSize()) {
+                                            if (song.albumArtUri != null || song.thumbnailUrl != null) {
+                                                AsyncImage(
+                                                    model = song.highResThumbnailUrl ?: song.thumbnailUrl ?: song.albumArtUri,
+                                                    contentDescription = "Now Playing",
+                                                    modifier = Modifier
+                                                        .fillMaxSize()
+                                                        .clip(RoundedCornerShape(32.dp)),
+                                                    contentScale = ContentScale.Crop
+                                                )
+                                            } else {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .fillMaxSize()
+                                                        .background(
+                                                            Brush.verticalGradient(
+                                                                colors = listOf(
+                                                                    primaryContainerColor.copy(alpha = 0.5f),
+                                                                    MaterialTheme.colorScheme.surfaceContainerHigh
+                                                                )
+                                                            )
+                                                        ),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Rounded.MusicNote,
+                                                        contentDescription = null,
+                                                        modifier = Modifier.size(64.dp),
+                                                        tint = onSurfaceVariantColor.copy(alpha = 0.3f)
+                                                    )
+                                                }
+                                            }
+                                            
+                                            // Gradient overlay for depth
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxSize()
+                                                    .clip(RoundedCornerShape(32.dp))
+                                                    .background(
+                                                        Brush.verticalGradient(
+                                                            colors = listOf(
+                                                                Color.Transparent,
+                                                                Color.Black.copy(alpha = 0.1f)
+                                                            )
+                                                        )
+                                                    )
+                                            )
+                                        }
+                                    }
+                                }
+                                
+                                // Song info
                                 Text(
-                                    text = song.title,
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium,
-                                    color = if (isCurrent) primaryColor else onSurfaceColor,
+                                    text = song.title.takeIf { !it.startsWith("Unknown") } ?: "Untitled",
+                                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    color = onSurfaceColor
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = song.artist.takeIf { !it.startsWith("Unknown") } ?: "Unknown Artist",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = onSurfaceVariantColor,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
-                                Text(
-                                    text = song.artist,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = if (isCurrent) primaryColor.copy(alpha = 0.7f) else onSurfaceVariantColor,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                            
-                            if (isCurrent) {
-                                Icon(
-                                    imageVector = Icons.Rounded.GraphicEq,
-                                    contentDescription = "Playing",
-                                    tint = primaryColor,
-                                    modifier = Modifier.size(24.dp)
-                                )
+                                
+                                Spacer(modifier = Modifier.height(24.dp))
+                                
+                                // Divider with label
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    HorizontalDivider(
+                                        modifier = Modifier.weight(1f),
+                                        color = onSurfaceVariantColor.copy(alpha = 0.1f)
+                                    )
+                                    Text(
+                                        text = "QUEUE",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = onSurfaceVariantColor,
+                                        modifier = Modifier.padding(horizontal = 16.dp)
+                                    )
+                                    HorizontalDivider(
+                                        modifier = Modifier.weight(1f),
+                                        color = onSurfaceVariantColor.copy(alpha = 0.1f)
+                                    )
+                                }
+                                
+                                Spacer(modifier = Modifier.height(16.dp))
                             }
                         }
                     }
                     
-                    if (index < queue.size - 1) {
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 12.dp),
-                            color = onSurfaceColor.copy(alpha = 0.05f)
-                        )
-                    }
-                }
-
-                // Load More Button with expressive shape morphing
-                item {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 24.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Button(
-                            onClick = onLoadMore,
-                            enabled = !isLoadingMore,
-                            shapes = ButtonDefaults.shapes(),
-                            contentPadding = PaddingValues(horizontal = 24.dp, vertical = 14.dp)
+                    // ========== QUEUE ITEMS ==========
+                    itemsIndexed(queue, key = { _, song -> "queue_${song.id}" }) { index, song ->
+                        val isCurrent = song.id == currentSong?.id
+                        
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(24.dp),
+                            color = if (isCurrent) primaryContainerColor.copy(alpha = 0.3f) 
+                                   else MaterialTheme.colorScheme.surfaceContainerLow,
+                            shadowElevation = if (isCurrent) 4.dp else 0.dp,
+                            onClick = { onSongClick(song) }
                         ) {
-                            if (isLoadingMore) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(20.dp),
-                                    strokeWidth = 2.dp,
-                                    color = MaterialTheme.colorScheme.onPrimary
-                                )
-                                Spacer(modifier = Modifier.width(10.dp))
-                                Text("Loading...", style = MaterialTheme.typography.titleSmall)
-                            } else {
-                                Icon(Icons.AutoMirrored.Filled.QueueMusic, contentDescription = null, modifier = Modifier.size(20.dp))
-                                Spacer(modifier = Modifier.width(10.dp))
-                                Text("Load More Recommendations", style = MaterialTheme.typography.titleSmall)
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                // Queue position
+                                Box(
+                                    modifier = Modifier.width(28.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (isCurrent) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.GraphicEq,
+                                            contentDescription = "Playing",
+                                            tint = primaryColor,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    } else {
+                                        Text(
+                                            text = "${index + 1}",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = onSurfaceVariantColor
+                                        )
+                                    }
+                                }
+                                
+                                Spacer(modifier = Modifier.width(12.dp))
+                                
+                                // Thumbnail with expressive rounded corners
+                                Surface(
+                                    modifier = Modifier.size(56.dp),
+                                    shape = RoundedCornerShape(16.dp),
+                                    color = MaterialTheme.colorScheme.surfaceVariant,
+                                    shadowElevation = if (isCurrent) 4.dp else 2.dp
+                                ) {
+                                    AsyncImage(
+                                        model = song.thumbnailUrl ?: song.albumArtUri,
+                                        contentDescription = null,
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .clip(RoundedCornerShape(16.dp)),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                }
+                                
+                                Spacer(modifier = Modifier.width(16.dp))
+                                
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = song.title,
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium,
+                                        color = if (isCurrent) primaryColor else onSurfaceColor,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = song.artist,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (isCurrent) primaryColor.copy(alpha = 0.7f) else onSurfaceVariantColor,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // Load More Button with expressive shape morphing
+                    item(key = "load_more_button") {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 24.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Button(
+                                onClick = onLoadMore,
+                                enabled = !isLoadingMore,
+                                shapes = ButtonDefaults.shapes(),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                ),
+                                contentPadding = PaddingValues(horizontal = 32.dp, vertical = 16.dp)
+                            ) {
+                                if (isLoadingMore) {
+                                    LoadingIndicator(
+                                        modifier = Modifier.size(20.dp),
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        polygons = listOf(
+                                            MaterialShapes.Cookie9Sided,
+                                            MaterialShapes.Pill,
+                                            MaterialShapes.Sunny
+                                        )
+                                    )
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Text("Loading...", style = MaterialTheme.typography.titleSmall)
+                                } else {
+                                    Icon(
+                                        Icons.AutoMirrored.Filled.QueueMusic, 
+                                        contentDescription = null, 
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Text("Load More", style = MaterialTheme.typography.titleSmall)
+                                }
                             }
                         }
                     }

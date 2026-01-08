@@ -175,18 +175,26 @@ class MusicService : MediaLibraryService() {
      * Pre-fetch stream URLs for upcoming songs in the queue
      */
     private fun prefetchUpcomingSongs() {
+        // Collect all player data on the main thread first (required by ExoPlayer)
         val currentIndex = player.currentMediaItemIndex
         val mediaCount = player.mediaItemCount
         
         if (mediaCount == 0) return
         
+        // Collect media items to prefetch while still on main thread
+        val itemsToPrefetch = mutableListOf<Pair<Int, MediaItem>>()
+        for (i in 1..PREFETCH_AHEAD) {
+            val nextIndex = currentIndex + i
+            if (nextIndex >= mediaCount) break
+            val mediaItem = player.getMediaItemAt(nextIndex)
+            itemsToPrefetch.add(nextIndex to mediaItem)
+        }
+        
+        if (itemsToPrefetch.isEmpty()) return
+        
+        // Now launch IO coroutine with the collected data
         serviceScope.launch(Dispatchers.IO) {
-            // Pre-fetch next N songs
-            for (i in 1..PREFETCH_AHEAD) {
-                val nextIndex = currentIndex + i
-                if (nextIndex >= mediaCount) break
-                
-                val mediaItem = player.getMediaItemAt(nextIndex)
+            for ((nextIndex, mediaItem) in itemsToPrefetch) {
                 val videoId = mediaItem.mediaId
                 
                 // Skip if already has URI or is cached
