@@ -167,6 +167,17 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
     
+    /**
+     * Search for songs by a specific artist on YouTube Music.
+     */
+    suspend fun searchArtistSongs(artistName: String): List<Song> {
+        return try {
+            youtubeRepository.search(artistName)
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+    
     fun logout() {
         sessionManager.clearSession()
         _isYouTubeConnected.value = false

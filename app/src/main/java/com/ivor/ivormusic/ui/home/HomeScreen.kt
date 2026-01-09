@@ -980,6 +980,8 @@ fun LibraryContent(
 ) {
     var viewedPlaylist by remember { mutableStateOf<com.ivor.ivormusic.data.PlaylistDisplayItem?>(null) }
     var viewedArtist by remember { mutableStateOf<String?>(null) }
+    // Album navigation state: Pair<albumName, List<Song>>
+    var viewedAlbum by remember { mutableStateOf<Pair<String, List<Song>>?>(null) }
     
     // Handle external navigation from player when artist is clicked
     LaunchedEffect(initialArtist) {
@@ -990,16 +992,17 @@ fun LibraryContent(
     }
     
     // Handle system back button for nested screens
-    BackHandler(enabled = viewedPlaylist != null || viewedArtist != null) {
-        if (viewedArtist != null) {
-            viewedArtist = null
-        } else if (viewedPlaylist != null) {
-            viewedPlaylist = null
+    BackHandler(enabled = viewedPlaylist != null || viewedArtist != null || viewedAlbum != null) {
+        when {
+            viewedAlbum != null -> viewedAlbum = null
+            viewedArtist != null -> viewedArtist = null
+            viewedPlaylist != null -> viewedPlaylist = null
         }
     }
     
     // Determine current navigation state
     val currentScreen = when {
+        viewedAlbum != null -> "album"
         viewedArtist != null -> "artist"
         viewedPlaylist != null -> "playlist"
         else -> "library"
@@ -1016,6 +1019,17 @@ fun LibraryContent(
         }
     ) { screen ->
         when (screen) {
+            "album" -> {
+                viewedAlbum?.let { (albumName, albumSongs) ->
+                    com.ivor.ivormusic.ui.artist.AlbumScreen(
+                        albumName = albumName,
+                        artistName = albumSongs.firstOrNull()?.artist ?: "Unknown Artist",
+                        songs = albumSongs,
+                        onBack = { viewedAlbum = null },
+                        onPlayQueue = onPlayQueue
+                    )
+                }
+            }
             "artist" -> {
                 viewedArtist?.let { artistName ->
                     com.ivor.ivormusic.ui.artist.ArtistScreen(
@@ -1023,7 +1037,11 @@ fun LibraryContent(
                         songs = songs,
                         onBack = { viewedArtist = null },
                         onPlayQueue = onPlayQueue,
-                        onSongClick = onSongClick
+                        onSongClick = onSongClick,
+                        onAlbumClick = { album, albumSongs -> 
+                            viewedAlbum = album to albumSongs 
+                        },
+                        viewModel = viewModel
                     )
                 }
             }
