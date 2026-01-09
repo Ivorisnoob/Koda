@@ -58,7 +58,8 @@ fun PlayerSheetContent(
     viewModel: PlayerViewModel,
     ambientBackground: Boolean = true,
     onCollapse: () -> Unit,
-    onLoadMore: () -> Unit = {}
+    onLoadMore: () -> Unit = {},
+    onArtistClick: (String) -> Unit = {}
 ) {
     // Handle back press to collapse player instead of quitting app
     BackHandler(enabled = true) {
@@ -149,6 +150,7 @@ fun PlayerSheetContent(
                     
                     onCollapse = onCollapse,
                     onShowQueue = { showQueue = true },
+                    onArtistClick = onArtistClick,
                     viewModel = viewModel,
                     primaryColor = primaryColor,
                     primaryContainerColor = primaryContainerColor,
@@ -188,6 +190,7 @@ private fun ExpressiveNowPlayingView(
     ambientBackground: Boolean,
     onCollapse: () -> Unit,
     onShowQueue: () -> Unit,
+    onArtistClick: (String) -> Unit,
     viewModel: PlayerViewModel,
     primaryColor: Color,
     primaryContainerColor: Color,
@@ -468,10 +471,18 @@ private fun ExpressiveNowPlayingView(
                     color = onSurfaceColor
                 )
                 Spacer(modifier = Modifier.height(4.dp))
+                // Clickable artist name
+                val artistName = currentSong?.artist?.takeIf { !it.startsWith("Unknown") } ?: "Unknown Artist"
                 Text(
-                    text = currentSong?.artist?.takeIf { !it.startsWith("Unknown") } ?: "Unknown Artist",
+                    text = artistName,
                     style = MaterialTheme.typography.titleMedium,
-                    color = onSurfaceVariantColor
+                    color = primaryColor.copy(alpha = 0.9f),
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable(
+                            enabled = artistName != "Unknown Artist"
+                        ) { onArtistClick(artistName) }
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
                 )
             }
 

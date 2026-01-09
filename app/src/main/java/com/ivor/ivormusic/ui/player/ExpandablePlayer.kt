@@ -44,6 +44,7 @@ fun ExpandablePlayer(
     onNextClick: () -> Unit,
     viewModel: PlayerViewModel,
     ambientBackground: Boolean = true,
+    onArtistClick: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     if (currentSong == null) return
@@ -142,7 +143,8 @@ fun ExpandablePlayer(
                             onCollapse = { onExpandChange(false) },
                             onLoadMore = {
                                 viewModel.loadMoreRecommendations()
-                            }
+                            },
+                            onArtistClick = onArtistClick
                         )
                     }
                 } else {

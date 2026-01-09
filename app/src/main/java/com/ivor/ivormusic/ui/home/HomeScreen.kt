@@ -2,6 +2,7 @@ package com.ivor.ivormusic.ui.home
 
 import android.Manifest
 import android.os.Build
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -194,6 +195,9 @@ fun HomeScreen(
     var isPlaylistLoading by remember { mutableStateOf(false) }
     val isLoading by viewModel.isLoading.collectAsState()
     
+    // Artist screen state (for navigation from player)
+    var viewedArtistFromPlayer by remember { mutableStateOf<String?>(null) }
+    
     // Update check state
     val updateRepository = remember { UpdateRepository() }
     var updateResult by remember { mutableStateOf<UpdateResult?>(null) }
@@ -290,7 +294,9 @@ fun HomeScreen(
                         },
                         contentPadding = PaddingValues(bottom = 160.dp),
                         viewModel = viewModel,
-                        isDarkMode = isDarkMode
+                        isDarkMode = isDarkMode,
+                        initialArtist = viewedArtistFromPlayer,
+                        onInitialArtistConsumed = { viewedArtistFromPlayer = null }
                     )
                 }
             }
@@ -349,6 +355,12 @@ fun HomeScreen(
             onNextClick = { playerViewModel.skipToNext() },
             viewModel = playerViewModel,
             ambientBackground = ambientBackground,
+            onArtistClick = { artistName ->
+                // Collapse player and navigate to Library tab to show artist
+                showPlayerSheet = false
+                viewedArtistFromPlayer = artistName
+                selectedTab = 2 // Library tab
+            },
             modifier = Modifier.align(Alignment.BottomCenter)
         )
         
@@ -962,34 +974,82 @@ fun LibraryContent(
     onPlayQueue: (List<Song>, Song?) -> Unit,
     contentPadding: PaddingValues,
     viewModel: HomeViewModel,
-    isDarkMode: Boolean
+    isDarkMode: Boolean,
+    initialArtist: String? = null,
+    onInitialArtistConsumed: () -> Unit = {}
 ) {
     var viewedPlaylist by remember { mutableStateOf<com.ivor.ivormusic.data.PlaylistDisplayItem?>(null) }
+    var viewedArtist by remember { mutableStateOf<String?>(null) }
     
-    // Handle system back button when a playlist is viewed
-    BackHandler(enabled = viewedPlaylist != null) {
-        viewedPlaylist = null
+    // Handle external navigation from player when artist is clicked
+    LaunchedEffect(initialArtist) {
+        if (initialArtist != null) {
+            viewedArtist = initialArtist
+            onInitialArtistConsumed()
+        }
     }
     
-    androidx.compose.animation.AnimatedContent(targetState = viewedPlaylist, label = "LibraryNav") { playlist ->
-        if (playlist == null) {
-            com.ivor.ivormusic.ui.library.LibraryScreen(
-                songs = songs,
-                onSongClick = onSongClick,
-                onPlayQueue = onPlayQueue,
-                onPlaylistClick = { viewedPlaylist = it },
-                contentPadding = contentPadding,
-                viewModel = viewModel,
-                isDarkMode = isDarkMode
-            )
-        } else {
-            com.ivor.ivormusic.ui.library.PlaylistDetailScreen(
-                playlist = playlist,
-                onBack = { viewedPlaylist = null },
-                onPlayQueue = onPlayQueue,
-                viewModel = viewModel,
-                isDarkMode = isDarkMode
-            )
+    // Handle system back button for nested screens
+    BackHandler(enabled = viewedPlaylist != null || viewedArtist != null) {
+        if (viewedArtist != null) {
+            viewedArtist = null
+        } else if (viewedPlaylist != null) {
+            viewedPlaylist = null
+        }
+    }
+    
+    // Determine current navigation state
+    val currentScreen = when {
+        viewedArtist != null -> "artist"
+        viewedPlaylist != null -> "playlist"
+        else -> "library"
+    }
+    
+    androidx.compose.animation.AnimatedContent(
+        targetState = currentScreen,
+        label = "LibraryNav",
+        transitionSpec = {
+            androidx.compose.animation.slideInHorizontally { width -> width } + 
+                androidx.compose.animation.fadeIn() togetherWith
+            androidx.compose.animation.slideOutHorizontally { width -> -width } + 
+                androidx.compose.animation.fadeOut()
+        }
+    ) { screen ->
+        when (screen) {
+            "artist" -> {
+                viewedArtist?.let { artistName ->
+                    com.ivor.ivormusic.ui.artist.ArtistScreen(
+                        artistName = artistName,
+                        songs = songs,
+                        onBack = { viewedArtist = null },
+                        onPlayQueue = onPlayQueue,
+                        onSongClick = onSongClick
+                    )
+                }
+            }
+            "playlist" -> {
+                viewedPlaylist?.let { playlist ->
+                    com.ivor.ivormusic.ui.library.PlaylistDetailScreen(
+                        playlist = playlist,
+                        onBack = { viewedPlaylist = null },
+                        onPlayQueue = onPlayQueue,
+                        viewModel = viewModel,
+                        isDarkMode = isDarkMode
+                    )
+                }
+            }
+            else -> {
+                com.ivor.ivormusic.ui.library.LibraryScreen(
+                    songs = songs,
+                    onSongClick = onSongClick,
+                    onPlayQueue = onPlayQueue,
+                    onPlaylistClick = { viewedPlaylist = it },
+                    onArtistClick = { viewedArtist = it },
+                    contentPadding = contentPadding,
+                    viewModel = viewModel,
+                    isDarkMode = isDarkMode
+                )
+            }
         }
     }
 }

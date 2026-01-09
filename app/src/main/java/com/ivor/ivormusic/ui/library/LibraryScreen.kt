@@ -1,6 +1,7 @@
 package com.ivor.ivormusic.ui.library
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -111,6 +112,7 @@ fun LibraryScreen(
     onSongClick: (Song) -> Unit,
     onPlayQueue: (List<Song>, Song?) -> Unit,
     onPlaylistClick: (com.ivor.ivormusic.data.PlaylistDisplayItem) -> Unit = {},
+    onArtistClick: (String) -> Unit = {},
     contentPadding: PaddingValues,
     viewModel: HomeViewModel,
     isDarkMode: Boolean,
@@ -546,7 +548,7 @@ fun LibraryScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(shape)
-                                .clickable { /* Handle artist click */ },
+                                .clickable { onArtistClick(artist) },
                             shape = shape,
                             color = cardColor,
                             tonalElevation = 1.dp
@@ -1066,26 +1068,69 @@ fun LibraryContent(
     isDarkMode: Boolean
 ) {
     var viewedPlaylist by remember { mutableStateOf<com.ivor.ivormusic.data.PlaylistDisplayItem?>(null) }
+    var viewedArtist by remember { mutableStateOf<String?>(null) }
     
-    androidx.compose.animation.AnimatedContent(targetState = viewedPlaylist, label = "LibraryNav") { playlist ->
-        if (playlist == null) {
-            LibraryScreen(
-                songs = songs,
-                onSongClick = onSongClick,
-                onPlayQueue = onPlayQueue,
-                onPlaylistClick = { viewedPlaylist = it },
-                contentPadding = contentPadding,
-                viewModel = viewModel,
-                isDarkMode = isDarkMode
-            )
-        } else {
-            PlaylistDetailScreen(
-                playlist = playlist,
-                onBack = { viewedPlaylist = null },
-                onPlayQueue = onPlayQueue,
-                viewModel = viewModel,
-                isDarkMode = isDarkMode
-            )
+    // Handle system back button for nested screens
+    androidx.activity.compose.BackHandler(enabled = viewedPlaylist != null || viewedArtist != null) {
+        if (viewedArtist != null) {
+            viewedArtist = null
+        } else if (viewedPlaylist != null) {
+            viewedPlaylist = null
+        }
+    }
+    
+    // Determine current navigation state
+    val currentScreen = when {
+        viewedArtist != null -> "artist"
+        viewedPlaylist != null -> "playlist"
+        else -> "library"
+    }
+    
+    androidx.compose.animation.AnimatedContent(
+        targetState = currentScreen,
+        label = "LibraryNav",
+        transitionSpec = {
+            androidx.compose.animation.slideInHorizontally { width -> width } + 
+                androidx.compose.animation.fadeIn() togetherWith
+            androidx.compose.animation.slideOutHorizontally { width -> -width } + 
+                androidx.compose.animation.fadeOut()
+        }
+    ) { screen ->
+        when (screen) {
+            "artist" -> {
+                viewedArtist?.let { artistName ->
+                    com.ivor.ivormusic.ui.artist.ArtistScreen(
+                        artistName = artistName,
+                        songs = songs,
+                        onBack = { viewedArtist = null },
+                        onPlayQueue = onPlayQueue,
+                        onSongClick = onSongClick
+                    )
+                }
+            }
+            "playlist" -> {
+                viewedPlaylist?.let { playlist ->
+                    PlaylistDetailScreen(
+                        playlist = playlist,
+                        onBack = { viewedPlaylist = null },
+                        onPlayQueue = onPlayQueue,
+                        viewModel = viewModel,
+                        isDarkMode = isDarkMode
+                    )
+                }
+            }
+            else -> {
+                LibraryScreen(
+                    songs = songs,
+                    onSongClick = onSongClick,
+                    onPlayQueue = onPlayQueue,
+                    onPlaylistClick = { viewedPlaylist = it },
+                    onArtistClick = { viewedArtist = it },
+                    contentPadding = contentPadding,
+                    viewModel = viewModel,
+                    isDarkMode = isDarkMode
+                )
+            }
         }
     }
 }
