@@ -79,8 +79,62 @@ class MusicService : MediaLibraryService() {
                     // Also trigger prefetch when playback is ready
                     prefetchUpcomingSongs()
                 }
+                
+                // FIX: Detect when stuck buffering on a YouTube item without URI
+                if (playbackState == Player.STATE_BUFFERING) {
+                    val currentItem = player.currentMediaItem
+                    val videoId = currentItem?.mediaId
+                    
+                    // Check if this is a YouTube item without a resolved URL
+                    if (currentItem != null && 
+                        currentItem.localConfiguration?.uri == null && 
+                        !videoId.isNullOrEmpty()) {
+                        
+                        Log.d(TAG, "Detected buffering on unresolved item: $videoId, attempting to resolve...")
+                        
+                        // Check cache first
+                        val cachedUrl = urlCache[videoId]
+                        if (cachedUrl != null) {
+                            // We have it cached, replace immediately
+                            val resolvedItem = currentItem.buildUpon()
+                                .setUri(android.net.Uri.parse(cachedUrl))
+                                .build()
+                            val currentIndex = player.currentMediaItemIndex
+                            player.replaceMediaItem(currentIndex, resolvedItem)
+                            player.seekTo(currentIndex, 0)
+                            player.play()
+                            Log.d(TAG, "Replaced with cached URL for $videoId")
+                        } else {
+                            // Need to resolve - do it in background
+                            serviceScope.launch(Dispatchers.IO) {
+                                val resolved = resolveStreamUrl(currentItem, videoId)
+                                if (resolved.localConfiguration?.uri != null) {
+                                    serviceScope.launch(Dispatchers.Main) {
+                                        try {
+                                            val currentIndex = player.currentMediaItemIndex
+                                            player.replaceMediaItem(currentIndex, resolved)
+                                            player.seekTo(currentIndex, 0)
+                                            player.play()
+                                            Log.d(TAG, "Resolved and replaced item for $videoId")
+                                        } catch (e: Exception) {
+                                            Log.e(TAG, "Failed to replace item for $videoId", e)
+                                        }
+                                    }
+                                } else if (player.hasNextMediaItem()) {
+                                    // Resolution failed entirely, skip to next
+                                    Log.w(TAG, "Resolution failed for $videoId, skipping to next")
+                                    serviceScope.launch(Dispatchers.Main) {
+                                        player.seekToNext()
+                                        player.play()
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         })
+
 
         val sessionIntent = packageManager.getLaunchIntentForPackage(packageName).let {
             PendingIntent.getActivity(this, 0, it, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)

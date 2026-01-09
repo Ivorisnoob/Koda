@@ -197,6 +197,20 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                     player.addMediaItems(otherItemsBefore.size + 1, otherItemsAfter)
                 }
             }
+            
+            // FIX: Add safety timeout for buffering state
+            viewModelScope.launch {
+                var timeout = 0
+                while (_isBuffering.value && timeout < 10) {
+                    delay(1000)
+                    timeout++
+                    if (timeout >= 10 && _isBuffering.value && !_isPlaying.value) {
+                        // Stuck buffering for 10 seconds - force reset state
+                        _isBuffering.value = false
+                        break
+                    }
+                }
+            }
         }
     }
     
@@ -303,11 +317,16 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
 
     fun skipToNext() {
         controller?.let { player ->
+            if (player.mediaItemCount <= 1 && _currentQueue.value.size > 1) {
+                // Queue might still be loading in background
+                return@let
+            }
+            
             if (player.hasNextMediaItem()) {
                 player.seekToNextMediaItem()
                 player.play()
             } else {
-                // If we are at the end, maybe try normal seekToNext which handles repeat modes
+                // If we are at the end, checks strictly for repeat mode or just seek to start if handled 
                 player.seekToNext()
                 player.play()
             }
