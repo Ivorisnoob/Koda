@@ -212,7 +212,7 @@ fun LibraryScreen(
                     end = 20.dp,
                     bottom = contentPadding.calculateBottomPadding() + 20.dp
                 ),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.spacedBy(0.dp)
             ) {
                 when (tabs[selectedTab]) {
                     "All" -> {

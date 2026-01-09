@@ -110,11 +110,11 @@ internal class PolygonShape(
         layoutDirection: LayoutDirection,
         density: Density
     ): Outline {
-        path = polygon.toPath().asComposePath()
-        val scaleMatrix = Matrix()
-        scaleMatrix.scale(size.width / 2f, size.height / 2f)
-        scaleMatrix.translate(1f, 1f)
-        path.transform(scaleMatrix)
+        val path = polygon.toPath().asComposePath()
+        val matrix = Matrix()
+        matrix.scale(size.width / 2f, size.height / 2f)
+        matrix.translate(size.width / 2f, size.height / 2f)
+        path.transform(matrix)
         return Outline.Generic(path)
     }
 }
@@ -225,7 +225,7 @@ fun ArtistScreen(
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = 120.dp)
+                contentPadding = PaddingValues(bottom = 160.dp)
             ) {
                 // ========== HERO HEADER ==========
                 item {
