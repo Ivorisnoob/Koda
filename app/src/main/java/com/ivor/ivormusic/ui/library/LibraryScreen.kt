@@ -985,10 +985,13 @@ fun PlaylistDetailScreen(
                                                 numVertices = 8,
                                                 rounding = androidx.graphics.shapes.CornerRounding(radius = 0.2f)
                                             )
+                                            val bounds = polygon.calculateBounds()
                                             val path = polygon.toPath().asComposePath()
                                             val scaleMatrix = androidx.compose.ui.graphics.Matrix()
-                                            scaleMatrix.scale(size.width / 2f, size.height / 2f)
-                                            scaleMatrix.translate(1f, 1f)
+                                            val scaleX = size.width / bounds.width
+                                            val scaleY = size.height / bounds.height
+                                            scaleMatrix.scale(scaleX, scaleY)
+                                            scaleMatrix.translate(-bounds.left * scaleX, -bounds.top * scaleY)
                                             path.transform(scaleMatrix)
                                             return Outline.Generic(path)
                                         }
@@ -1095,11 +1098,24 @@ fun LibraryContent(
     contentPadding: PaddingValues,
     viewModel: HomeViewModel,
     isDarkMode: Boolean
+    initialArtist: String? = null,
+    onInitialArtistConsumed: () -> Unit = {}
 ) {
     var viewedPlaylist by remember { mutableStateOf<com.ivor.ivormusic.data.PlaylistDisplayItem?>(null) }
     var viewedArtist by remember { mutableStateOf<String?>(null) }
     // Album navigation state: Pair<albumName, List<Song>>
     var viewedAlbum by remember { mutableStateOf<Pair<String, List<Song>>?>(null) }
+    
+    // Handle initial artist navigation from player
+    LaunchedEffect(initialArtist) {
+        if (initialArtist != null) {
+            viewedArtist = initialArtist
+            // Clear other views to ensure artist is shown
+            viewedAlbum = null
+            viewedPlaylist = null
+            onInitialArtistConsumed()
+        }
+    }
     
     // Handle system back button for nested screens
     androidx.activity.compose.BackHandler(enabled = viewedPlaylist != null || viewedArtist != null || viewedAlbum != null) {
@@ -1172,7 +1188,11 @@ fun LibraryContent(
                     onSongClick = onSongClick,
                     onPlayQueue = onPlayQueue,
                     onPlaylistClick = { viewedPlaylist = it },
-                    onArtistClick = { viewedArtist = it },
+                    onArtistClick = { 
+                        viewedArtist = it
+                        viewedAlbum = null
+                        viewedPlaylist = null
+                    },
                     onAlbumClick = { albumName, albumSongs -> 
                         viewedAlbum = albumName to albumSongs 
                     },

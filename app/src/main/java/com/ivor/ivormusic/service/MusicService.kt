@@ -137,7 +137,8 @@ class MusicService : MediaLibraryService() {
 
 
         val sessionIntent = packageManager.getLaunchIntentForPackage(packageName).let {
-            PendingIntent.getActivity(this, 0, it, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+            val intent = it ?: Intent(this, MainActivity::class.java)
+            PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         }
 
         mediaLibrarySession = MediaLibrarySession.Builder(this, player, object : MediaLibrarySession.Callback {
