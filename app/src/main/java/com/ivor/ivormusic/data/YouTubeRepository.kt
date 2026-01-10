@@ -830,9 +830,24 @@ class YouTubeRepository(private val context: Context) {
 
     /**
      * Get trending/recommended videos for video mode home screen.
-     * Falls back to popular search if trending endpoint fails.
+     * Uses personalized recommendations when logged in, falls back to trending otherwise.
      */
     suspend fun getTrendingVideos(): List<VideoItem> = withContext(Dispatchers.IO) {
+        // Try personalized recommendations first if logged in
+        if (sessionManager.isLoggedIn()) {
+            try {
+                android.util.Log.d("YouTubeRepo", "Fetching personalized video recommendations")
+                val videos = getPersonalizedVideoRecommendations()
+                if (videos.isNotEmpty()) {
+                    android.util.Log.d("YouTubeRepo", "Got ${videos.size} personalized videos")
+                    return@withContext videos
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("YouTubeRepo", "Error fetching personalized videos", e)
+            }
+        }
+        
+        // Fallback to public trending
         try {
             val ytService = ServiceList.all().find { it.serviceInfo.name == "YouTube" }
                 ?: return@withContext emptyList()
@@ -874,6 +889,176 @@ class YouTubeRepository(private val context: Context) {
             }
         }
     }
+
+    /**
+     * Get personalized video recommendations from YouTube (requires login).
+     * Uses the YouTube homepage API to get personalized suggestions.
+     */
+    private suspend fun getPersonalizedVideoRecommendations(): List<VideoItem> = withContext(Dispatchers.IO) {
+        val cookies = sessionManager.getCookies() ?: return@withContext emptyList()
+        val authHeader = YouTubeAuthUtils.getAuthorizationHeader(cookies) ?: ""
+        
+        // Use YouTube (not Music) browse endpoint for video recommendations
+        val url = "https://www.youtube.com/youtubei/v1/browse"
+        
+        val jsonBody = """
+            {
+                "context": {
+                    "client": {
+                        "clientName": "WEB",
+                        "clientVersion": "2.20240101.00.00",
+                        "hl": "en",
+                        "gl": "US"
+                    }
+                },
+                "browseId": "FEwhat_to_watch"
+            }
+        """.trimIndent()
+
+        val request = okhttp3.Request.Builder()
+            .url(url)
+            .post(jsonBody.toRequestBody("application/json".toMediaType()))
+            .addHeader("Cookie", cookies)
+            .addHeader("Authorization", authHeader)
+            .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            .addHeader("Origin", "https://www.youtube.com")
+            .addHeader("X-Goog-AuthUser", "0")
+            .build()
+
+        try {
+            val response = okHttpClient.newCall(request).execute()
+            val responseBody = response.body?.string() ?: return@withContext emptyList()
+            response.close()
+            
+            parseVideosFromYouTubeJson(responseBody)
+        } catch (e: Exception) {
+            android.util.Log.e("YouTubeRepo", "Error in getPersonalizedVideoRecommendations", e)
+            emptyList()
+        }
+    }
+
+    /**
+     * Parse video items from YouTube homepage JSON response.
+     */
+    private fun parseVideosFromYouTubeJson(json: String): List<VideoItem> {
+        val videos = mutableListOf<VideoItem>()
+        try {
+            val root = org.json.JSONObject(json)
+            val items = mutableListOf<org.json.JSONObject>()
+            
+            // Find all video renderers
+            findAllObjects(root, "videoRenderer", items)
+            findAllObjects(root, "compactVideoRenderer", items)
+            findAllObjects(root, "gridVideoRenderer", items)
+            findAllObjects(root, "richItemRenderer", items)
+            
+            items.forEach { item ->
+                try {
+                    // Check for nested videoRenderer in richItemRenderer
+                    val videoRenderer = item.optJSONObject("content")?.optJSONObject("videoRenderer") ?: item
+                    
+                    val videoId = videoRenderer.optString("videoId")
+                    if (videoId.isBlank()) return@forEach
+                    
+                    // Extract title
+                    val titleObj = videoRenderer.optJSONObject("title")
+                    val title = titleObj?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
+                        ?: titleObj?.optString("simpleText")
+                        ?: "Unknown Title"
+                    
+                    // Extract channel name
+                    val channelObj = videoRenderer.optJSONObject("ownerText")
+                        ?: videoRenderer.optJSONObject("shortBylineText")
+                        ?: videoRenderer.optJSONObject("longBylineText")
+                    val channelName = channelObj?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
+                        ?: "Unknown Channel"
+                    
+                    // Extract view count
+                    val viewCountText = videoRenderer.optJSONObject("viewCountText")?.optString("simpleText")
+                        ?: videoRenderer.optJSONObject("shortViewCountText")?.optString("simpleText")
+                        ?: ""
+                    
+                    // Extract duration
+                    val durationText = videoRenderer.optJSONObject("lengthText")?.optString("simpleText") ?: "0:00"
+                    val durationSeconds = parseDurationToSeconds(durationText)
+                    
+                    // Extract thumbnail
+                    val thumbnails = videoRenderer.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
+                    val thumbnailUrl = thumbnails?.let {
+                        it.optJSONObject(it.length() - 1)?.optString("url")
+                    }
+                    
+                    // Extract upload date
+                    val publishedText = videoRenderer.optJSONObject("publishedTimeText")?.optString("simpleText")
+                    
+                    videos.add(VideoItem(
+                        videoId = videoId,
+                        title = title,
+                        channelName = channelName,
+                        channelId = null,
+                        thumbnailUrl = thumbnailUrl,
+                        duration = durationSeconds,
+                        viewCount = viewCountText,
+                        uploadedDate = publishedText,
+                        isLive = durationSeconds <= 0L
+                    ))
+                } catch (e: Exception) {
+                    // Skip malformed item
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("YouTubeRepo", "Error parsing videos JSON", e)
+        }
+        return videos.distinctBy { it.videoId }.take(30)
+    }
+
+    /**
+     * Parse duration string like "3:45" or "1:23:45" to seconds.
+     */
+    private fun parseDurationToSeconds(duration: String): Long {
+        if (duration.isBlank() || duration == "0:00") return 0L
+        val parts = duration.split(":").mapNotNull { it.toLongOrNull() }
+        return when (parts.size) {
+            1 -> parts[0]
+            2 -> parts[0] * 60 + parts[1]
+            3 -> parts[0] * 3600 + parts[1] * 60 + parts[2]
+            else -> 0L
+        }
+    }
+
+    /**
+     * Recursively find all JSON objects with a specific key and add them to the results list.
+     */
+    private fun findAllObjects(json: org.json.JSONObject, key: String, results: MutableList<org.json.JSONObject>) {
+        // Check if this object has the key
+        if (json.has(key)) {
+            val value = json.opt(key)
+            if (value is org.json.JSONObject) {
+                results.add(value)
+            } else if (value is org.json.JSONArray) {
+                for (i in 0 until value.length()) {
+                    val item = value.optJSONObject(i)
+                    if (item != null) results.add(item)
+                }
+            }
+        }
+        
+        // Recurse into nested objects
+        json.keys().forEach { keyName ->
+            val value = json.opt(keyName)
+            when (value) {
+                is org.json.JSONObject -> findAllObjects(value, key, results)
+                is org.json.JSONArray -> {
+                    for (i in 0 until value.length()) {
+                        val item = value.optJSONObject(i)
+                        if (item != null) findAllObjects(item, key, results)
+                    }
+                }
+            }
+        }
+    }
+
+
 
     /**
      * Get the video stream URL (both audio and video) for playback.

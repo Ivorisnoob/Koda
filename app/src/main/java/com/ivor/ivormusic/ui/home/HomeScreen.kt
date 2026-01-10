@@ -127,6 +127,7 @@ fun HomeScreen(
     onThemeToggle: (Boolean) -> Unit = {},
     onNavigateToSettings: () -> Unit = {},
     onNavigateToDownloads: () -> Unit = {},
+    onNavigateToVideoPlayer: (VideoItem) -> Unit = {},
     loadLocalSongs: Boolean = true,
     ambientBackground: Boolean = true,
     videoMode: Boolean = false
@@ -253,18 +254,8 @@ fun HomeScreen(
                                 videos = trendingVideos,
                                 isLoading = isVideoLoading,
                                 onVideoClick = { video ->
-                                    // For now, play video as a song (audio only)
-                                    // TODO: Implement full video player
-                                    val song = com.ivor.ivormusic.data.Song.fromYouTube(
-                                        videoId = video.videoId,
-                                        title = video.title,
-                                        artist = video.channelName,
-                                        album = "",
-                                        duration = video.duration * 1000,
-                                        thumbnailUrl = video.thumbnailUrl
-                                    )
-                                    playerViewModel.playSong(song)
-                                    showPlayerSheet = true
+                                    // Navigate to video player screen
+                                    onNavigateToVideoPlayer(video)
                                 },
                                 onProfileClick = { showAuthDialog = true },
                                 onSettingsClick = onNavigateToSettings,
@@ -317,9 +308,14 @@ fun HomeScreen(
                             playerViewModel.playQueue(songList, song)
                             showPlayerSheet = true
                         },
+                        onVideoClick = { video ->
+                            // Navigate to video player screen
+                            onNavigateToVideoPlayer(video)
+                        },
                         contentPadding = PaddingValues(bottom = 160.dp),
                         viewModel = viewModel,
-                        isDarkMode = isDarkMode
+                        isDarkMode = isDarkMode,
+                        videoMode = videoMode
                     )
                     2 -> LibraryContent(
                         songs = songs,
@@ -848,17 +844,21 @@ fun SearchContent(
     songs: List<Song>,
     onSongClick: (Song) -> Unit,
     onPlayQueue: (List<Song>, Song) -> Unit = { _, song -> onSongClick(song) },
+    onVideoClick: (VideoItem) -> Unit = {},
     contentPadding: PaddingValues,
     viewModel: HomeViewModel,
-    isDarkMode: Boolean
+    isDarkMode: Boolean,
+    videoMode: Boolean = false
 ) {
     com.ivor.ivormusic.ui.search.SearchScreen(
         songs = songs,
         onSongClick = onSongClick,
         onPlayQueue = onPlayQueue,
+        onVideoClick = onVideoClick,
         contentPadding = contentPadding,
         viewModel = viewModel,
-        isDarkMode = isDarkMode
+        isDarkMode = isDarkMode,
+        videoMode = videoMode
     )
 }
 

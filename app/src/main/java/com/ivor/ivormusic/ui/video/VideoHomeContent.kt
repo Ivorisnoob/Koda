@@ -85,6 +85,7 @@ fun VideoHomeContent(
 ) {
     val backgroundColor = MaterialTheme.colorScheme.background
     val textColor = MaterialTheme.colorScheme.onBackground
+    val isYouTubeConnected by viewModel.isYouTubeConnected.collectAsState()
     
     // Animation state for staggered entry
     var isVisible by remember { mutableStateOf(false) }
@@ -139,10 +140,10 @@ fun VideoHomeContent(
                     }
                 }
                 
-                // Section title
+                // Section title - changes based on whether user is logged in
                 item {
                     Text(
-                        text = "Trending Videos",
+                        text = if (isYouTubeConnected) "Recommended For You" else "Trending Videos",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         color = textColor,
@@ -334,7 +335,7 @@ private fun VideoHeroSection(isDarkMode: Boolean) {
         Spacer(modifier = Modifier.height(8.dp))
         
         Text(
-            text = "Explore trending videos and content",
+            text = "Browse trending videos • Audio playback",
             style = MaterialTheme.typography.bodyLarge,
             color = secondaryTextColor
         )
