@@ -834,13 +834,18 @@ class YouTubeRepository(private val context: Context) {
      */
     suspend fun getTrendingVideos(): List<VideoItem> = withContext(Dispatchers.IO) {
         // Try personalized recommendations first if logged in
-        if (sessionManager.isLoggedIn()) {
+        val isLoggedIn = sessionManager.isLoggedIn()
+        android.util.Log.d("YouTubeRepo", "getTrendingVideos - isLoggedIn: $isLoggedIn")
+        
+        if (isLoggedIn) {
             try {
                 android.util.Log.d("YouTubeRepo", "Fetching personalized video recommendations")
                 val videos = getPersonalizedVideoRecommendations()
                 if (videos.isNotEmpty()) {
                     android.util.Log.d("YouTubeRepo", "Got ${videos.size} personalized videos")
                     return@withContext videos
+                } else {
+                    android.util.Log.w("YouTubeRepo", "Personalized recommendations returned empty, falling back to trending")
                 }
             } catch (e: Exception) {
                 android.util.Log.e("YouTubeRepo", "Error fetching personalized videos", e)
@@ -896,10 +901,28 @@ class YouTubeRepository(private val context: Context) {
      */
     private suspend fun getPersonalizedVideoRecommendations(): List<VideoItem> = withContext(Dispatchers.IO) {
         val cookies = sessionManager.getCookies() ?: return@withContext emptyList()
-        val authHeader = YouTubeAuthUtils.getAuthorizationHeader(cookies) ?: ""
         
-        // Use YouTube (not Music) browse endpoint for video recommendations
-        val url = "https://www.youtube.com/youtubei/v1/browse"
+        // Extract SAPISID for authentication hash
+        val sapisid = cookies.split(";")
+            .map { it.trim() }
+            .find { it.startsWith("SAPISID=") || it.startsWith("__Secure-3PAPISID=") }
+            ?.split("=")?.getOrNull(1)
+        
+        // Generate SAPISID hash for authorization
+        val origin = "https://www.youtube.com"
+        val authHeader = if (sapisid != null) {
+            val timestamp = System.currentTimeMillis() / 1000
+            val hashInput = "$timestamp $sapisid $origin"
+            val hash = java.security.MessageDigest.getInstance("SHA-1")
+                .digest(hashInput.toByteArray())
+                .joinToString("") { "%02x".format(it) }
+            "SAPISIDHASH ${timestamp}_${hash}"
+        } else {
+            YouTubeAuthUtils.getAuthorizationHeader(cookies) ?: ""
+        }
+        
+        // Use YouTube browse endpoint for "What to Watch" (home page recommendations)
+        val url = "https://www.youtube.com/youtubei/v1/browse?key=AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8&prettyPrint=false"
         
         val jsonBody = """
             {
@@ -908,7 +931,12 @@ class YouTubeRepository(private val context: Context) {
                         "clientName": "WEB",
                         "clientVersion": "2.20240101.00.00",
                         "hl": "en",
-                        "gl": "US"
+                        "gl": "US",
+                        "originalUrl": "https://www.youtube.com/",
+                        "platform": "DESKTOP"
+                    },
+                    "user": {
+                        "lockedSafetyMode": false
                     }
                 },
                 "browseId": "FEwhat_to_watch"
@@ -921,16 +949,24 @@ class YouTubeRepository(private val context: Context) {
             .addHeader("Cookie", cookies)
             .addHeader("Authorization", authHeader)
             .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-            .addHeader("Origin", "https://www.youtube.com")
+            .addHeader("Origin", origin)
+            .addHeader("Referer", "$origin/")
             .addHeader("X-Goog-AuthUser", "0")
+            .addHeader("X-Origin", origin)
+            .addHeader("Accept", "*/*")
+            .addHeader("Accept-Language", "en-US,en;q=0.9")
             .build()
 
         try {
+            android.util.Log.d("YouTubeRepo", "Making personalized video request with auth: ${authHeader.take(30)}...")
             val response = okHttpClient.newCall(request).execute()
             val responseBody = response.body?.string() ?: return@withContext emptyList()
             response.close()
             
-            parseVideosFromYouTubeJson(responseBody)
+            android.util.Log.d("YouTubeRepo", "Got personalized response: ${responseBody.take(500)}...")
+            val videos = parseVideosFromYouTubeJson(responseBody)
+            android.util.Log.d("YouTubeRepo", "Parsed ${videos.size} personalized videos")
+            videos
         } catch (e: Exception) {
             android.util.Log.e("YouTubeRepo", "Error in getPersonalizedVideoRecommendations", e)
             emptyList()
@@ -946,24 +982,175 @@ class YouTubeRepository(private val context: Context) {
             val root = org.json.JSONObject(json)
             val items = mutableListOf<org.json.JSONObject>()
             
-            // Find all video renderers
-            findAllObjects(root, "videoRenderer", items)
-            findAllObjects(root, "compactVideoRenderer", items)
-            findAllObjects(root, "gridVideoRenderer", items)
-            findAllObjects(root, "richItemRenderer", items)
+            // Log the top-level keys to understand the structure
+            android.util.Log.d("YouTubeRepo", "Root JSON keys: ${root.keys().asSequence().toList()}")
             
-            items.forEach { item ->
+            // Find all video renderers - YouTube homepage uses various structures
+            findAllObjects(root, "videoRenderer", items)
+            android.util.Log.d("YouTubeRepo", "After videoRenderer search: ${items.size} items")
+            
+            findAllObjects(root, "compactVideoRenderer", items)
+            android.util.Log.d("YouTubeRepo", "After compactVideoRenderer search: ${items.size} items")
+            
+            findAllObjects(root, "gridVideoRenderer", items)
+            android.util.Log.d("YouTubeRepo", "After gridVideoRenderer search: ${items.size} items")
+            
+            // Also search in richItemRenderer which contains videoRenderer or lockupViewModel
+            val richItems = mutableListOf<org.json.JSONObject>()
+            findAllObjects(root, "richItemRenderer", richItems)
+            android.util.Log.d("YouTubeRepo", "Found ${richItems.size} richItemRenderer items")
+            
+            richItems.forEachIndexed { index, richItem ->
+                val content = richItem.optJSONObject("content")
+                
+                // Try different paths to get video renderer
+                val videoRenderer = content?.optJSONObject("videoRenderer")
+                    ?: richItem.optJSONObject("videoRenderer")
+                
+                if (videoRenderer != null) {
+                    items.add(videoRenderer)
+                    android.util.Log.d("YouTubeRepo", "Added videoRenderer from richItem[$index]")
+                }
+                
+                // Handle new lockupViewModel format (YouTube's newer format)
+                val lockupViewModel = content?.optJSONObject("lockupViewModel")
+                if (lockupViewModel != null) {
+                    // Extract video info from lockupViewModel
+                    val contentId = lockupViewModel.optString("contentId") // This is the videoId
+                    if (contentId.isNotBlank()) {
+                        val metadata = lockupViewModel.optJSONObject("metadata")?.optJSONObject("lockupMetadataViewModel")
+                        val titleObj = metadata?.optJSONObject("title")
+                        val title = titleObj?.optString("content") ?: "Unknown Title"
+                        
+                        // Get channel name from metadata
+                        val metadataDetails = metadata?.optJSONObject("metadata")?.optJSONObject("contentMetadataViewModel")
+                        val metadataRows = metadataDetails?.optJSONArray("metadataRows")
+                        var channelName = "Unknown Channel"
+                        var viewCount = ""
+                        var uploadDate = ""
+                        
+                        if (metadataRows != null && metadataRows.length() > 0) {
+                            val firstRow = metadataRows.optJSONObject(0)?.optJSONArray("metadataParts")
+                            if (firstRow != null && firstRow.length() > 0) {
+                                channelName = firstRow.optJSONObject(0)?.optJSONObject("text")?.optString("content") ?: channelName
+                            }
+                            // Second row usually has views and date
+                            if (metadataRows.length() > 1) {
+                                val secondRow = metadataRows.optJSONObject(1)?.optJSONArray("metadataParts")
+                                if (secondRow != null) {
+                                    for (i in 0 until secondRow.length()) {
+                                        val part = secondRow.optJSONObject(i)?.optJSONObject("text")?.optString("content") ?: ""
+                                        if (part.contains("view", ignoreCase = true)) {
+                                            viewCount = part
+                                        } else if (part.isNotBlank() && uploadDate.isBlank()) {
+                                            uploadDate = part
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // Get thumbnail - try multiple paths
+                        val contentImage = lockupViewModel.optJSONObject("contentImage")
+                        val thumbnailViewModel = contentImage?.optJSONObject("collectionThumbnailViewModel")
+                            ?.optJSONObject("primaryThumbnail")?.optJSONObject("thumbnailViewModel")
+                            ?: contentImage?.optJSONObject("thumbnailViewModel")
+                        
+                        var thumbnailUrl = thumbnailViewModel?.optJSONObject("image")?.optJSONArray("sources")?.let { sources ->
+                            // Get highest quality thumbnail
+                            var bestUrl: String? = null
+                            var maxWidth = 0
+                            for (i in 0 until sources.length()) {
+                                val source = sources.optJSONObject(i)
+                                val width = source?.optInt("width", 0) ?: 0
+                                if (width >= maxWidth) {
+                                    maxWidth = width
+                                    bestUrl = source?.optString("url")
+                                }
+                            }
+                            bestUrl
+                        }
+                        
+                        // Fallback to standard YouTube thumbnail URL format
+                        if (thumbnailUrl.isNullOrBlank()) {
+                            thumbnailUrl = "https://i.ytimg.com/vi/$contentId/hqdefault.jpg"
+                        }
+                        
+                        // Get duration from overlays
+                        val overlays = thumbnailViewModel?.optJSONArray("overlays")
+                        var durationSeconds = 0L
+                        var durationText = ""
+                        if (overlays != null) {
+                            for (i in 0 until overlays.length()) {
+                                val overlayItem = overlays.optJSONObject(i)
+                                // Try thumbnailOverlayBadgeViewModel path
+                                val badgeText = overlayItem?.optJSONObject("thumbnailOverlayBadgeViewModel")
+                                    ?.optJSONArray("thumbnailBadges")?.optJSONObject(0)
+                                    ?.optJSONObject("thumbnailBadgeViewModel")?.optString("text")
+                                if (badgeText != null && badgeText.contains(":")) {
+                                    durationText = badgeText
+                                    durationSeconds = parseDurationToSeconds(badgeText)
+                                    break
+                                }
+                                // Try thumbnailOverlayTimeStatusRenderer path
+                                val timeStatus = overlayItem?.optJSONObject("thumbnailOverlayTimeStatusRenderer")
+                                    ?.optJSONObject("text")?.optString("simpleText")
+                                if (timeStatus != null && timeStatus.contains(":")) {
+                                    durationText = timeStatus
+                                    durationSeconds = parseDurationToSeconds(timeStatus)
+                                    break
+                                }
+                            }
+                        }
+                        
+                        // If still no duration, try to extract from accessibility text or metadata
+                        if (durationSeconds <= 0L) {
+                            // Try to find duration in title accessibility or elsewhere
+                            val accessibilityLabel = titleObj?.optJSONObject("accessibility")?.optString("label") ?: ""
+                            val durationMatch = Regex("(\\d+):(\\d+)(?::(\\d+))?").find(accessibilityLabel)
+                            if (durationMatch != null) {
+                                durationText = durationMatch.value
+                                durationSeconds = parseDurationToSeconds(durationText)
+                            }
+                        }
+                        
+                        // Assume it's not live if we couldn't find duration (most videos have a duration)
+                        val isLive = durationText.contains("LIVE", ignoreCase = true) || 
+                                    viewCount.contains("watching", ignoreCase = true)
+                        
+                        videos.add(VideoItem(
+                            videoId = contentId,
+                            title = title,
+                            channelName = channelName,
+                            channelId = null,
+                            thumbnailUrl = thumbnailUrl,
+                            duration = durationSeconds,
+                            viewCount = viewCount,
+                            uploadedDate = uploadDate,
+                            isLive = isLive
+                        ))
+                        
+                        if (index < 3) {
+                            android.util.Log.d("YouTubeRepo", "Parsed lockupViewModel[$index]: $title by $channelName")
+                        }
+                    }
+                }
+            }
+            
+            android.util.Log.d("YouTubeRepo", "Total video renderer items to parse: ${items.size}, lockupViewModel videos: ${videos.size}")
+            
+            items.forEach { videoRenderer ->
                 try {
-                    // Check for nested videoRenderer in richItemRenderer
-                    val videoRenderer = item.optJSONObject("content")?.optJSONObject("videoRenderer") ?: item
-                    
                     val videoId = videoRenderer.optString("videoId")
-                    if (videoId.isBlank()) return@forEach
+                    if (videoId.isBlank()) {
+                        return@forEach
+                    }
                     
                     // Extract title
                     val titleObj = videoRenderer.optJSONObject("title")
                     val title = titleObj?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
                         ?: titleObj?.optString("simpleText")
+                        ?: titleObj?.optJSONObject("accessibility")?.optJSONObject("accessibilityData")?.optString("label")
                         ?: "Unknown Title"
                     
                     // Extract channel name
@@ -976,16 +1163,35 @@ class YouTubeRepository(private val context: Context) {
                     // Extract view count
                     val viewCountText = videoRenderer.optJSONObject("viewCountText")?.optString("simpleText")
                         ?: videoRenderer.optJSONObject("shortViewCountText")?.optString("simpleText")
+                        ?: videoRenderer.optJSONObject("shortViewCountText")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
                         ?: ""
                     
                     // Extract duration
-                    val durationText = videoRenderer.optJSONObject("lengthText")?.optString("simpleText") ?: "0:00"
+                    val durationText = videoRenderer.optJSONObject("lengthText")?.optString("simpleText") 
+                        ?: videoRenderer.optJSONObject("lengthText")?.optJSONObject("accessibility")?.optJSONObject("accessibilityData")?.optString("label")?.let { 
+                            // Convert "3 minutes, 45 seconds" to "3:45"
+                            val mins = Regex("(\\d+) minute").find(it)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+                            val secs = Regex("(\\d+) second").find(it)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+                            String.format("%d:%02d", mins, secs)
+                        }
+                        ?: "0:00"
                     val durationSeconds = parseDurationToSeconds(durationText)
                     
                     // Extract thumbnail
                     val thumbnails = videoRenderer.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
                     val thumbnailUrl = thumbnails?.let {
-                        it.optJSONObject(it.length() - 1)?.optString("url")
+                        // Get highest quality thumbnail
+                        var bestUrl: String? = null
+                        var maxWidth = 0
+                        for (i in 0 until it.length()) {
+                            val thumb = it.optJSONObject(i)
+                            val width = thumb?.optInt("width", 0) ?: 0
+                            if (width >= maxWidth) {
+                                maxWidth = width
+                                bestUrl = thumb?.optString("url")
+                            }
+                        }
+                        bestUrl ?: it.optJSONObject(it.length() - 1)?.optString("url")
                     }
                     
                     // Extract upload date
@@ -1003,12 +1209,13 @@ class YouTubeRepository(private val context: Context) {
                         isLive = durationSeconds <= 0L
                     ))
                 } catch (e: Exception) {
-                    // Skip malformed item
+                    android.util.Log.w("YouTubeRepo", "Error parsing video item", e)
                 }
             }
         } catch (e: Exception) {
             android.util.Log.e("YouTubeRepo", "Error parsing videos JSON", e)
         }
+        android.util.Log.d("YouTubeRepo", "Successfully parsed ${videos.size} videos")
         return videos.distinctBy { it.videoId }.take(30)
     }
 
@@ -1029,7 +1236,10 @@ class YouTubeRepository(private val context: Context) {
     /**
      * Recursively find all JSON objects with a specific key and add them to the results list.
      */
-    private fun findAllObjects(json: org.json.JSONObject, key: String, results: MutableList<org.json.JSONObject>) {
+    private fun findAllObjects(json: org.json.JSONObject, key: String, results: MutableList<org.json.JSONObject>, depth: Int = 0) {
+        // Limit recursion depth to avoid stack overflow
+        if (depth > 50) return
+        
         // Check if this object has the key
         if (json.has(key)) {
             val value = json.opt(key)
@@ -1047,11 +1257,11 @@ class YouTubeRepository(private val context: Context) {
         json.keys().forEach { keyName ->
             val value = json.opt(keyName)
             when (value) {
-                is org.json.JSONObject -> findAllObjects(value, key, results)
+                is org.json.JSONObject -> findAllObjects(value, key, results, depth + 1)
                 is org.json.JSONArray -> {
                     for (i in 0 until value.length()) {
                         val item = value.optJSONObject(i)
-                        if (item != null) findAllObjects(item, key, results)
+                        if (item != null) findAllObjects(item, key, results, depth + 1)
                     }
                 }
             }
