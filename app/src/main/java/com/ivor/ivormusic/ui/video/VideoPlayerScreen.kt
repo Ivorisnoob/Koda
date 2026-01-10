@@ -462,11 +462,6 @@ fun VideoInfoSection(
                     }
                 }
             },
-            trailingContent = {
-                FilledTonalButton(onClick = { /* TODO */ }) {
-                    Text("Subscribe")
-                }
-            },
             modifier = Modifier.clip(RoundedCornerShape(12.dp))
         )
         

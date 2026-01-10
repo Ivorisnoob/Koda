@@ -91,7 +91,7 @@ data class VideoItem(
         /**
          * Formats view count to human-readable format.
          */
-        private fun formatViewCount(count: Long?): String {
+        fun formatViewCount(count: Long?): String {
             if (count == null || count < 0) return ""
             return when {
                 count >= 1_000_000_000 -> String.format("%.1fB views", count / 1_000_000_000.0)
@@ -119,5 +119,6 @@ data class VideoQuality(
  */
 data class VideoDetails(
     val qualities: List<VideoQuality>,
-    val relatedVideos: List<VideoItem>
+    val relatedVideos: List<VideoItem>,
+    val updatedVideoItem: VideoItem? = null
 )

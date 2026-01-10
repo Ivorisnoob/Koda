@@ -1392,7 +1392,28 @@ class YouTubeRepository(private val context: Context) {
                 } else null
             }
             
-            VideoDetails(finalQualities, related)
+            // Channel Info
+            val channelName = streamExtractor.uploaderName ?: "Unknown"
+            val channelIconUrl: String? = null // uploaderAvatarUrl remains unresolved, using null to fix build
+            val subCount = streamExtractor.uploaderSubscriberCount
+            
+            // Create updated video item (using original videoId)
+            val updatedVideoItem = VideoItem(
+                videoId = videoId,
+                title = streamExtractor.name ?: "Unknown",
+                channelName = channelName,
+                channelId = streamExtractor.uploaderUrl?.replace("https://www.youtube.com/channel/", ""),
+                channelIconUrl = channelIconUrl,
+                thumbnailUrl = streamExtractor.thumbnails?.maxByOrNull { it.width }?.url, // Use high res if available
+                duration = streamExtractor.length,
+                viewCount = VideoItem.formatViewCount(streamExtractor.viewCount),
+                uploadedDate = streamExtractor.uploadDate?.let { try { it.offsetDateTime().toString() } catch(e:Exception){ null } },
+                isLive = streamExtractor.streamType == org.schabi.newpipe.extractor.stream.StreamType.LIVE_STREAM,
+                description = streamExtractor.description?.content,
+                subscriberCount = if (subCount != null && subCount >= 0) VideoItem.formatViewCount(subCount).replace("views", "subscribers") else null
+            )
+
+            VideoDetails(finalQualities, related, updatedVideoItem)
         } catch (e: Exception) {
             android.util.Log.e("YouTubeRepo", "Error getting video details", e)
             VideoDetails(emptyList(), emptyList())

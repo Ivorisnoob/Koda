@@ -92,6 +92,12 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                 _exoPlayer?.clearMediaItems()
                 
                 val details = youtubeRepository.getVideoDetails(video.videoId)
+                
+                // Update video metadata (icon, subs) if available
+                if (details.updatedVideoItem != null) {
+                    _currentVideo.value = details.updatedVideoItem
+                }
+                
                 val qualities = details.qualities
                 _availableQualities.value = qualities
                 _relatedVideos.value = details.relatedVideos
