@@ -113,3 +113,11 @@ data class VideoQuality(
     val isDASH: Boolean = false,
     val audioUrl: String? = null // For non-DASH adaptive streams
 )
+
+/**
+ * Complete video details including qualities and related videos.
+ */
+data class VideoDetails(
+    val qualities: List<VideoQuality>,
+    val relatedVideos: List<VideoItem>
+)

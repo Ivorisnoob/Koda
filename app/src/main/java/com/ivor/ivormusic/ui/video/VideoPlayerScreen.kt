@@ -120,12 +120,20 @@ import kotlinx.coroutines.launch
 fun VideoPlayerScreen(
     video: VideoItem,
     onBackClick: () -> Unit,
+    onVideoSelect: (VideoItem) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val activity = context as? Activity
     val scope = rememberCoroutineScope()
     val youtubeRepository = remember { YouTubeRepository(context) }
+    
+    // ExoPlayer Setup (Initialized early for use in PiP receiver)
+    val exoPlayer = remember {
+        ExoPlayer.Builder(context).build().apply {
+            playWhenReady = true
+        }
+    }
     
     // Player state
     var isLoading by remember { mutableStateOf(true) }
@@ -143,41 +151,58 @@ fun VideoPlayerScreen(
     // Quality state
     var availableQualities by remember { mutableStateOf<List<VideoQuality>>(emptyList()) }
     var currentQuality by remember { mutableStateOf<VideoQuality?>(null) }
+    var relatedVideos by remember { mutableStateOf<List<VideoItem>>(emptyList()) }
     var showQualitySheet by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState()
     
     // PiP configuration
-    DisposableEffect(Unit) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            try {
-                val params = PictureInPictureParams.Builder()
-                    .setAutoEnterEnabled(true)
-                    .setAspectRatio(Rational(16, 9))
-                    .build()
-                activity?.setPictureInPictureParams(params)
-            } catch (e: Exception) {
-                // Ignore
+    // PiP Broadcast Receiver
+    val pipReceiver = remember {
+        object : android.content.BroadcastReceiver() {
+            override fun onReceive(context: android.content.Context?, intent: android.content.Intent?) {
+                when (intent?.action) {
+                    "PIP_PAUSE" -> exoPlayer.pause()
+                    "PIP_PLAY" -> exoPlayer.play()
+                }
             }
-        }
-        onDispose {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                try {
-                    activity?.setPictureInPictureParams(
-                        PictureInPictureParams.Builder().setAutoEnterEnabled(false).build()
-                    )
-                } catch (e: Exception) {}
-            }
-        }
-    }
-
-    // ExoPlayer Setup
-    val exoPlayer = remember {
-        ExoPlayer.Builder(context).build().apply {
-            playWhenReady = true
         }
     }
     
-
+    DisposableEffect(Unit) {
+        val filter = android.content.IntentFilter().apply {
+            addAction("PIP_PAUSE")
+            addAction("PIP_PLAY")
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            context.registerReceiver(pipReceiver, filter, android.content.Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            context.registerReceiver(pipReceiver, filter)
+        }
+        onDispose { 
+            try { context.unregisterReceiver(pipReceiver) } catch(e: Exception) {} 
+        }
+    }
+    
+    // Update PiP Params(Actions)
+    LaunchedEffect(isPlaying) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+             val playIntent = android.app.PendingIntent.getBroadcast(context, 0, android.content.Intent("PIP_PLAY"), android.app.PendingIntent.FLAG_IMMUTABLE)
+             val pauseIntent = android.app.PendingIntent.getBroadcast(context, 1, android.content.Intent("PIP_PAUSE"), android.app.PendingIntent.FLAG_IMMUTABLE)
+             val playAction = android.app.RemoteAction(android.graphics.drawable.Icon.createWithResource(context, android.R.drawable.ic_media_play), "Play", "Play", playIntent)
+             val pauseAction = android.app.RemoteAction(android.graphics.drawable.Icon.createWithResource(context, android.R.drawable.ic_media_pause), "Pause", "Pause", pauseIntent)
+             
+             val actions = if (isPlaying) listOf(pauseAction) else listOf(playAction)
+             
+             val paramsBuilder = PictureInPictureParams.Builder()
+                .setAspectRatio(Rational(16, 9))
+                .setActions(actions)
+                
+             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                 paramsBuilder.setAutoEnterEnabled(true)
+             }
+             activity?.setPictureInPictureParams(paramsBuilder.build())
+        }
+    }
     
     // Handle Buffering State
     DisposableEffect(exoPlayer) {
@@ -200,13 +225,19 @@ fun VideoPlayerScreen(
         isLoading = true
         hasError = false
         try {
-            // First fetch qualities to allow user selection
-            val qualities = youtubeRepository.getVideoQualities(video.videoId)
+            // Fetch details (qualities + related)
+            val details = youtubeRepository.getVideoDetails(video.videoId)
+            val qualities = details.qualities
             availableQualities = qualities
+            relatedVideos = details.relatedVideos
             
             if (qualities.isNotEmpty()) {
-                // Prefer DASH ("Auto (Best)") if available
-                val bestQuality = qualities.find { it.isDASH } ?: qualities.first()
+                // Default to 1080p60 or 1080p, else fallback to Auto (DASH), else first
+                val bestQuality = qualities.find { it.resolution.contains("1080p60") }
+                    ?: qualities.find { it.resolution.contains("1080p") }
+                    ?: qualities.find { it.isDASH }
+                    ?: qualities.first()
+                    
                 currentQuality = bestQuality
                 
                 val mediaItemBuilder = MediaItem.Builder().setUri(bestQuality.url)
@@ -372,6 +403,8 @@ fun VideoPlayerScreen(
                 // Info Area
                 VideoInfoSection(
                     video = video,
+                    relatedVideos = relatedVideos,
+                    onVideoSelect = onVideoSelect,
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f)
@@ -727,12 +760,16 @@ private fun PortraitPlayerContent(
 @Composable
 fun VideoInfoSection(
     video: VideoItem,
+    relatedVideos: List<VideoItem>,
+    onVideoSelect: (VideoItem) -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
         modifier = modifier
+            .fillMaxWidth()
             .verticalScroll(rememberScrollState())
             .padding(16.dp)
+            .padding(bottom = 80.dp) // Bottom padding for navigation bar if needed
     ) {
         // Title
         Text(
@@ -756,15 +793,7 @@ fun VideoInfoSection(
         Spacer(Modifier.height(24.dp))
         
         // Actions
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceEvenly
-        ) {
-            ActionButton(Icons.Rounded.ThumbUp, "Like")
-            ActionButton(Icons.Rounded.Share, "Share")
-            ActionButton(Icons.Rounded.Download, "Download")
-            ActionButton(Icons.Rounded.PlaylistAdd, "Save")
-        }
+
         
         Spacer(Modifier.height(24.dp))
         
@@ -839,6 +868,88 @@ fun VideoInfoSection(
                 }
             }
         }
+        
+        // Related Videos
+        if (relatedVideos.isNotEmpty()) {
+            Spacer(Modifier.height(24.dp))
+            Text(
+                text = "Up Next",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(bottom = 12.dp)
+            )
+            
+            relatedVideos.forEach { relatedVideo ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable { onVideoSelect(relatedVideo) }
+                        .padding(vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    // Thumbnail
+                    Box(
+                        modifier = Modifier
+                            .width(160.dp)
+                            .aspectRatio(16f/9f)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                    ) {
+                        if (relatedVideo.thumbnailUrl != null) {
+                            AsyncImage(
+                                model = relatedVideo.thumbnailUrl,
+                                contentDescription = null,
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop
+                            )
+                        }
+                        
+                        // Duration
+                        if (relatedVideo.duration > 0) {
+                            Surface(
+                                color = Color.Black.copy(alpha = 0.7f),
+                                shape = RoundedCornerShape(4.dp),
+                                modifier = Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .padding(4.dp)
+                            ) {
+                                Text(
+                                    text = relatedVideo.formattedDuration,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Color.White,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                    }
+                    
+                    // Info
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = relatedVideo.title,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = relatedVideo.channelName,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            text = relatedVideo.viewCount + " • " + (relatedVideo.uploadedDate ?: ""),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
+        
         Spacer(Modifier.height(32.dp))
     }
 }

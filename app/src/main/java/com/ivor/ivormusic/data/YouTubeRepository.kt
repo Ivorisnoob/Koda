@@ -12,6 +12,7 @@ import org.schabi.newpipe.extractor.search.SearchInfo
 import org.schabi.newpipe.extractor.stream.StreamInfoItem
 import org.schabi.newpipe.extractor.playlist.PlaylistInfo
 import org.schabi.newpipe.extractor.playlist.PlaylistInfoItem
+import org.schabi.newpipe.extractor.InfoItem
 import org.schabi.newpipe.extractor.linkhandler.SearchQueryHandler
 import okhttp3.OkHttpClient
 import okhttp3.MediaType.Companion.toMediaType
@@ -1333,83 +1334,73 @@ class YouTubeRepository(private val context: Context) {
     /**
      * Get available video qualities for a video.
      */
-    suspend fun getVideoQualities(videoId: String): List<VideoQuality> = withContext(Dispatchers.IO) {
+    /**
+     * Get video details including qualities and related videos.
+     */
+    suspend fun getVideoDetails(videoId: String): VideoDetails = withContext(Dispatchers.IO) {
         try {
             val streamUrl = "https://www.youtube.com/watch?v=$videoId"
             val ytService = ServiceList.all().find { it.serviceInfo.name == "YouTube" } 
-                ?: return@withContext emptyList()
+                ?: return@withContext VideoDetails(emptyList(), emptyList())
             val streamExtractor = ytService.getStreamExtractor(streamUrl)
             streamExtractor.fetchPage()
             
-            // Get combined video+audio streams (muxed)
-            // Note: Adaptive formats (video only) would require separate audio merging which ExoPlayer
-            // handles but simpler to use muxed streams if available for now
             val qualities = mutableListOf<VideoQuality>()
             
-            // Add Adaptive Stream (High Quality Auto) via DASH
-            // This is crucial for >720p content as YouTube serves 1080p+ via DASH
+            // 1. DASH/HLS
             if (!streamExtractor.dashMpdUrl.isNullOrBlank()) {
-                qualities.add(VideoQuality(
-                    resolution = "Auto (Best)",
-                    url = streamExtractor.dashMpdUrl!!,
-                    format = "DASH",
-                    isDASH = true
-                ))
+                qualities.add(VideoQuality("Auto (Best)", streamExtractor.dashMpdUrl!!, "DASH", true))
             } else if (!streamExtractor.hlsUrl.isNullOrBlank()) {
-                qualities.add(VideoQuality(
-                    resolution = "Auto (HLS)",
-                    url = streamExtractor.hlsUrl!!,
-                    format = "HLS",
-                    isDASH = true
-                ))
+                qualities.add(VideoQuality("Auto (HLS)", streamExtractor.hlsUrl!!, "HLS", true))
             }
             
-            // Explicit Adaptive Streams (Video Only + Audio)
-            // This ensures we get 1080p, 1440p, 4K etc even if DASH fails or user wants specific selection
+            // 2. Adaptive Streams
             val videoOnlyStreams = streamExtractor.videoOnlyStreams
             val audioStreams = streamExtractor.audioStreams
             val bestAudio = audioStreams.maxByOrNull { it.averageBitrate }
             
             if (bestAudio != null) {
-                val adaptiveQualities = videoOnlyStreams
+                qualities.addAll(videoOnlyStreams
                     .filter { it.resolution != null && it.content != null }
-                    .map { videoStream ->
-                        VideoQuality(
-                            resolution = videoStream.resolution!!,
-                            url = videoStream.content!!,
-                            format = videoStream.format?.name,
-                            isDASH = false,
-                            audioUrl = bestAudio.content
-                        )
-                    }
-                qualities.addAll(adaptiveQualities)
+                    .map { VideoQuality(it.resolution!!, it.content!!, it.format?.name, false, bestAudio.content) }
+                )
             }
 
-            // Standard Muxed Streams (backup, usually max 720p)
-            val videoStreams = streamExtractor.videoStreams
-            
-            val standardQualities = videoStreams
+            // 3. Muxed Streams
+            qualities.addAll(streamExtractor.videoStreams
                 .filter { it.resolution != null && it.content != null }
-                .map { 
-                    VideoQuality(
-                        resolution = it.resolution!!,
-                        url = it.content!!,
-                        format = it.format?.name,
-                        isDASH = false
-                    )
-                }
-                .distinctBy { it.resolution } // Avoid duplicates
-                .sortedByDescending { 
-                    it.resolution.replace("p", "").toIntOrNull() ?: 0 
-                }
-                
-            qualities.addAll(standardQualities)
+                .map { VideoQuality(it.resolution!!, it.content!!, it.format?.name, false) }
+            )
             
-            // Deduplicate based on resolution, preferring DASH/Adaptive
-            qualities.distinctBy { it.resolution }
+            val finalQualities = qualities.distinctBy { it.resolution }
+            
+            // Related Videos
+            val relatedItems = streamExtractor.relatedItems?.items ?: emptyList()
+            val related = relatedItems.mapNotNull { item: InfoItem ->
+                if (item is StreamInfoItem) {
+                    VideoItem.fromStreamInfoItem(
+                        videoId = item.url.replace("https://www.youtube.com/watch?v=", ""),
+                        title = item.name ?: "Unknown",
+                        channelName = item.uploaderName ?: "Unknown",
+                        channelIconUrl = null,
+                        thumbnailUrl = item.thumbnails?.maxByOrNull { it.width }?.url,
+                        durationSeconds = item.duration,
+                        viewCount = item.viewCount,
+                        uploadedDate = item.uploadDate?.let { try { it.offsetDateTime().toString() } catch(e:Exception){ null } },
+                        isLive = item.streamType == org.schabi.newpipe.extractor.stream.StreamType.LIVE_STREAM
+                    )
+                } else null
+            }
+            
+            VideoDetails(finalQualities, related)
         } catch (e: Exception) {
-            android.util.Log.e("YouTubeRepo", "Error getting video qualities", e)
-            emptyList()
+            android.util.Log.e("YouTubeRepo", "Error getting video details", e)
+            VideoDetails(emptyList(), emptyList())
         }
     }
+
+    /**
+     * Get available video qualities for a video.
+     */
+    suspend fun getVideoQualities(videoId: String): List<VideoQuality> = getVideoDetails(videoId).qualities
 }
