@@ -1,11 +1,16 @@
 package com.ivor.ivormusic.ui.video
 
-import androidx.compose.animation.AnimatedContent
+import android.app.PictureInPictureParams
+import android.app.RemoteAction
+import android.app.PendingIntent
+import android.content.Intent
+import android.graphics.drawable.Icon
+import android.os.Build
+import android.util.Rational
 import androidx.compose.animation.core.animateDp
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -13,16 +18,21 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
-import com.ivor.ivormusic.data.VideoItem
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.util.Consumer
+import androidx.media3.ui.PlayerView
+import androidx.media3.common.util.UnstableApi
+import com.ivor.ivormusic.R
 
 /**
  * Overlay component for persistent video playback across the app.
- * Mimics ExpandablePlayer but for Video.
+ * Handles both In-App Mini Player and System Picture-in-Picture.
  */
+@androidx.annotation.OptIn(UnstableApi::class)
 @Composable
 fun VideoPlayerOverlay(
     viewModel: VideoPlayerViewModel,
@@ -30,8 +40,116 @@ fun VideoPlayerOverlay(
 ) {
     val isExpanded by viewModel.isExpanded.collectAsState()
     val currentVideo by viewModel.currentVideo.collectAsState()
+    val isPlaying by viewModel.isPlaying.collectAsState()
+    
+    // Context and Activity
+    val context = LocalContext.current
+    val activity = context as? androidx.activity.ComponentActivity
+
+    // PiP State
+    var isInPipMode by remember { mutableStateOf(false) }
+
+    // Listen for PiP Mode changes
+    DisposableEffect(activity) {
+        val listener = Consumer<androidx.core.app.PictureInPictureModeChangedInfo> { info ->
+            isInPipMode = info.isInPictureInPictureMode
+            // Ensure expanded state is consistent/handled? 
+            // Usually if we go to PiP, we might want to ensure UI is ready for return?
+        }
+        activity?.addOnPictureInPictureModeChangedListener(listener)
+        onDispose { activity?.removeOnPictureInPictureModeChangedListener(listener) }
+    }
 
     if (currentVideo == null) return
+
+    // Update PiP Params (Active when video is present)
+    LaunchedEffect(currentVideo, isPlaying) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && activity != null) {
+             val videoId = currentVideo!!.videoId
+             val reqCodePlay = (videoId + "play").hashCode()
+             val reqCodePause = (videoId + "pause").hashCode()
+             
+             // Intents for PiP controls
+             val playIntent = PendingIntent.getBroadcast(
+                 context, 
+                 reqCodePlay, 
+                 Intent("PIP_PLAY").setPackage(context.packageName), 
+                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+             )
+             val pauseIntent = PendingIntent.getBroadcast(
+                 context, 
+                 reqCodePause, 
+                 Intent("PIP_PAUSE").setPackage(context.packageName), 
+                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+             )
+             
+             val playAction = RemoteAction(Icon.createWithResource(context, android.R.drawable.ic_media_play), "Play", "Play", playIntent)
+             val pauseAction = RemoteAction(Icon.createWithResource(context, android.R.drawable.ic_media_pause), "Pause", "Pause", pauseIntent)
+             
+             val actions = if (isPlaying) listOf(pauseAction) else listOf(playAction)
+             
+             val paramsBuilder = PictureInPictureParams.Builder()
+                .setAspectRatio(Rational(16, 9))
+                .setActions(actions)
+                
+             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                 paramsBuilder.setAutoEnterEnabled(true)
+             }
+             
+             try {
+                 activity.setPictureInPictureParams(paramsBuilder.build())
+             } catch (e: Exception) {
+                 e.printStackTrace()
+             }
+        }
+    }
+    
+    // PiP Broadcast Receiver (Handle actions)
+    DisposableEffect(Unit) {
+        val pipReceiver = object : android.content.BroadcastReceiver() {
+            override fun onReceive(ctx: android.content.Context?, intent: Intent?) {
+                when (intent?.action) {
+                    "PIP_PAUSE" -> viewModel.exoPlayer?.pause()
+                    "PIP_PLAY" -> viewModel.exoPlayer?.play()
+                }
+            }
+        }
+        val filter = android.content.IntentFilter().apply {
+            addAction("PIP_PAUSE")
+            addAction("PIP_PLAY")
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            context.registerReceiver(pipReceiver, filter, android.content.Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            context.registerReceiver(pipReceiver, filter)
+        }
+        onDispose { 
+            context.unregisterReceiver(pipReceiver)
+        }
+    }
+
+    // If in System PiP Mode, show purely the player
+    if (isInPipMode) {
+        AndroidView(
+            factory = { ctx ->
+                PlayerView(ctx).apply {
+                    player = viewModel.exoPlayer
+                    useController = false
+                }
+            },
+            modifier = Modifier.fillMaxSize()
+        )
+        return // Return early, don't show overlay UI
+    }
+
+    // ------------------------------------------------
+    // Normal In-App Overlay UI
+    // ------------------------------------------------
+
+    // Handle Back Press to minimize player
+    androidx.activity.compose.BackHandler(enabled = isExpanded) {
+        viewModel.setExpanded(false)
+    }
 
     val transition = updateTransition(isExpanded, label = "VideoExpand")
     val configuration = LocalConfiguration.current
@@ -46,9 +164,7 @@ fun VideoPlayerOverlay(
         transitionSpec = { spring(stiffness = 300f, dampingRatio = 0.8f) },
         label = "height"
     ) { expanded ->
-        if (expanded) screenHeight else 80.dp // Mini video height (e.g. 16:9 of width ~120dp?? No, better fixed height pill like music? Video usually needs aspect ratio.)
-        // Let's make mini player small floating box or bottom bar?
-        // Let's reuse Audio player style: Bottom bar.
+        if (expanded) screenHeight else 80.dp 
     }
     
     val widthPadding by transition.animateDp(
@@ -84,11 +200,9 @@ fun VideoPlayerOverlay(
         ) {
              if (isExpanded) {
                  // Full Screen Content
-                 // We need to pass the ViewModel to the VideoPlayerScreen content
                  VideoPlayerContent(
                      viewModel = viewModel,
                      onBackClick = { 
-                         // "Back" in full screen -> Minimize
                          viewModel.setExpanded(false) 
                      }
                  )
