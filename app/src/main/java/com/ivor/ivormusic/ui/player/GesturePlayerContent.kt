@@ -23,6 +23,7 @@ import androidx.compose.material3.*
 import androidx.compose.material3.carousel.HorizontalUncontainedCarousel
 import androidx.compose.material3.carousel.rememberCarouselState
 import androidx.compose.runtime.*
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -76,6 +77,9 @@ fun GesturePlayerSheetContent(
     // Lyrics state
     val lyricsResult by viewModel.lyricsResult.collectAsState()
     
+    // Load more state
+    val isLoadingMore by viewModel.isLoadingMore.collectAsState()
+    
     var showQueue by remember { mutableStateOf(false) }
     var showLyrics by remember { mutableStateOf(false) }
 
@@ -97,6 +101,8 @@ fun GesturePlayerSheetContent(
                     onSongClick = { song -> viewModel.playQueue(currentQueue, song) },
                     onCollapse = onCollapse,
                     onBackToPlayer = { showQueue = false },
+                    onLoadMore = onLoadMore,
+                    isLoadingMore = isLoadingMore,
                     isDownloaded = { id -> viewModel.isDownloaded(id) },
                     isDownloading = { id -> viewModel.isDownloading(id) },
                     isLocalOriginal = { song -> viewModel.isLocalOriginal(song) },
@@ -182,22 +188,37 @@ private fun GestureNowPlayingView(
         queue.indexOfFirst { it.id == currentSong?.id }.coerceAtLeast(0)
     }
     
+    // Track if we're programmatically scrolling to avoid triggering song change
+    var isProgrammaticScroll by remember { mutableStateOf(false) }
+    
     // Carousel state synced to current song
     val carouselState = rememberCarouselState(initialItem = currentIndex) { queue.size.coerceAtLeast(1) }
     
-    // Sync carousel with song changes from external sources
-    LaunchedEffect(currentIndex) {
-        if (queue.isNotEmpty() && carouselState.currentItem != currentIndex) {
-            carouselState.scrollToItem(currentIndex)
+    // Sync carousel with song changes from external sources (e.g., queue click)
+    LaunchedEffect(currentIndex, queue.size) {
+        if (queue.isNotEmpty() && carouselState.currentItem != currentIndex && currentIndex in queue.indices) {
+            isProgrammaticScroll = true
+            try {
+                carouselState.scrollToItem(currentIndex)
+            } finally {
+                // Small delay to ensure scroll completes before allowing user scrolls to trigger song change
+                kotlinx.coroutines.delay(100)
+                isProgrammaticScroll = false
+            }
         }
     }
     
-    // Handle carousel scroll to change songs
-    LaunchedEffect(carouselState.currentItem) {
-        val currentCarouselIndex = carouselState.currentItem
-        if (queue.isNotEmpty() && currentCarouselIndex != currentIndex && currentCarouselIndex in queue.indices) {
-            onSongChange(queue[currentCarouselIndex])
-        }
+    // Handle carousel swipe to change songs (only when user initiated)
+    LaunchedEffect(carouselState) {
+        snapshotFlow { carouselState.currentItem }
+            .collect { currentCarouselIndex ->
+                if (!isProgrammaticScroll && 
+                    queue.isNotEmpty() && 
+                    currentCarouselIndex != currentIndex && 
+                    currentCarouselIndex in queue.indices) {
+                    onSongChange(queue[currentCarouselIndex])
+                }
+            }
     }
     
     // Get album info
@@ -784,6 +805,8 @@ private fun GestureQueueView(
     onSongClick: (Song) -> Unit,
     onCollapse: () -> Unit,
     onBackToPlayer: () -> Unit,
+    onLoadMore: () -> Unit,
+    isLoadingMore: Boolean,
     isDownloaded: (String) -> Boolean,
     isDownloading: (String) -> Boolean,
     isLocalOriginal: (Song) -> Boolean,
@@ -1098,6 +1121,49 @@ private fun GestureQueueView(
                                         modifier = Modifier.size(16.dp)
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Load More Button with expressive shape morphing
+                    item(key = "gesture_queue_load_more") {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 24.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Button(
+                                onClick = onLoadMore,
+                                enabled = !isLoadingMore,
+                                shapes = ButtonDefaults.shapes(),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                ),
+                                contentPadding = PaddingValues(horizontal = 32.dp, vertical = 16.dp)
+                            ) {
+                                if (isLoadingMore) {
+                                    LoadingIndicator(
+                                        modifier = Modifier.size(20.dp),
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        polygons = listOf(
+                                            MaterialShapes.Cookie9Sided,
+                                            MaterialShapes.Pill,
+                                            MaterialShapes.Sunny
+                                        )
+                                    )
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Text("Loading...", style = MaterialTheme.typography.titleSmall)
+                                } else {
+                                    Icon(
+                                        Icons.AutoMirrored.Filled.QueueMusic, 
+                                        contentDescription = null, 
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Text("Load More", style = MaterialTheme.typography.titleSmall)
                                 }
                             }
                         }
