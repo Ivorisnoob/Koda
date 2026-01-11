@@ -323,26 +323,39 @@ fun HomeScreen(
                         isDarkMode = isDarkMode,
                         videoMode = videoMode
                     )
-                    2 -> LibraryContent(
-                        songs = songs,
-                        onSongClick = { song: Song ->
-                            // Pass all songs to enable Next/Previous navigation
-                            playerViewModel.playQueue(songs, song)
-                            showPlayerSheet = true
-                        },
-                        onPlaylistClick = { playlist: com.ivor.ivormusic.data.PlaylistDisplayItem ->
-                            // Optional: navigate to playlist detail or handled by parent
-                        },
-                        onPlayQueue = { songs: List<Song>, selectedSong: Song? ->
-                            playerViewModel.playQueue(songs, selectedSong)
-                            showPlayerSheet = true
-                        },
-                        contentPadding = PaddingValues(bottom = 160.dp),
-                        viewModel = viewModel,
-                        isDarkMode = isDarkMode,
-                        initialArtist = viewedArtistFromPlayer,
-                        onInitialArtistConsumed = { viewedArtistFromPlayer = null }
-                    )
+                    2 -> {
+                        if (videoMode) {
+                             com.ivor.ivormusic.ui.video.VideoHistoryContent(
+                                viewModel = viewModel,
+                                onVideoClick = { video ->
+                                    onNavigateToVideoPlayer(video)
+                                },
+                                onLoginClick = { showAuthDialog = true },
+                                contentPadding = PaddingValues(bottom = 160.dp)
+                            )
+                        } else {
+                            LibraryContent(
+                                songs = songs,
+                                onSongClick = { song: Song ->
+                                    // Pass all songs to enable Next/Previous navigation
+                                    playerViewModel.playQueue(songs, song)
+                                    showPlayerSheet = true
+                                },
+                                onPlaylistClick = { playlist: com.ivor.ivormusic.data.PlaylistDisplayItem ->
+                                    // Optional: navigate to playlist detail or handled by parent
+                                },
+                                onPlayQueue = { songs: List<Song>, selectedSong: Song? ->
+                                    playerViewModel.playQueue(songs, selectedSong)
+                                    showPlayerSheet = true
+                                },
+                                contentPadding = PaddingValues(bottom = 160.dp),
+                                viewModel = viewModel,
+                                isDarkMode = isDarkMode,
+                                initialArtist = viewedArtistFromPlayer,
+                                onInitialArtistConsumed = { viewedArtistFromPlayer = null }
+                            )
+                        }
+                    }
                 }
             }
         } else {

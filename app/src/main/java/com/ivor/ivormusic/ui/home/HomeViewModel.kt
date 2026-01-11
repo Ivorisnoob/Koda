@@ -66,6 +66,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val _trendingVideos = MutableStateFlow<List<VideoItem>>(emptyList())
     val trendingVideos: StateFlow<List<VideoItem>> = _trendingVideos.asStateFlow()
     
+    private val _historyVideos = MutableStateFlow<List<VideoItem>>(emptyList())
+    val historyVideos: StateFlow<List<VideoItem>> = _historyVideos.asStateFlow()
+    
+    private val _isHistoryLoading = MutableStateFlow(false)
+    val isHistoryLoading: StateFlow<Boolean> = _isHistoryLoading.asStateFlow()
+    
     private val _isVideoLoading = MutableStateFlow(false)
     val isVideoLoading: StateFlow<Boolean> = _isVideoLoading.asStateFlow()
 
@@ -245,6 +251,29 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * Load user's watch history.
+     */
+    fun loadYouTubeHistory() {
+        // If not logged in, clear history
+        if (!sessionManager.isLoggedIn()) {
+             _historyVideos.value = emptyList()
+             return
+        }
+        
+        viewModelScope.launch {
+            _isHistoryLoading.value = true
+            try {
+                val videos = youtubeRepository.getWatchHistory()
+                _historyVideos.value = videos
+            } catch (e: Exception) {
+                // Handle error silently
+            } finally {
+                _isHistoryLoading.value = false
+            }
+        }
+    }
+    
     /**
      * Search for videos (for video mode search).
      */

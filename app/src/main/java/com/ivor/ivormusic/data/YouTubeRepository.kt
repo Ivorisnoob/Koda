@@ -998,6 +998,78 @@ class YouTubeRepository(private val context: Context) {
     }
 
     /**
+     * Get user's watch history from YouTube.
+     * Uses the YouTube browse endpoint with "FEhistory".
+     */
+    suspend fun getWatchHistory(): List<VideoItem> = withContext(Dispatchers.IO) {
+        val cookies = sessionManager.getCookies() ?: return@withContext emptyList()
+        
+        // Extract SAPISID for authentication hash (reusing logic for consistency)
+        val sapisid = cookies.split(";")
+            .map { it.trim() }
+            .find { it.startsWith("SAPISID=") || it.startsWith("__Secure-3PAPISID=") }
+            ?.split("=")?.getOrNull(1)
+        
+        // Generate SAPISID hash for authorization
+        val origin = "https://www.youtube.com"
+        val authHeader = if (sapisid != null) {
+            val timestamp = System.currentTimeMillis() / 1000
+            val hashInput = "$timestamp $sapisid $origin"
+            val hash = java.security.MessageDigest.getInstance("SHA-1")
+                .digest(hashInput.toByteArray())
+                .joinToString("") { "%02x".format(it) }
+            "SAPISIDHASH ${timestamp}_${hash}"
+        } else {
+            YouTubeAuthUtils.getAuthorizationHeader(cookies, origin) ?: ""
+        }
+        
+        val url = "https://www.youtube.com/youtubei/v1/browse?key=AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8&prettyPrint=false"
+        
+        val jsonBody = """
+            {
+                "context": {
+                    "client": {
+                        "clientName": "WEB",
+                        "clientVersion": "2.20240101.00.00",
+                        "hl": "en",
+                        "gl": "US",
+                        "originalUrl": "https://www.youtube.com/feed/history",
+                        "platform": "DESKTOP"
+                    },
+                    "user": {
+                        "lockedSafetyMode": false
+                    }
+                },
+                "browseId": "FEhistory"
+            }
+        """.trimIndent()
+
+        val request = okhttp3.Request.Builder()
+            .url(url)
+            .post(jsonBody.toRequestBody("application/json".toMediaType()))
+            .addHeader("Cookie", cookies)
+            .addHeader("Authorization", authHeader)
+            .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            .addHeader("Origin", origin)
+            .addHeader("Referer", "$origin/feed/history")
+            .addHeader("X-Goog-AuthUser", "0")
+            .addHeader("X-Origin", origin)
+            .build()
+
+        try {
+            val response = okHttpClient.newCall(request).execute()
+            val responseBody = response.body?.string() ?: return@withContext emptyList()
+            response.close()
+            
+            // Re-use the existing parsing logic which handles various video item formats
+            parseVideosFromYouTubeJson(responseBody)
+        } catch (e: Exception) {
+            android.util.Log.e("YouTubeRepo", "Error fetching watch history", e)
+            emptyList()
+        }
+    }
+
+    /**
      * Parse video items from YouTube homepage JSON response.
      */
     private fun parseVideosFromYouTubeJson(json: String): List<VideoItem> {

@@ -55,6 +55,9 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     private val _relatedVideos = MutableStateFlow<List<VideoItem>>(emptyList())
     val relatedVideos: StateFlow<List<VideoItem>> = _relatedVideos
 
+    private val _isAutoPlayEnabled = MutableStateFlow(false)
+    val isAutoPlayEnabled: StateFlow<Boolean> = _isAutoPlayEnabled.asStateFlow()
+
     init {
         // Initialize ExoPlayer
         _exoPlayer = ExoPlayer.Builder(context).build().apply {
@@ -67,11 +70,20 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                 override fun onPlaybackStateChanged(playbackState: Int) {
                     _isBuffering.value = playbackState == Player.STATE_BUFFERING
                     if (playbackState == Player.STATE_ENDED) {
-                        // Handle Loop logic if needed (handled by UI state usually or player mode)
+                        if (_isAutoPlayEnabled.value) {
+                            val nextVideo = _relatedVideos.value.firstOrNull()
+                            if (nextVideo != null) {
+                                playVideo(nextVideo)
+                            }
+                        }
                     }
                 }
             })
         }
+    }
+
+    fun toggleAutoPlay() {
+        _isAutoPlayEnabled.value = !_isAutoPlayEnabled.value
     }
 
     fun playVideo(video: VideoItem) {

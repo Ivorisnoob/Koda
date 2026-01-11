@@ -30,6 +30,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Autorenew
 import androidx.compose.material.icons.rounded.Error
 import androidx.compose.material.icons.rounded.Fullscreen
 import androidx.compose.material.icons.rounded.FullscreenExit
@@ -95,6 +96,7 @@ fun FullscreenPlayerContent(
     isBuffering: Boolean,
     isPlaying: Boolean,
     isLooping: Boolean,
+    isAutoPlayEnabled: Boolean,
     currentPosition: Long,
     duration: Long,
     progress: Float,
@@ -104,7 +106,8 @@ fun FullscreenPlayerContent(
     onBack: () -> Unit,
     onFullscreenToggle: () -> Unit,
     onSettings: () -> Unit,
-    onLoopToggle: () -> Unit
+    onLoopToggle: () -> Unit,
+    onAutoPlayToggle: () -> Unit
 ) {
     // Stable shapes to prevent "square flash"
     val stableShapes = IconButtonDefaults.shapes()
@@ -184,6 +187,21 @@ fun FullscreenPlayerContent(
                         modifier = Modifier.weight(1f)
                     )
                     
+                    // Auto Play Toggle
+                    FilledTonalIconButton(
+                        onClick = onAutoPlayToggle,
+                        colors = IconButtonDefaults.filledTonalIconButtonColors(
+                            containerColor = if (isAutoPlayEnabled) MaterialTheme.colorScheme.primary else Color.Black.copy(0.5f),
+                            contentColor = if (isAutoPlayEnabled) MaterialTheme.colorScheme.onPrimary else Color.White
+                        ),
+                        shapes = stableShapes
+                    ) {
+                        Icon(
+                            androidx.compose.material.icons.Icons.Rounded.Autorenew,
+                            contentDescription = "Auto Play"
+                        )
+                    }
+
                     FilledTonalIconButton(
                         onClick = onLoopToggle,
                         colors = IconButtonDefaults.filledTonalIconButtonColors(
@@ -278,6 +296,7 @@ fun PortraitPlayerContent(
     isBuffering: Boolean,
     isPlaying: Boolean,
     isLooping: Boolean,
+    isAutoPlayEnabled: Boolean,
     currentPosition: Long,
     duration: Long,
     progress: Float,
@@ -287,7 +306,8 @@ fun PortraitPlayerContent(
     onBack: () -> Unit,
     onFullscreenToggle: () -> Unit,
     onSettings: () -> Unit,
-    onLoopToggle: () -> Unit
+    onLoopToggle: () -> Unit,
+    onAutoPlayToggle: () -> Unit
 ) {
     // Stable shapes
     val stableShapes = IconButtonDefaults.shapes()
@@ -351,6 +371,21 @@ fun PortraitPlayerContent(
                     }
                     
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        // Auto Play Toggle
+                         FilledTonalIconButton(
+                            onClick = onAutoPlayToggle,
+                            colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                containerColor = if (isAutoPlayEnabled) MaterialTheme.colorScheme.primary else Color.Black.copy(0.5f),
+                                contentColor = if (isAutoPlayEnabled) MaterialTheme.colorScheme.onPrimary else Color.White
+                            ),
+                            shapes = stableShapes
+                        ) {
+                            Icon(
+                                Icons.Rounded.Autorenew,
+                                contentDescription = "Auto Play"
+                            )
+                        }
+                        
                          FilledTonalIconButton(
                             onClick = onLoopToggle,
                             colors = IconButtonDefaults.filledTonalIconButtonColors(

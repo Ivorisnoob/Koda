@@ -45,6 +45,7 @@ fun VideoPlayerContent(
     val availableQualities by viewModel.availableQualities.collectAsState()
     val currentQuality by viewModel.currentQuality.collectAsState()
     val relatedVideos by viewModel.relatedVideos.collectAsState()
+    val isAutoPlayEnabled by viewModel.isAutoPlayEnabled.collectAsState()
     
     // Local UI State
     var showControls by remember { mutableStateOf(false) }
@@ -145,7 +146,9 @@ fun VideoPlayerContent(
                 onBack = { isFullscreen = false },
                 onFullscreenToggle = { isFullscreen = false },
                 onSettings = { showQualitySheet = true },
-                onLoopToggle = { isLooping = !isLooping }
+                onLoopToggle = { isLooping = !isLooping },
+                isAutoPlayEnabled = isAutoPlayEnabled,
+                onAutoPlayToggle = { viewModel.toggleAutoPlay() }
             )
             }
         } else {
@@ -181,7 +184,9 @@ fun VideoPlayerContent(
                         onBack = onBackClick,
                         onFullscreenToggle = { isFullscreen = true },
                         onSettings = { showQualitySheet = true },
-                        onLoopToggle = { isLooping = !isLooping }
+                        onLoopToggle = { isLooping = !isLooping },
+                        isAutoPlayEnabled = isAutoPlayEnabled,
+                        onAutoPlayToggle = { viewModel.toggleAutoPlay() }
                     )
                 }
                 
