@@ -98,21 +98,16 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         _isLoading.value = true
         _relatedVideos.value = emptyList() // Clear previous related
         
+        // Parallel Task 1: Load Video and Start Playback ASAP
         viewModelScope.launch {
             try {
                 _exoPlayer?.stop()
                 _exoPlayer?.clearMediaItems()
                 
+                // Get stream qualities first to start playback
                 val details = youtubeRepository.getVideoDetails(video.videoId)
-                
-                // Update video metadata (icon, subs) if available
-                if (details.updatedVideoItem != null) {
-                    _currentVideo.value = details.updatedVideoItem
-                }
-                
                 val qualities = details.qualities
                 _availableQualities.value = qualities
-                _relatedVideos.value = details.relatedVideos
                 
                 if (qualities.isNotEmpty()) {
                     val bestQuality = qualities.find { it.resolution.contains("1080p60") }
@@ -121,19 +116,41 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                         ?: qualities.first()
                         
                     loadQuality(bestQuality)
+                    _isLoading.value = false // Set loading to false once playback starts
                 } else {
-                    // Fallback to legacy stream url if no qualities found (rare)
+                    // Fallback to legacy stream url if no qualities found
                     val streamUrl = youtubeRepository.getVideoStreamUrl(video.videoId)
                     if (streamUrl != null) {
-                         val mediaItem = MediaItem.fromUri(streamUrl)
+                        val mediaItem = MediaItem.fromUri(streamUrl)
                         _exoPlayer?.setMediaItem(mediaItem)
                         _exoPlayer?.prepare()
+                        _isLoading.value = false
                     }
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
-            } finally {
                 _isLoading.value = false
+            }
+        }
+
+        // Parallel Task 2: Load Metadata and Related Videos
+        viewModelScope.launch {
+            try {
+                val details = youtubeRepository.getVideoDetails(video.videoId)
+                
+                // Update video metadata (icon, subs, description) if available
+                if (details.updatedVideoItem != null) {
+                    _currentVideo.value = details.updatedVideoItem
+                }
+                
+                _relatedVideos.value = details.relatedVideos
+                
+                // If Task 1 failed to set qualities (race condition), set them here
+                if (_availableQualities.value.isEmpty()) {
+                    _availableQualities.value = details.qualities
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
         }
         

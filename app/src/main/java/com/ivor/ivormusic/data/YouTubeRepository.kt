@@ -1091,6 +1091,35 @@ class YouTubeRepository(private val context: Context) {
             findAllObjects(root, "gridVideoRenderer", items)
             android.util.Log.d("YouTubeRepo", "After gridVideoRenderer search: ${items.size} items")
             
+            // Search for history specific and newer renderers
+            findAllObjects(root, "historyVideoRenderer", items)
+            findAllObjects(root, "shortVideoRenderer", items)
+            android.util.Log.d("YouTubeRepo", "After extended search: ${items.size} items")
+            
+            // Specialized list for lockupViewModels (New YouTube UI)
+            val lockupViewModels = mutableListOf<org.json.JSONObject>()
+            findAllObjects(root, "lockupViewModel", lockupViewModels)
+            android.util.Log.d("YouTubeRepo", "Found ${lockupViewModels.size} lockupViewModels")
+            
+            findAllObjects(root, "reelItemRenderer", items)
+            android.util.Log.d("YouTubeRepo", "After reelItemRenderer search: ${items.size} items")
+            
+            findAllObjects(root, "playlistVideoRenderer", items)
+            android.util.Log.d("YouTubeRepo", "After playlistVideoRenderer search: ${items.size} items")
+            
+            // Search for shelves which contain more items
+            val shelves = mutableListOf<org.json.JSONObject>()
+            findAllObjects(root, "shelfRenderer", shelves)
+            findAllObjects(root, "reelShelfRenderer", shelves)
+            android.util.Log.d("YouTubeRepo", "Found ${shelves.size} shelves to expand")
+            
+            shelves.forEach { shelf ->
+                findAllObjects(shelf, "videoRenderer", items)
+                findAllObjects(shelf, "historyVideoRenderer", items)
+                findAllObjects(shelf, "reelItemRenderer", items)
+                findAllObjects(shelf, "lockupViewModel", lockupViewModels)
+            }
+            
             // Also search in richItemRenderer which contains videoRenderer or lockupViewModel
             val richItems = mutableListOf<org.json.JSONObject>()
             findAllObjects(root, "richItemRenderer", richItems)
@@ -1098,21 +1127,19 @@ class YouTubeRepository(private val context: Context) {
             
             richItems.forEachIndexed { index, richItem ->
                 val content = richItem.optJSONObject("content")
-                
-                // Try different paths to get video renderer
                 val videoRenderer = content?.optJSONObject("videoRenderer")
                     ?: richItem.optJSONObject("videoRenderer")
+                if (videoRenderer != null) items.add(videoRenderer)
                 
-                if (videoRenderer != null) {
-                    items.add(videoRenderer)
-                    android.util.Log.d("YouTubeRepo", "Added videoRenderer from richItem[$index]")
-                }
-                
-                // Handle new lockupViewModel format (YouTube's newer format)
-                val lockupViewModel = content?.optJSONObject("lockupViewModel")
-                if (lockupViewModel != null) {
-                    // Extract video info from lockupViewModel
-                    val contentId = lockupViewModel.optString("contentId") // This is the videoId
+                val lockup = content?.optJSONObject("lockupViewModel")
+                    ?: richItem.optJSONObject("lockupViewModel")
+                if (lockup != null) lockupViewModels.add(lockup)
+            }
+            
+            lockupViewModels.distinctBy { it.optString("contentId") }.forEachIndexed { index, lockupViewModel ->
+                // Use the existing lockupViewModel parsing logic here
+                try {
+                    val contentId = lockupViewModel.optString("contentId")
                     if (contentId.isNotBlank()) {
                         val metadata = lockupViewModel.optJSONObject("metadata")?.optJSONObject("lockupMetadataViewModel")
                         val titleObj = metadata?.optJSONObject("title")
@@ -1267,7 +1294,7 @@ class YouTubeRepository(private val context: Context) {
                                            channelName.trim() != "."
                         
                         if (contentId.isNotEmpty() && title != "Unknown Title" && 
-                            !thumbnailUrl.isNullOrBlank() && isValidChannel) {
+                            !thumbnailUrl.isNullOrBlank()) {
                             videos.add(VideoItem(
                                 videoId = contentId,
                                 title = title,
@@ -1288,6 +1315,8 @@ class YouTubeRepository(private val context: Context) {
                              android.util.Log.w("YouTubeRepo", "Skipping invalid lockupViewModel item: id=$contentId, title=$title, channel=$channelName")
                         }
                     }
+                } catch (e: Exception) {
+                    android.util.Log.e("YouTubeRepo", "Error parsing lockupViewModel", e)
                 }
             }
             
@@ -1296,7 +1325,10 @@ class YouTubeRepository(private val context: Context) {
             items.forEach { videoRenderer ->
                 try {
                     val videoId = videoRenderer.optString("videoId")
-                    if (videoId.isBlank()) {
+                        .takeIf { it.isNotBlank() }
+                        ?: videoRenderer.optString("contentId")
+                    
+                    if (videoId.isNullOrBlank()) {
                         return@forEach
                     }
                     
