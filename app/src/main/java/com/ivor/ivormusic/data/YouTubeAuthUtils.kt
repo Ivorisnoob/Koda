@@ -17,10 +17,9 @@ object YouTubeAuthUtils {
     /**
      * Generates the SAPISIDHASH required for authenticated requests.
      */
-    fun getAuthorizationHeader(cookieString: String): String? {
+    fun getAuthorizationHeader(cookieString: String, origin: String = "https://music.youtube.com"): String? {
         val sapisid = getCookieValue(cookieString, "SAPISID") ?: return null
         val timestamp = System.currentTimeMillis() / 1000
-        val origin = "https://music.youtube.com"
         
         // The hash format is: timestamp + space + sapisid + space + origin
         val input = "$timestamp $sapisid $origin"

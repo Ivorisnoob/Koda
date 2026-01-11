@@ -924,7 +924,7 @@ class YouTubeRepository(private val context: Context) {
                 .joinToString("") { "%02x".format(it) }
             "SAPISIDHASH ${timestamp}_${hash}"
         } else {
-            YouTubeAuthUtils.getAuthorizationHeader(cookies) ?: ""
+            YouTubeAuthUtils.getAuthorizationHeader(cookies, origin) ?: ""
         }
         
         // Use YouTube browse endpoint for "What to Watch" (home page recommendations)
@@ -1125,17 +1125,39 @@ class YouTubeRepository(private val context: Context) {
                                     viewCount.contains("watching", ignoreCase = true)
                         
                         // Get channel icon (if available in metadata)
-                        // Note: lockupViewModel often doesn't contain the channel icon directly in the feed
-                        // We might need to construct a default one or fetch it separately if needed
-                        // But sometimes it's in the metadataRows
                         var channelIconUrl: String? = null
+                        
+                        // Try to find channel avatar in metadata rows or header
+                        // Sometimes lockupViewModel puts the avatar in the menu or adjacent renderers, but obscurely.
+                        // However, a common pattern in new YouTube layouts is the channel avatar is in the 'menu' 
+                        // or passed separately. But often it's missing in the feed for lockupViewModel.
+                        // One last place to check: metadataRows -> text with image.
+                        if (metadataRows != null) {
+                             for (i in 0 until metadataRows.length()) {
+                                 val parts = metadataRows.optJSONObject(i)?.optJSONArray("metadataParts")
+                                 if (parts != null) {
+                                     for (j in 0 until parts.length()) {
+                                         val part = parts.optJSONObject(j)
+                                         val img = part?.optJSONObject("image")
+                                         if (img != null) {
+                                             val sources = img.optJSONArray("sources")
+                                             if (sources != null && sources.length() > 0) {
+                                                 channelIconUrl = sources.optJSONObject(0)?.optString("url")
+                                                 break
+                                             }
+                                         }
+                                     }
+                                 }
+                                 if (channelIconUrl != null) break
+                             }
+                        }
                         
                         videos.add(VideoItem(
                             videoId = contentId,
                             title = title,
                             channelName = channelName,
                             channelId = null,
-                            channelIconUrl = channelIconUrl, // Will use default fallback in UI
+                            channelIconUrl = channelIconUrl, // Now trying to extract it
                             thumbnailUrl = thumbnailUrl,
                             duration = durationSeconds,
                             viewCount = viewCount,
@@ -1336,36 +1358,80 @@ class YouTubeRepository(private val context: Context) {
      */
 
 
+    private fun fetchYouTubeBrowse(browseId: String): String {
+        val cookies = sessionManager.getCookies() ?: return ""
+        val url = "https://www.youtube.com/youtubei/v1/browse?key=$INNER_TUBE_API_KEY"
+        
+        // Generate SAPISIDHASH for www.youtube.com origin
+        val authHeader = YouTubeAuthUtils.getAuthorizationHeader(cookies, "https://www.youtube.com") ?: ""
+
+        val jsonBody = """
+            {
+                "context": {
+                    "client": {
+                        "clientName": "WEB",
+                        "clientVersion": "2.20240101.00.00",
+                        "hl": "en",
+                        "gl": "US"
+                    }
+                },
+                "browseId": "$browseId"
+            }
+        """.trimIndent()
+
+        val request = okhttp3.Request.Builder()
+            .url(url)
+            .post(jsonBody.toRequestBody("application/json".toMediaType()))
+            .addHeader("Cookie", cookies)
+            .addHeader("Authorization", authHeader)
+            .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            .addHeader("Origin", "https://www.youtube.com")
+            .addHeader("X-Goog-AuthUser", "0")
+            .build()
+
+        return try {
+            val response = okHttpClient.newCall(request).execute()
+            response.body?.string() ?: ""
+        } catch (e: Exception) {
+            android.util.Log.e("YouTubeRepo", "Error in fetchYouTubeBrowse", e)
+            ""
+        }
+    }
+
     private fun getChannelAvatarUrl(channelId: String?): String? {
         if (channelId.isNullOrBlank()) return null
-        // Quick check for standard channel IDs
-        if (!channelId.startsWith("UC")) return null
         
         try {
-            val json = fetchInternalApi(channelId).takeIf { it.isNotEmpty() } ?: return null
+            // Use regular YouTube browse for channels/handles
+            val json = fetchYouTubeBrowse(channelId).takeIf { it.isNotEmpty() } ?: return null
             val root = org.json.JSONObject(json)
             
+            // 1. Search for avatar-specific view models (New YouTube UI)
+            val avatars = mutableListOf<org.json.JSONObject>()
+            findAllObjects(root, "avatarViewModel", avatars)
+            
+            for (avatar in avatars) {
+                val image = avatar.optJSONObject("image")
+                val thumbArr = image?.optJSONArray("sources") ?: image?.optJSONArray("thumbnails")
+                if (thumbArr != null && thumbArr.length() > 0) {
+                    val url = thumbArr.optJSONObject(thumbArr.length() - 1)?.optString("url")
+                    if (!url.isNullOrBlank()) return url
+                }
+            }
+
+            // 2. Fallback to existing renderer-based search
             val objects = mutableListOf<org.json.JSONObject>()
-            // Search for various header types
             findAllObjects(root, "musicImmersiveHeaderRenderer", objects)
-            findAllObjects(root, "musicVisualHeaderRenderer", objects)
             findAllObjects(root, "c4TabbedHeaderRenderer", objects)
             findAllObjects(root, "pageHeaderRenderer", objects) 
 
             for (obj in objects) {
-                // 1. Music Headers often use "thumbnail" -> "musicThumbnailRenderer"
-                var thumbArr = obj.optJSONObject("thumbnail")
-                    ?.optJSONObject("musicThumbnailRenderer")
-                    ?.optJSONObject("thumbnail")
-                    ?.optJSONArray("thumbnails")
+                var thumbArr: org.json.JSONArray? = null
                 
-                // 2. Direct "thumbnail" or "avatar" (Standard YouTube)
-                if (thumbArr == null) {
-                    thumbArr = obj.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
-                        ?: obj.optJSONObject("avatar")?.optJSONArray("thumbnails")
-                }
-
-                // 3. PageHeaderViewModel (New YouTube Mobile/Desktop)
+                // Try 'avatar' first
+                thumbArr = obj.optJSONObject("avatar")?.optJSONArray("thumbnails")
+                
+                // Deep nested PageHeaderViewModel
                 if (thumbArr == null) {
                    val content = obj.optJSONObject("content")?.optJSONObject("pageHeaderViewModel")
                    thumbArr = content?.optJSONObject("image")
@@ -1374,10 +1440,14 @@ class YouTubeRepository(private val context: Context) {
                        ?.optJSONObject("avatarViewModel")
                        ?.optJSONObject("image")
                        ?.optJSONArray("sources")
+                       ?: content?.optJSONObject("image")?.optJSONArray("sources")
                 }
 
                 if (thumbArr != null && thumbArr.length() > 0) {
-                    return thumbArr.optJSONObject(thumbArr.length() - 1)?.optString("url")
+                    val url = thumbArr.optJSONObject(thumbArr.length() - 1)?.optString("url")
+                    if (!url.isNullOrBlank() && !url.contains("featured_channel.jpg") && !url.contains("/an/")) {
+                         return url
+                    }
                 }
             }
         } catch (e: Exception) {
@@ -1446,10 +1516,25 @@ class YouTubeRepository(private val context: Context) {
             
             // Channel Info
             val channelName = streamExtractor.uploaderName ?: "Unknown"
-            val channelId = streamExtractor.uploaderUrl?.replace("https://www.youtube.com/channel/", "")
+            val uploaderUrl = streamExtractor.uploaderUrl ?: ""
             
-            // 🌟 Try to fetch channel avatar
-            val channelIconUrl = getChannelAvatarUrl(channelId)
+            // Clean extraction of Channel ID or Handle
+            val channelId = when {
+                uploaderUrl.contains("/channel/") -> uploaderUrl.substringAfter("/channel/")
+                uploaderUrl.contains("/@") -> uploaderUrl.substringAfter("/@").let { "@$it" }
+                uploaderUrl.contains("/user/") -> uploaderUrl.substringAfter("/user/")
+                else -> null
+            }
+            
+            // 🌟 Try to fetch channel avatar - Priority 1: From Extractor directly
+            var channelIconUrl = try {
+                 streamExtractor.uploaderAvatars?.maxByOrNull { it.width }?.url
+            } catch (e: Exception) { null }
+            
+            // Priority 2: From InnerTube Browse API
+            if (channelIconUrl.isNullOrEmpty()) {
+                channelIconUrl = getChannelAvatarUrl(channelId)
+            }
             
             val subCount = streamExtractor.uploaderSubscriberCount
             
