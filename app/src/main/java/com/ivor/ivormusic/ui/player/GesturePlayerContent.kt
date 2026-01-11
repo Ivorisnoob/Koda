@@ -392,9 +392,9 @@ private fun GestureNowPlayingView(
 }
 
 /**
- * Floating toolbar with action buttons matching the reference design
+ * Floating toolbar using official Material 3 Expressive HorizontalFloatingToolbar
  */
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class)
 @Composable
 private fun GesturePlayerToolbar(
     shuffleModeEnabled: Boolean,
@@ -410,102 +410,96 @@ private fun GesturePlayerToolbar(
     primaryColor: Color,
     onSurfaceVariantColor: Color
 ) {
-    Surface(
-        modifier = Modifier.padding(horizontal = 24.dp),
-        shape = RoundedCornerShape(28.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        tonalElevation = 4.dp
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        contentAlignment = Alignment.Center
     ) {
-        Row(
-            modifier = Modifier
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Shuffle
-            FilledTonalIconToggleButton(
-                checked = shuffleModeEnabled,
-                onCheckedChange = { onToggleShuffle() },
-                modifier = Modifier.size(48.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Shuffle,
-                    contentDescription = "Shuffle",
-                    modifier = Modifier.size(22.dp)
-                )
-            }
-            
-            // Repeat
-            FilledTonalIconToggleButton(
-                checked = repeatMode != Player.REPEAT_MODE_OFF,
-                onCheckedChange = { onToggleRepeat() },
-                modifier = Modifier.size(48.dp)
-            ) {
-                Icon(
-                    imageVector = when (repeatMode) {
-                        Player.REPEAT_MODE_ONE -> Icons.Default.RepeatOne
-                        else -> Icons.Default.Repeat
-                    },
-                    contentDescription = "Repeat",
-                    modifier = Modifier.size(22.dp)
-                )
-            }
-            
-            // Download (or Local indicator)
-            if (isLocalOriginal) {
-                FilledTonalIconButton(
-                    onClick = {},
-                    modifier = Modifier.size(48.dp)
+        HorizontalFloatingToolbar(
+            expanded = true,
+            modifier = Modifier,
+            colors = FloatingToolbarDefaults.standardFloatingToolbarColors(),
+            floatingActionButton = {
+                // Use FAB for the favorite button (highlighted action)
+                FloatingToolbarDefaults.StandardFloatingActionButton(
+                    onClick = onToggleFavorite,
+                    containerColor = if (isFavorite) 
+                        MaterialTheme.colorScheme.primaryContainer 
+                    else 
+                        FloatingActionButtonDefaults.containerColor,
+                    contentColor = if (isFavorite) 
+                        MaterialTheme.colorScheme.primary 
+                    else 
+                        FloatingActionButtonDefaults.containerColor
                 ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Smartphone,
-                        contentDescription = "Local File",
-                        modifier = Modifier.size(22.dp)
-                    )
-                }
-            } else {
-                FilledTonalIconToggleButton(
-                    checked = isDownloaded,
-                    onCheckedChange = { onToggleDownload() },
-                    modifier = Modifier.size(48.dp)
-                ) {
-                    if (isDownloading) {
-                        CircularWavyProgressIndicator(
-                            modifier = Modifier.size(20.dp),
-                            color = primaryColor
-                        )
-                    } else {
-                        Icon(
-                            imageVector = if (isDownloaded) Icons.Rounded.CheckCircle else Icons.Rounded.Download,
-                            contentDescription = if (isDownloaded) "Downloaded" else "Download",
-                            modifier = Modifier.size(22.dp)
-                        )
-                    }
-                }
-            }
-            
-            // Favorite - Larger, highlighted
-            Surface(
-                modifier = Modifier.size(56.dp),
-                shape = CircleShape,
-                color = if (isFavorite) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest,
-                onClick = { onToggleFavorite() }
-            ) {
-                Box(contentAlignment = Alignment.Center) {
                     Icon(
                         imageVector = if (isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
                         contentDescription = "Favorite",
-                        modifier = Modifier.size(28.dp),
                         tint = if (isFavorite) MaterialTheme.colorScheme.primary else onSurfaceVariantColor
                     )
                 }
+            },
+            content = {
+                // Shuffle toggle
+                IconToggleButton(
+                    checked = shuffleModeEnabled,
+                    onCheckedChange = { onToggleShuffle() }
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Shuffle,
+                        contentDescription = "Shuffle"
+                    )
+                }
+                
+                // Repeat toggle
+                IconToggleButton(
+                    checked = repeatMode != Player.REPEAT_MODE_OFF,
+                    onCheckedChange = { onToggleRepeat() }
+                ) {
+                    Icon(
+                        imageVector = when (repeatMode) {
+                            Player.REPEAT_MODE_ONE -> Icons.Default.RepeatOne
+                            else -> Icons.Default.Repeat
+                        },
+                        contentDescription = "Repeat"
+                    )
+                }
+                
+                // Download button (or local indicator)
+                if (isLocalOriginal) {
+                    IconButton(onClick = {}) {
+                        Icon(
+                            imageVector = Icons.Rounded.Smartphone,
+                            contentDescription = "Local File"
+                        )
+                    }
+                } else {
+                    IconToggleButton(
+                        checked = isDownloaded,
+                        onCheckedChange = { onToggleDownload() }
+                    ) {
+                        if (isDownloading) {
+                            CircularWavyProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                color = primaryColor
+                            )
+                        } else {
+                            Icon(
+                                imageVector = if (isDownloaded) Icons.Rounded.CheckCircle else Icons.Rounded.Download,
+                                contentDescription = if (isDownloaded) "Downloaded" else "Download"
+                            )
+                        }
+                    }
+                }
             }
-        }
+        )
     }
 }
 
 /**
  * Gesture Album Carousel - Swipe to change songs, tap to play/pause
+ * Uses Material 3 Expressive HorizontalUncontainedCarousel with maskClip for proper transitions
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -521,92 +515,87 @@ private fun GestureAlbumCarousel(
         contentAlignment = Alignment.Center
     ) {
         val albumSize = minOf(maxWidth, maxHeight) * 0.85f
-        val cornerRadius = albumSize * 0.10f
         
         HorizontalUncontainedCarousel(
             state = carouselState,
             itemWidth = albumSize,
             itemSpacing = 16.dp,
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(horizontal = (maxWidth - albumSize) / 2)
+            contentPadding = PaddingValues(horizontal = (maxWidth - albumSize) / 2),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(albumSize)
         ) { index ->
             val song = queue.getOrNull(index)
             val isCurrentItem = carouselState.currentItem == index
             
-            Surface(
+            // Use maskClip for proper carousel item clipping during scroll
+            Box(
                 modifier = Modifier
-                    .size(albumSize)
+                    .maskClip(MaterialTheme.shapes.extraLarge)
+                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                     .pointerInput(Unit) {
                         detectTapGestures(onTap = { onPlayPauseToggle() })
-                    },
-                shape = RoundedCornerShape(cornerRadius),
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                shadowElevation = if (isCurrentItem) 16.dp else 4.dp
-            ) {
-                Box(modifier = Modifier.fillMaxSize()) {
-                    val imgUrl = song?.highResThumbnailUrl ?: song?.thumbnailUrl ?: song?.albumArtUri?.toString()
-                    
-                    if (imgUrl != null) {
-                        AsyncImage(
-                            model = imgUrl,
-                            contentDescription = song?.title ?: "Album Art",
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .clip(RoundedCornerShape(cornerRadius)),
-                            contentScale = ContentScale.Crop
-                        )
-                    } else {
-                        // Placeholder
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(
-                                    Brush.verticalGradient(
-                                        colors = listOf(
-                                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
-                                            MaterialTheme.colorScheme.surfaceContainerHigh
-                                        )
-                                    )
-                                ),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.MusicNote,
-                                contentDescription = null,
-                                modifier = Modifier.size(albumSize * 0.35f),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
-                            )
-                        }
                     }
-                    
-                    // Play/Pause overlay for current item
-                    if (isCurrentItem && (isBuffering || !isPlaying)) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .clip(RoundedCornerShape(cornerRadius))
-                                .background(Color.Black.copy(alpha = 0.4f)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            if (isBuffering) {
-                                LoadingIndicator(
-                                    modifier = Modifier.size(64.dp),
-                                    color = Color.White,
-                                    polygons = listOf(
-                                        MaterialShapes.SoftBurst,
-                                        MaterialShapes.Cookie9Sided,
-                                        MaterialShapes.Pill,
-                                        MaterialShapes.Sunny
+            ) {
+                val imgUrl = song?.highResThumbnailUrl ?: song?.thumbnailUrl ?: song?.albumArtUri?.toString()
+                
+                if (imgUrl != null) {
+                    AsyncImage(
+                        model = imgUrl,
+                        contentDescription = song?.title ?: "Album Art",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    // Placeholder
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(
+                                Brush.verticalGradient(
+                                    colors = listOf(
+                                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
+                                        MaterialTheme.colorScheme.surfaceContainerHigh
                                     )
                                 )
-                            } else if (!isPlaying) {
-                                Icon(
-                                    imageVector = Icons.Default.PlayArrow,
-                                    contentDescription = "Play",
-                                    modifier = Modifier.size(72.dp),
-                                    tint = Color.White.copy(alpha = 0.9f)
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.MusicNote,
+                            contentDescription = null,
+                            modifier = Modifier.size(albumSize * 0.35f),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
+                        )
+                    }
+                }
+                
+                // Play/Pause overlay for current item
+                if (isCurrentItem && (isBuffering || !isPlaying)) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.4f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (isBuffering) {
+                            LoadingIndicator(
+                                modifier = Modifier.size(64.dp),
+                                color = Color.White,
+                                polygons = listOf(
+                                    MaterialShapes.SoftBurst,
+                                    MaterialShapes.Cookie9Sided,
+                                    MaterialShapes.Pill,
+                                    MaterialShapes.Sunny
                                 )
-                            }
+                            )
+                        } else if (!isPlaying) {
+                            Icon(
+                                imageVector = Icons.Default.PlayArrow,
+                                contentDescription = "Play",
+                                modifier = Modifier.size(72.dp),
+                                tint = Color.White.copy(alpha = 0.9f)
+                            )
                         }
                     }
                 }
