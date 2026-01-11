@@ -811,17 +811,26 @@ class YouTubeRepository(private val context: Context) {
             
             searchExtractor.initialPage.items.filterIsInstance<StreamInfoItem>().mapNotNull { item ->
                 try {
+                    val uploaderUrl = item.uploaderUrl ?: ""
+                    val channelId = when {
+                        uploaderUrl.contains("/channel/") -> uploaderUrl.substringAfter("/channel/")
+                        uploaderUrl.contains("/@") -> uploaderUrl.substringAfter("/@").let { "@$it" }
+                        uploaderUrl.contains("/user/") -> uploaderUrl.substringAfter("/user/")
+                        else -> null
+                    }
+                    
                     VideoItem.fromStreamInfoItem(
                         videoId = extractVideoId(item.url),
                         title = item.name ?: "Unknown",
                         channelName = item.uploaderName ?: "Unknown Channel",
-                        channelId = null, // Would need extra extraction
-                        thumbnailUrl = item.thumbnails?.firstOrNull()?.url,
+                        channelId = channelId,
+                        channelIconUrl = item.uploaderAvatars?.maxByOrNull { it.width }?.url,
+                        thumbnailUrl = item.thumbnails?.maxByOrNull { it.width }?.url ?: item.thumbnails?.firstOrNull()?.url,
                         durationSeconds = item.duration,
                         viewCount = item.viewCount,
                         uploadedDate = item.textualUploadDate,
                         isLive = item.isShortFormContent.not() && item.duration <= 0,
-                        subscriberCount = null // StreamInfoItem doesn't guarantee subscriber count
+                        subscriberCount = null
                     )
                 } catch (e: Exception) {
                     null
@@ -869,17 +878,26 @@ class YouTubeRepository(private val context: Context) {
             
             val videos = trendingExtractor.initialPage.items.filterIsInstance<StreamInfoItem>().mapNotNull { item ->
                 try {
+                    val uploaderUrl = item.uploaderUrl ?: ""
+                    val channelId = when {
+                        uploaderUrl.contains("/channel/") -> uploaderUrl.substringAfter("/channel/")
+                        uploaderUrl.contains("/@") -> uploaderUrl.substringAfter("/@").let { "@$it" }
+                        uploaderUrl.contains("/user/") -> uploaderUrl.substringAfter("/user/")
+                        else -> null
+                    }
+
                     VideoItem.fromStreamInfoItem(
                         videoId = extractVideoId(item.url),
                         title = item.name ?: "Unknown",
                         channelName = item.uploaderName ?: "Unknown Channel",
-                        channelId = null,
-                        thumbnailUrl = item.thumbnails?.firstOrNull()?.url,
+                        channelId = channelId,
+                        channelIconUrl = item.uploaderAvatars?.maxByOrNull { it.width }?.url,
+                        thumbnailUrl = item.thumbnails?.maxByOrNull { it.width }?.url ?: item.thumbnails?.firstOrNull()?.url,
                         durationSeconds = item.duration,
                         viewCount = item.viewCount,
                         uploadedDate = item.textualUploadDate,
                         isLive = item.isShortFormContent.not() && item.duration <= 0,
-                        subscriberCount = null // StreamInfoItem doesn't guarantee subscriber count
+                        subscriberCount = null
                     )
                 } catch (e: Exception) {
                     null
@@ -1028,17 +1046,26 @@ class YouTubeRepository(private val context: Context) {
                         val titleObj = metadata?.optJSONObject("title")
                         val title = titleObj?.optString("content") ?: "Unknown Title"
                         
-                        // Get channel name from metadata
+                        // Get channel name and ID from metadata
                         val metadataDetails = metadata?.optJSONObject("metadata")?.optJSONObject("contentMetadataViewModel")
                         val metadataRows = metadataDetails?.optJSONArray("metadataRows")
                         var channelName = "Unknown Channel"
+                        var channelId: String? = null
                         var viewCount = ""
                         var uploadDate = ""
                         
                         if (metadataRows != null && metadataRows.length() > 0) {
-                            val firstRow = metadataRows.optJSONObject(0)?.optJSONArray("metadataParts")
-                            if (firstRow != null && firstRow.length() > 0) {
-                                channelName = firstRow.optJSONObject(0)?.optJSONObject("text")?.optString("content") ?: channelName
+                            val firstRowParts = metadataRows.optJSONObject(0)?.optJSONArray("metadataParts")
+                            if (firstRowParts != null && firstRowParts.length() > 0) {
+                                val textObj = firstRowParts.optJSONObject(0)?.optJSONObject("text")
+                                channelName = textObj?.optString("content") ?: channelName
+                                
+                                // Extract channel ID
+                                val runs = textObj?.optJSONArray("runs")
+                                if (runs != null && runs.length() > 0) {
+                                    val browseEndpoint = runs.optJSONObject(0)?.optJSONObject("navigationEndpoint")?.optJSONObject("browseEndpoint")
+                                    channelId = browseEndpoint?.optString("browseId")
+                                }
                             }
                             // Second row usually has views and date
                             if (metadataRows.length() > 1) {
@@ -1127,17 +1154,26 @@ class YouTubeRepository(private val context: Context) {
                         // Get channel icon (if available in metadata)
                         var channelIconUrl: String? = null
                         
-                        // Try to find channel avatar in metadata rows or header
-                        // Sometimes lockupViewModel puts the avatar in the menu or adjacent renderers, but obscurely.
-                        // However, a common pattern in new YouTube layouts is the channel avatar is in the 'menu' 
-                        // or passed separately. But often it's missing in the feed for lockupViewModel.
-                        // One last place to check: metadataRows -> text with image.
-                        if (metadataRows != null) {
+                        // Search recursively for "avatarViewModel" which is standard in lockupViewModel
+                        val avatarList = mutableListOf<org.json.JSONObject>()
+                        findAllObjects(lockupViewModel, "avatarViewModel", avatarList)
+                        for (avatar in avatarList) {
+                            val image = avatar.optJSONObject("image")
+                            val sources = image?.optJSONArray("sources")
+                            if (sources != null && sources.length() > 0) {
+                                channelIconUrl = sources.optJSONObject(sources.length() - 1)?.optString("url")
+                                if (channelIconUrl != null) break
+                            }
+                        }
+                        
+                        // Fallback: Check metadata rows for generic images if avatarViewModel failed
+                        if (channelIconUrl == null && metadataRows != null) {
                              for (i in 0 until metadataRows.length()) {
                                  val parts = metadataRows.optJSONObject(i)?.optJSONArray("metadataParts")
                                  if (parts != null) {
                                      for (j in 0 until parts.length()) {
                                          val part = parts.optJSONObject(j)
+                                         // Sometimes it's directly in an image part
                                          val img = part?.optJSONObject("image")
                                          if (img != null) {
                                              val sources = img.optJSONArray("sources")
@@ -1156,7 +1192,7 @@ class YouTubeRepository(private val context: Context) {
                             videoId = contentId,
                             title = title,
                             channelName = channelName,
-                            channelId = null,
+                            channelId = channelId,
                             channelIconUrl = channelIconUrl, // Now trying to extract it
                             thumbnailUrl = thumbnailUrl,
                             duration = durationSeconds,
@@ -1166,7 +1202,7 @@ class YouTubeRepository(private val context: Context) {
                         ))
                         
                         if (index < 3) {
-                            android.util.Log.d("YouTubeRepo", "Parsed lockupViewModel[$index]: $title by $channelName")
+                            android.util.Log.d("YouTubeRepo", "Parsed lockupViewModel[$index]: $title by $channelName, avatar: $channelIconUrl")
                         }
                     }
                 }
@@ -1229,24 +1265,48 @@ class YouTubeRepository(private val context: Context) {
                         bestUrl ?: it.optJSONObject(it.length() - 1)?.optString("url")
                     }
                     
-                    // Extract upload date
-                    val publishedText = videoRenderer.optJSONObject("publishedTimeText")?.optString("simpleText")
-                    
                     // Extract channel icon
+                    var channelId: String? = null
+                    
+                    // 1. Try directly from channelThumbnailSupportedRenderers
                     val channelThumbnails = videoRenderer.optJSONObject("channelThumbnailSupportedRenderers")
                         ?.optJSONObject("channelThumbnailWithLinkRenderer")
                         ?.optJSONObject("thumbnail")
                         ?.optJSONArray("thumbnails")
                     
-                    val channelIconUrl = channelThumbnails?.let {
-                        it.optJSONObject(0)?.optString("url")
+                    var channelIconUrl = channelThumbnails?.let {
+                        it.optJSONObject(it.length() - 1)?.optString("url")
                     }
+                    
+                    // 2. Try to extract channelId and icon from channelObj navigationEndpoint
+                    try {
+                        val runs = channelObj?.optJSONArray("runs")
+                        if (runs != null && runs.length() > 0) {
+                            val browseEndpoint = runs.optJSONObject(0)?.optJSONObject("navigationEndpoint")?.optJSONObject("browseEndpoint")
+                            channelId = browseEndpoint?.optString("browseId")
+                        }
+                    } catch (e: Exception) {}
+
+                    // 3. Fallback search for avatar in the whole renderer if missing
+                    if (channelIconUrl == null) {
+                        val avatarList = mutableListOf<org.json.JSONObject>()
+                        findAllObjects(videoRenderer, "avatar", avatarList)
+                        for (avatar in avatarList) {
+                            val thumbs = avatar.optJSONArray("thumbnails")
+                            if (thumbs != null && thumbs.length() > 0) {
+                                channelIconUrl = thumbs.optJSONObject(thumbs.length() - 1)?.optString("url")
+                                break
+                            }
+                        }
+                    }
+                    // Extract upload date
+                    val publishedText = videoRenderer.optJSONObject("publishedTimeText")?.optString("simpleText")
                     
                     videos.add(VideoItem(
                         videoId = videoId,
                         title = title,
                         channelName = channelName,
-                        channelId = null,
+                        channelId = channelId,
                         channelIconUrl = channelIconUrl,
                         thumbnailUrl = thumbnailUrl,
                         duration = durationSeconds,

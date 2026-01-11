@@ -434,7 +434,7 @@ fun VideoCard(
                     .padding(12.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Channel avatar placeholder
+                // Channel avatar
                 Box(
                     modifier = Modifier
                         .size(40.dp)
@@ -442,12 +442,21 @@ fun VideoCard(
                         .background(MaterialTheme.colorScheme.surfaceContainerHighest),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        text = video.channelName.take(1).uppercase(),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    if (!video.channelIconUrl.isNullOrBlank()) {
+                        AsyncImage(
+                            model = video.channelIconUrl,
+                            contentDescription = null,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        Text(
+                            text = video.channelName.take(1).uppercase(),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
                 
                 Column(modifier = Modifier.weight(1f)) {
