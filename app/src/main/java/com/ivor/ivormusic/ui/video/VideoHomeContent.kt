@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
@@ -300,45 +301,77 @@ private fun VideoHeroSection(isDarkMode: Boolean) {
     val secondaryTextColor = MaterialTheme.colorScheme.onSurfaceVariant
     val accentColor = Color(0xFFFF0000) // YouTube red
     
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
+            .padding(bottom = 16.dp)
             .padding(horizontal = 20.dp)
-            .padding(top = 8.dp, bottom = 16.dp)
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = Icons.Rounded.PlayCircle,
-                contentDescription = null,
-                tint = accentColor,
-                modifier = Modifier.size(48.dp)
+            .clip(RoundedCornerShape(32.dp))
+            .background(
+                Brush.linearGradient(
+                    colors = listOf(
+                        accentColor.copy(alpha = 0.08f),
+                        MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.5f)
+                    )
+                )
             )
-            Spacer(modifier = Modifier.width(12.dp))
-            Column {
-                Text(
-                    text = "Video",
-                    style = MaterialTheme.typography.displayMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = textColor
-                )
-                Text(
-                    text = "Mode",
-                    style = MaterialTheme.typography.displayMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = accentColor
-                )
-            }
-        }
-        
-        Spacer(modifier = Modifier.height(8.dp))
-        
-        Text(
-            text = "Literally whole youtube",
-            style = MaterialTheme.typography.bodyLarge,
-            color = secondaryTextColor
+            .padding(24.dp)
+    ) {
+        // Abstract shape
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .offset(x = 20.dp, y = (-20).dp)
+                .size(140.dp)
+                .clip(CircleShape)
+                .background(accentColor.copy(alpha = 0.05f))
         )
+        
+        Column {
+            Row(
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Play Icon container
+                Surface(
+                    shape = CircleShape,
+                    color = accentColor.copy(alpha = 0.1f),
+                    modifier = Modifier.size(56.dp)
+                ) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Rounded.PlayCircle,
+                            contentDescription = null,
+                            tint = accentColor,
+                            modifier = Modifier.size(28.dp)
+                        )
+                    }
+                }
+                
+                Spacer(modifier = Modifier.width(16.dp))
+                
+                    Column(verticalArrangement = Arrangement.Center) {
+                        Text(
+                            text = "Video",
+                            style = MaterialTheme.typography.displayLarge,
+                            color = textColor
+                        )
+                        Text(
+                            text = "Mode",
+                            style = MaterialTheme.typography.displayLarge,
+                            color = accentColor
+                        )
+                    }
+            }
+            
+            Spacer(modifier = Modifier.height(12.dp))
+            
+            Text(
+                text = "Literally whole youtube but with no ads",
+                style = MaterialTheme.typography.bodyLarge,
+                color = secondaryTextColor,
+                modifier = Modifier.padding(start = 8.dp)
+            )
+        }
     }
 }
 
