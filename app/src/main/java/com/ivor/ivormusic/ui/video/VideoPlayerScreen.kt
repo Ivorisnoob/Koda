@@ -476,7 +476,7 @@ fun VideoInfoSection(
                 },
                 supportingContent = {
                     Text(
-                         text = "${video.subscriberCount ?: "Unknown"} subscribers",
+                         text = "${video.subscriberCount ?: "Unknown"}",
                          style = MaterialTheme.typography.bodySmall
                     )
                 },
