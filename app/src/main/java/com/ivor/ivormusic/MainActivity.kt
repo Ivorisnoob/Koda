@@ -23,6 +23,7 @@ import com.ivor.ivormusic.ui.home.HomeViewModel
 import com.ivor.ivormusic.ui.player.PlayerViewModel
 import com.ivor.ivormusic.ui.theme.IvorMusicTheme
 import com.ivor.ivormusic.ui.theme.ThemeViewModel
+import com.ivor.ivormusic.data.PlayerStyle
 
 
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -38,6 +39,7 @@ class MainActivity : ComponentActivity() {
             val loadLocalSongs by themeViewModel.loadLocalSongs.collectAsState()
             val ambientBackground by themeViewModel.ambientBackground.collectAsState()
             val videoMode by themeViewModel.videoMode.collectAsState()
+            val playerStyle by themeViewModel.playerStyle.collectAsState()
             
             val isSystemDark = isSystemInDarkTheme()
             val isDarkTheme = remember(themeMode, isSystemDark) {
@@ -62,7 +64,9 @@ class MainActivity : ComponentActivity() {
                     ambientBackground = ambientBackground,
                     onAmbientBackgroundToggle = { themeViewModel.setAmbientBackground(it) },
                     videoMode = videoMode,
-                    onVideoModeToggle = { themeViewModel.setVideoMode(it) }
+                    onVideoModeToggle = { themeViewModel.setVideoMode(it) },
+                    playerStyle = playerStyle,
+                    onPlayerStyleChange = { themeViewModel.setPlayerStyle(it) }
                 )
             }
         }
@@ -80,7 +84,9 @@ fun MusicApp(
     ambientBackground: Boolean,
     onAmbientBackgroundToggle: (Boolean) -> Unit,
     videoMode: Boolean,
-    onVideoModeToggle: (Boolean) -> Unit
+    onVideoModeToggle: (Boolean) -> Unit,
+    playerStyle: PlayerStyle,
+    onPlayerStyleChange: (PlayerStyle) -> Unit
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val navController = rememberNavController()
@@ -107,7 +113,8 @@ fun MusicApp(
                     },
                     loadLocalSongs = loadLocalSongs,
                     ambientBackground = ambientBackground,
-                    videoMode = videoMode
+                    videoMode = videoMode,
+                    playerStyle = playerStyle
                 )
             }
             composable("settings") {
@@ -120,6 +127,8 @@ fun MusicApp(
                     onAmbientBackgroundToggle = onAmbientBackgroundToggle,
                     videoMode = videoMode,
                     onVideoModeToggle = onVideoModeToggle,
+                    playerStyle = playerStyle,
+                    onPlayerStyleChange = onPlayerStyleChange,
                     onLogoutClick = { 
                         homeViewModel.logout()
                     },
