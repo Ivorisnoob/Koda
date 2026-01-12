@@ -66,7 +66,7 @@ fun VideoPlayerContent(
 
     if (currentVideo == null || exoPlayer == null) return
 
-    LaunchedEffect(exoPlayer) {
+    LaunchedEffect(exoPlayer, currentVideo) {
         while (isActive) {
             if (exoPlayer.duration > 0) {
                 duration = exoPlayer.duration
@@ -106,6 +106,8 @@ fun VideoPlayerContent(
         onDispose {
             activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             insetsController?.show(WindowInsetsCompat.Type.systemBars())
+            // Restore normal window behavior
+            window?.let { WindowCompat.setDecorFitsSystemWindows(it, true) }
         }
     }
     

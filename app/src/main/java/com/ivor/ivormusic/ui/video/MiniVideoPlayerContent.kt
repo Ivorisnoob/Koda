@@ -24,6 +24,7 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import com.ivor.ivormusic.ui.video.VideoPlayerViewModel
 
 @OptIn(UnstableApi::class, ExperimentalMaterial3ExpressiveApi::class)
@@ -43,15 +44,12 @@ fun MiniVideoPlayerContent(
     var progress by remember { mutableFloatStateOf(0f) }
     val exoPlayer = viewModel.exoPlayer
 
-    LaunchedEffect(exoPlayer, isPlaying) {
-        if (exoPlayer != null && isPlaying) {
-            while (true) {
-                val duration = exoPlayer.duration
-                if (duration > 0) {
-                    progress = exoPlayer.currentPosition.toFloat() / duration.toFloat()
-                }
-                delay(1000)
+    LaunchedEffect(exoPlayer, currentVideo) {
+        while (isActive) {
+            if (exoPlayer != null && exoPlayer.duration > 0) {
+                progress = exoPlayer.currentPosition.toFloat() / exoPlayer.duration.toFloat()
             }
+            delay(1000)
         }
     }
 
@@ -104,7 +102,7 @@ fun MiniVideoPlayerContent(
                 verticalArrangement = Arrangement.Center
             ) {
                 Text(
-                    text = currentVideo!!.title,
+                    text = currentVideo?.title ?: "",
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
@@ -112,7 +110,7 @@ fun MiniVideoPlayerContent(
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
-                    text = currentVideo!!.channelName,
+                    text = currentVideo?.channelName ?: "",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,

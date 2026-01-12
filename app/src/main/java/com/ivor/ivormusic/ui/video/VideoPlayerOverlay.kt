@@ -111,7 +111,7 @@ fun VideoPlayerOverlay(
     }
     
     // PiP Broadcast Receiver (Handle actions) - using package-scoped actions for security
-    DisposableEffect(Unit) {
+    DisposableEffect(viewModel) {
         val pipReceiver = object : android.content.BroadcastReceiver() {
             override fun onReceive(ctx: android.content.Context?, intent: Intent?) {
                 when (intent?.action) {

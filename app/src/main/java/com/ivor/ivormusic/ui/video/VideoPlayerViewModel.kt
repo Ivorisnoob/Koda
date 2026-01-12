@@ -86,7 +86,8 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                         if (_isAutoPlayEnabled.value) {
                             val nextVideo = _relatedVideos.value.firstOrNull()
                             if (nextVideo != null) {
-                                playVideo(nextVideo)
+                                // Dispatch to main thread via viewModelScope
+                                viewModelScope.launch { playVideo(nextVideo) }
                             }
                         }
                     }
@@ -204,21 +205,24 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         val mediaItemBuilder = MediaItem.Builder().setUri(quality.url)
         
         if (quality.isDASH) {
+            // DASH streams are adaptive - use directly without merging
             mediaItemBuilder.setMimeType(MimeTypes.APPLICATION_MPD)
-        }
-        
-        val audioUrl = quality.audioUrl
-        if (audioUrl != null) {
-            val dataSourceFactory = DefaultDataSource.Factory(context)
-            val videoSource = ProgressiveMediaSource.Factory(dataSourceFactory)
-                .createMediaSource(MediaItem.fromUri(quality.url))
-            val audioSource = ProgressiveMediaSource.Factory(dataSourceFactory)
-                .createMediaSource(MediaItem.fromUri(audioUrl))
-            
-            val mergingSource = MergingMediaSource(videoSource, audioSource)
-            _exoPlayer?.setMediaSource(mergingSource)
-        } else {
             _exoPlayer?.setMediaItem(mediaItemBuilder.build())
+        } else {
+            val audioUrl = quality.audioUrl
+            if (audioUrl != null) {
+                // Non-DASH with separate audio - use MergingMediaSource
+                val dataSourceFactory = DefaultDataSource.Factory(context)
+                val videoSource = ProgressiveMediaSource.Factory(dataSourceFactory)
+                    .createMediaSource(MediaItem.fromUri(quality.url))
+                val audioSource = ProgressiveMediaSource.Factory(dataSourceFactory)
+                    .createMediaSource(MediaItem.fromUri(audioUrl))
+                
+                val mergingSource = MergingMediaSource(videoSource, audioSource)
+                _exoPlayer?.setMediaSource(mergingSource)
+            } else {
+                _exoPlayer?.setMediaItem(mediaItemBuilder.build())
+            }
         }
         _exoPlayer?.prepare()
     }
@@ -251,6 +255,9 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     }
 
     fun closePlayer() {
+        // Remove quality change listener to prevent leaks if player closed before STATE_READY
+        qualityChangeListener?.let { _exoPlayer?.removeListener(it) }
+        qualityChangeListener = null
         _exoPlayer?.stop()
         _currentVideo.value = null
         _isExpanded.value = false

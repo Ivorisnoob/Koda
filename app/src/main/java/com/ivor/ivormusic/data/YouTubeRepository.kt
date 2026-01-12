@@ -489,14 +489,14 @@ class YouTubeRepository(private val context: Context) {
                             it.optJSONObject(it.length() - 1)?.optString("url")
                         }
 
-                        songs.add(Song.fromYouTube(
+                        Song.fromYouTube(
                             videoId = videoId,
                             title = title,
                             artist = artist,
                             album = album,
                             duration = 0L,
                             thumbnailUrl = thumbnailUrl
-                        )!!)
+                        )?.let { songs.add(it) }
                     }
                     // Strategy 2: musicTwoRowItemRenderer (Title/Subtitle)
                     else if (item.has("title")) { // Basic check for TwoRow
@@ -530,14 +530,14 @@ class YouTubeRepository(private val context: Context) {
                                 it.optJSONObject(it.length() - 1)?.optString("url")
                             }
 
-                            songs.add(Song.fromYouTube(
+                            Song.fromYouTube(
                                 videoId = videoId,
                                 title = title,
                                 artist = artist,
                                 album = album,
                                 duration = 0L,
                                 thumbnailUrl = thumbnailUrl
-                            )!!)
+                            )?.let { songs.add(it) }
                         }
                     }
                 } catch (e: Exception) {
@@ -1645,10 +1645,10 @@ class YouTubeRepository(private val context: Context) {
             val qualities = mutableListOf<VideoQuality>()
             
             // 1. DASH/HLS
-            if (!streamExtractor.dashMpdUrl.isNullOrBlank()) {
-                qualities.add(VideoQuality("Auto (Best)", streamExtractor.dashMpdUrl!!, "DASH", true))
-            } else if (!streamExtractor.hlsUrl.isNullOrBlank()) {
-                qualities.add(VideoQuality("Auto (HLS)", streamExtractor.hlsUrl!!, "HLS", true))
+            streamExtractor.dashMpdUrl?.takeIf { it.isNotBlank() }?.let { url ->
+                qualities.add(VideoQuality("Auto (Best)", url, "DASH", true))
+            } ?: streamExtractor.hlsUrl?.takeIf { it.isNotBlank() }?.let { url ->
+                qualities.add(VideoQuality("Auto (HLS)", url, "HLS", true))
             }
             
             // 2. Adaptive Streams
@@ -1658,15 +1658,21 @@ class YouTubeRepository(private val context: Context) {
             
             if (bestAudio != null) {
                 qualities.addAll(videoOnlyStreams
-                    .filter { it.resolution != null && it.content != null }
-                    .map { VideoQuality(it.resolution!!, it.content!!, it.format?.name, false, bestAudio.content) }
+                    .mapNotNull { stream ->
+                        val res = stream.resolution ?: return@mapNotNull null
+                        val url = stream.content ?: return@mapNotNull null
+                        VideoQuality(res, url, stream.format?.name, false, bestAudio.content)
+                    }
                 )
             }
 
             // 3. Muxed Streams
             qualities.addAll(streamExtractor.videoStreams
-                .filter { it.resolution != null && it.content != null }
-                .map { VideoQuality(it.resolution!!, it.content!!, it.format?.name, false) }
+                .mapNotNull { stream ->
+                    val res = stream.resolution ?: return@mapNotNull null
+                    val url = stream.content ?: return@mapNotNull null
+                    VideoQuality(res, url, stream.format?.name, false)
+                }
             )
             
             val finalQualities = qualities.distinctBy { it.resolution }
