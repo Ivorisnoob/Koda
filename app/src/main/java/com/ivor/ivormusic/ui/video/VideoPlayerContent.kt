@@ -48,6 +48,7 @@ fun VideoPlayerContent(
     val relatedVideos by viewModel.relatedVideos.collectAsState()
     val isAutoPlayEnabled by viewModel.isAutoPlayEnabled.collectAsState()
     val isLooping by viewModel.isLooping.collectAsState()
+    val playbackError by viewModel.playbackError.collectAsState()
     
     // Local UI State
     var showControls by remember { mutableStateOf(false) }
@@ -133,8 +134,8 @@ fun VideoPlayerContent(
                 exoPlayer = exoPlayer,
                 showControls = showControls,
                 onToggleControls = { showControls = !showControls },
-                hasError = false,
-                errorMessage = "",
+                hasError = playbackError != null,
+                errorMessage = playbackError?.message ?: "",
                 isLoading = isLoading,
                 isBuffering = isBuffering,
                 isPlaying = isPlaying,
@@ -171,8 +172,8 @@ fun VideoPlayerContent(
                         exoPlayer = exoPlayer,
                         showControls = showControls,
                         onToggleControls = { showControls = !showControls },
-                        hasError = false,
-                        errorMessage = "",
+                        hasError = playbackError != null,
+                        errorMessage = playbackError?.message ?: "",
                         isLoading = isLoading,
                         isBuffering = isBuffering,
                         isPlaying = isPlaying,

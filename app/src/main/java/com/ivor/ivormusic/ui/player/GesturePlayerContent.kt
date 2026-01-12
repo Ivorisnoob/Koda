@@ -213,7 +213,7 @@ private fun GestureNowPlayingView(
                     carouselState.scrollToItem(currentIndex)
                 }
             } catch (e: Exception) {
-                // Ignore scroll errors when state is invalid
+                android.util.Log.w("GesturePlayer", "Scroll failed: currentIndex=$currentIndex, queueSize=$queueSize, carouselItem=${carouselState.currentItem}", e)
             } finally {
                 kotlinx.coroutines.delay(150)
                 isProgrammaticScroll = false
@@ -233,7 +233,7 @@ private fun GestureNowPlayingView(
             try {
                 onSongChange(queue[currentCarouselItem])
             } catch (e: Exception) {
-                // Ignore errors if queue changed
+                android.util.Log.w("GesturePlayer", "Song change failed: carouselItem=$currentCarouselItem, queueSize=$queueSize, isProgrammaticScroll=$isProgrammaticScroll", e)
             }
         }
     }

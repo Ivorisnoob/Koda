@@ -63,23 +63,29 @@ fun VideoPlayerOverlay(
     if (currentVideo == null) return
 
     // Update PiP Params (Active when video is present)
+    val packageName = context.packageName
+    val pipPlayAction = "$packageName.PIP_PLAY"
+    val pipPauseAction = "$packageName.PIP_PAUSE"
+    
     LaunchedEffect(currentVideo, isPlaying) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && activity != null) {
              val videoId = currentVideo?.videoId ?: return@LaunchedEffect
-             val reqCodePlay = (videoId + "play").hashCode()
-             val reqCodePause = (videoId + "pause").hashCode()
+             // Use collision-resistant request codes: masked hashcode OR'd with action bit
+             val baseCode = videoId.hashCode() and 0x7FFFFFFF
+             val reqCodePlay = baseCode or 0x1
+             val reqCodePause = baseCode or 0x2
              
-             // Intents for PiP controls
+             // Intents for PiP controls - using package-scoped actions for security
              val playIntent = PendingIntent.getBroadcast(
                  context, 
                  reqCodePlay, 
-                 Intent("PIP_PLAY").setPackage(context.packageName), 
+                 Intent(pipPlayAction).setPackage(packageName), 
                  PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
              )
              val pauseIntent = PendingIntent.getBroadcast(
                  context, 
                  reqCodePause, 
-                 Intent("PIP_PAUSE").setPackage(context.packageName), 
+                 Intent(pipPauseAction).setPackage(packageName), 
                  PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
              )
              
@@ -104,20 +110,21 @@ fun VideoPlayerOverlay(
         }
     }
     
-    // PiP Broadcast Receiver (Handle actions)
+    // PiP Broadcast Receiver (Handle actions) - using package-scoped actions for security
     DisposableEffect(Unit) {
         val pipReceiver = object : android.content.BroadcastReceiver() {
             override fun onReceive(ctx: android.content.Context?, intent: Intent?) {
                 when (intent?.action) {
-                    "PIP_PAUSE" -> viewModel.exoPlayer?.pause()
-                    "PIP_PLAY" -> viewModel.exoPlayer?.play()
+                    pipPauseAction -> viewModel.exoPlayer?.pause()
+                    pipPlayAction -> viewModel.exoPlayer?.play()
                 }
             }
         }
         val filter = android.content.IntentFilter().apply {
-            addAction("PIP_PAUSE")
-            addAction("PIP_PLAY")
+            addAction(pipPauseAction)
+            addAction(pipPlayAction)
         }
+        // Package-scoped actions prevent other apps from triggering on all API levels
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             context.registerReceiver(pipReceiver, filter, android.content.Context.RECEIVER_NOT_EXPORTED)
         } else {

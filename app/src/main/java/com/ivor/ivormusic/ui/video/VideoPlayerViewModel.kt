@@ -64,6 +64,9 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
     private var playbackReportJob: kotlinx.coroutines.Job? = null
 
+    // Track quality change listener to prevent leaks
+    private var qualityChangeListener: Player.Listener? = null
+
     // Error state
     private val _playbackError = MutableStateFlow<Throwable?>(null)
     val playbackError: StateFlow<Throwable?> = _playbackError.asStateFlow()
@@ -223,6 +226,10 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     fun setQuality(quality: VideoQuality) {
         val player = _exoPlayer ?: return
         val position = player.currentPosition
+        
+        // Remove any existing quality change listener to prevent leaks
+        qualityChangeListener?.let { player.removeListener(it) }
+        
         loadQuality(quality)
         
         // Wait for player to be ready before seeking to preserved position
@@ -231,9 +238,11 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                 if (playbackState == Player.STATE_READY) {
                     player.seekTo(position)
                     player.removeListener(this)
+                    qualityChangeListener = null
                 }
             }
         }
+        qualityChangeListener = listener
         player.addListener(listener)
     }
 
@@ -257,6 +266,9 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
     override fun onCleared() {
         super.onCleared()
+        // Remove quality change listener to prevent leaks
+        qualityChangeListener?.let { _exoPlayer?.removeListener(it) }
+        qualityChangeListener = null
         _exoPlayer?.release()
         _exoPlayer = null
     }
