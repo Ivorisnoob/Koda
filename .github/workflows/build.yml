@@ -43,16 +43,15 @@ jobs:
       with:
         to: ${{ env.TELEGRAM_CHAT_ID }}
         token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-        format: markdown
+        format: html
         message: |
-          ✅ *Build Successful!*
+          ✅ <b>Build Successful!</b>
           
-          📱 *IvorMusic* Debug Build
-          🌿 *Branch:* `${{ github.ref_name }}`
-          📝 *Commit:* `${{ github.event.head_commit.message }}`
-          👤 *Author:* ${{ github.event.head_commit.author.name }}
+          📱 <b>IvorMusic</b> Debug Build
+          🌿 <b>Branch:</b> ${{ github.ref_name }}
+          👤 <b>Author:</b> ${{ github.event.head_commit.author.name }}
           
-          📦 [Download APK](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
+          📦 <a href="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}">Download APK</a>
 
     - name: Notify Telegram - Build Failed
       if: failure()
@@ -60,13 +59,12 @@ jobs:
       with:
         to: ${{ env.TELEGRAM_CHAT_ID }}
         token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-        format: markdown
+        format: html
         message: |
-          ❌ *Build Failed!*
+          ❌ <b>Build Failed!</b>
           
-          📱 *IvorMusic* Debug Build
-          🌿 *Branch:* `${{ github.ref_name }}`
-          📝 *Commit:* `${{ github.event.head_commit.message }}`
-          👤 *Author:* ${{ github.event.head_commit.author.name }}
+          📱 <b>IvorMusic</b> Debug Build
+          🌿 <b>Branch:</b> ${{ github.ref_name }}
+          👤 <b>Author:</b> ${{ github.event.head_commit.author.name }}
           
-          🔗 [View Logs](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
+          🔗 <a href="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}">View Logs</a>
