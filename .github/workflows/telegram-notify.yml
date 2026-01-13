@@ -19,9 +19,7 @@ env:
   TELEGRAM_CHAT_ID: "@ivorisnoob_projects"
 
 jobs:
-  # ============================================
-  # 🚀 Push/Commit Notification
-  # ============================================
+  # Push/Commit Notification
   notify-push:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
@@ -33,21 +31,17 @@ jobs:
           curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
             -d "chat_id=${{ env.TELEGRAM_CHAT_ID }}" \
             -d "parse_mode=HTML" \
-            -d "text=🎵 <b>IvorMusic</b> | New Update
-          ━━━━━━━━━━━━━━━━━━━━
+            -d "text=<b>The Music App</b> | New Update
 
-          🚀 <b>New commit pushed!</b>
+          New commit pushed!
 
-          � <code>${{ github.repository }}</code>
-          🌿 Branch: <code>${{ github.ref_name }}</code>
-          👨‍💻 Author: <b>${{ github.event.head_commit.author.name }}</b>
+          Repo: <code>${{ github.repository }}</code>
+          Branch: <code>${{ github.ref_name }}</code>
+          Author: <b>${{ github.event.head_commit.author.name }}</b>
 
-          ━━━━━━━━━━━━━━━━━━━━
-          🔗 <a href='${{ github.event.head_commit.url }}'>View Changes →</a>"
+          <a href='${{ github.event.head_commit.url }}'>View Changes</a>"
 
-  # ============================================
-  # 🔀 Pull Request Notifications
-  # ============================================
+  # Pull Request Opened
   notify-pr-opened:
     if: github.event_name == 'pull_request' && github.event.action == 'opened'
     runs-on: ubuntu-latest
@@ -59,19 +53,16 @@ jobs:
           curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
             -d "chat_id=${{ env.TELEGRAM_CHAT_ID }}" \
             -d "parse_mode=HTML" \
-            -d "text=🎵 <b>IvorMusic</b> | Pull Request
-          ━━━━━━━━━━━━━━━━━━━━
+            -d "text=<b>The Music App</b> | Pull Request
 
-          � <b>New PR opened!</b>
+          New PR opened!
 
-          📋 <b>${{ github.event.pull_request.title }}</b>
+          Title: <b>${{ github.event.pull_request.title }}</b>
+          Author: <b>${{ github.event.pull_request.user.login }}</b>
 
-          � Opened by: <b>${{ github.event.pull_request.user.login }}</b>
-          � <code>${{ github.event.pull_request.head.ref }}</code> → <code>${{ github.event.pull_request.base.ref }}</code>
+          <a href='${{ github.event.pull_request.html_url }}'>View PR</a>"
 
-          ━━━━━━━━━━━━━━━━━━━━
-          🔗 <a href='${{ github.event.pull_request.html_url }}'>Review PR →</a>"
-
+  # Pull Request Merged
   notify-pr-merged:
     if: github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.merged == true
     runs-on: ubuntu-latest
@@ -83,22 +74,16 @@ jobs:
           curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
             -d "chat_id=${{ env.TELEGRAM_CHAT_ID }}" \
             -d "parse_mode=HTML" \
-            -d "text=🎵 <b>IvorMusic</b> | Merged! 🎊
-          ━━━━━━━━━━━━━━━━━━━━
+            -d "text=<b>The Music App</b> | Merged!
 
-          ✅ <b>PR successfully merged!</b>
+          PR successfully merged!
 
-          📋 <b>${{ github.event.pull_request.title }}</b>
+          Title: <b>${{ github.event.pull_request.title }}</b>
+          Merged by: <b>${{ github.event.sender.login }}</b>
 
-          👤 Merged by: <b>${{ github.event.sender.login }}</b>
-          📊 +${{ github.event.pull_request.additions }} / -${{ github.event.pull_request.deletions }} lines
+          <a href='${{ github.event.pull_request.html_url }}'>View Details</a>"
 
-          ━━━━━━━━━━━━━━━━━━━━
-          🔗 <a href='${{ github.event.pull_request.html_url }}'>View Details →</a>"
-
-  # ============================================
-  # 🐛 Issue Notifications
-  # ============================================
+  # Issue Opened
   notify-issue-opened:
     if: github.event_name == 'issues' && github.event.action == 'opened'
     runs-on: ubuntu-latest
@@ -110,18 +95,16 @@ jobs:
           curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
             -d "chat_id=${{ env.TELEGRAM_CHAT_ID }}" \
             -d "parse_mode=HTML" \
-            -d "text=🎵 <b>IvorMusic</b> | New Issue
-          ━━━━━━━━━━━━━━━━━━━━
+            -d "text=<b>The Music App</b> | New Issue
 
-          � <b>Issue reported!</b>
+          Issue reported!
 
-          📋 <b>${{ github.event.issue.title }}</b>
+          Title: <b>${{ github.event.issue.title }}</b>
+          Reported by: <b>${{ github.event.issue.user.login }}</b>
 
-          👤 Reported by: <b>${{ github.event.issue.user.login }}</b>
+          <a href='${{ github.event.issue.html_url }}'>View Issue</a>"
 
-          ━━━━━━━━━━━━━━━━━━━━
-          🔗 <a href='${{ github.event.issue.html_url }}'>View Issue →</a>"
-
+  # Issue Closed
   notify-issue-closed:
     if: github.event_name == 'issues' && github.event.action == 'closed'
     runs-on: ubuntu-latest
@@ -133,21 +116,16 @@ jobs:
           curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
             -d "chat_id=${{ env.TELEGRAM_CHAT_ID }}" \
             -d "parse_mode=HTML" \
-            -d "text=🎵 <b>IvorMusic</b> | Issue Resolved
-          ━━━━━━━━━━━━━━━━━━━━
+            -d "text=<b>The Music App</b> | Issue Resolved
 
-          ✅ <b>Issue closed!</b>
+          Issue closed!
 
-          📋 <b>${{ github.event.issue.title }}</b>
+          Title: <b>${{ github.event.issue.title }}</b>
+          Closed by: <b>${{ github.event.sender.login }}</b>
 
-          👤 Closed by: <b>${{ github.event.sender.login }}</b>
+          <a href='${{ github.event.issue.html_url }}'>View Issue</a>"
 
-          ━━━━━━━━━━━━━━━━━━━━
-          🔗 <a href='${{ github.event.issue.html_url }}'>View Issue →</a>"
-
-  # ============================================
-  # 💬 Issue Comment Notification
-  # ============================================
+  # Issue Comment
   notify-comment:
     if: github.event_name == 'issue_comment'
     runs-on: ubuntu-latest
@@ -159,20 +137,16 @@ jobs:
           curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
             -d "chat_id=${{ env.TELEGRAM_CHAT_ID }}" \
             -d "parse_mode=HTML" \
-            -d "text=🎵 <b>IvorMusic</b> | New Comment
-          ━━━━━━━━━━━━━━━━━━━━
+            -d "text=<b>The Music App</b> | New Comment
 
-          � <b>Someone commented!</b>
+          Someone commented!
 
-          📋 On: <b>${{ github.event.issue.title }}</b>
-          👤 By: <b>${{ github.event.comment.user.login }}</b>
+          On: <b>${{ github.event.issue.title }}</b>
+          By: <b>${{ github.event.comment.user.login }}</b>
 
-          ━━━━━━━━━━━━━━━━━━━━
-          🔗 <a href='${{ github.event.comment.html_url }}'>Read Comment →</a>"
+          <a href='${{ github.event.comment.html_url }}'>Read Comment</a>"
 
-  # ============================================
-  # ⭐ Star Notification
-  # ============================================
+  # Star
   notify-star:
     if: github.event_name == 'watch' && github.event.action == 'started'
     runs-on: ubuntu-latest
@@ -184,22 +158,17 @@ jobs:
           curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
             -d "chat_id=${{ env.TELEGRAM_CHAT_ID }}" \
             -d "parse_mode=HTML" \
-            -d "text=🎵 <b>IvorMusic</b> | New Star! ⭐
-          ━━━━━━━━━━━━━━━━━━━━
+            -d "text=<b>The Music App</b> | New Star!
 
-          🌟 <b>We got a new star!</b>
+          We got a new star!
 
-          👤 <b>${{ github.event.sender.login }}</b> starred the repo!
+          <b>${{ github.event.sender.login }}</b> starred the repo!
+          Total Stars: <b>${{ github.event.repository.stargazers_count }}</b>
 
-          ⭐ Total Stars: <b>${{ github.event.repository.stargazers_count }}</b>
+          Thank you for your support!
+          <a href='https://github.com/${{ github.repository }}'>Visit Repo</a>"
 
-          ━━━━━━━━━━━━━━━━━━━━
-          Thank you for your support! 💜
-          🔗 <a href='https://github.com/${{ github.repository }}'>Visit Repo →</a>"
-
-  # ============================================
-  # 🍴 Fork Notification
-  # ============================================
+  # Fork
   notify-fork:
     if: github.event_name == 'fork'
     runs-on: ubuntu-latest
@@ -211,21 +180,17 @@ jobs:
           curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
             -d "chat_id=${{ env.TELEGRAM_CHAT_ID }}" \
             -d "parse_mode=HTML" \
-            -d "text=🎵 <b>IvorMusic</b> | Forked! 🍴
-          ━━━━━━━━━━━━━━━━━━━━
+            -d "text=<b>The Music App</b> | Forked!
 
-          🍴 <b>Repository forked!</b>
+          Repository forked!
 
-          👤 <b>${{ github.event.sender.login }}</b> forked the project!
-          📦 Fork: <code>${{ github.event.forkee.full_name }}</code>
+          <b>${{ github.event.sender.login }}</b> forked the project!
+          Fork: <code>${{ github.event.forkee.full_name }}</code>
 
-          ━━━━━━━━━━━━━━━━━━━━
-          Happy coding! 🚀
-          🔗 <a href='${{ github.event.forkee.html_url }}'>View Fork →</a>"
+          Happy coding!
+          <a href='${{ github.event.forkee.html_url }}'>View Fork</a>"
 
-  # ============================================
-  # 📦 Release Notification
-  # ============================================
+  # Release
   notify-release:
     if: github.event_name == 'release'
     runs-on: ubuntu-latest
@@ -237,13 +202,11 @@ jobs:
           curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
             -d "chat_id=${{ env.TELEGRAM_CHAT_ID }}" \
             -d "parse_mode=HTML" \
-            -d "text=� <b>IvorMusic</b> | New Release! 🎉
-          ━━━━━━━━━━━━━━━━━━━━
+            -d "text=<b>The Music App</b> | New Release!
 
-          📦 <b>Version ${{ github.event.release.tag_name }}</b>
+          Version <b>${{ github.event.release.tag_name }}</b>
 
-          📋 <b>${{ github.event.release.name }}</b>
-          👤 Released by: <b>${{ github.event.release.author.login }}</b>
+          Name: <b>${{ github.event.release.name }}</b>
+          Author: <b>${{ github.event.release.author.login }}</b>
 
-          ━━━━━━━━━━━━━━━━━━━━
-          � <a href='${{ github.event.release.html_url }}'>Download Now →</a>"
+          <a href='${{ github.event.release.html_url }}'>Download Now</a>"
