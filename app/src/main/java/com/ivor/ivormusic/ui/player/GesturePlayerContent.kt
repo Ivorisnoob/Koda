@@ -6,8 +6,13 @@ import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -20,27 +25,32 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
-import androidx.compose.material3.carousel.HorizontalUncontainedCarousel
-import androidx.compose.material3.carousel.rememberCarouselState
-import androidx.compose.material3.carousel.CarouselDefaults
 import androidx.compose.runtime.*
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import androidx.media3.common.Player
 import coil.compose.AsyncImage
 import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.data.LyricsResult
 import java.util.Locale
+import kotlin.math.absoluteValue
+import kotlin.math.roundToInt
 
 /**
  * Material 3 Expressive Gesture-Based Music Player
@@ -191,51 +201,10 @@ private fun GestureNowPlayingView(
     onSurfaceColor: Color,
     onSurfaceVariantColor: Color
 ) {
-    // Find current song index in queue - ensure safety with empty queues
-    val queueSize = queue.size
-    val currentIndex = remember(currentSong?.id, queueSize) {
+    // Simple current song index for the custom carousel
+    val currentIndex = remember(currentSong?.id, queue.size) {
         if (queue.isEmpty()) 0
         else queue.indexOfFirst { it.id == currentSong?.id }.coerceIn(0, queue.lastIndex.coerceAtLeast(0))
-    }
-    
-    // Track if we're programmatically scrolling to avoid triggering song change
-    var isProgrammaticScroll by remember { mutableStateOf(false) }
-    
-    // Carousel state synced to current song - create only if queue is not empty
-    val carouselState = rememberCarouselState(initialItem = currentIndex) { queueSize.coerceAtLeast(1) }
-    
-    // Sync carousel with song changes from external sources (e.g., queue click)
-    LaunchedEffect(currentIndex) {
-        if (queueSize > 0 && currentIndex in 0 until queueSize) {
-            isProgrammaticScroll = true
-            try {
-                if (carouselState.currentItem != currentIndex) {
-                    carouselState.scrollToItem(currentIndex)
-                }
-            } catch (e: Exception) {
-                android.util.Log.w("GesturePlayer", "Scroll failed: currentIndex=$currentIndex, queueSize=$queueSize, carouselItem=${carouselState.currentItem}", e)
-            } finally {
-                kotlinx.coroutines.delay(150)
-                isProgrammaticScroll = false
-            }
-        }
-    }
-    
-    // Handle carousel swipe to change songs (debounced to avoid rapid triggers)
-    val currentCarouselItem = carouselState.currentItem
-    LaunchedEffect(currentCarouselItem) {
-        // Debounce to ensure scroll has settled
-        kotlinx.coroutines.delay(100)
-        if (!isProgrammaticScroll && 
-            queueSize > 0 && 
-            currentCarouselItem != currentIndex && 
-            currentCarouselItem in 0 until queueSize) {
-            try {
-                onSongChange(queue[currentCarouselItem])
-            } catch (e: Exception) {
-                android.util.Log.w("GesturePlayer", "Song change failed: carouselItem=$currentCarouselItem, queueSize=$queueSize, isProgrammaticScroll=$isProgrammaticScroll", e)
-            }
-        }
     }
     
     // Get album info
@@ -385,12 +354,13 @@ private fun GestureNowPlayingView(
                             } else {
                                 // Album Art Carousel
                                 if (queue.isNotEmpty()) {
-                                    GestureAlbumCarousel(
+                                    SwipeableAlbumCarousel(
                                         queue = queue,
-                                        carouselState = carouselState,
+                                        currentIndex = currentIndex,
                                         isPlaying = isPlaying,
                                         isBuffering = isBuffering,
-                                        onPlayPauseToggle = onPlayPauseToggle
+                                        onPlayPauseToggle = onPlayPauseToggle,
+                                        onSongChange = onSongChange
                                     )
                                 } else if (currentSong != null) {
                                     // Single album art
@@ -446,26 +416,48 @@ private fun GestureNowPlayingView(
                         
                         Spacer(modifier = Modifier.height(30.dp))
                         
-                        // ========== 5. SLIDER PROGRESS (Video Player Style) ==========
+                        // ========== 5. WAVY PROGRESS BAR (Expressive Style) ==========
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(horizontal = 20.dp)
                         ) {
                             val progressFraction = if (duration > 0) progress.toFloat() / duration.toFloat() else 0f
-                            
-                            Slider(
-                                value = progressFraction,
-                                onValueChange = { fraction -> 
-                                    onSeekTo((fraction * duration).toLong())
-                                },
-                                colors = SliderDefaults.colors(
-                                    thumbColor = primaryColor,
-                                    activeTrackColor = primaryColor,
-                                    inactiveTrackColor = onSurfaceVariantColor.copy(alpha = 0.2f)
+                            val animatedProgress by animateFloatAsState(
+                                targetValue = progressFraction,
+                                animationSpec = spring(
+                                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                                    stiffness = Spring.StiffnessLow
                                 ),
-                                modifier = Modifier.fillMaxWidth()
+                                label = "WavyProgress"
                             )
+                            
+                            val thickStroke = Stroke(width = with(LocalDensity.current) { 6.dp.toPx() }, cap = StrokeCap.Round)
+                            
+                            // Wavy progress with invisible slider overlay for touch
+                            Box(contentAlignment = Alignment.Center) {
+                                LinearWavyProgressIndicator(
+                                    progress = { animatedProgress },
+                                    modifier = Modifier.fillMaxWidth().height(28.dp),
+                                    stroke = thickStroke,
+                                    trackStroke = thickStroke,
+                                    color = primaryColor,
+                                    trackColor = onSurfaceVariantColor.copy(alpha = 0.15f)
+                                )
+                                
+                                // Invisible slider for touch interaction
+                                Slider(
+                                    value = progress.toFloat(),
+                                    onValueChange = { onSeekTo(it.toLong()) },
+                                    valueRange = 0f..(duration.toFloat().coerceAtLeast(1f)),
+                                    colors = SliderDefaults.colors(
+                                        thumbColor = Color.Transparent,
+                                        activeTrackColor = Color.Transparent,
+                                        inactiveTrackColor = Color.Transparent
+                                    ),
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
                             
                             Row(
                                 modifier = Modifier
@@ -622,107 +614,225 @@ private fun GesturePlayerToolbar(
 }
 
 /**
- * Gesture Album Carousel - Swipe to change songs, tap to play/pause
- * Uses Material 3 Expressive HorizontalUncontainedCarousel with maskClip for proper transitions
+ * Custom Swipeable Album Carousel with smooth sliding animations
+ * 
+ * Architecture:
+ * - Uses a continuous float position for the carousel
+ * - Pre-renders 5 albums (-2 to +2) so transitions are instant
+ * - External changes animate smoothly via spring physics
+ * - No flickering, no delayed loading
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun GestureAlbumCarousel(
+private fun SwipeableAlbumCarousel(
     queue: List<Song>,
-    carouselState: androidx.compose.material3.carousel.CarouselState,
+    currentIndex: Int,
     isPlaying: Boolean,
     isBuffering: Boolean,
-    onPlayPauseToggle: () -> Unit
+    onPlayPauseToggle: () -> Unit,
+    onSongChange: (Song) -> Unit
 ) {
+    // The carousel position as a continuous float
+    // Position 0 = first song centered, Position 1 = second song centered, etc.
+    var targetPosition by remember { mutableFloatStateOf(currentIndex.toFloat()) }
+    val animatedPosition by animateFloatAsState(
+        targetValue = targetPosition,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessLow
+        ),
+        label = "CarouselPosition"
+    )
+    
+    // Track if user is dragging (to pause external sync during drag)
+    var isDragging by remember { mutableStateOf(false) }
+    
+    // Sync with external index changes (e.g., from queue click, skip buttons)
+    LaunchedEffect(currentIndex) {
+        if (!isDragging && targetPosition.roundToInt() != currentIndex) {
+            // Smoothly animate to the new position
+            targetPosition = currentIndex.toFloat()
+        }
+    }
+    
     BoxWithConstraints(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
     ) {
-        // Use 98% of available space for HUGE album art - ensure positive size
-        val albumSize = (minOf(maxWidth, maxHeight) * 0.98f).coerceAtLeast(1.dp)
-        val horizontalPadding = ((maxWidth - albumSize) / 2).coerceAtLeast(0.dp)
+        // Sizing calculations - BIGGER for better visibility
+        val albumSize = (minOf(maxWidth * 0.82f, maxHeight * 0.90f)).coerceAtLeast(1.dp)
+        val cornerRadius = albumSize * 0.08f
         
-        HorizontalUncontainedCarousel(
-            state = carouselState,
-            itemWidth = albumSize,
-            itemSpacing = 16.dp,
-            contentPadding = PaddingValues(horizontal = horizontalPadding),
-            flingBehavior = CarouselDefaults.singleAdvanceFlingBehavior(state = carouselState),
+        // Spacing between album centers
+        val spacing = albumSize * 0.75f
+        val spacingPx = with(LocalDensity.current) { spacing.toPx() }
+        
+        // Track starting position when drag begins
+        var dragStartPosition by remember { mutableFloatStateOf(0f) }
+        
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(albumSize)
-        ) { index ->
-            val song = queue.getOrNull(index)
-            val isCurrentItem = carouselState.currentItem == index
-            
-            // Use maskClip for proper carousel item clipping during scroll
-            Box(
-                modifier = Modifier
-                    .maskClip(MaterialTheme.shapes.extraLarge)
-                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                    .pointerInput(Unit) {
-                        detectTapGestures(onTap = { onPlayPauseToggle() })
-                    }
-            ) {
-                val imgUrl = song?.highResThumbnailUrl ?: song?.thumbnailUrl ?: song?.albumArtUri?.toString()
-                
-                if (imgUrl != null) {
-                    AsyncImage(
-                        model = imgUrl,
-                        contentDescription = song?.title ?: "Album Art",
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop
+                .pointerInput(queue.size) {
+                    detectHorizontalDragGestures(
+                        onDragStart = { 
+                            isDragging = true
+                            dragStartPosition = targetPosition
+                        },
+                        onDragEnd = {
+                            isDragging = false
+                            // Snap to nearest integer position
+                            val nearestIndex = targetPosition.roundToInt().coerceIn(0, queue.lastIndex)
+                            val startIndex = dragStartPosition.roundToInt()
+                            
+                            // Always trigger song change if we moved to different index
+                            if (nearestIndex != startIndex && nearestIndex in 0..queue.lastIndex) {
+                                onSongChange(queue[nearestIndex])
+                            }
+                            targetPosition = nearestIndex.toFloat()
+                        },
+                        onDragCancel = {
+                            isDragging = false
+                            // Return to start position on cancel
+                            targetPosition = dragStartPosition.roundToInt().toFloat().coerceIn(0f, queue.lastIndex.toFloat())
+                        },
+                        onHorizontalDrag = { _, amount ->
+                            val delta = -amount / spacingPx // Negative: drag right = go to lower index
+                            val newPosition = (targetPosition + delta).coerceIn(0f, queue.lastIndex.toFloat())
+                            targetPosition = newPosition
+                        }
                     )
-                } else {
-                    // Placeholder
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(
-                                Brush.verticalGradient(
-                                    colors = listOf(
-                                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
-                                        MaterialTheme.colorScheme.surfaceContainerHigh
-                                    )
-                                )
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.MusicNote,
-                            contentDescription = null,
-                            modifier = Modifier.size(albumSize * 0.35f),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
-                        )
-                    }
-                }
+                },
+            contentAlignment = Alignment.Center
+        ) {
+            // Render albums in range: visible ones around the current position
+            // Pre-render 2 extra on each side for smooth transitions
+            val centerIndex = animatedPosition.roundToInt()
+            val visibleRange = (centerIndex - 2).coerceAtLeast(0)..(centerIndex + 2).coerceAtMost(queue.lastIndex)
+            
+            visibleRange.forEach { songIndex ->
+                val song = queue[songIndex]
                 
-                // Play/Pause overlay for current item
-                if (isCurrentItem && (isBuffering || !isPlaying)) {
-                    Box(
+                // Position relative to center (0 = centered)
+                val relativePosition = songIndex.toFloat() - animatedPosition
+                val distanceFromCenter = relativePosition.absoluteValue
+                
+                // Skip rendering if too far off (optimization)
+                if (distanceFromCenter > 2.5f) return@forEach
+                
+                // Size: full at center, smaller at sides
+                val sizeMultiplier = (1f - distanceFromCenter * 0.30f).coerceIn(0.55f, 1f)
+                val currentSize = albumSize * sizeMultiplier
+                val currentCornerRadius = cornerRadius * sizeMultiplier
+                
+                // Alpha: full at center, faded at sides
+                val alpha = (1f - distanceFromCenter * 0.45f).coerceIn(0.35f, 1f)
+                
+                // Rotation: tilted based on position
+                val rotation = relativePosition * 8f
+                
+                // Z-index: center album on top
+                val zIndex = (10f - distanceFromCenter * 3f).coerceAtLeast(0f)
+                
+                // X position from center
+                val xOffset = spacing * relativePosition
+                
+                // Y offset for depth (side albums drop down)
+                val yOffset = 10.dp * distanceFromCenter
+                
+                // Is this the "current" centered album?
+                val isCentered = distanceFromCenter < 0.5f
+                
+                val imgUrl = song.highResThumbnailUrl 
+                    ?: song.thumbnailUrl 
+                    ?: song.albumArtUri?.toString()
+                
+                // Use key for stable identity
+                key(song.id) {
+                    Surface(
                         modifier = Modifier
-                            .fillMaxSize()
-                            .background(Color.Black.copy(alpha = 0.4f)),
-                        contentAlignment = Alignment.Center
+                            .size(currentSize)
+                            .offset(x = xOffset, y = yOffset)
+                            .zIndex(zIndex)
+                            .alpha(alpha)
+                            .graphicsLayer { rotationZ = rotation }
+                            .then(
+                                if (isCentered) {
+                                    Modifier.pointerInput(Unit) {
+                                        detectTapGestures(onTap = { onPlayPauseToggle() })
+                                    }
+                                } else Modifier
+                            ),
+                        shape = RoundedCornerShape(currentCornerRadius),
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        shadowElevation = if (isCentered) 16.dp else 4.dp
                     ) {
-                        if (isBuffering) {
-                            LoadingIndicator(
-                                modifier = Modifier.size(64.dp),
-                                color = Color.White,
-                                polygons = listOf(
-                                    MaterialShapes.SoftBurst,
-                                    MaterialShapes.Cookie9Sided,
-                                    MaterialShapes.Pill,
-                                    MaterialShapes.Sunny
-                                )
+                        Box(modifier = Modifier.fillMaxSize()) {
+                            // Album art with stable loading
+                            AsyncImage(
+                                model = imgUrl,
+                                contentDescription = song.title,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .clip(RoundedCornerShape(currentCornerRadius)),
+                                contentScale = ContentScale.Crop
                             )
-                        } else if (!isPlaying) {
-                            Icon(
-                                imageVector = Icons.Default.PlayArrow,
-                                contentDescription = "Play",
-                                modifier = Modifier.size(72.dp),
-                                tint = Color.White.copy(alpha = 0.9f)
-                            )
+                            
+                            // Fallback gradient if no image
+                            if (imgUrl == null) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(
+                                            Brush.verticalGradient(
+                                                colors = listOf(
+                                                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
+                                                    MaterialTheme.colorScheme.surfaceContainerHigh
+                                                )
+                                            )
+                                        ),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.MusicNote,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(currentSize * 0.35f),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
+                                    )
+                                }
+                            }
+                            
+                            // Play/Pause overlay only for centered album when paused/buffering
+                            if (isCentered && songIndex == currentIndex && (isBuffering || !isPlaying)) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .clip(RoundedCornerShape(currentCornerRadius))
+                                        .background(Color.Black.copy(alpha = 0.35f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (isBuffering) {
+                                        LoadingIndicator(
+                                            modifier = Modifier.size(60.dp),
+                                            color = Color.White,
+                                            polygons = listOf(
+                                                MaterialShapes.SoftBurst,
+                                                MaterialShapes.Cookie9Sided,
+                                                MaterialShapes.Pill,
+                                                MaterialShapes.Sunny
+                                            )
+                                        )
+                                    } else {
+                                        Icon(
+                                            imageVector = Icons.Default.PlayArrow,
+                                            contentDescription = "Play",
+                                            modifier = Modifier.size(68.dp),
+                                            tint = Color.White.copy(alpha = 0.9f)
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -730,6 +840,8 @@ private fun GestureAlbumCarousel(
         }
     }
 }
+
+
 
 /**
  * Single Album Art (fallback when no queue)
