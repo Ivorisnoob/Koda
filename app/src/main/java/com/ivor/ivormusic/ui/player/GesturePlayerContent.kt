@@ -341,16 +341,19 @@ private fun GestureNowPlayingView(
                     ) {
                         Crossfade(targetState = showLyrics, label = "AlbumLyricsCrossfade") { isLyricsVisible ->
                             if (isLyricsVisible) {
-                                // Synced Lyrics View
-                                SyncedLyricsView(
-                                    lyricsResult = lyricsResult,
-                                    currentPositionMs = progress,
-                                    onSeekTo = onSeekTo,
-                                    ambientBackground = ambientBackground,
-                                    primaryColor = primaryColor,
-                                    onSurfaceColor = onSurfaceColor,
-                                    onSurfaceVariantColor = onSurfaceVariantColor
-                                )
+                                // Key on song ID to force complete reset when song changes
+                                key(currentSong?.id) {
+                                    // Synced Lyrics View
+                                    SyncedLyricsView(
+                                        lyricsResult = lyricsResult,
+                                        currentPositionMs = progress,
+                                        onSeekTo = onSeekTo,
+                                        ambientBackground = ambientBackground,
+                                        primaryColor = primaryColor,
+                                        onSurfaceColor = onSurfaceColor,
+                                        onSurfaceVariantColor = onSurfaceVariantColor
+                                    )
+                                }
                             } else {
                                 // Album Art Carousel
                                 if (queue.isNotEmpty()) {
@@ -660,7 +663,7 @@ private fun SwipeableAlbumCarousel(
         contentAlignment = Alignment.Center
     ) {
         // Sizing calculations - BIGGER for better visibility
-        val albumSize = (minOf(maxWidth * 0.82f, maxHeight * 0.90f)).coerceAtLeast(1.dp)
+        val albumSize = (minOf(maxWidth * 0.90f, maxHeight * 0.95f)).coerceAtLeast(1.dp)
         val cornerRadius = albumSize * 0.08f
         
         // Spacing between album centers
