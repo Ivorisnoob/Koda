@@ -286,7 +286,7 @@ APKs are split by ABI for optimized sizes:
 
 - [ ] Enhanced Playlist Management — Create & edit playlists
 - [ ] Advanced Audio — Equalizer, gapless playback, crossfade
-- [ ] Lyrics Support — Display synced lyrics
+- [x] Lyrics Support — Display synced lyrics
 - [ ] Widget — Home screen music controls
 - [ ] Kotlin Multiplatform — Desktop & iOS support
 
