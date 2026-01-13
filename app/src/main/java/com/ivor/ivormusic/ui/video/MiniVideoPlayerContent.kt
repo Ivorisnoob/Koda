@@ -44,9 +44,9 @@ fun MiniVideoPlayerContent(
     var progress by remember { mutableFloatStateOf(0f) }
     val exoPlayer = viewModel.exoPlayer
 
-    LaunchedEffect(exoPlayer, currentVideo) {
+    LaunchedEffect(exoPlayer, currentVideo, isPlaying) {
         while (isActive) {
-            if (exoPlayer != null && exoPlayer.duration > 0) {
+            if (isPlaying && exoPlayer != null && exoPlayer.duration > 0) {
                 progress = exoPlayer.currentPosition.toFloat() / exoPlayer.duration.toFloat()
             }
             delay(1000)

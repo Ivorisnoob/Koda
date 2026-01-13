@@ -164,8 +164,7 @@ fun MusicApp(
         
         // Video Overlay
         com.ivor.ivormusic.ui.video.VideoPlayerOverlay(
-            viewModel = videoPlayerViewModel,
-            onBack = { /* Handled internally by overlay logic */ }
+            viewModel = videoPlayerViewModel
         )
     }
 }

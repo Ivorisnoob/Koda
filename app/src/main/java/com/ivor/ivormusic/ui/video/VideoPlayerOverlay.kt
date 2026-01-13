@@ -35,8 +35,7 @@ import com.ivor.ivormusic.R
 @androidx.annotation.OptIn(UnstableApi::class)
 @Composable
 fun VideoPlayerOverlay(
-    viewModel: VideoPlayerViewModel,
-    onBack: () -> Unit
+    viewModel: VideoPlayerViewModel
 ) {
     val isExpanded by viewModel.isExpanded.collectAsState()
     val currentVideo by viewModel.currentVideo.collectAsState()
@@ -143,6 +142,10 @@ fun VideoPlayerOverlay(
                     player = viewModel.exoPlayer
                     useController = false
                 }
+            },
+            update = { pv ->
+                pv.player = viewModel.exoPlayer
+                pv.useController = false
             },
             modifier = Modifier.fillMaxSize()
         )
