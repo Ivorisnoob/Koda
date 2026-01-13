@@ -24,6 +24,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import com.ivor.ivormusic.data.Song
+import com.ivor.ivormusic.data.PlayerStyle
 import com.ivor.ivormusic.ui.components.MiniPlayerContent
 
 /**
@@ -44,6 +45,7 @@ fun ExpandablePlayer(
     onNextClick: () -> Unit,
     viewModel: PlayerViewModel,
     ambientBackground: Boolean = true,
+    playerStyle: PlayerStyle = PlayerStyle.CLASSIC,
     onArtistClick: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -137,15 +139,30 @@ fun ExpandablePlayer(
             ) { targetExpanded ->
                 if (targetExpanded) {
                     Box(modifier = Modifier.fillMaxSize()) {
-                        PlayerSheetContent(
-                            viewModel = viewModel,
-                            ambientBackground = ambientBackground,
-                            onCollapse = { onExpandChange(false) },
-                            onLoadMore = {
-                                viewModel.loadMoreRecommendations()
-                            },
-                            onArtistClick = onArtistClick
-                        )
+                        when (playerStyle) {
+                            PlayerStyle.CLASSIC -> {
+                                PlayerSheetContent(
+                                    viewModel = viewModel,
+                                    ambientBackground = ambientBackground,
+                                    onCollapse = { onExpandChange(false) },
+                                    onLoadMore = {
+                                        viewModel.loadMoreRecommendations()
+                                    },
+                                    onArtistClick = onArtistClick
+                                )
+                            }
+                            PlayerStyle.GESTURE -> {
+                                GesturePlayerSheetContent(
+                                    viewModel = viewModel,
+                                    ambientBackground = ambientBackground,
+                                    onCollapse = { onExpandChange(false) },
+                                    onLoadMore = {
+                                        viewModel.loadMoreRecommendations()
+                                    },
+                                    onArtistClick = onArtistClick
+                                )
+                            }
+                        }
                     }
                 } else {
                     MiniPlayerContent(

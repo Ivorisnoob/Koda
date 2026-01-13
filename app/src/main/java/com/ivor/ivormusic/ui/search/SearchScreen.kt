@@ -67,7 +67,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.ivor.ivormusic.data.Song
+import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.ui.home.HomeViewModel
+import com.ivor.ivormusic.ui.video.VideoCard
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -99,15 +101,18 @@ fun SearchScreen(
     songs: List<Song>,
     onSongClick: (Song) -> Unit,
     onPlayQueue: (List<Song>, Song) -> Unit = { _, song -> onSongClick(song) },
+    onVideoClick: (VideoItem) -> Unit = {},
     contentPadding: PaddingValues,
     viewModel: HomeViewModel,
     isDarkMode: Boolean,
+    videoMode: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     var query by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
     var isLoadingMore by remember { mutableStateOf(false) }
     var youtubeResults by remember { mutableStateOf<List<Song>>(emptyList()) }
+    var videoResults by remember { mutableStateOf<List<VideoItem>>(emptyList()) }
     var visibleLocalCount by remember { mutableIntStateOf(20) }
     val scope = rememberCoroutineScope()
     
@@ -130,15 +135,24 @@ fun SearchScreen(
         }
     }
     
-    // Search YouTube when query changes
-    LaunchedEffect(query) {
+    // Search YouTube/Videos when query changes
+    LaunchedEffect(query, videoMode) {
         if (query.length >= 3) {
             delay(500) // Debounce
             isLoading = true
-            youtubeResults = viewModel.searchYouTube(query)
+            if (videoMode) {
+                // Search for videos in video mode
+                videoResults = viewModel.searchVideos(query)
+                youtubeResults = emptyList()
+            } else {
+                // Search for songs in music mode
+                youtubeResults = viewModel.searchYouTube(query)
+                videoResults = emptyList()
+            }
             isLoading = false
         } else {
             youtubeResults = emptyList()
+            videoResults = emptyList()
         }
     }
     
@@ -187,7 +201,7 @@ fun SearchScreen(
                                 )
                                 Spacer(modifier = Modifier.height(16.dp))
                                 Text(
-                                    "Searching YouTube Music...",
+                                    if (videoMode) "Searching YouTube Videos..." else "Searching YouTube Music...",
                                     color = secondaryTextColor,
                                     style = MaterialTheme.typography.bodyMedium
                                 )
@@ -243,6 +257,57 @@ fun SearchScreen(
                                 primaryColor = primaryColor
                             )
                         }
+                    }
+                }
+                
+                // Video Mode Results
+                videoMode && videoResults.isNotEmpty() -> {
+                    // Video Search Results Section
+                    item {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)
+                        ) {
+                            Surface(
+                                shape = CircleShape,
+                                color = Color(0xFFFF0000).copy(alpha = 0.15f),
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        Icons.Rounded.TravelExplore,
+                                        contentDescription = null,
+                                        tint = Color(0xFFFF0000),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.size(12.dp))
+                            Text(
+                                "YouTube Videos",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = textColor
+                            )
+                            Spacer(modifier = Modifier.weight(1f))
+                            Text(
+                                "${videoResults.size} results",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = secondaryTextColor
+                            )
+                        }
+                    }
+                    
+                    // Display video results
+                    itemsIndexed(videoResults) { index, video ->
+                        VideoCard(
+                            video = video,
+                            onClick = { onVideoClick(video) },
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                        )
                     }
                 }
                 

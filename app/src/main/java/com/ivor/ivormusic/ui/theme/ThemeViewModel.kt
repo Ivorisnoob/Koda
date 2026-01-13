@@ -3,6 +3,7 @@ package com.ivor.ivormusic.ui.theme
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import com.ivor.ivormusic.data.ThemePreferences
+import com.ivor.ivormusic.data.PlayerStyle
 import kotlinx.coroutines.flow.StateFlow
 
 /**
@@ -15,6 +16,8 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
     val themeMode: StateFlow<ThemeMode> = themePreferences.themeMode
     val loadLocalSongs: StateFlow<Boolean> = themePreferences.loadLocalSongs
     val ambientBackground: StateFlow<Boolean> = themePreferences.ambientBackground
+    val videoMode: StateFlow<Boolean> = themePreferences.videoMode
+    val playerStyle: StateFlow<PlayerStyle> = themePreferences.playerStyle
 
     fun setThemeMode(mode: ThemeMode) {
         themePreferences.setThemeMode(mode)
@@ -34,5 +37,17 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
     
     fun toggleAmbientBackground() {
         themePreferences.toggleAmbientBackground()
+    }
+    
+    fun setVideoMode(enabled: Boolean) {
+        themePreferences.setVideoMode(enabled)
+    }
+    
+    fun toggleVideoMode() {
+        themePreferences.toggleVideoMode()
+    }
+    
+    fun setPlayerStyle(style: PlayerStyle) {
+        themePreferences.setPlayerStyle(style)
     }
 }

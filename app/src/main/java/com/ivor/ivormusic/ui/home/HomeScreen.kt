@@ -35,6 +35,7 @@ import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.People
 import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -60,6 +61,9 @@ import androidx.compose.material3.carousel.HorizontalMultiBrowseCarousel
 import androidx.compose.material3.carousel.HorizontalUncontainedCarousel
 import androidx.compose.material3.carousel.rememberCarouselState
 import androidx.compose.material3.carousel.CarouselState
+import androidx.compose.material3.HorizontalFloatingToolbar
+import androidx.compose.material3.FloatingToolbarDefaults
+import androidx.compose.material3.IconToggleButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.activity.compose.BackHandler
@@ -92,6 +96,7 @@ import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberPermissionState
 import com.ivor.ivormusic.data.Song
+import com.ivor.ivormusic.data.PlayerStyle
 import com.ivor.ivormusic.ui.components.FloatingPillNavBar
 import com.ivor.ivormusic.ui.player.PlayerViewModel
 import com.ivor.ivormusic.ui.player.ExpandablePlayer
@@ -107,6 +112,8 @@ import androidx.graphics.shapes.toPath
 import androidx.compose.material3.MaterialShapes
 import androidx.compose.animation.with
 import kotlinx.coroutines.launch
+import com.ivor.ivormusic.data.VideoItem
+import com.ivor.ivormusic.ui.video.VideoHomeContent
 
 
 import androidx.compose.animation.ExperimentalAnimationApi
@@ -125,8 +132,11 @@ fun HomeScreen(
     onThemeToggle: (Boolean) -> Unit = {},
     onNavigateToSettings: () -> Unit = {},
     onNavigateToDownloads: () -> Unit = {},
+    onNavigateToVideoPlayer: (VideoItem) -> Unit = {},
     loadLocalSongs: Boolean = true,
-    ambientBackground: Boolean = true
+    ambientBackground: Boolean = true,
+    videoMode: Boolean = false,
+    playerStyle: PlayerStyle = PlayerStyle.CLASSIC
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val localSongs by viewModel.songs.collectAsState()
@@ -176,6 +186,17 @@ fun HomeScreen(
     LaunchedEffect(permissionState.status.isGranted, loadLocalSongs) {
         if (permissionState.status.isGranted && loadLocalSongs) {
             viewModel.loadSongs()
+        }
+    }
+    
+    // Video mode state
+    val trendingVideos by viewModel.trendingVideos.collectAsState()
+    val isVideoLoading by viewModel.isVideoLoading.collectAsState()
+    
+    // Load videos when video mode is enabled
+    LaunchedEffect(videoMode) {
+        if (videoMode) {
+            viewModel.loadTrendingVideos()
         }
     }
 
@@ -233,7 +254,26 @@ fun HomeScreen(
             ) { targetTab ->
                 when (targetTab) {
                     0 -> {
-                        if (isLoading && songs.isEmpty()) {
+                        // Video Mode: Show video content
+                        if (videoMode) {
+                            VideoHomeContent(
+                                videos = trendingVideos,
+                                isLoading = isVideoLoading,
+                                onVideoClick = { video ->
+                                    // Navigate to video player screen
+                                    onNavigateToVideoPlayer(video)
+                                },
+                                onProfileClick = { showAuthDialog = true },
+                                onSettingsClick = onNavigateToSettings,
+                                onDownloadsClick = onNavigateToDownloads,
+                                onRefresh = { viewModel.refreshVideos() },
+                                isDarkMode = isDarkMode,
+                                contentPadding = PaddingValues(bottom = 160.dp),
+                                viewModel = viewModel
+                            )
+                        } 
+                        // Music Mode: Show original content
+                        else if (isLoading && songs.isEmpty()) {
                              Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                                 LoadingIndicator(
                                     modifier = Modifier.size(48.dp),
@@ -274,30 +314,48 @@ fun HomeScreen(
                             playerViewModel.playQueue(songList, song)
                             showPlayerSheet = true
                         },
-                        contentPadding = PaddingValues(bottom = 160.dp),
-                        viewModel = viewModel,
-                        isDarkMode = isDarkMode
-                    )
-                    2 -> LibraryContent(
-                        songs = songs,
-                        onSongClick = { song: Song ->
-                            // Pass all songs to enable Next/Previous navigation
-                            playerViewModel.playQueue(songs, song)
-                            showPlayerSheet = true
-                        },
-                        onPlaylistClick = { playlist: com.ivor.ivormusic.data.PlaylistDisplayItem ->
-                            // Optional: navigate to playlist detail or handled by parent
-                        },
-                        onPlayQueue = { songs: List<Song>, selectedSong: Song? ->
-                            playerViewModel.playQueue(songs, selectedSong)
-                            showPlayerSheet = true
+                        onVideoClick = { video ->
+                            // Navigate to video player screen
+                            onNavigateToVideoPlayer(video)
                         },
                         contentPadding = PaddingValues(bottom = 160.dp),
                         viewModel = viewModel,
                         isDarkMode = isDarkMode,
-                        initialArtist = viewedArtistFromPlayer,
-                        onInitialArtistConsumed = { viewedArtistFromPlayer = null }
+                        videoMode = videoMode
                     )
+                    2 -> {
+                        if (videoMode) {
+                             com.ivor.ivormusic.ui.video.VideoHistoryContent(
+                                viewModel = viewModel,
+                                onVideoClick = { video ->
+                                    onNavigateToVideoPlayer(video)
+                                },
+                                onLoginClick = { showAuthDialog = true },
+                                contentPadding = PaddingValues(bottom = 160.dp)
+                            )
+                        } else {
+                            LibraryContent(
+                                songs = songs,
+                                onSongClick = { song: Song ->
+                                    // Pass all songs to enable Next/Previous navigation
+                                    playerViewModel.playQueue(songs, song)
+                                    showPlayerSheet = true
+                                },
+                                onPlaylistClick = { playlist: com.ivor.ivormusic.data.PlaylistDisplayItem ->
+                                    // Optional: navigate to playlist detail or handled by parent
+                                },
+                                onPlayQueue = { songs: List<Song>, selectedSong: Song? ->
+                                    playerViewModel.playQueue(songs, selectedSong)
+                                    showPlayerSheet = true
+                                },
+                                contentPadding = PaddingValues(bottom = 160.dp),
+                                viewModel = viewModel,
+                                isDarkMode = isDarkMode,
+                                initialArtist = viewedArtistFromPlayer,
+                                onInitialArtistConsumed = { viewedArtistFromPlayer = null }
+                            )
+                        }
+                    }
                 }
             }
         } else {
@@ -331,14 +389,65 @@ fun HomeScreen(
             }
         }
         
-        // Floating Navigation bar - truly floating overlay
-        FloatingPillNavBar(
-            selectedTab = selectedTab,
-            onTabSelected = { selectedTab = it },
-            isDarkMode = isDarkMode,
+        // Floating Navigation bar - truly floating overlay using Material 3 Expressive HorizontalFloatingToolbar
+        HorizontalFloatingToolbar(
+            expanded = true,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .navigationBarsPadding()
+                .padding(bottom = 20.dp),
+            content = {
+                // Home
+                IconToggleButton(
+                    checked = selectedTab == 0,
+                    onCheckedChange = { selectedTab = 0 },
+                    colors = IconButtonDefaults.iconToggleButtonColors(
+                        checkedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                        checkedContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        containerColor = Color.Transparent,
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                ) {
+                    Icon(
+                        imageVector = if (selectedTab == 0) Icons.Rounded.Home else Icons.Outlined.Home,
+                        contentDescription = "Home"
+                    )
+                }
+
+                // Search
+                IconToggleButton(
+                    checked = selectedTab == 1,
+                    onCheckedChange = { selectedTab = 1 },
+                    colors = IconButtonDefaults.iconToggleButtonColors(
+                        checkedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                        checkedContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        containerColor = Color.Transparent,
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                ) {
+                    Icon(
+                        imageVector = if (selectedTab == 1) Icons.Filled.Search else Icons.Outlined.Search,
+                        contentDescription = "Search"
+                    )
+                }
+
+                // Library
+                IconToggleButton(
+                    checked = selectedTab == 2,
+                    onCheckedChange = { selectedTab = 2 },
+                    colors = IconButtonDefaults.iconToggleButtonColors(
+                        checkedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                        checkedContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        containerColor = Color.Transparent,
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                ) {
+                    Icon(
+                        imageVector = if (selectedTab == 2) Icons.Filled.LibraryMusic else Icons.Outlined.LibraryMusic,
+                        contentDescription = "Library"
+                    )
+                }
+            }
         )
 
         // Expandable Player (Mini <-> Full Screen)
@@ -355,6 +464,7 @@ fun HomeScreen(
             onNextClick = { playerViewModel.skipToNext() },
             viewModel = playerViewModel,
             ambientBackground = ambientBackground,
+            playerStyle = playerStyle,
             onArtistClick = { artistName ->
                 // Collapse player and navigate to Library tab to show artist
                 showPlayerSheet = false
@@ -805,17 +915,21 @@ fun SearchContent(
     songs: List<Song>,
     onSongClick: (Song) -> Unit,
     onPlayQueue: (List<Song>, Song) -> Unit = { _, song -> onSongClick(song) },
+    onVideoClick: (VideoItem) -> Unit = {},
     contentPadding: PaddingValues,
     viewModel: HomeViewModel,
-    isDarkMode: Boolean
+    isDarkMode: Boolean,
+    videoMode: Boolean = false
 ) {
     com.ivor.ivormusic.ui.search.SearchScreen(
         songs = songs,
         onSongClick = onSongClick,
         onPlayQueue = onPlayQueue,
+        onVideoClick = onVideoClick,
         contentPadding = contentPadding,
         viewModel = viewModel,
-        isDarkMode = isDarkMode
+        isDarkMode = isDarkMode,
+        videoMode = videoMode
     )
 }
 

@@ -246,6 +246,9 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                 val newSongs = youTubeRepository.search("Songs related to $seed", com.ivor.ivormusic.data.YouTubeRepository.FILTER_SONGS)
                     .filter { newSong -> _currentQueue.value.none { it.id == newSong.id } } // Filter duplicates
                     .take(10)
+                    .map { 
+                        if (it.album.isNullOrEmpty()) it.copy(album = "Related to $seed") else it 
+                    }
                 
                 if (newSongs.isNotEmpty()) {
                     addToQueue(newSongs)

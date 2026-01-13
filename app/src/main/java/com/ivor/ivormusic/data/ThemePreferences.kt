@@ -24,6 +24,12 @@ class ThemePreferences(context: Context) {
     
     private val _ambientBackground = MutableStateFlow(getAmbientBackgroundPreference())
     val ambientBackground: StateFlow<Boolean> = _ambientBackground.asStateFlow()
+    
+    private val _videoMode = MutableStateFlow(getVideoModePreference())
+    val videoMode: StateFlow<Boolean> = _videoMode.asStateFlow()
+    
+    private val _playerStyle = MutableStateFlow(getPlayerStylePreference())
+    val playerStyle: StateFlow<PlayerStyle> = _playerStyle.asStateFlow()
 
     companion object {
         private const val PREFS_NAME = "ivor_music_theme_prefs"
@@ -31,6 +37,8 @@ class ThemePreferences(context: Context) {
         private const val KEY_OLD_DARK_MODE = "dark_mode" // For migration
         private const val KEY_LOAD_LOCAL_SONGS = "load_local_songs"
         private const val KEY_AMBIENT_BACKGROUND = "ambient_background"
+        private const val KEY_VIDEO_MODE = "video_mode"
+        private const val KEY_PLAYER_STYLE = "player_style"
     }
 
     /**
@@ -108,4 +116,56 @@ class ThemePreferences(context: Context) {
     fun toggleAmbientBackground() {
         setAmbientBackground(!_ambientBackground.value)
     }
+    
+    /**
+     * Get the stored video mode preference. Defaults to false (Music mode).
+     */
+    private fun getVideoModePreference(): Boolean {
+        return prefs.getBoolean(KEY_VIDEO_MODE, false)
+    }
+    
+    /**
+     * Save video mode preference and update the flow.
+     */
+    fun setVideoMode(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_VIDEO_MODE, enabled).apply()
+        _videoMode.value = enabled
+    }
+    
+    /**
+     * Toggle video mode setting.
+     */
+    fun toggleVideoMode() {
+        setVideoMode(!_videoMode.value)
+    }
+    
+    /**
+     * Get the stored player style preference. Defaults to CLASSIC.
+     */
+    private fun getPlayerStylePreference(): PlayerStyle {
+        val styleName = prefs.getString(KEY_PLAYER_STYLE, PlayerStyle.CLASSIC.name)
+        return try {
+            PlayerStyle.valueOf(styleName ?: PlayerStyle.CLASSIC.name)
+        } catch (e: IllegalArgumentException) {
+            PlayerStyle.CLASSIC
+        }
+    }
+    
+    /**
+     * Save player style preference and update the flow.
+     */
+    fun setPlayerStyle(style: PlayerStyle) {
+        prefs.edit().putString(KEY_PLAYER_STYLE, style.name).apply()
+        _playerStyle.value = style
+    }
+}
+
+/**
+ * Player UI Style options
+ */
+enum class PlayerStyle {
+    /** Classic button-based player with play/pause/next/previous controls */
+    CLASSIC,
+    /** Gesture-based carousel player with swipe navigation */
+    GESTURE
 }

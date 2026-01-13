@@ -48,6 +48,8 @@ import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Palette
+import androidx.compose.material.icons.rounded.PlayCircle
+import androidx.compose.material.icons.rounded.SwipeRight
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -62,6 +64,7 @@ import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.ToggleButton
 import androidx.compose.material3.ToggleButtonDefaults
 import androidx.compose.material3.MaterialShapes
+import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SegmentedButton
@@ -106,6 +109,7 @@ import com.ivor.ivormusic.data.SessionManager
 import com.ivor.ivormusic.data.UpdateRepository
 import com.ivor.ivormusic.data.UpdateResult
 import com.ivor.ivormusic.ui.auth.YouTubeAuthDialog
+import com.ivor.ivormusic.data.PlayerStyle
 import com.ivor.ivormusic.ui.theme.ThemeMode
 import kotlinx.coroutines.delay
 
@@ -153,6 +157,10 @@ fun SettingsScreen(
     onLoadLocalSongsToggle: (Boolean) -> Unit,
     ambientBackground: Boolean,
     onAmbientBackgroundToggle: (Boolean) -> Unit,
+    videoMode: Boolean,
+    onVideoModeToggle: (Boolean) -> Unit,
+    playerStyle: PlayerStyle,
+    onPlayerStyleChange: (PlayerStyle) -> Unit,
     onLogoutClick: () -> Unit,
     onBackClick: () -> Unit,
     contentPadding: PaddingValues = PaddingValues()
@@ -264,6 +272,26 @@ fun SettingsScreen(
                     }
                 }
             }
+            
+            // Player UI Section
+            item {
+                AnimatedSettingsSection(
+                    title = "Player UI",
+                    textColor = secondaryTextColor,
+                    visible = isVisible,
+                    delay = 25
+                ) {
+                    ExpressiveSettingsCard(surfaceColor = surfaceColor) {
+                        ExpressivePlayerStyleSelectItem(
+                            currentStyle = playerStyle,
+                            onStyleSelected = onPlayerStyleChange,
+                            textColor = textColor,
+                            secondaryTextColor = secondaryTextColor,
+                            accentColor = accentColor
+                        )
+                    }
+                }
+            }
 
             // YouTube Music Section
             item {
@@ -316,13 +344,33 @@ fun SettingsScreen(
                 }
             }
 
+            // Content Mode Section (Video/Music toggle)
+            item {
+                AnimatedSettingsSection(
+                    title = "Content Mode",
+                    textColor = secondaryTextColor,
+                    visible = isVisible,
+                    delay = 75
+                ) {
+                    ExpressiveSettingsCard(surfaceColor = surfaceColor) {
+                        ExpressiveVideoModeToggleItem(
+                            enabled = videoMode,
+                            onToggle = onVideoModeToggle,
+                            textColor = textColor,
+                            secondaryTextColor = secondaryTextColor,
+                            accentColor = Color(0xFFFF0000) // YouTube red
+                        )
+                    }
+                }
+            }
+
             // Library Section
             item {
                 AnimatedSettingsSection(
                     title = "Library",
                     textColor = secondaryTextColor,
                     visible = isVisible,
-                    delay = 100
+                    delay = 125
                 ) {
                     ExpressiveSettingsCard(surfaceColor = surfaceColor) {
                         ExpressiveLocalSongsToggleItem(
@@ -751,6 +799,187 @@ private fun ExpressiveAmbientBackgroundToggleItem(
                 checkedBorderColor = Color.Transparent
             )
         )
+    }
+}
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class)
+@Composable
+private fun ExpressiveVideoModeToggleItem(
+    enabled: Boolean,
+    onToggle: (Boolean) -> Unit,
+    textColor: Color,
+    secondaryTextColor: Color,
+    accentColor: Color
+) {
+    val options = listOf("Music", "Video")
+    val selectedIndex = if (enabled) 1 else 0
+    
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 14.dp)
+    ) {
+        // Header Row
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Icon
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(accentColor.copy(alpha = 0.12f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = if (enabled) Icons.Rounded.VideoLibrary else Icons.Rounded.MusicNote,
+                    contentDescription = null,
+                    tint = accentColor,
+                    modifier = Modifier.size(26.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(16.dp))
+
+            // Text
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Content Mode",
+                    color = textColor,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = if (enabled) "Showing YouTube videos" else "Showing music content",
+                    color = secondaryTextColor,
+                    fontSize = 13.sp
+                )
+            }
+        }
+        
+        Spacer(modifier = Modifier.height(16.dp))
+        
+        // Segmented Button Row
+        SingleChoiceSegmentedButtonRow(
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            options.forEachIndexed { index, label ->
+                SegmentedButton(
+                    selected = selectedIndex == index,
+                    onClick = { onToggle(index == 1) },
+                    shape = SegmentedButtonDefaults.itemShape(
+                        index = index,
+                        count = options.size
+                    ),
+                    icon = {
+                        SegmentedButtonDefaults.Icon(active = selectedIndex == index) {
+                            Icon(
+                                imageVector = if (index == 0) Icons.Rounded.MusicNote else Icons.Rounded.VideoLibrary,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                ) {
+                    Text(label)
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class)
+@Composable
+private fun ExpressivePlayerStyleSelectItem(
+    currentStyle: PlayerStyle,
+    onStyleSelected: (PlayerStyle) -> Unit,
+    textColor: Color,
+    secondaryTextColor: Color,
+    accentColor: Color
+) {
+    val options = listOf("Classic" to PlayerStyle.CLASSIC, "Gesture" to PlayerStyle.GESTURE)
+    
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 14.dp)
+    ) {
+        // Header Row
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Icon
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(accentColor.copy(alpha = 0.12f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = if (currentStyle == PlayerStyle.GESTURE) 
+                        Icons.Rounded.SwipeRight 
+                    else 
+                        Icons.Rounded.PlayCircle,
+                    contentDescription = null,
+                    tint = accentColor,
+                    modifier = Modifier.size(26.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(16.dp))
+
+            // Text
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Player Style",
+                    color = textColor,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = when (currentStyle) {
+                        PlayerStyle.CLASSIC -> "Button controls for playback"
+                        PlayerStyle.GESTURE -> "Swipe album art to navigate"
+                    },
+                    color = secondaryTextColor,
+                    fontSize = 13.sp
+                )
+            }
+        }
+        
+        Spacer(modifier = Modifier.height(16.dp))
+        
+        // Segmented Button Row
+        SingleChoiceSegmentedButtonRow(
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            options.forEachIndexed { index, (label, style) ->
+                SegmentedButton(
+                    selected = currentStyle == style,
+                    onClick = { onStyleSelected(style) },
+                    shape = SegmentedButtonDefaults.itemShape(
+                        index = index,
+                        count = options.size
+                    ),
+                    icon = {
+                        SegmentedButtonDefaults.Icon(active = currentStyle == style) {
+                            Icon(
+                                imageVector = if (index == 0) Icons.Rounded.PlayCircle else Icons.Rounded.SwipeRight,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                ) {
+                    Text(label)
+                }
+            }
+        }
     }
 }
 
