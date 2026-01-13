@@ -1,0 +1,239 @@
+name: Telegram Notifications
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    types: [opened, closed, reopened]
+  issues:
+    types: [opened, closed, reopened]
+  issue_comment:
+    types: [created]
+  watch:
+    types: [started]  # Stars
+  fork:
+  release:
+    types: [published]
+
+env:
+  TELEGRAM_CHAT_ID: "@ivorisnoob_projects"
+
+jobs:
+  # ============================================
+  # 🚀 Push/Commit Notification
+  # ============================================
+  notify-push:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Push Notification
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ env.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          format: markdown
+          message: |
+            🚀 *New Commit Pushed!*
+            
+            📦 *Repository:* `${{ github.repository }}`
+            🌿 *Branch:* `${{ github.ref_name }}`
+            
+            📝 *Commit:* `${{ github.event.head_commit.message }}`
+            👤 *Author:* ${{ github.event.head_commit.author.name }}
+            
+            🔗 [View Commit](${{ github.event.head_commit.url }})
+
+  # ============================================
+  # 🔀 Pull Request Notifications
+  # ============================================
+  notify-pr:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send PR Opened Notification
+        if: github.event.action == 'opened'
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ env.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          format: markdown
+          message: |
+            🔀 *New Pull Request!*
+            
+            📦 *Repository:* `${{ github.repository }}`
+            📋 *Title:* ${{ github.event.pull_request.title }}
+            👤 *Author:* @${{ github.event.pull_request.user.login }}
+            
+            🌿 `${{ github.event.pull_request.head.ref }}` → `${{ github.event.pull_request.base.ref }}`
+            
+            ➕ ${{ github.event.pull_request.additions }} additions
+            ➖ ${{ github.event.pull_request.deletions }} deletions
+            
+            🔗 [View PR](${{ github.event.pull_request.html_url }})
+
+      - name: Send PR Merged Notification
+        if: github.event.action == 'closed' && github.event.pull_request.merged == true
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ env.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          format: markdown
+          message: |
+            ✅ *Pull Request Merged!*
+            
+            📦 *Repository:* `${{ github.repository }}`
+            📋 *Title:* ${{ github.event.pull_request.title }}
+            👤 *Merged by:* @${{ github.event.sender.login }}
+            
+            ➕ ${{ github.event.pull_request.additions }} additions
+            ➖ ${{ github.event.pull_request.deletions }} deletions
+            
+            🔗 [View PR](${{ github.event.pull_request.html_url }})
+
+      - name: Send PR Closed Notification
+        if: github.event.action == 'closed' && github.event.pull_request.merged == false
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ env.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          format: markdown
+          message: |
+            ❌ *Pull Request Closed*
+            
+            📦 *Repository:* `${{ github.repository }}`
+            📋 *Title:* ${{ github.event.pull_request.title }}
+            👤 *Closed by:* @${{ github.event.sender.login }}
+            
+            🔗 [View PR](${{ github.event.pull_request.html_url }})
+
+  # ============================================
+  # 🐛 Issue Notifications
+  # ============================================
+  notify-issue:
+    if: github.event_name == 'issues'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Issue Opened Notification
+        if: github.event.action == 'opened'
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ env.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          format: markdown
+          message: |
+            🐛 *New Issue Opened!*
+            
+            📦 *Repository:* `${{ github.repository }}`
+            📋 *Title:* ${{ github.event.issue.title }}
+            👤 *Author:* @${{ github.event.issue.user.login }}
+            
+            🔗 [View Issue](${{ github.event.issue.html_url }})
+
+      - name: Send Issue Closed Notification
+        if: github.event.action == 'closed'
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ env.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          format: markdown
+          message: |
+            ✅ *Issue Closed!*
+            
+            📦 *Repository:* `${{ github.repository }}`
+            📋 *Title:* ${{ github.event.issue.title }}
+            👤 *Closed by:* @${{ github.event.sender.login }}
+            
+            🔗 [View Issue](${{ github.event.issue.html_url }})
+
+  # ============================================
+  # 💬 Issue Comment Notification
+  # ============================================
+  notify-comment:
+    if: github.event_name == 'issue_comment'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Comment Notification
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ env.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          format: markdown
+          message: |
+            💬 *New Comment!*
+            
+            📦 *Repository:* `${{ github.repository }}`
+            📋 *On:* ${{ github.event.issue.title }}
+            👤 *Author:* @${{ github.event.comment.user.login }}
+            
+            🔗 [View Comment](${{ github.event.comment.html_url }})
+
+  # ============================================
+  # ⭐ Star Notification
+  # ============================================
+  notify-star:
+    if: github.event_name == 'watch' && github.event.action == 'started'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Star Notification
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ env.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          format: markdown
+          message: |
+            ⭐ *New Star!*
+            
+            🎉 @${{ github.event.sender.login }} just starred the repo!
+            
+            📦 *Repository:* `${{ github.repository }}`
+            ⭐ *Total Stars:* ${{ github.event.repository.stargazers_count }}
+            
+            🔗 [View Repo](https://github.com/${{ github.repository }})
+
+  # ============================================
+  # 🍴 Fork Notification
+  # ============================================
+  notify-fork:
+    if: github.event_name == 'fork'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Fork Notification
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ env.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          format: markdown
+          message: |
+            🍴 *Repository Forked!*
+            
+            👤 @${{ github.event.sender.login }} forked the repo!
+            
+            📦 *Original:* `${{ github.repository }}`
+            📦 *Fork:* `${{ github.event.forkee.full_name }}`
+            🍴 *Total Forks:* ${{ github.event.repository.forks_count }}
+            
+            🔗 [View Fork](${{ github.event.forkee.html_url }})
+
+  # ============================================
+  # 📦 Release Notification
+  # ============================================
+  notify-release:
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Release Notification
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ env.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          format: markdown
+          message: |
+            🎉 *New Release Published!*
+            
+            📦 *Repository:* `${{ github.repository }}`
+            🏷️ *Version:* `${{ github.event.release.tag_name }}`
+            📋 *Name:* ${{ github.event.release.name }}
+            
+            👤 *Author:* @${{ github.event.release.author.login }}
+            
+            🔗 [Download Release](${{ github.event.release.html_url }})
