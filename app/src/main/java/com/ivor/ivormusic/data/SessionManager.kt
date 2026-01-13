@@ -14,13 +14,30 @@ class SessionManager(context: Context) {
         .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
         .build()
 
-    private val prefs = EncryptedSharedPreferences.create(
-        context,
-        "yt_music_session",
-        masterKey,
-        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-    )
+    private val prefs = try {
+        EncryptedSharedPreferences.create(
+            context,
+            PREFS_FILE_NAME,
+            masterKey,
+            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+        )
+    } catch (e: Exception) {
+        // Keystore corruption - delete corrupted prefs and recreate
+        android.util.Log.e("SessionManager", "EncryptedSharedPreferences corrupted, resetting", e)
+        context.getSharedPreferences(PREFS_FILE_NAME, Context.MODE_PRIVATE).edit().clear().apply()
+        // Also delete the backing file
+        val prefsFile = java.io.File(context.filesDir.parent, "shared_prefs/$PREFS_FILE_NAME.xml")
+        prefsFile.delete()
+        // Retry creation
+        EncryptedSharedPreferences.create(
+            context,
+            PREFS_FILE_NAME,
+            masterKey,
+            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+        )
+    }
 
     fun saveUserAvatar(url: String) {
         prefs.edit().putString(KEY_USER_AVATAR, url).apply()
@@ -67,6 +84,7 @@ class SessionManager(context: Context) {
     }
 
     companion object {
+        private const val PREFS_FILE_NAME = "yt_music_session"
         private const val KEY_COOKIES = "session_cookies"
         private const val KEY_USER_NAME = "user_name"
         private const val KEY_USER_AVATAR = "user_avatar"
