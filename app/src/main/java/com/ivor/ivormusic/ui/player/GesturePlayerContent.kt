@@ -30,6 +30,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
@@ -332,11 +333,11 @@ private fun GestureNowPlayingView(
                 BoxWithConstraints(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 4.dp),
+                        .padding(horizontal = 0.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    // Use most of available width for HUGE album art - ensure positive size
-                    val albumSize = (maxWidth - 16.dp).coerceAtLeast(1.dp)
+                    // Use FULL available width for HUGE album art - ensure positive size
+                    val albumSize = maxWidth.coerceAtLeast(1.dp)
                     
                     Box(
                         modifier = Modifier.size(albumSize),
@@ -398,7 +399,7 @@ private fun GestureNowPlayingView(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(horizontal = 24.dp),
-                            horizontalAlignment = Alignment.Start
+                            horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             Text(
                                 text = currentSong?.title?.takeIf { !it.startsWith("Unknown") } ?: "Untitled",
@@ -406,7 +407,7 @@ private fun GestureNowPlayingView(
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                                 color = onSurfaceColor,
-                                textAlign = TextAlign.Start
+                                textAlign = TextAlign.Center
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             val artistName = currentSong?.artist?.takeIf { !it.startsWith("Unknown") } ?: "Unknown Artist"
@@ -416,7 +417,7 @@ private fun GestureNowPlayingView(
                                 color = onSurfaceVariantColor,
                                 modifier = Modifier
                                     .clickable(enabled = artistName != "Unknown Artist") { onArtistClick(artistName) },
-                                textAlign = TextAlign.Start
+                                textAlign = TextAlign.Center
                             )
                         }
                         
@@ -506,7 +507,7 @@ private fun GestureNowPlayingView(
                     onSurfaceVariantColor = onSurfaceVariantColor
                 )
                 
-                Spacer(modifier = Modifier.height(32.dp))
+                Spacer(modifier = Modifier.height(56.dp))
             }
         }
         }
@@ -535,12 +536,12 @@ private fun GesturePlayerToolbar(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp),
+            .padding(horizontal = 0.dp),
         contentAlignment = Alignment.Center
     ) {
         HorizontalFloatingToolbar(
             expanded = true,
-            modifier = Modifier,
+            modifier = Modifier.scale(1.15f),
             colors = FloatingToolbarDefaults.standardFloatingToolbarColors(),
             floatingActionButton = {
                 // Use FAB for the favorite button (highlighted action)
