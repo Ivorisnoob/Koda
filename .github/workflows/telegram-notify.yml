@@ -32,6 +32,7 @@ jobs:
           to: ${{ env.TELEGRAM_CHAT_ID }}
           token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           format: html
+          debug: true
           message: |
             🚀 <b>New Commit Pushed!</b>
             
