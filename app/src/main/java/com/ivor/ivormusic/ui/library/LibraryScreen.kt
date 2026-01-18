@@ -981,7 +981,7 @@ fun PlaylistDetailScreen(
                                 Surface(
                                     onClick = { if (songs.isNotEmpty()) onPlayQueue(songs, null) },
                                     modifier = Modifier.size(80.dp),
-                                    shape = expressiveShape,
+                                    shape = CircleShape,
                                     color = primaryColor,
                                     shadowElevation = 12.dp
                                 ) {

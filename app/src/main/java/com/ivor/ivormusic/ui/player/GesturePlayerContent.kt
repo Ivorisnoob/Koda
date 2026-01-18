@@ -169,6 +169,21 @@ fun GesturePlayerSheetContent(
             }
         }
     }
+
+    if (showAddToPlaylist) {
+        AddToPlaylistSheet(
+            playlists = localPlaylists,
+            onPlaylistClick = { playlist ->
+                viewModel.addToPlaylist(playlist.id)
+                showAddToPlaylist = false
+            },
+            onCreateNewClick = { name, desc ->
+                viewModel.createPlaylist(name, desc)
+                showAddToPlaylist = false
+            },
+            onDismissRequest = { showAddToPlaylist = false }
+        )
+    }
 }
 
 /**
