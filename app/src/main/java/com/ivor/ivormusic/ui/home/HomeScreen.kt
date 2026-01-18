@@ -779,6 +779,11 @@ fun OrganicSongLayout(
             .fillMaxWidth()
             .height(480.dp)
     ) {
+        // Guard against invalid dimensions during transitions
+        if (maxWidth <= 0.dp || maxHeight <= 0.dp) {
+            return@BoxWithConstraints
+        }
+        
         val boxWidth = maxWidth
         val boxHeight = maxHeight
         

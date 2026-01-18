@@ -701,6 +701,11 @@ private fun SwipeableAlbumCarousel(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
     ) {
+        // Guard against invalid dimensions during transitions
+        if (maxWidth <= 0.dp || maxHeight <= 0.dp) {
+            return@BoxWithConstraints
+        }
+        
         // Sizing calculations - BIGGER for better visibility
         val albumSize = (minOf(maxWidth * 0.90f, maxHeight * 0.95f)).coerceAtLeast(1.dp)
         val cornerRadius = albumSize * 0.08f
@@ -900,6 +905,11 @@ private fun SingleAlbumArt(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
     ) {
+        // Guard against invalid dimensions during transitions
+        if (maxWidth <= 0.dp || maxHeight <= 0.dp) {
+            return@BoxWithConstraints
+        }
+        
         // Use 98% of available space for HUGE album art - ensure positive size
         val albumSize = (minOf(maxWidth, maxHeight) * 0.98f).coerceAtLeast(1.dp)
         val cornerRadius = (albumSize * 0.10f).coerceAtLeast(0.dp)

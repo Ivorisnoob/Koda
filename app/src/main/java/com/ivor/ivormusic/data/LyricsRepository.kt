@@ -43,6 +43,20 @@ class LyricsRepository {
         artist: String,
         durationMs: Long
     ): LyricsResult = withContext(Dispatchers.IO) {
+        // Validate inputs - avoid API calls with invalid data
+        if (title.isBlank() || title.startsWith("Unknown", ignoreCase = true)) {
+            Log.d(TAG, "Skipping lyrics fetch: invalid title '$title'")
+            return@withContext LyricsResult.NotFound
+        }
+        if (artist.isBlank() || artist.startsWith("Unknown", ignoreCase = true)) {
+            Log.d(TAG, "Skipping lyrics fetch: invalid artist '$artist'")
+            return@withContext LyricsResult.NotFound
+        }
+        if (durationMs <= 0) {
+            Log.d(TAG, "Skipping lyrics fetch: invalid duration $durationMs")
+            return@withContext LyricsResult.NotFound
+        }
+        
         // Check cache first
         cache[songId]?.let { 
             Log.d(TAG, "Cache hit for: $title")
@@ -223,14 +237,19 @@ class LyricsRepository {
     
     /**
      * Clean up search terms by removing common suffixes/prefixes that hurt matching.
+     * Also sanitizes characters that can cause API errors.
      */
     private fun cleanSearchTerm(term: String): String {
+        if (term.isBlank()) return ""
+        
         return term
             .replace(Regex("""\s*\(.*?\)\s*"""), " ")  // Remove parenthetical content
             .replace(Regex("""\s*\[.*?]\s*"""), " ")   // Remove bracketed content
             .replace(Regex("""\s*-\s*(Official|Music|Video|Audio|Lyrics|HD|HQ|4K).*""", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("""[^\p{L}\p{N}\s\-']"""), "") // Remove special chars except letters, numbers, spaces, hyphens, apostrophes
             .replace(Regex("""\s+"""), " ")            // Normalize whitespace
             .trim()
+            .take(100) // Limit length to prevent API issues
     }
     
     /**

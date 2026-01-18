@@ -224,6 +224,11 @@ private fun AlbumHeroHeader(
             .fillMaxWidth()
             .height(420.dp)
     ) {
+        // Guard against invalid dimensions during transitions
+        if (maxWidth <= 0.dp || maxHeight <= 0.dp) {
+            return@BoxWithConstraints
+        }
+        
         val width = maxWidth
         val height = maxHeight
         

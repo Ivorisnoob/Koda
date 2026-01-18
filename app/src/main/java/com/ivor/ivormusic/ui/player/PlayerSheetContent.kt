@@ -366,6 +366,11 @@ private fun ExpressiveNowPlayingView(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
                     ) {
+                        // Guard against invalid dimensions during transitions
+                        if (maxWidth <= 0.dp || maxHeight <= 0.dp) {
+                            return@BoxWithConstraints
+                        }
+                        
                         val albumSize = minOf(maxWidth, maxHeight) * 0.9f
                         val cornerRadius = albumSize * 0.15f
                         
