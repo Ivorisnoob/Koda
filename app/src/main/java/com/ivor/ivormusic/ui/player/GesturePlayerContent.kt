@@ -24,6 +24,7 @@ import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.rounded.*
+import androidx.compose.material.icons.rounded.PlaylistAdd
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -95,6 +96,8 @@ fun GesturePlayerSheetContent(
     
     var showQueue by remember { mutableStateOf(false) }
     var showLyrics by remember { mutableStateOf(false) }
+    var showAddToPlaylist by remember { mutableStateOf(false) }
+    val localPlaylists by viewModel.localPlaylists.collectAsState()
 
     val surfaceColor = MaterialTheme.colorScheme.background
     val primaryColor = MaterialTheme.colorScheme.primary
@@ -147,6 +150,7 @@ fun GesturePlayerSheetContent(
                     ambientBackground = ambientBackground,
                     onCollapse = onCollapse,
                     onShowQueue = { showQueue = true },
+                    onShowAddToPlaylist = { showAddToPlaylist = true }, // Pass callback
                     onArtistClick = onArtistClick,
                     onToggleShuffle = { viewModel.toggleShuffle() },
                     onToggleRepeat = { viewModel.toggleRepeat() },
@@ -154,6 +158,7 @@ fun GesturePlayerSheetContent(
                     onToggleDownload = { currentSong?.let { viewModel.toggleDownload(it) } },
                     onPlayPauseToggle = { viewModel.togglePlayPause() },
                     onSongChange = { song -> viewModel.playQueue(currentQueue, song) },
+
                     isDownloaded = currentSong?.let { viewModel.isDownloaded(it.id) } ?: false,
                     isDownloading = currentSong?.let { viewModel.isDownloading(it.id) } ?: false,
                     isLocalOriginal = currentSong?.let { viewModel.isLocalOriginal(it) } ?: false,
@@ -188,6 +193,7 @@ private fun GestureNowPlayingView(
     ambientBackground: Boolean,
     onCollapse: () -> Unit,
     onShowQueue: () -> Unit,
+    onShowAddToPlaylist: () -> Unit, // Add param
     onArtistClick: (String) -> Unit,
     onToggleShuffle: () -> Unit,
     onToggleRepeat: () -> Unit,
@@ -503,6 +509,7 @@ private fun GestureNowPlayingView(
                     isDownloaded = isDownloaded,
                     isDownloading = isDownloading,
                     isLocalOriginal = isLocalOriginal,
+                    onShowAddToPlaylist = onShowAddToPlaylist,
                     onToggleShuffle = onToggleShuffle,
                     onToggleRepeat = onToggleRepeat,
                     onToggleFavorite = onToggleFavorite,
@@ -530,6 +537,7 @@ private fun GesturePlayerToolbar(
     isDownloaded: Boolean,
     isDownloading: Boolean,
     isLocalOriginal: Boolean,
+    onShowAddToPlaylist: () -> Unit,
     onToggleShuffle: () -> Unit,
     onToggleRepeat: () -> Unit,
     onToggleFavorite: () -> Unit,
@@ -618,6 +626,14 @@ private fun GesturePlayerToolbar(
                             )
                         }
                     }
+                }
+                
+                // Add to Playlist Button
+                IconButton(onClick = onShowAddToPlaylist) {
+                    Icon(
+                        imageVector = Icons.Rounded.PlaylistAdd,
+                        contentDescription = "Add to Playlist"
+                    )
                 }
             }
         )

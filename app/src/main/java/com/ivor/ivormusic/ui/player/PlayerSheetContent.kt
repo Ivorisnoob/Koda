@@ -23,6 +23,7 @@ import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Smartphone
 import androidx.compose.material.icons.rounded.Lyrics
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.rounded.PlaylistAdd
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -85,6 +86,8 @@ fun PlayerSheetContent(
     val lyricsResult by viewModel.lyricsResult.collectAsState()
     
     var showQueue by remember { mutableStateOf(false) }
+    var showAddToPlaylist by remember { mutableStateOf(false) }
+    val localPlaylists by viewModel.localPlaylists.collectAsState()
 
     // 🌟 Stable shapes - prevents "square flash" on initial render
     // IconButtonDefaults.shapes() already uses internal remember/caching
@@ -150,6 +153,7 @@ fun PlayerSheetContent(
                     
                     onCollapse = onCollapse,
                     onShowQueue = { showQueue = true },
+                    onShowAddToPlaylist = { showAddToPlaylist = true },
                     onArtistClick = onArtistClick,
                     viewModel = viewModel,
                     primaryColor = primaryColor,
@@ -162,8 +166,24 @@ fun PlayerSheetContent(
                 )
             }
         }
+    } // THIS BITCH ASS BRACKET WAS MISSING AND IT TOOK ME HOURS TO KNOW
+
+    if (showAddToPlaylist) {
+        AddToPlaylistSheet(
+            playlists = localPlaylists,
+            onPlaylistClick = { playlist ->
+                viewModel.addToPlaylist(playlist.id)
+                showAddToPlaylist = false
+            },
+            onCreateNewClick = { name, desc ->
+                viewModel.createPlaylist(name, desc)
+                showAddToPlaylist = false
+            },
+            onDismissRequest = { showAddToPlaylist = false }
+        )
     }
 }
+
 
 /**
  * I do not fucking ned that many slop comments thank you
@@ -190,6 +210,7 @@ private fun ExpressiveNowPlayingView(
     ambientBackground: Boolean,
     onCollapse: () -> Unit,
     onShowQueue: () -> Unit,
+    onShowAddToPlaylist: () -> Unit,
     onArtistClick: (String) -> Unit,
     viewModel: PlayerViewModel,
     primaryColor: Color,
@@ -287,17 +308,35 @@ private fun ExpressiveNowPlayingView(
                 }
             }
             
-            // Queue button - static shape (no morphing needed for utility buttons)
-            FilledIconButton(
-                onClick = onShowQueue,
-                shape = CircleShape,
-                colors = IconButtonDefaults.filledIconButtonColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    contentColor = MaterialTheme.colorScheme.onSurface
-                ),
-                modifier = Modifier.size(48.dp)
+            // Right Side Group: Add to Playlist + Queue
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Icon(Icons.AutoMirrored.Filled.QueueMusic, "Queue", modifier = Modifier.size(24.dp))
+                FilledIconButton(
+                    onClick = onShowAddToPlaylist,
+                    shape = CircleShape,
+                    colors = IconButtonDefaults.filledIconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        contentColor = MaterialTheme.colorScheme.onSurface
+                    ),
+                    modifier = Modifier.size(48.dp)
+                ) {
+                    Icon(Icons.Rounded.PlaylistAdd, "Add to Playlist", modifier = Modifier.size(24.dp))
+                }
+
+                // Queue button
+                FilledIconButton(
+                    onClick = onShowQueue,
+                    shape = CircleShape,
+                    colors = IconButtonDefaults.filledIconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        contentColor = MaterialTheme.colorScheme.onSurface
+                    ),
+                    modifier = Modifier.size(48.dp)
+                ) {
+                    Icon(Icons.AutoMirrored.Filled.QueueMusic, "Queue", modifier = Modifier.size(24.dp))
+                }
             }
         }
         

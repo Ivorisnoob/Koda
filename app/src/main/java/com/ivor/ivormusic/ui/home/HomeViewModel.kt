@@ -20,6 +20,7 @@ import kotlinx.coroutines.launch
 class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val localRepository = SongRepository(application)
     private val youtubeRepository = YouTubeRepository(application)
+    private val playlistRepository = com.ivor.ivormusic.data.PlaylistRepository(application)
     private val sessionManager = SessionManager(application)
 
     private val _songs = MutableStateFlow<List<Song>>(emptyList())
@@ -51,8 +52,17 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         (ytLiked + manuallyLikedLocalSongs).distinctBy { it.id }
     }.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000), emptyList())
 
-    private val _userPlaylists = MutableStateFlow<List<com.ivor.ivormusic.data.PlaylistDisplayItem>>(emptyList())
-    val userPlaylists: StateFlow<List<com.ivor.ivormusic.data.PlaylistDisplayItem>> = _userPlaylists.asStateFlow()
+    // YouTube playlists
+    private val _youtubePlaylists = MutableStateFlow<List<com.ivor.ivormusic.data.PlaylistDisplayItem>>(emptyList())
+    
+    // Merged Playlists (Local + YouTube)
+    val userPlaylists: StateFlow<List<com.ivor.ivormusic.data.PlaylistDisplayItem>> = combine(
+        _youtubePlaylists,
+        playlistRepository.userPlaylists
+    ) { ytPlaylists, localPlaylists ->
+        val localItems = localPlaylists.map { it.toDisplayItem() }
+        localItems + ytPlaylists
+    }.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000), emptyList())
 
     private val _userAvatar = MutableStateFlow<String?>(sessionManager.getUserAvatar())
     val userAvatar: StateFlow<String?> = _userAvatar.asStateFlow()
@@ -132,7 +142,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             try {
                 _likedSongs.value = youtubeRepository.getLikedMusic()
-                _userPlaylists.value = youtubeRepository.getUserPlaylists()
+                _youtubePlaylists.value = youtubeRepository.getUserPlaylists()
             } catch (e: Exception) { }
         }
     }
@@ -178,15 +188,22 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     suspend fun getUserPlaylists(): List<com.ivor.ivormusic.data.PlaylistDisplayItem> {
-        return _userPlaylists.value
+        return userPlaylists.value
     }
 
     suspend fun fetchPlaylistSongs(playlistId: String): List<Song> {
+        // Check local first
+        val localPlaylist = playlistRepository.userPlaylists.value.find { it.id == playlistId }
+        if (localPlaylist != null) {
+            return localPlaylist.songs
+        }
+        // Fallback to YouTube
         return try {
             youtubeRepository.getPlaylist(playlistId)
         } catch (e: Exception) {
             emptyList()
         }
+
     }
     
     /**
@@ -205,7 +222,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         _isYouTubeConnected.value = false
         _youtubeSongs.value = emptyList()
         _likedSongs.value = emptyList()
-        _userPlaylists.value = emptyList()
+        _youtubePlaylists.value = emptyList()
     }
 
     fun refresh(excludedFolders: Set<String> = emptySet()) {
@@ -226,9 +243,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     
                     // Update library data
                     _likedSongs.value = youtubeRepository.getLikedMusic()
-                    _userPlaylists.value = youtubeRepository.getUserPlaylists()
+                    _youtubePlaylists.value = youtubeRepository.getUserPlaylists()
                 }
-                // Reload local songs with exclusions
+                // Reload local songs with exclusions and playlists
+                playlistRepository.refreshPlaylists()
                 _songs.value = localRepository.getSongs(excludedFolders)
             } catch (e: Exception) {
                 // Silently fail
@@ -299,5 +317,19 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
      */
     fun refreshVideos() {
         loadTrendingVideos()
+    }
+
+    // ============= PLAYLIST MANAGEMENT =============
+    
+    fun createLocalPlaylist(name: String, description: String?) {
+        viewModelScope.launch {
+            playlistRepository.createPlaylist(name, description)
+        }
+    }
+
+    fun addSongToLocalPlaylist(playlistId: String, song: Song) {
+        viewModelScope.launch {
+            playlistRepository.addSongToPlaylist(playlistId, song)
+        }
     }
 }

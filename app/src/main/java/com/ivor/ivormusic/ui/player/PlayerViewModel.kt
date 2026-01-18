@@ -19,6 +19,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
@@ -80,6 +82,16 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     
     private val _lyricsResult = MutableStateFlow<LyricsResult>(LyricsResult.Loading)
     val lyricsResult: StateFlow<LyricsResult> = _lyricsResult.asStateFlow()
+    
+    // Playlist Repository (Local Playlists)
+    private val playlistRepository = com.ivor.ivormusic.data.PlaylistRepository(context)
+    
+    // Expose only local playlists for "Add to Playlist" feature (since we can only write to local ones)
+    private val _localPlaylists = playlistRepository.userPlaylists
+    val localPlaylists: StateFlow<List<com.ivor.ivormusic.data.PlaylistDisplayItem>> = 
+        _localPlaylists.map { list ->
+            list.map { it.toDisplayItem() }
+        }.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000), emptyList())
 
     init {
         initializeController()
@@ -457,6 +469,21 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                 durationMs = song.duration
             )
             _lyricsResult.value = result
+        }
+    }
+    
+    // --- Playlist Actions ---
+
+    fun createPlaylist(name: String, description: String?) {
+        viewModelScope.launch {
+            playlistRepository.createPlaylist(name, description)
+        }
+    }
+
+    fun addToPlaylist(playlistId: String, song: Song? = _currentSong.value) {
+        if (song == null) return
+        viewModelScope.launch {
+            playlistRepository.addSongToPlaylist(playlistId, song)
         }
     }
 

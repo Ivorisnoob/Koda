@@ -1,10 +1,12 @@
 package com.ivor.ivormusic.data
 
 import android.net.Uri
+import kotlinx.serialization.Serializable
 
 /**
  * Represents the source of the song.
  */
+@Serializable
 enum class SongSource {
     LOCAL,
     YOUTUBE
@@ -13,13 +15,16 @@ enum class SongSource {
 /**
  * A unified Song model that supports both local and YouTube Music sources.
  */
+@Serializable
 data class Song(
     val id: String, // Changed from Long to String for YouTube video IDs
     val title: String,
     val artist: String,
     val album: String,
     val duration: Long, // Duration in milliseconds
+    @Serializable(with = UriAsStringSerializer::class)
     val uri: Uri? = null, // Local content URI (null for YouTube songs until resolved)
+    @Serializable(with = UriAsStringSerializer::class)
     val albumArtUri: Uri? = null, // Album art URI
     val thumbnailUrl: String? = null, // YouTube thumbnail URL
     val source: SongSource = SongSource.LOCAL,
