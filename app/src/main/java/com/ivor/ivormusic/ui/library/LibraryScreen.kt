@@ -970,18 +970,18 @@ fun PlaylistDetailScreen(
                             
                             Spacer(modifier = Modifier.height(20.dp))
                             
-                            // Big centered Play button with 8-sided shape
+                            // Big centered Play button with Expressive shape
                             Box(
                                 modifier = Modifier.fillMaxWidth(),
                                 contentAlignment = Alignment.Center
                             ) {
-                                // Create octagon shape
+                                // Use the built-in extension to convert the Expressive Polygon to a Shape
                                 val expressiveShape = MaterialShapes.Cookie9Sided.toShape()
                                 
                                 Surface(
                                     onClick = { if (songs.isNotEmpty()) onPlayQueue(songs, null) },
                                     modifier = Modifier.size(80.dp),
-                                    shape = CircleShape,
+                                    shape = expressiveShape,
                                     color = primaryColor,
                                     shadowElevation = 12.dp
                                 ) {
