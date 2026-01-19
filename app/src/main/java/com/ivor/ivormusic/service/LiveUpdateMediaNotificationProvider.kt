@@ -1,5 +1,6 @@
 package com.ivor.ivormusic.service
 
+import android.app.Notification
 import android.content.Context
 import android.os.Build
 import android.os.Bundle
@@ -19,13 +20,14 @@ import androidx.media3.session.MediaSession
  */
 @UnstableApi
 class LiveUpdateMediaNotificationProvider(
-    context: Context
+    private val context: Context
 ) : MediaNotification.Provider {
     
     private val defaultProvider = DefaultMediaNotificationProvider.Builder(context).build()
     
     companion object {
         private const val TAG = "LiveUpdateMediaNotificationProvider"
+        private const val LIVE_UPDATE_EXTRA = "android.requestPromotedOngoing"
     }
     
     override fun createNotification(
@@ -42,14 +44,27 @@ class LiveUpdateMediaNotificationProvider(
             onNotificationChangedCallback
         )
         
-        // For Android 16+, we need to modify the notification to request promoted ongoing status
+        // For Android 16+, rebuild notification with Live Update flag
         if (Build.VERSION.SDK_INT >= 36) { // API 36 = Android 16
             try {
-                // Add the live updates flag to the notification extras
-                val extras = defaultNotification.notification.extras ?: Bundle()
-                extras.putBoolean("android.requestPromotedOngoing", true)
+                val originalNotification = defaultNotification.notification
+                
+                // Rebuild the notification with the Live Update extra
+                val rebuiltNotification = Notification.Builder.recoverBuilder(context, originalNotification)
+                    .apply {
+                        // Add the live updates flag to extras
+                        extras.putBoolean(LIVE_UPDATE_EXTRA, true)
+                    }
+                    .build()
+                
+                // Return new MediaNotification with the rebuilt notification
+                return MediaNotification(
+                    defaultNotification.notificationId,
+                    rebuiltNotification
+                )
             } catch (e: Exception) {
-                // Silently fail if not supported
+                // If rebuilding fails, return original notification
+                android.util.Log.w(TAG, "Failed to add Live Update flag", e)
             }
         }
         

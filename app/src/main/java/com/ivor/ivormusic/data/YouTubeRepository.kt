@@ -499,17 +499,145 @@ class YouTubeRepository(private val context: Context) {
         try {
             val jsonResponse = fetchInternalApi("account/account_menu")
             
-            // Basic parsing for avatar
-            // Pattern: "thumbnail":{"thumbnails":[{"url":"..."
-            val thumbRegex = """"thumbnails":\[\{"url":"([^"]+)"""".toRegex()
-            val match = thumbRegex.find(jsonResponse)
-            
-            match?.groupValues?.get(1)?.let { url ->
-                // Ensure high res
-                val avatarUrl = url.replace("s88", "s1080").replace("s48", "s1080")
-                sessionManager.saveUserAvatar(avatarUrl)
+            if (jsonResponse.isEmpty()) {
+                android.util.Log.w("YouTubeRepo", "fetchAccountInfo: Empty response from API")
+                return@withContext
             }
+            
+            android.util.Log.d("YouTubeRepo", "fetchAccountInfo: Got response, length=${jsonResponse.length}")
+            
+            var avatarUrl: String? = null
+            var userName: String? = null
+            
+            try {
+                val root = org.json.JSONObject(jsonResponse)
+                
+                // Strategy 1: Look for account photo in accountPhotoRenderer
+                val accountPhotos = mutableListOf<org.json.JSONObject>()
+                findAllObjects(root, "accountPhoto", accountPhotos)
+                for (photo in accountPhotos) {
+                    val thumbnails = photo.optJSONArray("thumbnails")
+                    if (thumbnails != null && thumbnails.length() > 0) {
+                        // Get the largest thumbnail (last in array)
+                        val lastThumb = thumbnails.optJSONObject(thumbnails.length() - 1)
+                        avatarUrl = lastThumb?.optString("url")
+                        if (!avatarUrl.isNullOrEmpty()) {
+                            android.util.Log.d("YouTubeRepo", "Found avatar via accountPhoto: $avatarUrl")
+                            break
+                        }
+                    }
+                }
+                
+                // Strategy 2: Look for avatar in header renderers  
+                if (avatarUrl == null) {
+                    val avatarRenderers = mutableListOf<org.json.JSONObject>()
+                    findAllObjects(root, "avatar", avatarRenderers)
+                    for (avatar in avatarRenderers) {
+                        val thumbnails = avatar.optJSONArray("thumbnails")
+                        if (thumbnails != null && thumbnails.length() > 0) {
+                            val lastThumb = thumbnails.optJSONObject(thumbnails.length() - 1)
+                            avatarUrl = lastThumb?.optString("url")
+                            if (!avatarUrl.isNullOrEmpty()) {
+                                android.util.Log.d("YouTubeRepo", "Found avatar via avatar renderer: $avatarUrl")
+                                break
+                            }
+                        }
+                    }
+                }
+                
+                // Strategy 3: Look for thumbnail objects more broadly
+                if (avatarUrl == null) {
+                    val thumbnailRenderers = mutableListOf<org.json.JSONObject>()
+                    findAllObjects(root, "thumbnail", thumbnailRenderers)
+                    for (thumb in thumbnailRenderers) {
+                        val thumbnails = thumb.optJSONArray("thumbnails")
+                        if (thumbnails != null && thumbnails.length() > 0) {
+                            val lastThumb = thumbnails.optJSONObject(thumbnails.length() - 1)
+                            val url = lastThumb?.optString("url")
+                            // Only use if it looks like a profile picture URL (ggpht)
+                            if (!url.isNullOrEmpty() && url.contains("ggpht")) {
+                                avatarUrl = url
+                                android.util.Log.d("YouTubeRepo", "Found avatar via thumbnail renderer: $avatarUrl")
+                                break
+                            }
+                        }
+                    }
+                }
+                
+                // Strategy 4: Regex fallback for any ggpht URL (Google profile pictures)
+                if (avatarUrl == null) {
+                    val ggphtRegex = """"url"\s*:\s*"(https://ggpht\.googleusercontent\.com/[^"]+)"""".toRegex()
+                    val match = ggphtRegex.find(jsonResponse)
+                    avatarUrl = match?.groupValues?.get(1)
+                    if (avatarUrl != null) {
+                        android.util.Log.d("YouTubeRepo", "Found avatar via ggpht regex: $avatarUrl")
+                    }
+                }
+                
+                // Strategy 5: Any lh3.googleusercontent URL (Google user content)
+                if (avatarUrl == null) {
+                    val lh3Regex = """"url"\s*:\s*"(https://lh3\.googleusercontent\.com/[^"]+)"""".toRegex()
+                    val match = lh3Regex.find(jsonResponse)
+                    avatarUrl = match?.groupValues?.get(1)
+                    if (avatarUrl != null) {
+                        android.util.Log.d("YouTubeRepo", "Found avatar via lh3 regex: $avatarUrl")
+                    }
+                }
+                
+                // Extract user name
+                val accountNames = mutableListOf<org.json.JSONObject>()
+                findAllObjects(root, "accountName", accountNames)
+                for (nameObj in accountNames) {
+                    val simpleText = nameObj.optString("simpleText")
+                    if (!simpleText.isNullOrEmpty()) {
+                        userName = simpleText
+                        android.util.Log.d("YouTubeRepo", "Found user name: $userName")
+                        break
+                    }
+                    // Try runs format
+                    val runs = nameObj.optJSONArray("runs")
+                    if (runs != null && runs.length() > 0) {
+                        userName = runs.optJSONObject(0)?.optString("text")
+                        if (!userName.isNullOrEmpty()) {
+                            android.util.Log.d("YouTubeRepo", "Found user name from runs: $userName")
+                            break
+                        }
+                    }
+                }
+                
+            } catch (jsonEx: Exception) {
+                android.util.Log.w("YouTubeRepo", "JSON parsing failed, trying regex fallback", jsonEx)
+                
+                // Fallback regex for any thumbnail URL
+                val thumbRegex = """"thumbnails"\s*:\s*\[\s*\{\s*"url"\s*:\s*"([^"]+)"""".toRegex()
+                val match = thumbRegex.find(jsonResponse)
+                avatarUrl = match?.groupValues?.get(1)
+            }
+            
+            // Save avatar if found
+            if (!avatarUrl.isNullOrEmpty()) {
+                // Upgrade resolution - replace common small sizes with large
+                val highResUrl = avatarUrl
+                    .replace("=s88", "=s512")
+                    .replace("=s48", "=s512")
+                    .replace("=s96", "=s512")
+                    .replace("=s120", "=s512")
+                    .replace("/s88-", "/s512-")
+                    .replace("/s48-", "/s512-")
+                    .replace("/s96-", "/s512-")
+                android.util.Log.d("YouTubeRepo", "Saving avatar URL: $highResUrl")
+                sessionManager.saveUserAvatar(highResUrl)
+            } else {
+                android.util.Log.w("YouTubeRepo", "fetchAccountInfo: Could not find avatar in response")
+            }
+            
+            // Save user name if found
+            if (!userName.isNullOrEmpty()) {
+                sessionManager.saveUserName(userName)
+            }
+            
         } catch (e: Exception) {
+            android.util.Log.e("YouTubeRepo", "fetchAccountInfo error", e)
             e.printStackTrace()
         }
     }

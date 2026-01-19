@@ -323,16 +323,12 @@ fun SettingsScreen(
                     delay = 50
                 ) {
                     ExpressiveSettingsCard(surfaceColor = surfaceColor) {
-                        if (isLoggedIn) {
-                            // Logged in state
-                            ExpressiveSettingsItem(
-                                icon = Icons.Rounded.AccountCircle,
-                                title = "YouTube Account",
-                                subtitle = "Connected ✓",
-                                onClick = { },
+                    if (isLoggedIn) {
+                            // Logged in state with user avatar
+                            ExpressiveAccountItem(
+                                sessionManager = sessionManager,
                                 textColor = textColor,
-                                secondaryTextColor = secondaryTextColor,
-                                iconTint = Color(0xFF4CAF50)
+                                secondaryTextColor = secondaryTextColor
                             )
                             SettingsDivider()
                             // Save Video History Toggle
@@ -711,6 +707,83 @@ private fun SettingsDivider() {
             .height(1.dp)
             .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
     )
+}
+
+@Composable
+private fun ExpressiveAccountItem(
+    sessionManager: SessionManager,
+    textColor: Color,
+    secondaryTextColor: Color
+) {
+    val userAvatar = sessionManager.getUserAvatar()
+    val userName = sessionManager.getUserName()
+    
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Profile Picture
+        Box(
+            modifier = Modifier
+                .size(52.dp)
+                .clip(CircleShape)
+                .background(Color(0xFF4CAF50).copy(alpha = 0.12f)),
+            contentAlignment = Alignment.Center
+        ) {
+            if (!userAvatar.isNullOrEmpty()) {
+                AsyncImage(
+                    model = userAvatar,
+                    contentDescription = "Profile Picture",
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(CircleShape),
+                    contentScale = ContentScale.Crop
+                )
+            } else {
+                Icon(
+                    imageVector = Icons.Rounded.AccountCircle,
+                    contentDescription = null,
+                    tint = Color(0xFF4CAF50),
+                    modifier = Modifier.size(32.dp)
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.width(16.dp))
+
+        // User Info
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = userName ?: "YouTube Account",
+                color = textColor,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.CheckCircle,
+                    contentDescription = null,
+                    tint = Color(0xFF4CAF50),
+                    modifier = Modifier.size(14.dp)
+                )
+                Text(
+                    text = "Connected",
+                    color = Color(0xFF4CAF50),
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
