@@ -217,33 +217,10 @@ class MusicService : MediaLibraryService() {
                          val item = mediaItems[0]
                          val videoId = item.mediaId
                          // Determine if needs resolution (placeholder or cache key exists)
-                         val isCached = com.ivor.ivormusic.data.CacheManager.isCached(videoId)
-                         if (isCached) {
-                              Log.d(TAG, "Item $videoId is fully cached, playing instantly")
-                               // If cached, we might still need a URL if the CacheDataSource requires it,
-                               // but usually it uses the key.
-                               // However, ExoPlayer CacheDataSource uses the upstream URL as the key by default.
-                               // We need to ensure we provide the SAME URL as was used to cache it.
-                               // Since URLs expire, this is tricky. 
-                               // Strategy: We used the videoId as Key? No, by default it uses the URI.
-                               // BUT, we can set a custom cache key.
-                               // Let's rely on resolveStreamUrl to get a fresh URL, but CacheDataSource might ignore it if we don't match keys.
-                               // FIX: We need to use content keys.
-                               
-                               // For now, let's just resolve. The simple cache might handle it if we configured it to key by ID, 
-                               // but we didn't. So we rely on fresh URLs. 
-                               // Actually, since URLs expire, the cache hit ratio is low unless we use a custom key.
-                               // In CacheManager we set up SimpleCache, but not keying.
-                               
-                               // To make "Perfect" offline cache for YouTube:
-                               // typically you need to set a custom cache key (the video ID) on the MediaItem. 
-                         }
-                         
-                         val resolved = resolveStreamUrl(item, videoId)
-                         // Add custom cache key to the media item
-                         val finalItem = resolved.buildUpon()
-                            .setCustomCacheKey(videoId)
-                            .build()
+                         // The resolveStreamUrl function now automatically checks for cached content
+                         // and returns a MediaItem with the correct CustomCacheKey and a dummy URI if cached,
+                         // skipping the network request entirely.
+                         val finalItem = resolveStreamUrl(item, videoId)
                             
                          mutableListOf(finalItem)
                     } else {
