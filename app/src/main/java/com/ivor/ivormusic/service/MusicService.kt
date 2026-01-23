@@ -305,6 +305,18 @@ class MusicService : MediaLibraryService() {
      * Resolve stream URL for a media item
      */
     private suspend fun resolveStreamUrl(item: MediaItem, videoId: String): MediaItem {
+        // 0. Check Persistent Disk Cache
+        if (com.ivor.ivormusic.data.CacheManager.isCached(videoId)) {
+            Log.d(TAG, "Item $videoId is fully cached, skipping network resolution")
+            // Return a MediaItem that points to the cache key.
+            // We use a dummy URI because CacheDataSource will use the key to find the file.
+            // Even if the original URL expired, the cache content is valid under this key.
+            return item.buildUpon()
+                .setUri(android.net.Uri.parse("https://cached.ivormusic/$videoId"))
+                .setCustomCacheKey(videoId)
+                .build()
+        }
+
         // 1. Check runtime memory cache first
         urlCache[videoId]?.let { cachedUrl ->
             return item.buildUpon()
@@ -318,9 +330,17 @@ class MusicService : MediaLibraryService() {
             var attempts = 0
             while (attempts < 50) { 
                 kotlinx.coroutines.delay(100)
+                // Check memory cache again after waiting
                 urlCache[videoId]?.let { cachedUrl ->
                     return item.buildUpon()
                         .setUri(android.net.Uri.parse(cachedUrl))
+                        .setCustomCacheKey(videoId)
+                        .build()
+                }
+                // Check disk cache again (in case another thread finished downloading it - unlikely but safe)
+                if (com.ivor.ivormusic.data.CacheManager.isCached(videoId)) {
+                     return item.buildUpon()
+                        .setUri(android.net.Uri.parse("https://cached.ivormusic/$videoId"))
                         .setCustomCacheKey(videoId)
                         .build()
                 }
