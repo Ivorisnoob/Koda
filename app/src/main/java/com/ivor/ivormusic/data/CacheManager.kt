@@ -71,15 +71,32 @@ object CacheManager {
             }
         }
         
-        simpleCache = SimpleCache(
-            cacheDir!!,
-            evictor,
-            databaseProvider!!
-        )
+        try {
+            simpleCache = SimpleCache(
+                cacheDir!!,
+                evictor,
+                databaseProvider!!
+            )
+            Log.d(TAG, "Cache initialized with max size: ${maxSizeMb}MB")
+        } catch (e: Exception) {
+            Log.e(TAG, "Cache initialization failed, attempting recovery by clearing cache", e)
+            // Cache is corrupted - delete and retry
+            try {
+                cacheDir?.deleteRecursively()
+                cacheDir?.mkdirs()
+                databaseProvider = StandaloneDatabaseProvider(context)
+                simpleCache = SimpleCache(
+                    cacheDir!!,
+                    LeastRecentlyUsedCacheEvictor(maxCacheSizeBytes),
+                    databaseProvider!!
+                )
+                Log.d(TAG, "Cache recovery successful")
+            } catch (e2: Exception) {
+                Log.e(TAG, "Cache recovery failed - caching disabled", e2)
+                simpleCache = null
+            }
+        }
         
-
-        
-        Log.d(TAG, "Cache initialized with max size: ${maxSizeMb}MB")
         updateCacheSize()
     }
     
@@ -90,20 +107,29 @@ object CacheManager {
     
     /**
      * Create a CacheDataSource.Factory for use with ExoPlayer.
+     * If cache is unavailable or corrupted, returns null to fallback to non-cached playback.
      */
     fun createCacheDataSourceFactory(): CacheDataSource.Factory? {
         val cache = simpleCache ?: return null
         
-        val httpDataSourceFactory = DefaultHttpDataSource.Factory()
-            .setUserAgent("Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36")
-            .setConnectTimeoutMs(15000)
-            .setReadTimeoutMs(15000)
-            .setAllowCrossProtocolRedirects(true)
-        
-        return CacheDataSource.Factory()
-            .setCache(cache)
-            .setUpstreamDataSourceFactory(httpDataSourceFactory)
-            .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+        try {
+            val httpDataSourceFactory = DefaultHttpDataSource.Factory()
+                .setUserAgent("Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36")
+                .setConnectTimeoutMs(15000)
+                .setReadTimeoutMs(15000)
+                .setAllowCrossProtocolRedirects(true)
+            
+            return CacheDataSource.Factory()
+                .setCache(cache)
+                .setUpstreamDataSourceFactory(httpDataSourceFactory)
+                .setFlags(
+                    CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR or 
+                    CacheDataSource.FLAG_IGNORE_CACHE_FOR_UNSET_LENGTH_REQUESTS
+                )
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to create cache data source factory", e)
+            return null
+        }
     }
     
     /**

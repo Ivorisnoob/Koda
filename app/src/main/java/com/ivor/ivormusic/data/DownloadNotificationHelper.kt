@@ -98,17 +98,44 @@ class DownloadNotificationHelper(private val context: Context) {
             builder.setSubText("%.1f / %.1f MB".format(downloadedMB, totalMB))
         }
         
-        // Android 16+ Live Updates (Promoted Ongoing Notifications)
-        if (Build.VERSION.SDK_INT >= 36) { // Android 16 = API 36
+        // Android 16+ (API 36+) Live Updates (Promoted Ongoing Notifications)
+        if (Build.VERSION.SDK_INT >= 36) {
             try {
-                // Request promoted ongoing notification for Live Activity-like behavior
+                builder.setOngoing(true)
+                builder.setColorized(false)
                 builder.extras.putBoolean("android.requestPromotedOngoing", true)
             } catch (e: Exception) {
-                // Fallback silently if not supported
+                // Ignore if setting extras fails
             }
         }
         
-        notificationManager.notify(notificationId, builder.build())
+        var notification = builder.build()
+        
+        // Android 16 (API 36+) Rebuild for Chip Text
+        if (Build.VERSION.SDK_INT >= 36) {
+            try {
+                val nativeBuilder = Notification.Builder.recoverBuilder(context, notification)
+                nativeBuilder.setOngoing(true)
+                nativeBuilder.setColorized(false)
+                
+                try {
+                     nativeBuilder.javaClass.getMethod("setRequestPromotedOngoing", Boolean::class.java)
+                         .invoke(nativeBuilder, true)
+                     
+                     // Use percentage for chip text, e.g. "50%"
+                     nativeBuilder.javaClass.getMethod("setShortCriticalText", CharSequence::class.java)
+                         .invoke(nativeBuilder, "$progressPercent%")
+                } catch (e: Exception) {
+                     // Reflection failed
+                }
+                notification = nativeBuilder.build()
+            } catch (e: Exception) {
+                // Rebuild failed, use original
+            }
+        }
+        
+        notificationManager.notify(notificationId, notification)
+        return // Early return since we notified
     }
     
     /**

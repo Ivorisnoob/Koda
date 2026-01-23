@@ -44,6 +44,9 @@ class MusicService : MediaLibraryService() {
     private var crossfadeDurationMs = 3000L
     private var fadeVolumeJob: kotlinx.coroutines.Job? = null
     
+    // Live Update for music progress (Android 16+)
+    private var musicProgressLiveUpdate: MusicProgressLiveUpdate? = null
+    
     companion object {
         private const val TAG = "MusicService"
         private const val PREFETCH_AHEAD = 3
@@ -58,6 +61,11 @@ class MusicService : MediaLibraryService() {
         
         // Set custom media notification provider for Android 16 Live Activities support
         setMediaNotificationProvider(LiveUpdateMediaNotificationProvider(this))
+        
+        // Initialize Live Update for music progress (Android 16+)
+        if (android.os.Build.VERSION.SDK_INT >= 36) {
+            musicProgressLiveUpdate = MusicProgressLiveUpdate(this)
+        }
         
         themePreferences = com.ivor.ivormusic.data.ThemePreferences(this)
         observePreferences()
@@ -87,6 +95,7 @@ class MusicService : MediaLibraryService() {
 
     override fun onDestroy() {
         fadeVolumeJob?.cancel()
+        musicProgressLiveUpdate?.hide()
         mediaLibrarySession?.run {
             player.release()
             release()
@@ -242,10 +251,30 @@ class MusicService : MediaLibraryService() {
     private fun monitorCrossfadeProgress() {
         serviceScope.launch {
             while (isActive) {
-                if (isCrossfadeEnabled && player.isPlaying) {
-                    val duration = player.duration
-                    val position = player.currentPosition
+                val duration = player.duration
+                val position = player.currentPosition
+                val isPlaying = player.isPlaying
+                
+                // Update Live Update notification (Android 16+)
+                if (isPlaying && duration > 0 && position >= 0) {
+                    val mediaItem = player.currentMediaItem
+                    val title = mediaItem?.mediaMetadata?.title?.toString() ?: "Unknown"
+                    val artist = mediaItem?.mediaMetadata?.artist?.toString() ?: "Unknown Artist"
                     
+                    musicProgressLiveUpdate?.updateProgress(
+                        songTitle = title,
+                        artistName = artist,
+                        currentPositionMs = position,
+                        durationMs = duration,
+                        isPlaying = true
+                    )
+                } else if (!isPlaying) {
+                    // Hide Live Update when paused
+                    musicProgressLiveUpdate?.hide()
+                }
+                
+                // Crossfade logic
+                if (isCrossfadeEnabled && isPlaying) {
                     if (duration > 0 && position > 0) {
                         val remaining = duration - position
                         if (remaining <= crossfadeDurationMs) {
@@ -258,7 +287,7 @@ class MusicService : MediaLibraryService() {
                         }
                     }
                 }
-                kotlinx.coroutines.delay(200)
+                kotlinx.coroutines.delay(1000) // Update every second for Live Update
             }
         }
     }
@@ -282,17 +311,9 @@ class MusicService : MediaLibraryService() {
      * Resolve stream URL for a media item
      */
     private suspend fun resolveStreamUrl(item: MediaItem, videoId: String): MediaItem {
-        // 0. Check Persistent Disk Cache
-        if (com.ivor.ivormusic.data.CacheManager.isCached(videoId)) {
-            Log.d(TAG, "Item $videoId is fully cached, skipping network resolution")
-            // Return a MediaItem that points to the cache key.
-            // We use a dummy URI because CacheDataSource will use the key to find the file.
-            // Even if the original URL expired, the cache content is valid under this key.
-            return item.buildUpon()
-                .setUri(android.net.Uri.parse("https://cached.ivormusic/$videoId"))
-                .setCustomCacheKey(videoId)
-                .build()
-        }
+        // Note: Even for cached content, we still need a valid URL because ExoPlayer's
+        // CacheDataSource uses the URL for content metadata. The cache will be used
+        // automatically during playback if content exists under the customCacheKey.
 
         // 1. Check runtime memory cache first
         urlCache[videoId]?.let { cachedUrl ->
@@ -311,13 +332,6 @@ class MusicService : MediaLibraryService() {
                 urlCache[videoId]?.let { cachedUrl ->
                     return item.buildUpon()
                         .setUri(android.net.Uri.parse(cachedUrl))
-                        .setCustomCacheKey(videoId)
-                        .build()
-                }
-                // Check disk cache again (in case another thread finished downloading it - unlikely but safe)
-                if (com.ivor.ivormusic.data.CacheManager.isCached(videoId)) {
-                     return item.buildUpon()
-                        .setUri(android.net.Uri.parse("https://cached.ivormusic/$videoId"))
                         .setCustomCacheKey(videoId)
                         .build()
                 }

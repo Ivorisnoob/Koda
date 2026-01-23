@@ -44,23 +44,36 @@ class LiveUpdateMediaNotificationProvider(
             onNotificationChangedCallback
         )
         
-        // For Android 16+, rebuild notification with Live Update flag
-        if (Build.VERSION.SDK_INT >= 36) { // API 36 = Android 16
+        // For Android 16+ (API 36+), rebuild notification with Live Update flag
+        // Only apply on actual Android 16 to avoid breaking older versions
+        if (Build.VERSION.SDK_INT >= 36) {
             try {
                 val originalNotification = defaultNotification.notification
+                val extras = originalNotification.extras
+                val title = extras?.getCharSequence(Notification.EXTRA_TITLE) ?: "Music"
                 
-                // Rebuild the notification with the Live Update extra
-                val rebuiltNotification = Notification.Builder.recoverBuilder(context, originalNotification)
-                    .apply {
-                        // Add the live updates flag to extras
-                        extras.putBoolean(LIVE_UPDATE_EXTRA, true)
-                    }
-                    .build()
-                
-                // Return new MediaNotification with the rebuilt notification
+                val builder = Notification.Builder.recoverBuilder(context, originalNotification)
+                    .setOngoing(true)
+                    .setColorized(false) // Required for Live Updates
+                    
+                // Use reflection for Android 16 APIs
+                try {
+                     builder.javaClass.getMethod("setRequestPromotedOngoing", Boolean::class.java)
+                         .invoke(builder, true)
+                     
+                     builder.javaClass.getMethod("setShortCriticalText", CharSequence::class.java)
+                         .invoke(builder, title)
+                } catch (e: Exception) {
+                     // Fallback: just add the extra
+                     val newExtras = Bundle()
+                     extras?.let { newExtras.putAll(it) }
+                     newExtras.putBoolean("android.requestPromotedOngoing", true)
+                     builder.setExtras(newExtras)
+                }
+
                 return MediaNotification(
                     defaultNotification.notificationId,
-                    rebuiltNotification
+                    builder.build()
                 )
             } catch (e: Exception) {
                 // If rebuilding fails, return original notification
