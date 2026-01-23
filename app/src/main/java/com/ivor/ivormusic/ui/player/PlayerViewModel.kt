@@ -158,17 +158,37 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
 
                 override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
                     _playWhenReady.value = playWhenReady
+                    // If playWhenReady is true and we're not playing, we're likely buffering
+                    if (playWhenReady && !controller!!.isPlaying) {
+                        val state = controller?.playbackState ?: Player.STATE_IDLE
+                        if (state == Player.STATE_BUFFERING || state == Player.STATE_IDLE) {
+                            _isBuffering.value = true
+                        }
+                    }
                 }
 
                 override fun onPlaybackStateChanged(playbackState: Int) {
-                    _isBuffering.value = playbackState == Player.STATE_BUFFERING
-                    if (playbackState == Player.STATE_READY || playbackState == Player.STATE_ENDED) {
-                        _isBuffering.value = false
-                        // Only set duration if it's a valid positive value
-                        // ExoPlayer returns C.TIME_UNSET (negative) when duration is unknown
-                        val dur = controller?.duration ?: 0L
-                        if (dur > 0) {
-                            _duration.value = dur
+                    when (playbackState) {
+                        Player.STATE_BUFFERING -> {
+                            _isBuffering.value = true
+                        }
+                        Player.STATE_READY -> {
+                            // Only clear buffering if we were actually playing or about to
+                            _isBuffering.value = false
+                            // Only set duration if it's a valid positive value
+                            val dur = controller?.duration ?: 0L
+                            if (dur > 0) {
+                                _duration.value = dur
+                            }
+                        }
+                        Player.STATE_ENDED -> {
+                            _isBuffering.value = false
+                        }
+                        Player.STATE_IDLE -> {
+                            // If playWhenReady is true and we're IDLE, it means we're about to buffer
+                            if (controller?.playWhenReady == true) {
+                                _isBuffering.value = true
+                            }
                         }
                     }
                 }
@@ -341,6 +361,8 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         // Update current song immediately for UI responsiveness
         val currentSong = songs[startIndex]
         _currentSong.value = currentSong
+        _isBuffering.value = true // Immediately show loading
+        _duration.value = 0L // Reset duration until we load the new song
         updateCurrentSongLikedStatus()
         fetchLyrics(currentSong)
         
@@ -365,16 +387,12 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
             player.prepare()
             player.play()
             
-            // Safety timeout for buffering state
+            // Safety timeout for buffering state - if stuck for 30 seconds, clear it
             viewModelScope.launch {
-                var timeout = 0
-                while (_isBuffering.value && timeout < 10) {
-                    delay(1000)
-                    timeout++
-                    if (timeout >= 10 && _isBuffering.value && !_isPlaying.value) {
-                        _isBuffering.value = false
-                        break
-                    }
+                delay(30_000)
+                if (_isBuffering.value && !_isPlaying.value) {
+                    android.util.Log.w("PlayerViewModel", "Buffering timeout - clearing stuck state")
+                    _isBuffering.value = false
                 }
             }
         }
