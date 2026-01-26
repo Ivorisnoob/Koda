@@ -20,7 +20,10 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.guava.future
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import com.ivor.ivormusic.data.Song
+import com.ivor.ivormusic.data.PlaylistDisplayItem
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.collect.ImmutableList
 import androidx.media3.session.LibraryResult
@@ -53,7 +56,15 @@ class MusicService : MediaLibraryService() {
         private const val TAG = "MusicService"
         private const val PREFETCH_AHEAD = 3
         private const val STREAM_TIMEOUT_MS = 10000L
+        private const val ANDROID_AUTO_BROWSE_TIMEOUT_MS = 5000L // Android Auto has strict timeout
     }
+    
+    // Cache for Android Auto browse content to prevent slow loading
+    @Volatile private var cachedRecommendations: List<Song>? = null
+    @Volatile private var cachedPlaylists: List<PlaylistDisplayItem>? = null
+    @Volatile private var cachedPlaylistSongs: MutableMap<String, List<Song>> = mutableMapOf()
+    @Volatile private var lastBrowseCacheTime: Long = 0L
+    private val browseCacheValidityMs = 5 * 60 * 1000L // Cache valid for 5 minutes
 
     override fun onCreate() {
         super.onCreate()
@@ -249,25 +260,26 @@ class MusicService : MediaLibraryService() {
                 browser: MediaSession.ControllerInfo,
                 params: MediaLibraryService.LibraryParams?
             ): ListenableFuture<LibraryResult<MediaItem>> {
-                return serviceScope.future {
-                    Log.d(TAG, "onGetLibraryRoot called from package: ${browser.packageName}")
-                    val rootExtras = android.os.Bundle().apply {
-                         putBoolean("android.media.browse.CONTENT_STYLE_SUPPORTED", true)
-                         putInt("android.media.browse.CONTENT_STYLE_BROWSABLE_HINT", 1) // Grid
-                         putInt("android.media.browse.CONTENT_STYLE_PLAYABLE_HINT", 1) // List
-                    }
-                    val rootItem = MediaItem.Builder()
-                        .setMediaId("root")
-                        .setMediaMetadata(
-                            androidx.media3.common.MediaMetadata.Builder()
-                                .setTitle("Root")
-                                .setIsBrowsable(true)
-                                .setIsPlayable(false)
-                                .build()
-                        )
-                        .build()
-                    LibraryResult.ofItem(rootItem, MediaLibraryService.LibraryParams.Builder().setExtras(rootExtras).build())
+                Log.d(TAG, "onGetLibraryRoot called from package: ${browser.packageName}")
+                // Return immediately without using coroutines - this must complete fast
+                val rootExtras = android.os.Bundle().apply {
+                     putBoolean("android.media.browse.CONTENT_STYLE_SUPPORTED", true)
+                     putInt("android.media.browse.CONTENT_STYLE_BROWSABLE_HINT", 1) // Grid
+                     putInt("android.media.browse.CONTENT_STYLE_PLAYABLE_HINT", 1) // List
                 }
+                val rootItem = MediaItem.Builder()
+                    .setMediaId("root")
+                    .setMediaMetadata(
+                        androidx.media3.common.MediaMetadata.Builder()
+                            .setTitle("Root")
+                            .setIsBrowsable(true)
+                            .setIsPlayable(false)
+                            .build()
+                    )
+                    .build()
+                return com.google.common.util.concurrent.Futures.immediateFuture(
+                    LibraryResult.ofItem(rootItem, MediaLibraryService.LibraryParams.Builder().setExtras(rootExtras).build())
+                )
             }
 
             override fun onGetChildren(
@@ -278,50 +290,87 @@ class MusicService : MediaLibraryService() {
                 pageSize: Int,
                 params: MediaLibraryService.LibraryParams?
             ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
-                return serviceScope.future {
-                    Log.d(TAG, "onGetChildren called for parentId: $parentId")
+                Log.d(TAG, "onGetChildren called for parentId: $parentId from ${browser.packageName}")
+                
+                // For "root", return immediately without using coroutines
+                if (parentId == "root") {
                     val items = mutableListOf<MediaItem>()
                     
-                    when (parentId) {
-                        "root" -> {
-                            // 1. Recommended (Grid Layout for Songs)
-                            val recommendedExtras = android.os.Bundle().apply {
-                                putInt("android.media.browse.CONTENT_STYLE_PLAYABLE_HINT", 2) // Grid
-                            }
-                            items.add(
-                                MediaItem.Builder()
-                                    .setMediaId("RECOMMENDED")
-                                    .setMediaMetadata(
-                                        androidx.media3.common.MediaMetadata.Builder()
-                                            .setTitle("Recommended For You")
-                                            .setIsBrowsable(true)
-                                            .setIsPlayable(false)
-                                            .setExtras(recommendedExtras)
-                                            .build()
-                                    )
+                    // 1. Recommended (Grid Layout for Songs)
+                    val recommendedExtras = android.os.Bundle().apply {
+                        putInt("android.media.browse.CONTENT_STYLE_PLAYABLE_HINT", 2) // Grid
+                    }
+                    items.add(
+                        MediaItem.Builder()
+                            .setMediaId("RECOMMENDED")
+                            .setMediaMetadata(
+                                androidx.media3.common.MediaMetadata.Builder()
+                                    .setTitle("Recommended For You")
+                                    .setIsBrowsable(true)
+                                    .setIsPlayable(false)
+                                    .setExtras(recommendedExtras)
                                     .build()
                             )
-                            // 2. Playlists (Grid Layout for Playlists)
-                            val playlistsExtras = android.os.Bundle().apply {
-                                putInt("android.media.browse.CONTENT_STYLE_BROWSABLE_HINT", 2) // Grid
-                            }
-                            items.add(
-                                MediaItem.Builder()
-                                    .setMediaId("PLAYLISTS")
-                                    .setMediaMetadata(
-                                        androidx.media3.common.MediaMetadata.Builder()
-                                            .setTitle("Your Playlists")
-                                            .setIsBrowsable(true)
-                                            .setIsPlayable(false)
-                                            .setExtras(playlistsExtras)
-                                            .build()
-                                    )
+                            .build()
+                    )
+                    // 2. Playlists (Grid Layout for Playlists)
+                    val playlistsExtras = android.os.Bundle().apply {
+                        putInt("android.media.browse.CONTENT_STYLE_BROWSABLE_HINT", 2) // Grid
+                    }
+                    items.add(
+                        MediaItem.Builder()
+                            .setMediaId("PLAYLISTS")
+                            .setMediaMetadata(
+                                androidx.media3.common.MediaMetadata.Builder()
+                                    .setTitle("Your Playlists")
+                                    .setIsBrowsable(true)
+                                    .setIsPlayable(false)
+                                    .setExtras(playlistsExtras)
                                     .build()
                             )
-                        }
-                        "RECOMMENDED" -> {
-                            try {
-                                val songs = youtubeRepository.getRecommendations()
+                            .build()
+                    )
+                    
+                    Log.d(TAG, "Returning ${items.size} items for root")
+                    return com.google.common.util.concurrent.Futures.immediateFuture(
+                        LibraryResult.ofItemList(ImmutableList.copyOf(items), null)
+                    )
+                }
+                
+                // For content that requires network calls, use IO dispatcher
+                val ioScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+                return ioScope.future {
+                    val items = mutableListOf<MediaItem>()
+                    val now = System.currentTimeMillis()
+                    val cacheValid = (now - lastBrowseCacheTime) < browseCacheValidityMs
+                    
+                    try {
+                        when (parentId) {
+                            "RECOMMENDED" -> {
+                                // Use cache if valid, otherwise fetch with timeout
+                                val songs = if (cacheValid && cachedRecommendations != null) {
+                                    Log.d(TAG, "Using cached recommendations (${cachedRecommendations?.size} songs)")
+                                    cachedRecommendations!!
+                                } else {
+                                    try {
+                                        val result = withTimeoutOrNull(ANDROID_AUTO_BROWSE_TIMEOUT_MS) {
+                                            youtubeRepository.getRecommendations()
+                                        }
+                                        if (result != null) {
+                                            cachedRecommendations = result
+                                            lastBrowseCacheTime = now
+                                            Log.d(TAG, "Fetched ${result.size} recommendations")
+                                            result
+                                        } else {
+                                            Log.w(TAG, "Recommendations fetch timed out, using cache")
+                                            cachedRecommendations ?: emptyList()
+                                        }
+                                    } catch (e: Exception) {
+                                        Log.e(TAG, "Error fetching recommended", e)
+                                        cachedRecommendations ?: emptyList()
+                                    }
+                                }
+                                
                                 songs.forEach { song ->
                                     items.add(
                                         MediaItem.Builder()
@@ -339,29 +388,45 @@ class MusicService : MediaLibraryService() {
                                             .build()
                                     )
                                 }
-                            } catch (e: Exception) {
-                                Log.e(TAG, "Error fetching recommended", e)
                             }
-                        }
-                        "PLAYLISTS" -> {
-                             try {
-                                val playlists = youtubeRepository.getUserPlaylists()
+                            "PLAYLISTS" -> {
+                                // Use cache if valid, otherwise fetch with timeout
+                                val playlists = if (cacheValid && cachedPlaylists != null) {
+                                    Log.d(TAG, "Using cached playlists (${cachedPlaylists?.size} items)")
+                                    cachedPlaylists!!
+                                } else {
+                                    try {
+                                        val result = withTimeoutOrNull(ANDROID_AUTO_BROWSE_TIMEOUT_MS) {
+                                            youtubeRepository.getUserPlaylists()
+                                        }
+                                        if (result != null) {
+                                            cachedPlaylists = result
+                                            lastBrowseCacheTime = now
+                                            Log.d(TAG, "Fetched ${result.size} playlists")
+                                            result
+                                        } else {
+                                            Log.w(TAG, "Playlists fetch timed out, using cache")
+                                            cachedPlaylists ?: emptyList()
+                                        }
+                                    } catch (e: Exception) {
+                                        Log.e(TAG, "Error fetching playlists", e)
+                                        cachedPlaylists ?: emptyList()
+                                    }
+                                }
+                                
                                 playlists.forEach { playlist ->
                                     val extras = android.os.Bundle().apply {
-                                        // Hint Grid Item for the playlist itself
                                         putInt("android.media.browse.CONTENT_STYLE_BROWSABLE_HINT", 2) // Grid
                                     }
-                                    // Extract ID from URL (simple assumption for now)
                                     val playlistId = playlist.url.substringAfter("list=")
                                     
                                     items.add(
                                         MediaItem.Builder()
-                                            // Navigation ID prefix to distinguish from videos
-                                            .setMediaId("PLAYLIST_$playlistId") 
+                                            .setMediaId("PLAYLIST_$playlistId")
                                             .setMediaMetadata(
                                                 androidx.media3.common.MediaMetadata.Builder()
                                                     .setTitle(playlist.name)
-                                                    .setSubtitle(playlist.uploaderName) // Use subtitle for artist/uploader
+                                                    .setSubtitle(playlist.uploaderName)
                                                     .setArtworkUri(android.net.Uri.parse(playlist.thumbnailUrl ?: ""))
                                                     .setIsBrowsable(true)
                                                     .setIsPlayable(false)
@@ -371,16 +436,31 @@ class MusicService : MediaLibraryService() {
                                             .build()
                                     )
                                 }
-                            } catch (e: Exception) {
-                                Log.e(TAG, "Error fetching playlists", e)
                             }
-                        }
-                        else -> {
-                            // Handle Playlist Drill-down
-                            if (parentId.startsWith("PLAYLIST_")) {
-                                val playlistId = parentId.removePrefix("PLAYLIST_")
-                                try {
-                                    val songs = youtubeRepository.getPlaylist(playlistId)
+                            else -> {
+                                // Handle Playlist Drill-down
+                                if (parentId.startsWith("PLAYLIST_")) {
+                                    val playlistId = parentId.removePrefix("PLAYLIST_")
+                                    
+                                    // Check playlist songs cache
+                                    val songs = cachedPlaylistSongs[playlistId]?.takeIf { cacheValid }
+                                        ?: try {
+                                            val result = withTimeoutOrNull(ANDROID_AUTO_BROWSE_TIMEOUT_MS) {
+                                                youtubeRepository.getPlaylist(playlistId)
+                                            }
+                                            if (result != null) {
+                                                cachedPlaylistSongs[playlistId] = result
+                                                Log.d(TAG, "Fetched ${result.size} songs for playlist $playlistId")
+                                                result
+                                            } else {
+                                                Log.w(TAG, "Playlist fetch timed out for $playlistId")
+                                                cachedPlaylistSongs[playlistId] ?: emptyList()
+                                            }
+                                        } catch (e: Exception) {
+                                            Log.e(TAG, "Error fetching playlist details", e)
+                                            cachedPlaylistSongs[playlistId] ?: emptyList()
+                                        }
+                                    
                                     songs.forEach { song ->
                                         items.add(
                                             MediaItem.Builder()
@@ -398,14 +478,15 @@ class MusicService : MediaLibraryService() {
                                                 .build()
                                         )
                                     }
-                                } catch (e: Exception) {
-                                    Log.e(TAG, "Error fetching playlist details", e)
                                 }
                             }
                         }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Unexpected error in onGetChildren for $parentId", e)
                     }
                     
-                    LibraryResult.ofItemList(com.google.common.collect.ImmutableList.copyOf(items), null)
+                    Log.d(TAG, "Returning ${items.size} items for $parentId")
+                    LibraryResult.ofItemList(ImmutableList.copyOf(items), null)
                 }
             }
         })
