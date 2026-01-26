@@ -22,6 +22,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withTimeoutOrNull
 import com.google.common.util.concurrent.ListenableFuture
+import com.google.common.collect.ImmutableList
+import androidx.media3.session.LibraryResult
 import java.util.concurrent.ConcurrentHashMap
 
 @UnstableApi
@@ -55,6 +57,7 @@ class MusicService : MediaLibraryService() {
 
     override fun onCreate() {
         super.onCreate()
+        Log.d(TAG, "MusicService onCreate")
         
         // Initialize Cache Manager
         com.ivor.ivormusic.data.CacheManager.initialize(this)
@@ -91,7 +94,10 @@ class MusicService : MediaLibraryService() {
         }
     }
 
-    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? = mediaLibrarySession
+    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? {
+        Log.d(TAG, "onGetSession called from: ${controllerInfo.packageName}")
+        return mediaLibrarySession
+    }
 
     override fun onDestroy() {
         fadeVolumeJob?.cancel()
@@ -226,9 +232,6 @@ class MusicService : MediaLibraryService() {
                          val item = mediaItems[0]
                          val videoId = item.mediaId
                          // Determine if needs resolution (placeholder or cache key exists)
-                         // The resolveStreamUrl function now automatically checks for cached content
-                         // and returns a MediaItem with the correct CustomCacheKey and a dummy URI if cached,
-                         // skipping the network request entirely.
                          val finalItem = resolveStreamUrl(item, videoId)
                             
                          mutableListOf(finalItem)
@@ -238,6 +241,171 @@ class MusicService : MediaLibraryService() {
                             it.buildUpon().setCustomCacheKey(it.mediaId).build()
                         }.toMutableList()
                     }
+                }
+            }
+
+            override fun onGetLibraryRoot(
+                session: MediaLibrarySession,
+                browser: MediaSession.ControllerInfo,
+                params: MediaLibraryService.LibraryParams?
+            ): ListenableFuture<LibraryResult<MediaItem>> {
+                return serviceScope.future {
+                    Log.d(TAG, "onGetLibraryRoot called from package: ${browser.packageName}")
+                    val rootExtras = android.os.Bundle().apply {
+                         putBoolean("android.media.browse.CONTENT_STYLE_SUPPORTED", true)
+                         putInt("android.media.browse.CONTENT_STYLE_BROWSABLE_HINT", 1) // Grid
+                         putInt("android.media.browse.CONTENT_STYLE_PLAYABLE_HINT", 1) // List
+                    }
+                    val rootItem = MediaItem.Builder()
+                        .setMediaId("root")
+                        .setMediaMetadata(
+                            androidx.media3.common.MediaMetadata.Builder()
+                                .setTitle("Root")
+                                .setIsBrowsable(true)
+                                .setIsPlayable(false)
+                                .build()
+                        )
+                        .build()
+                    LibraryResult.ofItem(rootItem, MediaLibraryService.LibraryParams.Builder().setExtras(rootExtras).build())
+                }
+            }
+
+            override fun onGetChildren(
+                session: MediaLibrarySession,
+                browser: MediaSession.ControllerInfo,
+                parentId: String,
+                page: Int,
+                pageSize: Int,
+                params: MediaLibraryService.LibraryParams?
+            ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
+                return serviceScope.future {
+                    Log.d(TAG, "onGetChildren called for parentId: $parentId")
+                    val items = mutableListOf<MediaItem>()
+                    
+                    when (parentId) {
+                        "root" -> {
+                            // 1. Recommended (Grid Layout for Songs)
+                            val recommendedExtras = android.os.Bundle().apply {
+                                putInt("android.media.browse.CONTENT_STYLE_PLAYABLE_HINT", 2) // Grid
+                            }
+                            items.add(
+                                MediaItem.Builder()
+                                    .setMediaId("RECOMMENDED")
+                                    .setMediaMetadata(
+                                        androidx.media3.common.MediaMetadata.Builder()
+                                            .setTitle("Recommended For You")
+                                            .setIsBrowsable(true)
+                                            .setIsPlayable(false)
+                                            .setExtras(recommendedExtras)
+                                            .build()
+                                    )
+                                    .build()
+                            )
+                            // 2. Playlists (Grid Layout for Playlists)
+                            val playlistsExtras = android.os.Bundle().apply {
+                                putInt("android.media.browse.CONTENT_STYLE_BROWSABLE_HINT", 2) // Grid
+                            }
+                            items.add(
+                                MediaItem.Builder()
+                                    .setMediaId("PLAYLISTS")
+                                    .setMediaMetadata(
+                                        androidx.media3.common.MediaMetadata.Builder()
+                                            .setTitle("Your Playlists")
+                                            .setIsBrowsable(true)
+                                            .setIsPlayable(false)
+                                            .setExtras(playlistsExtras)
+                                            .build()
+                                    )
+                                    .build()
+                            )
+                        }
+                        "RECOMMENDED" -> {
+                            try {
+                                val songs = youtubeRepository.getRecommendations()
+                                songs.forEach { song ->
+                                    items.add(
+                                        MediaItem.Builder()
+                                            .setMediaId(song.id)
+                                            .setMediaMetadata(
+                                                androidx.media3.common.MediaMetadata.Builder()
+                                                    .setTitle(song.title)
+                                                    .setArtist(song.artist)
+                                                    .setAlbumTitle(song.album)
+                                                    .setArtworkUri(android.net.Uri.parse(song.thumbnailUrl ?: ""))
+                                                    .setIsBrowsable(false)
+                                                    .setIsPlayable(true)
+                                                    .build()
+                                            )
+                                            .build()
+                                    )
+                                }
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Error fetching recommended", e)
+                            }
+                        }
+                        "PLAYLISTS" -> {
+                             try {
+                                val playlists = youtubeRepository.getUserPlaylists()
+                                playlists.forEach { playlist ->
+                                    val extras = android.os.Bundle().apply {
+                                        // Hint Grid Item for the playlist itself
+                                        putInt("android.media.browse.CONTENT_STYLE_BROWSABLE_HINT", 2) // Grid
+                                    }
+                                    // Extract ID from URL (simple assumption for now)
+                                    val playlistId = playlist.url.substringAfter("list=")
+                                    
+                                    items.add(
+                                        MediaItem.Builder()
+                                            // Navigation ID prefix to distinguish from videos
+                                            .setMediaId("PLAYLIST_$playlistId") 
+                                            .setMediaMetadata(
+                                                androidx.media3.common.MediaMetadata.Builder()
+                                                    .setTitle(playlist.name)
+                                                    .setSubtitle(playlist.uploaderName) // Use subtitle for artist/uploader
+                                                    .setArtworkUri(android.net.Uri.parse(playlist.thumbnailUrl ?: ""))
+                                                    .setIsBrowsable(true)
+                                                    .setIsPlayable(false)
+                                                    .setExtras(extras)
+                                                    .build()
+                                            )
+                                            .build()
+                                    )
+                                }
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Error fetching playlists", e)
+                            }
+                        }
+                        else -> {
+                            // Handle Playlist Drill-down
+                            if (parentId.startsWith("PLAYLIST_")) {
+                                val playlistId = parentId.removePrefix("PLAYLIST_")
+                                try {
+                                    val songs = youtubeRepository.getPlaylist(playlistId)
+                                    songs.forEach { song ->
+                                        items.add(
+                                            MediaItem.Builder()
+                                                .setMediaId(song.id)
+                                                .setMediaMetadata(
+                                                    androidx.media3.common.MediaMetadata.Builder()
+                                                        .setTitle(song.title)
+                                                        .setArtist(song.artist)
+                                                        .setAlbumTitle(song.album)
+                                                        .setArtworkUri(android.net.Uri.parse(song.thumbnailUrl ?: ""))
+                                                        .setIsBrowsable(false)
+                                                        .setIsPlayable(true)
+                                                        .build()
+                                                )
+                                                .build()
+                                        )
+                                    }
+                                } catch (e: Exception) {
+                                    Log.e(TAG, "Error fetching playlist details", e)
+                                }
+                            }
+                        }
+                    }
+                    
+                    LibraryResult.ofItemList(com.google.common.collect.ImmutableList.copyOf(items), null)
                 }
             }
         })
