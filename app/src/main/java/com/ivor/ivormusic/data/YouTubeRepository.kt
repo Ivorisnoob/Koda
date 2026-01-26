@@ -566,7 +566,7 @@ class YouTubeRepository(private val context: Context) {
                 
                 // Strategy 4: Regex fallback for any ggpht URL (Google profile pictures)
                 if (avatarUrl == null) {
-                    val ggphtRegex = """"url"\s*:\s*"(https://ggpht\.googleusercontent\.com/[^"]+)"""".toRegex()
+                    val ggphtRegex = "\"url\"\\s*:\\s*\"(https://ggpht\\.googleusercontent\\.com/[^\"]+)\"".toRegex()
                     val match = ggphtRegex.find(jsonResponse)
                     avatarUrl = match?.groupValues?.get(1)
                     if (avatarUrl != null) {
@@ -576,7 +576,7 @@ class YouTubeRepository(private val context: Context) {
                 
                 // Strategy 5: Any lh3.googleusercontent URL (Google user content)
                 if (avatarUrl == null) {
-                    val lh3Regex = """"url"\s*:\s*"(https://lh3\.googleusercontent\.com/[^"]+)"""".toRegex()
+                    val lh3Regex = "\"url\"\\s*:\\s*\"(https://lh3\\.googleusercontent\\.com/[^\"]+)\"".toRegex()
                     val match = lh3Regex.find(jsonResponse)
                     avatarUrl = match?.groupValues?.get(1)
                     if (avatarUrl != null) {
@@ -609,7 +609,7 @@ class YouTubeRepository(private val context: Context) {
                 android.util.Log.w("YouTubeRepo", "JSON parsing failed, trying regex fallback", jsonEx)
                 
                 // Fallback regex for any thumbnail URL
-                val thumbRegex = """"thumbnails"\s*:\s*\[\s*\{\s*"url"\s*:\s*"([^"]+)"""".toRegex()
+                val thumbRegex = "\"thumbnails\"\\s*:\\s*\\[\\s*\\{\\s*\"url\"\\s*:\\s*\"([^\"]+)\"".toRegex()
                 val match = thumbRegex.find(jsonResponse)
                 avatarUrl = match?.groupValues?.get(1)
             }

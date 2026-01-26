@@ -65,8 +65,6 @@ class ThemePreferences(context: Context) {
         private const val KEY_MAX_CACHE_SIZE_MB = "max_cache_size_mb"
         private const val KEY_CROSSFADE_ENABLED = "crossfade_enabled"
         private const val KEY_CROSSFADE_DURATION = "crossfade_duration"
-        
-        // Last Played Song persistence
         private const val KEY_LAST_SONG_ID = "last_song_id"
         private const val KEY_LAST_SONG_TITLE = "last_song_title"
         private const val KEY_LAST_SONG_ARTIST = "last_song_artist"
@@ -122,12 +120,7 @@ class ThemePreferences(context: Context) {
             .apply()
     }
 
-    /**
-     * Get the stored theme mode preference. Defaults to SYSTEM.
-     * Migrates from old boolean preference if needed.
-     */
     private fun getThemeModePreference(): ThemeMode {
-        // Check if new key exists
         if (prefs.contains(KEY_THEME_MODE)) {
             val modeName = prefs.getString(KEY_THEME_MODE, ThemeMode.SYSTEM.name)
             return try {
@@ -137,7 +130,6 @@ class ThemePreferences(context: Context) {
             }
         }
         
-        // Callback to old preference for migration
         if (prefs.contains(KEY_OLD_DARK_MODE)) {
             val oldDarkMode = prefs.getBoolean(KEY_OLD_DARK_MODE, true)
             return if (oldDarkMode) ThemeMode.DARK else ThemeMode.LIGHT
