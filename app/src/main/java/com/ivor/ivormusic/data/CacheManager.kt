@@ -214,9 +214,28 @@ object CacheManager {
     }
     
     /**
-     * Check if a specific content key is cached.
+     * Check if a specific content key is cached (partially or fully).
      */
     fun isCached(contentKey: String): Boolean {
-        return simpleCache?.isCached(contentKey, 0, Long.MAX_VALUE) == true
+        val cache = simpleCache ?: return false
+        return cache.getCachedBytes(contentKey, 0, Long.MAX_VALUE) > 0
+    }
+
+    /**
+     * Check if a specific content key is fully cached.
+     */
+    fun isFullyCached(contentKey: String): Boolean {
+        val cache = simpleCache ?: return false
+        val length = cache.getContentMetadata(contentKey).get(androidx.media3.datasource.cache.ContentMetadata.KEY_CONTENT_LENGTH, -1L)
+        if (length <= 0) return false
+        return cache.getCachedBytes(contentKey, 0, length) >= length
+    }
+
+    /**
+     * Get the total length of the cached content for a key.
+     */
+    fun getCachedLength(contentKey: String): Long {
+        val cache = simpleCache ?: return -1L
+        return cache.getContentMetadata(contentKey).get(androidx.media3.datasource.cache.ContentMetadata.KEY_CONTENT_LENGTH, -1L)
     }
 }

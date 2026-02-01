@@ -84,6 +84,7 @@ class MusicService : MediaLibraryService() {
         private const val PREFETCH_AHEAD_COUNT = 3
         private const val RESOLVE_TIMEOUT_MS = 10_000L // Reduced to 10s
         private const val PLACEHOLDER_PREFIX = "https://placeholder.ivormusic/"
+        private const val CACHED_PREFIX = "https://cached.ivormusic/"
         private const val ANDROID_AUTO_BROWSE_TIMEOUT_MS = 30_000L
     }
 
@@ -332,13 +333,19 @@ class MusicService : MediaLibraryService() {
             return buildMediaItemWithUri(originalItem, downloaded.uri, downloaded.duration)
         }
 
-        // 2. Cache
+        // 2. Cache (Memory)
         uriCache[videoId]?.let { cachedUri ->
             Log.d(TAG, "Resolution: Found cached URI for $videoId")
             return buildMediaItemWithUri(originalItem, Uri.parse(cachedUri))
         }
 
-        // 3. Network with Retry
+        // 3. Disk Cache (Fully Cached - Instant Playback)
+        if (CacheManager.isFullyCached(videoId)) {
+            Log.d(TAG, "Resolution: Found full disk cache for $videoId. Enabling instant playback.")
+            return buildMediaItemWithUri(originalItem, Uri.parse("$CACHED_PREFIX$videoId"))
+        }
+
+        // 4. Network with Retry
         // YouTubeRepository retry logic handles NewPipe flakiness. 
         // We just handle timeout here.
         return try {
@@ -376,6 +383,7 @@ class MusicService : MediaLibraryService() {
 
         return original.buildUpon()
             .setUri(uri)
+            .setCustomCacheKey(original.mediaId)
             .setMediaMetadata(metaBuilder.build())
             .setTag(original.mediaId)
             .build()
