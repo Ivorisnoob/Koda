@@ -250,6 +250,14 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             emptyList()
         }
     }
+
+    suspend fun getArtistDetails(artistId: String): Pair<List<Song>, List<PlaylistDisplayItem>> {
+        return try {
+            youtubeRepository.getArtistDetails(artistId)
+        } catch (e: Exception) {
+            Pair(emptyList(), emptyList())
+        }
+    }
     
     fun logout() {
         sessionManager.clearSession()

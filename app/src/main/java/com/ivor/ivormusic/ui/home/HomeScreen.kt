@@ -932,23 +932,96 @@ fun SongStripCard(
 fun SearchContent(
     songs: List<Song>,
     onSongClick: (Song) -> Unit,
-    onPlayQueue: (List<Song>, Song) -> Unit = { _, song -> onSongClick(song) },
+    onPlayQueue: (List<Song>, Song?) -> Unit = { _, song -> song?.let { onSongClick(it) } },
     onVideoClick: (VideoItem) -> Unit = {},
     contentPadding: PaddingValues,
     viewModel: HomeViewModel,
     isDarkMode: Boolean,
     videoMode: Boolean = false
 ) {
-    com.ivor.ivormusic.ui.search.SearchScreen(
-        songs = songs,
-        onSongClick = onSongClick,
-        onPlayQueue = onPlayQueue,
-        onVideoClick = onVideoClick,
-        contentPadding = contentPadding,
-        viewModel = viewModel,
-        isDarkMode = isDarkMode,
-        videoMode = videoMode
-    )
+    var viewedPlaylist by remember { mutableStateOf<com.ivor.ivormusic.data.PlaylistDisplayItem?>(null) }
+    var viewedArtist by remember { mutableStateOf<com.ivor.ivormusic.data.ArtistItem?>(null) }
+
+    // Handle system back button for nested screens
+    BackHandler(enabled = viewedPlaylist != null || viewedArtist != null) {
+        when {
+            viewedArtist != null -> viewedArtist = null
+            viewedPlaylist != null -> viewedPlaylist = null
+        }
+    }
+
+    val currentScreen = when {
+        viewedArtist != null -> "artist"
+        viewedPlaylist != null -> "playlist"
+        else -> "search"
+    }
+
+    androidx.compose.animation.AnimatedContent(
+        targetState = currentScreen,
+        label = "SearchNav",
+        transitionSpec = {
+            if (targetState != "search") {
+                // Push (Going deeper)
+                (androidx.compose.animation.slideInHorizontally { width -> width } + 
+                        androidx.compose.animation.fadeIn()) togetherWith
+                        (androidx.compose.animation.slideOutHorizontally { width -> -width / 3 } + 
+                                androidx.compose.animation.fadeOut())
+            } else {
+                // Pop (Going back)
+                (androidx.compose.animation.slideInHorizontally { width -> -width / 3 } + 
+                        androidx.compose.animation.fadeIn()) togetherWith
+                        (androidx.compose.animation.slideOutHorizontally { width -> width } + 
+                                androidx.compose.animation.fadeOut())
+            }
+        }
+    ) { screen ->
+        when (screen) {
+            "artist" -> {
+                 viewedArtist?.let { artistItem ->
+                    com.ivor.ivormusic.ui.artist.ArtistScreen(
+                        artistName = artistItem.name,
+                        artistId = artistItem.id,
+                        songs = emptyList(), // We let the screen fetch songs via viewModel
+                        onBack = { viewedArtist = null },
+                        onPlayQueue = onPlayQueue,
+                        onSongClick = onSongClick,
+                        onAlbumClick = { album, albumSongs -> 
+                             // Optional: Handle playing album from artist screen
+                             onPlayQueue(albumSongs, null)
+                        },
+                        viewModel = viewModel
+                    )
+                }
+            }
+
+            "playlist" -> {
+                 viewedPlaylist?.let { playlist ->
+                    com.ivor.ivormusic.ui.library.PlaylistDetailScreen(
+                        playlist = playlist,
+                        onBack = { viewedPlaylist = null },
+                        onPlayQueue = onPlayQueue,
+                        viewModel = viewModel,
+                        isDarkMode = isDarkMode
+                    )
+                }
+            }
+            else -> {
+                com.ivor.ivormusic.ui.search.SearchScreen(
+                    songs = songs,
+                    onSongClick = onSongClick,
+                    onPlayQueue = onPlayQueue,
+                    onVideoClick = onVideoClick,
+                    onArtistClick = { artistItem -> viewedArtist = artistItem },
+                    onAlbumClick = { albumItem -> viewedPlaylist = albumItem },
+                    onPlaylistClick = { playlistItem -> viewedPlaylist = playlistItem },
+                    contentPadding = contentPadding,
+                    viewModel = viewModel,
+                    isDarkMode = isDarkMode,
+                    videoMode = videoMode
+                )
+            }
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)

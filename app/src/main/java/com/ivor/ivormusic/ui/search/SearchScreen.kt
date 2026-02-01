@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -112,6 +113,9 @@ fun SearchScreen(
     onSongClick: (Song) -> Unit,
     onPlayQueue: (List<Song>, Song) -> Unit = { _, song -> onSongClick(song) },
     onVideoClick: (VideoItem) -> Unit = {},
+    onArtistClick: (ArtistItem) -> Unit = {},
+    onAlbumClick: (PlaylistDisplayItem) -> Unit = {},
+    onPlaylistClick: (PlaylistDisplayItem) -> Unit = {},
     contentPadding: PaddingValues,
     viewModel: HomeViewModel,
     isDarkMode: Boolean,
@@ -370,18 +374,15 @@ fun SearchScreen(
                             secondaryTextColor = secondaryTextColor
                         )
                     }
-                    itemsIndexed(artistResults) { index, artist ->
+                    items(artistResults) { artist ->
                         ArtistResultCard(
-                             artist = artist,
-                             onClick = { /* TODO: Open Artist Page */ },
-                             cardColor = cardColor,
-                             textColor = textColor,
-                             secondaryTextColor = secondaryTextColor,
-                             modifier = Modifier.padding(horizontal = 20.dp)
+                            artist = artist,
+                            onClick = { onArtistClick(artist) },
+                            cardColor = cardColor,
+                            textColor = textColor,
+                            secondaryTextColor = secondaryTextColor
                         )
-                        if (index < artistResults.size - 1) {
-                            HorizontalDivider(modifier = Modifier.padding(horizontal = 44.dp), color = textColor.copy(alpha = 0.06f))
-                        }
+                        Spacer(modifier = Modifier.height(12.dp))
                     }
                 }
 
@@ -397,19 +398,16 @@ fun SearchScreen(
                             secondaryTextColor = secondaryTextColor
                         )
                     }
-                    itemsIndexed(albumResults) { index, album ->
+                    items(albumResults) { album ->
                         PlaylistResultCard(
-                             item = album,
-                             onClick = { /* TODO: Open Album */ },
-                             cardColor = cardColor,
-                             textColor = textColor,
-                             secondaryTextColor = secondaryTextColor,
-                             isAlbum = true,
-                             modifier = Modifier.padding(horizontal = 20.dp)
+                            item = album,
+                            onClick = { onAlbumClick(album) },
+                            cardColor = cardColor,
+                            textColor = textColor,
+                            secondaryTextColor = secondaryTextColor,
+                            isAlbum = true
                         )
-                        if (index < albumResults.size - 1) {
-                            HorizontalDivider(modifier = Modifier.padding(horizontal = 44.dp), color = textColor.copy(alpha = 0.06f))
-                        }
+                        Spacer(modifier = Modifier.height(12.dp))
                     }
                 }
 
@@ -425,19 +423,16 @@ fun SearchScreen(
                             secondaryTextColor = secondaryTextColor
                         )
                     }
-                    itemsIndexed(playlistResults) { index, playlist ->
-                         PlaylistResultCard(
-                             item = playlist,
-                             onClick = { /* TODO: Open Playlist */ },
-                             cardColor = cardColor,
-                             textColor = textColor,
-                             secondaryTextColor = secondaryTextColor,
-                             isAlbum = false,
-                             modifier = Modifier.padding(horizontal = 20.dp)
+                    items(playlistResults) { playlist ->
+                        PlaylistResultCard(
+                            item = playlist,
+                            onClick = { onPlaylistClick(playlist) },
+                            cardColor = cardColor,
+                            textColor = textColor,
+                            secondaryTextColor = secondaryTextColor,
+                            isAlbum = false
                         )
-                        if (index < playlistResults.size - 1) {
-                             HorizontalDivider(modifier = Modifier.padding(horizontal = 44.dp), color = textColor.copy(alpha = 0.06f))
-                        }
+                        Spacer(modifier = Modifier.height(12.dp))
                     }
                 }
 
