@@ -293,23 +293,29 @@ fun PlayerScreen(
 
                 FilledIconButton(
                     onClick = { viewModel.togglePlayPause() },
-                    modifier = Modifier.size(92.dp),
-                    shapes = IconButtonDefaults.shapes(),
+                    modifier = Modifier.size(96.dp),
+                    shapes = IconButtonDefaults.shapes(
+                        shape = RoundedCornerShape(32.dp)
+                    ),
                     colors = IconButtonDefaults.filledIconButtonColors(
                         containerColor = primaryColor,
                         contentColor = MaterialTheme.colorScheme.onPrimary
                     )
                 ) {
-                    if (isBuffering && playWhenReady && !isPlaying) {
-                        LoadingIndicator(
-                            modifier = Modifier.size(44.dp),
-                            color = MaterialTheme.colorScheme.onPrimary 
+                    // Logic fix: Show loader if we are explicitly buffering.
+                    // MusicService ensures playWhenReady is true even during resolution errors, 
+                    // causing PlayerViewModel to set isBuffering=true.
+                    if (isBuffering) {
+                        androidx.compose.material3.CircularProgressIndicator(
+                            modifier = Modifier.size(48.dp),
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            strokeWidth = 4.dp
                         )
                     } else {
                         Icon(
                             imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                             contentDescription = if (isPlaying) "Pause" else "Play",
-                            modifier = Modifier.size(48.dp)
+                            modifier = Modifier.size(56.dp)
                         )
                     }
                 }

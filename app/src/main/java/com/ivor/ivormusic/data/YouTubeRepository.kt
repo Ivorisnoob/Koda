@@ -191,31 +191,48 @@ class YouTubeRepository(private val context: Context) {
      * @return Result containing stream URL or error
      */
     suspend fun getStreamUrl(videoId: String): Result<String> = withContext(Dispatchers.IO) {
-        try {
-            val streamUrl = "https://www.youtube.com/watch?v=$videoId"
-            val ytService = ServiceList.all().find { it.serviceInfo.name == "YouTube" } 
-                ?: return@withContext Result.failure(Exception("YouTube Service not found in NewPipe"))
-            
-            val streamExtractor = ytService.getStreamExtractor(streamUrl)
-            streamExtractor.fetchPage()
-            
-            // Get the best audio-only stream
-            val audioStreams = streamExtractor.audioStreams
-            val bestAudioStream = audioStreams
-                .maxByOrNull { it.averageBitrate }
-                ?: audioStreams.maxByOrNull { it.bitrate }
-            
-            val url = bestAudioStream?.content
-            if (url != null) {
-                Result.success(url)
-            } else {
-                Result.failure(Exception("No audio stream found for $videoId"))
+        var attempts = 0
+        while (attempts < 3) {
+            try {
+                // Determine client type mainly for logs, but NewPipe handles rotation internally usually
+                val streamUrl = "https://www.youtube.com/watch?v=$videoId"
+                val ytService = ServiceList.all().find { it.serviceInfo.name == "YouTube" } 
+                    ?: return@withContext Result.failure(Exception("YouTube Service not found in NewPipe"))
+                
+                val streamExtractor = ytService.getStreamExtractor(streamUrl)
+                streamExtractor.fetchPage()
+                
+                // Get the best audio-only stream
+                val audioStreams = streamExtractor.audioStreams
+                val bestAudioStream = audioStreams
+                    .maxByOrNull { it.averageBitrate }
+                    ?: audioStreams.maxByOrNull { it.bitrate }
+                
+                val url = bestAudioStream?.content
+                if (url != null) {
+                    return@withContext Result.success(url)
+                } else {
+                    // If no stream found, it might be a content restriction (age-gate, region)
+                    if (attempts == 2) return@withContext Result.failure(Exception("No audio stream found for $videoId after 3 attempts"))
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("YouTubeRepository", "Attempt ${attempts+1} failed for $videoId: ${e.message}")
+                if (attempts == 2) {
+                    // Try fallback before giving up purely on NewPipe
+                    android.util.Log.w("YouTubeRepository", "NewPipe failed, trying Internal API fallback for $videoId")
+                    val fallbackUrl = getStreamUrlFallback(videoId)
+                    if (fallbackUrl != null) {
+                         android.util.Log.d("YouTubeRepository", "Fallback success for $videoId")
+                         return@withContext Result.success(fallbackUrl)
+                    }
+                    return@withContext Result.failure(e)
+                }
             }
-        } catch (e: Exception) {
-            // Log the error for debugging
-            android.util.Log.e("YouTubeRepository", "Error resolving stream for $videoId", e)
-            Result.failure(e)
+            attempts++
+            // Exponential backoff: 500ms, 1000ms
+            kotlinx.coroutines.delay(500L * attempts)
         }
+        Result.failure(Exception("Unknown error resolving stream"))
     }
 
     /**
@@ -602,6 +619,99 @@ class YouTubeRepository(private val context: Context) {
             
         } catch (e: Exception) {
             e.printStackTrace()
+        }
+    }
+
+    /**
+     * Fallback stream resolution using Internal API.
+     * Bypasses NewPipe HTML parsing which can get stuck on "Page needs to be reloaded" logic.
+     */
+    /**
+     * Fallback stream resolution using Internal API.
+     * Uses ANDROID client (InnerTube) often more robust against "reload" errors.
+     */
+    private suspend fun getStreamUrlFallback(videoId: String): String? = withContext(Dispatchers.IO) {
+        try {
+            // Use ANDROID client which is less strict about "page reload"
+            // The API Key is public and required for this endpoint
+            
+            val jsonBody = """
+               {
+                   "videoId": "$videoId",
+                   "context": {
+                       "client": {
+                           "clientName": "ANDROID",
+                           "clientVersion": "19.05.36",
+                           "androidSdkVersion": 30,
+                           "hl": "en",
+                           "gl": "US",
+                           "utcOffsetMinutes": 0
+                       }
+                   }
+               }
+            """.trimIndent()
+            
+            val url = "https://youtubei.googleapis.com/youtubei/v1/player?key=$INNER_TUBE_API_KEY"
+            
+            val requestBuilder = okhttp3.Request.Builder()
+               .url(url)
+               .post(jsonBody.toRequestBody("application/json".toMediaType()))
+               .addHeader("User-Agent", "com.google.android.youtube/19.05.36 (Linux; U; Android 11) gzip")
+               .addHeader("X-Goog-Api-Format-Version", "1")
+               
+            val response = okHttpClient.newCall(requestBuilder.build()).execute()
+            val json = response.body?.string() ?: return@withContext null
+            
+            val root = org.json.JSONObject(json)
+            
+            // Check for playability status error
+            val playability = root.optJSONObject("playabilityStatus")
+            if (playability != null && playability.optString("status") != "OK") {
+                 android.util.Log.e("YouTubeRepository", "Fallback playability error: ${playability.optString("reason")}")
+                 return@withContext null
+            }
+            
+            val streamingData = root.optJSONObject("streamingData") 
+            if (streamingData == null) {
+                 android.util.Log.e("YouTubeRepository", "Fallback no streamingData found in response.")
+                 return@withContext null
+            }
+            
+            // Extract formats
+            val formats = mutableListOf<org.json.JSONObject>()
+            streamingData.optJSONArray("adaptiveFormats")?.let { arr ->
+                for (i in 0 until arr.length()) formats.add(arr.getJSONObject(i))
+            }
+            streamingData.optJSONArray("formats")?.let { arr ->
+                for (i in 0 until arr.length()) formats.add(arr.getJSONObject(i))
+            }
+            
+            // Find best audio (Opus preferred, then AAC)
+            val audioFormats = formats.filter { it.optString("mimeType").contains("audio") }
+            
+            // Log for debugging
+            android.util.Log.d("YouTubeRepository", "Fallback found ${audioFormats.size} audio formats")
+            
+            val bestAudio = audioFormats.maxByOrNull { it.optInt("bitrate") }
+                
+            var streamUrl = bestAudio?.optString("url")
+            
+            if (streamUrl.isNullOrEmpty()) {
+                // If URL is missing, it might use signatureCipher
+                val cipher = bestAudio?.optString("signatureCipher") ?: bestAudio?.optString("cipher")
+                if (!cipher.isNullOrEmpty()) {
+                    android.util.Log.w("YouTubeRepository", "Fallback found cipher, but decryption not implemented here. Relying on NewPipe.")
+                    // If we really need to decrypt, we would need a complex Decryptor. 
+                    // Usually NewPipe handles this. If NewPipe failed, we are in trouble unless we fix NewPipe.
+                    // However, ANDROID client usually gives direct URLs for most music content.
+                    return@withContext null
+                }
+            }
+            
+            return@withContext streamUrl
+        } catch (e: Exception) {
+            android.util.Log.e("YouTubeRepository", "Fallback failed for $videoId", e)
+            null
         }
     }
 

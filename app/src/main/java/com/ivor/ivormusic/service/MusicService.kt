@@ -2,147 +2,122 @@ package com.ivor.ivormusic.service
 
 import android.app.PendingIntent
 import android.content.Intent
+import android.net.Uri
 import android.util.Log
+import androidx.media3.common.AudioAttributes
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.session.LibraryResult
 import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession
+import com.google.common.collect.ImmutableList
+import com.google.common.util.concurrent.Futures
+import com.google.common.util.concurrent.ListenableFuture
 import com.ivor.ivormusic.MainActivity
+import com.ivor.ivormusic.data.CacheManager
+import com.ivor.ivormusic.data.DownloadRepository
+import com.ivor.ivormusic.data.PlaylistDisplayItem
+import com.ivor.ivormusic.data.Song
+import com.ivor.ivormusic.data.ThemePreferences
 import com.ivor.ivormusic.data.YouTubeRepository
-import com.ivor.ivormusic.data.SongSource
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.guava.future
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import com.ivor.ivormusic.data.Song
-import com.ivor.ivormusic.data.PlaylistDisplayItem
-import com.google.common.util.concurrent.ListenableFuture
-import com.google.common.collect.ImmutableList
-import androidx.media3.session.LibraryResult
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 
 @UnstableApi
-
 class MusicService : MediaLibraryService() {
+
+    // --- Components ---
     private var mediaLibrarySession: MediaLibrarySession? = null
     private lateinit var player: ExoPlayer
     private lateinit var youtubeRepository: YouTubeRepository
-    private lateinit var themePreferences: com.ivor.ivormusic.data.ThemePreferences
+    private lateinit var downloadRepository: DownloadRepository
+    private lateinit var themePreferences: ThemePreferences
+
+    // --- Scopes ---
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private val resolveScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    // --- State & Cache ---
+    // --- State & Cache ---
+    // Deduplicated active resolutions: VideoID -> Deferred result
+    private val activeResolutions = ConcurrentHashMap<String, kotlinx.coroutines.Deferred<MediaItem>>()
+    // Cache for resolved URIs (VideoID -> URI)
+    private val uriCache = ConcurrentHashMap<String, String>()
     
-    // Cache for resolved stream URLs (videoId -> streamUrl)
-    private val urlCache = ConcurrentHashMap<String, String>()
-    
-    // Track which items are being resolved to avoid duplicate requests
-    private val resolvingItems = ConcurrentHashMap<String, Boolean>()
-    
-    // Crossfade variables
+    // --- Configuration ---
     private var isCrossfadeEnabled = true
     private var crossfadeDurationMs = 3000L
-    private var fadeVolumeJob: kotlinx.coroutines.Job? = null
+    private var fadeVolumeJob: Job? = null
     
-    // Live Update for music progress (Android 16+)
+    // Live Update (Android 16+)
     private var musicProgressLiveUpdate: MusicProgressLiveUpdate? = null
-    
-    companion object {
-        private const val TAG = "MusicService"
-        private const val PREFETCH_AHEAD = 3
-        private const val STREAM_TIMEOUT_MS = 30000L // Increased to 30s
-        private const val ANDROID_AUTO_BROWSE_TIMEOUT_MS = 30000L // Android Auto timeout (30 seconds)
-    }
-    
-    // Cache for Android Auto browse content to prevent slow loading
+
+    // Android Auto Cache
     @Volatile private var cachedRecommendations: List<Song>? = null
     @Volatile private var cachedPlaylists: List<PlaylistDisplayItem>? = null
     @Volatile private var cachedPlaylistSongs: MutableMap<String, List<Song>> = mutableMapOf()
     @Volatile private var lastBrowseCacheTime: Long = 0L
-    private val browseCacheValidityMs = 5 * 60 * 1000L // Cache valid for 5 minutes
+    private val browseCacheValidityMs = 5 * 60 * 1000L // 5 minutes
+
+    companion object {
+        private const val TAG = "MusicService"
+        private const val PREFETCH_AHEAD_COUNT = 3
+        private const val RESOLVE_TIMEOUT_MS = 10_000L // Reduced to 10s
+        private const val PLACEHOLDER_PREFIX = "https://placeholder.ivormusic/"
+        private const val ANDROID_AUTO_BROWSE_TIMEOUT_MS = 30_000L
+    }
 
     override fun onCreate() {
         super.onCreate()
-        Log.d(TAG, "MusicService onCreate")
-        
-        // Initialize Cache Manager
-        com.ivor.ivormusic.data.CacheManager.initialize(this)
-        
-        // Set custom media notification provider for Android 16 Live Activities support
+        Log.i(TAG, "MusicService Creating...")
+
+        // 1. Initialize Dependencies
+        CacheManager.initialize(this)
+        youtubeRepository = YouTubeRepository(this)
+        downloadRepository = DownloadRepository(this)
+        themePreferences = ThemePreferences(this)
+
+        // 2. Setup Notifications & Live Updates
         setMediaNotificationProvider(LiveUpdateMediaNotificationProvider(this))
-        
-        // Initialize Live Update for music progress (Android 16+)
         if (android.os.Build.VERSION.SDK_INT >= 36) {
             musicProgressLiveUpdate = MusicProgressLiveUpdate(this)
         }
-        
-        themePreferences = com.ivor.ivormusic.data.ThemePreferences(this)
-        observePreferences()
-        
-        initializeSessionAndPlayer()
-        
-        // Pre-warm Android Auto cache in background
-        preWarmAutoCache()
-    }
-    
-    private fun observePreferences() {
-        serviceScope.launch {
-            themePreferences.crossfadeEnabled.collect { 
-                isCrossfadeEnabled = it
-            }
-        }
-        serviceScope.launch {
-            themePreferences.crossfadeDurationMs.collect { 
-                crossfadeDurationMs = it.toLong()
-            }
-        }
-        serviceScope.launch {
-            themePreferences.maxCacheSizeMb.collect { sizeMb ->
-                com.ivor.ivormusic.data.CacheManager.setMaxCacheSize(this@MusicService, sizeMb)
-            }
-        }
-    }
-    
-    /**
-     * Pre-warm the Android Auto content cache in the background.
-     * This ensures that when Android Auto connects, content is ready immediately.
-     */
-    private fun preWarmAutoCache() {
-        serviceScope.launch(Dispatchers.IO) {
-            try {
-                Log.d(TAG, "Pre-warming Android Auto cache...")
-                
-                // Fetch recommendations
-                val recommendations = youtubeRepository.getRecommendations()
-                if (recommendations.isNotEmpty()) {
-                    cachedRecommendations = recommendations
-                    lastBrowseCacheTime = System.currentTimeMillis()
-                    Log.d(TAG, "Pre-warmed ${recommendations.size} recommendations")
-                }
-                
-                // Fetch playlists
-                val playlists = youtubeRepository.getUserPlaylists()
-                if (playlists.isNotEmpty()) {
-                    cachedPlaylists = playlists
-                    Log.d(TAG, "Pre-warmed ${playlists.size} playlists")
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error pre-warming cache", e)
-            }
-        }
-    }
 
-    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? {
-        Log.d(TAG, "onGetSession called from: ${controllerInfo.packageName}")
-        return mediaLibrarySession
+        // 3. Initialize Preferences
+        observePreferences()
+
+        // 4. Initialize Player
+        initializePlayer()
+
+        // 5. Initialize Session
+        initializeSession()
+
+        // 6. Pre-warm caches
+        preWarmAutoCache()
     }
 
     override fun onDestroy() {
+        Log.i(TAG, "MusicService Destroying...")
         fadeVolumeJob?.cancel()
         musicProgressLiveUpdate?.hide()
         mediaLibrarySession?.run {
@@ -150,727 +125,588 @@ class MusicService : MediaLibraryService() {
             release()
             mediaLibrarySession = null
         }
-        com.ivor.ivormusic.data.CacheManager.release()
-        urlCache.clear()
-        resolvingItems.clear()
+        CacheManager.release()
+        activeResolutions.clear()
+        uriCache.clear()
         super.onDestroy()
     }
 
-    private fun initializeSessionAndPlayer() {
-        // Use CacheDataSourceFactory for persistent caching
-        val cacheDataSourceFactory = com.ivor.ivormusic.data.CacheManager.createCacheDataSourceFactory()
-            ?: androidx.media3.datasource.DefaultDataSource.Factory(this)
-            
-        // Configure LoadControl for instant playback start
-        val loadControl = androidx.media3.exoplayer.DefaultLoadControl.Builder()
+    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? {
+        return mediaLibrarySession
+    }
+
+    // --- Initialization ---
+
+    private fun initializePlayer() {
+        // Custom LoadControl for "Robus + Fast" User Experience
+        // We use a 2s start buffer (user request) to ensure we have enough data to avoid immediate buffering
+        // but rely on pre-fetching to make it feel instant.
+        val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                15_000, // Min buffer 15s (was 30s)
-                50_000, // Max buffer 50s (was 120s)
-                250,    // Buffer for playback 0.25s (was 2.5s) - INSTANT START
-                2000    // Buffer for rebuffer 2s (was 5s)
+                30_000, // Min Buffer 30s
+                60_000, // Max Buffer 60s
+                2000,   // Buffer for Playback: 2s (Robust start)
+                3000    // Buffer for Rebuffer: 3s
             )
             .setPrioritizeTimeOverSizeThresholds(true)
             .build()
-            
-        val renderersFactory = androidx.media3.exoplayer.DefaultRenderersFactory(this)
-            .setExtensionRendererMode(androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF)
+
+        val renderersFactory = DefaultRenderersFactory(this)
+            .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF)
+
+        val cacheDataSourceFactory = CacheManager.createCacheDataSourceFactory()
+            ?: DefaultDataSource.Factory(this)
 
         player = ExoPlayer.Builder(this)
             .setRenderersFactory(renderersFactory)
             .setMediaSourceFactory(
-                androidx.media3.exoplayer.source.DefaultMediaSourceFactory(this)
-                    .setDataSourceFactory(cacheDataSourceFactory)
+                DefaultMediaSourceFactory(this).setDataSourceFactory(cacheDataSourceFactory)
             )
             .setLoadControl(loadControl)
-            .setAudioAttributes(androidx.media3.common.AudioAttributes.DEFAULT, true)
+            .setAudioAttributes(AudioAttributes.DEFAULT, true)
             .setHandleAudioBecomingNoisy(true)
             .build()
-            
-        youtubeRepository = YouTubeRepository(this)
+        
+        player.addListener(PlayerEventListener())
+    }
 
-        // Add listener for lazy pre-fetching of upcoming songs and Crossfade
-        player.addListener(object : Player.Listener {
-            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-                super.onMediaItemTransition(mediaItem, reason)
-                
-                // Trigger Crossfade Effect (Fade In)
-                // Trigger Fade In if strictly auto transition (and crossfade enabled)
-                // Note: The fade-out loop handles the end of the previous track.
-                if (isCrossfadeEnabled && reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) {
-                     performFadeIn()
-                } else {
-                     player.volume = 1.0f // Reset volume if manual skip
-                }
-                
-                // Pre-fetch next songs when track changes
-                prefetchUpcomingSongs()
-            }
-            
-            override fun onPlaybackStateChanged(playbackState: Int) {
-                super.onPlaybackStateChanged(playbackState)
-                if (playbackState == Player.STATE_READY) {
-                    prefetchUpcomingSongs()
-                }
-            }
-            
-            override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
-                Log.e(TAG, "Player Error: ${error.errorCodeName}", error)
-                
-                // Stop skipping if no network
-                if (!isNetworkAvailable()) {
-                    Log.w(TAG, "No network detected during player error - pausing to prevent skip loop")
-                    player.pause()
-                    return
-                }
-                
-                // RECOVERY LOGIC
-                val currentItem = player.currentMediaItem
-                val videoId = currentItem?.mediaId
-                
-                if (videoId != null && !urlCache.containsKey("RETRY_$videoId")) {
-                    Log.d(TAG, "Attempting strict recovery for $videoId")
-                    
-                    // Mark as retrying to prevent infinite loops
-                    urlCache["RETRY_$videoId"] = "true"
-                    
-                    serviceScope.launch(Dispatchers.IO) {
-                        try {
-                            // Force fresh resolution (bypass functional cache)
-                            urlCache.remove(videoId)
-                            val newItem = resolveStreamUrl(currentItem, videoId)
-                            
-                            serviceScope.launch(Dispatchers.Main) {
-                                val index = player.currentMediaItemIndex
-                                player.replaceMediaItem(index, newItem)
-                                player.prepare()
-                                player.play()
-                                Log.d(TAG, "Recovery successful for $videoId")
-                            }
-                        } catch (e: Exception) {
-                             Log.e(TAG, "Recovery failed for $videoId", e)
-                             // Skip to next if recovery fails
-                             serviceScope.launch(Dispatchers.Main) {
-                                 if (player.hasNextMediaItem()) {
-                                     player.seekToNext()
-                                     player.play()
-                                 }
-                             }
-                        }
-                    }
-                } else {
-                    // If already retried or unknown error, try to skip
-                     if (player.hasNextMediaItem()) {
-                         player.seekToNext()
-                         player.play()
-                     }
-                }
-            }
-        })
-
+    private fun initializeSession() {
         val sessionIntent = packageManager.getLaunchIntentForPackage(packageName).let {
             val intent = it ?: Intent(this, MainActivity::class.java)
             PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         }
 
-        mediaLibrarySession = MediaLibrarySession.Builder(this, player, object : MediaLibrarySession.Callback {
-            override fun onConnect(
-                session: MediaSession,
-                controller: MediaSession.ControllerInfo
-            ): MediaSession.ConnectionResult {
-                val connectionResult = super.onConnect(session, controller)
-                val availablePlayerCommands = connectionResult.availablePlayerCommands.buildUpon()
-                    .add(Player.COMMAND_SET_SHUFFLE_MODE)
-                    .add(Player.COMMAND_SET_REPEAT_MODE)
-                    .build()
-                return MediaSession.ConnectionResult.accept(
-                    connectionResult.availableSessionCommands,
-                    availablePlayerCommands
-                )
-            }
-
-            override fun onAddMediaItems(
-                mediaSession: MediaSession,
-                controller: MediaSession.ControllerInfo,
-                mediaItems: MutableList<MediaItem>
-            ): ListenableFuture<MutableList<MediaItem>> {
-                Log.d(TAG, "onAddMediaItems called with ${mediaItems.size} items from ${controller.packageName}")
-                
-                // Use IO dispatcher for network operations
-                val ioScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-                return ioScope.future {
-                    if (mediaItems.size == 1) {
-                         var item = mediaItems[0]
-                         val videoId = item.mediaId
-                         Log.d(TAG, "Resolving stream for video: $videoId, title: ${item.mediaMetadata.title ?: "null"}")
-                         
-                         // Try to find full metadata in cache if title is missing
-                         if (item.mediaMetadata.title == null) {
-                             val cachedSong = cachedRecommendations?.find { it.id == videoId }
-                                 ?: cachedPlaylistSongs.values.flatten().find { it.id == videoId }
-                                 
-                             if (cachedSong != null) {
-                                 Log.d(TAG, "Restoring metadata from cache for $videoId")
-                                 item = item.buildUpon()
-                                     .setMediaMetadata(
-                                         androidx.media3.common.MediaMetadata.Builder()
-                                             .setTitle(cachedSong.title)
-                                             .setArtist(cachedSong.artist)
-                                             .setAlbumTitle(cachedSong.album)
-                                             .setArtworkUri(android.net.Uri.parse(cachedSong.thumbnailUrl ?: ""))
-                                             .setIsBrowsable(false)
-                                             .setIsPlayable(true)
-                                             .build()
-                                     )
-                                     .build()
-                             }
-                         }
-                         
-                         val finalItem = resolveStreamUrl(item, videoId)
-                         Log.d(TAG, "Resolved item URI: ${finalItem.localConfiguration?.uri}")
-                         
-                         // Auto-Queue: Fetch related songs in background
-                         val seedTitle = item.mediaMetadata.title?.toString() ?: "Popular Music"
-                         serviceScope.launch(Dispatchers.IO) {
-                             try {
-                                 // Wait briefly to ensure playback starts smoothly first
-                                 kotlinx.coroutines.delay(1000)
-                                 
-                                 Log.d(TAG, "Auto-Queue: Fetching songs related to '$seedTitle'")
-                                 val relatedSongs = youtubeRepository.search("Songs related to $seedTitle", YouTubeRepository.FILTER_SONGS)
-                                     .filter { it.id != videoId } // Exclude current song
-                                     .take(20) // Limit queue size
-                                 
-                                 if (relatedSongs.isNotEmpty()) {
-                                     val newItems = relatedSongs.map { song ->
-                                         MediaItem.Builder()
-                                            .setMediaId(song.id)
-                                            .setUri("https://placeholder.ivormusic/${song.id}")
-                                            .setMediaMetadata(
-                                                androidx.media3.common.MediaMetadata.Builder()
-                                                    .setTitle(song.title)
-                                                    .setArtist(song.artist)
-                                                    .setAlbumTitle(song.album)
-                                                    .setArtworkUri(android.net.Uri.parse(song.thumbnailUrl ?: ""))
-                                                    .build()
-                                            )
-                                            .build()
-                                     }
-                                     
-                                     withContext(Dispatchers.Main) {
-                                         // appending to the player
-                                         if (player.currentMediaItem?.mediaId == videoId) {
-                                             player.addMediaItems(newItems)
-                                             Log.d(TAG, "Auto-Queue: Added ${newItems.size} related songs")
-                                         }
-                                     }
-                                 }
-                             } catch (e: Exception) {
-                                 Log.e(TAG, "Auto-Queue failed", e)
-                             }
-                         }
-                            
-                         mutableListOf(finalItem)
-                    } else {
-                        // Batch add, prefetch later
-                        Log.d(TAG, "Batch adding ${mediaItems.size} items")
-                        mediaItems.map { mediaItem ->
-                            var item = mediaItem
-                            val videoId = item.mediaId
-                            
-                            // Restore metadata if missing
-                            if (item.mediaMetadata.title == null) {
-                                 val cachedSong = cachedRecommendations?.find { it.id == videoId }
-                                     ?: cachedPlaylistSongs.values.flatten().find { it.id == videoId }
-                                     
-                                 if (cachedSong != null) {
-                                     item = item.buildUpon()
-                                         .setMediaMetadata(
-                                             androidx.media3.common.MediaMetadata.Builder()
-                                                 .setTitle(cachedSong.title)
-                                                 .setArtist(cachedSong.artist)
-                                                 .setAlbumTitle(cachedSong.album)
-                                                 .setArtworkUri(android.net.Uri.parse(cachedSong.thumbnailUrl ?: ""))
-                                                 .setIsBrowsable(false)
-                                                 .setIsPlayable(true)
-                                                 .build()
-                                         )
-                                         .build()
-                                 }
-                            }
-                            
-                            item.buildUpon().setCustomCacheKey(videoId).build()
-                        }.toMutableList()
-                    }
-                }
-            }
-
-            override fun onGetLibraryRoot(
-                session: MediaLibrarySession,
-                browser: MediaSession.ControllerInfo,
-                params: MediaLibraryService.LibraryParams?
-            ): ListenableFuture<LibraryResult<MediaItem>> {
-                Log.d(TAG, "onGetLibraryRoot called from package: ${browser.packageName}")
-                // Return immediately without using coroutines - this must complete fast
-                val rootExtras = android.os.Bundle().apply {
-                     putBoolean("android.media.browse.CONTENT_STYLE_SUPPORTED", true)
-                     putInt("android.media.browse.CONTENT_STYLE_BROWSABLE_HINT", 1) // Grid
-                     putInt("android.media.browse.CONTENT_STYLE_PLAYABLE_HINT", 1) // List
-                }
-                val rootItem = MediaItem.Builder()
-                    .setMediaId("root")
-                    .setMediaMetadata(
-                        androidx.media3.common.MediaMetadata.Builder()
-                            .setTitle("Root")
-                            .setIsBrowsable(true)
-                            .setIsPlayable(false)
-                            .build()
-                    )
-                    .build()
-                return com.google.common.util.concurrent.Futures.immediateFuture(
-                    LibraryResult.ofItem(rootItem, MediaLibraryService.LibraryParams.Builder().setExtras(rootExtras).build())
-                )
-            }
-
-            override fun onGetChildren(
-                session: MediaLibrarySession,
-                browser: MediaSession.ControllerInfo,
-                parentId: String,
-                page: Int,
-                pageSize: Int,
-                params: MediaLibraryService.LibraryParams?
-            ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
-                Log.d(TAG, "onGetChildren called for parentId: $parentId from ${browser.packageName}")
-                
-                // For "root", return immediately without using coroutines
-                if (parentId == "root") {
-                    val items = mutableListOf<MediaItem>()
-                    
-                    // 1. Recommended (Grid Layout for Songs)
-                    val recommendedExtras = android.os.Bundle().apply {
-                        putInt("android.media.browse.CONTENT_STYLE_PLAYABLE_HINT", 2) // Grid
-                    }
-                    items.add(
-                        MediaItem.Builder()
-                            .setMediaId("RECOMMENDED")
-                            .setMediaMetadata(
-                                androidx.media3.common.MediaMetadata.Builder()
-                                    .setTitle("Recommended For You")
-                                    .setIsBrowsable(true)
-                                    .setIsPlayable(false)
-                                    .setExtras(recommendedExtras)
-                                    .build()
-                            )
-                            .build()
-                    )
-                    // 2. Playlists (Grid Layout for Playlists)
-                    val playlistsExtras = android.os.Bundle().apply {
-                        putInt("android.media.browse.CONTENT_STYLE_BROWSABLE_HINT", 2) // Grid
-                    }
-                    items.add(
-                        MediaItem.Builder()
-                            .setMediaId("PLAYLISTS")
-                            .setMediaMetadata(
-                                androidx.media3.common.MediaMetadata.Builder()
-                                    .setTitle("Your Playlists")
-                                    .setIsBrowsable(true)
-                                    .setIsPlayable(false)
-                                    .setExtras(playlistsExtras)
-                                    .build()
-                            )
-                            .build()
-                    )
-                    
-                    Log.d(TAG, "Returning ${items.size} items for root")
-                    return com.google.common.util.concurrent.Futures.immediateFuture(
-                        LibraryResult.ofItemList(ImmutableList.copyOf(items), null)
-                    )
-                }
-                
-                // For content that requires network calls, use IO dispatcher
-                val ioScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-                Log.w(TAG, "Starting async fetch for parentId: $parentId")
-                return ioScope.future {
-                    val items = mutableListOf<MediaItem>()
-                    val now = System.currentTimeMillis()
-                    val cacheValid = (now - lastBrowseCacheTime) < browseCacheValidityMs
-                    
-                    try {
-                        when (parentId) {
-                            "RECOMMENDED" -> {
-                                // Use cache if valid, otherwise fetch with timeout
-                                val songs = if (cacheValid && cachedRecommendations != null) {
-                                    Log.d(TAG, "Using cached recommendations (${cachedRecommendations?.size} songs)")
-                                    cachedRecommendations!!
-                                } else {
-                                    try {
-                                        Log.w(TAG, "Calling getRecommendations with timeout ${ANDROID_AUTO_BROWSE_TIMEOUT_MS}ms")
-                                        val startTime = System.currentTimeMillis()
-                                        val result = withTimeoutOrNull(ANDROID_AUTO_BROWSE_TIMEOUT_MS) {
-                                            youtubeRepository.getRecommendations()
-                                        }
-                                        val elapsed = System.currentTimeMillis() - startTime
-                                        Log.w(TAG, "getRecommendations returned in ${elapsed}ms, result size: ${result?.size ?: "null"}")
-                                        if (result != null) {
-                                            cachedRecommendations = result
-                                            lastBrowseCacheTime = now
-                                            Log.d(TAG, "Fetched ${result.size} recommendations")
-                                            result
-                                        } else {
-                                            Log.w(TAG, "Recommendations fetch timed out, using cache")
-                                            cachedRecommendations ?: emptyList()
-                                        }
-                                    } catch (e: Exception) {
-                                        Log.e(TAG, "Error fetching recommended", e)
-                                        cachedRecommendations ?: emptyList()
-                                    }
-                                }
-                                
-                                // Filter out songs with empty IDs to prevent error
-                                songs.filter { it.id.isNotEmpty() }.forEach { song ->
-                                    items.add(
-                                        MediaItem.Builder()
-                                            .setMediaId(song.id)
-                                            .setMediaMetadata(
-                                                androidx.media3.common.MediaMetadata.Builder()
-                                                    .setTitle(song.title)
-                                                    .setArtist(song.artist)
-                                                    .setAlbumTitle(song.album)
-                                                    .setArtworkUri(android.net.Uri.parse(song.thumbnailUrl ?: ""))
-                                                    .setIsBrowsable(false)
-                                                    .setIsPlayable(true)
-                                                    .build()
-                                            )
-                                            .build()
-                                    )
-                                }
-                            }
-                            "PLAYLISTS" -> {
-                                // Use cache if valid, otherwise fetch with timeout
-                                val playlists = if (cacheValid && cachedPlaylists != null) {
-                                    Log.d(TAG, "Using cached playlists (${cachedPlaylists?.size} items)")
-                                    cachedPlaylists!!
-                                } else {
-                                    try {
-                                        val result = withTimeoutOrNull(ANDROID_AUTO_BROWSE_TIMEOUT_MS) {
-                                            youtubeRepository.getUserPlaylists()
-                                        }
-                                        if (result != null) {
-                                            cachedPlaylists = result
-                                            lastBrowseCacheTime = now
-                                            Log.d(TAG, "Fetched ${result.size} playlists")
-                                            result
-                                        } else {
-                                            Log.w(TAG, "Playlists fetch timed out, using cache")
-                                            cachedPlaylists ?: emptyList()
-                                        }
-                                    } catch (e: Exception) {
-                                        Log.e(TAG, "Error fetching playlists", e)
-                                        cachedPlaylists ?: emptyList()
-                                    }
-                                }
-                                
-                                playlists.forEach { playlist ->
-                                    val extras = android.os.Bundle().apply {
-                                        putInt("android.media.browse.CONTENT_STYLE_BROWSABLE_HINT", 2) // Grid
-                                    }
-                                    val playlistId = playlist.url.substringAfter("list=")
-                                    
-                                    items.add(
-                                        MediaItem.Builder()
-                                            .setMediaId("PLAYLIST_$playlistId")
-                                            .setMediaMetadata(
-                                                androidx.media3.common.MediaMetadata.Builder()
-                                                    .setTitle(playlist.name)
-                                                    .setSubtitle(playlist.uploaderName)
-                                                    .setArtworkUri(android.net.Uri.parse(playlist.thumbnailUrl ?: ""))
-                                                    .setIsBrowsable(true)
-                                                    .setIsPlayable(false)
-                                                    .setExtras(extras)
-                                                    .build()
-                                            )
-                                            .build()
-                                    )
-                                }
-                            }
-                            else -> {
-                                // Handle Playlist Drill-down
-                                if (parentId.startsWith("PLAYLIST_")) {
-                                    val playlistId = parentId.removePrefix("PLAYLIST_")
-                                    
-                                    // Check playlist songs cache
-                                    val songs = cachedPlaylistSongs[playlistId]?.takeIf { cacheValid }
-                                        ?: try {
-                                            val result = withTimeoutOrNull(ANDROID_AUTO_BROWSE_TIMEOUT_MS) {
-                                                youtubeRepository.getPlaylist(playlistId)
-                                            }
-                                            if (result != null) {
-                                                cachedPlaylistSongs[playlistId] = result
-                                                Log.d(TAG, "Fetched ${result.size} songs for playlist $playlistId")
-                                                result
-                                            } else {
-                                                Log.w(TAG, "Playlist fetch timed out for $playlistId")
-                                                cachedPlaylistSongs[playlistId] ?: emptyList()
-                                            }
-                                        } catch (e: Exception) {
-                                            Log.e(TAG, "Error fetching playlist details", e)
-                                            cachedPlaylistSongs[playlistId] ?: emptyList()
-                                        }
-                                    
-                                    // Filter out songs with empty IDs to prevent error
-                                    songs.filter { it.id.isNotEmpty() }.forEach { song ->
-                                        items.add(
-                                            MediaItem.Builder()
-                                                .setMediaId(song.id)
-                                                .setMediaMetadata(
-                                                    androidx.media3.common.MediaMetadata.Builder()
-                                                        .setTitle(song.title)
-                                                        .setArtist(song.artist)
-                                                        .setAlbumTitle(song.album)
-                                                        .setArtworkUri(android.net.Uri.parse(song.thumbnailUrl ?: ""))
-                                                        .setIsBrowsable(false)
-                                                        .setIsPlayable(true)
-                                                        .build()
-                                                )
-                                                .build()
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Unexpected error in onGetChildren for $parentId", e)
-                    }
-                    
-                    Log.d(TAG, "Returning ${items.size} items for $parentId")
-                    LibraryResult.ofItemList(ImmutableList.copyOf(items), null)
-                }
-            }
-        })
+        mediaLibrarySession = MediaLibrarySession.Builder(this, player, LibrarySessionCallback())
             .setSessionActivity(sessionIntent)
             .build()
-            
-        // Start monitoring for Fade-Out
-        monitorCrossfadeProgress()
     }
-    
-    private fun monitorCrossfadeProgress() {
+
+    private fun observePreferences() {
+        serviceScope.launch { themePreferences.crossfadeEnabled.collect { isCrossfadeEnabled = it } }
+        serviceScope.launch { themePreferences.crossfadeDurationMs.collect { crossfadeDurationMs = it.toLong() } }
         serviceScope.launch {
-            while (isActive) {
-                val duration = player.duration
-                val position = player.currentPosition
-                val isPlaying = player.isPlaying
+            themePreferences.maxCacheSizeMb.collect { sizeMb ->
+                CacheManager.setMaxCacheSize(this@MusicService, sizeMb)
+            }
+        }
+    }
+
+    // --- Core Logic: The Player Event Listener ---
+
+    private inner class PlayerEventListener : Player.Listener {
+        
+        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            super.onMediaItemTransition(mediaItem, reason)
+
+            // 1. Crossfade Logic
+            if (isCrossfadeEnabled && reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) {
+                performFadeIn()
+            } else {
+                player.volume = 1.0f
+            }
+
+            // 2. Critical: Check validity of CURRENT item
+            if (mediaItem != null) {
+                validateAndPlayCurrentItem(mediaItem)
+            }
+
+            // 3. Robust Prefetching of FUTURE items
+            prefetchUpcomingSongs()
+        }
+
+        override fun onPlaybackStateChanged(playbackState: Int) {
+            super.onPlaybackStateChanged(playbackState)
+            
+            // Start prefetching as soon as we are ready
+            if (playbackState == Player.STATE_READY) {
+                prefetchUpcomingSongs()
+            }
+
+            // Android 16 Live Update monitoring
+            if (playbackState == Player.STATE_READY && player.isPlaying) {
+                monitorProgress()
+            }
+        }
+
+        override fun onPlayerError(error: PlaybackException) {
+            Log.e(TAG, "Player Error: ${error.errorCodeName}", error)
+            handlePlayerError(error)
+        }
+    }
+
+    // --- Logic 1: Validation & Playback execution ---
+
+    private fun validateAndPlayCurrentItem(mediaItem: MediaItem) {
+        val uri = mediaItem.localConfiguration?.uri
+        val videoId = mediaItem.mediaId
+
+        if (isPlaceholder(uri)) {
+            Log.w(TAG, "Validation: Hit placeholder for $videoId. Resolving...")
+            
+            // Launch resolution main-safe
+            serviceScope.launch {
+                // Get the deduplicated future (reuses existing if prefetch started it)
+                val deferred = getOrStartResolution(mediaItem)
                 
-                // Update Live Update notification (Android 16+)
-                if (isPlaying && duration > 0 && position >= 0) {
-                    val mediaItem = player.currentMediaItem
-                    val title = mediaItem?.mediaMetadata?.title?.toString() ?: "Unknown"
-                    val artist = mediaItem?.mediaMetadata?.artist?.toString() ?: "Unknown Artist"
+                try {
+                    val resolvedItem = deferred.await()
                     
-                    musicProgressLiveUpdate?.updateProgress(
-                        songTitle = title,
-                        artistName = artist,
-                        currentPositionMs = position,
-                        durationMs = duration,
-                        isPlaying = true
-                    )
-                } else if (!isPlaying) {
-                    // Hide Live Update when paused
-                    musicProgressLiveUpdate?.hide()
+                    // Apply if still current
+                    if (player.currentMediaItem?.mediaId == videoId) {
+                        Log.i(TAG, "Validation: Applied resolved item for $videoId")
+                        val index = player.currentMediaItemIndex
+                        player.replaceMediaItem(index, resolvedItem)
+                        player.prepare()
+                        player.playWhenReady = true
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Validation: Resolution failed for $videoId", e)
                 }
+            }
+        } else {
+            Log.d(TAG, "Validation: Playing valid URI for $videoId")
+        }
+    }
+
+    // --- Logic 2: Robust Prefetching ---
+
+    private fun prefetchUpcomingSongs() {
+        val currentIndex = player.currentMediaItemIndex
+        if (currentIndex == C.INDEX_UNSET) return
+
+        for (i in 1..PREFETCH_AHEAD_COUNT) {
+            val targetIndex = currentIndex + i
+            if (targetIndex >= player.mediaItemCount) break
+
+            val item = player.getMediaItemAt(targetIndex)
+            val uri = item.localConfiguration?.uri
+
+            if (isPlaceholder(uri)) {
+                // Start resolution in background (fire and forget)
+                // This populates activeResolutions so validateAndPlayCurrentItem can pick it up instantly
+                getOrStartResolution(item)
                 
-                // Crossfade logic
-                if (isCrossfadeEnabled && isPlaying) {
-                    if (duration > 0 && position > 0) {
-                        val remaining = duration - position
-                        if (remaining <= crossfadeDurationMs) {
-                            // Fade Out
-                            val volume = (remaining.toFloat() / crossfadeDurationMs).coerceIn(0f, 1f)
-                            player.volume = volume
-                        } else if (player.volume < 1f && fadeVolumeJob?.isActive != true) {
-                            // Restore volume if not in fade out window and not currently fading in
-                            player.volume = 1f
+                serviceScope.launch {
+                    try {
+                        val deferred = getOrStartResolution(item)
+                        val resolvedItem = deferred.await()
+                        
+                        // Update player if item is still there
+                        if (targetIndex < player.mediaItemCount && 
+                            player.getMediaItemAt(targetIndex).mediaId == item.mediaId) {
+                            Log.d(TAG, "Prefetch: Updated item +$i (${item.mediaId})")
+                            player.replaceMediaItem(targetIndex, resolvedItem)
                         }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Prefetch: Failed to resolve upcoming ${item.mediaId}")
                     }
                 }
-                kotlinx.coroutines.delay(1000) // Update every second for Live Update
+            }
+        }
+    }
+
+    // --- Logic 3: Resolution Core (Deduplicated) ---
+
+    private fun getOrStartResolution(mediaItem: MediaItem): kotlinx.coroutines.Deferred<MediaItem> {
+        val videoId = mediaItem.mediaId
+        
+        return activeResolutions.computeIfAbsent(videoId) {
+            // Create a new async job
+            resolveScope.async {
+                performResolution(mediaItem)
+            }.also { 
+                // Auto-cleanup when done to prevent memory leaks
+                it.invokeOnCompletion { activeResolutions.remove(videoId) }
+            }
+        }
+    }
+
+    private suspend fun performResolution(originalItem: MediaItem): MediaItem {
+        val videoId = originalItem.mediaId
+        Log.d(TAG, "Resolution: Starting for $videoId")
+        
+        // 1. Downloads
+        val downloaded = downloadRepository.downloadedSongs.value.find { it.id == videoId }
+        if (downloaded != null && downloaded.uri != null) {
+            Log.d(TAG, "Resolution: Found download for $videoId")
+            return buildMediaItemWithUri(originalItem, downloaded.uri, downloaded.duration)
+        }
+
+        // 2. Cache
+        uriCache[videoId]?.let { cachedUri ->
+            Log.d(TAG, "Resolution: Found cached URI for $videoId")
+            return buildMediaItemWithUri(originalItem, Uri.parse(cachedUri))
+        }
+
+        // 3. Network with Retry
+        // YouTubeRepository retry logic handles NewPipe flakiness. 
+        // We just handle timeout here.
+        return try {
+            val result = withTimeoutOrNull(RESOLVE_TIMEOUT_MS) {
+                youtubeRepository.getStreamUrl(videoId)
+            }
+            
+            val streamUrl = result?.getOrNull()
+            if (!streamUrl.isNullOrEmpty()) {
+                uriCache[videoId] = streamUrl
+                Log.d(TAG, "Resolution: Network success for $videoId")
+                buildMediaItemWithUri(originalItem, Uri.parse(streamUrl))
+            } else {
+                Log.e(TAG, "Resolution: Failed or Timed Out for $videoId")
+                originalItem // Return placeholder (will error in player)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Resolution: Exception for $videoId", e)
+            originalItem
+        }
+    }
+
+    private fun buildMediaItemWithUri(original: MediaItem, uri: Uri, duration: Long? = null): MediaItem {
+        val metaBuilder = original.mediaMetadata.buildUpon()
+        if (original.mediaMetadata.title == null) {
+             val cachedInfo = cachedRecommendations?.find { it.id == original.mediaId }
+                 ?: cachedPlaylistSongs.values.flatten().find { it.id == original.mediaId }
+             
+             if (cachedInfo != null) {
+                 metaBuilder.setTitle(cachedInfo.title)
+                     .setArtist(cachedInfo.artist)
+                     .setArtworkUri(if (cachedInfo.thumbnailUrl != null) Uri.parse(cachedInfo.thumbnailUrl) else null)
+             }
+        }
+
+        return original.buildUpon()
+            .setUri(uri)
+            .setMediaMetadata(metaBuilder.build())
+            .setTag(original.mediaId)
+            .build()
+    }
+
+    private fun isPlaceholder(uri: Uri?): Boolean {
+        return uri == null || uri.toString().startsWith(PLACEHOLDER_PREFIX)
+    }
+
+    // --- Logic 4: Error Handling ---
+
+    private fun handlePlayerError(error: PlaybackException) {
+        val currentItem = player.currentMediaItem ?: return
+        val videoId = currentItem.mediaId
+        
+        Log.w(TAG, "Handling Error for $videoId")
+
+        // 1. If we are already resolving this item, just wait.
+        // The validation logic or update logic will handle it when ready.
+        if (activeResolutions.containsKey(videoId)) {
+            Log.d(TAG, "Error: Already resolving $videoId. Ignoring error.")
+            // Temporarily pause to stop spinning until resolution finishes
+            player.playWhenReady = true // Keep it true so UI shows buffering?
+            // Actually, if we error, we are in IDLE.
+            // We verify:
+            return
+        }
+
+        // 2. Retry Logic
+        val retryCountKey = "retry_count_$videoId"
+        val retryCount = uriCache[retryCountKey]?.toIntOrNull() ?: 0
+
+        if (retryCount < 2) {
+            Log.w(TAG, "Error: Retrying ($retryCount/2) for $videoId...")
+            uriCache[retryCountKey] = (retryCount + 1).toString()
+            uriCache.remove(videoId) // Clear bad cache
+            
+            serviceScope.launch {
+                delay(1000)
+                // FORCE new resolution
+                activeResolutions.remove(videoId) 
+                
+                val deferred = getOrStartResolution(currentItem)
+                try {
+                    val resolved = deferred.await()
+                    if (player.currentMediaItem?.mediaId == videoId) {
+                         player.replaceMediaItem(player.currentMediaItemIndex, resolved)
+                         player.prepare()
+                         player.play()
+                    }
+                } catch (e: Exception) {
+                    // Retry failed, skip.
+                    if (player.hasNextMediaItem()) {
+                         player.seekToNext()
+                         player.play()
+                    }
+                }
+            }
+        } else {
+            Log.e(TAG, "Error: Max retries exhausted for $videoId. Skipping.")
+            if (player.hasNextMediaItem()) {
+                player.seekToNext()
+                player.play()
+            } else {
+                player.stop()
+            }
+        }
+    }
+
+    // --- Media Library Session Callback ---
+    
+    private inner class LibrarySessionCallback : MediaLibrarySession.Callback {
+        
+        override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult {
+            val availablePlayerCommands = MediaSession.ConnectionResult.DEFAULT_PLAYER_COMMANDS.buildUpon()
+                .add(Player.COMMAND_SET_SHUFFLE_MODE)
+                .add(Player.COMMAND_SET_REPEAT_MODE)
+                .build()
+                
+            return MediaSession.ConnectionResult.accept(
+                MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS,
+                availablePlayerCommands
+            )
+        }
+
+        override fun onAddMediaItems(
+            mediaSession: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            mediaItems: MutableList<MediaItem>
+        ): ListenableFuture<MutableList<MediaItem>> {
+            // This is called when user clicks a song or "Play All"
+            
+            val processedItems = mediaItems.map { item ->
+                // Mark all incoming items as placeholders initially
+                // This delegates ALL resolution logic to our robust prefetch system
+                // instead of blocking the UI thread waiting for the first song.
+                // We create a valid MediaItem but with a placeholder URI.
+                
+                val videoId = item.mediaId
+                
+                // Check if we have metadata in our browse cache to enrich the item immediately
+                var meta = item.mediaMetadata
+                if (meta.title == null) {
+                    val cached = findSongInCache(videoId)
+                    if (cached != null) {
+                        meta = MediaMetadata.Builder()
+                            .setTitle(cached.title)
+                            .setArtist(cached.artist)
+                            .setAlbumTitle(cached.album)
+                            .setArtworkUri(if (cached.thumbnailUrl != null) Uri.parse(cached.thumbnailUrl) else null)
+                            .setIsBrowsable(false)
+                            .setIsPlayable(true)
+                            .build()
+                    }
+                }
+
+                MediaItem.Builder()
+                    .setMediaId(videoId)
+                    .setUri("$PLACEHOLDER_PREFIX$videoId")
+                    .setMediaMetadata(meta)
+                    .build()
+            }.toMutableList()
+
+            return Futures.immediateFuture(processedItems)
+        }
+        
+        // --- Browsing Logic (Android Auto / Media Browser) ---
+
+        override fun onGetLibraryRoot(
+            session: MediaLibrarySession,
+            browser: MediaSession.ControllerInfo,
+            params: MediaLibraryService.LibraryParams?
+        ): ListenableFuture<LibraryResult<MediaItem>> {
+            val rootExtras = android.os.Bundle().apply {
+                putBoolean("android.media.browse.CONTENT_STYLE_SUPPORTED", true)
+                putInt("android.media.browse.CONTENT_STYLE_BROWSABLE_HINT", 1) // Grid
+                putInt("android.media.browse.CONTENT_STYLE_PLAYABLE_HINT", 1) // List
+            }
+            val rootItem = MediaItem.Builder()
+                .setMediaId("root")
+                .setMediaMetadata(
+                    MediaMetadata.Builder()
+                        .setTitle("Root")
+                        .setIsBrowsable(true)
+                        .setIsPlayable(false)
+                        .build()
+                )
+                .build()
+            return Futures.immediateFuture(
+                LibraryResult.ofItem(rootItem, MediaLibraryService.LibraryParams.Builder().setExtras(rootExtras).build())
+            )
+        }
+
+        override fun onGetChildren(
+            session: MediaLibrarySession,
+            browser: MediaSession.ControllerInfo,
+            parentId: String,
+            page: Int,
+            pageSize: Int,
+            params: MediaLibraryService.LibraryParams?
+        ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
+            if (parentId == "root") {
+                return Futures.immediateFuture(LibraryResult.ofItemList(getRootItems(), null))
+            }
+            
+            // Async fetch for content
+            return serviceScope.future(Dispatchers.IO) {
+                val items = fetchChildrenForId(parentId)
+                LibraryResult.ofItemList(ImmutableList.copyOf(items), null)
             }
         }
     }
     
+    // --- Browsing Helper Methods ---
+    
+    private fun getRootItems(): ImmutableList<MediaItem> {
+        val items = mutableListOf<MediaItem>()
+        // 1. Recommended
+        items.add(MediaItem.Builder()
+            .setMediaId("RECOMMENDED")
+            .setMediaMetadata(MediaMetadata.Builder().setTitle("Recommended For You").setIsBrowsable(true).setIsPlayable(false).build())
+            .build())
+        // 2. Playlists
+        items.add(MediaItem.Builder()
+            .setMediaId("PLAYLISTS")
+            .setMediaMetadata(MediaMetadata.Builder().setTitle("Your Playlists").setIsBrowsable(true).setIsPlayable(false).build())
+            .build())
+        return ImmutableList.copyOf(items)
+    }
+
+    private suspend fun fetchChildrenForId(parentId: String): List<MediaItem> {
+        val now = System.currentTimeMillis()
+        val isCacheValid = (now - lastBrowseCacheTime) < browseCacheValidityMs
+        
+        return when (parentId) {
+            "RECOMMENDED" -> {
+                val songs = if (isCacheValid && cachedRecommendations != null) {
+                    cachedRecommendations!!
+                } else {
+                    val result = youtubeRepository.getRecommendations()
+                    if (result.isNotEmpty()) {
+                        cachedRecommendations = result
+                        lastBrowseCacheTime = now
+                    }
+                    result
+                }
+                songs.map(::mapSongToMediaItem)
+            }
+            "PLAYLISTS" -> {
+                val playlists = if (isCacheValid && cachedPlaylists != null) {
+                    cachedPlaylists!!
+                } else {
+                    val result = youtubeRepository.getUserPlaylists()
+                    if (result.isNotEmpty()) {
+                        cachedPlaylists = result
+                        lastBrowseCacheTime = now
+                    }
+                    result
+                }
+                playlists.map { playlist ->
+                    val playlistId = playlist.url.substringAfter("list=")
+                    MediaItem.Builder()
+                        .setMediaId("PLAYLIST_$playlistId")
+                        .setMediaMetadata(MediaMetadata.Builder()
+                            .setTitle(playlist.name)
+                            .setSubtitle(playlist.uploaderName)
+                            .setArtworkUri(Uri.parse(playlist.thumbnailUrl ?: ""))
+                            .setIsBrowsable(true)
+                            .setIsPlayable(false)
+                            .build())
+                        .build()
+                }
+            }
+            else -> {
+                if (parentId.startsWith("PLAYLIST_")) {
+                    val playlistId = parentId.removePrefix("PLAYLIST_")
+                    val songs = cachedPlaylistSongs[playlistId]?.takeIf { isCacheValid }
+                        ?: youtubeRepository.getPlaylist(playlistId).also {
+                            if (it.isNotEmpty()) cachedPlaylistSongs[playlistId] = it
+                        }
+                    songs.map(::mapSongToMediaItem)
+                } else {
+                    emptyList()
+                }
+            }
+        }
+    }
+
+    private fun mapSongToMediaItem(song: Song): MediaItem {
+        return MediaItem.Builder()
+            .setMediaId(song.id)
+            .setMediaMetadata(MediaMetadata.Builder()
+                .setTitle(song.title)
+                .setArtist(song.artist)
+                .setAlbumTitle(song.album)
+                .setArtworkUri(Uri.parse(song.thumbnailUrl ?: ""))
+                .setIsBrowsable(false)
+                .setIsPlayable(true)
+                .build())
+            .build()
+    }
+    
+    private fun findSongInCache(videoId: String): Song? {
+        return cachedRecommendations?.find { it.id == videoId }
+            ?: cachedPlaylistSongs.values.flatten().find { it.id == videoId }
+    }
+
+    // --- Helpers ---
+
+    private fun preWarmAutoCache() {
+        serviceScope.launch(Dispatchers.IO) {
+            try {
+                if (cachedRecommendations == null) {
+                    val recs = youtubeRepository.getRecommendations()
+                    if (recs.isNotEmpty()) {
+                        cachedRecommendations = recs
+                        lastBrowseCacheTime = System.currentTimeMillis()
+                    }
+                }
+                if (cachedPlaylists == null) {
+                    val playlists = youtubeRepository.getUserPlaylists()
+                    if (playlists.isNotEmpty()) cachedPlaylists = playlists
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to pre-warm cache", e)
+            }
+        }
+    }
+
     private fun performFadeIn() {
         fadeVolumeJob?.cancel()
         fadeVolumeJob = serviceScope.launch {
-            // Fade In
             player.volume = 0f
             val steps = 20
             val stepTime = crossfadeDurationMs / steps
             for (i in 1..steps) {
                 player.volume = i / steps.toFloat()
-                kotlinx.coroutines.delay(stepTime)
+                delay(stepTime)
             }
             player.volume = 1f
         }
     }
     
-    /**
-     * Resolve stream URL for a media item
-     */
-    private suspend fun resolveStreamUrl(item: MediaItem, videoId: String): MediaItem {
-        // 1. Check runtime memory cache first
-        urlCache[videoId]?.let { cachedUrl ->
-            return item.buildUpon()
-                .setUri(android.net.Uri.parse(cachedUrl))
-                .setCustomCacheKey(videoId) 
-                .build()
-        }
-
-        // 2. Concurrency handling
-        if (resolvingItems.putIfAbsent(videoId, true) == true) {
-            var attempts = 0
-            while (attempts < 50) { 
-                kotlinx.coroutines.delay(100)
-                // Check memory cache again after waiting
-                urlCache[videoId]?.let { cachedUrl ->
-                    return item.buildUpon()
-                        .setUri(android.net.Uri.parse(cachedUrl))
-                        .setCustomCacheKey(videoId)
-                        .build()
-                }
-                attempts++
-            }
-            return item
-        }
-
-        // 3. Perform Resolution
-        try {
-            if (!isNetworkAvailable()) {
-                throw java.io.IOException("No internet connection")
-            }
-
-            val streamUrl = withTimeoutOrNull(STREAM_TIMEOUT_MS) {
-                var attempt = 0
-                while (isActive) {
-                    val result = youtubeRepository.getStreamUrl(videoId)
-                    if (result.isSuccess) return@withTimeoutOrNull result.getOrNull()
-                    
-                    attempt++
-                    if (attempt >= 3) break // Max 3 retries
-                    
-                    val exception = result.exceptionOrNull()
-                    Log.w(TAG, "Attempt $attempt failed for $videoId: ${exception?.message}")
-                    
-                    // Simple backoff: 1s, 2s, 3s
-                    kotlinx.coroutines.delay(1000L * attempt)
-                }
-                null
-            }
-
-            if (streamUrl != null) {
-                urlCache[videoId] = streamUrl
-                return item.buildUpon()
-                    .setUri(android.net.Uri.parse(streamUrl))
-                    .setCustomCacheKey(videoId) // CRITICAL: Use Video ID as persistent cache key
-                    .build()
-            } else {
-                Log.e(TAG, "Failed to resolve URL for $videoId after retries") 
-                return item
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error resolving URL for $videoId", e)
-            return item
-        } finally {
-            resolvingItems.remove(videoId)
-        }
-    }
-
-    private fun isNetworkAvailable(): Boolean {
-        val connectivityManager = getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
-        val network = connectivityManager.activeNetwork ?: return false
-        val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
-        return capabilities.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
-    }
-    
-    /**
-     * Pre-fetch stream URLs for upcoming songs in the queue
-     */
-    private fun prefetchUpcomingSongs() {
-        val currentIndex = player.currentMediaItemIndex
-        val mediaCount = player.mediaItemCount
-        
-        if (mediaCount == 0) return
-        
-        val itemsToPrefetch = mutableListOf<Pair<Int, MediaItem>>()
-        for (i in 1..PREFETCH_AHEAD) {
-            val nextIndex = currentIndex + i
-            if (nextIndex >= mediaCount) break
-            val mediaItem = player.getMediaItemAt(nextIndex)
-            itemsToPrefetch.add(nextIndex to mediaItem)
-        }
-        
-        if (itemsToPrefetch.isEmpty()) return
-        
-        serviceScope.launch(Dispatchers.IO) {
-            for ((nextIndex, mediaItem) in itemsToPrefetch) {
-                val videoId = mediaItem.mediaId
+    private fun monitorProgress() {
+        serviceScope.launch {
+            while (isActive && player.isPlaying) {
+                val duration = player.duration
+                val position = player.currentPosition
                 
-                if (mediaItem.localConfiguration?.uri != null && 
-                    !mediaItem.localConfiguration!!.uri.toString().startsWith("https://placeholder")) continue
-                    
-                if (urlCache.containsKey(videoId)) continue
-                if (resolvingItems.containsKey(videoId)) continue
-                
-                // Check persistent cache
-                if (com.ivor.ivormusic.data.CacheManager.isCached(videoId)) {
-                    // Cached on disk? We still need a URL to feed DataSource, but we can reuse expried ones or just resolve fresh
-                    // Ideally we resolve fresh to ensure cache key matches wrapper
+                // Android 16 Live Update
+                if (duration > 0) {
+                     val mediaItem = player.currentMediaItem
+                     musicProgressLiveUpdate?.updateProgress(
+                         songTitle = mediaItem?.mediaMetadata?.title?.toString() ?: "Unknown",
+                         artistName = mediaItem?.mediaMetadata?.artist?.toString() ?: "Unknown",
+                         currentPositionMs = position,
+                         durationMs = duration,
+                         isPlaying = true
+                     )
                 }
                 
-                val resolvedItem = resolveStreamUrl(mediaItem, videoId)
-                
-                if (resolvedItem.localConfiguration?.uri != null) {
-                    val uri = resolvedItem.localConfiguration!!.uri
-                    Log.d(TAG, "Prefetched URL for $videoId: $uri")
-                    
-                    // AGGRESSIVE PRE-CACHING
-                    // Actually download the first 500KB of the song to disk cache now
-                    try {
-                        val cacheDataSourceFactory = com.ivor.ivormusic.data.CacheManager.createCacheDataSourceFactory()
-                        if (cacheDataSourceFactory != null) {
-                            val dataSpec = androidx.media3.datasource.DataSpec.Builder()
-                                .setUri(uri)
-                                .setKey(videoId) // Use videoId as cache key
-                                .setLength(512 * 1024) // Pre-load 512KB
-                                .build()
-                            
-                            // Create CacheDataSource and cast it (Factory returns DataSource interface)
-                            val cacheDataSource = cacheDataSourceFactory.createDataSource() as? androidx.media3.datasource.cache.CacheDataSource
-                            
-                            if (cacheDataSource != null) {
-                                val cacheWriter = androidx.media3.datasource.cache.CacheWriter(
-                                    cacheDataSource,
-                                    dataSpec,
-                                    null, // temporary buffer
-                                    null // progress listener
-                                )
-                                
-                                cacheWriter.cache()
-                                Log.d(TAG, "Pre-cached first 512KB for $videoId")
-                            }
-                        }
-                    } catch (e: Exception) {
-                        Log.w(TAG, "Failed to pre-cache data for $videoId", e)
-                    }
-                    
-                    serviceScope.launch(Dispatchers.Main) {
-                        try {
-                            if (nextIndex < player.mediaItemCount) {
-                                player.replaceMediaItem(nextIndex, resolvedItem)
-                            }
-                        } catch (e: Exception) {
-                            // Ignore index out of bounds
-                        }
+                // Crossfade Logic (Fade Out)
+                if (isCrossfadeEnabled && duration > position) {
+                    val remaining = duration - position
+                    if (remaining <= crossfadeDurationMs) {
+                        val volume = (remaining.toFloat() / crossfadeDurationMs).coerceIn(0f, 1f)
+                        player.volume = volume
                     }
                 }
+                
+                delay(1000)
             }
         }
     }
