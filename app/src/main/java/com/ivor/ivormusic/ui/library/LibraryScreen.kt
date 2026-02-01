@@ -51,6 +51,10 @@ import androidx.compose.material.icons.rounded.PlaylistPlay
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Smartphone
+import androidx.compose.material.icons.rounded.DeleteSweep
+import androidx.compose.material.icons.rounded.Insights
+import androidx.compose.material.icons.rounded.BarChart
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilterChip
@@ -1152,6 +1156,17 @@ fun StatsScreen(
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
+                actions = {
+                    IconButton(onClick = {
+                        scope.launch {
+                            statsRepository.clearHistory()
+                            globalStats = null
+                            history = emptyList()
+                        }
+                    }) {
+                        Icon(Icons.Rounded.DeleteSweep, contentDescription = "Clear History")
+                    }
+                },
                 colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(
                     containerColor = Color.Transparent
                 )
@@ -1159,11 +1174,13 @@ fun StatsScreen(
         },
         containerColor = Color.Transparent
     ) { innerPadding ->
+        val currentStats = globalStats
+        
         if (isLoading) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 LoadingIndicator()
             }
-        } else if (globalStats == null || globalStats!!.totalPlays == 0) {
+        } else if (currentStats == null || currentStats.totalPlays == 0) {
             Box(Modifier.fillMaxSize().padding(innerPadding), contentAlignment = Alignment.Center) {
                 EmptyStateCard(
                     title = "No Statistics Yet",
@@ -1193,7 +1210,7 @@ fun StatsScreen(
                         ) {
                             StatSummaryCard(
                                 label = "Total Plays",
-                                value = globalStats!!.totalPlays.toString(),
+                                value = currentStats.totalPlays.toString(),
                                 icon = Icons.Rounded.PlayArrow,
                                 modifier = Modifier.weight(1.0f),
                                 color = MaterialTheme.colorScheme.primaryContainer,
@@ -1201,7 +1218,7 @@ fun StatsScreen(
                             )
                             StatSummaryCard(
                                 label = "Play Time",
-                                value = formatTime(globalStats!!.totalPlayTimeSeconds),
+                                value = formatTime(currentStats.totalPlayTimeSeconds),
                                 icon = Icons.Rounded.BarChart,
                                 modifier = Modifier.weight(1.0f),
                                 color = MaterialTheme.colorScheme.secondaryContainer,
@@ -1214,7 +1231,7 @@ fun StatsScreen(
                         ) {
                             StatSummaryCard(
                                 label = "Artists",
-                                value = globalStats!!.uniqueArtists.toString(),
+                                value = currentStats.uniqueArtists.toString(),
                                 icon = Icons.Rounded.MusicNote,
                                 modifier = Modifier.weight(1.0f),
                                 color = MaterialTheme.colorScheme.tertiaryContainer,
@@ -1222,7 +1239,7 @@ fun StatsScreen(
                             )
                             StatSummaryCard(
                                 label = "Songs",
-                                value = globalStats!!.uniqueSongs.toString(),
+                                value = currentStats.uniqueSongs.toString(),
                                 icon = Icons.Rounded.Album,
                                 modifier = Modifier.weight(1.0f),
                                 color = MaterialTheme.colorScheme.surfaceContainerHighest,
@@ -1232,7 +1249,7 @@ fun StatsScreen(
                     }
                 }
 
-                if (globalStats!!.topSongs.isNotEmpty()) {
+                if (currentStats.topSongs.isNotEmpty()) {
                     item {
                         Text(
                             "Top Tracks",
@@ -1241,12 +1258,12 @@ fun StatsScreen(
                             color = textColor
                         )
                     }
-                    items(globalStats!!.topSongs.take(5)) { songStat ->
+                    items(currentStats.topSongs.take(5)) { songStat ->
                         TopSongItem(songStat, cardColor, textColor, secondaryTextColor)
                     }
                 }
 
-                if (globalStats!!.topArtists.isNotEmpty()) {
+                if (currentStats.topArtists.isNotEmpty()) {
                     item {
                         Text(
                             "Favorite Artists",
@@ -1260,7 +1277,7 @@ fun StatsScreen(
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
                             contentPadding = PaddingValues(vertical = 4.dp)
                         ) {
-                            items(globalStats!!.topArtists.take(10)) { artist ->
+                            items(currentStats.topArtists.take(10)) { artist ->
                                 TopArtistCard(artist, cardColor, textColor, secondaryTextColor)
                             }
                         }
@@ -1340,14 +1357,15 @@ fun StatSummaryCard(
     )
 
     Surface(
-        modifier = modifier.graphicsLayer {
-            scaleX = scale
-            scaleY = scale
-            this.alpha = alpha
-        },
-        shape = RoundedCornerShape(28.dp),
+        modifier = modifier
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+                this.alpha = alpha
+            },
+        shape = RoundedCornerShape(28.dp), // Extra Extra Large corner for expressive feel
         color = color,
-        tonalElevation = 2.dp
+        tonalElevation = 8.dp
     ) {
         Column(
             modifier = Modifier.padding(20.dp),

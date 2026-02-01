@@ -360,11 +360,13 @@ class MusicService : MediaLibraryService() {
                 buildMediaItemWithUri(originalItem, Uri.parse(streamUrl))
             } else {
                 Log.e(TAG, "Resolution: Failed or Timed Out for $videoId")
-                originalItem // Return placeholder (will error in player)
+                // Return an item with a special error URI instead of the placeholder
+                // This breaks the loop because isPlaceholder() will be false.
+                buildMediaItemWithUri(originalItem, Uri.parse("error://resolution_failed/$videoId"))
             }
         } catch (e: Exception) {
             Log.e(TAG, "Resolution: Exception for $videoId", e)
-            originalItem
+            buildMediaItemWithUri(originalItem, Uri.parse("error://exception/$videoId"))
         }
     }
 

@@ -52,6 +52,15 @@ class StatsRepository(private val context: Context) {
         mutex.withLock {
             try {
                 val history = loadHistory().toMutableList()
+                
+                // DEBOUNCE: Don't add the same song if it was added less than 10 seconds ago
+                // This prevents duplicate entries from media item resolution loops.
+                val lastEntry = history.firstOrNull()
+                if (lastEntry?.songId == song.id && (System.currentTimeMillis() - lastEntry.timestamp) < 10000L) {
+                    Log.d(TAG, "Stats: Debouncing duplicate play event for ${song.title}")
+                    return@withLock
+                }
+
                 val entry = PlayHistoryEntry(
                     songId = song.id,
                     title = song.title,
