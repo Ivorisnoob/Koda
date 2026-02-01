@@ -123,7 +123,6 @@ fun AlbumScreen(
     }
     
     // Create 8-sided polygon shape for Play button
-    // Create 8-sided polygon shape for Play button
     val octagonShape = MaterialShapes.Cookie9Sided.toShape()
     
     Box(

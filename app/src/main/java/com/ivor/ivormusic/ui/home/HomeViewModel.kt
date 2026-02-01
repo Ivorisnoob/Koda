@@ -24,9 +24,13 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val youtubeRepository = YouTubeRepository(application)
     private val playlistRepository = com.ivor.ivormusic.data.PlaylistRepository(application)
     private val sessionManager = SessionManager(application)
+    private val searchHistoryRepository = com.ivor.ivormusic.data.SearchHistoryRepository(application)
 
     private val _songs = MutableStateFlow<List<Song>>(emptyList())
     val songs: StateFlow<List<Song>> = _songs.asStateFlow()
+
+    private val _searchHistory = MutableStateFlow(searchHistoryRepository.getHistory())
+    val searchHistory: StateFlow<List<String>> = _searchHistory.asStateFlow()
 
     private val _youtubeSongs = MutableStateFlow<List<Song>>(emptyList())
     val youtubeSongs: StateFlow<List<Song>> = _youtubeSongs.asStateFlow()
@@ -373,5 +377,23 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             playlistRepository.addSongToPlaylist(playlistId, song)
         }
+    }
+
+    // --- Search History Actions ---
+
+    fun addToSearchHistory(query: String) {
+        if (query.isBlank()) return
+        searchHistoryRepository.addQuery(query)
+        _searchHistory.value = searchHistoryRepository.getHistory()
+    }
+
+    fun removeFromSearchHistory(query: String) {
+        searchHistoryRepository.removeQuery(query)
+        _searchHistory.value = searchHistoryRepository.getHistory()
+    }
+
+    fun clearSearchHistory() {
+        searchHistoryRepository.clearHistory()
+        _searchHistory.value = emptyList()
     }
 }
