@@ -11,7 +11,12 @@ import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.navigationBars
-
+import androidx.compose.animation.animateColor
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.with
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -31,6 +36,7 @@ import com.ivor.ivormusic.ui.components.MiniPlayerContent
  * A container that expands from a MiniPlayer (floating pill) to a Full Screen Player.
  * Animates bounds, corners, and padding.
  */
+@androidx.compose.animation.ExperimentalAnimationApi
 @Composable
 fun ExpandablePlayer(
     isExpanded: Boolean,
@@ -90,6 +96,11 @@ fun ExpandablePlayer(
         if (expanded) 0.dp else 50.dp
     }
 
+    // Animate container color: SurfaceHigh when collapsed, Transparent when expanded 
+    val containerColor by transition.animateColor(label = "containerColor") { expanded ->
+        if (expanded) Color.Transparent else MaterialTheme.colorScheme.surfaceContainerHigh
+    }
+
     // Swipe Logic
     var dragOffset by remember { mutableFloatStateOf(0f) }
     val swipeThreshold = -50f
@@ -129,12 +140,25 @@ fun ExpandablePlayer(
                 }
                 .clickable(enabled = !isExpanded) { onExpandChange(true) },
             shape = RoundedCornerShape(cornerRadius.coerceAtLeast(0.dp)),
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            color = containerColor,
             shadowElevation = if (isExpanded) 0.dp else 8.dp,
             tonalElevation = if (isExpanded) 0.dp else 4.dp
         ) {
-            // Content Crossfade
+            // Content Crossfade with better transition
             transition.AnimatedContent(
+                transitionSpec = {
+                    if (targetState) {
+                        // Expanding: Fade In + Scale Up, while MiniPlayer Fades Out
+                        (fadeIn(animationSpec = spring(stiffness = 300f)) + 
+                         scaleIn(initialScale = 0.9f, animationSpec = spring(stiffness = 300f))) with
+                        (fadeOut(animationSpec = spring(stiffness = 300f)))
+                    } else {
+                        // Collapsing: MiniPlayer Fades In, FullPlayer Fades Out + Scales Down
+                        (fadeIn(animationSpec = spring(stiffness = 300f))) with
+                        (fadeOut(animationSpec = spring(stiffness = 300f)) + 
+                         scaleOut(targetScale = 0.9f, animationSpec = spring(stiffness = 300f)))
+                    }
+                },
                 contentKey = { it }
             ) { targetExpanded ->
                 if (targetExpanded) {

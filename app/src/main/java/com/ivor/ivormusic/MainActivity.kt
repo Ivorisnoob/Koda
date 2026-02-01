@@ -7,6 +7,12 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.background
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -164,8 +170,14 @@ fun MusicApp(
     
     val videoPlayerViewModel: com.ivor.ivormusic.ui.video.VideoPlayerViewModel = viewModel()
     
-    Box(modifier = Modifier.fillMaxSize()) {
+    // Root container with theme background to prevent "flashbangs" during transitions
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+    ) {
         NavHost(navController = navController, startDestination = "home") {
+
             composable("home") {
                 HomeScreen(
                     onSongClick = { song ->
@@ -187,7 +199,13 @@ fun MusicApp(
                     playerStyle = playerStyle
                 )
             }
-            composable("settings") {
+            composable(
+                route = "settings",
+                enterTransition = { slideInHorizontally(initialOffsetX = { it }) + fadeIn() },
+                exitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut() },
+                popEnterTransition = { slideInHorizontally(initialOffsetX = { -it / 3 }) + fadeIn() },
+                popExitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut() }
+            ) {
                 com.ivor.ivormusic.ui.settings.SettingsScreen(
                     currentThemeMode = currentThemeMode,
                     onThemeModeChange = onThemeModeChange,
@@ -221,7 +239,13 @@ fun MusicApp(
                     onCrossfadeDurationChange = onCrossfadeDurationChange
                 )
             }
-            composable("downloads") {
+            composable(
+                route = "downloads",
+                enterTransition = { slideInHorizontally(initialOffsetX = { it }) + fadeIn() },
+                exitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut() },
+                popEnterTransition = { slideInHorizontally(initialOffsetX = { -it / 3 }) + fadeIn() },
+                popExitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut() }
+            ) {
                 val downloadedSongs by playerViewModel.downloadedSongs.collectAsState()
                 val downloadProgress by playerViewModel.downloadProgress.collectAsState()
                 

@@ -13905,6 +13905,44 @@ ComposeMaterial3Flags.isCheckboxStylingFixEnabled = true
 **Description:** Flag controlling checkbox styling. When true, uses Material Design 3 styling (updated colors and container sizing). Now provided through `ComposeMaterial3Flags` object (changed in alpha10).
 
 
+## 8.5 Version History
+
+### Version 1.5.0-alpha13
+
+January 28, 2026
+
+androidx.compose.material3:material3-*:1.5.0-alpha13 is released. Version 1.5.0-alpha13 contains these commits.
+
+#### API Changes
+
+- Added support for search bar animationSpecForContentExpand and animationSpecForContentCollapse. (I033a5)
+
+#### Bug Fixes
+
+- Fixed an issue where the content of an expanded SearchBar did not use a theme-aware color (I878e0, b/379441904)
+- Fixed a bug where BottomSheetScaffold would invoke SheetState's confirmValueChange callback with incorrect values when passing a drag handle to BottomSheetScaffold. Please note that confirmValueChange should only be used to veto state changes. Use a snapshotFlow to observe state changes. (Ice9ee, b/465824174, b/477031833)
+
+### Version 1.5.0-alpha12
+
+January 14, 2026
+
+androidx.compose.material3:material3-*:1.5.0-alpha12 is released. Version 1.5.0-alpha12 contains these commits.
+
+#### API Changes
+
+- Updates TopAppBarDefaults (enterAlways and pinned behaviors) to support lazyListState, scrollState, and reverseScrolling. This fixes layout direction issues and correctly handles initially scrolled content. (I9d5c2, b/262234750)
+- Add contentPadding and horizontalSpacing parameters to AssistChip and ElevatedAssistChip. Add HorizontalSpacing and ContentPadding defaults to AssistChipDefaults. (I2ac90, b/304853782)
+- The DatePicker APIs using Java Time classes are no longer tagged as experimental. (I5039c, b/457537971)
+
+#### Bug Fixes
+
+- Fix a DatePicker date-formatting crash on API 23 (I67a94, b/452713222)
+- Fixed visual alignment bug in the fancy animated indicator sample when used with scrollable tab rows. (Iae0f3, b/466790304)
+- Fixed an issue where the TimePicker's AM/PM selector did not use text style defined by Material Design specification. (Ie908a, b/469788786)
+- Fixed a crash in HorizontalFloatingToolbar that could occur in landscape mode when the on-screen keyboard was displayed. (Ia13c1, b/466692323)
+- Fixed an issue where the TopAppBar title could overlap with its actions when no navigationIcon was provided. The title is now correctly constrained to its available space. (I2ba97, b/428697836)
+- Support RTL with pane expansion anchors (I0770b, b/467775639)
+
 ## 8.6 Component and API Index
 
 This index provides quick access to all components and APIs documented in this guide.

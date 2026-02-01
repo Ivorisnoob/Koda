@@ -123,8 +123,7 @@ object CacheManager {
                 .setCache(cache)
                 .setUpstreamDataSourceFactory(httpDataSourceFactory)
                 .setFlags(
-                    CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR or 
-                    CacheDataSource.FLAG_IGNORE_CACHE_FOR_UNSET_LENGTH_REQUESTS
+                    CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR
                 )
         } catch (e: Exception) {
             Log.e(TAG, "Failed to create cache data source factory", e)

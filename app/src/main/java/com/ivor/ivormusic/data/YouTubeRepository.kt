@@ -72,6 +72,16 @@ class YouTubeRepository(private val context: Context) {
         .readTimeout(30, TimeUnit.SECONDS)
         .build()
 
+    private fun getRandomUserAgent(): String {
+        val agents = listOf(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        )
+        return agents.random()
+    }
+
     init {
         initializeNewPipe()
     }
@@ -174,23 +184,55 @@ class YouTubeRepository(private val context: Context) {
      * @param videoId The YouTube video ID
      * @return The stream URL or null if not found
      */
-    suspend fun getStreamUrl(videoId: String): String? = withContext(Dispatchers.IO) {
-        try {
-            val streamUrl = "https://www.youtube.com/watch?v=$videoId"
-            val ytService = ServiceList.all().find { it.serviceInfo.name == "YouTube" } ?: return@withContext null
-            val streamExtractor = ytService.getStreamExtractor(streamUrl)
-            streamExtractor.fetchPage()
-            
-            // Get the best audio-only stream
-            val audioStreams = streamExtractor.audioStreams
-            val bestAudioStream = audioStreams
-                .maxByOrNull { it.averageBitrate }
-                ?: audioStreams.maxByOrNull { it.bitrate }
-            
-            bestAudioStream?.content
-        } catch (e: Exception) {
-            null
+    /**
+     * Get the best audio stream URL for a video.
+     * Note: These URLs expire, so call this right before playback.
+     * @param videoId The YouTube video ID
+     * @return Result containing stream URL or error
+     */
+    suspend fun getStreamUrl(videoId: String): Result<String> = withContext(Dispatchers.IO) {
+        var attempts = 0
+        while (attempts < 3) {
+            try {
+                // Determine client type mainly for logs, but NewPipe handles rotation internally usually
+                val streamUrl = "https://www.youtube.com/watch?v=$videoId"
+                val ytService = ServiceList.all().find { it.serviceInfo.name == "YouTube" } 
+                    ?: return@withContext Result.failure(Exception("YouTube Service not found in NewPipe"))
+                
+                val streamExtractor = ytService.getStreamExtractor(streamUrl)
+                streamExtractor.fetchPage()
+                
+                // Get the best audio-only stream
+                val audioStreams = streamExtractor.audioStreams
+                val bestAudioStream = audioStreams
+                    .maxByOrNull { it.averageBitrate }
+                    ?: audioStreams.maxByOrNull { it.bitrate }
+                
+                val url = bestAudioStream?.content
+                if (url != null) {
+                    return@withContext Result.success(url)
+                } else {
+                    // If no stream found, it might be a content restriction (age-gate, region)
+                    if (attempts == 2) return@withContext Result.failure(Exception("No audio stream found for $videoId after 3 attempts"))
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("YouTubeRepository", "Attempt ${attempts+1} failed for $videoId: ${e.message}")
+                if (attempts == 2) {
+                    // Try fallback before giving up purely on NewPipe
+                    android.util.Log.w("YouTubeRepository", "NewPipe failed, trying Internal API fallback for $videoId")
+                    val fallbackUrl = getStreamUrlFallback(videoId)
+                    if (fallbackUrl != null) {
+                         android.util.Log.d("YouTubeRepository", "Fallback success for $videoId")
+                         return@withContext Result.success(fallbackUrl)
+                    }
+                    return@withContext Result.failure(e)
+                }
+            }
+            attempts++
+            // Exponential backoff: 500ms, 1000ms
+            kotlinx.coroutines.delay(500L * attempts)
         }
+        Result.failure(Exception("Unknown error resolving stream"))
     }
 
     /**
@@ -355,7 +397,7 @@ class YouTubeRepository(private val context: Context) {
                 "context": {
                     "client": {
                         "clientName": "WEB_REMIX",
-                        "clientVersion": "1.20230102.01.00",
+                        "clientVersion": "1.20240402.09.00",
                         "hl": "en",
                         "gl": "US"
                     }
@@ -369,7 +411,7 @@ class YouTubeRepository(private val context: Context) {
             .post(jsonBody.toRequestBody("application/json".toMediaType()))
             .addHeader("Cookie", cookies)
             .addHeader("Authorization", authHeader)
-            .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            .addHeader("User-Agent", getRandomUserAgent())
             .addHeader("Origin", "https://music.youtube.com")
             .addHeader("X-Goog-AuthUser", "0")
             .build()
@@ -499,12 +541,7 @@ class YouTubeRepository(private val context: Context) {
         try {
             val jsonResponse = fetchInternalApi("account/account_menu")
             
-            if (jsonResponse.isEmpty()) {
-                android.util.Log.w("YouTubeRepo", "fetchAccountInfo: Empty response from API")
-                return@withContext
-            }
-            
-            android.util.Log.d("YouTubeRepo", "fetchAccountInfo: Got response, length=${jsonResponse.length}")
+            if (jsonResponse.isEmpty()) return@withContext
             
             var avatarUrl: String? = null
             var userName: String? = null
@@ -512,123 +549,67 @@ class YouTubeRepository(private val context: Context) {
             try {
                 val root = org.json.JSONObject(jsonResponse)
                 
-                // Strategy 1: Look for account photo in accountPhotoRenderer
-                val accountPhotos = mutableListOf<org.json.JSONObject>()
-                findAllObjects(root, "accountPhoto", accountPhotos)
-                for (photo in accountPhotos) {
-                    val thumbnails = photo.optJSONArray("thumbnails")
+                // Navigate to the account section
+                // Usually: actions -> openPopupAction -> popup -> multiPageMenuRenderer -> header -> activeAccountHeaderRenderer
+                val actions = root.optJSONArray("actions")
+                val popup = actions?.optJSONObject(0)
+                    ?.optJSONObject("openPopupAction")
+                    ?.optJSONObject("popup")
+                    ?.optJSONObject("multiPageMenuRenderer")
+                
+                val header = popup?.optJSONObject("header")?.optJSONObject("activeAccountHeaderRenderer")
+                
+                if (header != null) {
+                    // Extract Name
+                    userName = getRunText(header.optJSONObject("accountName"))
+                    
+                    // Extract Avatar
+                    val thumbnails = header.optJSONObject("avatar")?.optJSONArray("thumbnails")
                     if (thumbnails != null && thumbnails.length() > 0) {
-                        // Get the largest thumbnail (last in array)
-                        val lastThumb = thumbnails.optJSONObject(thumbnails.length() - 1)
-                        avatarUrl = lastThumb?.optString("url")
-                        if (!avatarUrl.isNullOrEmpty()) {
-                            android.util.Log.d("YouTubeRepo", "Found avatar via accountPhoto: $avatarUrl")
-                            break
-                        }
+                        avatarUrl = thumbnails.optJSONObject(thumbnails.length() - 1)?.optString("url")
                     }
                 }
                 
-                // Strategy 2: Look for avatar in header renderers  
-                if (avatarUrl == null) {
-                    val avatarRenderers = mutableListOf<org.json.JSONObject>()
-                    findAllObjects(root, "avatar", avatarRenderers)
-                    for (avatar in avatarRenderers) {
-                        val thumbnails = avatar.optJSONArray("thumbnails")
-                        if (thumbnails != null && thumbnails.length() > 0) {
-                            val lastThumb = thumbnails.optJSONObject(thumbnails.length() - 1)
-                            avatarUrl = lastThumb?.optString("url")
-                            if (!avatarUrl.isNullOrEmpty()) {
-                                android.util.Log.d("YouTubeRepo", "Found avatar via avatar renderer: $avatarUrl")
-                                break
+                // Fallback: Check sections if header failed
+                if (userName == null || avatarUrl == null) {
+                    val sections = popup?.optJSONArray("sections")
+                    if (sections != null) {
+                        for (i in 0 until sections.length()) {
+                            val item = sections.optJSONObject(i)
+                                ?.optJSONObject("multiPageMenuSectionRenderer")
+                                ?.optJSONArray("items")?.optJSONObject(0)
+                                ?.optJSONObject("compactLinkRenderer")
+                                
+                            // Sometimes the first item is the account link
+                            if (item != null) {
+                                val thumb = item.optJSONObject("icon")?.optJSONArray("thumbnails")
+                                if (avatarUrl == null && thumb != null) {
+                                    avatarUrl = thumb.optJSONObject(thumb.length() - 1)?.optString("url")
+                                }
                             }
                         }
                     }
                 }
                 
-                // Strategy 3: Look for thumbnail objects more broadly
-                if (avatarUrl == null) {
-                    val thumbnailRenderers = mutableListOf<org.json.JSONObject>()
-                    findAllObjects(root, "thumbnail", thumbnailRenderers)
-                    for (thumb in thumbnailRenderers) {
-                        val thumbnails = thumb.optJSONArray("thumbnails")
-                        if (thumbnails != null && thumbnails.length() > 0) {
-                            val lastThumb = thumbnails.optJSONObject(thumbnails.length() - 1)
-                            val url = lastThumb?.optString("url")
-                            // Only use if it looks like a profile picture URL (ggpht)
-                            if (!url.isNullOrEmpty() && url.contains("ggpht")) {
-                                avatarUrl = url
-                                android.util.Log.d("YouTubeRepo", "Found avatar via thumbnail renderer: $avatarUrl")
-                                break
-                            }
-                        }
-                    }
-                }
-                
-                // Strategy 4: Regex fallback for any ggpht URL (Google profile pictures)
+                // Fallback: Regex for ggpht if parsing failed
                 if (avatarUrl == null) {
                     val ggphtRegex = "\"url\"\\s*:\\s*\"(https://ggpht\\.googleusercontent\\.com/[^\"]+)\"".toRegex()
                     val match = ggphtRegex.find(jsonResponse)
                     avatarUrl = match?.groupValues?.get(1)
-                    if (avatarUrl != null) {
-                        android.util.Log.d("YouTubeRepo", "Found avatar via ggpht regex: $avatarUrl")
-                    }
                 }
-                
-                // Strategy 5: Any lh3.googleusercontent URL (Google user content)
-                if (avatarUrl == null) {
-                    val lh3Regex = "\"url\"\\s*:\\s*\"(https://lh3\\.googleusercontent\\.com/[^\"]+)\"".toRegex()
-                    val match = lh3Regex.find(jsonResponse)
-                    avatarUrl = match?.groupValues?.get(1)
-                    if (avatarUrl != null) {
-                        android.util.Log.d("YouTubeRepo", "Found avatar via lh3 regex: $avatarUrl")
-                    }
-                }
-                
-                // Extract user name
-                val accountNames = mutableListOf<org.json.JSONObject>()
-                findAllObjects(root, "accountName", accountNames)
-                for (nameObj in accountNames) {
-                    val simpleText = nameObj.optString("simpleText")
-                    if (!simpleText.isNullOrEmpty()) {
-                        userName = simpleText
-                        android.util.Log.d("YouTubeRepo", "Found user name: $userName")
-                        break
-                    }
-                    // Try runs format
-                    val runs = nameObj.optJSONArray("runs")
-                    if (runs != null && runs.length() > 0) {
-                        userName = runs.optJSONObject(0)?.optString("text")
-                        if (!userName.isNullOrEmpty()) {
-                            android.util.Log.d("YouTubeRepo", "Found user name from runs: $userName")
-                            break
-                        }
-                    }
-                }
-                
+
             } catch (jsonEx: Exception) {
-                android.util.Log.w("YouTubeRepo", "JSON parsing failed, trying regex fallback", jsonEx)
-                
-                // Fallback regex for any thumbnail URL
-                val thumbRegex = "\"thumbnails\"\\s*:\\s*\\[\\s*\\{\\s*\"url\"\\s*:\\s*\"([^\"]+)\"".toRegex()
-                val match = thumbRegex.find(jsonResponse)
-                avatarUrl = match?.groupValues?.get(1)
+                // Ignore
             }
             
             // Save avatar if found
             if (!avatarUrl.isNullOrEmpty()) {
-                // Upgrade resolution - replace common small sizes with large
+                // Upgrade resolution
                 val highResUrl = avatarUrl
                     .replace("=s88", "=s512")
                     .replace("=s48", "=s512")
                     .replace("=s96", "=s512")
-                    .replace("=s120", "=s512")
-                    .replace("/s88-", "/s512-")
-                    .replace("/s48-", "/s512-")
-                    .replace("/s96-", "/s512-")
-                android.util.Log.d("YouTubeRepo", "Saving avatar URL: $highResUrl")
                 sessionManager.saveUserAvatar(highResUrl)
-            } else {
-                android.util.Log.w("YouTubeRepo", "fetchAccountInfo: Could not find avatar in response")
             }
             
             // Save user name if found
@@ -637,8 +618,100 @@ class YouTubeRepository(private val context: Context) {
             }
             
         } catch (e: Exception) {
-            android.util.Log.e("YouTubeRepo", "fetchAccountInfo error", e)
             e.printStackTrace()
+        }
+    }
+
+    /**
+     * Fallback stream resolution using Internal API.
+     * Bypasses NewPipe HTML parsing which can get stuck on "Page needs to be reloaded" logic.
+     */
+    /**
+     * Fallback stream resolution using Internal API.
+     * Uses ANDROID client (InnerTube) often more robust against "reload" errors.
+     */
+    private suspend fun getStreamUrlFallback(videoId: String): String? = withContext(Dispatchers.IO) {
+        try {
+            // Use ANDROID client which is less strict about "page reload"
+            // The API Key is public and required for this endpoint
+            
+            val jsonBody = """
+               {
+                   "videoId": "$videoId",
+                   "context": {
+                       "client": {
+                           "clientName": "ANDROID",
+                           "clientVersion": "19.05.36",
+                           "androidSdkVersion": 30,
+                           "hl": "en",
+                           "gl": "US",
+                           "utcOffsetMinutes": 0
+                       }
+                   }
+               }
+            """.trimIndent()
+            
+            val url = "https://youtubei.googleapis.com/youtubei/v1/player?key=$INNER_TUBE_API_KEY"
+            
+            val requestBuilder = okhttp3.Request.Builder()
+               .url(url)
+               .post(jsonBody.toRequestBody("application/json".toMediaType()))
+               .addHeader("User-Agent", "com.google.android.youtube/19.05.36 (Linux; U; Android 11) gzip")
+               .addHeader("X-Goog-Api-Format-Version", "1")
+               
+            val response = okHttpClient.newCall(requestBuilder.build()).execute()
+            val json = response.body?.string() ?: return@withContext null
+            
+            val root = org.json.JSONObject(json)
+            
+            // Check for playability status error
+            val playability = root.optJSONObject("playabilityStatus")
+            if (playability != null && playability.optString("status") != "OK") {
+                 android.util.Log.e("YouTubeRepository", "Fallback playability error: ${playability.optString("reason")}")
+                 return@withContext null
+            }
+            
+            val streamingData = root.optJSONObject("streamingData") 
+            if (streamingData == null) {
+                 android.util.Log.e("YouTubeRepository", "Fallback no streamingData found in response.")
+                 return@withContext null
+            }
+            
+            // Extract formats
+            val formats = mutableListOf<org.json.JSONObject>()
+            streamingData.optJSONArray("adaptiveFormats")?.let { arr ->
+                for (i in 0 until arr.length()) formats.add(arr.getJSONObject(i))
+            }
+            streamingData.optJSONArray("formats")?.let { arr ->
+                for (i in 0 until arr.length()) formats.add(arr.getJSONObject(i))
+            }
+            
+            // Find best audio (Opus preferred, then AAC)
+            val audioFormats = formats.filter { it.optString("mimeType").contains("audio") }
+            
+            // Log for debugging
+            android.util.Log.d("YouTubeRepository", "Fallback found ${audioFormats.size} audio formats")
+            
+            val bestAudio = audioFormats.maxByOrNull { it.optInt("bitrate") }
+                
+            var streamUrl = bestAudio?.optString("url")
+            
+            if (streamUrl.isNullOrEmpty()) {
+                // If URL is missing, it might use signatureCipher
+                val cipher = bestAudio?.optString("signatureCipher") ?: bestAudio?.optString("cipher")
+                if (!cipher.isNullOrEmpty()) {
+                    android.util.Log.w("YouTubeRepository", "Fallback found cipher, but decryption not implemented here. Relying on NewPipe.")
+                    // If we really need to decrypt, we would need a complex Decryptor. 
+                    // Usually NewPipe handles this. If NewPipe failed, we are in trouble unless we fix NewPipe.
+                    // However, ANDROID client usually gives direct URLs for most music content.
+                    return@withContext null
+                }
+            }
+            
+            return@withContext streamUrl
+        } catch (e: Exception) {
+            android.util.Log.e("YouTubeRepository", "Fallback failed for $videoId", e)
+            null
         }
     }
 
@@ -664,7 +737,7 @@ class YouTubeRepository(private val context: Context) {
                     "context": {
                         "client": {
                             "clientName": "WEB_REMIX",
-                            "clientVersion": "1.20230102.01.00",
+                            "clientVersion": "1.20240402.09.00",
                             "hl": "en",
                             "gl": "US"
                         }
@@ -692,7 +765,7 @@ class YouTubeRepository(private val context: Context) {
             .post(jsonBody.toRequestBody("application/json".toMediaType()))
             .addHeader("Cookie", cookies)
             .addHeader("Authorization", authHeader)
-            .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            .addHeader("User-Agent", getRandomUserAgent())
             .addHeader("Origin", "https://music.youtube.com")
             .addHeader("X-Goog-AuthUser", "0")
             .build()
@@ -710,117 +783,35 @@ class YouTubeRepository(private val context: Context) {
         val songs = mutableListOf<Song>()
         try {
             val root = org.json.JSONObject(json)
-            val items = mutableListOf<org.json.JSONObject>()
-            // Recursively find all "musicResponsiveListItemRenderer" (Lists)
-            findAllObjects(root, "musicResponsiveListItemRenderer", items)
-            // Also find "musicTwoRowItemRenderer" (Shelves/Cards)
-            findAllObjects(root, "musicTwoRowItemRenderer", items)
+            
+            // OPTIMIZED: Direct traversal instead of recursive search
+            // Find the SectionListRenderer which contains the shelves
+            val contentsArray = findRootContents(root) ?: return emptyList()
 
-            items.forEach { item ->
-                try {
-                    // Strategy 1: musicResponsiveListItemRenderer (Flex Columns)
-                    if (item.has("flexColumns")) {
-                        // Extract Video ID
-                        val videoId = extractValueFromRuns(item, "videoId") ?: return@forEach
-                        
-                        // Extract Title
-                        val flexColumns = item.optJSONArray("flexColumns")
-                        val titleFormatted = flexColumns?.optJSONObject(0)
-                            ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
-                            ?.optJSONObject("text")
-                        val title = getRunText(titleFormatted) ?: "Unknown Title"
-
-                        // Extract Artist and Album
-                        val subtitleFormatted = flexColumns?.optJSONObject(1)
-                            ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
-                            ?.optJSONObject("text")
-                        
-                        val subtitleRuns = subtitleFormatted?.optJSONArray("runs")
-                        var artist = "Unknown Artist"
-                        var album = "Unknown Album"
-                        
-                        if (subtitleRuns != null && subtitleRuns.length() > 0) {
-                            val firstPart = subtitleRuns.optJSONObject(0)?.optString("text")
-                            if (firstPart == "Song" || firstPart == "Video" || firstPart == "Music video") {
-                                // Format: Song • Artist • Album
-                                if (subtitleRuns.length() > 2) {
-                                    artist = subtitleRuns.optJSONObject(2)?.optString("text") ?: artist
-                                    if (subtitleRuns.length() > 4) {
-                                        album = subtitleRuns.optJSONObject(4)?.optString("text") ?: album
-                                    }
-                                }
-                            } else {
-                                // Format: Artist • Album
-                                artist = firstPart ?: artist
-                                if (subtitleRuns.length() > 2) {
-                                    album = subtitleRuns.optJSONObject(2)?.optString("text") ?: album
-                                }
-                            }
+            // Iterate over shelves (musicCarouselShelfRenderer, musicShelfRenderer, etc.)
+            for (i in 0 until contentsArray.length()) {
+                val shelfWrapper = contentsArray.optJSONObject(i) ?: continue
+                
+                // Get the items array from the shelf
+                val items = parseItemsFromShelf(shelfWrapper)
+                
+                // Process items
+                items.forEach { item ->
+                    try {
+                        // Strategy 1: musicResponsiveListItemRenderer (Flex Columns) - Standard Song/Video list
+                        val responsiveItem = item.optJSONObject("musicResponsiveListItemRenderer")
+                        if (responsiveItem != null) {
+                            parseResponsiveListItem(responsiveItem)?.let { songs.add(it) }
                         }
-
-                        // Extract Thumbnail
-                        val thumbnails = item.optJSONObject("thumbnail")
-                            ?.optJSONObject("musicThumbnailRenderer")
-                            ?.optJSONObject("thumbnail")
-                            ?.optJSONArray("thumbnails")
                         
-                        val thumbnailUrl = thumbnails?.let {
-                            it.optJSONObject(it.length() - 1)?.optString("url")
+                        // Strategy 2: musicTwoRowItemRenderer (Title/Subtitle) - Cards/Shelves
+                        val twoRowItem = item.optJSONObject("musicTwoRowItemRenderer")
+                        if (twoRowItem != null) {
+                             parseTwoRowItem(twoRowItem)?.let { songs.add(it) }
                         }
-
-                        Song.fromYouTube(
-                            videoId = videoId,
-                            title = title,
-                            artist = artist,
-                            album = album,
-                            duration = 0L,
-                            thumbnailUrl = thumbnailUrl
-                        )?.let { songs.add(it) }
+                    } catch (e: Exception) {
+                        // Skip malformed item
                     }
-                    // Strategy 2: musicTwoRowItemRenderer (Title/Subtitle)
-                    else if (item.has("title")) { // Basic check for TwoRow
-                        // Check if it's a song/video (has videoId in navigation)
-                        val videoId = extractValueFromRuns(item, "videoId")
-                        if (videoId != null) {
-                            val title = getRunText(item.optJSONObject("title")) ?: "Unknown"
-                            val subtitleFormatted = item.optJSONObject("subtitle")
-                            val subtitleRuns = subtitleFormatted?.optJSONArray("runs")
-                             
-                            var artist = "Unknown Artist"
-                            var album = "Unknown"
-                            
-                            if (subtitleRuns != null && subtitleRuns.length() > 0) {
-                                val firstPart = subtitleRuns.optJSONObject(0)?.optString("text")
-                                if (firstPart == "Song" || firstPart == "Video" || firstPart == "Music video") {
-                                    if (subtitleRuns.length() > 2) {
-                                        artist = subtitleRuns.optJSONObject(2)?.optString("text") ?: artist
-                                    }
-                                } else {
-                                    artist = firstPart ?: artist
-                                }
-                            }
-                            
-                             val thumbnails = item.optJSONObject("thumbnailRenderer")
-                                ?.optJSONObject("musicThumbnailRenderer")
-                                ?.optJSONObject("thumbnail")
-                                ?.optJSONArray("thumbnails")
-                            
-                            val thumbnailUrl = thumbnails?.let {
-                                it.optJSONObject(it.length() - 1)?.optString("url")
-                            }
-
-                            Song.fromYouTube(
-                                videoId = videoId,
-                                title = title,
-                                artist = artist,
-                                album = album,
-                                duration = 0L,
-                                thumbnailUrl = thumbnailUrl
-                            )?.let { songs.add(it) }
-                        }
-                    }
-                } catch (e: Exception) {
-                    // Skip malformed item
                 }
             }
         } catch (e: Exception) {
@@ -828,58 +819,308 @@ class YouTubeRepository(private val context: Context) {
         }
         return songs.distinctBy { it.id }
     }
+
+    // --- Optimized Traversal Helpers ---
+
+    /**
+     * Locates the 'contents' array within sectionListRenderer by traversing standard paths.
+     * Handles: Home (Browse), Search Results, and Playlist Details.
+     */
+    private fun findRootContents(root: org.json.JSONObject): org.json.JSONArray? {
+        // Path 1: Standard Browse/Home/Playlist (contents -> singleColumn... -> tabs -> tab -> content -> sectionList)
+        root.optJSONObject("contents")
+            ?.optJSONObject("singleColumnBrowseResultsRenderer")
+            ?.optJSONArray("tabs")?.optJSONObject(0)
+            ?.optJSONObject("tabRenderer")
+            ?.optJSONObject("content")
+            ?.optJSONObject("sectionListRenderer")
+            ?.optJSONArray("contents")
+            ?.let { return it }
+
+        // Path 2: Search Results (contents -> tabbedSearchResultsRenderer -> tabs -> tab -> content -> sectionList)
+        root.optJSONObject("contents")
+            ?.optJSONObject("tabbedSearchResultsRenderer")
+            ?.optJSONArray("tabs")?.optJSONObject(0)
+            ?.optJSONObject("tabRenderer")
+            ?.optJSONObject("content")
+            ?.optJSONObject("sectionListRenderer")
+            ?.optJSONArray("contents")
+            ?.let { return it }
+            
+        // Path 3: Direct SectionList (sometimes used in continuation responses)
+        root.optJSONObject("continuationContents")
+            ?.optJSONObject("musicPlaylistShelfContinuation")
+            ?.optJSONArray("contents")
+            ?.let { 
+                // Wrap items in a synthetic shelf structure to match loop expectation or return directly
+                // For continuation, it's usually a list of items directly.
+                // To keep logic consistent, we'll return this directly and handle it if the caller expects shelves.
+                // Actually, continuations usually return items directly, not shelves.
+                // Let's handle generic continuation structure:
+                return it
+            }
+            
+        root.optJSONObject("continuationContents")
+            ?.optJSONObject("sectionListContinuation")
+            ?.optJSONArray("contents")
+            ?.let { return it }
+
+        return null
+    }
+
+    /**
+     * Extracts the list of items from a Shelf wrapper (Carousel, Shelf, or direct list).
+     */
+    private fun parseItemsFromShelf(shelfWrapper: org.json.JSONObject): List<org.json.JSONObject> {
+        val items = mutableListOf<org.json.JSONObject>()
+        
+        // 1. musicCarouselShelfRenderer (Horizontal Scroll)
+        val carousel = shelfWrapper.optJSONObject("musicCarouselShelfRenderer")
+        if (carousel != null) {
+            val contents = carousel.optJSONArray("contents")
+            if (contents != null) {
+                for (j in 0 until contents.length()) {
+                    contents.optJSONObject(j)?.let { items.add(it) }
+                }
+            }
+            return items
+        }
+        
+        // 2. musicShelfRenderer (Vertical List)
+        val shelf = shelfWrapper.optJSONObject("musicShelfRenderer")
+        if (shelf != null) {
+            val contents = shelf.optJSONArray("contents")
+            if (contents != null) {
+                for (j in 0 until contents.length()) {
+                    contents.optJSONObject(j)?.let { items.add(it) }
+                }
+            }
+            return items
+        }
+        
+        // 3. musicPlaylistShelfRenderer (Playlist Detail List)
+        val playlistShelf = shelfWrapper.optJSONObject("musicPlaylistShelfRenderer")
+        if (playlistShelf != null) {
+            val contents = playlistShelf.optJSONArray("contents")
+            if (contents != null) {
+                for (j in 0 until contents.length()) {
+                    contents.optJSONObject(j)?.let { items.add(it) }
+                }
+            }
+            return items
+        }
+        
+        // 4. Direct Item (if the "shelf" is actually just an item in a continuation list)
+        if (shelfWrapper.has("musicResponsiveListItemRenderer") || shelfWrapper.has("musicTwoRowItemRenderer")) {
+            items.add(shelfWrapper)
+        }
+        
+        return items
+    }
+
+    private fun parseResponsiveListItem(item: org.json.JSONObject): Song? {
+        val flexColumns = item.optJSONArray("flexColumns") ?: return null
+        
+        // Video ID extraction
+        // Usually in navigationEndpoint -> watchEndpoint
+        // Or playlistItemData -> videoId
+        var videoId = item.optJSONObject("playlistItemData")?.optString("videoId")
+        
+        if (videoId.isNullOrEmpty()) {
+             // Try searching deep for watch endpoint
+             val nav = item.optJSONObject("overlay")
+                ?.optJSONObject("musicItemThumbnailOverlayRenderer")
+                ?.optJSONObject("content")
+                ?.optJSONObject("musicPlayButtonRenderer")
+                ?.optJSONObject("playNavigationEndpoint")
+                ?.optJSONObject("watchEndpoint")
+             videoId = nav?.optString("videoId")
+        }
+        
+        if (videoId.isNullOrEmpty()) {
+             // Last resort: scan the flex columns for a navigation endpoint
+             // This is cheaper than full recursion
+             for (i in 0 until flexColumns.length()) {
+                 val col = flexColumns.optJSONObject(i)
+                             ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
+                             ?.optJSONObject("text")
+                 val runs = col?.optJSONArray("runs")
+                 if (runs != null) {
+                     for (r in 0 until runs.length()) {
+                         val vid = runs.optJSONObject(r)
+                            ?.optJSONObject("navigationEndpoint")
+                            ?.optJSONObject("watchEndpoint")
+                            ?.optString("videoId")
+                         if (!vid.isNullOrEmpty()) {
+                             videoId = vid
+                             break
+                         }
+                     }
+                 }
+                 if (!videoId.isNullOrEmpty()) break
+             }
+        }
+
+        if (videoId.isNullOrEmpty()) return null
+
+        // Extract Title
+        val titleFormatted = flexColumns.optJSONObject(0)
+            ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
+            ?.optJSONObject("text")
+        val title = getRunText(titleFormatted) ?: "Unknown Title"
+
+        // Extract Artist and Album
+        val subtitleFormatted = flexColumns.optJSONObject(1)
+            ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
+            ?.optJSONObject("text")
+        
+        val subtitleRuns = subtitleFormatted?.optJSONArray("runs")
+        var artist = "Unknown Artist"
+        var album = "Unknown Album"
+        
+        if (subtitleRuns != null && subtitleRuns.length() > 0) {
+            val firstPart = subtitleRuns.optJSONObject(0)?.optString("text")
+            if (firstPart == "Song" || firstPart == "Video" || firstPart == "Music video") {
+                // Format: Song • Artist • Album
+                if (subtitleRuns.length() > 2) {
+                    artist = subtitleRuns.optJSONObject(2)?.optString("text") ?: artist
+                    if (subtitleRuns.length() > 4) {
+                        album = subtitleRuns.optJSONObject(4)?.optString("text") ?: album
+                    }
+                }
+            } else {
+                // Format: Artist • Album
+                artist = firstPart ?: artist
+                if (subtitleRuns.length() > 2) {
+                    album = subtitleRuns.optJSONObject(2)?.optString("text") ?: album
+                }
+            }
+        }
+
+        // Extract Thumbnail
+        val thumbnails = item.optJSONObject("thumbnail")
+            ?.optJSONObject("musicThumbnailRenderer")
+            ?.optJSONObject("thumbnail")
+            ?.optJSONArray("thumbnails")
+        
+        val thumbnailUrl = thumbnails?.let {
+            it.optJSONObject(it.length() - 1)?.optString("url")
+        }
+
+        return Song.fromYouTube(
+            videoId = videoId!!,
+            title = title,
+            artist = artist,
+            album = album,
+            duration = 0L,
+            thumbnailUrl = thumbnailUrl
+        )
+    }
+
+    private fun parseTwoRowItem(item: org.json.JSONObject): Song? {
+         // Check if it's a song/video (has videoId in navigation)
+         // Navigation often in: navigationEndpoint -> watchEndpoint -> videoId
+         val nav = item.optJSONObject("navigationEndpoint")?.optJSONObject("watchEndpoint")
+         val videoId = nav?.optString("videoId")
+         
+         if (videoId.isNullOrEmpty()) return null 
+
+         val title = getRunText(item.optJSONObject("title")) ?: "Unknown"
+         
+         val subtitleFormatted = item.optJSONObject("subtitle")
+         val subtitleRuns = subtitleFormatted?.optJSONArray("runs")
+          
+         var artist = "Unknown Artist"
+         var album = "Unknown"
+         
+         if (subtitleRuns != null && subtitleRuns.length() > 0) {
+             val firstPart = subtitleRuns.optJSONObject(0)?.optString("text")
+             if (firstPart == "Song" || firstPart == "Video" || firstPart == "Music video") {
+                 if (subtitleRuns.length() > 2) {
+                     artist = subtitleRuns.optJSONObject(2)?.optString("text") ?: artist
+                 }
+             } else {
+                 artist = firstPart ?: artist
+             }
+         }
+         
+          val thumbnails = item.optJSONObject("thumbnailRenderer")
+             ?.optJSONObject("musicThumbnailRenderer")
+             ?.optJSONObject("thumbnail")
+             ?.optJSONArray("thumbnails")
+         
+         val thumbnailUrl = thumbnails?.let {
+             it.optJSONObject(it.length() - 1)?.optString("url")
+         }
+
+         return Song.fromYouTube(
+             videoId = videoId,
+             title = title,
+             artist = artist,
+             album = album,
+             duration = 0L,
+             thumbnailUrl = thumbnailUrl
+         )
+    }
     
     private fun parsePlaylistsFromInternalJson(json: String): List<PlaylistDisplayItem> {
         val playlists = mutableListOf<PlaylistDisplayItem>()
         try {
             val root = org.json.JSONObject(json)
-            val items = mutableListOf<org.json.JSONObject>()
-            // Playlists are usually in "musicTwoRowItemRenderer" or "gridPlaylistRenderer"
-            // For "likedsongs" endpoint, it might be different, but library usually uses TwoRow
-            findAllObjects(root, "musicTwoRowItemRenderer", items)
             
-            items.forEach { item ->
-                 try {
-                     // Extract ID
-                     val navigationEndpoint = item.optJSONObject("navigationEndpoint")
-                     val browseId = navigationEndpoint?.optJSONObject("browseEndpoint")?.optString("browseId")
-                     
-                     // Ensure it's a playlist
-                     if (browseId != null && (browseId.startsWith("VL") || browseId.startsWith("PL"))) {
-                         val cleanId = browseId.removePrefix("VL")
-                         
-                         // Extract Title
-                         val title = getRunText(item.optJSONObject("title")) ?: "Unknown Playlist"
-                         
-                         // Extract Subtitle (Uploader / Count)
-                         val subtitleObj = item.optJSONObject("subtitle")
-                         val subtitle = getRunText(subtitleObj) ?: "Unknown"
-                         
-                         // Extract item count from subtitle
-                         // Subtitle usually contains patterns like "100 songs" or "Playlist • 50 songs"
-                         val itemCount = extractItemCountFromSubtitle(subtitleObj)
-                         
-                         // Extract Thumbnail
-                         val thumbnails = item.optJSONObject("thumbnailRenderer")
-                            ?.optJSONObject("musicThumbnailRenderer")
-                            ?.optJSONObject("thumbnail")
-                            ?.optJSONArray("thumbnails")
-                         
-                         val thumbnailUrl = thumbnails?.let {
-                             it.optJSONObject(it.length() - 1)?.optString("url")
-                         }
+            // OPTIMIZED: Use direct traversal
+            val contentsArray = findRootContents(root) ?: return emptyList()
 
-                         playlists.add(PlaylistDisplayItem(
-                             name = title,
-                             url = "https://music.youtube.com/playlist?list=$cleanId",
-                             uploaderName = subtitle,
-                             itemCount = itemCount,
-                             thumbnailUrl = thumbnailUrl
-                         ))
-                     }
-                 } catch (e: Exception) {
-                     // Skip
-                 }
+            // Iterate over shelves and items
+            for (i in 0 until contentsArray.length()) {
+                val shelfWrapper = contentsArray.optJSONObject(i) ?: continue
+                val items = parseItemsFromShelf(shelfWrapper)
+                
+                items.forEach { item ->
+                    try {
+                         // Playlists are usually musicTwoRowItemRenderer
+                         val twoRowItem = item.optJSONObject("musicTwoRowItemRenderer")
+                         if (twoRowItem != null) {
+                             // Extract ID
+                             val navigationEndpoint = twoRowItem.optJSONObject("navigationEndpoint")
+                             val browseId = navigationEndpoint?.optJSONObject("browseEndpoint")?.optString("browseId")
+                             
+                             // Ensure it's a playlist
+                             if (browseId != null && (browseId.startsWith("VL") || browseId.startsWith("PL"))) {
+                                 val cleanId = browseId.removePrefix("VL")
+                                 
+                                 // Extract Title
+                                 val title = getRunText(twoRowItem.optJSONObject("title")) ?: "Unknown Playlist"
+                                 
+                                 // Extract Subtitle (Uploader / Count)
+                                 val subtitleObj = twoRowItem.optJSONObject("subtitle")
+                                 val subtitle = getRunText(subtitleObj) ?: "Unknown"
+                                 
+                                 val itemCount = extractItemCountFromSubtitle(subtitleObj)
+                                 
+                                 // Extract Thumbnail
+                                 val thumbnails = twoRowItem.optJSONObject("thumbnailRenderer")
+                                    ?.optJSONObject("musicThumbnailRenderer")
+                                    ?.optJSONObject("thumbnail")
+                                    ?.optJSONArray("thumbnails")
+                                 
+                                 val thumbnailUrl = thumbnails?.let {
+                                     it.optJSONObject(it.length() - 1)?.optString("url")
+                                 }
+
+                                 playlists.add(PlaylistDisplayItem(
+                                     name = title,
+                                     url = "https://music.youtube.com/playlist?list=$cleanId",
+                                     uploaderName = subtitle,
+                                     itemCount = itemCount,
+                                     thumbnailUrl = thumbnailUrl
+                                 ))
+                             }
+                         }
+                    } catch (e: Exception) {
+                         // Skip
+                    }
+                }
             }
         } catch (e: Exception) {
             e.printStackTrace()
@@ -928,22 +1169,13 @@ class YouTubeRepository(private val context: Context) {
 
     // --- JSON Helpers ---
 
-    private fun findAllObjects(node: Any, key: String, results: MutableList<org.json.JSONObject>) {
-        if (node is org.json.JSONObject) {
-            if (node.has(key)) {
-                results.add(node.getJSONObject(key))
-            }
-            // Recurse keys
-            val keys = node.keys()
-            while (keys.hasNext()) {
-                val nextKey = keys.next()
-                findAllObjects(node.get(nextKey), key, results)
-            }
-        } else if (node is org.json.JSONArray) {
-            for (i in 0 until node.length()) {
-                findAllObjects(node.get(i), key, results)
-            }
-        }
+    // Optimized replacement for recursive searching when needed
+    // Only search 1 level deep for specific keys to avoid full recursion
+    private fun findObject(node: Any, key: String): org.json.JSONObject? {
+         if (node is org.json.JSONObject) {
+            if (node.has(key)) return node.getJSONObject(key)
+         }
+         return null
     }
 
     private fun getRunText(formattedString: org.json.JSONObject?): String? {
@@ -960,12 +1192,9 @@ class YouTubeRepository(private val context: Context) {
     }
 
     private fun extractValueFromRuns(item: org.json.JSONObject, key: String): String? {
-        // Recursive search for a specific key value pair in a small subtree is expensive 
-        // but for videoId it usually lives in navigationEndpoint -> watchEndpoint -> videoId
-        // Let's try to find navigationEndpoint recursively in the item
-        val endpoints = mutableListOf<org.json.JSONObject>()
-        findAllObjects(item, "watchEndpoint", endpoints)
-        return endpoints.firstOrNull()?.optString("videoId")
+        // Direct checkout instead of recursion
+        val nav = item.optJSONObject("navigationEndpoint")?.optJSONObject("watchEndpoint")
+        return nav?.optString(key)
     }
 
 
@@ -1394,374 +1623,361 @@ class YouTubeRepository(private val context: Context) {
     }
 
     /**
+     * Resurrected helper for deep recursive search.
+     * Used sparingly for fallback scenarios where structure is unknown.
+     */
+    private fun findAllObjects(json: org.json.JSONObject, key: String, results: MutableList<org.json.JSONObject>, depth: Int = 0) {
+        if (depth > 20) return // Reduced depth limit from 50
+        
+        if (json.has(key)) {
+            val value = json.opt(key)
+            if (value is org.json.JSONObject) {
+                results.add(value)
+            } else if (value is org.json.JSONArray) {
+                for (i in 0 until value.length()) {
+                    val item = value.optJSONObject(i)
+                    if (item != null) results.add(item)
+                }
+            }
+        }
+        
+        json.keys().forEach { keyName ->
+            val value = json.opt(keyName)
+            when (value) {
+                is org.json.JSONObject -> findAllObjects(value, key, results, depth + 1)
+                is org.json.JSONArray -> {
+                    for (i in 0 until value.length()) {
+                        val item = value.optJSONObject(i)
+                        if (item != null) findAllObjects(item, key, results, depth + 1)
+                    }
+                }
+            }
+        }
+    }
+    /**
      * Parse video items from YouTube homepage JSON response.
+     * Use optimized path traversal instead of recursive findAllObjects.
      */
     private fun parseVideosFromYouTubeJson(json: String): List<VideoItem> {
         val videos = mutableListOf<VideoItem>()
         try {
             val root = org.json.JSONObject(json)
-            val items = mutableListOf<org.json.JSONObject>()
             
-            // Log the top-level keys to understand the structure
-            android.util.Log.d("YouTubeRepo", "Root JSON keys: ${root.keys().asSequence().toList()}")
+            // Locate content array
+            // Normal Home: contents -> singleColumnBrowseResultsRenderer -> tabs[0] -> tabRenderer -> content -> richGridRenderer -> contents
+            // Or sectionListRenderer -> contents
             
-            // Find all video renderers - YouTube homepage uses various structures
-            findAllObjects(root, "videoRenderer", items)
-            android.util.Log.d("YouTubeRepo", "After videoRenderer search: ${items.size} items")
+            var contents: org.json.JSONArray? = null
             
-            findAllObjects(root, "compactVideoRenderer", items)
-            android.util.Log.d("YouTubeRepo", "After compactVideoRenderer search: ${items.size} items")
-            
-            findAllObjects(root, "gridVideoRenderer", items)
-            android.util.Log.d("YouTubeRepo", "After gridVideoRenderer search: ${items.size} items")
-            
-            // Search for history specific and newer renderers
-            findAllObjects(root, "historyVideoRenderer", items)
-            findAllObjects(root, "shortVideoRenderer", items)
-            android.util.Log.d("YouTubeRepo", "After extended search: ${items.size} items")
-            
-            // Specialized list for lockupViewModels (New YouTube UI)
-            val lockupViewModels = mutableListOf<org.json.JSONObject>()
-            findAllObjects(root, "lockupViewModel", lockupViewModels)
-            android.util.Log.d("YouTubeRepo", "Found ${lockupViewModels.size} lockupViewModels")
-            
-            findAllObjects(root, "reelItemRenderer", items)
-            android.util.Log.d("YouTubeRepo", "After reelItemRenderer search: ${items.size} items")
-            
-            findAllObjects(root, "playlistVideoRenderer", items)
-            android.util.Log.d("YouTubeRepo", "After playlistVideoRenderer search: ${items.size} items")
-            
-            // Search for shelves which contain more items
-            val shelves = mutableListOf<org.json.JSONObject>()
-            findAllObjects(root, "shelfRenderer", shelves)
-            findAllObjects(root, "reelShelfRenderer", shelves)
-            android.util.Log.d("YouTubeRepo", "Found ${shelves.size} shelves to expand")
-            
-            shelves.forEach { shelf ->
-                findAllObjects(shelf, "videoRenderer", items)
-                findAllObjects(shelf, "historyVideoRenderer", items)
-                findAllObjects(shelf, "reelItemRenderer", items)
-                findAllObjects(shelf, "lockupViewModel", lockupViewModels)
-            }
-            
-            // Also search in richItemRenderer which contains videoRenderer or lockupViewModel
-            val richItems = mutableListOf<org.json.JSONObject>()
-            findAllObjects(root, "richItemRenderer", richItems)
-            android.util.Log.d("YouTubeRepo", "Found ${richItems.size} richItemRenderer items")
-            
-            richItems.forEachIndexed { index, richItem ->
-                val content = richItem.optJSONObject("content")
-                val videoRenderer = content?.optJSONObject("videoRenderer")
-                    ?: richItem.optJSONObject("videoRenderer")
-                if (videoRenderer != null) items.add(videoRenderer)
+            val tabs = root.optJSONObject("contents")
+                ?.optJSONObject("singleColumnBrowseResultsRenderer")
+                ?.optJSONArray("tabs")
                 
-                val lockup = content?.optJSONObject("lockupViewModel")
-                    ?: richItem.optJSONObject("lockupViewModel")
-                if (lockup != null) lockupViewModels.add(lockup)
+            if (tabs != null && tabs.length() > 0) {
+                 val contentObj = tabs.optJSONObject(0)?.optJSONObject("tabRenderer")?.optJSONObject("content")
+                 
+                 // Try RichGrid (modern Home)
+                 contents = contentObj?.optJSONObject("richGridRenderer")?.optJSONArray("contents")
+                 
+                 // Try SectionList (old Home or other views)
+                 if (contents == null) {
+                     contents = contentObj?.optJSONObject("sectionListRenderer")?.optJSONArray("contents")
+                 }
             }
             
-            lockupViewModels.distinctBy { it.optString("contentId") }.forEachIndexed { index, lockupViewModel ->
-                // Use the existing lockupViewModel parsing logic here
-                try {
-                    val contentId = lockupViewModel.optString("contentId")
-                    if (contentId.isNotBlank()) {
-                        val metadata = lockupViewModel.optJSONObject("metadata")?.optJSONObject("lockupMetadataViewModel")
-                        val titleObj = metadata?.optJSONObject("title")
-                        val title = titleObj?.optString("content") ?: "Unknown Title"
+            // If we found contents, iterate them
+            if (contents != null) {
+                for (i in 0 until contents.length()) {
+                    val item = contents.optJSONObject(i) ?: continue
+                    
+                    // 1. RichItemRenderer (Home Grid)
+                    val richItem = item.optJSONObject("richItemRenderer")
+                    if (richItem != null) {
+                        val content = richItem.optJSONObject("content")
                         
-                        // Get channel name and ID from metadata
-                        val metadataDetails = metadata?.optJSONObject("metadata")?.optJSONObject("contentMetadataViewModel")
-                        val metadataRows = metadataDetails?.optJSONArray("metadataRows")
-                        var channelName = "Unknown Channel"
-                        var channelId: String? = null
-                        var viewCount = ""
-                        var uploadDate = ""
-                        
-                        if (metadataRows != null && metadataRows.length() > 0) {
-                            val firstRowParts = metadataRows.optJSONObject(0)?.optJSONArray("metadataParts")
-                            if (firstRowParts != null && firstRowParts.length() > 0) {
-                                val textObj = firstRowParts.optJSONObject(0)?.optJSONObject("text")
-                                channelName = textObj?.optString("content") ?: channelName
-                                
-                                // Extract channel ID
-                                val runs = textObj?.optJSONArray("runs")
-                                if (runs != null && runs.length() > 0) {
-                                    val browseEndpoint = runs.optJSONObject(0)?.optJSONObject("navigationEndpoint")?.optJSONObject("browseEndpoint")
-                                    channelId = browseEndpoint?.optString("browseId")
-                                }
-                            }
-                            // Second row usually has views and date
-                            if (metadataRows.length() > 1) {
-                                val secondRow = metadataRows.optJSONObject(1)?.optJSONArray("metadataParts")
-                                if (secondRow != null) {
-                                    for (i in 0 until secondRow.length()) {
-                                        val part = secondRow.optJSONObject(i)?.optJSONObject("text")?.optString("content") ?: ""
-                                        if (part.contains("view", ignoreCase = true)) {
-                                            viewCount = part
-                                        } else if (part.isNotBlank() && uploadDate.isBlank()) {
-                                            uploadDate = part
-                                        }
-                                    }
-                                }
-                            }
+                        // Handler for VideoRenderer (Old UI)
+                        content?.optJSONObject("videoRenderer")?.let { 
+                            parseVideoRenderer(it)?.let { v -> videos.add(v) } 
                         }
                         
-                        // Get thumbnail - try multiple paths
-                        val contentImage = lockupViewModel.optJSONObject("contentImage")
-                        val thumbnailViewModel = contentImage?.optJSONObject("collectionThumbnailViewModel")
-                            ?.optJSONObject("primaryThumbnail")?.optJSONObject("thumbnailViewModel")
-                            ?: contentImage?.optJSONObject("thumbnailViewModel")
-                        
-                        var thumbnailUrl = thumbnailViewModel?.optJSONObject("image")?.optJSONArray("sources")?.let { sources ->
-                            // Get highest quality thumbnail
-                            var bestUrl: String? = null
-                            var maxWidth = 0
-                            for (i in 0 until sources.length()) {
-                                val source = sources.optJSONObject(i)
-                                val width = source?.optInt("width", 0) ?: 0
-                                if (width >= maxWidth) {
-                                    maxWidth = width
-                                    bestUrl = source?.optString("url")
-                                }
-                            }
-                            bestUrl
+                        // Handler for LockupViewModel (New UI)
+                        content?.optJSONObject("lockupViewModel")?.let {
+                            parseLockupViewModel(it)?.let { v -> videos.add(v) }
                         }
-                        
-                        // Fallback to standard YouTube thumbnail URL format
-                        if (thumbnailUrl.isNullOrBlank()) {
-                            thumbnailUrl = "https://i.ytimg.com/vi/$contentId/hqdefault.jpg"
-                        }
-                        
-                        // Get duration from overlays
-                        val overlays = thumbnailViewModel?.optJSONArray("overlays")
-                        var durationSeconds = 0L
-                        var durationText = ""
-                        if (overlays != null) {
-                            for (i in 0 until overlays.length()) {
-                                val overlayItem = overlays.optJSONObject(i)
-                                // Try thumbnailOverlayBadgeViewModel path
-                                val badgeText = overlayItem?.optJSONObject("thumbnailOverlayBadgeViewModel")
-                                    ?.optJSONArray("thumbnailBadges")?.optJSONObject(0)
-                                    ?.optJSONObject("thumbnailBadgeViewModel")?.optString("text")
-                                if (badgeText != null && badgeText.contains(":")) {
-                                    durationText = badgeText
-                                    durationSeconds = parseDurationToSeconds(badgeText)
-                                    break
-                                }
-                                // Try thumbnailOverlayTimeStatusRenderer path
-                                val timeStatus = overlayItem?.optJSONObject("thumbnailOverlayTimeStatusRenderer")
-                                    ?.optJSONObject("text")?.optString("simpleText")
-                                if (timeStatus != null && timeStatus.contains(":")) {
-                                    durationText = timeStatus
-                                    durationSeconds = parseDurationToSeconds(timeStatus)
-                                    break
-                                }
-                            }
-                        }
-                        
-                        // If still no duration, try to extract from accessibility text or metadata
-                        if (durationSeconds <= 0L) {
-                            // Try to find duration in title accessibility or elsewhere
-                            val accessibilityLabel = titleObj?.optJSONObject("accessibility")?.optString("label") ?: ""
-                            val durationMatch = Regex("(\\d+):(\\d+)(?::(\\d+))?").find(accessibilityLabel)
-                            if (durationMatch != null) {
-                                durationText = durationMatch.value
-                                durationSeconds = parseDurationToSeconds(durationText)
-                            }
-                        }
-                        
-                        // Assume it's not live if we couldn't find duration (most videos have a duration)
-                        val isLive = durationText.contains("LIVE", ignoreCase = true) || 
-                                    viewCount.contains("watching", ignoreCase = true)
-                        
-                        // Get channel icon (if available in metadata)
-                        var channelIconUrl: String? = null
-                        
-                        // Search recursively for "avatarViewModel" which is standard in lockupViewModel
-                        val avatarList = mutableListOf<org.json.JSONObject>()
-                        findAllObjects(lockupViewModel, "avatarViewModel", avatarList)
-                        for (avatar in avatarList) {
-                            val image = avatar.optJSONObject("image")
-                            val sources = image?.optJSONArray("sources")
-                            if (sources != null && sources.length() > 0) {
-                                channelIconUrl = sources.optJSONObject(sources.length() - 1)?.optString("url")
-                                if (channelIconUrl != null) break
-                            }
-                        }
-                        
-                        // Fallback: Check metadata rows for generic images if avatarViewModel failed
-                        if (channelIconUrl == null && metadataRows != null) {
-                             for (i in 0 until metadataRows.length()) {
-                                 val parts = metadataRows.optJSONObject(i)?.optJSONArray("metadataParts")
-                                 if (parts != null) {
-                                     for (j in 0 until parts.length()) {
-                                         val part = parts.optJSONObject(j)
-                                         // Sometimes it's directly in an image part
-                                         val img = part?.optJSONObject("image")
-                                         if (img != null) {
-                                             val sources = img.optJSONArray("sources")
-                                             if (sources != null && sources.length() > 0) {
-                                                 channelIconUrl = sources.optJSONObject(0)?.optString("url")
-                                                 break
-                                             }
-                                         }
-                                     }
-                                 }
-                                 if (channelIconUrl != null) break
+                    }
+                    
+                    // 2. RichSectionRenderer (Shelves within Grid)
+                    val richSection = item.optJSONObject("richSectionRenderer")?.optJSONObject("content")
+                    if (richSection != null) {
+                        val shelfItems = parseItemsFromShelf(richSection)
+                        shelfItems.forEach { shelfItem ->
+                             // Check for LockupViewModel in shelf
+                             if (shelfItem.has("lockupViewModel")) {
+                                  parseLockupViewModel(shelfItem.optJSONObject("lockupViewModel"))?.let { v -> videos.add(v) }
+                             } else if (shelfItem.has("videoRenderer")) {
+                                  parseVideoRenderer(shelfItem.optJSONObject("videoRenderer"))?.let { v -> videos.add(v) }
+                             } else if (shelfItem.has("gridVideoRenderer")) { // Search results often use this
+                                  parseVideoRenderer(shelfItem.optJSONObject("gridVideoRenderer"))?.let { v -> videos.add(v) }
                              }
                         }
-                        
-                        // Filter out incomplete/corrupted items
-                        // Check for channel names that are just symbols or "Unknown Channel"
-                        val isValidChannel = channelName != "Unknown Channel" && 
-                                           channelName.trim().length > 1 && 
-                                           channelName.trim() != "."
-                        
-                        if (contentId.isNotEmpty() && title != "Unknown Title" && 
-                            !thumbnailUrl.isNullOrBlank() && isValidChannel) {
-                            videos.add(VideoItem(
-                                videoId = contentId,
-                                title = title,
-                                channelName = channelName,
-                                channelId = channelId,
-                                channelIconUrl = channelIconUrl, // Now trying to extract it
-                                thumbnailUrl = thumbnailUrl,
-                                duration = durationSeconds,
-                                viewCount = viewCount,
-                                uploadedDate = uploadDate,
-                                isLive = isLive
-                            ))
-                            
-                            if (index < 3) {
-                                android.util.Log.d("YouTubeRepo", "Parsed lockupViewModel[$index]: $title by $channelName, avatar: $channelIconUrl")
-                            }
-                        } else {
-                             android.util.Log.w("YouTubeRepo", "Skipping invalid lockupViewModel item: id=$contentId, title=$title, channel=$channelName")
-                        }
                     }
-                } catch (e: Exception) {
-                    android.util.Log.e("YouTubeRepo", "Error parsing lockupViewModel", e)
                 }
             }
             
-            android.util.Log.d("YouTubeRepo", "Total video renderer items to parse: ${items.size}, lockupViewModel videos: ${videos.size}")
-            
-            items.forEach { videoRenderer ->
-                try {
-                    val videoId = videoRenderer.optString("videoId")
-                        .takeIf { it.isNotBlank() }
-                        ?: videoRenderer.optString("contentId")
-                    
-                    if (videoId.isNullOrBlank()) {
-                        return@forEach
-                    }
-                    
-                    // Extract title
-                    val titleObj = videoRenderer.optJSONObject("title")
-                    val title = titleObj?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
-                        ?: titleObj?.optString("simpleText")
-                        ?: titleObj?.optJSONObject("accessibility")?.optJSONObject("accessibilityData")?.optString("label")
-                        ?: "Unknown Title"
-                    
-                    // Extract channel name
-                    val channelObj = videoRenderer.optJSONObject("ownerText")
-                        ?: videoRenderer.optJSONObject("shortBylineText")
-                        ?: videoRenderer.optJSONObject("longBylineText")
-                    val channelName = channelObj?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
-                        ?: "Unknown Channel"
-                    
-                    // Extract view count
-                    val viewCountText = videoRenderer.optJSONObject("viewCountText")?.optString("simpleText")
-                        ?: videoRenderer.optJSONObject("shortViewCountText")?.optString("simpleText")
-                        ?: videoRenderer.optJSONObject("shortViewCountText")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
-                        ?: ""
-                    
-                    // Extract duration
-                    val durationText = videoRenderer.optJSONObject("lengthText")?.optString("simpleText") 
-                        ?: videoRenderer.optJSONObject("lengthText")?.optJSONObject("accessibility")?.optJSONObject("accessibilityData")?.optString("label")?.let { 
-                            // Convert "3 minutes, 45 seconds" to "3:45"
-                            val mins = Regex("(\\d+) minute").find(it)?.groupValues?.get(1)?.toIntOrNull() ?: 0
-                            val secs = Regex("(\\d+) second").find(it)?.groupValues?.get(1)?.toIntOrNull() ?: 0
-                            String.format("%d:%02d", mins, secs)
-                        }
-                        ?: "0:00"
-                    val durationSeconds = parseDurationToSeconds(durationText)
-                    
-                    // Extract thumbnail
-                    val thumbnails = videoRenderer.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
-                    val thumbnailUrl = thumbnails?.let {
-                        // Get highest quality thumbnail
-                        var bestUrl: String? = null
-                        var maxWidth = 0
-                        for (i in 0 until it.length()) {
-                            val thumb = it.optJSONObject(i)
-                            val width = thumb?.optInt("width", 0) ?: 0
-                            if (width >= maxWidth) {
-                                maxWidth = width
-                                bestUrl = thumb?.optString("url")
-                            }
-                        }
-                        bestUrl ?: it.optJSONObject(it.length() - 1)?.optString("url")
-                    }
-                    
-                    // Extract channel icon
-                    var channelId: String? = null
-                    
-                    // 1. Try directly from channelThumbnailSupportedRenderers
-                    val channelThumbnails = videoRenderer.optJSONObject("channelThumbnailSupportedRenderers")
-                        ?.optJSONObject("channelThumbnailWithLinkRenderer")
-                        ?.optJSONObject("thumbnail")
-                        ?.optJSONArray("thumbnails")
-                    
-                    var channelIconUrl = channelThumbnails?.let {
-                        it.optJSONObject(it.length() - 1)?.optString("url")
-                    }
-                    
-                    // 2. Try to extract channelId and icon from channelObj navigationEndpoint
-                    try {
-                        val runs = channelObj?.optJSONArray("runs")
-                        if (runs != null && runs.length() > 0) {
-                            val browseEndpoint = runs.optJSONObject(0)?.optJSONObject("navigationEndpoint")?.optJSONObject("browseEndpoint")
-                            channelId = browseEndpoint?.optString("browseId")
-                        }
-                    } catch (e: Exception) {}
-
-                    // 3. Fallback search for avatar in the whole renderer if missing
-                    if (channelIconUrl == null) {
-                        val avatarList = mutableListOf<org.json.JSONObject>()
-                        findAllObjects(videoRenderer, "avatar", avatarList)
-                        for (avatar in avatarList) {
-                            val thumbs = avatar.optJSONArray("thumbnails")
-                            if (thumbs != null && thumbs.length() > 0) {
-                                channelIconUrl = thumbs.optJSONObject(thumbs.length() - 1)?.optString("url")
-                                break
-                            }
-                        }
-                    }
-                    // Extract upload date
-                    val publishedText = videoRenderer.optJSONObject("publishedTimeText")?.optString("simpleText")
-                    
-                    videos.add(VideoItem(
-                        videoId = videoId,
-                        title = title,
-                        channelName = channelName,
-                        channelId = channelId,
-                        channelIconUrl = channelIconUrl,
-                        thumbnailUrl = thumbnailUrl,
-                        duration = durationSeconds,
-                        viewCount = viewCountText,
-                        uploadedDate = publishedText,
-                        isLive = durationSeconds <= 0L
-                    ))
-                } catch (e: Exception) {
-                    android.util.Log.w("YouTubeRepo", "Error parsing video item", e)
-                }
-            }
         } catch (e: Exception) {
-            android.util.Log.e("YouTubeRepo", "Error parsing videos JSON", e)
+            e.printStackTrace()
         }
-        android.util.Log.d("YouTubeRepo", "Successfully parsed ${videos.size} videos")
         return videos.distinctBy { it.videoId }.take(30)
+    }
+    
+    // --- Video Parsing Helpers ---
+    
+    private fun parseLockupViewModel(lockupViewModel: org.json.JSONObject?): VideoItem? {
+        if (lockupViewModel == null) return null
+        try {
+            val contentId = lockupViewModel.optString("contentId")
+            // STRICT VALIDATION: Ensure it's a valid Video ID (11 chars) to avoid playlists/channels
+            if (contentId.length != 11) return null
+            
+             val metadata = lockupViewModel.optJSONObject("metadata")?.optJSONObject("lockupMetadataViewModel")
+             val titleObj = metadata?.optJSONObject("title")
+             val title = titleObj?.optString("content") ?: "Unknown Title"
+             
+             // Get channel name and ID from metadata
+             val metadataDetails = metadata?.optJSONObject("metadata")?.optJSONObject("contentMetadataViewModel")
+             val metadataRows = metadataDetails?.optJSONArray("metadataRows")
+             var channelName = "Unknown Channel"
+             var channelId: String? = null
+             var viewCount = ""
+             var uploadDate = ""
+             
+             if (metadataRows != null && metadataRows.length() > 0) {
+                 val firstRowParts = metadataRows.optJSONObject(0)?.optJSONArray("metadataParts")
+                 if (firstRowParts != null && firstRowParts.length() > 0) {
+                     val textObj = firstRowParts.optJSONObject(0)?.optJSONObject("text")
+                     channelName = textObj?.optString("content") ?: channelName
+                     
+                     // Extract channel ID directly from runs if available
+                     if (textObj?.has("runs") == true) {
+                         val runs = textObj.optJSONArray("runs")
+                         if (runs != null && runs.length() > 0) {
+                             val browseEndpoint = runs.optJSONObject(0)?.optJSONObject("navigationEndpoint")?.optJSONObject("browseEndpoint")
+                             channelId = browseEndpoint?.optString("browseId")
+                         }
+                     }
+                 }
+                 // Second row usually has views and date
+                 if (metadataRows.length() > 1) {
+                     val secondRow = metadataRows.optJSONObject(1)?.optJSONArray("metadataParts")
+                     if (secondRow != null) {
+                         for (i in 0 until secondRow.length()) {
+                             val part = secondRow.optJSONObject(i)?.optJSONObject("text")?.optString("content") ?: ""
+                             if (part.contains("view", ignoreCase = true)) {
+                                 viewCount = part
+                             } else if (part.isNotBlank() && uploadDate.isBlank()) {
+                                 uploadDate = part
+                             }
+                         }
+                     }
+                 }
+             }
+             
+             // Get thumbnail
+             val contentImage = lockupViewModel.optJSONObject("contentImage")
+             val thumbnailViewModel = contentImage?.optJSONObject("collectionThumbnailViewModel")
+                 ?.optJSONObject("primaryThumbnail")?.optJSONObject("thumbnailViewModel")
+                 ?: contentImage?.optJSONObject("thumbnailViewModel")
+             
+             var thumbnailUrl = thumbnailViewModel?.optJSONObject("image")?.optJSONArray("sources")?.let { sources ->
+                 // Get highest quality thumbnail
+                 var bestUrl: String? = null
+                 var maxWidth = 0
+                 for (i in 0 until sources.length()) {
+                     val source = sources.optJSONObject(i)
+                     val width = source?.optInt("width", 0) ?: 0
+                     if (width >= maxWidth) {
+                         maxWidth = width
+                         bestUrl = source?.optString("url")
+                     }
+                 }
+                 bestUrl
+             }
+             
+             if (thumbnailUrl.isNullOrBlank()) {
+                 thumbnailUrl = "https://i.ytimg.com/vi/$contentId/hqdefault.jpg"
+             }
+             
+             // Get Duration
+             val overlays = thumbnailViewModel?.optJSONArray("overlays")
+             var durationSeconds = 0L
+             var durationText = ""
+             if (overlays != null) {
+                 for (i in 0 until overlays.length()) {
+                     val overlayItem = overlays.optJSONObject(i)
+                     // Try thumbnailOverlayBadgeViewModel path
+                     val badgeText = overlayItem?.optJSONObject("thumbnailOverlayBadgeViewModel")
+                         ?.optJSONArray("thumbnailBadges")?.optJSONObject(0)
+                         ?.optJSONObject("thumbnailBadgeViewModel")?.optString("text")
+                     if (badgeText != null && badgeText.contains(":")) {
+                         durationText = badgeText
+                         durationSeconds = parseDurationToSeconds(badgeText)
+                         break
+                     }
+                     // Try thumbnailOverlayTimeStatusRenderer path
+                     val timeStatus = overlayItem?.optJSONObject("thumbnailOverlayTimeStatusRenderer")
+                         ?.optJSONObject("text")?.optString("simpleText")
+                     if (timeStatus != null && timeStatus.contains(":")) {
+                         durationText = timeStatus
+                         durationSeconds = parseDurationToSeconds(timeStatus)
+                         break
+                     }
+                 }
+             }
+             
+             // If still no duration, try to extract from accessibility text or metadata
+             if (durationSeconds <= 0L) {
+                 // Try to find duration in title accessibility or elsewhere
+                 val accessibilityLabel = titleObj?.optJSONObject("accessibility")?.optString("label") ?: ""
+                 val durationMatch = Regex("(\\d+):(\\d+)(?::(\\d+))?").find(accessibilityLabel)
+                 if (durationMatch != null) {
+                     durationText = durationMatch.value
+                     durationSeconds = parseDurationToSeconds(durationText)
+                 }
+             }
+             
+             // Assume it's not live if we couldn't find duration (most videos have a duration)
+             val isLive = durationText.contains("LIVE", ignoreCase = true) || 
+                         viewCount.contains("watching", ignoreCase = true)
+             
+            return VideoItem(
+                videoId = contentId,
+                title = title,
+                channelName = channelName,
+                channelId = channelId,
+                channelIconUrl = null, // Skip heavy recursion for icon
+                thumbnailUrl = thumbnailUrl,
+                duration = durationSeconds,
+                viewCount = viewCount,
+                uploadedDate = uploadDate,
+                isLive = isLive
+            )
+        } catch (e: Exception) {
+            return null
+        }
+    }
+    
+    private fun parseVideoRenderer(videoRenderer: org.json.JSONObject?): VideoItem? {
+        if (videoRenderer == null) return null
+        try {
+            val videoId = videoRenderer.optString("videoId")
+                .takeIf { it.isNotBlank() }
+                ?: videoRenderer.optString("contentId")
+            
+            if (videoId.isNullOrBlank()) {
+                return null
+            }
+            
+            // Extract title
+            val titleObj = videoRenderer.optJSONObject("title")
+            val title = titleObj?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
+                ?: titleObj?.optString("simpleText")
+                ?: titleObj?.optJSONObject("accessibility")?.optJSONObject("accessibilityData")?.optString("label")
+                ?: "Unknown Title"
+            
+            // Extract channel name
+            val channelObj = videoRenderer.optJSONObject("ownerText")
+                ?: videoRenderer.optJSONObject("shortBylineText")
+                ?: videoRenderer.optJSONObject("longBylineText")
+            val channelName = channelObj?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
+                ?: "Unknown Channel"
+            
+            // Extract view count
+            val viewCountText = videoRenderer.optJSONObject("viewCountText")?.optString("simpleText")
+                ?: videoRenderer.optJSONObject("shortViewCountText")?.optString("simpleText")
+                ?: videoRenderer.optJSONObject("shortViewCountText")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
+                ?: ""
+            
+            // Extract duration
+            val durationText = videoRenderer.optJSONObject("lengthText")?.optString("simpleText") 
+                ?: videoRenderer.optJSONObject("lengthText")?.optJSONObject("accessibility")?.optJSONObject("accessibilityData")?.optString("label")?.let { 
+                    // Convert "3 minutes, 45 seconds" to "3:45"
+                    val mins = Regex("(\\d+) minute").find(it)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+                    val secs = Regex("(\\d+) second").find(it)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+                    String.format("%d:%02d", mins, secs)
+                }
+                ?: "0:00"
+            val durationSeconds = parseDurationToSeconds(durationText)
+            
+            // Extract thumbnail
+            val thumbnails = videoRenderer.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
+            val thumbnailUrl = thumbnails?.let {
+                // Get highest quality thumbnail
+                var bestUrl: String? = null
+                var maxWidth = 0
+                for (i in 0 until it.length()) {
+                    val thumb = it.optJSONObject(i)
+                    val width = thumb?.optInt("width", 0) ?: 0
+                    if (width >= maxWidth) {
+                        maxWidth = width
+                        bestUrl = thumb?.optString("url")
+                    }
+                }
+                bestUrl ?: it.optJSONObject(it.length() - 1)?.optString("url")
+            }
+            
+            // Extract channel icon
+            var channelId: String? = null
+            
+            // 1. Try directly from channelThumbnailSupportedRenderers
+            val channelThumbnails = videoRenderer.optJSONObject("channelThumbnailSupportedRenderers")
+                ?.optJSONObject("channelThumbnailWithLinkRenderer")
+                ?.optJSONObject("thumbnail")
+                ?.optJSONArray("thumbnails")
+            
+            var channelIconUrl = channelThumbnails?.let {
+                it.optJSONObject(it.length() - 1)?.optString("url")
+            }
+            
+            // 2. Try to extract channelId and icon from channelObj navigationEndpoint
+            try {
+                val runs = channelObj?.optJSONArray("runs")
+                if (runs != null && runs.length() > 0) {
+                    val browseEndpoint = runs.optJSONObject(0)?.optJSONObject("navigationEndpoint")?.optJSONObject("browseEndpoint")
+                    channelId = browseEndpoint?.optString("browseId")
+                }
+            } catch (e: Exception) {}
+
+            // 3. Fallback search for avatar in the whole renderer if missing
+            if (channelIconUrl == null) {
+                // We use the light-weight finder here since we are inside a single renderer, so recursion is shallow
+                val avatarList = mutableListOf<org.json.JSONObject>()
+                findAllObjects(videoRenderer, "avatar", avatarList, 0)
+                for (avatar in avatarList) {
+                    val thumbs = avatar.optJSONArray("thumbnails")
+                    if (thumbs != null && thumbs.length() > 0) {
+                        channelIconUrl = thumbs.optJSONObject(thumbs.length() - 1)?.optString("url")
+                        break
+                    }
+                }
+            }
+            // Extract upload date
+            val publishedText = videoRenderer.optJSONObject("publishedTimeText")?.optString("simpleText")
+            
+            return VideoItem(
+                videoId = videoId,
+                title = title,
+                channelName = channelName,
+                channelId = channelId,
+                channelIconUrl = channelIconUrl,
+                thumbnailUrl = thumbnailUrl,
+                duration = durationSeconds,
+                viewCount = viewCountText,
+                uploadedDate = publishedText,
+                isLive = durationSeconds <= 0L
+            )
+        } catch (e: Exception) {
+             return null
+        }
     }
 
     /**
@@ -1790,37 +2006,7 @@ class YouTubeRepository(private val context: Context) {
     /**
      * Recursively find all JSON objects with a specific key and add them to the results list.
      */
-    private fun findAllObjects(json: org.json.JSONObject, key: String, results: MutableList<org.json.JSONObject>, depth: Int = 0) {
-        // Limit recursion depth to avoid stack overflow
-        if (depth > 50) return
-        
-        // Check if this object has the key
-        if (json.has(key)) {
-            val value = json.opt(key)
-            if (value is org.json.JSONObject) {
-                results.add(value)
-            } else if (value is org.json.JSONArray) {
-                for (i in 0 until value.length()) {
-                    val item = value.optJSONObject(i)
-                    if (item != null) results.add(item)
-                }
-            }
-        }
-        
-        // Recurse into nested objects
-        json.keys().forEach { keyName ->
-            val value = json.opt(keyName)
-            when (value) {
-                is org.json.JSONObject -> findAllObjects(value, key, results, depth + 1)
-                is org.json.JSONArray -> {
-                    for (i in 0 until value.length()) {
-                        val item = value.optJSONObject(i)
-                        if (item != null) findAllObjects(item, key, results, depth + 1)
-                    }
-                }
-            }
-        }
-    }
+
 
 
 
@@ -1883,7 +2069,7 @@ class YouTubeRepository(private val context: Context) {
             .post(jsonBody.toRequestBody("application/json".toMediaType()))
             .addHeader("Cookie", cookies)
             .addHeader("Authorization", authHeader)
-            .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            .addHeader("User-Agent", getRandomUserAgent())
             .addHeader("Origin", "https://www.youtube.com")
             .addHeader("X-Goog-AuthUser", "0")
             .build()
@@ -1905,50 +2091,26 @@ class YouTubeRepository(private val context: Context) {
             val json = fetchYouTubeBrowse(channelId).takeIf { it.isNotEmpty() } ?: return null
             val root = org.json.JSONObject(json)
             
-            // 1. Search for avatar-specific view models (New YouTube UI)
-            val avatars = mutableListOf<org.json.JSONObject>()
-            findAllObjects(root, "avatarViewModel", avatars)
+            val header = root.optJSONObject("header")
             
-            for (avatar in avatars) {
-                val image = avatar.optJSONObject("image")
-                val thumbArr = image?.optJSONArray("sources") ?: image?.optJSONArray("thumbnails")
-                if (thumbArr != null && thumbArr.length() > 0) {
-                    val url = thumbArr.optJSONObject(thumbArr.length() - 1)?.optString("url")
-                    if (!url.isNullOrBlank()) return url
-                }
+            // 1. C4TabbedHeaderRenderer
+            val c4Header = header?.optJSONObject("c4TabbedHeaderRenderer")
+            if (c4Header != null) {
+                val thumbs = c4Header.optJSONObject("avatar")?.optJSONArray("thumbnails")
+                return thumbs?.optJSONObject(thumbs.length() - 1)?.optString("url")
             }
-
-            // 2. Fallback to existing renderer-based search
-            val objects = mutableListOf<org.json.JSONObject>()
-            findAllObjects(root, "musicImmersiveHeaderRenderer", objects)
-            findAllObjects(root, "c4TabbedHeaderRenderer", objects)
-            findAllObjects(root, "pageHeaderRenderer", objects) 
-
-            for (obj in objects) {
-                var thumbArr: org.json.JSONArray? = null
+            
+            // 2. PageHeader (New UI)
+            val pageHeader = header?.optJSONObject("pageHeaderRenderer")?.optJSONObject("content")
+                ?.optJSONObject("pageHeaderViewModel")?.optJSONObject("image")
+                ?.optJSONObject("decoratedAvatarViewModel")?.optJSONObject("avatar")
+                ?.optJSONObject("avatarViewModel")?.optJSONObject("image")
                 
-                // Try 'avatar' first
-                thumbArr = obj.optJSONObject("avatar")?.optJSONArray("thumbnails")
-                
-                // Deep nested PageHeaderViewModel
-                if (thumbArr == null) {
-                   val content = obj.optJSONObject("content")?.optJSONObject("pageHeaderViewModel")
-                   thumbArr = content?.optJSONObject("image")
-                       ?.optJSONObject("decoratedAvatarViewModel")
-                       ?.optJSONObject("avatar")
-                       ?.optJSONObject("avatarViewModel")
-                       ?.optJSONObject("image")
-                       ?.optJSONArray("sources")
-                       ?: content?.optJSONObject("image")?.optJSONArray("sources")
-                }
-
-                if (thumbArr != null && thumbArr.length() > 0) {
-                    val url = thumbArr.optJSONObject(thumbArr.length() - 1)?.optString("url")
-                    if (!url.isNullOrBlank() && !url.contains("featured_channel.jpg") && !url.contains("/an/")) {
-                         return url
-                    }
-                }
+            val sources = pageHeader?.optJSONArray("sources")
+            if (sources != null && sources.length() > 0) {
+                return sources.optJSONObject(sources.length() - 1)?.optString("url")
             }
+            
         } catch (e: Exception) {
             android.util.Log.e("YouTubeRepo", "Error fetching channel avatar", e)
         }

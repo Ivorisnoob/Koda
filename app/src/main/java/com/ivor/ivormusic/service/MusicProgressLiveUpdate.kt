@@ -55,6 +55,11 @@ class MusicProgressLiveUpdate(private val context: Context) {
         }
     }
     
+    // Track last state to prevent redundant updates (stutter)
+    private var lastProgress = -1
+    private var lastChipText = ""
+    private var lastTitle = ""
+    
     /**
      * Show or update the Live Update notification with current playback progress.
      */
@@ -77,6 +82,19 @@ class MusicProgressLiveUpdate(private val context: Context) {
         
         // Short text for chip (max ~7 chars for full display)
         val chipText = if (remainingMin > 0) "${remainingMin}m" else "${remainingSec}s"
+        
+        // Check if anything visually changed
+        if (isShowing && 
+            progress == lastProgress && 
+            chipText == lastChipText && 
+            songTitle == lastTitle) {
+            return // No visual change, skip update to prevent stutter
+        }
+        
+        // Update valid state
+        lastProgress = progress
+        lastChipText = chipText
+        lastTitle = songTitle
         
         val contentIntent = PendingIntent.getActivity(
             context,

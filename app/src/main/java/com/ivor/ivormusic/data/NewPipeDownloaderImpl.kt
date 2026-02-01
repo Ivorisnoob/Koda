@@ -41,17 +41,19 @@ class NewPipeDownloaderImpl(
         }
 
         // Add cookies from SessionManager if available
-        sessionManager?.getCookies()?.let { cookies ->
-            if (cookies.isNotEmpty()) {
-                requestBuilder.addHeader("Cookie", cookies)
-            }
-        }
+        // DISABLE COOKIES for NewPipe requests to prevent "The page needs to be reloaded" errors
+        // sessionManager?.getCookies()?.let { cookies ->
+        //    if (cookies.isNotEmpty()) {
+        //        requestBuilder.addHeader("Cookie", cookies)
+        //    }
+        // }
 
         // Add default user agent if not present
         if (!headers.containsKey("User-Agent")) {
+            // Use a modern User-Agent to avoid "Page needs to be reloaded" errors
             requestBuilder.addHeader(
                 "User-Agent",
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
             )
         }
 

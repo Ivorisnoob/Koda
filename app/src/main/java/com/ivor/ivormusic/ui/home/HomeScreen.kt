@@ -247,10 +247,20 @@ fun HomeScreen(
                 targetState = selectedTab,
                 label = "TabTransition",
                 transitionSpec = {
-                    (androidx.compose.animation.fadeIn(animationSpec = androidx.compose.animation.core.tween(300)) +
-                            androidx.compose.animation.slideInHorizontally(animationSpec = androidx.compose.animation.core.tween(300)) { width -> width / 3 }) with
-                            (androidx.compose.animation.fadeOut(animationSpec = androidx.compose.animation.core.tween(300)) +
-                                    androidx.compose.animation.slideOutHorizontally(animationSpec = androidx.compose.animation.core.tween(300)) { width -> -width / 3 })
+                    val direction = if (targetState > initialState) 1 else -1
+                    if (direction > 0) {
+                        // Moving forward (Right): New enters from Right, Old leaves to Left
+                        (androidx.compose.animation.slideInHorizontally { width -> width } + 
+                                androidx.compose.animation.fadeIn()) togetherWith
+                                (androidx.compose.animation.slideOutHorizontally { width -> -width / 3 } + 
+                                        androidx.compose.animation.fadeOut())
+                    } else {
+                        // Moving backward (Left): New enters from Left, Old leaves to Right
+                        (androidx.compose.animation.slideInHorizontally { width -> -width / 3 } + 
+                                androidx.compose.animation.fadeIn()) togetherWith
+                                (androidx.compose.animation.slideOutHorizontally { width -> width } + 
+                                        androidx.compose.animation.fadeOut())
+                    }
                 }
             ) { targetTab ->
                 when (targetTab) {
@@ -1130,14 +1140,37 @@ fun LibraryContent(
         else -> "library"
     }
     
+    // Helper to determine screen depth for animation direction
+    val getWrapperDepth = { screenName: String ->
+        when (screenName) {
+            "library" -> 0
+            "playlist" -> 1
+            "artist" -> 1
+            "album" -> 2
+            else -> 0
+        }
+    }
+    
     androidx.compose.animation.AnimatedContent(
         targetState = currentScreen,
         label = "LibraryNav",
         transitionSpec = {
-            androidx.compose.animation.slideInHorizontally { width -> width } + 
-                androidx.compose.animation.fadeIn() togetherWith
-            androidx.compose.animation.slideOutHorizontally { width -> -width } + 
-                androidx.compose.animation.fadeOut()
+            val initialDepth = getWrapperDepth(initialState)
+            val targetDepth = getWrapperDepth(targetState)
+            
+            if (targetDepth > initialDepth) {
+                // Push (Going deeper)
+                (androidx.compose.animation.slideInHorizontally { width -> width } + 
+                        androidx.compose.animation.fadeIn()) togetherWith
+                        (androidx.compose.animation.slideOutHorizontally { width -> -width / 3 } + 
+                                androidx.compose.animation.fadeOut())
+            } else {
+                // Pop (Going back)
+                (androidx.compose.animation.slideInHorizontally { width -> -width / 3 } + 
+                        androidx.compose.animation.fadeIn()) togetherWith
+                        (androidx.compose.animation.slideOutHorizontally { width -> width } + 
+                                androidx.compose.animation.fadeOut())
+            }
         }
     ) { screen ->
         when (screen) {
