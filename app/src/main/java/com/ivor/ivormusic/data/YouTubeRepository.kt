@@ -72,6 +72,16 @@ class YouTubeRepository(private val context: Context) {
         .readTimeout(30, TimeUnit.SECONDS)
         .build()
 
+    private fun getRandomUserAgent(): String {
+        val agents = listOf(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        )
+        return agents.random()
+    }
+
     init {
         initializeNewPipe()
     }
@@ -174,10 +184,18 @@ class YouTubeRepository(private val context: Context) {
      * @param videoId The YouTube video ID
      * @return The stream URL or null if not found
      */
-    suspend fun getStreamUrl(videoId: String): String? = withContext(Dispatchers.IO) {
+    /**
+     * Get the best audio stream URL for a video.
+     * Note: These URLs expire, so call this right before playback.
+     * @param videoId The YouTube video ID
+     * @return Result containing stream URL or error
+     */
+    suspend fun getStreamUrl(videoId: String): Result<String> = withContext(Dispatchers.IO) {
         try {
             val streamUrl = "https://www.youtube.com/watch?v=$videoId"
-            val ytService = ServiceList.all().find { it.serviceInfo.name == "YouTube" } ?: return@withContext null
+            val ytService = ServiceList.all().find { it.serviceInfo.name == "YouTube" } 
+                ?: return@withContext Result.failure(Exception("YouTube Service not found in NewPipe"))
+            
             val streamExtractor = ytService.getStreamExtractor(streamUrl)
             streamExtractor.fetchPage()
             
@@ -187,9 +205,16 @@ class YouTubeRepository(private val context: Context) {
                 .maxByOrNull { it.averageBitrate }
                 ?: audioStreams.maxByOrNull { it.bitrate }
             
-            bestAudioStream?.content
+            val url = bestAudioStream?.content
+            if (url != null) {
+                Result.success(url)
+            } else {
+                Result.failure(Exception("No audio stream found for $videoId"))
+            }
         } catch (e: Exception) {
-            null
+            // Log the error for debugging
+            android.util.Log.e("YouTubeRepository", "Error resolving stream for $videoId", e)
+            Result.failure(e)
         }
     }
 
@@ -355,7 +380,7 @@ class YouTubeRepository(private val context: Context) {
                 "context": {
                     "client": {
                         "clientName": "WEB_REMIX",
-                        "clientVersion": "1.20230102.01.00",
+                        "clientVersion": "1.20240402.09.00",
                         "hl": "en",
                         "gl": "US"
                     }
@@ -369,7 +394,7 @@ class YouTubeRepository(private val context: Context) {
             .post(jsonBody.toRequestBody("application/json".toMediaType()))
             .addHeader("Cookie", cookies)
             .addHeader("Authorization", authHeader)
-            .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            .addHeader("User-Agent", getRandomUserAgent())
             .addHeader("Origin", "https://music.youtube.com")
             .addHeader("X-Goog-AuthUser", "0")
             .build()
@@ -602,7 +627,7 @@ class YouTubeRepository(private val context: Context) {
                     "context": {
                         "client": {
                             "clientName": "WEB_REMIX",
-                            "clientVersion": "1.20230102.01.00",
+                            "clientVersion": "1.20240402.09.00",
                             "hl": "en",
                             "gl": "US"
                         }
@@ -630,7 +655,7 @@ class YouTubeRepository(private val context: Context) {
             .post(jsonBody.toRequestBody("application/json".toMediaType()))
             .addHeader("Cookie", cookies)
             .addHeader("Authorization", authHeader)
-            .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            .addHeader("User-Agent", getRandomUserAgent())
             .addHeader("Origin", "https://music.youtube.com")
             .addHeader("X-Goog-AuthUser", "0")
             .build()
@@ -1934,7 +1959,7 @@ class YouTubeRepository(private val context: Context) {
             .post(jsonBody.toRequestBody("application/json".toMediaType()))
             .addHeader("Cookie", cookies)
             .addHeader("Authorization", authHeader)
-            .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            .addHeader("User-Agent", getRandomUserAgent())
             .addHeader("Origin", "https://www.youtube.com")
             .addHeader("X-Goog-AuthUser", "0")
             .build()

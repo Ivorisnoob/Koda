@@ -55,7 +55,7 @@ class MusicService : MediaLibraryService() {
     companion object {
         private const val TAG = "MusicService"
         private const val PREFETCH_AHEAD = 3
-        private const val STREAM_TIMEOUT_MS = 10000L
+        private const val STREAM_TIMEOUT_MS = 30000L // Increased to 30s
         private const val ANDROID_AUTO_BROWSE_TIMEOUT_MS = 30000L // Android Auto timeout (30 seconds)
     }
     
@@ -215,6 +215,13 @@ class MusicService : MediaLibraryService() {
             
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
                 Log.e(TAG, "Player Error: ${error.errorCodeName}", error)
+                
+                // Stop skipping if no network
+                if (!isNetworkAvailable()) {
+                    Log.w(TAG, "No network detected during player error - pausing to prevent skip loop")
+                    player.pause()
+                    return
+                }
                 
                 // RECOVERY LOGIC
                 val currentItem = player.currentMediaItem
@@ -709,10 +716,6 @@ class MusicService : MediaLibraryService() {
      * Resolve stream URL for a media item
      */
     private suspend fun resolveStreamUrl(item: MediaItem, videoId: String): MediaItem {
-        // Note: Even for cached content, we still need a valid URL because ExoPlayer's
-        // CacheDataSource uses the URL for content metadata. The cache will be used
-        // automatically during playback if content exists under the customCacheKey.
-
         // 1. Check runtime memory cache first
         urlCache[videoId]?.let { cachedUrl ->
             return item.buildUpon()
@@ -740,10 +743,28 @@ class MusicService : MediaLibraryService() {
 
         // 3. Perform Resolution
         try {
-            val streamUrl = withTimeoutOrNull(STREAM_TIMEOUT_MS) {
-                // Determine network type/quality preference here if needed
-                youtubeRepository.getStreamUrl(videoId)
+            if (!isNetworkAvailable()) {
+                throw java.io.IOException("No internet connection")
             }
+
+            val streamUrl = withTimeoutOrNull(STREAM_TIMEOUT_MS) {
+                var attempt = 0
+                while (isActive) {
+                    val result = youtubeRepository.getStreamUrl(videoId)
+                    if (result.isSuccess) return@withTimeoutOrNull result.getOrNull()
+                    
+                    attempt++
+                    if (attempt >= 3) break // Max 3 retries
+                    
+                    val exception = result.exceptionOrNull()
+                    Log.w(TAG, "Attempt $attempt failed for $videoId: ${exception?.message}")
+                    
+                    // Simple backoff: 1s, 2s, 3s
+                    kotlinx.coroutines.delay(1000L * attempt)
+                }
+                null
+            }
+
             if (streamUrl != null) {
                 urlCache[videoId] = streamUrl
                 return item.buildUpon()
@@ -751,6 +772,7 @@ class MusicService : MediaLibraryService() {
                     .setCustomCacheKey(videoId) // CRITICAL: Use Video ID as persistent cache key
                     .build()
             } else {
+                Log.e(TAG, "Failed to resolve URL for $videoId after retries") 
                 return item
             }
         } catch (e: Exception) {
@@ -759,6 +781,13 @@ class MusicService : MediaLibraryService() {
         } finally {
             resolvingItems.remove(videoId)
         }
+    }
+
+    private fun isNetworkAvailable(): Boolean {
+        val connectivityManager = getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+        val network = connectivityManager.activeNetwork ?: return false
+        val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
+        return capabilities.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
     }
     
     /**

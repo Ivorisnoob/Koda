@@ -186,10 +186,12 @@ class DownloadRepository(private val context: Context) {
             
             // Get stream URL
             updateProgress(song.id, song, 0.05f, DownloadStatus.DOWNLOADING)
-            val streamUrl = youtubeRepository.getStreamUrl(song.id)
+            val result = youtubeRepository.getStreamUrl(song.id)
+            val streamUrl = result.getOrNull()
             
             if (streamUrl == null) {
-                Log.e(TAG, "Could not get stream URL for ${song.title}")
+                val error = result.exceptionOrNull()
+                Log.e(TAG, "Could not get stream URL for ${song.title}", error)
                 updateProgress(song.id, song, 0f, DownloadStatus.FAILED)
                 return@withContext
             }
