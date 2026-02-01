@@ -4,6 +4,13 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.animation.togetherWith
@@ -62,6 +69,12 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.rounded.BarChart
+import androidx.compose.material.icons.rounded.Insights
+import androidx.compose.material.icons.rounded.SkipNext
+import androidx.compose.material.icons.rounded.MoreTime
+import androidx.compose.material3.ElevatedCard
+import androidx.compose.material3.CardDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -96,16 +109,19 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-// MaterialShapes and toShape are needed
 import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.toShape
 import coil.compose.AsyncImage
 import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.ui.home.HomeViewModel
+import kotlinx.coroutines.launch
+import androidx.compose.ui.text.style.TextAlign
+import com.ivor.ivormusic.data.ArtistStats
+import com.ivor.ivormusic.data.SongStats
+import com.ivor.ivormusic.data.PlayHistoryEntry
+import com.ivor.ivormusic.data.GlobalStats
+import com.ivor.ivormusic.data.StatsRepository
 
-/**
- * Segmented list shape helper for Expressive design
- */
 @Composable
 private fun getSegmentedShape(index: Int, count: Int, cornerSize: androidx.compose.ui.unit.Dp = 28.dp): Shape {
     return when {
@@ -116,14 +132,6 @@ private fun getSegmentedShape(index: Int, count: Int, cornerSize: androidx.compo
     }
 }
 
-// MaterialShapes.toShape() is used directly - no custom PolygonShape needed
-
-/**
- * Library Screen with Material 3 Expressive design
- * - YouTube playlists and liked songs integration
- * - Premium card designs with beautiful rounded corners
- * - Category tabs
- */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun LibraryScreen(
@@ -136,6 +144,7 @@ fun LibraryScreen(
     contentPadding: PaddingValues,
     viewModel: HomeViewModel,
     isDarkMode: Boolean,
+    onStatsClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     // Theme colors from MaterialTheme
@@ -162,13 +171,30 @@ fun LibraryScreen(
             .windowInsetsPadding(WindowInsets.statusBars)
     ) {
         // Header
-        Text(
-            "Your Library",
-            style = MaterialTheme.typography.headlineLarge,
-            fontWeight = FontWeight.Bold,
-            color = textColor,
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp)
-        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "Your Library",
+                style = MaterialTheme.typography.headlineLarge,
+                fontWeight = FontWeight.Bold,
+                color = textColor
+            )
+            
+            IconButton(
+                onClick = onStatsClick,
+                colors = androidx.compose.material3.IconButtonDefaults.filledIconButtonColors(
+                    containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onTertiaryContainer
+                )
+            ) {
+                Icon(Icons.Rounded.Insights, contentDescription = "Statistics")
+            }
+        }
         
         // Category Filter Chips
         LazyRow(
@@ -680,7 +706,6 @@ private fun LibrarySongCard(
             },
             trailingContent = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                     // Download Status / Button
                     if (isDownloading) {
                         CircularWavyProgressIndicator(
                             modifier = Modifier.size(20.dp),
@@ -824,7 +849,6 @@ fun PlaylistDetailScreen(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(bottom = 120.dp)
             ) {
-                // ========== HERO HEADER ==========
                 item {
                     BoxWithConstraints(
                         modifier = Modifier
@@ -982,7 +1006,6 @@ fun PlaylistDetailScreen(
                             
                         }
                         
-                        // Seated Floating Play Button
                         Box(
                             modifier = Modifier
                                 .align(Alignment.BottomCenter)
@@ -1029,7 +1052,6 @@ fun PlaylistDetailScreen(
                     }
                 }
                 
-                // ========== SONGS SECTION ==========
                 item {
                     Spacer(modifier = Modifier.height(24.dp))
                     Row(
@@ -1096,6 +1118,360 @@ fun PlaylistDetailScreen(
     }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class)
+@Composable
+fun StatsScreen(
+    onBack: () -> Unit,
+    viewModel: HomeViewModel,
+    contentPadding: PaddingValues
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val statsRepository = remember { StatsRepository(context) }
+    var globalStats by remember { mutableStateOf<GlobalStats?>(null) }
+    var history by remember { mutableStateOf<List<PlayHistoryEntry>>(emptyList()) }
+    var isLoading by remember { mutableStateOf(true) }
+
+    val textColor = MaterialTheme.colorScheme.onBackground
+    val secondaryTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val cardColor = MaterialTheme.colorScheme.surfaceContainerHigh
+    
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+
+    LaunchedEffect(Unit) {
+        globalStats = statsRepository.getGlobalStats()
+        history = statsRepository.loadHistory()
+        isLoading = false
+    }
+
+    androidx.compose.material3.Scaffold(
+        topBar = {
+            androidx.compose.material3.TopAppBar(
+                title = { Text("Insights", fontWeight = FontWeight.ExtraBold) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color.Transparent
+                )
+            )
+        },
+        containerColor = Color.Transparent
+    ) { innerPadding ->
+        if (isLoading) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                LoadingIndicator()
+            }
+        } else if (globalStats == null || globalStats!!.totalPlays == 0) {
+            Box(Modifier.fillMaxSize().padding(innerPadding), contentAlignment = Alignment.Center) {
+                EmptyStateCard(
+                    title = "No Statistics Yet",
+                    subtitle = "Start listening to some music!",
+                    icon = Icons.Rounded.Insights,
+                    cardColor = cardColor,
+                    textColor = textColor,
+                    secondaryTextColor = secondaryTextColor
+                )
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(
+                    top = innerPadding.calculateTopPadding(),
+                    bottom = contentPadding.calculateBottomPadding() + 24.dp,
+                    start = 20.dp,
+                    end = 20.dp
+                ),
+                verticalArrangement = Arrangement.spacedBy(20.dp)
+            ) {
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            StatSummaryCard(
+                                label = "Total Plays",
+                                value = globalStats!!.totalPlays.toString(),
+                                icon = Icons.Rounded.PlayArrow,
+                                modifier = Modifier.weight(1.0f),
+                                color = MaterialTheme.colorScheme.primaryContainer,
+                                delay = 0
+                            )
+                            StatSummaryCard(
+                                label = "Play Time",
+                                value = formatTime(globalStats!!.totalPlayTimeSeconds),
+                                icon = Icons.Rounded.BarChart,
+                                modifier = Modifier.weight(1.0f),
+                                color = MaterialTheme.colorScheme.secondaryContainer,
+                                delay = 100
+                            )
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            StatSummaryCard(
+                                label = "Artists",
+                                value = globalStats!!.uniqueArtists.toString(),
+                                icon = Icons.Rounded.MusicNote,
+                                modifier = Modifier.weight(1.0f),
+                                color = MaterialTheme.colorScheme.tertiaryContainer,
+                                delay = 200
+                            )
+                            StatSummaryCard(
+                                label = "Songs",
+                                value = globalStats!!.uniqueSongs.toString(),
+                                icon = Icons.Rounded.Album,
+                                modifier = Modifier.weight(1.0f),
+                                color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                delay = 300
+                            )
+                        }
+                    }
+                }
+
+                if (globalStats!!.topSongs.isNotEmpty()) {
+                    item {
+                        Text(
+                            "Top Tracks",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = textColor
+                        )
+                    }
+                    items(globalStats!!.topSongs.take(5)) { songStat ->
+                        TopSongItem(songStat, cardColor, textColor, secondaryTextColor)
+                    }
+                }
+
+                if (globalStats!!.topArtists.isNotEmpty()) {
+                    item {
+                        Text(
+                            "Favorite Artists",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = textColor
+                        )
+                    }
+                    item {
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            contentPadding = PaddingValues(vertical = 4.dp)
+                        ) {
+                            items(globalStats!!.topArtists.take(10)) { artist ->
+                                TopArtistCard(artist, cardColor, textColor, secondaryTextColor)
+                            }
+                        }
+                    }
+                }
+
+                if (history.isNotEmpty()) {
+                    item {
+                        Text(
+                            "Playback History",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = textColor,
+                            modifier = Modifier.padding(top = 8.dp)
+                        )
+                    }
+                    itemsIndexed(history.take(50)) { index, entry ->
+                        HistoryItem(entry, textColor, secondaryTextColor)
+                        if (index < history.size - 1) {
+                            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = textColor.copy(alpha = 0.05f))
+                        }
+                    }
+                    
+                    item {
+                        Button(
+                            onClick = { 
+                                scope.launch { 
+                                    statsRepository.clearHistory()
+                                    globalStats = null
+                                    history = emptyList()
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth().padding(top = 24.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.errorContainer, 
+                                contentColor = MaterialTheme.colorScheme.onErrorContainer
+                            ),
+                            shape = RoundedCornerShape(20.dp)
+                        ) {
+                            Text("Clear History and Stats")
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun StatSummaryCard(
+    label: String,
+    value: String,
+    icon: ImageVector,
+    color: Color,
+    delay: Int,
+    modifier: Modifier = Modifier
+) {
+    var visible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(delay.toLong())
+        visible = true
+    }
+    
+    val scale by animateFloatAsState(
+        targetValue = if (visible) 1f else 0.8f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessLow
+        ),
+        label = "StatCardScale"
+    )
+    
+    val alpha by animateFloatAsState(
+        targetValue = if (visible) 1f else 0f,
+        animationSpec = tween(300),
+        label = "StatCardAlpha"
+    )
+
+    Surface(
+        modifier = modifier.graphicsLayer {
+            scaleX = scale
+            scaleY = scale
+            this.alpha = alpha
+        },
+        shape = RoundedCornerShape(28.dp),
+        color = color,
+        tonalElevation = 2.dp
+    ) {
+        Column(
+            modifier = Modifier.padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(Color.White.copy(alpha = 0.2f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp))
+            }
+            Column {
+                Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)
+                Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+            }
+        }
+    }
+}
+
+@Composable
+fun TopSongItem(
+    stat: SongStats,
+    cardColor: Color,
+    textColor: Color,
+    secondaryTextColor: Color
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        shape = RoundedCornerShape(20.dp),
+        color = cardColor
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            AsyncImage(
+                model = stat.thumbnailUrl,
+                contentDescription = null,
+                modifier = Modifier.size(56.dp).clip(RoundedCornerShape(12.dp)),
+                contentScale = ContentScale.Crop
+            )
+            Spacer(Modifier.width(16.dp))
+            Column(Modifier.weight(1f)) {
+                Text(stat.title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(stat.artist, style = MaterialTheme.typography.bodySmall, color = secondaryTextColor)
+            }
+            Column(horizontalAlignment = Alignment.End) {
+                Text(stat.playCount.toString(), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.primary)
+                Text("plays", style = MaterialTheme.typography.labelSmall, color = secondaryTextColor)
+            }
+        }
+    }
+}
+
+@Composable
+fun TopArtistCard(
+    stat: ArtistStats,
+    cardColor: Color,
+    textColor: Color,
+    secondaryTextColor: Color
+) {
+    Surface(
+        modifier = Modifier.width(140.dp),
+        shape = RoundedCornerShape(28.dp),
+        color = cardColor
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Surface(
+                modifier = Modifier.size(72.dp),
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.secondaryContainer
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(Icons.Rounded.MusicNote, null, modifier = Modifier.size(36.dp), tint = MaterialTheme.colorScheme.onSecondaryContainer)
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+            Text(stat.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, maxLines = 1, textAlign = TextAlign.Center)
+            Text("${stat.playCount} sessions", style = MaterialTheme.typography.labelSmall, color = secondaryTextColor)
+        }
+    }
+}
+
+@Composable
+fun HistoryItem(
+    entry: PlayHistoryEntry,
+    textColor: Color,
+    secondaryTextColor: Color
+) {
+    ListItem(
+        headlineContent = { Text(entry.title, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        supportingContent = { Text("${entry.artist} • ${formatTimestamp(entry.timestamp)}", color = secondaryTextColor, maxLines = 1) },
+        leadingContent = {
+            AsyncImage(
+                model = entry.thumbnailUrl,
+                contentDescription = null,
+                modifier = Modifier.size(48.dp).clip(RoundedCornerShape(10.dp)),
+                contentScale = ContentScale.Crop
+            )
+        },
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+    )
+}
+
+private fun formatTime(seconds: Long): String {
+    val h = seconds / 3600
+    val m = (seconds % 3600) / 60
+    return if (h > 0) "${h}h ${m}m" else "${m}m"
+}
+
+private fun formatTimestamp(timestamp: Long): String {
+    val date = java.util.Date(timestamp)
+    val formatter = java.text.SimpleDateFormat("MMM dd, HH:mm", java.util.Locale.getDefault())
+    return formatter.format(date)
+}
+
+
 @Composable
 fun LibraryContent(
     songs: List<Song>,
@@ -1106,25 +1482,22 @@ fun LibraryContent(
     viewModel: HomeViewModel,
     isDarkMode: Boolean,
     initialArtist: String? = null,
-    onInitialArtistConsumed: () -> Unit = {}
+    onInitialArtistConsumed: () -> Unit = {},
+    onStatsClick: () -> Unit = {}
 ) {
     var viewedPlaylist by remember { mutableStateOf<com.ivor.ivormusic.data.PlaylistDisplayItem?>(null) }
     var viewedArtist by remember { mutableStateOf<String?>(null) }
-    // Album navigation state: Pair<albumName, List<Song>>
     var viewedAlbum by remember { mutableStateOf<Pair<String, List<Song>>?>(null) }
     
-    // Handle initial artist navigation from player
     LaunchedEffect(initialArtist) {
         if (initialArtist != null) {
             viewedArtist = initialArtist
-            // Clear other views to ensure artist is shown
             viewedAlbum = null
             viewedPlaylist = null
             onInitialArtistConsumed()
         }
     }
     
-    // Handle system back button for nested screens
     androidx.activity.compose.BackHandler(enabled = viewedPlaylist != null || viewedArtist != null || viewedAlbum != null) {
         when {
             viewedAlbum != null -> viewedAlbum = null
@@ -1133,7 +1506,6 @@ fun LibraryContent(
         }
     }
     
-    // Determine current navigation state
     val currentScreen = when {
         viewedAlbum != null -> "album"
         viewedArtist != null -> "artist"
@@ -1141,14 +1513,25 @@ fun LibraryContent(
         else -> "library"
     }
     
+    val emphasizedEasing = androidx.compose.animation.core.CubicBezierEasing(0.2f, 0f, 0f, 1f)
+    
     androidx.compose.animation.AnimatedContent(
         targetState = currentScreen,
         label = "LibraryNav",
         transitionSpec = {
-            androidx.compose.animation.slideInHorizontally { width -> width } + 
-                androidx.compose.animation.fadeIn() togetherWith
-            androidx.compose.animation.slideOutHorizontally { width -> -width } + 
-                androidx.compose.animation.fadeOut()
+            val emphasizedTweenEnter = androidx.compose.animation.core.tween<androidx.compose.ui.unit.IntOffset>(
+                durationMillis = 500,
+                easing = emphasizedEasing
+            )
+            val emphasizedTweenFade = androidx.compose.animation.core.tween<Float>(
+                durationMillis = 400,
+                easing = emphasizedEasing
+            )
+            
+            androidx.compose.animation.slideInHorizontally(animationSpec = emphasizedTweenEnter) { width -> width } + 
+                androidx.compose.animation.fadeIn(animationSpec = emphasizedTweenFade) togetherWith
+            androidx.compose.animation.slideOutHorizontally(animationSpec = emphasizedTweenEnter) { width -> -width / 4 } + 
+                androidx.compose.animation.fadeOut(animationSpec = emphasizedTweenFade)
         }
     ) { screen ->
         when (screen) {
@@ -1205,7 +1588,8 @@ fun LibraryContent(
                     },
                     contentPadding = contentPadding,
                     viewModel = viewModel,
-                    isDarkMode = isDarkMode
+                    isDarkMode = isDarkMode,
+                    onStatsClick = onStatsClick
                 )
             }
         }

@@ -114,6 +114,7 @@ import androidx.compose.animation.with
 import kotlinx.coroutines.launch
 import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.ui.video.VideoHomeContent
+import com.ivor.ivormusic.ui.library.LibraryContent
 
 
 import androidx.compose.animation.ExperimentalAnimationApi
@@ -132,6 +133,7 @@ fun HomeScreen(
     onThemeToggle: (Boolean) -> Unit = {},
     onNavigateToSettings: () -> Unit = {},
     onNavigateToDownloads: () -> Unit = {},
+    onNavigateToStats: () -> Unit = {},
     onNavigateToVideoPlayer: (VideoItem) -> Unit = {},
     loadLocalSongs: Boolean = true,
     excludedFolders: Set<String> = emptySet(),
@@ -364,7 +366,8 @@ fun HomeScreen(
                                 viewModel = viewModel,
                                 isDarkMode = isDarkMode,
                                 initialArtist = viewedArtistFromPlayer,
-                                onInitialArtistConsumed = { viewedArtistFromPlayer = null }
+                                onInitialArtistConsumed = { viewedArtistFromPlayer = null },
+                                onStatsClick = onNavigateToStats
                             )
                         }
                     }
@@ -1171,132 +1174,5 @@ fun QuickPicksSection(
     }
 }
 
-@Composable
-fun LibraryContent(
-    songs: List<Song>,
-    onSongClick: (Song) -> Unit,
-    onPlaylistClick: (com.ivor.ivormusic.data.PlaylistDisplayItem) -> Unit = {},
-    onPlayQueue: (List<Song>, Song?) -> Unit,
-    contentPadding: PaddingValues,
-    viewModel: HomeViewModel,
-    isDarkMode: Boolean,
-    initialArtist: String? = null,
-    onInitialArtistConsumed: () -> Unit = {}
-) {
-    var viewedPlaylist by remember { mutableStateOf<com.ivor.ivormusic.data.PlaylistDisplayItem?>(null) }
-    var viewedArtist by remember { mutableStateOf<String?>(null) }
-    // Album navigation state: Pair<albumName, List<Song>>
-    var viewedAlbum by remember { mutableStateOf<Pair<String, List<Song>>?>(null) }
-    
-    // Handle external navigation from player when artist is clicked
-    LaunchedEffect(initialArtist) {
-        if (initialArtist != null) {
-            viewedArtist = initialArtist
-            onInitialArtistConsumed()
-        }
-    }
-    
-    // Handle system back button for nested screens
-    BackHandler(enabled = viewedPlaylist != null || viewedArtist != null || viewedAlbum != null) {
-        when {
-            viewedAlbum != null -> viewedAlbum = null
-            viewedArtist != null -> viewedArtist = null
-            viewedPlaylist != null -> viewedPlaylist = null
-        }
-    }
-    
-    // Determine current navigation state
-    val currentScreen = when {
-        viewedAlbum != null -> "album"
-        viewedArtist != null -> "artist"
-        viewedPlaylist != null -> "playlist"
-        else -> "library"
-    }
-    
-    // Helper to determine screen depth for animation direction
-    val getWrapperDepth = { screenName: String ->
-        when (screenName) {
-            "library" -> 0
-            "playlist" -> 1
-            "artist" -> 1
-            "album" -> 2
-            else -> 0
-        }
-    }
-    
-    androidx.compose.animation.AnimatedContent(
-        targetState = currentScreen,
-        label = "LibraryNav",
-        transitionSpec = {
-            val initialDepth = getWrapperDepth(initialState)
-            val targetDepth = getWrapperDepth(targetState)
-            
-            if (targetDepth > initialDepth) {
-                // Push (Going deeper)
-                (androidx.compose.animation.slideInHorizontally { width -> width } + 
-                        androidx.compose.animation.fadeIn()) togetherWith
-                        (androidx.compose.animation.slideOutHorizontally { width -> -width / 3 } + 
-                                androidx.compose.animation.fadeOut())
-            } else {
-                // Pop (Going back)
-                (androidx.compose.animation.slideInHorizontally { width -> -width / 3 } + 
-                        androidx.compose.animation.fadeIn()) togetherWith
-                        (androidx.compose.animation.slideOutHorizontally { width -> width } + 
-                                androidx.compose.animation.fadeOut())
-            }
-        }
-    ) { screen ->
-        when (screen) {
-            "album" -> {
-                viewedAlbum?.let { (albumName, albumSongs) ->
-                    com.ivor.ivormusic.ui.artist.AlbumScreen(
-                        albumName = albumName,
-                        artistName = albumSongs.firstOrNull()?.artist ?: "Unknown Artist",
-                        songs = albumSongs,
-                        onBack = { viewedAlbum = null },
-                        onPlayQueue = onPlayQueue
-                    )
-                }
-            }
-            "artist" -> {
-                viewedArtist?.let { artistName ->
-                    com.ivor.ivormusic.ui.artist.ArtistScreen(
-                        artistName = artistName,
-                        songs = songs,
-                        onBack = { viewedArtist = null },
-                        onPlayQueue = onPlayQueue,
-                        onSongClick = onSongClick,
-                        onAlbumClick = { album, albumSongs -> 
-                            viewedAlbum = album to albumSongs 
-                        },
-                        viewModel = viewModel
-                    )
-                }
-            }
-            "playlist" -> {
-                viewedPlaylist?.let { playlist ->
-                    com.ivor.ivormusic.ui.library.PlaylistDetailScreen(
-                        playlist = playlist,
-                        onBack = { viewedPlaylist = null },
-                        onPlayQueue = onPlayQueue,
-                        viewModel = viewModel,
-                        isDarkMode = isDarkMode
-                    )
-                }
-            }
-            else -> {
-                com.ivor.ivormusic.ui.library.LibraryScreen(
-                    songs = songs,
-                    onSongClick = onSongClick,
-                    onPlayQueue = onPlayQueue,
-                    onPlaylistClick = { viewedPlaylist = it },
-                    onArtistClick = { viewedArtist = it },
-                    contentPadding = contentPadding,
-                    viewModel = viewModel,
-                    isDarkMode = isDarkMode
-                )
-            }
-        }
-    }
-}
+
 

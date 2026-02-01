@@ -80,6 +80,9 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     // Lyrics Repository and State
     private val lyricsRepository = LyricsRepository()
     
+    // Stats Repository
+    private val statsRepository = com.ivor.ivormusic.data.StatsRepository(context)
+
     private val _lyricsResult = MutableStateFlow<LyricsResult>(LyricsResult.Loading)
     val lyricsResult: StateFlow<LyricsResult> = _lyricsResult.asStateFlow()
     
@@ -232,9 +235,10 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                         // Save as last played song for restoration
                         themePreferences.saveLastPlayedSong(it)
                         
-                        // Sync history with YouTube
+                        // Sync history with YouTube and Local Stats
                         viewModelScope.launch {
                             youTubeRepository.reportPlayback(it.id)
+                            statsRepository.addPlayEvent(it)
                         }
                         
                         // AUTO-QUEUE: Check if we need to load more songs

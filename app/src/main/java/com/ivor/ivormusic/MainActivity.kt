@@ -35,6 +35,7 @@ import com.ivor.ivormusic.ui.player.PlayerViewModel
 import com.ivor.ivormusic.ui.theme.IvorMusicTheme
 import com.ivor.ivormusic.ui.theme.ThemeViewModel
 import com.ivor.ivormusic.data.PlayerStyle
+import androidx.compose.ui.unit.dp
 
 
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -50,7 +51,6 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         
-        // Request notification permission for Android 13+ (for download notifications)
         requestNotificationPermission()
         
         setContent {
@@ -63,7 +63,6 @@ class MainActivity : ComponentActivity() {
             val saveVideoHistory by themeViewModel.saveVideoHistory.collectAsState()
             val excludedFolders by themeViewModel.excludedFolders.collectAsState()
             
-            // Cache & Crossfade
             val cacheEnabled by themeViewModel.cacheEnabled.collectAsState()
             val maxCacheSizeMb by themeViewModel.maxCacheSizeMb.collectAsState()
             val currentCacheSize by themeViewModel.currentCacheSizeBytes.collectAsState()
@@ -85,7 +84,6 @@ class MainActivity : ComponentActivity() {
                     onThemeModeChange = { themeViewModel.setThemeMode(it) },
                     isDarkMode = isDarkTheme, // Derived for compatibility
                     onThemeToggle = { isDark ->
-                        // Fallback toggle for legacy consumers
                         themeViewModel.setThemeMode(if (isDark) ThemeMode.DARK else ThemeMode.LIGHT)
                     },
                     loadLocalSongs = loadLocalSongs,
@@ -170,7 +168,6 @@ fun MusicApp(
     
     val videoPlayerViewModel: com.ivor.ivormusic.ui.video.VideoPlayerViewModel = viewModel()
     
-    // Root container with theme background to prevent "flashbangs" during transitions
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -189,6 +186,7 @@ fun MusicApp(
                     onThemeToggle = onThemeToggle,
                     onNavigateToSettings = { navController.navigate("settings") },
                     onNavigateToDownloads = { navController.navigate("downloads") },
+                    onNavigateToStats = { navController.navigate("stats") },
                     onNavigateToVideoPlayer = { video ->
                         videoPlayerViewModel.playVideo(video)
                     },
@@ -270,9 +268,41 @@ fun MusicApp(
                     }
                 )
             }
+            composable(
+                route = "stats",
+                enterTransition = { 
+                    slideInHorizontally(
+                        initialOffsetX = { it },
+                        animationSpec = androidx.compose.animation.core.tween(500, easing = androidx.compose.animation.core.CubicBezierEasing(0.2f, 0f, 0f, 1f))
+                    ) + fadeIn(animationSpec = androidx.compose.animation.core.tween(400))
+                },
+                exitTransition = { 
+                    slideOutHorizontally(
+                        targetOffsetX = { it },
+                        animationSpec = androidx.compose.animation.core.tween(500, easing = androidx.compose.animation.core.CubicBezierEasing(0.2f, 0f, 0f, 1f))
+                    ) + fadeOut(animationSpec = androidx.compose.animation.core.tween(400))
+                },
+                popEnterTransition = { 
+                    slideInHorizontally(
+                        initialOffsetX = { -it / 3 },
+                        animationSpec = androidx.compose.animation.core.tween(500, easing = androidx.compose.animation.core.CubicBezierEasing(0.2f, 0f, 0f, 1f))
+                    ) + fadeIn(animationSpec = androidx.compose.animation.core.tween(400))
+                },
+                popExitTransition = { 
+                    slideOutHorizontally(
+                        targetOffsetX = { it },
+                        animationSpec = androidx.compose.animation.core.tween(500, easing = androidx.compose.animation.core.CubicBezierEasing(0.2f, 0f, 0f, 1f))
+                    ) + fadeOut(animationSpec = androidx.compose.animation.core.tween(400))
+                }
+            ) {
+                com.ivor.ivormusic.ui.library.StatsScreen(
+                    onBack = { navController.popBackStack() },
+                    viewModel = homeViewModel,
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 160.dp)
+                )
+            }
         }
         
-        // Video Overlay
         com.ivor.ivormusic.ui.video.VideoPlayerOverlay(
             viewModel = videoPlayerViewModel
         )
