@@ -89,22 +89,11 @@ private fun getSegmentedShape(index: Int, count: Int, cornerSize: androidx.compo
     }
 }
 
-// MaterialShapes.toShape() is used directly - no custom PolygonShape needed
-
-/**
- * 🌟 Material 3 Expressive Artist Screen
- * 
- * Design Features:
- * - Large hero header with organic shapes and gradient background
- * - Animated floating album art thumbnails
- * - Big centered 8-sided play button
- * - Fetches data from internet if no local songs
- * - Premium card design for song list
- */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun ArtistScreen(
     artistName: String,
+    artistId: String? = null,
     songs: List<Song>,
     onBack: () -> Unit,
     onPlayQueue: (List<Song>, Song?) -> Unit,
@@ -125,6 +114,7 @@ fun ArtistScreen(
     
     // State for fetched songs
     var artistSongs by remember { mutableStateOf<List<Song>>(emptyList()) }
+    var fetchedAlbums by remember { mutableStateOf<List<com.ivor.ivormusic.data.PlaylistDisplayItem>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
     var isLoadingMore by remember { mutableStateOf(false) }
     var visibleSongCount by remember { mutableIntStateOf(20) }
@@ -132,7 +122,7 @@ fun ArtistScreen(
     val scope = rememberCoroutineScope()
     
     // Fetch songs - first check local, then fetch from internet
-    LaunchedEffect(artistName, songs) {
+    LaunchedEffect(artistName, artistId, songs) {
         isLoading = true
         visibleSongCount = 20
         
@@ -145,11 +135,23 @@ fun ArtistScreen(
             // Use local songs if available
             artistSongs = localArtistSongs
             hasLocalSongs = true
+            // Local albums are derived automatically below
             isLoading = false
         } else if (viewModel != null) {
             // Fetch from internet if no local songs
-            val fetchedSongs = viewModel.searchArtistSongs(artistName)
-            artistSongs = fetchedSongs
+            if (artistId != null) {
+                 val (songs, albums) = viewModel.getArtistDetails(artistId)
+                 artistSongs = songs
+                 fetchedAlbums = albums
+                 
+                 // Fallback: If ID-based fetch returned no songs, try simple search by name
+                 if (artistSongs.isEmpty()) {
+                     artistSongs = viewModel.searchArtistSongs(artistName)
+                 }
+            } else {
+                 val fetchedSongs = viewModel.searchArtistSongs(artistName)
+                 artistSongs = fetchedSongs
+            }
             hasLocalSongs = false
             isLoading = false
         } else {
@@ -159,12 +161,13 @@ fun ArtistScreen(
         }
     }
     
-    // Get unique albums (only meaningful for local songs with album metadata)
-    val albums = remember(artistSongs, hasLocalSongs) {
+    // Get unique albums (Local + Fetched)
+    val albums = remember(artistSongs, hasLocalSongs, fetchedAlbums) {
         if (hasLocalSongs) {
             artistSongs.groupBy { it.album }.keys.toList()
         } else {
-            emptyList() // YouTube search results don't have proper album info
+            // Use fetched albums if available
+            fetchedAlbums.map { it.name }
         }
     }
     
@@ -241,23 +244,36 @@ fun ArtistScreen(
                         ) {
                             val validAlbums = albums.filter { it.isNotBlank() && !it.startsWith("Unknown") }
                             items(validAlbums.size) { index ->
-                                val album = validAlbums[index]
-                                val albumSongs = artistSongs.filter { it.album == album }
-                                val albumArt = albumSongs.firstOrNull()?.let { 
-                                    it.highResThumbnailUrl ?: it.thumbnailUrl ?: it.albumArtUri?.toString() 
+                                val albumName = validAlbums[index]
+                                val albumSongs = if (hasLocalSongs) artistSongs.filter { it.album == albumName } else emptyList()
+                                
+                                val fetchedAlbum = fetchedAlbums.find { it.name == albumName }
+                                val songCount = if (hasLocalSongs) albumSongs.size else (fetchedAlbum?.itemCount ?: 0)
+                                val thumbnailUrl = if (hasLocalSongs) {
+                                    albumSongs.firstOrNull()?.let { it.highResThumbnailUrl ?: it.thumbnailUrl ?: it.albumArtUri?.toString() }
+                                } else {
+                                    fetchedAlbum?.thumbnailUrl
                                 }
                                 
                                 AlbumCard(
-                                    albumName = album,
-                                    songCount = albumSongs.size,
-                                    thumbnailUrl = albumArt,
+                                    albumName = albumName,
+                                    songCount = songCount,
+                                    thumbnailUrl = thumbnailUrl,
                                     primaryColor = primaryColor,
                                     cardColor = cardColor,
                                     textColor = textColor,
                                     secondaryTextColor = secondaryTextColor,
                                     onClick = { 
-                                        onAlbumClick?.invoke(album, albumSongs) 
-                                            ?: onPlayQueue(albumSongs, null) 
+                                        if (hasLocalSongs) {
+                                            onAlbumClick?.invoke(albumName, albumSongs) ?: onPlayQueue(albumSongs, null)
+                                        } else if (fetchedAlbum != null) {
+                                            // For fetched albums, we navigate to the album detail
+                                            // and let it fetch songs. We use onAlbumClick but with
+                                            // an empty list initially, or better, we pass the URL.
+                                            // For now, let's just use the Callback in a way that
+                                            // can be handled.
+                                            onAlbumClick?.invoke(albumName, emptyList())
+                                        }
                                     }
                                 )
                             }

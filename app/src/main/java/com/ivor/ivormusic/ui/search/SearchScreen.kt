@@ -22,16 +22,25 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.TravelExplore
+import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.rounded.Album
+import androidx.compose.material.icons.rounded.QueueMusic
+import androidx.compose.material.icons.rounded.SmartDisplay
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.HorizontalDivider
@@ -63,12 +72,27 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.material3.TextButton
 import coil.compose.AsyncImage
 import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.data.VideoItem
+import com.ivor.ivormusic.data.ArtistItem
+import com.ivor.ivormusic.data.PlaylistDisplayItem
 import com.ivor.ivormusic.ui.home.HomeViewModel
+import androidx.compose.material3.MaterialShapes
+import androidx.compose.material3.toShape
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.graphics.Outline
+import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Search
 import com.ivor.ivormusic.ui.video.VideoCard
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -102,6 +126,9 @@ fun SearchScreen(
     onSongClick: (Song) -> Unit,
     onPlayQueue: (List<Song>, Song) -> Unit = { _, song -> onSongClick(song) },
     onVideoClick: (VideoItem) -> Unit = {},
+    onArtistClick: (ArtistItem) -> Unit = {},
+    onAlbumClick: (PlaylistDisplayItem) -> Unit = {},
+    onPlaylistClick: (PlaylistDisplayItem) -> Unit = {},
     contentPadding: PaddingValues,
     viewModel: HomeViewModel,
     isDarkMode: Boolean,
@@ -113,8 +140,18 @@ fun SearchScreen(
     var isLoadingMore by remember { mutableStateOf(false) }
     var youtubeResults by remember { mutableStateOf<List<Song>>(emptyList()) }
     var videoResults by remember { mutableStateOf<List<VideoItem>>(emptyList()) }
+    var artistResults by remember { mutableStateOf<List<ArtistItem>>(emptyList()) }
+    var albumResults by remember { mutableStateOf<List<PlaylistDisplayItem>>(emptyList()) }
+    var playlistResults by remember { mutableStateOf<List<PlaylistDisplayItem>>(emptyList()) }
+    var selectedCategory by remember { mutableStateOf(SearchCategory.SONGS) }
+    
     var visibleLocalCount by remember { mutableIntStateOf(20) }
     val scope = rememberCoroutineScope()
+    val focusManager = LocalFocusManager.current
+    
+    // Search history and focus state
+    val searchHistory by viewModel.searchHistory.collectAsState()
+    var isSearchFocused by remember { mutableStateOf(false) }
     
     // Theme colors from MaterialTheme
     val backgroundColor = MaterialTheme.colorScheme.background
@@ -135,24 +172,36 @@ fun SearchScreen(
         }
     }
     
-    // Search YouTube/Videos when query changes
-    LaunchedEffect(query, videoMode) {
-        if (query.length >= 3) {
+    // Search YouTube/Videos/Artists/Albums/Playlists when query changes
+    LaunchedEffect(query, videoMode, selectedCategory) {
+        if (query.length >= 2) {
             delay(500) // Debounce
             isLoading = true
+            
+            // Clear previous results of other types
+            youtubeResults = emptyList()
+            videoResults = emptyList()
+            artistResults = emptyList()
+            albumResults = emptyList()
+            playlistResults = emptyList()
+
             if (videoMode) {
-                // Search for videos in video mode
-                videoResults = viewModel.searchVideos(query)
-                youtubeResults = emptyList()
+                 videoResults = viewModel.searchVideos(query)
             } else {
-                // Search for songs in music mode
-                youtubeResults = viewModel.searchYouTube(query)
-                videoResults = emptyList()
+                when (selectedCategory) {
+                    SearchCategory.SONGS -> youtubeResults = viewModel.searchYouTube(query)
+                    SearchCategory.ARTISTS -> artistResults = viewModel.searchArtists(query)
+                    SearchCategory.ALBUMS -> albumResults = viewModel.searchAlbums(query)
+                    SearchCategory.PLAYLISTS -> playlistResults = viewModel.searchPlaylists(query)
+                }
             }
             isLoading = false
         } else {
             youtubeResults = emptyList()
             videoResults = emptyList()
+            artistResults = emptyList()
+            albumResults = emptyList()
+            playlistResults = emptyList()
         }
     }
     
@@ -175,6 +224,13 @@ fun SearchScreen(
                 SearchHeroHeader(
                     query = query,
                     onQueryChange = { query = it },
+                    onFocusChanged = { isSearchFocused = it },
+                    onSearch = { 
+                        if (it.isNotBlank()) {
+                            viewModel.addToSearchHistory(it)
+                            focusManager.clearFocus()
+                        }
+                    },
                     primaryColor = primaryColor,
                     primaryContainerColor = primaryContainerColor,
                     tertiaryContainerColor = tertiaryContainerColor,
@@ -184,8 +240,38 @@ fun SearchScreen(
                 )
             }
             
+            // Category Chips (only in Music Mode)
+            if (!videoMode && query.isNotEmpty()) {
+                item {
+                    SearchFilterChips(
+                        selectedCategory = selectedCategory,
+                        onCategorySelected = { selectedCategory = it },
+                        primaryColor = primaryColor,
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
+                    )
+                }
+            }
+            
             // ========== CONTENT ==========
             when {
+                // Show search history if focused and query is empty
+                isSearchFocused && query.isEmpty() && searchHistory.isNotEmpty() -> {
+                    item {
+                        SearchHistoryList(
+                            history = searchHistory,
+                            onHistoryClick = { 
+                                query = it
+                                focusManager.clearFocus()
+                            },
+                            onRemoveClick = { viewModel.removeFromSearchHistory(it) },
+                            onClearAll = { viewModel.clearSearchHistory() },
+                            textColor = textColor,
+                            secondaryTextColor = secondaryTextColor,
+                            surfaceColor = surfaceColor
+                        )
+                    }
+                }
+
                 isLoading -> {
                     item {
                         Box(
@@ -201,7 +287,13 @@ fun SearchScreen(
                                 )
                                 Spacer(modifier = Modifier.height(16.dp))
                                 Text(
-                                    if (videoMode) "Searching YouTube Videos..." else "Searching YouTube Music...",
+                                    when {
+                                        videoMode -> "Searching Videos..."
+                                        selectedCategory == SearchCategory.ARTISTS -> "Searching Artists..."
+                                        selectedCategory == SearchCategory.ALBUMS -> "Searching Albums..."
+                                        selectedCategory == SearchCategory.PLAYLISTS -> "Searching Playlists..."
+                                        else -> "Searching Music..."
+                                    },
                                     color = secondaryTextColor,
                                     style = MaterialTheme.typography.bodyMedium
                                 )
@@ -311,6 +403,104 @@ fun SearchScreen(
                     }
                 }
                 
+                
+                artistResults.isNotEmpty() -> {
+                    item {
+                        ResultHeader(
+                            title = "Artists",
+                            count = artistResults.size,
+                            icon = Icons.Rounded.Person,
+                            color = Color(0xFF9C27B0), // Purple
+                            textColor = textColor,
+                            secondaryTextColor = secondaryTextColor
+                        )
+                    }
+                    
+                    val artistPairs = artistResults.chunked(2)
+                    items(artistPairs) { pair ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            pair.forEach { artist ->
+                                ArtistResultCard(
+                                    artist = artist,
+                                    onClick = { 
+                                        viewModel.addToSearchHistory(query)
+                                        onArtistClick(artist) 
+                                    },
+                                    cardColor = cardColor,
+                                    textColor = textColor,
+                                    secondaryTextColor = secondaryTextColor,
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                            if (pair.size == 1) {
+                                Spacer(modifier = Modifier.weight(1f))
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(16.dp))
+                    }
+                }
+
+                // --- Album Results ---
+                albumResults.isNotEmpty() -> {
+                     item {
+                        ResultHeader(
+                            title = "Albums",
+                            count = albumResults.size,
+                            icon = Icons.Rounded.Album,
+                            color = Color(0xFF_009688), // Teal
+                            textColor = textColor,
+                            secondaryTextColor = secondaryTextColor
+                        )
+                    }
+                    items(albumResults) { album ->
+                        PlaylistResultCard(
+                            item = album,
+                            onClick = { 
+                                viewModel.addToSearchHistory(query)
+                                onAlbumClick(album) 
+                            },
+                            cardColor = cardColor,
+                            textColor = textColor,
+                            secondaryTextColor = secondaryTextColor,
+                            isAlbum = true
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                    }
+                }
+
+                // --- Playlist Results ---
+                playlistResults.isNotEmpty() -> {
+                    item {
+                        ResultHeader(
+                            title = "Playlists",
+                            count = playlistResults.size,
+                            icon = Icons.Rounded.QueueMusic,
+                            color = Color(0xFF_FF9800), // Orange
+                            textColor = textColor,
+                            secondaryTextColor = secondaryTextColor
+                        )
+                    }
+                    items(playlistResults) { playlist ->
+                        PlaylistResultCard(
+                            item = playlist,
+                            onClick = { 
+                                viewModel.addToSearchHistory(query)
+                                onPlaylistClick(playlist) 
+                            },
+                            cardColor = cardColor,
+                            textColor = textColor,
+                            secondaryTextColor = secondaryTextColor,
+                            isAlbum = false
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                    }
+                }
+
                 youtubeResults.isNotEmpty() -> {
                     // YouTube Search Results Section
                     item {
@@ -613,6 +803,8 @@ fun SearchScreen(
 private fun SearchHeroHeader(
     query: String,
     onQueryChange: (String) -> Unit,
+    onFocusChanged: (Boolean) -> Unit,
+    onSearch: (String) -> Unit,
     primaryColor: Color,
     primaryContainerColor: Color,
     tertiaryContainerColor: Color,
@@ -679,7 +871,9 @@ private fun SearchHeroHeader(
             
             // Search Field with beautiful rounded corners
             Surface(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .onFocusChanged { onFocusChanged(it.isFocused) },
                 shape = RoundedCornerShape(28.dp),
                 color = surfaceColor,
                 tonalElevation = 4.dp,
@@ -713,6 +907,12 @@ private fun SearchHeroHeader(
                             }
                         }
                     },
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                        imeAction = androidx.compose.ui.text.input.ImeAction.Search
+                    ),
+                    keyboardActions = androidx.compose.foundation.text.KeyboardActions(
+                        onSearch = { onSearch(query) }
+                    ),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = textColor,
                         unfocusedTextColor = textColor,
@@ -871,5 +1071,339 @@ private fun SearchSongCard(
                 supportingColor = secondaryTextColor
             )
         )
+    }
+}
+
+enum class SearchCategory {
+    SONGS, ARTISTS, ALBUMS, PLAYLISTS
+}
+
+@Composable
+fun ResultHeader(
+    title: String,
+    count: Int,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    color: Color,
+    textColor: Color,
+    secondaryTextColor: Color
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)
+    ) {
+        Surface(
+            shape = CircleShape,
+            color = color.copy(alpha = 0.15f),
+            modifier = Modifier.size(32.dp)
+        ) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    icon,
+                    contentDescription = null,
+                    tint = color,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        }
+        Spacer(modifier = Modifier.size(12.dp))
+        Text(
+            title,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = textColor
+        )
+        Spacer(modifier = Modifier.weight(1f))
+        Text(
+            "$count results",
+            style = MaterialTheme.typography.bodySmall,
+            color = secondaryTextColor
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SearchFilterChips(
+    selectedCategory: SearchCategory,
+    onCategorySelected: (SearchCategory) -> Unit,
+    primaryColor: Color,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        SearchCategory.values().forEach { category ->
+            val selected = category == selectedCategory
+            FilterChip(
+                selected = selected,
+                onClick = { onCategorySelected(category) },
+                label = { 
+                    Text(
+                        category.name.lowercase().capitalize(), 
+                        style = MaterialTheme.typography.labelLarge
+                    ) 
+                },
+                leadingIcon = if (selected) {
+                    { Icon(androidx.compose.material.icons.Icons.Default.Check, null, modifier = Modifier.size(16.dp)) }
+                } else null,
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = primaryColor.copy(alpha = 0.1f),
+                    selectedLabelColor = primaryColor,
+                    selectedLeadingIconColor = primaryColor
+                )
+            )
+        }
+    }
+}
+
+private fun String.capitalize() = replaceFirstChar { if (it.isLowerCase()) it.titlecase(java.util.Locale.getDefault()) else it.toString() }
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+fun ArtistResultCard(
+    artist: ArtistItem,
+    onClick: () -> Unit,
+    cardColor: Color,
+    textColor: Color,
+    secondaryTextColor: Color,
+    modifier: Modifier = Modifier
+) {
+    // List of organic shapes from the library
+    val shapes = remember {
+        listOf(
+            MaterialShapes.Cookie9Sided,
+            MaterialShapes.ClamShell,
+            MaterialShapes.Flower,
+            MaterialShapes.Clover4Leaf,
+            MaterialShapes.Puffy,
+            MaterialShapes.Sunny
+        )
+    }
+    
+    val shapeItem = remember(artist.name) {
+        shapes[Math.abs(artist.name.hashCode()) % shapes.size]
+    }
+    val artistShape = shapeItem.toShape()
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(
+            modifier = Modifier
+                .size(140.dp)
+                .graphicsLayer { 
+                    shape = artistShape
+                    clip = true 
+                }
+                .background(MaterialTheme.colorScheme.surfaceVariant),
+            contentAlignment = Alignment.Center
+        ) {
+            AsyncImage(
+                model = artist.thumbnailUrl ?: "",
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+        
+        Spacer(modifier = Modifier.height(12.dp))
+        
+        Text(
+            text = artist.name,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = textColor,
+            textAlign = TextAlign.Center,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
+        ) {
+            if (artist.isVerified) {
+                Icon(
+                    androidx.compose.material.icons.Icons.Default.CheckCircle, 
+                    contentDescription = "Verified",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(14.dp)
+                )
+                Spacer(modifier = Modifier.size(4.dp))
+            }
+            
+            if (!artist.subscriberCount.isNullOrEmpty()) {
+                Text(
+                    text = "${artist.subscriberCount}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = secondaryTextColor,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+fun PlaylistResultCard(
+    item: PlaylistDisplayItem,
+    onClick: () -> Unit,
+    cardColor: Color,
+    textColor: Color,
+    secondaryTextColor: Color,
+    isAlbum: Boolean,
+    modifier: Modifier = Modifier
+) {
+     Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp),
+        color = cardColor,
+        shape = RoundedCornerShape(20.dp),
+        tonalElevation = 2.dp
+    ) {
+        Row(
+            modifier = Modifier
+                .clickable(onClick = onClick)
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+             val albumShape = MaterialShapes.Square.toShape()
+             val imageShape = if (isAlbum) albumShape else RoundedCornerShape(20.dp)
+             
+             AsyncImage(
+                model = item.thumbnailUrl ?: "",
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .size(64.dp)
+                    .clip(imageShape)
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+             )
+             Spacer(modifier = Modifier.size(16.dp))
+             
+             Column {
+                 Text(
+                     text = item.name,
+                     style = MaterialTheme.typography.titleMedium,
+                     fontWeight = FontWeight.SemiBold,
+                     color = textColor,
+                     maxLines = 1,
+                     overflow = TextOverflow.Ellipsis
+                 )
+                 Spacer(modifier = Modifier.height(2.dp))
+                 Row(verticalAlignment = Alignment.CenterVertically) {
+                      Icon(
+                         if (isAlbum) Icons.Rounded.Album else Icons.Rounded.QueueMusic,
+                         contentDescription = null,
+                         tint = secondaryTextColor,
+                         modifier = Modifier.size(14.dp)
+                      )
+                      Spacer(modifier = Modifier.size(6.dp))
+                      Text(
+                         text = if (isAlbum) "Album • ${item.uploaderName}" else "Playlist • ${item.uploaderName} • ${item.itemCount} songs",
+                         style = MaterialTheme.typography.bodySmall,
+                         color = secondaryTextColor,
+                         maxLines = 1,
+                         overflow = TextOverflow.Ellipsis
+                      )
+                 }
+             }
+        }
+    }
+}
+
+/**
+ * Search History List Composable
+ */
+@Composable
+fun SearchHistoryList(
+    history: List<String>,
+    onHistoryClick: (String) -> Unit,
+    onRemoveClick: (String) -> Unit,
+    onClearAll: () -> Unit,
+    textColor: Color,
+    secondaryTextColor: Color,
+    surfaceColor: Color
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 8.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "Recent searches",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                color = secondaryTextColor
+            )
+            TextButton(onClick = onClearAll) {
+                Text(
+                    "Clear all",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+        }
+        
+        history.forEach { query ->
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .clickable { onHistoryClick(query) },
+                color = surfaceColor.copy(alpha = 0.5f),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Rounded.History,
+                        contentDescription = null,
+                        tint = secondaryTextColor,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.size(16.dp))
+                    Text(
+                        text = query,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = textColor,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(
+                        onClick = { onRemoveClick(query) },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            Icons.Rounded.Close,
+                            contentDescription = "Remove",
+                            tint = secondaryTextColor,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+            }
+        }
     }
 }

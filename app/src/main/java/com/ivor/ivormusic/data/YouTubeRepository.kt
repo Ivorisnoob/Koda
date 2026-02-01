@@ -15,6 +15,9 @@ import org.schabi.newpipe.extractor.playlist.PlaylistInfoItem
 import org.schabi.newpipe.extractor.InfoItem
 import org.schabi.newpipe.extractor.stream.StreamType
 import org.schabi.newpipe.extractor.linkhandler.SearchQueryHandler
+import org.schabi.newpipe.extractor.channel.ChannelInfoItem
+import org.schabi.newpipe.extractor.ListExtractor
+import org.schabi.newpipe.extractor.Page
 import okhttp3.OkHttpClient
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -133,6 +136,143 @@ class YouTubeRepository(private val context: Context) {
             }
         } catch (e: Exception) {
             emptyList()
+        }
+    }
+
+    /**
+     * Search for playlists on YouTube Music.
+     */
+    suspend fun searchPlaylists(query: String): List<PlaylistDisplayItem> = withContext(Dispatchers.IO) {
+        try {
+            val ytService = ServiceList.all().find { it.serviceInfo.name == "YouTube" } ?: return@withContext emptyList()
+            val searchExtractor = ytService.getSearchExtractor(query, listOf(FILTER_PLAYLISTS), "")
+            searchExtractor.fetchPage()
+            
+            searchExtractor.initialPage.items.filterIsInstance<PlaylistInfoItem>().mapNotNull { item ->
+                PlaylistDisplayItem(
+                    name = item.name ?: "Unknown Playlist",
+                    url = item.url,
+                    uploaderName = item.uploaderName ?: "Unknown",
+                    itemCount = item.streamCount.toInt(),
+                    thumbnailUrl = item.thumbnails?.firstOrNull()?.url
+                )
+            }
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    /**
+     * Search for albums on YouTube Music.
+     * Note: Albums are often returned as PlaylistInfoItem in NewPipe for YouTube Music.
+     */
+    suspend fun searchAlbums(query: String): List<PlaylistDisplayItem> = withContext(Dispatchers.IO) {
+        try {
+            val ytService = ServiceList.all().find { it.serviceInfo.name == "YouTube" } ?: return@withContext emptyList()
+            val searchExtractor = ytService.getSearchExtractor(query, listOf(FILTER_ALBUMS), "")
+            searchExtractor.fetchPage()
+            
+            searchExtractor.initialPage.items.filterIsInstance<PlaylistInfoItem>().mapNotNull { item ->
+                PlaylistDisplayItem(
+                    name = item.name ?: "Unknown Album",
+                    url = item.url, // Album URL usually works like a playlist
+                    uploaderName = item.uploaderName ?: "Unknown Artist",
+                    itemCount = item.streamCount.toInt(),
+                    thumbnailUrl = item.thumbnails?.firstOrNull()?.url
+                )
+            }
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    /**
+     * Search for artists on YouTube Music.
+     */
+    suspend fun searchArtists(query: String): List<ArtistItem> = withContext(Dispatchers.IO) {
+        try {
+            val ytService = ServiceList.all().find { it.serviceInfo.name == "YouTube" } ?: return@withContext emptyList()
+            val searchExtractor = ytService.getSearchExtractor(query, listOf(FILTER_ARTISTS), "")
+            searchExtractor.fetchPage()
+            
+            searchExtractor.initialPage.items.filterIsInstance<ChannelInfoItem>().mapNotNull { item ->
+                ArtistItem(
+                    id = item.url.substringAfterLast("/"), // Extract Browse ID from URL
+                    name = item.name ?: "Unknown Artist",
+                    thumbnailUrl = item.thumbnails?.firstOrNull()?.url,
+                    subscriberCount = item.subscriberCount?.let { VideoItem.formatViewCount(it) }, // Reusing helper
+                    description = item.description,
+                    isVerified = item.isVerified
+                )
+            }
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    /**
+     * Get details for a specific artist (Songs and Albums).
+     */
+    suspend fun getArtistDetails(artistId: String): Pair<List<Song>, List<PlaylistDisplayItem>> = withContext(Dispatchers.IO) {
+        try {
+            val ytService = ServiceList.all().find { it.serviceInfo.name == "YouTube" } 
+                ?: return@withContext Pair(emptyList(), emptyList())
+            
+            val url = when {
+                artistId.startsWith("UC") || artistId.startsWith("UU") -> 
+                    "https://www.youtube.com/channel/$artistId"
+                artistId.startsWith("FMW") || artistId.startsWith("MPAD") ->
+                    "https://music.youtube.com/browse/$artistId"
+                else -> if (artistId.startsWith("@")) {
+                    "https://www.youtube.com/$artistId"
+                } else {
+                    "https://www.youtube.com/channel/$artistId" // Default to channel
+                }
+            }
+            android.util.Log.d("YouTubeRepo", "Fetching artist details from: $url")
+            val extractor = ytService.getChannelExtractor(url)
+            extractor.fetchPage()
+            
+            val artistName = extractor.name ?: "Unknown Artist"
+            val initialPage = (extractor as org.schabi.newpipe.extractor.ListExtractor<*>).initialPage
+            val items: List<InfoItem> = initialPage.items
+            
+            val songs = mutableListOf<Song>()
+            val albums = mutableListOf<PlaylistDisplayItem>()
+            
+            items.forEach { item ->
+                if (item is org.schabi.newpipe.extractor.stream.StreamInfoItem) {
+                    try {
+                        songs.add(
+                            Song.fromYouTube(
+                                videoId = extractVideoId(item.url),
+                                title = item.name ?: "Unknown",
+                                artist = item.uploaderName ?: artistName,
+                                album = "",
+                                duration = item.duration * 1000L,
+                                thumbnailUrl = item.thumbnails?.firstOrNull()?.url
+                            )
+                        )
+                    } catch (e: Exception) {}
+                } else if (item is org.schabi.newpipe.extractor.playlist.PlaylistInfoItem) {
+                    try {
+                        albums.add(
+                            PlaylistDisplayItem(
+                                name = item.name ?: "Unknown",
+                                url = item.url,
+                                uploaderName = item.uploaderName ?: artistName,
+                                itemCount = item.streamCount.toInt(),
+                                thumbnailUrl = item.thumbnails?.firstOrNull()?.url
+                            )
+                        )
+                    } catch (e: Exception) {}
+                }
+            }
+            
+            Pair(songs, albums)
+        } catch (e: Exception) {
+            android.util.Log.e("YouTubeRepo", "Error fetching artist details", e)
+            Pair(emptyList(), emptyList())
         }
     }
 

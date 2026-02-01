@@ -8,6 +8,8 @@ import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.data.SongRepository
 import com.ivor.ivormusic.data.FolderInfo
 import com.ivor.ivormusic.data.VideoItem
+import com.ivor.ivormusic.data.ArtistItem
+import com.ivor.ivormusic.data.PlaylistDisplayItem
 import com.ivor.ivormusic.data.YouTubeRepository
 import com.ivor.ivormusic.data.LikedSongsRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,9 +24,13 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val youtubeRepository = YouTubeRepository(application)
     private val playlistRepository = com.ivor.ivormusic.data.PlaylistRepository(application)
     private val sessionManager = SessionManager(application)
+    private val searchHistoryRepository = com.ivor.ivormusic.data.SearchHistoryRepository(application)
 
     private val _songs = MutableStateFlow<List<Song>>(emptyList())
     val songs: StateFlow<List<Song>> = _songs.asStateFlow()
+
+    private val _searchHistory = MutableStateFlow(searchHistoryRepository.getHistory())
+    val searchHistory: StateFlow<List<String>> = _searchHistory.asStateFlow()
 
     private val _youtubeSongs = MutableStateFlow<List<Song>>(emptyList())
     val youtubeSongs: StateFlow<List<Song>> = _youtubeSongs.asStateFlow()
@@ -206,6 +212,38 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     }
     
+
+    
+    /**
+     * Search Wrapper Functions for UI
+     */
+    suspend fun searchArtists(query: String): List<ArtistItem> {
+        if (query.isBlank()) return emptyList()
+        return try {
+            youtubeRepository.searchArtists(query)
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    suspend fun searchAlbums(query: String): List<PlaylistDisplayItem> {
+        if (query.isBlank()) return emptyList()
+        return try {
+            youtubeRepository.searchAlbums(query)
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    suspend fun searchPlaylists(query: String): List<PlaylistDisplayItem> {
+        if (query.isBlank()) return emptyList()
+        return try {
+            youtubeRepository.searchPlaylists(query)
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
     /**
      * Search for songs by a specific artist on YouTube Music.
      */
@@ -214,6 +252,14 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             youtubeRepository.search(artistName)
         } catch (e: Exception) {
             emptyList()
+        }
+    }
+
+    suspend fun getArtistDetails(artistId: String): Pair<List<Song>, List<PlaylistDisplayItem>> {
+        return try {
+            youtubeRepository.getArtistDetails(artistId)
+        } catch (e: Exception) {
+            Pair(emptyList(), emptyList())
         }
     }
     
@@ -331,5 +377,23 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             playlistRepository.addSongToPlaylist(playlistId, song)
         }
+    }
+
+    // --- Search History Actions ---
+
+    fun addToSearchHistory(query: String) {
+        if (query.isBlank()) return
+        searchHistoryRepository.addQuery(query)
+        _searchHistory.value = searchHistoryRepository.getHistory()
+    }
+
+    fun removeFromSearchHistory(query: String) {
+        searchHistoryRepository.removeQuery(query)
+        _searchHistory.value = searchHistoryRepository.getHistory()
+    }
+
+    fun clearSearchHistory() {
+        searchHistoryRepository.clearHistory()
+        _searchHistory.value = emptyList()
     }
 }
