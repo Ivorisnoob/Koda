@@ -2,6 +2,7 @@ package com.ivor.ivormusic.ui.home
 
 import android.Manifest
 import android.os.Build
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -579,8 +580,10 @@ fun YourMixContent(
     val backgroundColor = MaterialTheme.colorScheme.background
     val textColor = MaterialTheme.colorScheme.onBackground
     
+    val isRefreshing by viewModel.isLoading.collectAsState()
+    
     PullToRefreshBox(
-        isRefreshing = viewModel.isLoading.collectAsState().value,
+        isRefreshing = isRefreshing,
         onRefresh = { viewModel.refresh(excludedFolders) },
         modifier = Modifier.fillMaxSize()
     ) {
@@ -591,20 +594,64 @@ fun YourMixContent(
                 .windowInsetsPadding(WindowInsets.statusBars),
             contentPadding = PaddingValues(bottom = contentPadding.calculateBottomPadding())
         ) {
-            item { TopBarSection(onProfileClick = onProfileClick, onSettingsClick = onSettingsClick, onDownloadsClick = onDownloadsClick, isDarkMode = isDarkMode, viewModel = viewModel) }
-            item { HeroSection(songs = songs, onPlayClick = onPlayClick, isDarkMode = isDarkMode) }
-            item {
-                if (songs.isNotEmpty()) {
-                    OrganicSongLayout(songs = songs, onSongClick = onSongClick)
+            item { 
+                var visible by remember { mutableStateOf(false) }
+                LaunchedEffect(Unit) { visible = true }
+                Box(Modifier.graphicsLayer {
+                    alpha = if (visible) 1f else 0f
+                    translationY = if (visible) 0f else -20f
+                }.animateContentSize()) {
+                    TopBarSection(onProfileClick = onProfileClick, onSettingsClick = onSettingsClick, onDownloadsClick = onDownloadsClick, isDarkMode = isDarkMode, viewModel = viewModel)
                 }
             }
-            item {
-                Spacer(modifier = Modifier.height(32.dp))
-                RecentAlbumsSection(songs = songs, onSongClick = onSongClick, isDarkMode = isDarkMode)
+            
+            item { 
+                var visible by remember { mutableStateOf(false) }
+                LaunchedEffect(Unit) { kotlinx.coroutines.delay(100); visible = true }
+                Box(Modifier.graphicsLayer {
+                    alpha = if (visible) 1f else 0f
+                    translationY = if (visible) 0f else 40f
+                }) {
+                    HeroSection(songs = songs, onPlayClick = onPlayClick, isDarkMode = isDarkMode)
+                }
             }
+            
             item {
-                Spacer(modifier = Modifier.height(24.dp))
-                QuickPicksSection(songs = songs, onSongClick = onSongClick, isDarkMode = isDarkMode)
+                if (songs.isNotEmpty()) {
+                    var visible by remember { mutableStateOf(false) }
+                    LaunchedEffect(Unit) { kotlinx.coroutines.delay(200); visible = true }
+                    Box(Modifier.graphicsLayer {
+                        alpha = if (visible) 1f else 0f
+                        scaleX = if (visible) 1f else 0.9f
+                        scaleY = if (visible) 1f else 0.9f
+                    }) {
+                        OrganicSongLayout(songs = songs, onSongClick = onSongClick)
+                    }
+                }
+            }
+            
+            item {
+                var visible by remember { mutableStateOf(false) }
+                LaunchedEffect(Unit) { kotlinx.coroutines.delay(300); visible = true }
+                Column(Modifier.graphicsLayer {
+                    alpha = if (visible) 1f else 0f
+                    translationY = if (visible) 0f else 30f
+                }) {
+                    Spacer(modifier = Modifier.height(32.dp))
+                    RecentAlbumsSection(songs = songs, onSongClick = onSongClick, isDarkMode = isDarkMode)
+                }
+            }
+            
+            item {
+                var visible by remember { mutableStateOf(false) }
+                LaunchedEffect(Unit) { kotlinx.coroutines.delay(400); visible = true }
+                Column(Modifier.graphicsLayer {
+                    alpha = if (visible) 1f else 0f
+                    translationY = if (visible) 0f else 30f
+                }) {
+                    Spacer(modifier = Modifier.height(24.dp))
+                    QuickPicksSection(songs = songs, onSongClick = onSongClick, isDarkMode = isDarkMode)
+                }
             }
             item { Spacer(modifier = Modifier.height(32.dp)) }
         }

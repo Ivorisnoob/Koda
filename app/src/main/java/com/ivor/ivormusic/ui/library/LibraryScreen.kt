@@ -1258,8 +1258,8 @@ fun StatsScreen(
                             color = textColor
                         )
                     }
-                    items(currentStats.topSongs.take(5)) { songStat ->
-                        TopSongItem(songStat, cardColor, textColor, secondaryTextColor)
+                    itemsIndexed(currentStats.topSongs.take(5)) { index, songStat ->
+                        TopSongItem(songStat, cardColor, textColor, secondaryTextColor, index = index)
                     }
                 }
 
@@ -1277,8 +1277,8 @@ fun StatsScreen(
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
                             contentPadding = PaddingValues(vertical = 4.dp)
                         ) {
-                            items(currentStats.topArtists.take(10)) { artist ->
-                                TopArtistCard(artist, cardColor, textColor, secondaryTextColor)
+                            itemsIndexed(currentStats.topArtists.take(10)) { index, artist ->
+                                TopArtistCard(artist, cardColor, textColor, secondaryTextColor, index = index)
                             }
                         }
                     }
@@ -1295,7 +1295,7 @@ fun StatsScreen(
                         )
                     }
                     itemsIndexed(history.take(50)) { index, entry ->
-                        HistoryItem(entry, textColor, secondaryTextColor)
+                        HistoryItem(entry, textColor, secondaryTextColor, index = index)
                         if (index < history.size - 1) {
                             HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = textColor.copy(alpha = 0.05f))
                         }
@@ -1393,10 +1393,26 @@ fun TopSongItem(
     stat: SongStats,
     cardColor: Color,
     textColor: Color,
-    secondaryTextColor: Color
+    secondaryTextColor: Color,
+    index: Int = 0
 ) {
+    var visible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(200L + (index * 50))
+        visible = true
+    }
+
+    val alpha by animateFloatAsState(if (visible) 1f else 0f, tween(500), label = "alpha")
+    val translationY by animateFloatAsState(if (visible) 0f else 40f, spring(Spring.DampingRatioLowBouncy, Spring.StiffnessLow), label = "trans")
+
     Surface(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+            .graphicsLayer {
+                this.alpha = alpha
+                this.translationY = translationY
+            },
         shape = RoundedCornerShape(20.dp),
         color = cardColor
     ) {
@@ -1428,10 +1444,24 @@ fun TopArtistCard(
     stat: ArtistStats,
     cardColor: Color,
     textColor: Color,
-    secondaryTextColor: Color
+    secondaryTextColor: Color,
+    index: Int = 0
 ) {
+    var visible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(400L + (index * 80))
+        visible = true
+    }
+
+    val scale by animateFloatAsState(if (visible) 1f else 0.5f, spring(Spring.DampingRatioMediumBouncy, Spring.StiffnessLow), label = "scale")
+
     Surface(
-        modifier = Modifier.width(140.dp),
+        modifier = Modifier
+            .width(140.dp)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            },
         shape = RoundedCornerShape(28.dp),
         color = cardColor
     ) {
@@ -1440,6 +1470,7 @@ fun TopArtistCard(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
+            // Using an expressive shape for the artist icon container
             Surface(
                 modifier = Modifier.size(72.dp),
                 shape = CircleShape,
@@ -1460,9 +1491,23 @@ fun TopArtistCard(
 fun HistoryItem(
     entry: PlayHistoryEntry,
     textColor: Color,
-    secondaryTextColor: Color
+    secondaryTextColor: Color,
+    index: Int = 0
 ) {
+    var visible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(600L + (index * 30))
+        visible = true
+    }
+
+    val alpha by animateFloatAsState(if (visible) 1f else 0f, tween(300), label = "alpha")
+    val slide by animateFloatAsState(if (visible) 0f else 20f, spring(Spring.DampingRatioNoBouncy), label = "slide")
+
     ListItem(
+        modifier = Modifier.graphicsLayer {
+            this.alpha = alpha
+            this.translationX = slide
+        },
         headlineContent = { Text(entry.title, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis) },
         supportingContent = { Text("${entry.artist} • ${formatTimestamp(entry.timestamp)}", color = secondaryTextColor, maxLines = 1) },
         leadingContent = {
