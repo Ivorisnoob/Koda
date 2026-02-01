@@ -8,6 +8,8 @@ import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.data.SongRepository
 import com.ivor.ivormusic.data.FolderInfo
 import com.ivor.ivormusic.data.VideoItem
+import com.ivor.ivormusic.data.ArtistItem
+import com.ivor.ivormusic.data.PlaylistDisplayItem
 import com.ivor.ivormusic.data.YouTubeRepository
 import com.ivor.ivormusic.data.LikedSongsRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -206,6 +208,38 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     }
     
+
+    
+    /**
+     * Search Wrapper Functions for UI
+     */
+    suspend fun searchArtists(query: String): List<ArtistItem> {
+        if (query.isBlank()) return emptyList()
+        return try {
+            youtubeRepository.searchArtists(query)
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    suspend fun searchAlbums(query: String): List<PlaylistDisplayItem> {
+        if (query.isBlank()) return emptyList()
+        return try {
+            youtubeRepository.searchAlbums(query)
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    suspend fun searchPlaylists(query: String): List<PlaylistDisplayItem> {
+        if (query.isBlank()) return emptyList()
+        return try {
+            youtubeRepository.searchPlaylists(query)
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
     /**
      * Search for songs by a specific artist on YouTube Music.
      */

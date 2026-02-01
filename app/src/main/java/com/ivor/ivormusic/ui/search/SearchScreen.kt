@@ -28,10 +28,18 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.TravelExplore
+import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.rounded.Album
+import androidx.compose.material.icons.rounded.QueueMusic
+import androidx.compose.material.icons.rounded.SmartDisplay
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.HorizontalDivider
@@ -68,6 +76,8 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.data.VideoItem
+import com.ivor.ivormusic.data.ArtistItem
+import com.ivor.ivormusic.data.PlaylistDisplayItem
 import com.ivor.ivormusic.ui.home.HomeViewModel
 import com.ivor.ivormusic.ui.video.VideoCard
 import kotlinx.coroutines.delay
@@ -113,6 +123,12 @@ fun SearchScreen(
     var isLoadingMore by remember { mutableStateOf(false) }
     var youtubeResults by remember { mutableStateOf<List<Song>>(emptyList()) }
     var videoResults by remember { mutableStateOf<List<VideoItem>>(emptyList()) }
+    var artistResults by remember { mutableStateOf<List<ArtistItem>>(emptyList()) }
+    var albumResults by remember { mutableStateOf<List<PlaylistDisplayItem>>(emptyList()) }
+    var playlistResults by remember { mutableStateOf<List<PlaylistDisplayItem>>(emptyList()) }
+    
+    var selectedCategory by remember { mutableStateOf(SearchCategory.SONGS) }
+    
     var visibleLocalCount by remember { mutableIntStateOf(20) }
     val scope = rememberCoroutineScope()
     
@@ -135,24 +151,36 @@ fun SearchScreen(
         }
     }
     
-    // Search YouTube/Videos when query changes
-    LaunchedEffect(query, videoMode) {
-        if (query.length >= 3) {
+    // Search YouTube/Videos/Artists/Albums/Playlists when query changes
+    LaunchedEffect(query, videoMode, selectedCategory) {
+        if (query.length >= 2) {
             delay(500) // Debounce
             isLoading = true
+            
+            // Clear previous results of other types
+            youtubeResults = emptyList()
+            videoResults = emptyList()
+            artistResults = emptyList()
+            albumResults = emptyList()
+            playlistResults = emptyList()
+
             if (videoMode) {
-                // Search for videos in video mode
-                videoResults = viewModel.searchVideos(query)
-                youtubeResults = emptyList()
+                 videoResults = viewModel.searchVideos(query)
             } else {
-                // Search for songs in music mode
-                youtubeResults = viewModel.searchYouTube(query)
-                videoResults = emptyList()
+                when (selectedCategory) {
+                    SearchCategory.SONGS -> youtubeResults = viewModel.searchYouTube(query)
+                    SearchCategory.ARTISTS -> artistResults = viewModel.searchArtists(query)
+                    SearchCategory.ALBUMS -> albumResults = viewModel.searchAlbums(query)
+                    SearchCategory.PLAYLISTS -> playlistResults = viewModel.searchPlaylists(query)
+                }
             }
             isLoading = false
         } else {
             youtubeResults = emptyList()
             videoResults = emptyList()
+            artistResults = emptyList()
+            albumResults = emptyList()
+            playlistResults = emptyList()
         }
     }
     
@@ -184,6 +212,18 @@ fun SearchScreen(
                 )
             }
             
+            // Category Chips (only in Music Mode)
+            if (!videoMode && query.isNotEmpty()) {
+                item {
+                    SearchFilterChips(
+                        selectedCategory = selectedCategory,
+                        onCategorySelected = { selectedCategory = it },
+                        primaryColor = primaryColor,
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
+                    )
+                }
+            }
+            
             // ========== CONTENT ==========
             when {
                 isLoading -> {
@@ -201,7 +241,13 @@ fun SearchScreen(
                                 )
                                 Spacer(modifier = Modifier.height(16.dp))
                                 Text(
-                                    if (videoMode) "Searching YouTube Videos..." else "Searching YouTube Music...",
+                                    when {
+                                        videoMode -> "Searching Videos..."
+                                        selectedCategory == SearchCategory.ARTISTS -> "Searching Artists..."
+                                        selectedCategory == SearchCategory.ALBUMS -> "Searching Albums..."
+                                        selectedCategory == SearchCategory.PLAYLISTS -> "Searching Playlists..."
+                                        else -> "Searching Music..."
+                                    },
                                     color = secondaryTextColor,
                                     style = MaterialTheme.typography.bodyMedium
                                 )
@@ -311,6 +357,90 @@ fun SearchScreen(
                     }
                 }
                 
+                
+                // --- Artist Results ---
+                artistResults.isNotEmpty() -> {
+                    item {
+                        ResultHeader(
+                            title = "Artists",
+                            count = artistResults.size,
+                            icon = Icons.Rounded.Person,
+                            color = Color(0xFF_9C27B0), // Purple
+                            textColor = textColor,
+                            secondaryTextColor = secondaryTextColor
+                        )
+                    }
+                    itemsIndexed(artistResults) { index, artist ->
+                        ArtistResultCard(
+                             artist = artist,
+                             onClick = { /* TODO: Open Artist Page */ },
+                             cardColor = cardColor,
+                             textColor = textColor,
+                             secondaryTextColor = secondaryTextColor,
+                             modifier = Modifier.padding(horizontal = 20.dp)
+                        )
+                        if (index < artistResults.size - 1) {
+                            HorizontalDivider(modifier = Modifier.padding(horizontal = 44.dp), color = textColor.copy(alpha = 0.06f))
+                        }
+                    }
+                }
+
+                // --- Album Results ---
+                albumResults.isNotEmpty() -> {
+                     item {
+                        ResultHeader(
+                            title = "Albums",
+                            count = albumResults.size,
+                            icon = Icons.Rounded.Album,
+                            color = Color(0xFF_009688), // Teal
+                            textColor = textColor,
+                            secondaryTextColor = secondaryTextColor
+                        )
+                    }
+                    itemsIndexed(albumResults) { index, album ->
+                        PlaylistResultCard(
+                             item = album,
+                             onClick = { /* TODO: Open Album */ },
+                             cardColor = cardColor,
+                             textColor = textColor,
+                             secondaryTextColor = secondaryTextColor,
+                             isAlbum = true,
+                             modifier = Modifier.padding(horizontal = 20.dp)
+                        )
+                        if (index < albumResults.size - 1) {
+                            HorizontalDivider(modifier = Modifier.padding(horizontal = 44.dp), color = textColor.copy(alpha = 0.06f))
+                        }
+                    }
+                }
+
+                // --- Playlist Results ---
+                playlistResults.isNotEmpty() -> {
+                    item {
+                        ResultHeader(
+                            title = "Playlists",
+                            count = playlistResults.size,
+                            icon = Icons.Rounded.QueueMusic,
+                            color = Color(0xFF_FF9800), // Orange
+                            textColor = textColor,
+                            secondaryTextColor = secondaryTextColor
+                        )
+                    }
+                    itemsIndexed(playlistResults) { index, playlist ->
+                         PlaylistResultCard(
+                             item = playlist,
+                             onClick = { /* TODO: Open Playlist */ },
+                             cardColor = cardColor,
+                             textColor = textColor,
+                             secondaryTextColor = secondaryTextColor,
+                             isAlbum = false,
+                             modifier = Modifier.padding(horizontal = 20.dp)
+                        )
+                        if (index < playlistResults.size - 1) {
+                             HorizontalDivider(modifier = Modifier.padding(horizontal = 44.dp), color = textColor.copy(alpha = 0.06f))
+                        }
+                    }
+                }
+
                 youtubeResults.isNotEmpty() -> {
                     // YouTube Search Results Section
                     item {
@@ -871,5 +1001,219 @@ private fun SearchSongCard(
                 supportingColor = secondaryTextColor
             )
         )
+    }
+}
+
+enum class SearchCategory {
+    SONGS, ARTISTS, ALBUMS, PLAYLISTS
+}
+
+@Composable
+fun ResultHeader(
+    title: String,
+    count: Int,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    color: Color,
+    textColor: Color,
+    secondaryTextColor: Color
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)
+    ) {
+        Surface(
+            shape = CircleShape,
+            color = color.copy(alpha = 0.15f),
+            modifier = Modifier.size(32.dp)
+        ) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    icon,
+                    contentDescription = null,
+                    tint = color,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        }
+        Spacer(modifier = Modifier.size(12.dp))
+        Text(
+            title,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = textColor
+        )
+        Spacer(modifier = Modifier.weight(1f))
+        Text(
+            "$count results",
+            style = MaterialTheme.typography.bodySmall,
+            color = secondaryTextColor
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SearchFilterChips(
+    selectedCategory: SearchCategory,
+    onCategorySelected: (SearchCategory) -> Unit,
+    primaryColor: Color,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        SearchCategory.values().forEach { category ->
+            val selected = category == selectedCategory
+            FilterChip(
+                selected = selected,
+                onClick = { onCategorySelected(category) },
+                label = { 
+                    Text(
+                        category.name.lowercase().capitalize(), 
+                        style = MaterialTheme.typography.labelLarge
+                    ) 
+                },
+                leadingIcon = if (selected) {
+                    { Icon(androidx.compose.material.icons.Icons.Default.Check, null, modifier = Modifier.size(16.dp)) }
+                } else null,
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = primaryColor.copy(alpha = 0.1f),
+                    selectedLabelColor = primaryColor,
+                    selectedLeadingIconColor = primaryColor
+                )
+            )
+        }
+    }
+}
+
+private fun String.capitalize() = replaceFirstChar { if (it.isLowerCase()) it.titlecase(java.util.Locale.getDefault()) else it.toString() }
+
+@Composable
+fun ArtistResultCard(
+    artist: ArtistItem,
+    onClick: () -> Unit,
+    cardColor: Color,
+    textColor: Color,
+    secondaryTextColor: Color,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .clickable(onClick = onClick),
+        color = cardColor,
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+             AsyncImage(
+                model = artist.thumbnailUrl ?: "",
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .size(56.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+             )
+             Spacer(modifier = Modifier.size(16.dp))
+             
+             Column {
+                 Row(verticalAlignment = Alignment.CenterVertically) {
+                     Text(
+                         text = artist.name,
+                         style = MaterialTheme.typography.titleMedium,
+                         fontWeight = FontWeight.Bold,
+                         color = textColor
+                     )
+                     if (artist.isVerified) {
+                         Spacer(modifier = Modifier.size(4.dp))
+                         Icon(
+                             androidx.compose.material.icons.Icons.Default.CheckCircle, 
+                             contentDescription = "Verified",
+                             tint = MaterialTheme.colorScheme.primary,
+                             modifier = Modifier.size(14.dp)
+                         )
+                     }
+                 }
+                 if (!artist.subscriberCount.isNullOrEmpty()) {
+                     Text(
+                         text = "${artist.subscriberCount} subscribers",
+                         style = MaterialTheme.typography.bodySmall,
+                         color = secondaryTextColor
+                     )
+                 }
+             }
+        }
+    }
+}
+
+@Composable
+fun PlaylistResultCard(
+    item: PlaylistDisplayItem,
+    onClick: () -> Unit,
+    cardColor: Color,
+    textColor: Color,
+    secondaryTextColor: Color,
+    isAlbum: Boolean,
+    modifier: Modifier = Modifier
+) {
+     Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick),
+        color = cardColor,
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+             AsyncImage(
+                model = item.thumbnailUrl ?: "",
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .size(56.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+             )
+             Spacer(modifier = Modifier.size(16.dp))
+             
+             Column {
+                 Text(
+                     text = item.name,
+                     style = MaterialTheme.typography.titleMedium,
+                     fontWeight = FontWeight.SemiBold,
+                     color = textColor,
+                     maxLines = 1,
+                     overflow = TextOverflow.Ellipsis
+                 )
+                 Spacer(modifier = Modifier.height(2.dp))
+                 Row(verticalAlignment = Alignment.CenterVertically) {
+                      Icon(
+                         if (isAlbum) Icons.Rounded.Album else Icons.Rounded.QueueMusic,
+                         contentDescription = null,
+                         tint = secondaryTextColor,
+                         modifier = Modifier.size(12.dp)
+                      )
+                      Spacer(modifier = Modifier.size(4.dp))
+                      Text(
+                         text = if (isAlbum) "Album • ${item.uploaderName}" else "Playlist • ${item.uploaderName} • ${item.itemCount} songs",
+                         style = MaterialTheme.typography.bodySmall,
+                         color = secondaryTextColor,
+                         maxLines = 1,
+                         overflow = TextOverflow.Ellipsis
+                      )
+                 }
+             }
+        }
     }
 }
