@@ -234,6 +234,9 @@ app/src/main/java/com/ivor/ivormusic/
 
 ---
 
+## Technical Documentation
+For a deep dive into the app's inner workings, internal data flows, and architecture diagrams, see our [Documentation Hub](docs/README.md).
+
 ## Getting Started
 
 ### Prerequisites
