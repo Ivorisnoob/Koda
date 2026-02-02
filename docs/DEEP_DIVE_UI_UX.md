@@ -7,13 +7,16 @@ This document details the implementation of the app's visual identity, focusing 
 The app is built on the latest iterations of Material 3, emphasizing **expressive motion** and **organic shapes**.
 
 ### 1. Shape System
-Unlike standard Material 3, the "Expressive" variant uses more extreme corner radii and shape-morphing animations.
--   **Configuration**: Defined in `Theme.kt` via `ExpressiveShapes`.
+The app leverages the **Material 3 Expressive** shape system, which moves beyond static radii to dynamic, organic forms.
+
+-   **Composition Shapes**: Defined in `Theme.kt` via `ExpressiveShapes`.
+-   **Organic Polygons**: Uses the `MaterialShapes` object for non-geometric forms like `Cookie`, `Sunny`, and `SoftBurst`.
+    -   **Conversion**: Polygons are converted to usable Compose shapes via the `.toShape()` extension.
+    -   **Morphing**: Integrated into `LoadingIndicator` cycles and interactive button states.
 -   **Tokens**:
-    -   `extraLarge`: 36.dp (Used for Main Player and prominent cards).
-    -   `large`: 28.dp (Used for secondary containers).
-    -   `medium`: 20.dp (Used for search results and list items).
--   **Morphing**: Components like `ToggleButton` and `SplitButton` use `ButtonDefaults.shapes()` to animate between square and rounded states during interaction.
+    -   `extraLarge`: 36.dp (Main Player, Hero sections).
+    -   `large`: 28.dp (Floating toolbars, Bottom bars).
+    -   `medium`: 20.dp (Search result segments, Playlists).
 
 ### 2. Motion & Transitions
 The app utilizes a custom **Motion Scheme** that favors organic, spring-based easing.

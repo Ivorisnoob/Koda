@@ -1,6 +1,6 @@
 # Material 3 Components
 
-Material 3は38のドキュメント化されたコンポーネントを提供します。各コンポーネントには、概要、ガイドライン、仕様、アクセシビリティのサブページがあります。
+Material 3 provides 38 documented components. Each component includes sub-pages for overview, guidelines, specifications, and accessibility.
 
 ## Table of Contents
 
@@ -14,30 +14,30 @@ Material 3は38のドキュメント化されたコンポーネントを提供�
 
 ## Action Components
 
-ユーザーがアクションを実行するためのコンポーネント。
+Components that allow users to perform actions.
 
 ### Buttons
 
 #### Common Buttons
-主要なアクションのための標準的なボタン。
+Standard buttons for primary and secondary actions.
 
 **Variants:**
-- **Filled**: 最も高い強調度、プライマリアクション
-- **Filled Tonal**: 中程度の強調度、セカンダリアクション
-- **Outlined**: 線のみ、中程度の強調度
-- **Elevated**: 影付き、強調が必要だがFilledほどではない
-- **Text**: 最も低い強調度、補助的なアクション
+- **Filled**: Highest emphasis, for primary actions.
+- **Filled Tonal**: Medium emphasis, for secondary actions.
+- **Outlined**: Outline-only, medium emphasis.
+- **Elevated**: With shadow, used when emphasis is needed but less than Filled.
+- **Text**: Lowest emphasis, for auxiliary actions.
 
 **Usage Guidelines:**
-- 1つの画面にFilledボタンは1つまで推奨
-- ボタンの階層を明確に（Filled > Tonal > Outlined > Text）
-- 最小タッチターゲット: 48×48dp
-- ラベルは動詞で開始（例: "保存", "送信", "削除"）
+- Recommended to have only one Filled button per screen.
+- Maintain a clear hierarchy of buttons (Filled > Tonal > Outlined > Text).
+- Minimum touch target: 48×48dp.
+- Labels should start with a verb (e.g., "Save", "Send", "Delete").
 
 URL: https://m3.material.io/components/buttons/overview
 
 #### Icon Buttons
-コンパクトな補助的アクションボタン。
+Compact buttons for auxiliary actions.
 
 **Variants:**
 - Standard
@@ -46,41 +46,41 @@ URL: https://m3.material.io/components/buttons/overview
 - Outlined
 
 **Usage:**
-- 繰り返し使用されるアクション（お気に入り、共有、削除）
-- 限られたスペース
-- アイコンのみで意味が明確な場合
+- For repeating actions (Favorite, Share, Delete).
+- Limited space.
+- When the meaning is clear from the icon alone.
 
 URL: https://m3.material.io/components/icon-buttons/overview
 
 #### Floating Action Button (FAB)
-画面の主要アクションのための浮遊ボタン。
+A floating button for the screen's primary action.
 
 **Types:**
-- **FAB**: 標準的なFAB
-- **Small FAB**: 小さいFAB
-- **Large FAB**: 大きいFAB
-- **Extended FAB**: テキストラベル付きFAB
+- **FAB**: Standard FAB.
+- **Small FAB**: Smaller FAB.
+- **Large FAB**: Larger FAB.
+- **Extended FAB**: FAB with a text label.
 
 **Guidelines:**
-- 1画面に1つのFAB推奨
-- 最も重要なアクションのみ
-- 配置: 通常は右下
-- スクロール時の動作を考慮（隠す/縮小）
+- Recommend one FAB per screen.
+- Use only for the most important action.
+- Placement: Typically bottom-right.
+- Consider behavior during scrolling (hide or shrink).
 
 URL: https://m3.material.io/components/floating-action-button/overview
 
 #### Segmented Buttons
-関連するオプションの単一選択または複数選択グループ。
+A group of related options for single or multiple selection.
 
 **Usage:**
-- ビューの切り替え（リスト/グリッド）
-- フィルタリング（カテゴリ選択）
-- 設定オプション
+- Switching views (List/Grid).
+- Filtering (Category selection).
+- Configuration options.
 
 **Guidelines:**
-- 2-5個のオプション推奨
-- 各オプションは簡潔に（1-2語）
-- アイコン+テキストまたはテキストのみ
+- Recommended 2-5 options.
+- Labels should be concise (1-2 words).
+- Icon+text or text-only.
 
 URL: https://m3.material.io/components/segmented-buttons/overview
 
@@ -88,113 +88,113 @@ URL: https://m3.material.io/components/segmented-buttons/overview
 
 ## Selection and Input Components
 
-ユーザーが選択や入力を行うためのコンポーネント。
+Components that allow users to make selections or enter input.
 
 ### Checkbox
-リストから複数のアイテムを選択。
+Select multiple items from a list.
 
 **States:**
 - Unchecked
 - Checked
-- Indeterminate（部分選択）
+- Indeterminate (partial selection)
 
 **Usage:**
-- 複数選択
-- オン/オフ設定（ただしSwitchの方が適切な場合も）
-- リスト項目の選択
+- Multiple selection.
+- On/Off settings (though a Switch might be better in some cases).
+- Selecting list items.
 
 URL: https://m3.material.io/components/checkbox/guidelines
 
 ### Radio Button
-セットから1つのオプションを選択。
+Select a single option from a set.
 
 **Usage:**
-- 相互排他的なオプション（1つのみ選択可能）
-- すべてのオプションを表示する必要がある場合
-- 2-7個のオプション推奨
+- Mutually exclusive options (only one selection possible).
+- When all options need to be visible.
+- Recommended 2-7 options.
 
 **Guidelines:**
-- デフォルト選択肢を提供
-- オプションは垂直に配置推奨
-- ラベルはクリック可能に
+- Provide a default choice.
+- Recommended to arrange options vertically.
+- Labels should be clickable.
 
 URL: https://m3.material.io/components/radio-button/overview
 
 ### Switch
-バイナリのオン/オフ切り替え。
+Binary On/Off toggle.
 
 **Usage:**
-- 即座に効果が反映される設定
-- 単一アイテムの有効/無効化
-- リスト内の個別項目の切り替え
+- Settings where the effect is applied immediately.
+- Enabling/disabling a single item.
+- Toggling individual items within a list.
 
 **vs Checkbox:**
-- Switch: 即座に効果、状態の切り替え
-- Checkbox: 保存が必要、複数選択
+- Switch: Immediate effect, state change.
+- Checkbox: Requires saving, multiple selection.
 
 URL: https://m3.material.io/components/switch/guidelines
 
 ### Text Fields
-テキスト入力用のフォームフィールド。
+Form fields for text input.
 
 **Types:**
-- **Filled**: デフォルト、背景塗りつぶし
-- **Outlined**: 線のみ、フォーム内で推奨
+- **Filled**: Default, with a filled background.
+- **Outlined**: Outline-only, recommended for forms.
 
 **Elements:**
-- Label: 入力内容の説明
-- Input text: ユーザー入力
-- Helper text: 補助的な説明
-- Error text: エラーメッセージ
-- Leading/Trailing icons: アイコン
+- Label: Description of input.
+- Input text: User-entered text.
+- Helper text: Auxiliary instructions.
+- Error text: Error messages.
+- Leading/Trailing icons: Associated icons.
 
 **Guidelines:**
-- ラベルは簡潔に
-- プレースホルダーは補助的な例として使用
-- エラーは具体的に（"無効な入力" ではなく "有効なメールアドレスを入力してください"）
+- Labels should be concise.
+- Use placeholders as auxiliary examples.
+- Errors should be specific (e.g., "Please enter a valid email address" instead of "Invalid input").
 
 URL: https://m3.material.io/components/text-fields/overview
 
 ### Chips
-コンパクトな情報要素。
+Compact informational elements.
 
 **Types:**
-- **Assist**: アクションやヘルプのサジェスト
-- **Filter**: コンテンツのフィルタリング
-- **Input**: ユーザー入力（タグ、連絡先）
-- **Suggestion**: 動的な提案
+- **Assist**: Action or help suggestions.
+- **Filter**: Content filtering.
+- **Input**: User input (tags, contacts).
+- **Suggestion**: Dynamic suggestions.
 
 **Usage:**
-- タグや属性の表示
-- フィルタリングオプション
-- 選択されたアイテムの表示
+- Displaying tags or attributes.
+- Filtering options.
+- Displaying selected items.
 
 URL: https://m3.material.io/components/chips/guidelines
 
 ### Sliders
-範囲内の値を選択。
+Select a value from a range.
 
 **Types:**
-- Continuous: 連続的な値
-- Discrete: 離散的な値（ステップ付き）
+- Continuous: For a continuous range of values.
+- Discrete: For discrete values (with steps).
 
 **Usage:**
-- 音量、明るさ調整
-- 価格範囲選択
-- 数値設定
+- Volume, brightness adjustment.
+- Price range selection.
+- Numerical settings.
 
 URL: https://m3.material.io/components/sliders/specs
 
 ### Date Pickers / Time Pickers
-日付と時刻の選択。
+Selecting dates and times.
 
 **Date Picker Modes:**
-- Modal: ダイアログ形式
-- Docked: インライン表示
+- Modal: Dialog format.
+- Docked: Inline display.
 
 **Time Picker Types:**
-- Dial: ダイヤル形式
-- Input: テキスト入力形式
+- Dial: Dial format.
+- Input: Text input format.
 
 URL: https://m3.material.io/components/date-pickers
 
@@ -202,69 +202,69 @@ URL: https://m3.material.io/components/date-pickers
 
 ## Navigation Components
 
-アプリ内のナビゲーションを提供するコンポーネント。
+Components that provide navigation within the app.
 
 ### Navigation Bar
-モバイル向けボトムナビゲーション。
+Bottom navigation for mobile devices.
 
 **Guidelines:**
-- 3-5個の主要な目的地
-- アイコン+ラベル（アイコンのみは避ける）
-- 常に表示（スクロールしても固定）
-- Compact window size class向け
+- 3-5 primary destinations.
+- Icon + Label (avoid icon-only).
+- Always visible (fixed during scrolling).
+- For Compact window size class.
 
 URL: https://m3.material.io/components/navigation-bar/overview
 
 ### Navigation Drawer
-サイドナビゲーション。
+Side navigation menus.
 
 **Types:**
-- **Standard**: 画面端から開閉
-- **Modal**: オーバーレイ形式
+- **Standard**: Opens/closes from the screen edge.
+- **Modal**: Overlay format.
 
 **Usage:**
-- 5個以上の目的地
-- Medium/Expanded window size class
-- アプリの主要セクション
+- 5 or more destinations.
+- Medium/Expanded window size classes.
+- Primary sections of the app.
 
 URL: https://m3.material.io/components/navigation-drawer/overview
 
 ### Navigation Rail
-垂直方向のナビゲーション（中型画面）。
+Vertical navigation for medium-sized screens.
 
 **Usage:**
-- Medium window size class（タブレット縦向き）
-- 3-7個の目的地
-- 画面左端に固定
+- Medium window size class (tablet portrait).
+- 3-7 destinations.
+- Fixed to the left edge of the screen.
 
 URL: https://m3.material.io/components/navigation-rail/overview
 
 ### Top App Bar
-画面上部のタイトルとアクション。
+Title and actions at the top of the screen.
 
 **Types:**
-- **Small**: 標準的なアプリバー
-- **Medium**: 中サイズ（スクロールで縮小）
-- **Large**: 大サイズ（スクロールで縮小）
+- **Small**: Standard app bar.
+- **Medium**: Medium size (shrinks on scroll).
+- **Large**: Large size (shrinks on scroll).
 
 **Elements:**
-- Navigation icon: 戻る、メニュー
-- Title: 画面タイトル
-- Action icons: 主要なアクション（最大3つ推奨）
+- Navigation icon: Back, menu.
+- Title: Screen title.
+- Action icons: Primary actions (recommended max 3).
 
 URL: https://m3.material.io/components/app-bars/overview
 
 ### Tabs
-コンテンツを複数のビューに整理。
+Organize content into multiple views.
 
 **Types:**
-- Primary tabs: メインコンテンツの切り替え
-- Secondary tabs: サブセクションの切り替え
+- Primary tabs: Switch between main content areas.
+- Secondary tabs: Switch between sub-sections.
 
 **Guidelines:**
-- 2-6個のタブ推奨
-- ラベルは簡潔に（1-2語）
-- スワイプジェスチャーでの切り替えをサポート
+- Recommended 2-6 tabs.
+- Labels should be concise (1-2 words).
+- Support switching via swipe gestures.
 
 URL: https://m3.material.io/components/tabs/guidelines
 
@@ -272,30 +272,30 @@ URL: https://m3.material.io/components/tabs/guidelines
 
 ## Containment and Layout Components
 
-コンテンツを整理・表示するためのコンポーネント。
+Components for organizing and displaying content.
 
 ### Cards
-関連情報をまとめたコンテナ。
+Containers that group related information.
 
 **Types:**
-- **Elevated**: 影付き
-- **Filled**: 背景塗りつぶし
-- **Outlined**: 線のみ
+- **Elevated**: With shadow.
+- **Filled**: With a filled background.
+- **Outlined**: Outline-only.
 
 **Usage:**
-- 異なるコンテンツのコレクション
-- アクション可能なコンテンツ
-- エントリーポイント
+- Collections of different content types.
+- Actionable content.
+- Entry points for detailed info.
 
 **Guidelines:**
-- 過度に使用しない（リストで十分な場合も）
-- 明確なアクションを提供
-- 情報の階層を維持
+- Do not overuse (a list might suffice).
+- Provide clear actions.
+- Maintain information hierarchy.
 
 URL: https://m3.material.io/components/cards/guidelines
 
 ### Lists
-垂直方向のテキストと画像のインデックス。
+Vertical indexes of text and images.
 
 **Types:**
 - Single-line
@@ -303,48 +303,48 @@ URL: https://m3.material.io/components/cards/guidelines
 - Three-line
 
 **Elements:**
-- Leading element: アイコン、画像、チェックボックス
-- Primary text: メインテキスト
-- Secondary text: サブテキスト
-- Trailing element: メタ情報、アクション
+- Leading element: Icon, image, checkbox.
+- Primary text: Main text.
+- Secondary text: Supporting text.
+- Trailing element: Meta info, actions.
 
 **Usage:**
-- 同質なコンテンツのコレクション
-- スキャン可能な情報
-- 詳細へのエントリーポイント
+- Collections of homogeneous content.
+- Scannable information.
+- Entry points to details.
 
 URL: https://m3.material.io/components/lists/overview
 
 ### Carousel
-スクロール可能なビジュアルアイテムのコレクション。
+A collection of scrollable visual items.
 
 **Types:**
-- Hero: 大きい、フォーカスされたアイテム
-- Multi-browse: 複数アイテム表示
-- Uncontained: フルブリード
+- Hero: Large, focused items.
+- Multi-browse: Multiple items displayed at once.
+- Uncontained: Full-bleed edges.
 
 **Usage:**
-- 画像ギャラリー
-- プロダクトショーケース
-- オンボーディング
+- Image galleries.
+- Product showcases.
+- Onboarding screens.
 
 URL: https://m3.material.io/components/carousel/overview
 
 ### Bottom Sheets / Side Sheets
-追加コンテンツを表示するサーフェス。
+Surfaces that display supplemental content.
 
 **Types:**
-- **Standard**: 永続的、画面の一部
-- **Modal**: 一時的、フォーカスが必要
+- **Standard**: Persistent, part of the screen.
+- **Modal**: Temporary, requires focus.
 
 **Bottom Sheet Usage:**
-- コンテキストアクション
-- 追加オプション
-- Mobile向け
+- Contextual actions.
+- Additional options.
+- For mobile devices.
 
 **Side Sheet Usage:**
-- 詳細情報、フィルタ
-- Tablet/Desktop向け
+- Detailed information, filters.
+- For tablets/desktops.
 
 URL: https://m3.material.io/components/bottom-sheets/overview
 
@@ -352,124 +352,124 @@ URL: https://m3.material.io/components/bottom-sheets/overview
 
 ## Communication Components
 
-ユーザーにフィードバックや情報を伝えるコンポーネント。
+Components that communicate feedback or info to the user.
 
 ### Dialogs
-ユーザーアクションが必要な重要なプロンプト。
+Urgent prompts that require user action.
 
 **Types:**
-- **Basic**: タイトル、本文、アクション
-- **Full-screen**: フルスクリーンダイアログ（モバイル）
+- **Basic**: Title, body text, actions.
+- **Full-screen**: Full-screen dialogs (mobile).
 
 **Usage:**
-- 重要な決定（削除確認など）
-- 必須の情報入力
-- エラーや警告
+- Important decisions (e.g., delete confirmation).
+- Required information input.
+- Errors or warnings.
 
 **Guidelines:**
-- タイトルは質問形式推奨
-- アクションは明確に（"削除"、"キャンセル"）
-- 破壊的なアクションは右側に配置しない
+- Recommended to use a question for the title.
+- Actions should be clear (e.g., "Delete", "Cancel").
+- Do not place destructive actions on the right without consideration.
 
 URL: https://m3.material.io/components/dialogs/guidelines
 
 ### Snackbar
-プロセスの簡潔な更新を画面下部に表示。
+Brief updates about a process displayed at the bottom of the screen.
 
 **Usage:**
-- 操作完了の確認（"メッセージを送信しました"）
-- 軽微なエラー通知
-- オプショナルなアクション提供
+- Confirmation of finished operations ("Message sent").
+- Minor error notifications.
+- Providing optional actions (e.g., "Undo").
 
 **Guidelines:**
-- 表示時間: 4-10秒
-- 1行のメッセージ推奨
-- 最大1つのアクション
-- 重要な情報には使用しない（Dialogを使用）
+- Display duration: 4-10 seconds.
+- Recommend single-line messages.
+- Maximum of one action.
+- Do not use for critical information (use a Dialog instead).
 
 URL: https://m3.material.io/components/snackbar/overview
 
 ### Badges
-ナビゲーション項目上の通知とカウント。
+Notifications and counts on navigation items.
 
 **Types:**
-- Numeric: 数値表示（1-999）
-- Dot: ドット表示（新着あり）
+- Numeric: Displaying a count (1-999).
+- Dot: Simple dot indicator for something new.
 
 **Usage:**
-- 未読通知の数
-- 新着コンテンツのインジケーター
+- Number of unread notifications.
+- Indicator for new content.
 
 URL: https://m3.material.io/components/badges/overview
 
 ### Progress Indicators
-進行中のプロセスのステータス表示。
+Status of an ongoing process.
 
 **Types:**
-- **Circular**: 円形、不定期または確定的
-- **Linear**: 線形、確定的な進捗
+- **Circular**: Round, indeterminate or determinate.
+- **Linear**: Bar, determinate progress.
 
 **Usage:**
-- Circular: ローディング、処理中
-- Linear: ファイルアップロード、ダウンロード
+- Circular: Loading, processing.
+- Linear: File uploads, downloads.
 
 **Guidelines:**
-- 2秒以上かかる処理で表示
-- 可能な限り確定的な進捗を使用
-- 進捗率がわからない場合は不定期
+- Display for processes taking longer than 2 seconds.
+- Use determinate progress whenever possible.
+- Use indeterminate if the progress duration is unknown.
 
 URL: https://m3.material.io/components/progress-indicators/overview
 
 ### Tooltips
-コンテキストラベルとメッセージ。
+Contextual labels and messages.
 
 **Types:**
-- Plain: テキストのみ
-- Rich: テキスト+アイコン/画像
+- Plain: Text-only.
+- Rich: Text + icons/images.
 
 **Usage:**
-- アイコンボタンの説明
-- 切り詰められたテキストの完全版
-- 補助的な情報
+- Explaining icon buttons.
+- Full version of truncated text.
+- Auxiliary information.
 
 **Guidelines:**
-- 簡潔に（1行推奨）
-- 重要な情報には使用しない
-- タッチデバイスではlong press
+- Concise (single line recommended).
+- Do not use for critical information.
+- Long press on touch devices.
 
 URL: https://m3.material.io/components/tooltips/guidelines
 
 ### Menus
-一時的なサーフェース上の選択肢リスト。
+List of choices on temporary surfaces.
 
 **Types:**
-- Standard menu
-- Dropdown menu
-- Exposed dropdown menu（選択状態を表示）
+- Standard menu.
+- Dropdown menu.
+- Exposed dropdown menu (displays selection state).
 
 **Usage:**
-- コンテキストメニュー
-- 選択オプション
-- アクションのリスト
+- Context menus.
+- Selection options.
+- List of actions.
 
 **Guidelines:**
-- 2-7個のアイテム推奨
-- アイコンはオプション
-- 破壊的なアクションは分離
+- Recommended 2-7 items.
+- Icons are optional.
+- Separate destructive actions.
 
 URL: https://m3.material.io/components/menus/overview
 
 ### Search
-検索バーとサジェスト。
+Search bar and suggestions.
 
 **Elements:**
-- Search bar: 検索入力フィールド
-- Search view: 全画面検索インターフェース
+- Search bar: Input field for search.
+- Search view: Full-screen search interface.
 
 **Usage:**
-- アプリ内検索
-- フィルタリング
-- サジェスト表示
+- In-app search.
+- Filtering.
+- Displaying suggestions.
 
 URL: https://m3.material.io/components/search/overview
 

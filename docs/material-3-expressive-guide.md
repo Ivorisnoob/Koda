@@ -715,7 +715,25 @@ The `Typography` class defines the typographic hierarchy for your app, ensuring 
 
 ### 2.3 Shapes
 
-The `Shapes` class defines the shape system for your app, controlling corner radii and other shape properties for components.
+The `Shapes` class defines the standard shape system for your app. In the **Expressive** variant, this is augmented by organic polygons.
+
+#### 2.3.1 Expressive Organic Polygons (`MaterialShapes`)
+For non-geometric, organic forms, use the `MaterialShapes` object provided by the library. These are defined as `RoundedPolygon` objects.
+
+**Key Polygons:**
+- `MaterialShapes.Square`: A soft-edged squircle.
+- `MaterialShapes.Pill`: A stadium shape for extended elements.
+- `MaterialShapes.Sunny`: A burst shape for attention-grabbing elements.
+- `MaterialShapes.Cookie9Sided`: A playful, scalloped edge.
+
+#### 2.3.2 Conversion: `toShape()`
+Since `RoundedPolygon` is not a Compose `Shape`, it must be converted using the `.toShape()` extension function.
+
+```kotlin
+// Usage in Clipping
+val expressiveShape = MaterialShapes.Pill.toShape()
+Box(modifier = Modifier.clip(expressiveShape)) { ... }
+```
 
 **See also:**
 - [MaterialTheme](#materialtheme) - Apply shapes to your app
