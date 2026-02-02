@@ -38,12 +38,12 @@ import kotlin.math.cos
 import kotlin.math.sin
 
 /**
- * Chromatic Mist - Premium ambient background inspired by Apple Music
- * 
+ * Chromatic Mist - Premium ambient background inspired by Apple Music Needs a Little bit of more work
+ *
  * Creates a beautiful, organic animated background that extracts colors
  * from album artwork and displays them as slowly drifting, heavily blurred
  * color clouds that create an immersive atmosphere.
- * 
+ *
  * Features:
  * - Color extraction from album art using Palette API
  * - Multiple layered gradient clouds with independent animations
@@ -75,7 +75,7 @@ fun ChromaticMistBackground(
     val surfaceContainer = MaterialTheme.colorScheme.surfaceContainer
     val surfaceContainerHigh = MaterialTheme.colorScheme.surfaceContainerHigh
     val primaryColor = MaterialTheme.colorScheme.primary
-    
+
     // If disabled or no album art, show simple fallback with M3 colors
     if (!enabled || albumArtUrl == null) {
         Box(
@@ -85,9 +85,9 @@ fun ChromaticMistBackground(
         )
         return
     }
-    
+
     val context = LocalContext.current
-    
+
     // Extracted colors state - starts with theme-aware defaults
     val defaultColors = listOf(
         surfaceColor,
@@ -95,9 +95,9 @@ fun ChromaticMistBackground(
         surfaceContainerHigh,
         primaryColor.copy(alpha = 0.3f)
     )
-    
+
     var colorPalette by remember { mutableStateOf(defaultColors) }
-    
+
     // Extract colors from album art
     LaunchedEffect(albumArtUrl) {
         val colors = extractColorsFromUrl(context, albumArtUrl)
@@ -105,7 +105,7 @@ fun ChromaticMistBackground(
             colorPalette = colors
         }
     }
-    
+
     // Animate color transitions smoothly
     val animatedColors = colorPalette.mapIndexed { index: Int, targetColor: Color ->
         animateColorAsState(
@@ -117,7 +117,7 @@ fun ChromaticMistBackground(
             label = "ColorTransition$index"
         ).value
     }
-    
+
     // Create color clouds with the animated colors
     val clouds = remember(animatedColors) {
         listOf(
@@ -155,10 +155,10 @@ fun ChromaticMistBackground(
             )
         )
     }
-    
+
     // Infinite animation for organic movement
     val infiniteTransition = rememberInfiniteTransition(label = "ChromaticMist")
-    
+
     // Primary movement cycle - very slow for subtle effect
     val primaryPhase by infiniteTransition.animateFloat(
         initialValue = 0f,
@@ -169,7 +169,7 @@ fun ChromaticMistBackground(
         ),
         label = "PrimaryPhase"
     )
-    
+
     // Secondary movement cycle - offset timing for organic feel
     val secondaryPhase by infiniteTransition.animateFloat(
         initialValue = 0f,
@@ -180,7 +180,7 @@ fun ChromaticMistBackground(
         ),
         label = "SecondaryPhase"
     )
-    
+
     // Breathing effect - subtle scale pulsing
     val breathingScale by infiniteTransition.animateFloat(
         initialValue = 0.95f,
@@ -191,11 +191,11 @@ fun ChromaticMistBackground(
         ),
         label = "Breathing"
     )
-    
+
     // Capture colors for use in Canvas (can't access MaterialTheme inside DrawScope)
     val baseBackgroundColor = backgroundColor
     val dominantTint = animatedColors.getOrElse(0) { surfaceColor }
-    
+
     Box(modifier = modifier.fillMaxSize()) {
         // M3-themed base layer
         Canvas(modifier = Modifier.fillMaxSize()) {
@@ -210,7 +210,7 @@ fun ChromaticMistBackground(
                     )
                 )
             )
-            
+
             // Draw each cloud with organic movement
             clouds.forEach { cloud ->
                 drawColorCloud(
@@ -220,7 +220,7 @@ fun ChromaticMistBackground(
                     breathingScale = breathingScale
                 )
             }
-            
+
             // Subtle vignette overlay for depth (theme-aware)
             drawRect(
                 brush = Brush.radialGradient(
@@ -248,24 +248,24 @@ private fun DrawScope.drawColorCloud(
     // Calculate organic offset using layered sine waves (pseudo-Perlin)
     val phase = primaryPhase * cloud.speedMultiplier + cloud.phaseOffset
     val secondPhase = secondaryPhase * cloud.speedMultiplier * 0.7f + cloud.phaseOffset
-    
+
     // Multi-frequency movement for natural feel - Increased amplitude for more movement
     val xOffset = (
         sin(phase) * 0.15f +                    // Primary movement
         sin(phase * 1.7f + 0.3f) * 0.08f +      // Secondary frequency
         sin(secondPhase * 0.5f) * 0.05f         // Tertiary slow drift
     )
-    
+
     val yOffset = (
         cos(phase * 0.8f) * 0.12f +             // Primary movement (different rate)
         cos(phase * 1.3f + 0.7f) * 0.08f +      // Secondary frequency
         cos(secondPhase * 0.6f + 0.5f) * 0.05f  // Tertiary slow drift
     )
-    
+
     val centerX = size.width * (cloud.baseOffset.x + xOffset)
     val centerY = size.height * (cloud.baseOffset.y + yOffset)
     val radius = size.maxDimension * cloud.radiusMultiplier * breathingScale
-    
+
     // Draw the cloud as a large radial gradient
     drawCircle(
         brush = Brush.radialGradient(
@@ -298,13 +298,13 @@ private suspend fun extractColorsFromUrl(
             .allowHardware(false) // Palette needs software bitmap
             .size(128) // Small size for faster processing
             .build()
-        
+
         val result = loader.execute(request)
         if (result is SuccessResult) {
             val bitmap = (result.drawable as? BitmapDrawable)?.bitmap
             if (bitmap != null) {
                 val palette = Palette.from(bitmap).generate()
-                
+
                 // Extract colors in priority order
                 listOfNotNull(
                     palette.darkVibrantSwatch?.rgb?.let { rgb -> Color(rgb) },

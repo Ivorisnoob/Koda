@@ -2,6 +2,7 @@ package com.ivor.ivormusic.ui.home
 
 import android.Manifest
 import android.os.Build
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -114,8 +115,7 @@ import androidx.compose.animation.with
 import kotlinx.coroutines.launch
 import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.ui.video.VideoHomeContent
-
-
+import com.ivor.ivormusic.ui.library.LibraryContent
 import androidx.compose.animation.ExperimentalAnimationApi
 import com.ivor.ivormusic.BuildConfig
 import com.ivor.ivormusic.R
@@ -132,6 +132,7 @@ fun HomeScreen(
     onThemeToggle: (Boolean) -> Unit = {},
     onNavigateToSettings: () -> Unit = {},
     onNavigateToDownloads: () -> Unit = {},
+    onNavigateToStats: () -> Unit = {},
     onNavigateToVideoPlayer: (VideoItem) -> Unit = {},
     loadLocalSongs: Boolean = true,
     excludedFolders: Set<String> = emptySet(),
@@ -364,7 +365,8 @@ fun HomeScreen(
                                 viewModel = viewModel,
                                 isDarkMode = isDarkMode,
                                 initialArtist = viewedArtistFromPlayer,
-                                onInitialArtistConsumed = { viewedArtistFromPlayer = null }
+                                onInitialArtistConsumed = { viewedArtistFromPlayer = null },
+                                onStatsClick = onNavigateToStats
                             )
                         }
                     }
@@ -576,8 +578,10 @@ fun YourMixContent(
     val backgroundColor = MaterialTheme.colorScheme.background
     val textColor = MaterialTheme.colorScheme.onBackground
     
+    val isRefreshing by viewModel.isLoading.collectAsState()
+    
     PullToRefreshBox(
-        isRefreshing = viewModel.isLoading.collectAsState().value,
+        isRefreshing = isRefreshing,
         onRefresh = { viewModel.refresh(excludedFolders) },
         modifier = Modifier.fillMaxSize()
     ) {
@@ -588,20 +592,64 @@ fun YourMixContent(
                 .windowInsetsPadding(WindowInsets.statusBars),
             contentPadding = PaddingValues(bottom = contentPadding.calculateBottomPadding())
         ) {
-            item { TopBarSection(onProfileClick = onProfileClick, onSettingsClick = onSettingsClick, onDownloadsClick = onDownloadsClick, isDarkMode = isDarkMode, viewModel = viewModel) }
-            item { HeroSection(songs = songs, onPlayClick = onPlayClick, isDarkMode = isDarkMode) }
-            item {
-                if (songs.isNotEmpty()) {
-                    OrganicSongLayout(songs = songs, onSongClick = onSongClick)
+            item { 
+                var visible by remember { mutableStateOf(false) }
+                LaunchedEffect(Unit) { visible = true }
+                Box(Modifier.graphicsLayer {
+                    alpha = if (visible) 1f else 0f
+                    translationY = if (visible) 0f else -20f
+                }.animateContentSize()) {
+                    TopBarSection(onProfileClick = onProfileClick, onSettingsClick = onSettingsClick, onDownloadsClick = onDownloadsClick, isDarkMode = isDarkMode, viewModel = viewModel)
                 }
             }
-            item {
-                Spacer(modifier = Modifier.height(32.dp))
-                RecentAlbumsSection(songs = songs, onSongClick = onSongClick, isDarkMode = isDarkMode)
+            
+            item { 
+                var visible by remember { mutableStateOf(false) }
+                LaunchedEffect(Unit) { kotlinx.coroutines.delay(100); visible = true }
+                Box(Modifier.graphicsLayer {
+                    alpha = if (visible) 1f else 0f
+                    translationY = if (visible) 0f else 40f
+                }) {
+                    HeroSection(songs = songs, onPlayClick = onPlayClick, isDarkMode = isDarkMode)
+                }
             }
+            
             item {
-                Spacer(modifier = Modifier.height(24.dp))
-                QuickPicksSection(songs = songs, onSongClick = onSongClick, isDarkMode = isDarkMode)
+                if (songs.isNotEmpty()) {
+                    var visible by remember { mutableStateOf(false) }
+                    LaunchedEffect(Unit) { kotlinx.coroutines.delay(200); visible = true }
+                    Box(Modifier.graphicsLayer {
+                        alpha = if (visible) 1f else 0f
+                        scaleX = if (visible) 1f else 0.9f
+                        scaleY = if (visible) 1f else 0.9f
+                    }) {
+                        OrganicSongLayout(songs = songs, onSongClick = onSongClick)
+                    }
+                }
+            }
+            
+            item {
+                var visible by remember { mutableStateOf(false) }
+                LaunchedEffect(Unit) { kotlinx.coroutines.delay(300); visible = true }
+                Column(Modifier.graphicsLayer {
+                    alpha = if (visible) 1f else 0f
+                    translationY = if (visible) 0f else 30f
+                }) {
+                    Spacer(modifier = Modifier.height(32.dp))
+                    RecentAlbumsSection(songs = songs, onSongClick = onSongClick, isDarkMode = isDarkMode)
+                }
+            }
+            
+            item {
+                var visible by remember { mutableStateOf(false) }
+                LaunchedEffect(Unit) { kotlinx.coroutines.delay(400); visible = true }
+                Column(Modifier.graphicsLayer {
+                    alpha = if (visible) 1f else 0f
+                    translationY = if (visible) 0f else 30f
+                }) {
+                    Spacer(modifier = Modifier.height(24.dp))
+                    QuickPicksSection(songs = songs, onSongClick = onSongClick, isDarkMode = isDarkMode)
+                }
             }
             item { Spacer(modifier = Modifier.height(32.dp)) }
         }
@@ -1171,132 +1219,5 @@ fun QuickPicksSection(
     }
 }
 
-@Composable
-fun LibraryContent(
-    songs: List<Song>,
-    onSongClick: (Song) -> Unit,
-    onPlaylistClick: (com.ivor.ivormusic.data.PlaylistDisplayItem) -> Unit = {},
-    onPlayQueue: (List<Song>, Song?) -> Unit,
-    contentPadding: PaddingValues,
-    viewModel: HomeViewModel,
-    isDarkMode: Boolean,
-    initialArtist: String? = null,
-    onInitialArtistConsumed: () -> Unit = {}
-) {
-    var viewedPlaylist by remember { mutableStateOf<com.ivor.ivormusic.data.PlaylistDisplayItem?>(null) }
-    var viewedArtist by remember { mutableStateOf<String?>(null) }
-    // Album navigation state: Pair<albumName, List<Song>>
-    var viewedAlbum by remember { mutableStateOf<Pair<String, List<Song>>?>(null) }
-    
-    // Handle external navigation from player when artist is clicked
-    LaunchedEffect(initialArtist) {
-        if (initialArtist != null) {
-            viewedArtist = initialArtist
-            onInitialArtistConsumed()
-        }
-    }
-    
-    // Handle system back button for nested screens
-    BackHandler(enabled = viewedPlaylist != null || viewedArtist != null || viewedAlbum != null) {
-        when {
-            viewedAlbum != null -> viewedAlbum = null
-            viewedArtist != null -> viewedArtist = null
-            viewedPlaylist != null -> viewedPlaylist = null
-        }
-    }
-    
-    // Determine current navigation state
-    val currentScreen = when {
-        viewedAlbum != null -> "album"
-        viewedArtist != null -> "artist"
-        viewedPlaylist != null -> "playlist"
-        else -> "library"
-    }
-    
-    // Helper to determine screen depth for animation direction
-    val getWrapperDepth = { screenName: String ->
-        when (screenName) {
-            "library" -> 0
-            "playlist" -> 1
-            "artist" -> 1
-            "album" -> 2
-            else -> 0
-        }
-    }
-    
-    androidx.compose.animation.AnimatedContent(
-        targetState = currentScreen,
-        label = "LibraryNav",
-        transitionSpec = {
-            val initialDepth = getWrapperDepth(initialState)
-            val targetDepth = getWrapperDepth(targetState)
-            
-            if (targetDepth > initialDepth) {
-                // Push (Going deeper)
-                (androidx.compose.animation.slideInHorizontally { width -> width } + 
-                        androidx.compose.animation.fadeIn()) togetherWith
-                        (androidx.compose.animation.slideOutHorizontally { width -> -width / 3 } + 
-                                androidx.compose.animation.fadeOut())
-            } else {
-                // Pop (Going back)
-                (androidx.compose.animation.slideInHorizontally { width -> -width / 3 } + 
-                        androidx.compose.animation.fadeIn()) togetherWith
-                        (androidx.compose.animation.slideOutHorizontally { width -> width } + 
-                                androidx.compose.animation.fadeOut())
-            }
-        }
-    ) { screen ->
-        when (screen) {
-            "album" -> {
-                viewedAlbum?.let { (albumName, albumSongs) ->
-                    com.ivor.ivormusic.ui.artist.AlbumScreen(
-                        albumName = albumName,
-                        artistName = albumSongs.firstOrNull()?.artist ?: "Unknown Artist",
-                        songs = albumSongs,
-                        onBack = { viewedAlbum = null },
-                        onPlayQueue = onPlayQueue
-                    )
-                }
-            }
-            "artist" -> {
-                viewedArtist?.let { artistName ->
-                    com.ivor.ivormusic.ui.artist.ArtistScreen(
-                        artistName = artistName,
-                        songs = songs,
-                        onBack = { viewedArtist = null },
-                        onPlayQueue = onPlayQueue,
-                        onSongClick = onSongClick,
-                        onAlbumClick = { album, albumSongs -> 
-                            viewedAlbum = album to albumSongs 
-                        },
-                        viewModel = viewModel
-                    )
-                }
-            }
-            "playlist" -> {
-                viewedPlaylist?.let { playlist ->
-                    com.ivor.ivormusic.ui.library.PlaylistDetailScreen(
-                        playlist = playlist,
-                        onBack = { viewedPlaylist = null },
-                        onPlayQueue = onPlayQueue,
-                        viewModel = viewModel,
-                        isDarkMode = isDarkMode
-                    )
-                }
-            }
-            else -> {
-                com.ivor.ivormusic.ui.library.LibraryScreen(
-                    songs = songs,
-                    onSongClick = onSongClick,
-                    onPlayQueue = onPlayQueue,
-                    onPlaylistClick = { viewedPlaylist = it },
-                    onArtistClick = { viewedArtist = it },
-                    contentPadding = contentPadding,
-                    viewModel = viewModel,
-                    isDarkMode = isDarkMode
-                )
-            }
-        }
-    }
-}
+
 

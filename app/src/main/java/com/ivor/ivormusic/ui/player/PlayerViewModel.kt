@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
 
 class PlayerViewModel(private val context: Context) : ViewModel() {
 
@@ -56,6 +57,10 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     private val _currentQueue = MutableStateFlow<List<Song>>(emptyList())
     val currentQueue: StateFlow<List<Song>> = _currentQueue.asStateFlow()
 
+    // Stats tracking
+    private var lastRecordedSongId: String? = null
+    private var playRecordingJob: Job? = null
+    
     // Liked songs functionality
     private val likedSongsRepository = LikedSongsRepository(context)
     
@@ -80,6 +85,9 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     // Lyrics Repository and State
     private val lyricsRepository = LyricsRepository()
     
+    // Stats Repository
+    private val statsRepository = com.ivor.ivormusic.data.StatsRepository(context)
+
     private val _lyricsResult = MutableStateFlow<LyricsResult>(LyricsResult.Loading)
     val lyricsResult: StateFlow<LyricsResult> = _lyricsResult.asStateFlow()
     
@@ -232,9 +240,28 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                         // Save as last played song for restoration
                         themePreferences.saveLastPlayedSong(it)
                         
-                        // Sync history with YouTube
-                        viewModelScope.launch {
-                            youTubeRepository.reportPlayback(it.id)
+                        // STATS RECORDING WITH THRESHOLD
+                        // Cancel previous job if any
+                        playRecordingJob?.cancel()
+                        
+                        // Sync history with YouTube and Local Stats
+                        // CRITICAL: Only record play if it's a new song or a deliberate repeat/auto-next.
+                        // We filter out transitions caused by Media Item Replacement (Resolution) 
+                        // by checking if the ID actually changed.
+                        val isResolutionTransition = reason == Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED && it.id == lastRecordedSongId
+                        
+                        if (!isResolutionTransition) {
+                            val currentSongId = it.id
+                            playRecordingJob = viewModelScope.launch {
+                                // Wait for 15 seconds of playback before counting as a 'play'
+                                // This prevents skips and resolution changes from inflating stats.
+                                delay(15_000)
+                                if (isActive) {
+                                    lastRecordedSongId = currentSongId
+                                    youTubeRepository.reportPlayback(currentSongId)
+                                    statsRepository.addPlayEvent(it)
+                                }
+                            }
                         }
                         
                         // AUTO-QUEUE: Check if we need to load more songs

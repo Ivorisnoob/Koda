@@ -234,6 +234,9 @@ app/src/main/java/com/ivor/ivormusic/
 
 ---
 
+## Technical Documentation
+For a deep dive into the app's inner workings, internal data flows, and architecture diagrams, see our [Documentation Hub](docs/README.md).
+
 ## Getting Started
 
 ### Prerequisites
@@ -294,11 +297,12 @@ APKs are split by ABI for optimized sizes:
 
 ## Contributing
 
-Contributions are welcome! Please:
-1. Open an **issue** to discuss proposed changes
-2. Submit a **pull request** with your improvements
+Contributions are welcome! Whether it's reporting a bug, suggesting a new feature, or submitting a pull request, your help is appreciated.
+
+Please see our [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to get started.
 
 ---
+
 
 ## License
 

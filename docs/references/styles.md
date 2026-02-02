@@ -1,6 +1,6 @@
 # Material 3 Styles
 
-Material 3 Stylesは、カラー、タイポグラフィ、形状、エレベーション、アイコン、モーションを通じて視覚言語を定義します。
+Material 3 Styles define the visual language through color, typography, shape, elevation, icons, and motion.
 
 ## Table of Contents
 
@@ -17,64 +17,64 @@ Material 3 Stylesは、カラー、タイポグラフィ、形状、エレベー
 
 ### Color System Overview
 
-Material 3のカラーシステムは、アクセシブルでパーソナライズ可能なカラースキームを作成します。
+The Material 3 color system creates accessible and personalizable color schemes.
 
 URL: https://m3.material.io/styles/color/system/overview
 
 ### Color Roles
 
-UIエレメントを特定の色に結びつける役割:
+Roles that map UI elements to specific colors:
 
 #### Primary Colors
-- **primary**: アプリの主要色（メインボタン、アクティブ状態）
-- **onPrimary**: プライマリ色上のテキスト/アイコン
-- **primaryContainer**: プライマリ要素のコンテナ
-- **onPrimaryContainer**: コンテナ上のテキスト
+- **primary**: The main color of the app (primary buttons, active states).
+- **onPrimary**: Text/icons on the primary color.
+- **primaryContainer**: Container for primary elements.
+- **onPrimaryContainer**: Text on the container.
 
 #### Secondary & Tertiary
-- **secondary**: アクセントカラー
-- **tertiary**: 強調やバランス調整
+- **secondary**: Accent color.
+- **tertiary**: Colors for emphasis or balance adjustment.
 
 #### Surface Colors
-- **surface**: カード、シート、メニューの背景
-- **surfaceVariant**: わずかに異なる背景
-- **surfaceTint**: エレベーション表現用
+- **surface**: Background for cards, sheets, and menus.
+- **surfaceVariant**: A slightly different background color.
+- **surfaceTint**: Used for representing elevation.
 
 #### Semantic Colors
-- **error**: エラー状態
-- **warning**: 警告（一部実装で利用可能）
-- **success**: 成功状態（一部実装で利用可能）
+- **error**: Error states.
+- **warning**: Warning states (available in some implementations).
+- **success**: Success states (available in some implementations).
 
 URL: https://m3.material.io/styles/color/roles
 
 ### Color Schemes
 
 #### Dynamic Color
-ユーザーの壁紙や選択から色を抽出:
-- **User-generated**: ユーザーの選択から
-- **Content-based**: 画像/コンテンツから抽出
+Extracting colors from user wallpapers or selections:
+- **User-generated**: From the user's explicit choice.
+- **Content-based**: Extracted from images or content.
 
 URL: https://m3.material.io/styles/color/dynamic-color/overview
 
 #### Static Color
-固定されたカラースキーム:
-- **Baseline**: デフォルトのMaterialベースライン
-- **Custom brand**: カスタムブランドカラー
+Fixed color schemes:
+- **Baseline**: The default Material baseline.
+- **Custom brand**: Custom brand colors.
 
 URL: https://m3.material.io/styles/color/static/baseline
 
 ### Key Colors and Tones
 
-- **Source color**: スキーム生成の起点となる色
-- **Tonal palette**: 各キーカラーから生成される13段階のトーン（0, 10, 20, ..., 100）
-- Light theme: 通常トーン40をプライマリに使用
-- Dark theme: 通常トーン80をプライマリに使用
+- **Source color**: The starting point for generating a scheme.
+- **Tonal palette**: 13 tones (0, 10, 20, ..., 100) generated from each key color.
+- Light theme: Typically uses tone 40 for primary.
+- Dark theme: Typically uses tone 80 for primary.
 
 URL: https://m3.material.io/styles/color/the-color-system/key-colors-tones
 
 ### Tools
 
-**Material Theme Builder**: カラースキーム生成、カスタマイズ、エクスポートツール
+**Material Theme Builder**: Tools for generating, customizing, and exporting color schemes.
 
 URL: https://m3.material.io/blog/material-theme-builder-2-color-match
 
@@ -84,19 +84,19 @@ URL: https://m3.material.io/blog/material-theme-builder-2-color-match
 
 ### Type Scale
 
-Material 3は5つのロール×3つのサイズ = 15のタイプスタイルを定義:
+Material 3 defines 15 type styles across 5 roles and 3 sizes:
 
 #### Roles
-1. **Display**: 大きく短いテキスト（ヒーロー、見出し）
-2. **Headline**: 中規模の見出し
-3. **Title**: 小さい見出し（アプリバー、リスト項目）
-4. **Body**: 本文テキスト
-5. **Label**: ボタン、タブ、小さいテキスト
+1. **Display**: Large, short text (hero moments, banners).
+2. **Headline**: Medium-sized headings.
+3. **Title**: Smaller headings (app bars, list items).
+4. **Body**: Main body text.
+5. **Label**: Buttons, tabs, and small text.
 
 #### Sizes
-- **Large**: 最大サイズ
-- **Medium**: 標準サイズ
-- **Small**: 最小サイズ
+- **Large**: Maximum size.
+- **Medium**: Standard size.
+- **Small**: Minimum size.
 
 #### Example Styles
 ```
@@ -110,17 +110,17 @@ URL: https://m3.material.io/styles/typography/overview
 
 ### Fonts
 
-- デフォルト: **Roboto** (Android), **San Francisco** (iOS), **Roboto** (Web)
-- カスタムフォントのサポート
-- 変数フォントの活用
+- Defaults: **Roboto** (Android), **San Francisco** (iOS), **Roboto** (Web).
+- Support for custom fonts.
+- Leveraging variable fonts.
 
 URL: https://m3.material.io/styles/typography/fonts
 
 ### Applying Typography
 
-- セマンティックな使用（見出しにはheadline、本文にはbody）
-- 一貫した階層
-- 行の高さと余白の適切な設定
+- Semantic usage (use headline for headings, body for body text).
+- Consistent hierarchy.
+- Appropriate line heights and spacing settings.
 
 URL: https://m3.material.io/styles/typography/applying-type
 
@@ -130,29 +130,29 @@ URL: https://m3.material.io/styles/typography/applying-type
 
 ### Overview
 
-エレベーションはZ軸上のサーフェス間の距離を表現します。
+Elevation represents the distance between surfaces on the Z-axis.
 
 URL: https://m3.material.io/styles/elevation/overview
 
 ### Elevation Levels
 
-Material 3は6つのエレベーションレベルを定義:
+Material 3 defines 6 elevation levels:
 
 | Level | DP | Use Case |
 |-------|-----|----------|
-| 0 | 0dp | 通常のサーフェス |
-| 1 | 1dp | カード、わずかに浮いた要素 |
-| 2 | 3dp | 検索バー |
-| 3 | 6dp | FAB（休止状態） |
-| 4 | 8dp | ナビゲーションドロワー |
-| 5 | 12dp | モーダルボトムシート、ダイアログ |
+| 0 | 0dp | Default surface |
+| 1 | 1dp | Cards, slightly raised elements |
+| 2 | 3dp | Search bars |
+| 3 | 6dp | FAB (resting state) |
+| 4 | 8dp | Navigation drawers |
+| 5 | 12dp | Modal bottom sheets, dialogs |
 
 ### Elevation Representation
 
-Material 3では2つの方法でエレベーションを表現:
+Material 3 represents elevation in two ways:
 
-1. **Shadow**: 影によるエレベーション（Light theme主体）
-2. **Surface tint**: サーフェスに色のティントを重ねる（Dark theme主体）
+1. **Shadow**: Elevation via shadows (primarily in Light theme).
+2. **Surface tint**: Overlaying a color tint on surfaces (primarily in Dark theme).
 
 URL: https://m3.material.io/styles/elevation/applying-elevation
 
@@ -162,31 +162,31 @@ URL: https://m3.material.io/styles/elevation/applying-elevation
 
 ### Overview
 
-形状は、注意の誘導、状態表現、ブランド表現に使用されます。
+Shape is used to direct attention, express states, and communicate brand identity.
 
 URL: https://m3.material.io/styles/shape/overview-principles
 
 ### Corner Radius Scale
 
-Material 3は5つの形状トークンを定義:
+Material 3 defines 5 shape tokens:
 
 | Token | Default Value | Use Case |
 |-------|---------------|----------|
-| None | 0dp | フルスクリーン、厳格なレイアウト |
-| Extra Small | 4dp | チェックボックス、小さい要素 |
-| Small | 8dp | チップ、小さいボタン |
-| Medium | 12dp | カード、標準ボタン |
-| Large | 16dp | FAB、大きいカード |
-| Extra Large | 28dp | ダイアログ、ボトムシート |
-| Full | 9999dp | 完全な円形 |
+| None | 0dp | Full screen, strict layouts |
+| Extra Small | 4dp | Checkboxes, small elements |
+| Small | 8dp | Chips, small buttons |
+| Medium | 12dp | Cards, standard buttons |
+| Large | 16dp | FABs, large cards |
+| Extra Large | 28dp | Dialogs, bottom sheets |
+| Full | 9999dp | Perfect circles |
 
 ### Shape Morph
 
-**M3 Expressiveの重要機能**: 形状が滑らかに変形するアニメーション
+**Key feature of M3 Expressive**: Animations where shapes transform smoothly.
 
-- トランジション時の視覚的な流れ
-- ブランド表現の強化
-- ユーザーの注意を引く
+- Visual flow during transitions.
+- Enhanced brand expression.
+- Attracting user attention.
 
 URL: https://m3.material.io/styles/shape/shape-morph
 
@@ -196,35 +196,35 @@ URL: https://m3.material.io/styles/shape/shape-morph
 
 ### Material Symbols
 
-Material Symbolsは可変アイコンフォント:
+Material Symbols are variable icon fonts:
 
 #### Styles
-- **Outlined**: 線のみのスタイル（デフォルト）
-- **Filled**: 塗りつぶしスタイル
-- **Rounded**: 丸みを帯びたスタイル
-- **Sharp**: シャープなスタイル
+- **Outlined**: Outline-only style (default).
+- **Filled**: Filled style.
+- **Rounded**: Rounded corner style.
+- **Sharp**: Sharp corner style.
 
 #### Variable Features
-- **Weight**: 線の太さ（100-700）
-- **Grade**: 視覚的な重み（-25 to 200）
-- **Optical size**: 表示サイズ最適化（20, 24, 40, 48dp）
-- **Fill**: 塗りつぶし状態（0-1）
+- **Weight**: Stroke thickness (100-700).
+- **Grade**: Visual weight (-25 to 200).
+- **Optical size**: Optimization for display size (20, 24, 40, 48dp).
+- **Fill**: Fill state (0 or 1).
 
 #### Sizes
-- 20dp: 密なレイアウト
-- 24dp: 標準サイズ
-- 40dp: タッチターゲット拡大
-- 48dp: 大きいタッチターゲット
+- 20dp: Dense layouts.
+- 24dp: Standard size.
+- 40dp: Large touch targets.
+- 48dp: Extra-large touch targets.
 
 URL: https://m3.material.io/styles/icons/overview
 
 ### Custom Icons
 
-カスタムアイコンのデザインガイドライン:
-- 24×24dpグリッド
-- 2dpストローク幅
-- 2dpの角丸
-- 一貫したメタファー
+Design guidelines for custom icons:
+- 24×24dp grid.
+- 2dp stroke width.
+- 2dp corner radius.
+- Consistent metaphors.
 
 URL: https://m3.material.io/styles/icons/designing-icons
 
@@ -232,15 +232,15 @@ URL: https://m3.material.io/styles/icons/designing-icons
 
 ## Motion
 
-**M3 Expressiveの中核要素**: モーションは、UIを表現豊かで使いやすくします。
+**Core element of M3 Expressive**: Motion makes the UI expressive and easy to use.
 
 URL: https://m3.material.io/styles/motion/overview
 
 ### Motion Principles
 
-1. **Informative**: ユーザーに情報を伝える
-2. **Focused**: 注意を適切に誘導
-3. **Expressive**: 感情的なエンゲージメントを高める
+1. **Informative**: Communicates information to the user.
+2. **Focused**: Appropriately directs attention.
+3. **Expressive**: Enhances emotional engagement.
 
 URL: https://m3.material.io/styles/motion/overview/how-it-works
 
@@ -248,20 +248,20 @@ URL: https://m3.material.io/styles/motion/overview/how-it-works
 
 #### Easing Types
 
-Material 3は4つのイージングカーブを定義:
+Material 3 defines 4 easing curves:
 
-1. **Emphasized**: 劇的で表現豊かな動き
+1. **Emphasized**: Dramatic and expressive movement.
    - Decelerate: cubic-bezier(0.05, 0.7, 0.1, 1.0)
    - Accelerate: cubic-bezier(0.3, 0.0, 0.8, 0.15)
    - Standard: cubic-bezier(0.2, 0.0, 0, 1.0)
 
-2. **Standard**: バランスの取れた標準的な動き
+2. **Standard**: Balanced, standard movement.
    - cubic-bezier(0.2, 0.0, 0, 1.0)
 
-3. **Emphasized Decelerate**: 要素が画面に入る
+3. **Emphasized Decelerate**: Elements entering the screen.
    - cubic-bezier(0.05, 0.7, 0.1, 1.0)
 
-4. **Emphasized Accelerate**: 要素が画面から出る
+4. **Emphasized Accelerate**: Elements leaving the screen.
    - cubic-bezier(0.3, 0.0, 0.8, 0.15)
 
 #### Duration Guidelines
@@ -273,39 +273,39 @@ Material 3は4つのイージングカーブを定義:
 | Large (layout change) | 400-500ms |
 | Complex transition | 500-700ms |
 
-**重要**: 長すぎるアニメーション（>1000ms）は避ける
+**Important**: Avoid excessively long animations (>1000ms).
 
 URL: https://m3.material.io/styles/motion/easing-and-duration
 
 ### Transitions
 
-ナビゲーション時のトランジションパターン:
+Transition patterns during navigation:
 
 #### Transition Types
 
-1. **Container transform**: コンテナが変形して次の画面へ
-2. **Shared axis**: 共通軸に沿った移動（X, Y, Z軸）
-3. **Fade through**: フェードアウト→フェードイン
-4. **Fade**: シンプルなフェード
+1. **Container transform**: A container transforms into the next screen.
+2. **Shared axis**: Movement along a common axis (X, Y, Z).
+3. **Fade through**: Fade out followed by fade in.
+4. **Fade**: Simple fade animation.
 
 #### When to Use Each
 
-- **Container transform**: リスト項目→詳細画面
-- **Shared axis X**: タブ切り替え、水平ナビゲーション
-- **Shared axis Y**: ステッパー、垂直ナビゲーション
-- **Shared axis Z**: 前後のナビゲーション（戻る/進む）
-- **Fade through**: コンテンツ更新（関連性が低い）
-- **Fade**: オーバーレイ、補助的な変更
+- **Container transform**: List item to detail screen.
+- **Shared axis X**: Tab switching, horizontal navigation.
+- **Shared axis Y**: Steppers, vertical navigation.
+- **Shared axis Z**: Back/Forward navigation.
+- **Fade through**: Content updates (low relationship).
+- **Fade**: Overlays, auxiliary changes.
 
 URL: https://m3.material.io/styles/motion/transitions/transition-patterns
 
 ### M3 Expressive Motion
 
-**新しい表現豊かなモーションシステム**:
+**New expressive motion system**:
 
-- より大胆なアニメーション
-- カスタマイズ可能なモーションテーマ
-- ブランド表現の強化
+- Bolder animations.
+- Customizable motion themes.
+- Enhanced brand expression.
 
 URL: https://m3.material.io/blog/m3-expressive-motion-theming
 

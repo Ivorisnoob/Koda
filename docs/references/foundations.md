@@ -1,6 +1,6 @@
 # Material 3 Foundations
 
-Material 3 Foundationsは、すべてのMaterialインターフェースの基盤となる設計原則とパターンを定義します。
+Material 3 Foundations define the design principles and patterns that serve as the base for all Material interfaces.
 
 ## Table of Contents
 
@@ -16,30 +16,30 @@ Material 3 Foundationsは、すべてのMaterialインターフェースの基�
 ## Accessibility
 
 ### Core Principles
-- 多様な能力を持つユーザーのための設計
-- スクリーンリーダーなどの支援技術との統合
-- WCAG準拠のコントラスト比
+- Design for users with diverse abilities.
+- Integration with assistive technologies like screen readers.
+- WCAG-compliant contrast ratios.
 
 ### Key Areas
 
 #### Structure and Elements
-- 直感的なレイアウト階層
-- アクセシブルなUI要素の設計
-- フォーカス管理とナビゲーション
+- Intuitive layout hierarchy.
+- Design of accessible UI elements.
+- Focus management and navigation.
 
 URL: https://m3.material.io/foundations/designing/structure
 
 #### Color Contrast
-- WCAG準拠のカラーコントラスト
-- テキストとUIコントロールの視認性
-- 4.5:1（通常テキスト）、3:1（大きいテキスト、UIコンポーネント）
+- WCAG-compliant color contrast.
+- Visual clarity for text and UI controls.
+- 4.5:1 (Normal text), 3:1 (Large text, UI components).
 
 URL: https://m3.material.io/foundations/designing/color-contrast
 
 #### Text Accessibility
-- テキストリサイズのサポート（200%まで）
-- アクセシブルなテキスト切り詰め
-- 明確で適応可能な文章
+- Support for text resizing (up to 200%).
+- Accessible text truncation.
+- Clear and adaptable writing.
 
 URL: https://m3.material.io/foundations/writing/text-resizing
 
@@ -50,16 +50,16 @@ URL: https://m3.material.io/foundations/writing/text-resizing
 ### Understanding Layout
 
 #### Core Components
-- **Regions**: 画面の主要エリア（ヘッダー、本文、ナビゲーション）
-- **Columns**: グリッドシステムの基本単位
-- **Gutters**: カラム間のスペース
-- **Spacing**: 4dpベースの一貫したスペーシングシステム
+- **Regions**: Major screen areas (header, body, navigation).
+- **Columns**: Fundamental units of the grid system.
+- **Gutters**: Spaces between columns.
+- **Spacing**: 4dp-based consistent spacing system.
 
 URL: https://m3.material.io/foundations/layout/understanding-layout/overview
 
 ### Window Size Classes
 
-画面サイズに応じたレスポンシブデザイン:
+Responsive design based on screen size:
 
 | Size Class | Width | Typical Device | Key Patterns |
 |-----------|-------|---------------|--------------|
@@ -72,11 +72,11 @@ URL: https://m3.material.io/foundations/layout/applying-layout/window-size-class
 
 ### Canonical Layouts
 
-よく使われるレイアウトパターン:
+Commonly used layout patterns:
 
-1. **List-detail**: マスター・詳細ナビゲーション
-2. **Feed**: コンテンツフィード
-3. **Supporting pane**: 補助コンテンツパネル
+1. **List-detail**: Master-detail navigation.
+2. **Feed**: Content feed.
+3. **Supporting pane**: Auxiliary content panel.
 
 URL: https://m3.material.io/foundations/layout/canonical-layouts/overview
 
@@ -87,15 +87,15 @@ URL: https://m3.material.io/foundations/layout/canonical-layouts/overview
 ### States
 
 #### Visual States
-- **Enabled**: デフォルト状態
-- **Hover**: ポインタがホバーしている状態（デスクトップ）
-- **Focused**: キーボードフォーカス
-- **Pressed**: アクティブに押されている状態
-- **Dragged**: ドラッグ中
-- **Disabled**: 無効化状態
+- **Enabled**: Default state.
+- **Hover**: Pointer hovering (Desktop).
+- **Focused**: Keyboard focus.
+- **Pressed**: Actively being pressed.
+- **Dragged**: During a drag operation.
+- **Disabled**: Disabled state.
 
 #### State Layers
-半透明なオーバーレイで状態を視覚的に示す:
+Semi-transparent overlays visually indicating states:
 - Hover: 8% opacity
 - Focus: 12% opacity
 - Press: 12% opacity
@@ -104,20 +104,20 @@ URL: https://m3.material.io/foundations/interaction/states/state-layers
 
 ### Gestures
 
-モバイルインターフェース向けタッチジェスチャー:
-- Tap: 基本的な選択
-- Long press: コンテキストメニュー
-- Drag: 移動、並べ替え
-- Swipe: ナビゲーション、削除
-- Pinch: ズーム
+Touch gestures for mobile interfaces:
+- Tap: Basic selection.
+- Long press: Context menu.
+- Drag: Move, rearrange.
+- Swipe: Navigation, deletion.
+- Pinch: Zoom.
 
 URL: https://m3.material.io/foundations/interaction/gestures
 
 ### Selection
 
-選択インタラクションパターン:
-- **Single selection**: ラジオボタン、リスト項目
-- **Multi selection**: チェックボックス、選択可能なリスト
+Selection interaction patterns:
+- **Single selection**: Radio buttons, list items.
+- **Multi selection**: Checkboxes, selectable lists.
 
 URL: https://m3.material.io/foundations/interaction/selection
 
@@ -127,35 +127,35 @@ URL: https://m3.material.io/foundations/interaction/selection
 
 ### UX Writing Principles
 
-1. **Clear**: 明確で理解しやすい
-2. **Concise**: 簡潔で要点を押さえた
-3. **Useful**: ユーザーのニーズに応える
-4. **Consistent**: 用語とトーンの一貫性
+1. **Clear**: Explicit and easy to understand.
+2. **Concise**: Brief and to the point.
+3. **Useful**: Meets user needs.
+4. **Consistent**: Uniformity in terminology and tone.
 
 ### Notifications
 
-効果的な通知コンテンツ:
-- アクション可能な情報
-- 明確な次のステップ
-- ユーザーコンテキストの理解
+Effective notification content:
+- Actionable information.
+- Clear next steps.
+- Understanding of user context.
 
 URL: https://m3.material.io/foundations/content-design/notifications
 
 ### Alt Text
 
-アクセシブルな画像説明:
-- 装飾的画像: 空のalt属性
-- 機能的画像: アクションを説明
-- 情報的画像: 内容を簡潔に説明
+Accessible image descriptions:
+- Decorative images: Empty alt attribute.
+- Functional images: Describe the action.
+- Informational images: Briefly describe the content.
 
 URL: https://m3.material.io/foundations/content-design/alt-text
 
 ### Global Writing
 
-国際的なオーディエンス向けの文章:
-- ローカライゼーションを考慮した単語選択
-- 文化的に中立な表現
-- 翻訳しやすい文法構造
+Writing for global audiences:
+- Word choices considering localization.
+- Culturally neutral expressions.
+- Grammar structures easy to translate.
 
 URL: https://m3.material.io/foundations/content-design/global-writing/overview
 
@@ -165,18 +165,18 @@ URL: https://m3.material.io/foundations/content-design/global-writing/overview
 
 ### What are Design Tokens?
 
-デザイントークンは、デザイン、ツール、コード全体で使用される設計上の決定の最小単位:
+Design tokens are the smallest units of design decisions used across design, tools, and code:
 
-- **Color tokens**: primary, secondary, surface, error など
-- **Typography tokens**: displayLarge, bodyMedium など
-- **Shape tokens**: cornerRadius, roundedCorner など
-- **Motion tokens**: duration, easing curves
+- **Color tokens**: primary, secondary, surface, error, etc.
+- **Typography tokens**: displayLarge, bodyMedium, etc.
+- **Shape tokens**: cornerRadius, roundedCorner, etc.
+- **Motion tokens**: duration, easing curves.
 
 ### Benefits
 
-- デザインとコード間の一貫性
-- テーマのカスタマイズが容易
-- プラットフォーム間での統一
+- Consistency between design and code.
+- Ease of theme customization.
+- Unity across platforms.
 
 URL: https://m3.material.io/foundations/design-tokens/overview
 
@@ -186,16 +186,16 @@ URL: https://m3.material.io/foundations/design-tokens/overview
 
 ### Principles
 
-- **Responsive**: ウィンドウサイズに応じた調整
-- **Adaptive**: デバイス特性に応じた最適化
-- **Contextual**: 使用コンテキストを考慮
+- **Responsive**: Adjusts to window size.
+- **Adaptive**: Optimizes for device characteristics.
+- **Contextual**: Considers usage context.
 
 ### Key Strategies
 
-1. Window size classesに基づくレイアウト調整
-2. 入力方式（タッチ、マウス、キーボード）への対応
-3. デバイス機能（カメラ、位置情報等）の活用
-4. オフラインとオンラインシナリオの対応
+1. Layout adjustments based on Window size classes.
+2. Support for input methods (touch, mouse, keyboard).
+3. Leveraging device features (camera, location, etc.).
+4. Handling offline and online scenarios.
 
 URL: https://m3.material.io/foundations/adaptive-design
 
