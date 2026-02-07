@@ -23,6 +23,9 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -139,7 +142,8 @@ private fun LyricsContent(
                     isPast = index < currentLineIndex,
                     onTap = { onSeekTo(line.timeMs) },
                     primaryColor = primaryColor,
-                    onSurfaceColor = onSurfaceColor
+                    onSurfaceColor = onSurfaceColor,
+                    currentPositionMs = currentPositionMs
                 )
             }
         }
@@ -186,7 +190,8 @@ private fun LyricLine(
     isPast: Boolean,
     onTap: () -> Unit,
     primaryColor: Color,
-    onSurfaceColor: Color
+    onSurfaceColor: Color,
+    currentPositionMs: Long = 0L
 ) {
     // Animate scale for current line emphasis
     val scale by animateFloatAsState(
@@ -204,44 +209,79 @@ private fun LyricLine(
         animationSpec = spring(stiffness = Spring.StiffnessLow),
         label = "LyricAlpha"
     )
-    
-    // Animate color
-    val textColor by animateColorAsState(
-        targetValue = if (isCurrent) primaryColor else onSurfaceColor,
-        animationSpec = spring(stiffness = Spring.StiffnessLow),
-        label = "LyricColor"
-    )
-    
-    // Blur effect (simulated with alpha for compatibility, or use RenderEffect if API 31+)
-    // For now, we rely on scale and alpha which is very effective
-    
-    Text(
-        text = line.text,
-        style = if (isCurrent) {
-            MaterialTheme.typography.headlineMedium.copy(
-                fontWeight = FontWeight.ExtraBold,
-                shadow = androidx.compose.ui.graphics.Shadow(
-                    color = primaryColor.copy(alpha = 0.5f),
-                    blurRadius = 24f
-                )
-            )
-        } else {
-            MaterialTheme.typography.titleLarge.copy(
-                fontWeight = FontWeight.Medium
-            )
-        },
-        color = textColor,
-        textAlign = TextAlign.Center,
+
+    Box(
         modifier = Modifier
             .fillMaxWidth()
             .scale(scale)
             .alpha(alpha)
             .clickable(
                 interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
-                indication = null // distinct click effect not needed for lyrics
+                indication = null
             ) { onTap() }
-            .padding(vertical = 8.dp)
-    )
+            .padding(vertical = 8.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        if (isCurrent && line.contentSpans.isNotEmpty()) {
+            // Enhanced LRC: Precise Word-by-Word
+            // Render using AnnotatedString based on time comparison
+            val annotatedString = buildAnnotatedString {
+                line.contentSpans.forEach { span ->
+                    val isWordPassed = currentPositionMs >= span.timeMs
+                    val color = if (isWordPassed) primaryColor else onSurfaceColor.copy(alpha = 0.5f)
+                    
+                    withStyle(
+                        SpanStyle(
+                            color = color,
+                            fontSize = if(isWordPassed) MaterialTheme.typography.headlineMedium.fontSize else MaterialTheme.typography.headlineMedium.fontSize,
+                            fontWeight = if(isWordPassed) FontWeight.ExtraBold else FontWeight.Bold,
+                             shadow = if (isWordPassed) androidx.compose.ui.graphics.Shadow(
+                                color = primaryColor.copy(alpha = 0.5f),
+                                blurRadius = 24f
+                            ) else null
+                        )
+                    ) {
+                        append(span.text)
+                    }
+                    append(" ")
+                }
+            }
+            
+            Text(
+                text = annotatedString,
+                style = MaterialTheme.typography.headlineMedium,
+                textAlign = TextAlign.Center
+            )
+            
+        } else if (isCurrent) {
+            // Standard LRC: Line-Synced Only
+            // Just highlight the whole line clearly. No "fake" gradient filling.
+            // This is safer and more honest to the user.
+            
+            Text(
+                text = line.text,
+                style = MaterialTheme.typography.headlineMedium.copy(
+                    fontWeight = FontWeight.ExtraBold,
+                    shadow = androidx.compose.ui.graphics.Shadow(
+                        color = primaryColor.copy(alpha = 0.5f),
+                        blurRadius = 24f
+                    )
+                ),
+                color = primaryColor,
+                textAlign = TextAlign.Center
+            )
+        } else {
+            // Inactive lines
+            Text(
+                text = line.text,
+                style = MaterialTheme.typography.titleLarge.copy(
+                    fontWeight = FontWeight.Medium
+                ),
+                color = onSurfaceColor,
+                textAlign = TextAlign.Center
+            )
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)

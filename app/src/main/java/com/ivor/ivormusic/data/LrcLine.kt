@@ -4,8 +4,15 @@ package com.ivor.ivormusic.data
  * Represents a single line of synced lyrics with its timestamp.
  */
 data class LrcLine(
-    val timeMs: Long,  // Timestamp in milliseconds
-    val text: String   // Lyrics text for this line
+    val timeMs: Long,
+    val text: String,
+    val contentSpans: List<LrcContentSpan> = emptyList() // Optional word-level spans
+)
+
+data class LrcContentSpan(
+    val timeMs: Long,
+    val text: String,
+    val durationMs: Long = 0L // Duration of this span/word
 )
 
 /**
