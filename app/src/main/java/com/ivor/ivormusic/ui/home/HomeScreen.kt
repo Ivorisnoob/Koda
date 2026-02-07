@@ -65,8 +65,7 @@ import androidx.compose.material3.carousel.CarouselState
 import androidx.compose.material3.HorizontalFloatingToolbar
 import androidx.compose.material3.FloatingToolbarDefaults
 import androidx.compose.material3.IconToggleButton
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
-import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
+import com.ivor.ivormusic.ui.components.ExpressivePullToRefresh
 import androidx.activity.compose.BackHandler
 import androidx.compose.material3.carousel.CarouselDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -580,7 +579,7 @@ fun YourMixContent(
     
     val isRefreshing by viewModel.isLoading.collectAsState()
     
-    PullToRefreshBox(
+    ExpressivePullToRefresh(
         isRefreshing = isRefreshing,
         onRefresh = { viewModel.refresh(excludedFolders) },
         modifier = Modifier.fillMaxSize()

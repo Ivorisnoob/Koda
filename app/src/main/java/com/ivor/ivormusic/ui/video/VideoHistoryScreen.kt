@@ -37,8 +37,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
-import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
+import com.ivor.ivormusic.ui.components.ExpressivePullToRefresh
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -132,7 +131,7 @@ fun VideoHistoryContent(
         return
     }
 
-    PullToRefreshBox(
+    ExpressivePullToRefresh(
         isRefreshing = isHistoryLoading,
         onRefresh = { viewModel.loadYouTubeHistory() },
         modifier = Modifier.fillMaxSize()

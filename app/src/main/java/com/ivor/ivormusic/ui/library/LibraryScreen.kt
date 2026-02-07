@@ -89,8 +89,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
-import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
+import com.ivor.ivormusic.ui.components.ExpressivePullToRefresh
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.offset
@@ -237,7 +236,7 @@ fun LibraryScreen(
         Spacer(modifier = Modifier.height(20.dp))
 
         // Main Content
-        PullToRefreshBox(
+        ExpressivePullToRefresh(
             isRefreshing = isLoading,
             onRefresh = { viewModel.refresh() },
             modifier = Modifier.fillMaxSize()
