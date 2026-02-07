@@ -92,31 +92,43 @@ private fun LyricsContent(
     onSurfaceVariantColor: Color
 ) {
     val listState = rememberLazyListState()
-    val coroutineScope = rememberCoroutineScope()
     
     // Calculate current line index based on playback position
-    val currentLineIndex = remember(currentPositionMs, lines) {
-        lines.indexOfLast { it.timeMs <= currentPositionMs }.coerceAtLeast(0)
+    val currentLineIndex by remember(currentPositionMs, lines) {
+        derivedStateOf {
+            val index = lines.indexOfLast { it.timeMs <= currentPositionMs }
+            index.coerceAtLeast(0)
+        }
     }
     
-    // Auto-scroll to current line with some look-ahead
+    // Auto-scroll to current line
     LaunchedEffect(currentLineIndex) {
-        if (lines.isNotEmpty() && currentLineIndex >= 0) {
-            // Center the current line with some padding items above
-            val targetIndex = (currentLineIndex - 2).coerceAtLeast(0)
+        if (lines.isNotEmpty()) {
+            // Animate scroll to the current line to keep it centered
+            // The BoxWithConstraints padding strategy ensures this aligns to center
             listState.animateScrollToItem(
-                index = targetIndex,
+                index = currentLineIndex,
                 scrollOffset = 0
             )
         }
     }
     
-    Box(modifier = Modifier.fillMaxSize()) {
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        // Calculate padding to center the content
+        // We use half height for top/bottom padding so the first/last items can reach the center
+        val centerPadding = maxHeight / 2
+        
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(vertical = 80.dp, horizontal = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            // Large vertical padding allows every item to be scrolled to the center
+            contentPadding = PaddingValues(
+                top = centerPadding,
+                bottom = centerPadding,
+                start = 24.dp,
+                end = 24.dp
+            ),
+            verticalArrangement = Arrangement.spacedBy(24.dp), // Increased spacing for better readability
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             itemsIndexed(lines, key = { index, line -> "${index}_${line.timeMs}" }) { index, line ->
@@ -132,19 +144,18 @@ private fun LyricsContent(
             }
         }
         
-
-        
-        // Top fade gradient - only show if NOT using ambient background
+        // Top fade gradient
         if (!ambientBackground) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(80.dp)
+                    .height(centerPadding) // Gradient covers the top padding area
                     .align(Alignment.TopCenter)
                     .background(
                         Brush.verticalGradient(
                             colors = listOf(
                                 MaterialTheme.colorScheme.background,
+                                MaterialTheme.colorScheme.background.copy(alpha = 0.5f),
                                 MaterialTheme.colorScheme.background.copy(alpha = 0f)
                             )
                         )
@@ -155,12 +166,13 @@ private fun LyricsContent(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(80.dp)
+                    .height(centerPadding) // Gradient covers the bottom padding area
                     .align(Alignment.BottomCenter)
                     .background(
                         Brush.verticalGradient(
                             colors = listOf(
                                 MaterialTheme.colorScheme.background.copy(alpha = 0f),
+                                MaterialTheme.colorScheme.background.copy(alpha = 0.5f),
                                 MaterialTheme.colorScheme.background
                             )
                         )
