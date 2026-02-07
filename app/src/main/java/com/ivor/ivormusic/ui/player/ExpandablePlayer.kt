@@ -1,42 +1,49 @@
 package com.ivor.ivormusic.ui.player
 
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.animateDp
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.updateTransition
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.navigationBars
-import androidx.compose.animation.animateColor
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.with
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.lerp
 import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.data.PlayerStyle
 import com.ivor.ivormusic.ui.components.MiniPlayerContent
+import kotlin.math.absoluteValue
+import kotlin.math.roundToInt
 
 /**
  * A container that expands from a MiniPlayer (floating pill) to a Full Screen Player.
- * Animates bounds, corners, and padding.
+ * Uses a single animated progress value to drive all property interpolations for optimal performance.
+ * Leverages Material Physics motion scheme for smooth, interruptible animations.
+ * 
+ * Swipe gestures:
+ * - Swipe UP on mini player: Expand to full player
+ * - Swipe DOWN on full player: Collapse to mini player
+ * - Swipe LEFT/RIGHT on mini player: Dismiss/clear player
  */
-@androidx.compose.animation.ExperimentalAnimationApi
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun ExpandablePlayer(
     isExpanded: Boolean,
@@ -57,118 +64,165 @@ fun ExpandablePlayer(
 ) {
     if (currentSong == null) return
 
-    val transition = updateTransition(isExpanded, label = "ExpandParams")
     val configuration = LocalConfiguration.current
     val screenHeight = configuration.screenHeightDp.dp
-    
-    // Calculate bottom padding based on NavBar height (~90dp) + system insets
+    val screenWidth = configuration.screenWidthDp.dp
     val density = LocalDensity.current
     val bottomWindowInsets = WindowInsets.navigationBars
     val bottomInset = with(density) { bottomWindowInsets.getBottom(this).toDp() }
     
-    // Animate container properties
-    val height by transition.animateDp(
-        transitionSpec = { spring(stiffness = 300f, dampingRatio = 0.8f) },
-        label = "height"
-    ) { expanded ->
-        if (expanded) screenHeight else 80.dp
+    // Single animated progress (0f = collapsed, 1f = expanded)
+    // Using Material Physics slowSpatialSpec for full-screen animations
+    val expandProgress by animateFloatAsState(
+        targetValue = if (isExpanded) 1f else 0f,
+        animationSpec = MaterialTheme.motionScheme.slowSpatialSpec(),
+        label = "expandProgress"
+    )
+    
+    // Derive all properties from the single progress value
+    val collapsedHeight = 80.dp
+    val collapsedWidthPadding = 16.dp
+    val collapsedBottomPadding = 100.dp + bottomInset
+    val collapsedCornerRadius = 50.dp
+    
+    val expandedHeight = screenHeight
+    val expandedWidthPadding = 0.dp
+    val expandedBottomPadding = 0.dp
+    val expandedCornerRadius = 0.dp
+    
+    // Interpolated values based on progress
+    val height = lerp(collapsedHeight, expandedHeight, expandProgress)
+    val widthPadding = lerp(collapsedWidthPadding, expandedWidthPadding, expandProgress)
+    val bottomPadding = lerp(collapsedBottomPadding, expandedBottomPadding, expandProgress)
+    val cornerRadius = lerp(collapsedCornerRadius, expandedCornerRadius, expandProgress)
+    
+    // Color interpolation - collapsed shows surface, expanded shows transparent
+    val containerColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(
+        alpha = 1f - expandProgress
+    )
+
+    // Swipe Logic for expand/collapse (vertical)
+    var verticalDragOffset by remember { mutableFloatStateOf(0f) }
+    val verticalSwipeThreshold = -50f
+    
+    // Swipe Logic for dismiss (horizontal) - only when collapsed
+    var horizontalDragOffset by remember { mutableFloatStateOf(0f) }
+    var isDismissing by remember { mutableStateOf(false) }
+    val horizontalDismissThreshold = with(density) { 100.dp.toPx() }
+    
+    // Dismiss animation - slides out and fades
+    val dismissOffsetTarget = if (isDismissing) {
+        // Slide out in the direction of the swipe
+        if (horizontalDragOffset > 0) with(density) { screenWidth.toPx() } else with(density) { -screenWidth.toPx() }
+    } else {
+        horizontalDragOffset
     }
     
-    val widthPadding by transition.animateDp(
-        transitionSpec = { spring(stiffness = 300f, dampingRatio = 0.8f) },
-        label = "widthPadding"
-    ) { expanded ->
-        if (expanded) 0.dp else 16.dp
-    }
-
-    val bottomPadding by transition.animateDp(
-        transitionSpec = { spring(stiffness = 300f, dampingRatio = 0.8f) },
-        label = "bottomPadding"
-    ) { expanded ->
-        // FloatingPillNavBar is ~88dp tall + padding. We place MiniPlayer just above it.
-        if (expanded) 0.dp else (100.dp + bottomInset)
-    }
+    val animatedHorizontalOffset by animateFloatAsState(
+        targetValue = if (!isExpanded) dismissOffsetTarget else 0f,
+        animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
+        finishedListener = { 
+            if (isDismissing) {
+                viewModel.clearPlayer()
+                isDismissing = false
+                horizontalDragOffset = 0f
+            }
+        },
+        label = "horizontalOffset"
+    )
     
-    val cornerRadius by transition.animateDp(
-        transitionSpec = { spring(stiffness = 300f, dampingRatio = 0.8f) },
-        label = "cornerRadius"
-    ) { expanded ->
-        if (expanded) 0.dp else 50.dp
-    }
-
-    // Animate container color: SurfaceHigh when collapsed, Transparent when expanded 
-    val containerColor by transition.animateColor(label = "containerColor") { expanded ->
-        if (expanded) Color.Transparent else MaterialTheme.colorScheme.surfaceContainerHigh
-    }
-
-    // Swipe Logic
-    var dragOffset by remember { mutableFloatStateOf(0f) }
-    val swipeThreshold = -50f
+    // Alpha based on swipe distance
+    val dismissAlpha = if (isDismissing) 0f else 1f - (animatedHorizontalOffset.absoluteValue / (horizontalDismissThreshold * 2)).coerceIn(0f, 0.5f)
 
     // Container
     Box(
-        modifier = modifier
-            .fillMaxSize(),
+        modifier = modifier.fillMaxSize(),
         contentAlignment = Alignment.BottomCenter
     ) {
-        // Enforce padding via Box content alignment and absolute offset or padding
-        // Using padding on the box itself might clip content if we aren't careful? and this caused some crashes lmao here and there as expected
-        // Let's stick to the previous structure but ensure correct Z-index/HitTest
-        
         Surface(
             modifier = Modifier
-                .padding(bottom = bottomPadding.coerceAtLeast(0.dp)) // Clamp to prevent negative
-                .padding(horizontal = widthPadding.coerceAtLeast(0.dp)) // Clamp to prevent negative
+                .padding(bottom = bottomPadding.coerceAtLeast(0.dp))
+                .padding(horizontal = widthPadding.coerceAtLeast(0.dp))
+                .offset { IntOffset(animatedHorizontalOffset.roundToInt(), 0) }
+                .graphicsLayer { alpha = dismissAlpha }
                 .fillMaxWidth()
-                .height(height.coerceAtLeast(0.dp)) 
-                .pointerInput(Unit) {
-                    detectVerticalDragGestures(
-                        onDragStart = { dragOffset = 0f },
-                        onDragEnd = {
-                            if (dragOffset < swipeThreshold && !isExpanded) {
-                                onExpandChange(true)
-                            } else if (dragOffset > -swipeThreshold && isExpanded) {
-                                onExpandChange(false)
+                .height(height.coerceAtLeast(0.dp))
+                .pointerInput(isExpanded) {
+                    if (isExpanded) {
+                        // Expanded: Only handle vertical drag for collapse
+                        detectVerticalDragGestures(
+                            onDragStart = { verticalDragOffset = 0f },
+                            onDragEnd = {
+                                if (verticalDragOffset > -verticalSwipeThreshold) {
+                                    onExpandChange(false)
+                                }
+                                verticalDragOffset = 0f
+                            },
+                            onVerticalDrag = { change, dragAmount ->
+                                change.consume()
+                                verticalDragOffset += dragAmount
                             }
-                            dragOffset = 0f
-                        },
-                        onVerticalDrag = { change, dragAmount ->
-                            change.consume()
-                            dragOffset += dragAmount
-                        }
-                    )
+                        )
+                    } else {
+                        // Collapsed: Handle horizontal drag for dismiss
+                        detectHorizontalDragGestures(
+                            onDragStart = { horizontalDragOffset = 0f },
+                            onDragEnd = {
+                                if (horizontalDragOffset.absoluteValue > horizontalDismissThreshold) {
+                                    // Trigger dismiss animation - don't reset offset yet
+                                    isDismissing = true
+                                } else {
+                                    // Snap back
+                                    horizontalDragOffset = 0f
+                                }
+                            },
+                            onHorizontalDrag = { change, dragAmount ->
+                                change.consume()
+                                horizontalDragOffset += dragAmount
+                            }
+                        )
+                    }
+                }
+                .pointerInput(isExpanded) {
+                    if (!isExpanded) {
+                        // Collapsed: Also handle vertical drag for expand
+                        detectVerticalDragGestures(
+                            onDragStart = { verticalDragOffset = 0f },
+                            onDragEnd = {
+                                if (verticalDragOffset < verticalSwipeThreshold) {
+                                    onExpandChange(true)
+                                }
+                                verticalDragOffset = 0f
+                            },
+                            onVerticalDrag = { change, dragAmount ->
+                                change.consume()
+                                verticalDragOffset += dragAmount
+                            }
+                        )
+                    }
                 }
                 .clickable(enabled = !isExpanded) { onExpandChange(true) },
             shape = RoundedCornerShape(cornerRadius.coerceAtLeast(0.dp)),
-            color = containerColor,
-            shadowElevation = if (isExpanded) 0.dp else 8.dp,
-            tonalElevation = if (isExpanded) 0.dp else 4.dp
+            color = containerColor
+            // No shadow/elevation for cleaner look
         ) {
-            // Content Crossfade with better transition
-            transition.AnimatedContent(
+            // Get animation specs from material motion scheme (must be called in composable scope)
+            val fadeSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
+            
+            // Content with simple crossfade - no scale transforms for performance
+            AnimatedContent(
+                targetState = isExpanded,
                 transitionSpec = {
-                    if (targetState) {
-                        // Expanding: Fade In + Scale Up, while MiniPlayer Fades Out
-                        (fadeIn(animationSpec = spring(stiffness = 300f)) + 
-                         scaleIn(initialScale = 0.9f, animationSpec = spring(stiffness = 300f))) with
-                        (fadeOut(animationSpec = spring(stiffness = 300f)))
-                    } else {
-                        // Collapsing: MiniPlayer Fades In, FullPlayer Fades Out + Scales Down
-                        (fadeIn(animationSpec = spring(stiffness = 300f))) with
-                        (fadeOut(animationSpec = spring(stiffness = 300f)) + 
-                         scaleOut(targetScale = 0.9f, animationSpec = spring(stiffness = 300f)))
-                    }
+                    // Simple fade for better performance
+                    fadeIn(animationSpec = fadeSpec) togetherWith fadeOut(animationSpec = fadeSpec)
                 },
-                contentKey = { it }
+                contentKey = { it },
+                label = "playerContent"
             ) { targetExpanded ->
                 if (targetExpanded) {
-                    // Guard: Skip rendering complex player content when height is too small
-                    // This prevents IllegalArgumentException: maxWidth >= minWidth constraint failures
-                    // during the collapse/expand animation when container dimensions are invalid
-                    // Use relative threshold (25% of screen) to work on all DPI settings
+                    // Guard: Skip rendering when height is too small during animation
                     val minSafeHeight = screenHeight * 0.25f
                     if (height < minSafeHeight) {
-                        // Show simple placeholder during animation transition
                         Box(modifier = Modifier.fillMaxSize())
                     } else {
                         Box(modifier = Modifier.fillMaxSize()) {
@@ -214,5 +268,3 @@ fun ExpandablePlayer(
         }
     }
 }
-
-

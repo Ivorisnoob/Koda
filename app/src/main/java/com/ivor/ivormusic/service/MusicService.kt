@@ -244,6 +244,10 @@ class MusicService : MediaLibraryService() {
         if (isPlaceholder(uri)) {
             Log.w(TAG, "Validation: Hit placeholder for $videoId. Resolving...")
             
+            // Capture the current playWhenReady state BEFORE resolution
+            // This ensures restored songs don't auto-play if the user hadn't started playback
+            val wasPlayWhenReady = player.playWhenReady
+            
             // Launch resolution main-safe
             serviceScope.launch {
                 // Get the deduplicated future (reuses existing if prefetch started it)
@@ -254,11 +258,13 @@ class MusicService : MediaLibraryService() {
                     
                     // Apply if still current
                     if (player.currentMediaItem?.mediaId == videoId) {
-                        Log.i(TAG, "Validation: Applied resolved item for $videoId")
+                        Log.i(TAG, "Validation: Applied resolved item for $videoId (playWhenReady=$wasPlayWhenReady)")
                         val index = player.currentMediaItemIndex
                         player.replaceMediaItem(index, resolvedItem)
                         player.prepare()
-                        player.playWhenReady = true
+                        // Restore to previous playWhenReady state, not force to true
+                        // This prevents auto-play on cold start restoration
+                        player.playWhenReady = wasPlayWhenReady
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Validation: Resolution failed for $videoId", e)

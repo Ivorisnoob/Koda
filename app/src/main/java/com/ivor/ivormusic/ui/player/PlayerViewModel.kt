@@ -61,6 +61,9 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     private var lastRecordedSongId: String? = null
     private var playRecordingJob: Job? = null
     
+    // Flag to prevent listener from restoring song after clear
+    private var isPlayerCleared = false
+    
     // Liked songs functionality
     private val likedSongsRepository = LikedSongsRepository(context)
     
@@ -210,6 +213,12 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                 }
 
                 override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                    // If we just cleared the player, don't restore from this callback
+                    if (isPlayerCleared) {
+                        android.util.Log.d("PlayerViewModel", "Ignoring media transition - player was cleared")
+                        return
+                    }
+                    
                     // Update current song based on Media ID
                     val id = mediaItem?.mediaId
                     var song: Song? = null
@@ -381,6 +390,9 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
 
     fun playQueue(songs: List<Song>, startSong: Song? = null) {
         if (songs.isEmpty()) return
+        
+        // Reset cleared flag - user is actively playing
+        isPlayerCleared = false
         
         _currentQueue.value = songs
         val startIndex = (if (startSong != null) songs.indexOfFirst { it.id == startSong.id } else 0).coerceAtLeast(0)
@@ -668,6 +680,35 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         viewModelScope.launch {
             playlistRepository.addSongToPlaylist(playlistId, song)
         }
+    }
+    
+    /**
+     * Clear the current player state, stop playback, and dismiss the mini player.
+     * This removes the last played song from preferences so it won't restore on next launch.
+     */
+    fun clearPlayer() {
+        // Set flag BEFORE clearing to prevent listener from restoring
+        isPlayerCleared = true
+        
+        controller?.let { player ->
+            player.stop()
+            player.clearMediaItems()
+        }
+        
+        // Clear UI state
+        _currentSong.value = null
+        _currentQueue.value = emptyList()
+        _isPlaying.value = false
+        _isBuffering.value = false
+        _playWhenReady.value = false
+        _progress.value = 0L
+        _duration.value = 0L
+        _lyricsResult.value = LyricsResult.Loading
+        
+        // Clear stored last played song so it doesn't restore
+        themePreferences.clearLastPlayedSong()
+        
+        android.util.Log.d("PlayerViewModel", "Player cleared and mini player dismissed")
     }
 
     override fun onCleared() {
