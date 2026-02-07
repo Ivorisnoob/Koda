@@ -102,33 +102,34 @@ private fun LyricsContent(
     }
     
     // Auto-scroll to current line
-    LaunchedEffect(currentLineIndex) {
+    LaunchedEffect(currentLineIndex, lines) {
         if (lines.isNotEmpty()) {
             // Animate scroll to the current line to keep it centered
-            // The BoxWithConstraints padding strategy ensures this aligns to center
-            listState.animateScrollToItem(
-                index = currentLineIndex,
-                scrollOffset = 0
-            )
+            try {
+                listState.animateScrollToItem(
+                    index = currentLineIndex,
+                    scrollOffset = 0
+                )
+            } catch (e: Exception) {
+                // Ignore scroll errors during rapid updates
+            }
         }
     }
     
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         // Calculate padding to center the content
-        // We use half height for top/bottom padding so the first/last items can reach the center
         val centerPadding = maxHeight / 2
         
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize(),
-            // Large vertical padding allows every item to be scrolled to the center
             contentPadding = PaddingValues(
                 top = centerPadding,
                 bottom = centerPadding,
-                start = 24.dp,
-                end = 24.dp
+                start = 32.dp,
+                end = 32.dp
             ),
-            verticalArrangement = Arrangement.spacedBy(24.dp), // Increased spacing for better readability
+            verticalArrangement = Arrangement.spacedBy(32.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             itemsIndexed(lines, key = { index, line -> "${index}_${line.timeMs}" }) { index, line ->
@@ -138,41 +139,37 @@ private fun LyricsContent(
                     isPast = index < currentLineIndex,
                     onTap = { onSeekTo(line.timeMs) },
                     primaryColor = primaryColor,
-                    onSurfaceColor = onSurfaceColor,
-                    onSurfaceVariantColor = onSurfaceVariantColor
+                    onSurfaceColor = onSurfaceColor
                 )
             }
         }
         
-        // Top fade gradient
+        // Premium gradient fade at top and bottom
         if (!ambientBackground) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(centerPadding) // Gradient covers the top padding area
+                    .height(centerPadding * 0.6f)
                     .align(Alignment.TopCenter)
                     .background(
                         Brush.verticalGradient(
                             colors = listOf(
                                 MaterialTheme.colorScheme.background,
-                                MaterialTheme.colorScheme.background.copy(alpha = 0.5f),
                                 MaterialTheme.colorScheme.background.copy(alpha = 0f)
                             )
                         )
                     )
             )
             
-            // Bottom fade gradient
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(centerPadding) // Gradient covers the bottom padding area
+                    .height(centerPadding * 0.6f)
                     .align(Alignment.BottomCenter)
                     .background(
                         Brush.verticalGradient(
                             colors = listOf(
                                 MaterialTheme.colorScheme.background.copy(alpha = 0f),
-                                MaterialTheme.colorScheme.background.copy(alpha = 0.5f),
                                 MaterialTheme.colorScheme.background
                             )
                         )
@@ -189,26 +186,21 @@ private fun LyricLine(
     isPast: Boolean,
     onTap: () -> Unit,
     primaryColor: Color,
-    onSurfaceColor: Color,
-    onSurfaceVariantColor: Color
+    onSurfaceColor: Color
 ) {
     // Animate scale for current line emphasis
     val scale by animateFloatAsState(
-        targetValue = if (isCurrent) 1.1f else 1f,
+        targetValue = if (isCurrent) 1.25f else 1.0f,
         animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMedium
+            dampingRatio = Spring.DampingRatioLowBouncy,
+            stiffness = Spring.StiffnessLow
         ),
         label = "LyricScale"
     )
     
     // Animate alpha for past/future lines
     val alpha by animateFloatAsState(
-        targetValue = when {
-            isCurrent -> 1f
-            isPast -> 0.4f
-            else -> 0.6f
-        },
+        targetValue = if (isCurrent) 1f else 0.35f,
         animationSpec = spring(stiffness = Spring.StiffnessLow),
         label = "LyricAlpha"
     )
@@ -220,27 +212,36 @@ private fun LyricLine(
         label = "LyricColor"
     )
     
-    Surface(
+    // Blur effect (simulated with alpha for compatibility, or use RenderEffect if API 31+)
+    // For now, we rely on scale and alpha which is very effective
+    
+    Text(
+        text = line.text,
+        style = if (isCurrent) {
+            MaterialTheme.typography.headlineMedium.copy(
+                fontWeight = FontWeight.ExtraBold,
+                shadow = androidx.compose.ui.graphics.Shadow(
+                    color = primaryColor.copy(alpha = 0.5f),
+                    blurRadius = 24f
+                )
+            )
+        } else {
+            MaterialTheme.typography.titleLarge.copy(
+                fontWeight = FontWeight.Medium
+            )
+        },
+        color = textColor,
+        textAlign = TextAlign.Center,
         modifier = Modifier
             .fillMaxWidth()
             .scale(scale)
             .alpha(alpha)
-            .clickable { onTap() },
-        shape = RoundedCornerShape(16.dp),
-        color = if (isCurrent) primaryColor.copy(alpha = 0.1f) else Color.Transparent
-    ) {
-        Text(
-            text = line.text,
-            style = if (isCurrent) {
-                MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold)
-            } else {
-                MaterialTheme.typography.titleLarge
-            },
-            color = textColor,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(vertical = 12.dp, horizontal = 16.dp)
-        )
-    }
+            .clickable(
+                interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                indication = null // distinct click effect not needed for lyrics
+            ) { onTap() }
+            .padding(vertical = 8.dp)
+    )
 }
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)

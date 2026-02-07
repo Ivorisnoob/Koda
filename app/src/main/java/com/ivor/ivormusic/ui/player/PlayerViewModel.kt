@@ -661,6 +661,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                 songId = song.id,
                 title = song.title,
                 artist = song.artist,
+                album = song.album ?: "",
                 durationMs = song.duration
             )
             _lyricsResult.value = result

@@ -6,6 +6,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
@@ -18,12 +19,11 @@ import kotlin.math.abs
 class LyricsRepository {
     
     companion object {
-        private const val TAG = "KugouLyricsRepository"
-        private const val SEARCH_SONG_URL = "https://mobileservice.kugou.com/api/v3/search/song"
-        private const val SEARCH_LYRICS_URL = "https://lyrics.kugou.com/search"
-        private const val DOWNLOAD_LYRICS_URL = "https://lyrics.kugou.com/download"
+        private const val TAG = "LrclibRepository"
+        private const val API_GET_URL = "https://lrclib.net/api/get"
+        private const val API_SEARCH_URL = "https://lrclib.net/api/search"
         
-        private const val DURATION_TOLERANCE_SEC = 5 // Tolerance for duration matching
+        private const val DURATION_TOLERANCE_SEC = 3
     }
     
     private val client = OkHttpClient.Builder()
@@ -37,6 +37,7 @@ class LyricsRepository {
         songId: String,
         title: String,
         artist: String,
+        album: String = "",
         durationMs: Long
     ): LyricsResult = withContext(Dispatchers.IO) {
         if (title.isBlank()) return@withContext LyricsResult.NotFound
@@ -46,28 +47,28 @@ class LyricsRepository {
 
         try {
             val durationSec = (durationMs / 1000).toInt()
-            val keyword = "$title - $artist"
             
-            // Try to find a candidate
-            val candidate = getLyricsCandidate(keyword, durationSec)
-                ?: return@withContext LyricsResult.NotFound
-                
-            Log.d(TAG, "Found candidate: ${candidate.id}, accessKey: ${candidate.accessKey}")
+            // 1. Try exact match with /api/get
+            val exactMatch = getLyricsExact(title, artist, album, durationSec)
+            if (exactMatch != null) {
+                val parsed = parseLrc(exactMatch)
+                if (parsed.isNotEmpty()) {
+                    cache[songId] = parsed
+                    return@withContext LyricsResult.Success(parsed)
+                }
+            }
             
-            // Download lyrics
-            val lyricsContent = downloadLyrics(candidate.id, candidate.accessKey)
-                ?: return@withContext LyricsResult.NotFound
-                
-            // Normalize
-            val normalizedLyrics = normalizeLyrics(lyricsContent)
+            // 2. If exact match fails, try search
+            val searchMatch = searchLyrics(title, artist, album, durationSec)
+            if (searchMatch != null) {
+                val parsed = parseLrc(searchMatch)
+                if (parsed.isNotEmpty()) {
+                    cache[songId] = parsed
+                    return@withContext LyricsResult.Success(parsed)
+                }
+            }
             
-            // Parse
-            val parsedLines = parseLrc(normalizedLyrics)
-            if (parsedLines.isEmpty()) return@withContext LyricsResult.NotFound
-            
-            // Cache
-            cache[songId] = parsedLines
-            return@withContext LyricsResult.Success(parsedLines)
+            return@withContext LyricsResult.NotFound
             
         } catch (e: Exception) {
             Log.e(TAG, "Error fetching lyrics", e)
@@ -75,125 +76,102 @@ class LyricsRepository {
         }
     }
     
-    // --- Helper Classes ---
-    
-    private data class Candidate(val id: String, val accessKey: String, val duration: Int)
-    private data class SongInfo(val hash: String, val duration: Int)
-    
-    // --- API Methods ---
-    
-    private fun getLyricsCandidate(keyword: String, durationSec: Int): Candidate? {
-        val encodedKeyword = URLEncoder.encode(keyword, "UTF-8")
+    private fun getLyricsExact(title: String, artist: String, album: String, duration: Int): String? {
+        // Only try exact if we have reliable metadata
+        if (title.isBlank() || artist.isBlank() || duration <= 0) return null
         
-        // Strategy 1: Search song -> Get Hash -> Search Lyrics by Hash
-        // This is more accurate as we verify song duration first
-        try {
-            val songResults = searchSongs(encodedKeyword)
-            for (song in songResults) {
-                // If duration match is good (or unknown duration)
-                if (durationSec <= 0 || abs(song.duration - durationSec) <= DURATION_TOLERANCE_SEC) {
-                    val candidate = searchLyricsByHash(song.hash)
-                    if (candidate != null) return candidate
-                }
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "Strategy 1 failed", e)
+        val urlBuilder = android.net.Uri.parse(API_GET_URL).buildUpon()
+            .appendQueryParameter("track_name", title)
+            .appendQueryParameter("artist_name", artist)
+            .appendQueryParameter("duration", duration.toString())
+            
+        if (album.isNotBlank()) {
+            urlBuilder.appendQueryParameter("album_name", album)
+        }
+            
+        val url = urlBuilder.build().toString()
+        val json = fetchJson(url)
+        
+        // Check if instrumental
+        if (json?.optBoolean("instrumental", false) == true) {
+             return null // Or handle instrumental differently
         }
         
-        // Strategy 2: Search lyrics directly by keyword
-        try {
-            val candidates = searchLyricsByKeyword(encodedKeyword, durationSec)
-            return candidates.firstOrNull()
-        } catch (e: Exception) {
-            Log.w(TAG, "Strategy 2 failed", e)
-        }
-        
-        return null
-    }
-    
-    private fun searchSongs(encodedKeyword: String): List<SongInfo> {
-        val url = "$SEARCH_SONG_URL?version=9108&plat=0&pagesize=10&showtype=0&keyword=$encodedKeyword"
-        val json = fetchJson(url) ?: return emptyList()
-        val list = mutableListOf<SongInfo>()
-        
-        val infoArray = json.optJSONObject("data")?.optJSONArray("info") ?: return emptyList()
-        
-        for (i in 0 until infoArray.length()) {
-            val item = infoArray.optJSONObject(i) ?: continue
-            val hash = item.optString("hash")
-            val duration = item.optInt("duration")
-            if (hash.isNotBlank()) {
-                list.add(SongInfo(hash, duration))
-            }
-        }
-        return list
-    }
-    
-    private fun searchLyricsByHash(hash: String): Candidate? {
-        val url = "$SEARCH_LYRICS_URL?ver=1&man=yes&client=pc&hash=$hash"
-        val json = fetchJson(url) ?: return null
-        
-        val candidates = json.optJSONArray("candidates") ?: return null
-        if (candidates.length() > 0) {
-            val item = candidates.optJSONObject(0)
-            val id = item.optString("id")
-            val accessKey = item.optString("accesskey")
-            if (id.isNotBlank() && accessKey.isNotBlank()) {
-                return Candidate(id, accessKey, 0)
-            }
-        }
-        return null
+        return json?.optString("syncedLyrics")?.takeIf { it.isNotBlank() }
     }
 
-    private fun searchLyricsByKeyword(encodedKeyword: String, durationSec: Int): List<Candidate> {
-        val durationParam = if (durationSec > 0) "&duration=${durationSec * 1000}" else ""
-        val url = "$SEARCH_LYRICS_URL?ver=1&man=yes&client=pc&keyword=$encodedKeyword$durationParam"
-        val json = fetchJson(url) ?: return emptyList()
+    private fun searchLyrics(title: String, artist: String, album: String, duration: Int): String? {
+        val query = "$title $artist"
+        val url = android.net.Uri.parse(API_SEARCH_URL).buildUpon()
+            .appendQueryParameter("q", query)
+            .build().toString()
+            
+        val jsonArray = fetchJsonArray(url) ?: return null
         
-        val list = mutableListOf<Candidate>()
-        val candidates = json.optJSONArray("candidates") ?: return emptyList()
+        var bestMatch: JSONObject? = null
+        var bestDiff = Int.MAX_VALUE
         
-        for (i in 0 until candidates.length()) {
-            val item = candidates.optJSONObject(i) ?: continue
-            val id = item.optString("id")
-            val accessKey = item.optString("accesskey")
-            val dur = item.optInt("duration") // ms
-            if (id.isNotBlank() && accessKey.isNotBlank()) {
-                list.add(Candidate(id, accessKey, dur / 1000))
+        for (i in 0 until jsonArray.length()) {
+            val item = jsonArray.optJSONObject(i) ?: continue
+            val itemDuration = item.optInt("duration", 0)
+            val synced = item.optString("syncedLyrics")
+            
+            if (synced.isBlank()) continue
+            
+            // Check duration validity (allow 0 if no better option, but prefer close match)
+            val diff = abs(itemDuration - duration)
+            
+            if (diff <= DURATION_TOLERANCE_SEC) {
+                // If we find a very close match, take it immediately? 
+                // Let's verify album if possible, but duration is strongest signal for synced lyrics.
+                return synced
+            }
+            
+            if (diff < bestDiff) {
+                bestDiff = diff
+                bestMatch = item
             }
         }
-        return list
+        
+        // Fallback: if we have a match within reasonable range (e.g. 10s)
+        if (bestMatch != null && bestDiff <= 10) {
+            return bestMatch.optString("syncedLyrics")
+        }
+        
+        return null
     }
     
-    private fun downloadLyrics(id: String, accessKey: String): String? {
-        val url = "$DOWNLOAD_LYRICS_URL?fmt=lrc&charset=utf8&client=pc&ver=1&id=$id&accesskey=$accessKey"
-        val json = fetchJson(url) ?: return null
-        
-        val contentBase64 = json.optString("content")
-        if (contentBase64.isBlank()) return null
-        
+    private fun fetchJson(url: String): JSONObject? {
         return try {
-            val decodedBytes = Base64.decode(contentBase64, Base64.DEFAULT)
-            String(decodedBytes, Charsets.UTF_8)
+            val request = Request.Builder()
+                .url(url)
+                .header("User-Agent", "IvorMusic/1.0 (https://github.com/Ivorisnoob/TheMusicApp)")
+                .build()
+            
+            val response = client.newCall(request).execute()
+            if (response.code == 404) return null
+            val body = response.body?.string()
+            if (!response.isSuccessful || body.isNullOrBlank()) return null
+            JSONObject(body)
         } catch (e: Exception) {
-            Log.e(TAG, "Base64 decode failed", e)
+            Log.e(TAG, "Request failed: $url", e)
             null
         }
     }
     
-    private fun fetchJson(url: String): JSONObject? {
-        val request = Request.Builder()
-            .url(url)
-            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
-            .build()
-        
-        val response = client.newCall(request).execute()
-        val body = response.body?.string()
-        if (!response.isSuccessful || body.isNullOrBlank()) return null
-        
+    private fun fetchJsonArray(url: String): JSONArray? {
         return try {
-            JSONObject(body)
+            val request = Request.Builder()
+                .url(url)
+                .header("User-Agent", "IvorMusic/1.0 (https://github.com/Ivorisnoob/TheMusicApp)")
+                .build()
+            
+            val response = client.newCall(request).execute()
+            val body = response.body?.string()
+            if (!response.isSuccessful || body.isNullOrBlank()) return null
+            JSONArray(body)
         } catch (e: Exception) {
+            Log.e(TAG, "Request failed: $url", e)
             null
         }
     }
@@ -201,17 +179,12 @@ class LyricsRepository {
     // --- Normalization & Parsing ---
     
     private fun normalizeLyrics(lrc: String): String {
-        // Simple normalization: remove BOM if present
-        var result = lrc.replace("\ufeff", "")
-        
-        // Decode HTML entities if any (simple ones)
-        result = result.replace("&apos;", "'")
-        
-        return result
+        return lrc.replace("\ufeff", "").replace("&apos;", "'")
     }
 
     fun parseLrc(lrcContent: String): List<LrcLine> {
         val lines = mutableListOf<LrcLine>()
+        // Regex for standard LRC: [mm:ss.xx] text
         val pattern = Regex("""\[(\d{1,2}):(\d{2})\.(\d{2,3})](.*)""")
         
         for (line in lrcContent.lines()) {
@@ -229,7 +202,6 @@ class LyricsRepository {
             val timeMs = (mins * 60 * 1000L) + (secs * 1000L) + ms
             
             val content = text.trim()
-            // Allow empty lines if they are instrumental breaks, but generally we want content
             if (content.isNotEmpty()) {
                 lines.add(LrcLine(timeMs, content))
             }
