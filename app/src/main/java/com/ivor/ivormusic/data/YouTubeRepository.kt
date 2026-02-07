@@ -67,6 +67,12 @@ class YouTubeRepository(private val context: Context) {
          * 
          * Reference: https://github.com/AyMaN-GhOsT/YouTube-Internal-Clients
          */
+        /**
+         * Global Browser User-Agent to be used across the app (NewPipe, CacheManager, internal API).
+         * Must be consistent to avoid playback throttling and "Page needs to be reloaded" errors.
+         * Using a modern Chrome UA is recommended.
+         */
+        const val BROWSER_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
         private const val INNER_TUBE_API_KEY = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8"
     }
 
@@ -76,13 +82,7 @@ class YouTubeRepository(private val context: Context) {
         .build()
 
     private fun getRandomUserAgent(): String {
-        val agents = listOf(
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
-            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-        )
-        return agents.random()
+        return BROWSER_USER_AGENT
     }
 
     init {
@@ -768,24 +768,29 @@ class YouTubeRepository(private val context: Context) {
      */
     /**
      * Fallback stream resolution using Internal API.
-     * Uses ANDROID client (InnerTube) often more robust against "reload" errors.
+     * Uses ANDROID_MUSIC client (InnerTube) which is more robust against "reload" errors for music content.
      */
     private suspend fun getStreamUrlFallback(videoId: String): String? = withContext(Dispatchers.IO) {
         try {
-            // Use ANDROID client which is less strict about "page reload"
-            // The API Key is public and required for this endpoint
+            // Use ANDROID_MUSIC client which is specifically for YouTube Music content
+            // and less prone to bot detection than the generic ANDROID client
             
             val jsonBody = """
                {
                    "videoId": "$videoId",
                    "context": {
                        "client": {
-                           "clientName": "ANDROID",
-                           "clientVersion": "19.05.36",
-                           "androidSdkVersion": 30,
+                           "clientName": "ANDROID_MUSIC",
+                           "clientVersion": "7.20.51",
+                           "androidSdkVersion": 34,
                            "hl": "en",
                            "gl": "US",
                            "utcOffsetMinutes": 0
+                       }
+                   },
+                   "playbackContext": {
+                       "contentPlaybackContext": {
+                           "signatureTimestamp": ${System.currentTimeMillis() / 1000}
                        }
                    }
                }
@@ -796,7 +801,7 @@ class YouTubeRepository(private val context: Context) {
             val requestBuilder = okhttp3.Request.Builder()
                .url(url)
                .post(jsonBody.toRequestBody("application/json".toMediaType()))
-               .addHeader("User-Agent", "com.google.android.youtube/19.05.36 (Linux; U; Android 11) gzip")
+               .addHeader("User-Agent", "com.google.android.apps.youtube.music/7.20.51 (Linux; U; Android 14; en_US) gzip")
                .addHeader("X-Goog-Api-Format-Version", "1")
                
             val response = okHttpClient.newCall(requestBuilder.build()).execute()

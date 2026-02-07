@@ -40,20 +40,19 @@ class NewPipeDownloaderImpl(
             }
         }
 
-        // Add cookies from SessionManager if available
-        // DISABLE COOKIES for NewPipe requests to prevent "The page needs to be reloaded" errors
-        // sessionManager?.getCookies()?.let { cookies ->
-        //    if (cookies.isNotEmpty()) {
-        //        requestBuilder.addHeader("Cookie", cookies)
-        //    }
-        // }
+        // Add cookies from SessionManager if available for authenticated requests
+        sessionManager?.getCookies()?.let { cookies ->
+            if (cookies.isNotEmpty()) {
+                requestBuilder.addHeader("Cookie", cookies)
+            }
+        }
 
         // Add default user agent if not present
         if (!headers.containsKey("User-Agent")) {
-            // Use a modern User-Agent to avoid "Page needs to be reloaded" errors
+            // Use the shared Browser UA to ensure consistency with playback
             requestBuilder.addHeader(
                 "User-Agent",
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+                YouTubeRepository.BROWSER_USER_AGENT
             )
         }
 

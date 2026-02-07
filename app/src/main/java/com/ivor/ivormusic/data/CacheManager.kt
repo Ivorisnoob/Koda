@@ -114,7 +114,7 @@ object CacheManager {
         
         try {
             val httpDataSourceFactory = DefaultHttpDataSource.Factory()
-                .setUserAgent("Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36")
+                .setUserAgent(YouTubeRepository.BROWSER_USER_AGENT)
                 .setConnectTimeoutMs(15000)
                 .setReadTimeoutMs(15000)
                 .setAllowCrossProtocolRedirects(true)
