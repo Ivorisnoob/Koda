@@ -27,6 +27,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
@@ -144,7 +145,7 @@ fun HomeScreen(
     val youtubeSongs by viewModel.youtubeSongs.collectAsState()
     val isYouTubeConnected by viewModel.isYouTubeConnected.collectAsState()
     
-    // Use local songs or YouTube songs based on setting
+    // Use local songs or YouTube songs (which includes fallback search results if not logged in)
     val songs = if (loadLocalSongs) localSongs else youtubeSongs
     
     val currentSong by playerViewModel.currentSong.collectAsState()
@@ -843,6 +844,7 @@ fun OrganicSongLayout(
         
         val boxWidth = maxWidth
         val boxHeight = maxHeight
+        val context = androidx.compose.ui.platform.LocalContext.current
         
         // Circle sizes - percentage of screen width
         val circle1Size = boxWidth * 0.29f  // Top-left circle
@@ -862,12 +864,38 @@ fun OrganicSongLayout(
                     .clickable { onSongClick(songs[0]) },
                 contentAlignment = Alignment.Center
             ) {
-                if (songs[0].albumArtUri != null || songs[0].thumbnailUrl != null) {
-                    AsyncImage(
-                        model = songs[0].highResThumbnailUrl ?: songs[0].albumArtUri ?: songs[0].thumbnailUrl,
+                val imageUrl = songs[0].highResThumbnailUrl ?: songs[0].thumbnailUrl
+                val localUri = songs[0].albumArtUri
+                
+                if (imageUrl != null || localUri != null) {
+                    coil.compose.SubcomposeAsyncImage(
+                        model = coil.request.ImageRequest.Builder(context)
+                            .data(localUri ?: imageUrl)
+                            .crossfade(true)
+                            .build(),
                         contentDescription = songs[0].title,
                         modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop
+                        contentScale = ContentScale.Crop,
+                        loading = {
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Rounded.MusicNote,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(48.dp),
+                                    tint = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.5f)
+                                )
+                            }
+                        },
+                        error = {
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Rounded.MusicNote,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(48.dp),
+                                    tint = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                            }
+                        }
                     )
                 } else {
                     Icon(
@@ -893,12 +921,38 @@ fun OrganicSongLayout(
                     .clickable { onSongClick(songs[1]) },
                 contentAlignment = Alignment.Center
             ) {
-                if (songs[1].albumArtUri != null || songs[1].thumbnailUrl != null) {
-                    AsyncImage(
-                        model = songs[1].highResThumbnailUrl ?: songs[1].albumArtUri ?: songs[1].thumbnailUrl,
+                val imageUrl = songs[1].highResThumbnailUrl ?: songs[1].thumbnailUrl
+                val localUri = songs[1].albumArtUri
+                
+                if (imageUrl != null || localUri != null) {
+                    coil.compose.SubcomposeAsyncImage(
+                        model = coil.request.ImageRequest.Builder(context)
+                            .data(localUri ?: imageUrl)
+                            .crossfade(true)
+                            .build(),
                         contentDescription = songs[1].title,
                         modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop
+                        contentScale = ContentScale.Crop,
+                        loading = {
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Rounded.MusicNote,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(24.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                                )
+                            }
+                        },
+                        error = {
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Rounded.MusicNote,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(24.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
                     )
                 } else {
                     Icon(
@@ -924,12 +978,38 @@ fun OrganicSongLayout(
                     .clickable { onSongClick(songs[2]) },
                 contentAlignment = Alignment.Center
             ) {
-                if (songs[2].albumArtUri != null || songs[2].thumbnailUrl != null) {
-                    AsyncImage(
-                        model = songs[2].highResThumbnailUrl ?: songs[2].albumArtUri ?: songs[2].thumbnailUrl,
+                val imageUrl = songs[2].highResThumbnailUrl ?: songs[2].thumbnailUrl
+                val localUri = songs[2].albumArtUri
+                
+                if (imageUrl != null || localUri != null) {
+                    coil.compose.SubcomposeAsyncImage(
+                        model = coil.request.ImageRequest.Builder(context)
+                            .data(localUri ?: imageUrl)
+                            .crossfade(true)
+                            .build(),
                         contentDescription = songs[2].title,
                         modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop
+                        contentScale = ContentScale.Crop,
+                        loading = {
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Rounded.MusicNote,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(24.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                                )
+                            }
+                        },
+                        error = {
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Rounded.MusicNote,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(24.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
                     )
                 } else {
                     Icon(
@@ -957,19 +1037,63 @@ fun SongStripCard(
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
-        if (song.albumArtUri != null || song.thumbnailUrl != null) {
-            AsyncImage(
-                model = song.highResThumbnailUrl ?: song.albumArtUri ?: song.thumbnailUrl,
+        val imageUrl = song.highResThumbnailUrl ?: song.thumbnailUrl
+        val localUri = song.albumArtUri
+        
+        if (imageUrl != null || localUri != null) {
+            coil.compose.SubcomposeAsyncImage(
+                model = coil.request.ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current)
+                    .data(localUri ?: imageUrl)
+                    .crossfade(true)
+                    .build(),
                 contentDescription = song.title,
                 modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop
+                contentScale = ContentScale.Crop,
+                loading = {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(MaterialTheme.colorScheme.surfaceContainer),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.MusicNote,
+                            contentDescription = null,
+                            modifier = Modifier.size(32.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                        )
+                    }
+                },
+                error = {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(MaterialTheme.colorScheme.surfaceContainer),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.MusicNote,
+                            contentDescription = null,
+                            modifier = Modifier.size(32.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                        )
+                    }
+                }
             )
         } else {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(MaterialTheme.colorScheme.surfaceContainer)
-            )
+                    .background(MaterialTheme.colorScheme.surfaceContainer),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.MusicNote,
+                    contentDescription = null,
+                    modifier = Modifier.size(32.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                )
+            }
         }
     }
 }

@@ -135,30 +135,46 @@ fun MiniPlayerContent(
                 Box(
                     modifier = Modifier
                         .size(44.dp)
-                        .clip(CircleShape),
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.surfaceVariant),
                     contentAlignment = Alignment.Center
                 ) {
-                    if (currentSong.albumArtUri != null || currentSong.thumbnailUrl != null) {
-                        AsyncImage(
-                            model = currentSong.highResThumbnailUrl ?: currentSong.albumArtUri ?: currentSong.thumbnailUrl,
+                    val imageUrl = currentSong.highResThumbnailUrl ?: currentSong.thumbnailUrl
+                    val localUri = currentSong.albumArtUri
+                    
+                    if (imageUrl != null || localUri != null) {
+                        coil.compose.SubcomposeAsyncImage(
+                            model = coil.request.ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current)
+                                .data(localUri ?: imageUrl)
+                                .crossfade(true)
+                                .build(),
                             contentDescription = "Album Art",
                             modifier = Modifier.size(44.dp),
-                            contentScale = ContentScale.Crop
+                            contentScale = ContentScale.Crop,
+                            loading = {
+                                Icon(
+                                    imageVector = Icons.Rounded.MusicNote,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(20.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            },
+                            error = {
+                                Icon(
+                                    imageVector = Icons.Rounded.MusicNote,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(20.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         )
                     } else {
-                        Box(
-                            modifier = Modifier
-                                .size(44.dp)
-                                .background(MaterialTheme.colorScheme.surfaceVariant),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.MusicNote,
-                                contentDescription = null,
-                                modifier = Modifier.size(20.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
+                        Icon(
+                            imageVector = Icons.Rounded.MusicNote,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }

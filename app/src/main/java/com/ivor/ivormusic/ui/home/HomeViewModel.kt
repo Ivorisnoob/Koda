@@ -34,6 +34,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _youtubeSongs = MutableStateFlow<List<Song>>(emptyList())
     val youtubeSongs: StateFlow<List<Song>> = _youtubeSongs.asStateFlow()
+    
+
 
     private val _isYouTubeConnected = MutableStateFlow(false)
     val isYouTubeConnected: StateFlow<Boolean> = _isYouTubeConnected.asStateFlow()
@@ -154,14 +156,20 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun loadYouTubeRecommendations() {
-        if (!sessionManager.isLoggedIn()) return
-        
         viewModelScope.launch {
             _isLoading.value = true
             try {
-                val recs = youtubeRepository.getRecommendations()
-                if (recs.isNotEmpty()) {
-                    _youtubeSongs.value = recs
+                if (sessionManager.isLoggedIn()) {
+                    val recs = youtubeRepository.getRecommendations()
+                    if (recs.isNotEmpty()) {
+                        _youtubeSongs.value = recs
+                    }
+                } else {
+                    // Not logged in: Show fallback search results for "Best Cigarettes After Sex songs" as requested
+                    val fallbackResults = youtubeRepository.search("Best Cigarettes After Sex songs")
+                    if (fallbackResults.isNotEmpty()) {
+                        _youtubeSongs.value = fallbackResults
+                    }
                 }
             } catch (e: Exception) {
                 // Handle error silently for now
