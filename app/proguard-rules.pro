@@ -25,6 +25,7 @@
 -dontwarn java.beans.**
 -dontwarn javax.script.**
 -dontwarn com.google.common.**
+-dontwarn com.google.re2j.**
 
 # Keep NewPipe Extractor classes if they are being stripped too aggressively
 -keep class org.schabi.newpipe.extractor.** { *; }
