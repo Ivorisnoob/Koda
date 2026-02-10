@@ -485,12 +485,15 @@ class MusicService : MediaLibraryService() {
             // This is called when user clicks a song or "Play All"
             
             val processedItems = mediaItems.map { item ->
-                // Mark all incoming items as placeholders initially
-                // This delegates ALL resolution logic to our robust prefetch system
-                // instead of blocking the UI thread waiting for the first song.
-                // We create a valid MediaItem but with a placeholder URI.
-                
                 val videoId = item.mediaId
+                val existingUri = item.localConfiguration?.uri
+                
+                // Check if this item already has a valid, non-placeholder URI.
+                // Local songs from MediaStore come with a content:// URI that ExoPlayer
+                // can play directly — we must NOT overwrite it with a placeholder.
+                val isLocalUri = existingUri != null 
+                    && !existingUri.toString().startsWith(PLACEHOLDER_PREFIX)
+                    && existingUri.scheme == "content"
                 
                 // Check if we have metadata in our browse cache to enrich the item immediately
                 var meta = item.mediaMetadata
@@ -508,11 +511,22 @@ class MusicService : MediaLibraryService() {
                     }
                 }
 
-                MediaItem.Builder()
-                    .setMediaId(videoId)
-                    .setUri("$PLACEHOLDER_PREFIX$videoId")
-                    .setMediaMetadata(meta)
-                    .build()
+                if (isLocalUri) {
+                    // Local song: preserve the original content:// URI for direct playback
+                    Log.d(TAG, "onAddMediaItems: Preserving local URI for $videoId: $existingUri")
+                    MediaItem.Builder()
+                        .setMediaId(videoId)
+                        .setUri(existingUri)
+                        .setMediaMetadata(meta)
+                        .build()
+                } else {
+                    // YouTube song: use placeholder — resolution will happen via prefetch system
+                    MediaItem.Builder()
+                        .setMediaId(videoId)
+                        .setUri("$PLACEHOLDER_PREFIX$videoId")
+                        .setMediaMetadata(meta)
+                        .build()
+                }
             }.toMutableList()
 
             return Futures.immediateFuture(processedItems)
