@@ -155,8 +155,13 @@ class MusicService : MediaLibraryService() {
         val renderersFactory = DefaultRenderersFactory(this)
             .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF)
 
-        val cacheDataSourceFactory = CacheManager.createCacheDataSourceFactory()
-            ?: DefaultDataSource.Factory(this)
+        // Use DefaultDataSource as upstream so the cache pipeline can handle ALL URI schemes:
+        // file:// (downloaded songs), content:// (local MediaStore), and http(s):// (streams).
+        // Previously, DefaultHttpDataSource was used which could ONLY handle http(s)://,
+        // causing downloaded file:// songs to fail silently and buffer forever.
+        val cacheDataSourceFactory = CacheManager.createCacheDataSourceFactory(
+            DefaultDataSource.Factory(this)
+        ) ?: DefaultDataSource.Factory(this)
 
         player = ExoPlayer.Builder(this)
             .setRenderersFactory(renderersFactory)
@@ -489,11 +494,11 @@ class MusicService : MediaLibraryService() {
                 val existingUri = item.localConfiguration?.uri
                 
                 // Check if this item already has a valid, non-placeholder URI.
-                // Local songs from MediaStore come with a content:// URI that ExoPlayer
-                // can play directly — we must NOT overwrite it with a placeholder.
+                // Local songs come with either content:// (MediaStore) or file:// (downloaded) URIs
+                // that ExoPlayer can play directly — we must NOT overwrite them with a placeholder.
                 val isLocalUri = existingUri != null 
                     && !existingUri.toString().startsWith(PLACEHOLDER_PREFIX)
-                    && existingUri.scheme == "content"
+                    && (existingUri.scheme == "content" || existingUri.scheme == "file")
                 
                 // Check if we have metadata in our browse cache to enrich the item immediately
                 var meta = item.mediaMetadata

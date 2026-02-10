@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.database.StandaloneDatabaseProvider
+import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
@@ -108,12 +109,16 @@ object CacheManager {
     /**
      * Create a CacheDataSource.Factory for use with ExoPlayer.
      * If cache is unavailable or corrupted, returns null to fallback to non-cached playback.
+     * 
+     * @param upstreamFactory Optional upstream data source factory. If provided, this is used
+     *   for cache misses. Use DefaultDataSource.Factory to support all URI schemes (file://,
+     *   content://, http(s)://). If null, defaults to HTTP-only factory.
      */
-    fun createCacheDataSourceFactory(): CacheDataSource.Factory? {
+    fun createCacheDataSourceFactory(upstreamFactory: DataSource.Factory? = null): CacheDataSource.Factory? {
         val cache = simpleCache ?: return null
         
         try {
-            val httpDataSourceFactory = DefaultHttpDataSource.Factory()
+            val upstream = upstreamFactory ?: DefaultHttpDataSource.Factory()
                 .setUserAgent(YouTubeRepository.BROWSER_USER_AGENT)
                 .setConnectTimeoutMs(15000)
                 .setReadTimeoutMs(15000)
@@ -121,7 +126,7 @@ object CacheManager {
             
             return CacheDataSource.Factory()
                 .setCache(cache)
-                .setUpstreamDataSourceFactory(httpDataSourceFactory)
+                .setUpstreamDataSourceFactory(upstream)
                 .setFlags(
                     CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR
                 )
