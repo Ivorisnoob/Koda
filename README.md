@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" width="120" alt="The Music App Logo"/>
+  <img src="app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" width="120" alt="Koda Logo"/>
 </p>
 
-<h1 align="center">The Music App</h1>
+<h1 align="center">Koda</h1>
 
 <p align="center">
   <b>A modern, feature-rich Android music & video player powered by YouTube Music</b>
@@ -16,13 +16,13 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/github/stars/Ivorisnoob/TheMusicApp?style=social" alt="Stars"/>
-  <img src="https://img.shields.io/github/forks/Ivorisnoob/TheMusicApp?style=social" alt="Forks"/>
+  <img src="https://img.shields.io/github/stars/Ivorisnoob/Koda?style=social" alt="Stars"/>
+  <img src="https://img.shields.io/github/forks/Ivorisnoob/Koda?style=social" alt="Forks"/>
 </p>
 
 ---
 
-Built entirely with **Kotlin** and **Jetpack Compose**, The Music App delivers a premium music and video experience with **Material 3 Expressive** design. Stream music, watch videos, and enjoy personalized recommendations—all without requiring official API keys.
+Built entirely with **Kotlin** and **Jetpack Compose**, Koda delivers a premium music and video experience with **Material 3 Expressive** design. Stream music, watch videos, and enjoy personalized recommendations—all without requiring official API keys.
 
 ## Screenshots
 
@@ -247,7 +247,7 @@ For a deep dive into the app's inner workings, internal data flows, and architec
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/Ivorisnoob/TheMusicApp.git
+   git clone https://github.com/Ivorisnoob/Koda.git
    ```
 
 2. **Open in Android Studio**

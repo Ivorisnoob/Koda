@@ -1,6 +1,6 @@
 # Material 3 Expressive Shapes
 
-The Music App utilizes the latest **Material 3 Expressive** shape system, which introduces dynamic shapes, organic polygons, and sophisticated shape-morphing animations.
+Koda utilizes the latest **Material 3 Expressive** shape system, which introduces dynamic shapes, organic polygons, and sophisticated shape-morphing animations.
 
 ## The `MaterialShapes` Object
 

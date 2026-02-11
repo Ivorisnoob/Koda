@@ -30,7 +30,7 @@ jobs:
           curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
             -d "chat_id=${{ env.TELEGRAM_CHAT_ID }}" \
             -d "parse_mode=HTML" \
-            -d "text=<b>The Music App</b> | Pull Request
+            -d "text=<b>Koda</b> | Pull Request
 
           New PR opened!
 
@@ -51,7 +51,7 @@ jobs:
           curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
             -d "chat_id=${{ env.TELEGRAM_CHAT_ID }}" \
             -d "parse_mode=HTML" \
-            -d "text=<b>The Music App</b> | Merged!
+            -d "text=<b>Koda</b> | Merged!
 
           PR successfully merged!
 
@@ -72,7 +72,7 @@ jobs:
           curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
             -d "chat_id=${{ env.TELEGRAM_CHAT_ID }}" \
             -d "parse_mode=HTML" \
-            -d "text=<b>The Music App</b> | New Issue
+            -d "text=<b>Koda</b> | New Issue
 
           Issue reported!
 
@@ -93,7 +93,7 @@ jobs:
           curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
             -d "chat_id=${{ env.TELEGRAM_CHAT_ID }}" \
             -d "parse_mode=HTML" \
-            -d "text=<b>The Music App</b> | Issue Resolved
+            -d "text=<b>Koda</b> | Issue Resolved
 
           Issue closed!
 
@@ -114,7 +114,7 @@ jobs:
           curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
             -d "chat_id=${{ env.TELEGRAM_CHAT_ID }}" \
             -d "parse_mode=HTML" \
-            -d "text=<b>The Music App</b> | New Comment
+            -d "text=<b>Koda</b> | New Comment
 
           Someone commented!
 
@@ -147,7 +147,7 @@ jobs:
           curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
             -d "chat_id=${{ env.TELEGRAM_CHAT_ID }}" \
             -d "parse_mode=HTML" \
-            -d "text=<b>The Music App</b> | ⭐ Star Milestone!
+            -d "text=<b>Koda</b> | ⭐ Star Milestone!
 
           🎉 We reached <b>${{ github.event.repository.stargazers_count }}</b> stars!
 
@@ -169,7 +169,7 @@ jobs:
           curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
             -d "chat_id=${{ env.TELEGRAM_CHAT_ID }}" \
             -d "parse_mode=HTML" \
-            -d "text=<b>The Music App</b> | Forked!
+            -d "text=<b>Koda</b> | Forked!
 
           Repository forked!
 
@@ -191,7 +191,7 @@ jobs:
           curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
             -d "chat_id=${{ env.TELEGRAM_CHAT_ID }}" \
             -d "parse_mode=HTML" \
-            -d "text=<b>The Music App</b> | New Release!
+            -d "text=<b>Koda</b> | New Release!
 
           Version <b>${{ github.event.release.tag_name }}</b>
 

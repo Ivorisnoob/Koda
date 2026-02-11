@@ -1,6 +1,6 @@
 # Project Documentation Hub
 
-This directory serves as the centralized repository for the technical specifications, architectural designs, and development guidelines for **The Music App**.
+This directory serves as the centralized repository for the technical specifications, architectural designs, and development guidelines for **Koda**.
 
 ## Core Documentation
 

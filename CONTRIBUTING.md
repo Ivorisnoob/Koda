@@ -1,6 +1,6 @@
-# Contributing to The Music App
+# Contributing to Koda
 
-First off, thank you for considering contributing to **The Music App**! It's people like you that make the open-source community such an amazing place to learn, inspire, and create.
+First off, thank you for considering contributing to **Koda**! It's people like you that make the open-source community such an amazing place to learn, inspire, and create.
 
 ## How Can I Contribute?
 
@@ -25,7 +25,7 @@ First off, thank you for considering contributing to **The Music App**! It's peo
 
 ## Development Setup
 
-1. **Clone the repo**: `git clone https://github.com/Ivorisnoob/TheMusicApp.git`
+1. **Clone the repo**: `git clone https://github.com/Ivorisnoob/Koda.git`
 2. **Open in Android Studio**: Use the latest stable version of Android Studio (Ladybug or newer).
 3. **Sync Gradle**: Let the dependencies download.
 4. **Run**: You're ready to start building!

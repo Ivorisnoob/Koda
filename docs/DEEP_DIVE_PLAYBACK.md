@@ -1,6 +1,6 @@
 # Deep Dive: Playback Engine
 
-This document details the audio playback architecture of The Music App, centered around the integration of Media3 ExoPlayer and a custom background service.
+This document details the audio playback architecture of Koda, centered around the integration of Media3 ExoPlayer and a custom background service.
 
 ## Core Component: `MusicService`
 

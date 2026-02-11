@@ -1,6 +1,6 @@
 # Technical Architecture
 
-This document provides a comprehensive technical breakdown of The Music App's architecture, data flow, and core systems. It is designed for developers and contributors seeking specialized knowledge of the application's inner workings.
+This document provides a comprehensive technical breakdown of Koda's architecture, data flow, and core systems. It is designed for developers and contributors seeking specialized knowledge of the application's inner workings.
 
 ## System Architecture
 
