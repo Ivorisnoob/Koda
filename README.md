@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" width="120" alt="Koda Logo"/>
+  <img src="icon.svg" width="120" alt="Koda Logo"/>
 </p>
 
 <h1 align="center">Koda</h1>
