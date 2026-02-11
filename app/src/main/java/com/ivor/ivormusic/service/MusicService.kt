@@ -411,21 +411,32 @@ class MusicService : MediaLibraryService() {
     private fun handlePlayerError(error: PlaybackException) {
         val currentItem = player.currentMediaItem ?: return
         val videoId = currentItem.mediaId
+        val uri = currentItem.localConfiguration?.uri
         
-        Log.w(TAG, "Handling Error for $videoId")
+        Log.w(TAG, "Handling Error for $videoId (uri=$uri)")
+
+        // Local songs (content:// or file://) — errors are typically unrecoverable
+        // (file deleted, permission revoked, corrupt file). Don't try YouTube resolution.
+        if (uri != null && (uri.scheme == "content" || uri.scheme == "file")) {
+            Log.e(TAG, "Error: Local song $videoId failed. Skipping (not retryable via YouTube).")
+            if (player.hasNextMediaItem()) {
+                player.seekToNext()
+                player.play()
+            } else {
+                player.stop()
+            }
+            return
+        }
 
         // 1. If we are already resolving this item, just wait.
         // The validation logic or update logic will handle it when ready.
         if (activeResolutions.containsKey(videoId)) {
             Log.d(TAG, "Error: Already resolving $videoId. Ignoring error.")
-            // Temporarily pause to stop spinning until resolution finishes
-            player.playWhenReady = true // Keep it true so UI shows buffering?
-            // Actually, if we error, we are in IDLE.
-            // We verify:
+            player.playWhenReady = true
             return
         }
 
-        // 2. Retry Logic
+        // 2. Retry Logic (YouTube songs only)
         val retryCountKey = "retry_count_$videoId"
         val retryCount = uriCache[retryCountKey]?.toIntOrNull() ?: 0
 

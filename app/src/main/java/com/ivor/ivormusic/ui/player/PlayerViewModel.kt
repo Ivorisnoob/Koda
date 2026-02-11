@@ -169,10 +169,12 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
 
                 override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
                     _playWhenReady.value = playWhenReady
-                    // If playWhenReady is true and we're not playing, we're likely buffering
+                    // Only set buffering if we're actively in BUFFERING state.
+                    // Avoid setting it for IDLE — playQueue() already handles that,
+                    // and re-setting here causes races where buffering flag gets stuck.
                     if (playWhenReady && !controller!!.isPlaying) {
                         val state = controller?.playbackState ?: Player.STATE_IDLE
-                        if (state == Player.STATE_BUFFERING || state == Player.STATE_IDLE) {
+                        if (state == Player.STATE_BUFFERING) {
                             _isBuffering.value = true
                         }
                     }
@@ -196,10 +198,11 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                             _isBuffering.value = false
                         }
                         Player.STATE_IDLE -> {
-                            // If playWhenReady is true and we're IDLE, it means we're about to buffer
-                            if (controller?.playWhenReady == true) {
-                                _isBuffering.value = true
-                            }
+                            // Don't aggressively set buffering here.
+                            // playQueue() already sets _isBuffering = true before calling prepare().
+                            // Setting it again here causes race conditions with STATE_READY
+                            // especially for local songs that transition through IDLE->READY
+                            // almost instantly.
                         }
                     }
                 }
@@ -340,15 +343,32 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         val id = mediaItem.mediaId
         if (id.isEmpty()) return null
         
-        return Song(
-            id = id,
-            title = metadata.title?.toString() ?: "Unknown",
-            artist = metadata.artist?.toString() ?: "Unknown Artist",
-            album = metadata.albumTitle?.toString() ?: "",
-            duration = metadata.durationMs ?: 0L,
-            thumbnailUrl = metadata.artworkUri?.toString(),
-            source = com.ivor.ivormusic.data.SongSource.YOUTUBE
-        )
+        // Detect source from the URI scheme — local songs use content:// or file://
+        val uri = mediaItem.localConfiguration?.uri
+        val isLocal = uri != null && (uri.scheme == "content" || uri.scheme == "file")
+        
+        return if (isLocal) {
+            Song(
+                id = id,
+                title = metadata.title?.toString() ?: "Unknown",
+                artist = metadata.artist?.toString() ?: "Unknown Artist",
+                album = metadata.albumTitle?.toString() ?: "",
+                duration = metadata.durationMs ?: 0L,
+                uri = uri,
+                albumArtUri = metadata.artworkUri,
+                source = com.ivor.ivormusic.data.SongSource.LOCAL
+            )
+        } else {
+            Song(
+                id = id,
+                title = metadata.title?.toString() ?: "Unknown",
+                artist = metadata.artist?.toString() ?: "Unknown Artist",
+                album = metadata.albumTitle?.toString() ?: "",
+                duration = metadata.durationMs ?: 0L,
+                thumbnailUrl = metadata.artworkUri?.toString(),
+                source = com.ivor.ivormusic.data.SongSource.YOUTUBE
+            )
+        }
     }
 
     private fun startProgressUpdates() {
