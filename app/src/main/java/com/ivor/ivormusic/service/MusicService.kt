@@ -12,6 +12,9 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.DataSource
+import androidx.media3.datasource.DataSpec
+import androidx.media3.datasource.TransferListener
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
@@ -155,18 +158,66 @@ class MusicService : MediaLibraryService() {
         val renderersFactory = DefaultRenderersFactory(this)
             .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF)
 
-        // Use DefaultDataSource as upstream so the cache pipeline can handle ALL URI schemes:
-        // file:// (downloaded songs), content:// (local MediaStore), and http(s):// (streams).
-        // Previously, DefaultHttpDataSource was used which could ONLY handle http(s)://,
-        // causing downloaded file:// songs to fail silently and buffer forever.
-        val cacheDataSourceFactory = CacheManager.createCacheDataSourceFactory(
-            DefaultDataSource.Factory(this)
-        ) ?: DefaultDataSource.Factory(this)
+        // SMART DATA SOURCE FACTORY
+        // Logic: Use CacheDataSource for network (http/https), but use valid DefaultDataSource for local files (content/file).
+        // This prevents the cache from trying to grasp local content which causes playback failures on some devices.
+        
+        val defaultDataSourceFactory = DefaultDataSource.Factory(this)
+        // Use DefaultHttpDataSource for cache upstream to ensure we don't accidentally cache local files inside the cache source itself
+        // (though we will control routing below regardless)
+        val cacheDataSourceFactory = CacheManager.createCacheDataSourceFactory(null) 
+            ?: defaultDataSourceFactory
+
+        val smartDataSourceFactory = DataSource.Factory {
+            val defaultSource = defaultDataSourceFactory.createDataSource()
+            val cacheSource = if (cacheDataSourceFactory != defaultDataSourceFactory) {
+                cacheDataSourceFactory.createDataSource()
+            } else null
+
+            object : DataSource {
+                private var currentSource: DataSource? = null
+
+                override fun addTransferListener(transferListener: TransferListener) {
+                    defaultSource.addTransferListener(transferListener)
+                    cacheSource?.addTransferListener(transferListener)
+                }
+
+                override fun open(dataSpec: DataSpec): Long {
+                    val scheme = dataSpec.uri.scheme
+                    val isNetwork = scheme == "http" || scheme == "https"
+                    
+                    // Route to Cache only for network requests
+                    currentSource = if (isNetwork && cacheSource != null) {
+                        cacheSource
+                    } else {
+                        defaultSource
+                    }
+                    return currentSource!!.open(dataSpec)
+                }
+
+                override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+                    return currentSource?.read(buffer, offset, length) ?: 0
+                }
+
+                override fun getUri(): Uri? {
+                    return currentSource?.uri
+                }
+
+                override fun getResponseHeaders(): Map<String, List<String>> {
+                    return currentSource?.responseHeaders ?: emptyMap()
+                }
+
+                override fun close() {
+                    currentSource?.close()
+                    currentSource = null
+                }
+            }
+        }
 
         player = ExoPlayer.Builder(this)
             .setRenderersFactory(renderersFactory)
             .setMediaSourceFactory(
-                DefaultMediaSourceFactory(this).setDataSourceFactory(cacheDataSourceFactory)
+                DefaultMediaSourceFactory(this).setDataSourceFactory(smartDataSourceFactory)
             )
             .setLoadControl(loadControl)
             .setAudioAttributes(AudioAttributes.DEFAULT, true)

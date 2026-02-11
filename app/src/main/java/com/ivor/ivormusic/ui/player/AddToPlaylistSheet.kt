@@ -69,7 +69,7 @@ fun AddToPlaylistSheet(
                 onCreateNewClick(name, desc)
                 showCreateDialog = false
                 // Don't dismiss sheet yet, let user see it added or auto dismiss? cause Sheet scrolling or dismis UX is SO SHIT istfg
-                // Probably better to dismiss sheet or show success. 
+                // Probably better to dismiss sheet or show success.
                 // For now we dismiss sheet logic is handled by caller usually or we stay open.
             }
         )
@@ -106,8 +106,8 @@ fun AddToPlaylistSheet(
                 // Create New Item
                 item {
                     ListItem(
-                        headlineContent = { 
-                            Text("New Playlist", fontWeight = FontWeight.SemiBold) 
+                        headlineContent = {
+                            Text("New Playlist", fontWeight = FontWeight.SemiBold)
                         },
                         leadingContent = {
                             Surface(
@@ -154,7 +154,10 @@ fun AddToPlaylistSheet(
                                         modifier = Modifier.fillMaxSize()
                                     )
                                 } else {
-                                    AccessIcon(Icons.Rounded.PlaylistPlay, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    AccessIcon(
+                                        Icons.Rounded.PlaylistPlay,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
                                 }
                             }
                         },
