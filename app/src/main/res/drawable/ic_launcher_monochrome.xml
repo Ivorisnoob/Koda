@@ -9,10 +9,10 @@
     <!-- Utilizes fillType="evenOdd" to create cutouts for the note inside the blob -->
     
     <group
-        android:scaleX="0.24"
-        android:scaleY="0.24"
-        android:translateX="2.16"
-        android:translateY="9.6"
+        android:scaleX="0.16"
+        android:scaleY="0.16"
+        android:translateX="19.44"
+        android:translateY="24.4"
         android:pivotX="0"
         android:pivotY="0">
 

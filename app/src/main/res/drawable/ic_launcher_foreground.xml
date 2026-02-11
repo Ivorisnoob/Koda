@@ -11,10 +11,10 @@
     <!-- = scale 0.24, translateX = 18 + 0.24*(-66) = 18 - 15.84 = 2.16 -->
     <!-- = scale 0.24, translateY = 18 + 0.24*(-35) = 18 - 8.4  = 9.6  -->
     <group
-        android:scaleX="0.24"
-        android:scaleY="0.24"
-        android:translateX="2.16"
-        android:translateY="9.6"
+        android:scaleX="0.16"
+        android:scaleY="0.16"
+        android:translateX="19.44"
+        android:translateY="24.4"
         android:pivotX="0"
         android:pivotY="0">
 
