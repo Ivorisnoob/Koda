@@ -10,74 +10,180 @@
                 android:scaleX="0.16"
                 android:scaleY="0.16"
                 android:translateX="19.44"
-                android:translateY="24.4">
-                
+                android:translateY="24.4"
+                android:pivotX="0"
+                android:pivotY="0">
+
+                <!-- ==================== BLOB (Background) ==================== -->
+                <!-- Scales up first as the foundation -->
                 <group
-                    android:name="icon_content"
-                    android:pivotX="220"
-                    android:pivotY="200">
-                    
-                    <!-- Main blob shape (purple) -->
+                    android:name="blob_group"
+                    android:pivotX="222"
+                    android:pivotY="189"
+                    android:scaleX="0"
+                    android:scaleY="0">
+
                     <path
                         android:fillColor="#372DA9"
                         android:pathData="M252.415,86.924C260.733,89.841 269.528,93.751 299.373,95.837C299.97,95.98 336.301,98.589 346.635,133.461C357.965,171.696 324.972,178.628 336.471,236.506C337.836,243.377 348.783,276.18 321.089,299.014C297.449,318.507 267.342,305.735 243.488,301.777C220.289,298.942 211.789,300.713 183.5,308.503C171.093,311.342 139.076,321.585 108.872,299.005C62.926,264.657 93.946,205.775 97.712,198.627C104.658,185.443 104.988,185.787 111.289,172.444C122.885,145.45 121.863,145.139 126.319,109.43C127.133,105.948 130.619,70.937 165.586,58.767C199.825,46.851 220.118,74.018 252.415,86.924Z" />
 
-                    <!-- Note body (cream vertical shape) -->
-                    <path
-                        android:fillColor="#DAD8CD"
-                        android:pathData="M182.416,102.074C187.095,101.521 186.951,101.069 191.433,101.907C213.931,106.112 209.914,125.655 209.862,191.502C209.824,239.679 214.779,269.716 187.502,270.194C159.755,270.679 164.862,236.541 164.827,197.499C164.754,115.768 161.533,109.096 182.416,102.074Z" />
-
-                    <!-- Note flag (cream flag shape) -->
-                    <path
-                        android:fillColor="#DAD8CC"
-                        android:pathData="M236.501,156.417C239.476,156.799 286.443,176.659 289.528,190.495C292.729,204.855 276.432,210.607 249.606,226.679C215.168,247.312 220.962,204.368 220.93,176.495C220.917,164.857 223.697,157.763 236.501,156.417Z" />
-
-                    <!-- Dark accent - bottom left -->
                     <path
                         android:fillColor="#202265"
                         android:pathData="M126.319,109.43C121.863,145.139 122.885,145.45 111.289,172.444C108.458,167.821 108.619,167.967 108.378,167.583C79.838,122.273 122.752,110.407 126.319,109.43Z" />
 
-                    <!-- Dark accent - bottom tail -->
                     <path
                         android:fillColor="#191346"
                         android:pathData="M243.488,301.777C225.355,314.167 206.946,328.618 183.5,308.503C211.789,300.713 220.289,298.942 243.488,301.777Z" />
 
-                    <!-- Dark accent - top right -->
                     <path
                         android:fillColor="#1F3263"
                         android:pathData="M252.415,86.924C255.741,85.039 286.185,67.787 299.373,95.837C269.528,93.751 260.733,89.841 252.415,86.924Z" />
+                </group>
 
-                    <!-- Green dot accent -->
+                <!-- ==================== NOTE BODY (Stem) ==================== -->
+                <!-- Slides up from below after blob appears -->
+                <group
+                    android:name="note_body_group"
+                    android:pivotX="187"
+                    android:pivotY="270"
+                    android:scaleX="0"
+                    android:scaleY="0"
+                    android:translateY="80">
+
+                    <path
+                        android:fillColor="#DAD8CD"
+                        android:pathData="M182.416,102.074C187.095,101.521 186.951,101.069 191.433,101.907C213.931,106.112 209.914,125.655 209.862,191.502C209.824,239.679 214.779,269.716 187.502,270.194C159.755,270.679 164.862,236.541 164.827,197.499C164.754,115.768 161.533,109.096 182.416,102.074Z" />
+                </group>
+
+                <!-- ==================== NOTE FLAG ==================== -->
+                <!-- Swings in with rotation after the stem appears -->
+                <group
+                    android:name="note_flag_group"
+                    android:pivotX="221"
+                    android:pivotY="157"
+                    android:scaleX="0"
+                    android:scaleY="0"
+                    android:rotation="-45">
+
+                    <path
+                        android:fillColor="#DAD8CC"
+                        android:pathData="M236.501,156.417C239.476,156.799 286.443,176.659 289.528,190.495C292.729,204.855 276.432,210.607 249.606,226.679C215.168,247.312 220.962,204.368 220.93,176.495C220.917,164.857 223.697,157.763 236.501,156.417Z" />
+                </group>
+
+                <!-- ==================== GREEN DOT ==================== -->
+                <!-- Pops in last with extra bounce -->
+                <group
+                    android:name="green_dot_group"
+                    android:pivotX="307"
+                    android:pivotY="275"
+                    android:scaleX="0"
+                    android:scaleY="0">
+
                     <path
                         android:fillColor="#98EB41"
                         android:pathData="M307.408,265.264C308.688,265.097 313.932,262.512 319.443,268.546C321.073,270.331 322.43,274.821 321.238,278.414C315.637,295.304 287.212,278.607 307.408,265.264Z" />
                 </group>
+
             </group>
         </vector>
     </aapt:attr>
-    <target android:name="icon_content">
+
+    <!-- ========== BLOB: Scale up with overshoot (0–350ms) ========== -->
+    <target android:name="blob_group">
         <aapt:attr name="android:animation">
             <set>
-                <!-- Scale up with a bounce (overshoot) -->
                 <objectAnimator
                     android:propertyName="scaleX"
-                    android:valueFrom="0.4"
-                    android:valueTo="1.0"
-                    android:duration="800"
+                    android:valueFrom="0"
+                    android:valueTo="1"
+                    android:duration="350"
                     android:interpolator="@android:interpolator/overshoot" />
                 <objectAnimator
                     android:propertyName="scaleY"
-                    android:valueFrom="0.4"
-                    android:valueTo="1.0"
-                    android:duration="800"
+                    android:valueFrom="0"
+                    android:valueTo="1"
+                    android:duration="350"
                     android:interpolator="@android:interpolator/overshoot" />
-                
-                <!-- Fade in effect -->
+            </set>
+        </aapt:attr>
+    </target>
+
+    <!-- ========== NOTE BODY: Scale + slide up (150–450ms) ========== -->
+    <target android:name="note_body_group">
+        <aapt:attr name="android:animation">
+            <set>
                 <objectAnimator
-                    android:propertyName="alpha"
-                    android:valueFrom="0.0"
-                    android:valueTo="1.0"
-                    android:duration="300" />
+                    android:propertyName="scaleX"
+                    android:valueFrom="0"
+                    android:valueTo="1"
+                    android:startOffset="150"
+                    android:duration="300"
+                    android:interpolator="@android:interpolator/overshoot" />
+                <objectAnimator
+                    android:propertyName="scaleY"
+                    android:valueFrom="0"
+                    android:valueTo="1"
+                    android:startOffset="150"
+                    android:duration="300"
+                    android:interpolator="@android:interpolator/overshoot" />
+                <objectAnimator
+                    android:propertyName="translateY"
+                    android:valueFrom="80"
+                    android:valueTo="0"
+                    android:startOffset="150"
+                    android:duration="300"
+                    android:interpolator="@android:interpolator/decelerate_cubic" />
+            </set>
+        </aapt:attr>
+    </target>
+
+    <!-- ========== NOTE FLAG: Scale + swing in via rotation (300–600ms) ========== -->
+    <target android:name="note_flag_group">
+        <aapt:attr name="android:animation">
+            <set>
+                <objectAnimator
+                    android:propertyName="scaleX"
+                    android:valueFrom="0"
+                    android:valueTo="1"
+                    android:startOffset="300"
+                    android:duration="300"
+                    android:interpolator="@android:interpolator/overshoot" />
+                <objectAnimator
+                    android:propertyName="scaleY"
+                    android:valueFrom="0"
+                    android:valueTo="1"
+                    android:startOffset="300"
+                    android:duration="300"
+                    android:interpolator="@android:interpolator/overshoot" />
+                <objectAnimator
+                    android:propertyName="rotation"
+                    android:valueFrom="-45"
+                    android:valueTo="0"
+                    android:startOffset="300"
+                    android:duration="300"
+                    android:interpolator="@android:interpolator/overshoot" />
+            </set>
+        </aapt:attr>
+    </target>
+
+    <!-- ========== GREEN DOT: Pop in last with extra bounce (450–700ms) ========== -->
+    <target android:name="green_dot_group">
+        <aapt:attr name="android:animation">
+            <set>
+                <objectAnimator
+                    android:propertyName="scaleX"
+                    android:valueFrom="0"
+                    android:valueTo="1"
+                    android:startOffset="450"
+                    android:duration="250"
+                    android:interpolator="@android:interpolator/overshoot" />
+                <objectAnimator
+                    android:propertyName="scaleY"
+                    android:valueFrom="0"
+                    android:valueTo="1"
+                    android:startOffset="450"
+                    android:duration="250"
+                    android:interpolator="@android:interpolator/overshoot" />
             </set>
         </aapt:attr>
     </target>
