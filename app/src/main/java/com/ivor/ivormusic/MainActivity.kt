@@ -42,11 +42,6 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import com.ivor.ivormusic.ui.theme.ThemeMode
 
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
-import android.animation.ObjectAnimator
-import android.view.View
-import android.view.animation.AnticipateInterpolator
-import androidx.core.animation.doOnEnd
-import android.animation.AnimatorSet
 
 class MainActivity : ComponentActivity() {
     
@@ -58,38 +53,8 @@ class MainActivity : ComponentActivity() {
         val splashScreen = installSplashScreen()
         super.onCreate(savedInstanceState)
         
-        // Creative Exit Animation: Slide Up & Fade Out
-        // Restored previous "Slide Up" effect but optimized for speed (400ms)
-        splashScreen.setOnExitAnimationListener { splashScreenViewProvider ->
-            val iconView = splashScreenViewProvider.iconView
-            
-            // Slide the icon up (move vertically off screen)
-            val slideUp = ObjectAnimator.ofFloat(
-                iconView,
-                View.TRANSLATION_Y,
-                0f,
-                -iconView.height.toFloat()
-            )
-            slideUp.interpolator = AnticipateInterpolator()
-            slideUp.duration = 400L // Snappy duration
-
-            // Fade out the background
-            val fadeOut = ObjectAnimator.ofFloat(
-                splashScreenViewProvider.view,
-                View.ALPHA,
-                1f,
-                0f
-            )
-            fadeOut.duration = 300L
-            fadeOut.startDelay = 100L
-
-            val set = AnimatorSet()
-            set.playTogether(slideUp, fadeOut)
-            set.doOnEnd { 
-                splashScreenViewProvider.remove() 
-            }
-            set.start()
-        }
+        // Remove splash instantly when ready — the AVD entrance animation is the show
+        splashScreen.setOnExitAnimationListener { it.remove() }
 
         enableEdgeToEdge()
         
