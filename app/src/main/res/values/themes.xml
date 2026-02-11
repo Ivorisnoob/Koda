@@ -2,4 +2,16 @@
 <resources>
 
     <style name="Theme.IvorMusic" parent="android:Theme.Material.Light.NoActionBar" />
+
+    <!-- Splash Screen Theme (Android 12+) -->
+    <style name="Theme.App.Starting" parent="Theme.SplashScreen">
+        <!-- Set the splash screen background color (Deep Purple) -->
+        <item name="windowSplashScreenBackground">#1A1070</item>
+        <!-- Use the animated vector drawable we created -->
+        <item name="windowSplashScreenAnimatedIcon">@drawable/avd_splash</item>
+        <!-- Set the animation duration (match the AVD duration) -->
+        <item name="windowSplashScreenAnimationDuration">800</item>
+        <!-- Post-splash theme (the actual app theme) -->
+        <item name="postSplashScreenTheme">@style/Theme.IvorMusic</item>
+    </style>
 </resources>

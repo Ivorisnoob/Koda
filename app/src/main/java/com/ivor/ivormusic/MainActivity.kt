@@ -41,6 +41,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.isSystemInDarkTheme
 import com.ivor.ivormusic.ui.theme.ThemeMode
 
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import android.animation.ObjectAnimator
+import android.view.View
+import android.view.animation.AnticipateInterpolator
+import androidx.core.animation.doOnEnd
+import android.animation.AnimatorSet
+
 class MainActivity : ComponentActivity() {
     
     companion object {
@@ -48,7 +55,42 @@ class MainActivity : ComponentActivity() {
     }
     
     override fun onCreate(savedInstanceState: Bundle?) {
+        val splashScreen = installSplashScreen()
         super.onCreate(savedInstanceState)
+        
+        // Creative Exit Animation: Slide Up & Fade Out
+        // Restored previous "Slide Up" effect but optimized for speed (400ms)
+        splashScreen.setOnExitAnimationListener { splashScreenViewProvider ->
+            val iconView = splashScreenViewProvider.iconView
+            
+            // Slide the icon up (move vertically off screen)
+            val slideUp = ObjectAnimator.ofFloat(
+                iconView,
+                View.TRANSLATION_Y,
+                0f,
+                -iconView.height.toFloat()
+            )
+            slideUp.interpolator = AnticipateInterpolator()
+            slideUp.duration = 400L // Snappy duration
+
+            // Fade out the background
+            val fadeOut = ObjectAnimator.ofFloat(
+                splashScreenViewProvider.view,
+                View.ALPHA,
+                1f,
+                0f
+            )
+            fadeOut.duration = 300L
+            fadeOut.startDelay = 100L
+
+            val set = AnimatorSet()
+            set.playTogether(slideUp, fadeOut)
+            set.doOnEnd { 
+                splashScreenViewProvider.remove() 
+            }
+            set.start()
+        }
+
         enableEdgeToEdge()
         
         requestNotificationPermission()
@@ -79,37 +121,39 @@ class MainActivity : ComponentActivity() {
             }
             
             IvorMusicTheme(darkTheme = isDarkTheme) {
-                MusicApp(
-                    currentThemeMode = themeMode,
-                    onThemeModeChange = { themeViewModel.setThemeMode(it) },
-                    isDarkMode = isDarkTheme, // Derived for compatibility
-                    onThemeToggle = { isDark ->
-                        themeViewModel.setThemeMode(if (isDark) ThemeMode.DARK else ThemeMode.LIGHT)
-                    },
-                    loadLocalSongs = loadLocalSongs,
-                    onLoadLocalSongsToggle = { themeViewModel.setLoadLocalSongs(it) },
-                    ambientBackground = ambientBackground,
-                    onAmbientBackgroundToggle = { themeViewModel.setAmbientBackground(it) },
-                    videoMode = videoMode,
-                    onVideoModeToggle = { themeViewModel.setVideoMode(it) },
-                    playerStyle = playerStyle,
-                    onPlayerStyleChange = { themeViewModel.setPlayerStyle(it) },
-                    saveVideoHistory = saveVideoHistory,
-                    onSaveVideoHistoryToggle = { themeViewModel.setSaveVideoHistory(it) },
-                    excludedFolders = excludedFolders,
-                    onAddExcludedFolder = { themeViewModel.addExcludedFolder(it) },
-                    onRemoveExcludedFolder = { themeViewModel.removeExcludedFolder(it) },
-                    cacheEnabled = cacheEnabled,
-                    onCacheEnabledToggle = { themeViewModel.setCacheEnabled(it) },
-                    maxCacheSizeMb = maxCacheSizeMb,
-                    onMaxCacheSizeMbChange = { themeViewModel.setMaxCacheSizeMb(it) },
-                    currentCacheSize = currentCacheSize,
-                    onClearCacheClick = { themeViewModel.clearCacheAction() },
-                    crossfadeEnabled = crossfadeEnabled,
-                    onCrossfadeEnabledToggle = { themeViewModel.toggleCrossfadeEnabled() },
-                    crossfadeDurationMs = crossfadeDurationMs,
-                    onCrossfadeDurationChange = { themeViewModel.setCrossfadeDuration(it) }
-                )
+                Box(modifier = Modifier.fillMaxSize()) {
+                    MusicApp(
+                        currentThemeMode = themeMode,
+                        onThemeModeChange = { themeViewModel.setThemeMode(it) },
+                        isDarkMode = isDarkTheme, // Derived for compatibility
+                        onThemeToggle = { isDark ->
+                            themeViewModel.setThemeMode(if (isDark) ThemeMode.DARK else ThemeMode.LIGHT)
+                        },
+                        loadLocalSongs = loadLocalSongs,
+                        onLoadLocalSongsToggle = { themeViewModel.setLoadLocalSongs(it) },
+                        ambientBackground = ambientBackground,
+                        onAmbientBackgroundToggle = { themeViewModel.setAmbientBackground(it) },
+                        videoMode = videoMode,
+                        onVideoModeToggle = { themeViewModel.setVideoMode(it) },
+                        playerStyle = playerStyle,
+                        onPlayerStyleChange = { themeViewModel.setPlayerStyle(it) },
+                        saveVideoHistory = saveVideoHistory,
+                        onSaveVideoHistoryToggle = { themeViewModel.setSaveVideoHistory(it) },
+                        excludedFolders = excludedFolders,
+                        onAddExcludedFolder = { themeViewModel.addExcludedFolder(it) },
+                        onRemoveExcludedFolder = { themeViewModel.removeExcludedFolder(it) },
+                        cacheEnabled = cacheEnabled,
+                        onCacheEnabledToggle = { themeViewModel.setCacheEnabled(it) },
+                        maxCacheSizeMb = maxCacheSizeMb,
+                        onMaxCacheSizeMbChange = { themeViewModel.setMaxCacheSizeMb(it) },
+                        currentCacheSize = currentCacheSize,
+                        onClearCacheClick = { themeViewModel.clearCacheAction() },
+                        crossfadeEnabled = crossfadeEnabled,
+                        onCrossfadeEnabledToggle = { themeViewModel.toggleCrossfadeEnabled() },
+                        crossfadeDurationMs = crossfadeDurationMs,
+                        onCrossfadeDurationChange = { themeViewModel.setCrossfadeDuration(it) }
+                    )
+                }
             }
         }
     }
