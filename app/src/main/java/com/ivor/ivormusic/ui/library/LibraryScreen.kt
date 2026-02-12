@@ -532,7 +532,8 @@ private fun LibraryScreenInternal(
 
 // ... Use same AllSongsList, PlaylistsList, ArtistsList, AlbumsList, Components as before (updated with proper imports and logic) ...
 
-// Restore internal components
+// ============ COMPONENT DEFINITIONS ============
+
 @Composable
 private fun AllSongsList(
     songs: List<Song>,
@@ -544,17 +545,28 @@ private fun AllSongsList(
     isDownloaded: (Song) -> Boolean,
     padding: PaddingValues
 ) {
-    if (songs.isEmpty()) {
+    if (songs.isEmpty() && likedSongs.isEmpty()) {
         EmptyState(Icons.Rounded.MusicNote, "No songs found", "Try adding music to your device or checking your filters.")
         return
     }
 
     LazyColumn(
-        contentPadding = PaddingValues(bottom = 100.dp + padding.calculateBottomPadding(), top = 8.dp),
+        contentPadding = PaddingValues(
+            bottom = 100.dp + padding.calculateBottomPadding(),
+            top = 0.dp,
+            start = 16.dp,
+            end = 16.dp
+        ),
         modifier = Modifier.fillMaxSize()
     ) {
         if (likedSongs.isNotEmpty()) item {
-            LikedSongsBanner(likedSongs.size, onLikedSongsClick)
+            PlaylistListItem(
+                name = "Liked Songs",
+                count = likedSongs.size,
+                thumbnailUrl = null,
+                isLikedSongs = true,
+                onClick = onLikedSongsClick
+            )
         }
 
         items(songs, key = { it.id }) { song ->
@@ -570,65 +582,193 @@ private fun AllSongsList(
 }
 
 @Composable
-private fun LikedSongsBanner(count: Int, onClick: () -> Unit) {
-    Surface(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp).clip(RoundedCornerShape(24.dp)).clickable(onClick = onClick),
-        color = MaterialTheme.colorScheme.tertiaryContainer,
-        shape = RoundedCornerShape(24.dp)
+private fun PlaylistsList(
+    playlists: List<PlaylistDisplayItem>,
+    likedSongs: List<Song>,
+    onPlaylistClick: (PlaylistDisplayItem) -> Unit,
+    onLikedSongsClick: () -> Unit,
+    padding: PaddingValues
+) {
+    if (playlists.isEmpty() && likedSongs.isEmpty()) {
+        EmptyState(Icons.AutoMirrored.Rounded.PlaylistPlay, "No Playlists", "Create a playlist to get started.")
+        return
+    }
+
+    LazyColumn(
+        contentPadding = PaddingValues(
+            bottom = 100.dp + padding.calculateBottomPadding(),
+            top = 0.dp,
+            start = 16.dp,
+            end = 16.dp
+        ),
+        modifier = Modifier.fillMaxSize()
     ) {
-        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Surface(modifier = Modifier.size(56.dp), shape = CircleShape, color = MaterialTheme.colorScheme.onTertiaryContainer) {
-                Box(contentAlignment = Alignment.Center) { Icon(Icons.Rounded.Favorite, null, tint = MaterialTheme.colorScheme.tertiaryContainer) }
+        if (likedSongs.isNotEmpty()) {
+            item {
+                PlaylistListItem(name = "Liked Songs", count = likedSongs.size, thumbnailUrl = null, isLikedSongs = true, onClick = onLikedSongsClick)
             }
-            Spacer(modifier = Modifier.width(16.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text("Liked Songs", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onTertiaryContainer)
-                Text("$count tracks", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.8f))
-            }
-            IconButton(onClick = onClick, colors = IconButtonDefaults.iconButtonColors(containerColor = MaterialTheme.colorScheme.onTertiaryContainer, contentColor = MaterialTheme.colorScheme.tertiaryContainer)) {
-                // Changing to ArrowForward or ChevronRight to indicate navigation, or keep PlayArrow if user wants to play *from details*
-                // Since this now opens details, an arrow might be better, or just remove the icon.
-                // Keeping it as PlayArrow but it opens details might be confusing if they expect instant play.
-                // Let's use ArrowForward to signify "Go to Liked Songs".
-                Icon(Icons.AutoMirrored.Rounded.PlaylistPlay, "Open")
-            }
+        }
+        items(playlists) { playlist ->
+            PlaylistListItem(name = playlist.name ?: "Untitled", count = playlist.itemCount, thumbnailUrl = playlist.thumbnailUrl, onClick = { onPlaylistClick(playlist) })
         }
     }
 }
 
-// ... PlaylistsList remains largely same but using updated onLikedSongsClick logic internally ...
+@Composable
+private fun ArtistsList(songs: List<Song>, isGrid: Boolean, onArtistClick: (String) -> Unit, padding: PaddingValues) {
+    val artists = remember(songs) { songs.groupBy { it.artist }.toList().sortedBy { it.first } }
+    if (artists.isEmpty()) { EmptyState(Icons.Rounded.MusicNote, "No Artists", "Add music to see artists here."); return }
+
+    if (isGrid) {
+        LazyVerticalGrid(
+            columns = GridCells.Adaptive(160.dp),
+            contentPadding = PaddingValues(
+                start = 16.dp,
+                end = 16.dp,
+                top = 24.dp,
+                bottom = 100.dp + padding.calculateBottomPadding()
+            ),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            items(artists) { (artist, artistSongs) -> MediaGridItem(artist, "${artistSongs.size} tracks", artistSongs.firstOrNull()?.albumArtUri.toString(), Icons.Rounded.MusicNote) { onArtistClick(artist) } }
+        }
+    } else {
+        LazyColumn(
+            contentPadding = PaddingValues(
+                bottom = 100.dp + padding.calculateBottomPadding(),
+                start = 16.dp,
+                end = 16.dp
+            ),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            items(artists) { (artist, artistSongs) -> MediaListItem(artist, "${artistSongs.size} tracks", artistSongs.firstOrNull()?.albumArtUri.toString(), Icons.Rounded.MusicNote) { onArtistClick(artist) } }
+        }
+    }
+}
+
+@Composable
+private fun AlbumsList(songs: List<Song>, isGrid: Boolean, onAlbumClick: (String, List<Song>) -> Unit, padding: PaddingValues) {
+    val albums = remember(songs) { songs.groupBy { it.album }.toList().sortedBy { it.first } }
+    if (albums.isEmpty()) { EmptyState(Icons.Rounded.Album, "No Albums", "Add music to see albums here."); return }
+
+    if (isGrid) {
+        LazyVerticalGrid(
+            columns = GridCells.Adaptive(160.dp),
+            contentPadding = PaddingValues(
+                start = 16.dp,
+                end = 16.dp,
+                top = 24.dp,
+                bottom = 100.dp + padding.calculateBottomPadding()
+            ),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            items(albums) { (album, albumSongs) -> MediaGridItem(album, albumSongs.firstOrNull()?.artist ?: "Unknown", albumSongs.firstOrNull()?.albumArtUri.toString(), Icons.Rounded.Album) { onAlbumClick(album, albumSongs) } }
+        }
+    } else {
+        LazyColumn(
+            contentPadding = PaddingValues(
+                bottom = 100.dp + padding.calculateBottomPadding(),
+                start = 16.dp,
+                end = 16.dp
+            ),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            items(albums) { (album, albumSongs) -> MediaListItem(album, albumSongs.firstOrNull()?.artist ?: "Unknown", albumSongs.firstOrNull()?.albumArtUri.toString(), Icons.Rounded.Album) { onAlbumClick(album, albumSongs) } }
+        }
+    }
+}
+
+@Composable
+fun SongListItem(song: Song, onClick: () -> Unit, onDownloadClick: () -> Unit, isDownloading: Boolean, isDownloaded: Boolean) {
+    Column {
+        ListItem(
+            headlineContent = { Text(song.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold) },
+            supportingContent = { Text(song.artist, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+            leadingContent = { 
+                Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh, modifier = Modifier.size(48.dp)) { 
+                    if (song.albumArtUri != null || song.thumbnailUrl != null) 
+                        AsyncImage(model = song.highResThumbnailUrl ?: song.albumArtUri ?: song.thumbnailUrl, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize()) 
+                    else 
+                        Box(contentAlignment = Alignment.Center) { Icon(Icons.Rounded.MusicNote, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) } 
+                } 
+            },
+            trailingContent = { 
+                if (isDownloading) CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp) 
+                else if (isDownloaded) Icon(Icons.Rounded.Smartphone, "Downloaded", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp)) 
+            },
+            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+            modifier = Modifier.clickable(onClick = onClick)
+        )
+        HorizontalDivider(modifier = Modifier.padding(start = 72.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
+    }
+}
 
 @Composable
 fun PlaylistListItem(name: String, count: Int, thumbnailUrl: String?, isLikedSongs: Boolean = false, onClick: () -> Unit) {
-    Surface(onClick = onClick, shape = RoundedCornerShape(20.dp), color = if (isLikedSongs) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh, modifier = Modifier.fillMaxWidth()) {
-        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Surface(shape = RoundedCornerShape(12.dp), color = if (isLikedSongs) MaterialTheme.colorScheme.onTertiaryContainer else MaterialTheme.colorScheme.surfaceContainer, modifier = Modifier.size(56.dp)) { if (thumbnailUrl != null) AsyncImage(model = thumbnailUrl, contentDescription = null, contentScale = ContentScale.Crop) else Box(contentAlignment = Alignment.Center) { Icon(if (isLikedSongs) Icons.Rounded.Favorite else Icons.AutoMirrored.Rounded.PlaylistPlay, null, tint = if (isLikedSongs) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.onSurfaceVariant) } }
-            Spacer(modifier = Modifier.width(16.dp))
-            Column { 
-                Text(name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = if (isLikedSongs) MaterialTheme.colorScheme.onTertiaryContainer else MaterialTheme.colorScheme.onSurface)
-                
+    Column {
+        ListItem(
+            headlineContent = { Text(name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface) },
+            supportingContent = { 
                 val countText = if (count >= 0) "$count tracks" else "Playlist"
-                Text(countText, style = MaterialTheme.typography.bodyMedium, color = if (isLikedSongs) MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.8f) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)) 
-            }
-        }
+                Text(countText, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)) 
+            },
+            leadingContent = { 
+                Surface(shape = RoundedCornerShape(12.dp), color = if (isLikedSongs) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh, modifier = Modifier.size(48.dp)) { 
+                    if (thumbnailUrl != null) AsyncImage(model = thumbnailUrl, contentDescription = null, contentScale = ContentScale.Crop) 
+                    else Box(contentAlignment = Alignment.Center) { Icon(if (isLikedSongs) Icons.Rounded.Favorite else Icons.AutoMirrored.Rounded.PlaylistPlay, null, tint = if (isLikedSongs) MaterialTheme.colorScheme.onTertiaryContainer else MaterialTheme.colorScheme.onSurfaceVariant) } 
+                } 
+            },
+            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+            modifier = Modifier.clickable(onClick = onClick)
+        )
+        HorizontalDivider(modifier = Modifier.padding(start = 72.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
     }
 }
 
 @Composable
 fun MediaListItem(title: String, subtitle: String, imageUrl: String?, icon: ImageVector, onClick: () -> Unit) {
-    ListItem(headlineContent = { Text(title, fontWeight = FontWeight.SemiBold) }, supportingContent = { Text(subtitle) }, leadingContent = { Surface(shape = CircleShape, modifier = Modifier.size(48.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) { if (imageUrl != null && imageUrl != "null") AsyncImage(model = imageUrl, contentDescription = null, contentScale = ContentScale.Crop) else Box(contentAlignment = Alignment.Center) { Icon(icon, null, tint = MaterialTheme.colorScheme.primary) } } }, modifier = Modifier.clickable(onClick = onClick))
+    Column {
+        ListItem(
+            headlineContent = { Text(title, fontWeight = FontWeight.SemiBold) },
+            supportingContent = { Text(subtitle) },
+            leadingContent = { 
+                Surface(shape = RoundedCornerShape(12.dp), modifier = Modifier.size(48.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) { 
+                    if (imageUrl != null && imageUrl != "null") 
+                        AsyncImage(model = imageUrl, contentDescription = null, contentScale = ContentScale.Crop) 
+                    else 
+                        Box(contentAlignment = Alignment.Center) { Icon(icon, null, tint = MaterialTheme.colorScheme.primary) } 
+                } 
+            },
+            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+            modifier = Modifier.clickable(onClick = onClick)
+        )
+        HorizontalDivider(modifier = Modifier.padding(start = 72.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
+    }
 }
 
 @Composable
 fun MediaGridItem(title: String, subtitle: String, imageUrl: String?, icon: ImageVector, onClick: () -> Unit) {
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(160.dp).clickable(onClick = onClick)) {
-        Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh, modifier = Modifier.size(160.dp)) { if (imageUrl != null && imageUrl != "null") AsyncImage(model = imageUrl, contentDescription = null, contentScale = ContentScale.Crop) else Box(contentAlignment = Alignment.Center) { Icon(icon, null, modifier = Modifier.size(64.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)) } }
+        Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh, modifier = Modifier.size(160.dp)) { if (imageUrl != null && imageUrl != "null") AsyncImage(model = imageUrl, contentDescription = null, contentScale = ContentScale.Crop) else Box(contentAlignment = Alignment.Center) { Icon(icon, null, modifier = Modifier.size(64.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)) } }
         Spacer(modifier = Modifier.height(8.dp))
         Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center); Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
     }
 }
 
-// ============ MISSING COMPONENTS ============
+@Composable
+fun EmptyState(icon: ImageVector, title: String, subtitle: String) {
+    Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+        Icon(icon, null, modifier = Modifier.size(80.dp), tint = MaterialTheme.colorScheme.surfaceContainerHigh)
+        Spacer(modifier = Modifier.height(16.dp))
+        Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(subtitle, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
