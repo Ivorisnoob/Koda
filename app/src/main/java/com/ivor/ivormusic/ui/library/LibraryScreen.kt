@@ -400,7 +400,7 @@ fun LibraryScreen(
                                 )
                             }
                             
-                            itemsIndexed(songs.take(20)) { index, song -> 
+                            itemsIndexed(songs) { index, song -> 
                                 LibrarySongCard(
                                     song = song,
                                     onClick = { onPlayQueue(songs, song) },
@@ -408,10 +408,10 @@ fun LibraryScreen(
                                     textColor = textColor,
                                     secondaryTextColor = secondaryTextColor,
                                     accentColor = accentColor,
-                                    shape = getSegmentedShape(index, songs.take(20).size),
+                                    shape = getSegmentedShape(index, songs.size),
                                     isLocalOriginal = true
                                 )
-                                if (index < songs.take(20).size - 1) {
+                                if (index < songs.size - 1) {
                                     HorizontalDivider(
                                         modifier = Modifier.padding(horizontal = 24.dp),
                                         color = textColor.copy(alpha = 0.08f)
