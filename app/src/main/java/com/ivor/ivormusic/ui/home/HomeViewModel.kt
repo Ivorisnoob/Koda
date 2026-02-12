@@ -122,9 +122,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         return downloadRepository.isLocalOriginal(song)
     }
 
-    fun loadSongs(excludedFolders: Set<String> = emptySet()) {
+    fun loadSongs(excludedFolders: Set<String> = emptySet(), manualScan: Boolean = false) {
         viewModelScope.launch {
-            _songs.value = localRepository.getSongs(excludedFolders)
+            _songs.value = localRepository.getSongs(excludedFolders, manualScan)
         }
     }
     
@@ -279,7 +279,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         _youtubePlaylists.value = emptyList()
     }
 
-    fun refresh(excludedFolders: Set<String> = emptySet()) {
+    fun refresh(excludedFolders: Set<String> = emptySet(), manualScan: Boolean = false) {
         viewModelScope.launch {
             _isLoading.value = true
             try {
@@ -301,7 +301,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 // Reload local songs with exclusions and playlists
                 playlistRepository.refreshPlaylists()
-                _songs.value = localRepository.getSongs(excludedFolders)
+                _songs.value = localRepository.getSongs(excludedFolders, manualScan)
             } catch (e: Exception) {
                 // Silently fail
             } finally {

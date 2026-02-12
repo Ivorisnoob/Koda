@@ -51,6 +51,12 @@ class ThemePreferences(context: Context) {
     private val _crossfadeDurationMs = MutableStateFlow(getCrossfadeDurationPreference())
     val crossfadeDurationMs: StateFlow<Int> = _crossfadeDurationMs.asStateFlow()
 
+    private val _oemFixEnabled = MutableStateFlow(getOemFixEnabledPreference())
+    val oemFixEnabled: StateFlow<Boolean> = _oemFixEnabled.asStateFlow()
+
+    private val _manualScanEnabled = MutableStateFlow(getManualScanEnabledPreference())
+    val manualScanEnabled: StateFlow<Boolean> = _manualScanEnabled.asStateFlow()
+
     companion object {
         private const val PREFS_NAME = "ivor_music_theme_prefs"
         private const val KEY_THEME_MODE = "theme_mode_enum"
@@ -65,6 +71,8 @@ class ThemePreferences(context: Context) {
         private const val KEY_MAX_CACHE_SIZE_MB = "max_cache_size_mb"
         private const val KEY_CROSSFADE_ENABLED = "crossfade_enabled"
         private const val KEY_CROSSFADE_DURATION = "crossfade_duration"
+        private const val KEY_OEM_FIX_ENABLED = "oem_fix_enabled"
+        private const val KEY_MANUAL_SCAN_ENABLED = "manual_scan_enabled"
         private const val KEY_LAST_SONG_ID = "last_song_id"
         private const val KEY_LAST_SONG_TITLE = "last_song_title"
         private const val KEY_LAST_SONG_ARTIST = "last_song_artist"
@@ -326,6 +334,24 @@ class ThemePreferences(context: Context) {
     fun setCrossfadeDuration(durationMs: Int) {
         prefs.edit().putInt(KEY_CROSSFADE_DURATION, durationMs).apply()
         _crossfadeDurationMs.value = durationMs
+    }
+
+    private fun getOemFixEnabledPreference(): Boolean {
+        return prefs.getBoolean(KEY_OEM_FIX_ENABLED, false)
+    }
+
+    fun setOemFixEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_OEM_FIX_ENABLED, enabled).apply()
+        _oemFixEnabled.value = enabled
+    }
+
+    private fun getManualScanEnabledPreference(): Boolean {
+        return prefs.getBoolean(KEY_MANUAL_SCAN_ENABLED, false)
+    }
+
+    fun setManualScanEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_MANUAL_SCAN_ENABLED, enabled).apply()
+        _manualScanEnabled.value = enabled
     }
 }
 

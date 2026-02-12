@@ -52,6 +52,8 @@ import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.PlayCircle
+import androidx.compose.material.icons.rounded.Security
+import androidx.compose.material.icons.rounded.FlashOn
 import androidx.compose.material.icons.rounded.SwipeRight
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -188,6 +190,10 @@ fun SettingsScreen(
     onCrossfadeEnabledToggle: (Boolean) -> Unit,
     crossfadeDurationMs: Int,
     onCrossfadeDurationChange: (Int) -> Unit,
+    oemFixEnabled: Boolean,
+    onOemFixEnabledToggle: (Boolean) -> Unit,
+    manualScanEnabled: Boolean,
+    onManualScanEnabledToggle: (Boolean) -> Unit,
     contentPadding: PaddingValues = PaddingValues()
 ) {
     val context = LocalContext.current
@@ -383,6 +389,102 @@ fun SettingsScreen(
                                         thumbColor = accentColor,
                                         activeTrackColor = accentColor
                                     )
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // OEM & HyperOS Fixes Section
+            item {
+                AnimatedSettingsSection(
+                    title = "OEM & HyperOS Fixes",
+                    textColor = secondaryTextColor,
+                    visible = isVisible,
+                    delay = 38
+                ) {
+                    ExpressiveSettingsCard(surfaceColor = surfaceColor) {
+                        // High Compatibility Scanning (Manual Scan)
+                        ExpressiveOemToggleItem(
+                            icon = Icons.Rounded.Security,
+                            title = "High Compatibility Scanning",
+                            subtitle = "Bypasses MediaStore (Fixes missing music on HyperOS)",
+                            enabled = manualScanEnabled,
+                            onToggle = { enabled ->
+                                if (enabled && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                                    if (!android.os.Environment.isExternalStorageManager()) {
+                                        val intent = Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
+                                            data = Uri.parse("package:${context.packageName}")
+                                        }
+                                        context.startActivity(intent)
+                                    }
+                                }
+                                onManualScanEnabledToggle(enabled)
+                            },
+                            textColor = textColor,
+                            secondaryTextColor = secondaryTextColor,
+                            accentColor = Color(0xFF4CAF50)
+                        )
+                        
+                        SettingsDivider()
+                        
+                        // Battery Optimization Fix
+                        ExpressiveSettingsItem(
+                            icon = Icons.Rounded.FlashOn,
+                            title = "Ignore Battery Optimizations",
+                            subtitle = "Prevents playback from stopping in background",
+                            onClick = {
+                                val packageName = context.packageName
+                                val intent = Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                                    data = Uri.parse("package:$packageName")
+                                }
+                                try {
+                                    context.startActivity(intent)
+                                } catch (e: Exception) {
+                                    // Fallback for HyperOS/Restrictive OEMs: Open App Info
+                                    // From here user can manually set "No restrictions" in Battery saver
+                                    try {
+                                        val appInfoIntent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                            data = Uri.parse("package:$packageName")
+                                        }
+                                        context.startActivity(appInfoIntent)
+                                    } catch (e2: Exception) {
+                                        // Absolute fallback
+                                        context.startActivity(Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+                                    }
+                                }
+                            },
+                            textColor = textColor,
+                            secondaryTextColor = secondaryTextColor,
+                            iconTint = Color(0xFFFFB300),
+                            showChevron = true
+                        )
+                    }
+                    
+                    if (isXiaomiDevice()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Surface(
+                            shape = RoundedCornerShape(16.dp),
+                            color = Color(0xFFFFB300).copy(alpha = 0.1f),
+                            modifier = Modifier.padding(horizontal = 4.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Info,
+                                    contentDescription = null,
+                                    tint = Color(0xFFF57C00),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Text(
+                                    text = "Xiaomi device detected. Enabling these is highly recommended.",
+                                    color = Color(0xFFF57C00),
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Medium
                                 )
                             }
                         }
@@ -1991,3 +2093,91 @@ private fun FolderItem(
     }
 }
 
+@Composable
+private fun ExpressiveOemToggleItem(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    enabled: Boolean,
+    onToggle: (Boolean) -> Unit,
+    textColor: Color,
+    secondaryTextColor: Color,
+    accentColor: Color
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.97f else 1f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
+        label = "scale"
+    )
+    
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .scale(scale)
+            .clip(RoundedCornerShape(18.dp))
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null
+            ) { onToggle(!enabled) }
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Icon
+        Box(
+            modifier = Modifier
+                .size(48.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(accentColor.copy(alpha = 0.12f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = accentColor,
+                modifier = Modifier.size(26.dp)
+            )
+        }
+
+        Spacer(modifier = Modifier.width(16.dp))
+
+        // Text
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                color = textColor,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = subtitle,
+                color = secondaryTextColor,
+                fontSize = 13.sp
+            )
+        }
+
+        // Switch
+        Switch(
+            checked = enabled,
+            onCheckedChange = onToggle,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Color.White,
+                checkedTrackColor = accentColor,
+                uncheckedThumbColor = Color.White,
+                uncheckedTrackColor = secondaryTextColor.copy(alpha = 0.3f),
+                uncheckedBorderColor = Color.Transparent,
+                checkedBorderColor = Color.Transparent
+            )
+        )
+    }
+}
+
+private fun isXiaomiDevice(): Boolean {
+    val manufacturer = android.os.Build.MANUFACTURER.lowercase()
+    val brand = android.os.Build.BRAND.lowercase()
+    return manufacturer.contains("xiaomi") || brand.contains("xiaomi") || 
+           brand.contains("redmi") || brand.contains("poco")
+}

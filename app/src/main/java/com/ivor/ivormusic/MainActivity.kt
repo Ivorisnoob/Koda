@@ -69,6 +69,8 @@ class MainActivity : ComponentActivity() {
             val playerStyle by themeViewModel.playerStyle.collectAsState()
             val saveVideoHistory by themeViewModel.saveVideoHistory.collectAsState()
             val excludedFolders by themeViewModel.excludedFolders.collectAsState()
+            val oemFixEnabled by themeViewModel.oemFixEnabled.collectAsState()
+            val manualScanEnabled by themeViewModel.manualScanEnabled.collectAsState()
             
             val cacheEnabled by themeViewModel.cacheEnabled.collectAsState()
             val maxCacheSizeMb by themeViewModel.maxCacheSizeMb.collectAsState()
@@ -107,6 +109,10 @@ class MainActivity : ComponentActivity() {
                         excludedFolders = excludedFolders,
                         onAddExcludedFolder = { themeViewModel.addExcludedFolder(it) },
                         onRemoveExcludedFolder = { themeViewModel.removeExcludedFolder(it) },
+                        oemFixEnabled = oemFixEnabled,
+                        onOemFixEnabledToggle = { themeViewModel.setOemFixEnabled(it) },
+                        manualScanEnabled = manualScanEnabled,
+                        onManualScanEnabledToggle = { themeViewModel.setManualScanEnabled(it) },
                         cacheEnabled = cacheEnabled,
                         onCacheEnabledToggle = { themeViewModel.setCacheEnabled(it) },
                         maxCacheSizeMb = maxCacheSizeMb,
@@ -168,7 +174,11 @@ fun MusicApp(
     crossfadeEnabled: Boolean,
     onCrossfadeEnabledToggle: (Boolean) -> Unit,
     crossfadeDurationMs: Int,
-    onCrossfadeDurationChange: (Int) -> Unit
+    onCrossfadeDurationChange: (Int) -> Unit,
+    oemFixEnabled: Boolean,
+    onOemFixEnabledToggle: (Boolean) -> Unit,
+    manualScanEnabled: Boolean,
+    onManualScanEnabledToggle: (Boolean) -> Unit
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val navController = rememberNavController()
@@ -203,7 +213,8 @@ fun MusicApp(
                     excludedFolders = excludedFolders,
                     ambientBackground = ambientBackground,
                     videoMode = videoMode,
-                    playerStyle = playerStyle
+                    playerStyle = playerStyle,
+                    manualScan = manualScanEnabled
                 )
             }
             composable(
@@ -243,7 +254,11 @@ fun MusicApp(
                     crossfadeEnabled = crossfadeEnabled,
                     onCrossfadeEnabledToggle = onCrossfadeEnabledToggle,
                     crossfadeDurationMs = crossfadeDurationMs,
-                    onCrossfadeDurationChange = onCrossfadeDurationChange
+                    onCrossfadeDurationChange = onCrossfadeDurationChange,
+                    oemFixEnabled = oemFixEnabled,
+                    onOemFixEnabledToggle = onOemFixEnabledToggle,
+                    manualScanEnabled = manualScanEnabled,
+                    onManualScanEnabledToggle = onManualScanEnabledToggle
                 )
             }
             composable(

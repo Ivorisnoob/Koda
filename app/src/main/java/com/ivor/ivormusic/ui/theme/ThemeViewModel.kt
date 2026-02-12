@@ -29,6 +29,9 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
     val crossfadeEnabled: StateFlow<Boolean> = themePreferences.crossfadeEnabled
     val crossfadeDurationMs: StateFlow<Int> = themePreferences.crossfadeDurationMs
     
+    val oemFixEnabled: StateFlow<Boolean> = themePreferences.oemFixEnabled
+    val manualScanEnabled: StateFlow<Boolean> = themePreferences.manualScanEnabled
+    
     val currentCacheSizeBytes: StateFlow<Long> = com.ivor.ivormusic.data.CacheManager.currentCacheSizeBytes
 
     fun setThemeMode(mode: ThemeMode) {
@@ -109,5 +112,13 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
     
     fun setCrossfadeDuration(durationMs: Int) {
         themePreferences.setCrossfadeDuration(durationMs)
+    }
+
+    fun setOemFixEnabled(enabled: Boolean) {
+        themePreferences.setOemFixEnabled(enabled)
+    }
+
+    fun setManualScanEnabled(enabled: Boolean) {
+        themePreferences.setManualScanEnabled(enabled)
     }
 }

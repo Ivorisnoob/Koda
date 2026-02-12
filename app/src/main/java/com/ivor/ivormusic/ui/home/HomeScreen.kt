@@ -138,7 +138,8 @@ fun HomeScreen(
     excludedFolders: Set<String> = emptySet(),
     ambientBackground: Boolean = true,
     videoMode: Boolean = false,
-    playerStyle: PlayerStyle = PlayerStyle.CLASSIC
+    playerStyle: PlayerStyle = PlayerStyle.CLASSIC,
+    manualScan: Boolean = false
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val localSongs by viewModel.songs.collectAsState()
@@ -171,13 +172,13 @@ fun HomeScreen(
     )
 
     // Load songs based on setting
-    LaunchedEffect(Unit, loadLocalSongs, excludedFolders) {
+    LaunchedEffect(Unit, loadLocalSongs, excludedFolders, manualScan) {
         viewModel.checkYouTubeConnection()
         if (loadLocalSongs) {
             if (!permissionState.status.isGranted) {
                 permissionState.launchPermissionRequest()
             } else {
-                viewModel.loadSongs(excludedFolders)
+                viewModel.loadSongs(excludedFolders, manualScan)
             }
         } else {
             // Load YouTube recommendations when not using local songs
@@ -185,9 +186,9 @@ fun HomeScreen(
         }
     }
 
-    LaunchedEffect(permissionState.status.isGranted, loadLocalSongs, excludedFolders) {
+    LaunchedEffect(permissionState.status.isGranted, loadLocalSongs, excludedFolders, manualScan) {
         if (permissionState.status.isGranted && loadLocalSongs) {
-            viewModel.loadSongs(excludedFolders)
+            viewModel.loadSongs(excludedFolders, manualScan)
         }
     }
     
@@ -311,7 +312,8 @@ fun HomeScreen(
                                 isDarkMode = isDarkMode,
                                 contentPadding = PaddingValues(bottom = 160.dp), // Space for navbar + miniplayer
                                 viewModel = viewModel,
-                                excludedFolders = excludedFolders
+                                excludedFolders = excludedFolders,
+                                manualScan = manualScan
                             )
                         }
                     }
@@ -573,7 +575,8 @@ fun YourMixContent(
     isDarkMode: Boolean,
     contentPadding: PaddingValues,
     viewModel: HomeViewModel,
-    excludedFolders: Set<String> = emptySet()
+    excludedFolders: Set<String> = emptySet(),
+    manualScan: Boolean = false
 ) {
     val backgroundColor = MaterialTheme.colorScheme.background
     val textColor = MaterialTheme.colorScheme.onBackground
@@ -582,7 +585,7 @@ fun YourMixContent(
     
     ExpressivePullToRefresh(
         isRefreshing = isRefreshing,
-        onRefresh = { viewModel.refresh(excludedFolders) },
+        onRefresh = { viewModel.refresh(excludedFolders, manualScan) },
         modifier = Modifier.fillMaxSize()
     ) {
         LazyColumn(

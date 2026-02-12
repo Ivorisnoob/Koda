@@ -13,8 +13,15 @@ class SongRepository(private val context: Context) {
     /**
      * Get all songs from the device, optionally filtering out excluded folders.
      * @param excludedFolders Set of folder paths to exclude from results
+     * @param manualScan If true, bypass MediaStore and scan filesystem directly (OEM fix)
      */
-    suspend fun getSongs(excludedFolders: Set<String> = emptySet()): List<Song> = withContext(Dispatchers.IO) {
+    suspend fun getSongs(
+        excludedFolders: Set<String> = emptySet(),
+        manualScan: Boolean = false
+    ): List<Song> = withContext(Dispatchers.IO) {
+        if (manualScan) {
+            return@withContext getSongsViaManualScan(excludedFolders)
+        }
         val songs = mutableListOf<Song>()
         val collection = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
             MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)
@@ -124,6 +131,64 @@ class SongRepository(private val context: Context) {
                 songCount = count
             )
         }.sortedBy { it.displayName.lowercase() }
+    }
+
+    /**
+     * Manual filesystem scan to bypass MediaStore restrictions on HyperOS/OEMs.
+     */
+    private fun getSongsViaManualScan(excludedFolders: Set<String>): List<Song> {
+        val songs = mutableListOf<Song>()
+        val rootPaths = listOfNotNull(
+            System.getenv("EXTERNAL_STORAGE"),
+            "/storage/emulated/0",
+            "/sdcard"
+        ).distinct()
+
+        val audioExtensions = setOf("mp3", "m4a", "wav", "flac", "ogg", "aac", "opus")
+
+        rootPaths.forEach { root ->
+            val rootFile = File(root)
+            if (rootFile.exists() && rootFile.isDirectory) {
+                scanDir(rootFile, songs, excludedFolders, audioExtensions)
+            }
+        }
+        return songs.distinctBy { it.id }.sortedBy { it.title.lowercase() }
+    }
+
+    private fun scanDir(
+        dir: File,
+        results: MutableList<Song>,
+        excludedFolders: Set<String>,
+        extensions: Set<String>
+    ) {
+        // Skip hidden and excluded folders
+        if (dir.name.startsWith(".") || excludedFolders.contains(dir.absolutePath)) return
+        
+        // Skip common Android system/data dirs
+        val name = dir.name.lowercase()
+        if (name == "android" || name == "data" || name == "obb") return
+
+        val files = dir.listFiles() ?: return
+        for (file in files) {
+            if (file.isDirectory) {
+                scanDir(file, results, excludedFolders, extensions)
+            } else if (file.isFile) {
+                val ext = file.extension.lowercase()
+                if (ext in extensions) {
+                    val song = Song(
+                        id = file.absolutePath.hashCode().toString(),
+                        title = file.nameWithoutExtension,
+                        artist = "Unknown Artist",
+                        album = dir.name,
+                        duration = 0L, // Hard to get without MediaStore or extra parsing
+                        uri = Uri.fromFile(file),
+                        source = SongSource.LOCAL,
+                        filePath = file.absolutePath
+                    )
+                    results.add(song)
+                }
+            }
+        }
     }
 }
 
