@@ -387,6 +387,17 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    // Stats
+    private val statsRepository = com.ivor.ivormusic.data.StatsRepository(application)
+    private val _globalStats = MutableStateFlow(com.ivor.ivormusic.data.GlobalStats())
+    val globalStats: StateFlow<com.ivor.ivormusic.data.GlobalStats> = _globalStats.asStateFlow()
+
+    fun refreshStats() {
+        viewModelScope.launch {
+            _globalStats.value = statsRepository.getGlobalStats()
+        }
+    }
+
     // --- Search History Actions ---
 
     fun addToSearchHistory(query: String) {

@@ -641,7 +641,20 @@ class YouTubeRepository(private val context: Context) {
                  val playlistExtractor = ytService.getPlaylistExtractor(playlistUrl)
                  playlistExtractor.fetchPage()
                  
-                 playlistExtractor.initialPage.items.filterIsInstance<StreamInfoItem>().mapNotNull { item ->
+                 val allItems = mutableListOf<StreamInfoItem>()
+                 allItems.addAll(playlistExtractor.initialPage.items.filterIsInstance<StreamInfoItem>())
+                 
+                 var currentPage = playlistExtractor.initialPage
+                 while (currentPage.hasNextPage()) {
+                     try {
+                         currentPage = playlistExtractor.getPage(currentPage.nextPage)
+                         allItems.addAll(currentPage.items.filterIsInstance<StreamInfoItem>())
+                     } catch (e: Exception) {
+                         break
+                     }
+                 }
+                 
+                 allItems.mapNotNull { item ->
                      Song.fromYouTube(
                          videoId = extractVideoId(item.url),
                          title = item.name ?: "Unknown",
