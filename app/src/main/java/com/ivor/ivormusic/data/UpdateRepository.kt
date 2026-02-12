@@ -1,5 +1,6 @@
 package com.ivor.ivormusic.data
 
+import android.os.Build
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -11,13 +12,12 @@ import java.util.concurrent.TimeUnit
 /**
  * Repository for checking app updates from GitHub Releases.
  * Uses GitHub API to fetch the latest release and compare version tags.
+ * Supports ABI-aware APK matching for split builds.
  */
 class UpdateRepository {
     
-    companion object {
-        private const val TAG = "UpdateRepository"
-        private const val GITHUB_API_BASE = "https://api.github.com/repos"
-    }
+    private val TAG = "UpdateRepository"
+    private val GITHUB_API_BASE = "https://api.github.com/repos"
     
     private val client = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
@@ -58,19 +58,27 @@ class UpdateRepository {
                     val htmlUrl = jsonObject.optString("html_url", "")
                     val publishedAt = jsonObject.optString("published_at", "")
                     
-                    // Extract download URL for APK if available
-                    var apkDownloadUrl: String? = null
+                    // Parse ALL APK assets
+                    val apkAssets = mutableListOf<ApkAsset>()
                     val assets = jsonObject.optJSONArray("assets")
                     if (assets != null) {
                         for (i in 0 until assets.length()) {
                             val asset = assets.getJSONObject(i)
                             val name = asset.optString("name", "")
                             if (name.endsWith(".apk")) {
-                                apkDownloadUrl = asset.optString("browser_download_url")
-                                break
+                                apkAssets.add(
+                                    ApkAsset(
+                                        name = name,
+                                        downloadUrl = asset.optString("browser_download_url"),
+                                        size = asset.optLong("size", 0L)
+                                    )
+                                )
                             }
                         }
                     }
+                    
+                    // Parse images from release body (markdown image syntax)
+                    val releaseImages = parseImagesFromMarkdown(releaseNotes)
                     
                     // Clean version strings for comparison (remove 'v' prefix if present)
                     val latestVersion = tagName.removePrefix("v").removePrefix("V")
@@ -86,8 +94,10 @@ class UpdateRepository {
                             releaseName = releaseName,
                             releaseNotes = releaseNotes,
                             htmlUrl = htmlUrl,
-                            apkDownloadUrl = apkDownloadUrl,
-                            publishedAt = publishedAt
+                            apkAssets = apkAssets,
+                            apkDownloadUrl = findBestApk(apkAssets)?.downloadUrl,
+                            publishedAt = publishedAt,
+                            releaseImages = releaseImages
                         )
                     } else {
                         UpdateResult.UpToDate(currentVersion = cleanCurrentVersion)
@@ -134,7 +144,74 @@ class UpdateRepository {
             return false
         }
     }
+    
+    /**
+     * Extract image URLs from markdown-formatted release notes
+     */
+    private fun parseImagesFromMarkdown(markdown: String): List<String> {
+        val images = mutableListOf<String>()
+        // Match markdown image syntax: ![alt](url)
+        val regex = Regex("""!\[.*?]\((.*?)\)""")
+        regex.findAll(markdown).forEach { match ->
+            match.groupValues.getOrNull(1)?.let { url ->
+                if (url.startsWith("http")) images.add(url)
+            }
+        }
+        // Also match raw image URLs from GitHub user-content
+        val rawUrlRegex = Regex("""(https://(?:user-images\.githubusercontent\.com|github\.com)[^\s)\"]+\.(?:png|jpg|jpeg|gif|webp))""", RegexOption.IGNORE_CASE)
+        rawUrlRegex.findAll(markdown).forEach { match ->
+            val url = match.groupValues[0]
+            if (url !in images) images.add(url)
+        }
+        return images
+    }
+    
+    companion object DeviceInfo {
+        /**
+         * Get the device's primary ABI
+         */
+        fun getDeviceAbi(): String {
+            return Build.SUPPORTED_ABIS.firstOrNull() ?: "arm64-v8a"
+        }
+        
+        /**
+         * Find the best matching APK for this device
+         */
+        fun findBestApk(assets: List<ApkAsset>): ApkAsset? {
+            val abi = getDeviceAbi()
+            // First try exact ABI match
+            val abiMatch = assets.find { asset ->
+                asset.name.contains(abi, ignoreCase = true)
+            }
+            if (abiMatch != null) return abiMatch
+            
+            // Try simplified match (arm64 -> v8a, armeabi -> v7a)
+            val simplified = when {
+                abi.contains("arm64") || abi.contains("v8a") -> assets.find { 
+                    it.name.contains("v8a", ignoreCase = true) || it.name.contains("arm64", ignoreCase = true)
+                }
+                abi.contains("armeabi") || abi.contains("v7a") -> assets.find {
+                    it.name.contains("v7a", ignoreCase = true) || it.name.contains("armeabi", ignoreCase = true)
+                }
+                else -> null
+            }
+            if (simplified != null) return simplified
+            
+            // Fallback: universal APK or first available
+            return assets.find { it.name.contains("universal", ignoreCase = true) }
+                ?: assets.firstOrNull()
+        }
+    }
 }
+
+/**
+ * Represents a downloadable APK asset from a GitHub release.
+ */
+data class ApkAsset(
+    val name: String,
+    val downloadUrl: String,
+    val size: Long
+)
 
 /**
  * Result of an update check.
@@ -145,8 +222,10 @@ sealed class UpdateResult {
         val releaseName: String,
         val releaseNotes: String,
         val htmlUrl: String,
+        val apkAssets: List<ApkAsset> = emptyList(),
         val apkDownloadUrl: String?,
-        val publishedAt: String
+        val publishedAt: String,
+        val releaseImages: List<String> = emptyList()
     ) : UpdateResult()
     
     data class UpToDate(val currentVersion: String) : UpdateResult()

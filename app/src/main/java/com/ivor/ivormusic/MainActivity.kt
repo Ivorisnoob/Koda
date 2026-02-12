@@ -206,6 +206,7 @@ fun MusicApp(
                     onNavigateToSettings = { navController.navigate("settings") },
                     onNavigateToDownloads = { navController.navigate("downloads") },
                     onNavigateToStats = { navController.navigate("stats") },
+                    onNavigateToUpdate = { navController.navigate("update") },
                     onNavigateToVideoPlayer = { video ->
                         videoPlayerViewModel.playVideo(video)
                     },
@@ -258,7 +259,8 @@ fun MusicApp(
                     oemFixEnabled = oemFixEnabled,
                     onOemFixEnabledToggle = onOemFixEnabledToggle,
                     manualScanEnabled = manualScanEnabled,
-                    onManualScanEnabledToggle = onManualScanEnabledToggle
+                    onManualScanEnabledToggle = onManualScanEnabledToggle,
+                    onNavigateToUpdate = { navController.navigate("update") }
                 )
             }
             composable(
@@ -323,6 +325,17 @@ fun MusicApp(
                     onBack = { navController.popBackStack() },
                     viewModel = homeViewModel,
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 160.dp)
+                )
+            }
+            composable(
+                route = "update",
+                enterTransition = { slideInHorizontally(initialOffsetX = { it }) + fadeIn() },
+                exitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut() },
+                popEnterTransition = { slideInHorizontally(initialOffsetX = { -it / 3 }) + fadeIn() },
+                popExitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut() }
+            ) {
+                com.ivor.ivormusic.ui.settings.UpdateScreen(
+                    onBack = { navController.popBackStack() }
                 )
             }
         }

@@ -39,6 +39,7 @@ import androidx.compose.material.icons.rounded.People
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.WindowInsets
@@ -133,6 +134,7 @@ fun HomeScreen(
     onNavigateToSettings: () -> Unit = {},
     onNavigateToDownloads: () -> Unit = {},
     onNavigateToStats: () -> Unit = {},
+    onNavigateToUpdate: () -> Unit = {},
     onNavigateToVideoPlayer: (VideoItem) -> Unit = {},
     loadLocalSongs: Boolean = true,
     excludedFolders: Set<String> = emptySet(),
@@ -225,7 +227,6 @@ fun HomeScreen(
     // Update check state
     val updateRepository = remember { UpdateRepository() }
     var updateResult by remember { mutableStateOf<UpdateResult?>(null) }
-    var showUpdateBanner by remember { mutableStateOf(true) }
     
     // Check for updates on app launch (only for release builds)
     LaunchedEffect(Unit) {
@@ -490,71 +491,44 @@ fun HomeScreen(
             modifier = Modifier.align(Alignment.BottomCenter)
         )
         
-        // Update available banner - only show when there's actually an update
-        if (showUpdateBanner && updateResult is UpdateResult.UpdateAvailable) {
+        // Update available indicator
+        if (updateResult is UpdateResult.UpdateAvailable) {
             val update = updateResult as UpdateResult.UpdateAvailable
             Surface(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-                    .padding(top = 60.dp)
-                    .align(Alignment.TopCenter)
-                    .clickable {
-                        val intent = android.content.Intent(
-                            android.content.Intent.ACTION_VIEW,
-                            android.net.Uri.parse(update.htmlUrl)
-                        )
-                        androidx.core.content.ContextCompat.startActivity(
-                            context,
-                            intent,
-                            null
-                        )
-                    },
-                shape = RoundedCornerShape(16.dp),
-                color = Color(0xFF4CAF50),
-                shadowElevation = 4.dp
+                    .padding(top = 16.dp, end = 20.dp)
+                    .align(Alignment.TopEnd)
+                    .padding(top = 44.dp) // Below profile icon
+                    .clip(RoundedCornerShape(50))
+                    .clickable { onNavigateToUpdate() },
+                color = MaterialTheme.colorScheme.primaryContainer,
+                tonalElevation = 4.dp,
+                shadowElevation = 4.dp,
+                shape = RoundedCornerShape(50)
             ) {
                 Row(
-                    modifier = Modifier.padding(16.dp),
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
-                        imageVector = Icons.Rounded.Download,
+                        Icons.Rounded.SystemUpdate,
                         contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(24.dp)
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.size(16.dp)
                     )
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Update Available: v${update.latestVersion}",
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
-                        )
-                        Text(
-                            text = "Tap to download the latest version",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Color.White.copy(alpha = 0.9f)
-                        )
-                    }
-                    IconButton(
-                        onClick = { showUpdateBanner = false },
-                        modifier = Modifier.size(32.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "Dismiss",
-                            tint = Color.White,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "v${update.latestVersion}",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
                 }
             }
         }
     }
     
-    // Auth Dialog welp i guess we are doing it then
+    // Auth Dialog
     if (showAuthDialog) {
         com.ivor.ivormusic.ui.auth.YouTubeAuthDialog(
             onDismiss = { showAuthDialog = false },
