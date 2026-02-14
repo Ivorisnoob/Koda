@@ -1,6 +1,6 @@
 # Material 3 Expressive Lists
 
-Material 3 Expressive introduces updates to Lists, enabling more rich and interactive layouts. This includes segmented styling and enhanced interactions.
+Material 3 Expressive introduces updates to Lists, enabling more rich and interactive layouts. This moves beyond simple flat lists to segmented, shape-aware, and physics-driven collections.
 
 ## Expressive List Items
 
@@ -35,7 +35,8 @@ fun ExpressiveListExample() {
                 contentDescription = null
             )
         },
-        modifier = Modifier.clip(RoundedCornerShape(16.dp)), // Example of shape application
+        // Apply an expressive shape (e.g., Medium Rounded or Squircle)
+        modifier = Modifier.clip(RoundedCornerShape(16.dp)),
         colors = ListItemDefaults.colors(
             containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerHigh
         )
@@ -48,9 +49,15 @@ fun ExpressiveListExample() {
 Expressive lists often use "segmented" items, where each item has its own container shape and elevation, separating it from others. This is different from the continuous "flat" list style.
 
 To achieve this:
-1.  Apply a Shape to the `ListItem` (or its container).
-2.  Add padding between items.
-3.  Use a distinct container color.
+1.  **Shape:** Apply a Shape to the `ListItem`. You can use standard shapes or custom `RoundedPolygon` shapes from the [Shapes](./Shapes.md) library for a more organic feel.
+2.  **Spacing:** Add padding between items (e.g., `Arrangement.spacedBy(8.dp)` in your `LazyColumn`).
+3.  **Color:** Use a distinct container color (e.g., `surfaceContainer` or `surfaceContainerHigh`) to differentiate the item from the background.
+
+### Interactivity & Motion
+
+When using `MotionScheme.expressive()` in your theme:
+*   **Press States:** List items will scale or "squish" slightly on press rather than just showing a ripple.
+*   **Reordering:** If implementing drag-and-drop, the item movement will follow the spring physics defined in the motion scheme.
 
 ### Multi-line Support
 

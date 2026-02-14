@@ -1,55 +1,83 @@
 # Material 3 Expressive Progress Indicators
 
-Material 3 Expressive introduces "Wavy" progress indicators, adding a playful and distinct visual style to loading states.
+Expressive design reimagines loading states not just as waiting times, but as active, living elements of the UI. The primary introduction here is the **Wavy** style, which feels more organic and fluid than the mechanical circular spinner.
 
-## LinearWavyProgressIndicator
+## Wavy Progress Indicators
 
-A linear progress indicator with a wavy visual path.
+The `WavyProgressIndicator` (Linear and Circular) replaces the straight lines with sine-wave paths that animate.
 
-### Determinate Usage (Lambda API)
+### Wavy Linear Progress Indicator
 
-Newer versions of Material 3 introduce a lambda-based API for `progress` to improve performance by avoiding recomposition of the indicator when the value changes.
+Typically used for indeterminate loading states at the top of surfaces or cards.
 
 ```kotlin
-import androidx.compose.material3.LinearWavyProgressIndicator
-import androidx.compose.runtime.Composable
-
+@ExperimentalMaterial3ExpressiveApi
 @Composable
-fun WavyLinearExample(currentProgress: () -> Float) {
-    // Indeterminate
-    LinearWavyProgressIndicator()
+fun WavyLinearSample() {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        // Indeterminate
+        WavyLinearProgressIndicator(
+            modifier = Modifier.fillMaxWidth(),
+        )
 
-    // Determinate (Lambda overload for performance)
-    LinearWavyProgressIndicator(progress = currentProgress)
+        // Determinate (with progress)
+        WavyLinearProgressIndicator(
+            progress = { 0.7f },
+            modifier = Modifier.fillMaxWidth()
+        )
+    }
 }
 ```
 
-## CircularWavyProgressIndicator
+### Wavy Circular Progress Indicator
 
-A circular progress indicator with a wavy path.
+Replaces the standard arc spinner.
 
 ```kotlin
-import androidx.compose.material3.CircularWavyProgressIndicator
-import androidx.compose.runtime.Composable
-
+@ExperimentalMaterial3ExpressiveApi
 @Composable
-fun WavyCircularExample(currentProgress: () -> Float) {
-    // Indeterminate
-    CircularWavyProgressIndicator()
+fun WavyCircularSample() {
+    WavyCircularProgressIndicator(
+        modifier = Modifier.size(48.dp),
+        // You can customize the amplitude and frequency of the wave
+        amplitude = 1.0f, // Default is usually around 1.0
+        wavelength = 20.dp
+    )
+}
+```
 
-    // Determinate (Lambda overload)
-    CircularWavyProgressIndicator(progress = currentProgress)
+## LoadingIndicator (Morphing)
+
+There is also a concept of a `LoadingIndicator` that utilizes **Shape Morphing**. This indicator sits between two states or morphs its shape (e.g., from a star to a polygon) repeatedly to indicate activity.
+
+This is often implemented using `androidx.graphics.shapes` directly (as seen in the [Shapes](./Shapes.md) documentation example) or via new dedicated composables if available in the specific library version.
+
+### Example: Morphing Loading State
+A common expressive pattern is a small shape in the center of the screen that breathes or morphs.
+
+```kotlin
+// Conceptual example using the Shapes API
+@Composable
+fun MorphingLoader() {
+    val infiniteTransition = rememberInfiniteTransition("Loader")
+    val progress by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1000, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        )
+    )
+
+    // Draw a shape that morphs from Triangle to Circle
+    MorphingIcon(progress = progress, ...)
 }
 ```
 
 ## Customization
 
-You can often customize the wave parameters (amplitude, speed) in the indeterminate variations, as mentioned in the release notes.
+*   **Amplitude:** Controls the height of the wave peaks.
+*   **Wavelength:** Controls the distance between peaks.
+*   **Speed:** In indeterminate modes, how fast the wave travels.
 
-```kotlin
-// Example with custom wave parameters if API permits (check specific version)
-LinearWavyProgressIndicator(
-    // amplitude = ...
-    // waveSpeed = ...
-)
-```
+These indicators respect the `MotionScheme` for their enter/exit transitions if they are shown/hidden via `AnimatedVisibility`.
