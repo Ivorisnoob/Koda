@@ -21,6 +21,7 @@ import androidx.compose.material.icons.automirrored.rounded.List
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material.icons.automirrored.rounded.Sort
 import androidx.compose.material.icons.rounded.*
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -41,6 +42,7 @@ import com.ivor.ivormusic.data.PlaylistDisplayItem
 import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.ui.artist.ArtistScreen
 import com.ivor.ivormusic.ui.components.ExpressivePullToRefresh
+import androidx.compose.foundation.ExperimentalFoundationApi
 import com.ivor.ivormusic.ui.home.HomeViewModel
 
 /**
@@ -678,7 +680,7 @@ fun EmptyLibraryState(title: String, subtitle: String) {
 
 // ============ PLAYLIST DETAIL SCREEN ============
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun PlaylistDetailScreen(
     playlist: PlaylistDisplayItem,
@@ -691,6 +693,23 @@ fun PlaylistDetailScreen(
     var songs by remember { mutableStateOf(preloadedSongs ?: emptyList()) }
     val isLoading by viewModel.isLoading.collectAsState()
     val isFetching = remember { mutableStateOf(songs.isEmpty()) }
+    
+    // Search State
+    var searchQuery by remember { mutableStateOf("") }
+    var isSearchActive by remember { mutableStateOf(false) }
+
+    // Scroll State for FAB and App Bar
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    val isCollapsed by remember { derivedStateOf { listState.firstVisibleItemIndex > 0 } }
+    
+    // Filtered Songs
+    val filteredSongs = remember(songs, searchQuery) {
+        if (searchQuery.isBlank()) songs 
+        else songs.filter { 
+            it.title.contains(searchQuery, ignoreCase = true) || 
+            it.artist.contains(searchQuery, ignoreCase = true) 
+        }
+    }
 
     LaunchedEffect(playlist.id) {
         if (preloadedSongs == null) {
@@ -703,57 +722,86 @@ fun PlaylistDetailScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = {},
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f)) {
-                            Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back", modifier = Modifier.padding(8.dp))
-                        }
+                title = { 
+                    AnimatedVisibility(
+                        visible = isCollapsed,
+                        enter = fadeIn() + slideInVertically { it / 2 },
+                        exit = fadeOut() + slideOutVertically { it / 2 }
+                    ) {
+                        Text(
+                            playlist.name ?: "Unknown", 
+                            maxLines = 1, 
+                            overflow = TextOverflow.Ellipsis,
+                            style = MaterialTheme.typography.titleMedium
+                        )
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { isSearchActive = !isSearchActive }) {
+                        Icon(
+                            imageVector = if (isSearchActive) Icons.Rounded.Close else Icons.Rounded.Search,
+                            contentDescription = "Search in playlist"
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = if (isCollapsed) MaterialTheme.colorScheme.surface else Color.Transparent,
+                    scrolledContainerColor = MaterialTheme.colorScheme.surface
+                )
             )
+        },
+        floatingActionButton = {
+            if (filteredSongs.isNotEmpty()) {
+                ExtendedFloatingActionButton(
+                    text = { Text("Play All") },
+                    icon = { Icon(Icons.Rounded.PlayArrow, null) },
+                    onClick = { onPlayQueue(filteredSongs, filteredSongs.first()) },
+                    expanded = !isCollapsed,
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+            }
         }
     ) { padding ->
         LazyColumn(
+            state = listState,
             contentPadding = PaddingValues(bottom = 100.dp),
             modifier = Modifier
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)
         ) {
-            // Parallax-style Header Concept
+            // Header
             item {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(350.dp)
-                ) {
-                    // Background blur logic or gradient
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(
-                                Brush.verticalGradient(
-                                    colors = listOf(
-                                        MaterialTheme.colorScheme.surfaceContainerHigh,
-                                        MaterialTheme.colorScheme.background
-                                    )
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(
+                                    MaterialTheme.colorScheme.surfaceContainerHigh,
+                                    MaterialTheme.colorScheme.background
                                 )
                             )
-                    )
-                    
+                        )
+                ) {
                     Column(
                         modifier = Modifier
-                            .fillMaxSize()
-                            .statusBarsPadding()
-                            .padding(top = 40.dp),
+                            .fillMaxWidth()
+                            .padding(top = padding.calculateTopPadding(), bottom = 24.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        // Big Album Art
+                        // Album Art
                         Surface(
                             shape = RoundedCornerShape(24.dp),
-                            modifier = Modifier.size(200.dp),
-                            shadowElevation = 16.dp,
+                            modifier = Modifier
+                                .size(240.dp) // Larger
+                                .padding(top = 16.dp),
+                            shadowElevation = 12.dp,
                             color = MaterialTheme.colorScheme.surfaceContainerHighest
                         ) {
                              if (playlist.thumbnailUrl != null && playlist.thumbnailUrl != "null") {
@@ -767,55 +815,81 @@ fun PlaylistDetailScreen(
                         
                         Spacer(Modifier.height(24.dp))
                         
+                        // Title & Subtitle
                         Text(
                             text = playlist.name ?: "Unknown",
-                            style = MaterialTheme.typography.headlineMedium,
+                            style = MaterialTheme.typography.displaySmall, // Expressive Typography
                             fontWeight = FontWeight.Bold,
                             textAlign = TextAlign.Center,
                             modifier = Modifier.padding(horizontal = 24.dp)
                         )
                         
                         Text(
-                            text = if (isAlbum) "Album • ${playlist.uploaderName}" else "Playlist • ${songs.size} tracks",
+                            text = if (isAlbum) "Album • ${playlist.uploaderName} • ${songs.size} tracks" else "Playlist • ${songs.size} tracks",
                             style = MaterialTheme.typography.titleMedium,
                             color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(top = 4.dp)
+                            modifier = Modifier.padding(horizontal = 24.dp).padding(top = 8.dp),
+                            textAlign = TextAlign.Center
                         )
                     }
                 }
             }
-            
-            // Action Buttons
-            item {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 24.dp, vertical = 16.dp),
-                    horizontalArrangement = Arrangement.SpaceEvenly
-                ) {
-                    // Play All
-                    FilledTonalButton(
-                        onClick = { if (songs.isNotEmpty()) onPlayQueue(songs, songs.first()) },
-                        contentPadding = PaddingValues(horizontal = 32.dp, vertical = 14.dp),
-                        modifier = Modifier.fillMaxWidth()
+
+            // Search Bar (Sticky)
+            if (isSearchActive) {
+                stickyHeader {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        color = MaterialTheme.colorScheme.background,
+                        shadowElevation = 4.dp
                     ) {
-                        Icon(Icons.Rounded.PlayArrow, null)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Play All")
+                        TextField(
+                            value = searchQuery,
+                            onValueChange = { searchQuery = it },
+                            placeholder = { Text("Find in playlist...") },
+                            leadingIcon = { Icon(Icons.Rounded.Search, null) },
+                            trailingIcon = if (searchQuery.isNotEmpty()) {
+                                { IconButton(onClick = { searchQuery = "" }) { Icon(Icons.Rounded.Close, null) } }
+                            } else null,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = TextFieldDefaults.colors(
+                                focusedIndicatorColor = Color.Transparent,
+                                unfocusedIndicatorColor = Color.Transparent,
+                                disabledIndicatorColor = Color.Transparent
+                            ), // Single line
+                            singleLine = true
+                        )
                     }
                 }
-                HorizontalDivider(Modifier.padding(horizontal = 24.dp, vertical = 8.dp))
             }
 
+            // Loading / List
             if (isFetching.value) {
                 item {
-                    Box(Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator()
+                    Box(Modifier.fillMaxWidth().padding(top = 32.dp), contentAlignment = Alignment.Center) {
+                        LoadingIndicator(
+                            modifier = Modifier.width(48.dp),
+                            color = MaterialTheme.colorScheme.primary
+                        )
                     }
                 }
             } else {
-                items(songs) { song ->
-                    SongListItem(song = song, onClick = { onPlayQueue(songs, song) })
+                if (filteredSongs.isEmpty() && searchQuery.isNotEmpty()) {
+                    item {
+                        Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                            Text("No songs found matching '$searchQuery'", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                } else {
+                    items(filteredSongs) { song ->
+                        SongListItem(
+                            song = song, 
+                            onClick = { onPlayQueue(filteredSongs, song) }
+                        )
+                    }
                 }
             }
         }
