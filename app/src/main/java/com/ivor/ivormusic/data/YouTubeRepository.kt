@@ -491,7 +491,7 @@ class YouTubeRepository(private val context: Context) {
             val allSongs = mutableListOf<Song>()
             var continuationToken: String? = null
             var pageCount = 0
-            val maxPages = 10 // Safety limit to prevent infinite loops
+            val maxPages = 500 // Increased limit to fetch all liked songs
             
             do {
                 val json = if (continuationToken == null) {
@@ -598,6 +598,14 @@ class YouTubeRepository(private val context: Context) {
                 val token = node.optJSONObject("continuationEndpoint")
                     ?.optJSONObject("continuationCommand")
                     ?.optString("token")
+                if (!token.isNullOrEmpty()) {
+                    results.add(token)
+                    return
+                }
+            }
+            // Check for direct continuationCommand
+            if (node.has("continuationCommand")) {
+                val token = node.optJSONObject("continuationCommand")?.optString("token")
                 if (!token.isNullOrEmpty()) {
                     results.add(token)
                     return
@@ -1017,6 +1025,13 @@ class YouTubeRepository(private val context: Context) {
                 // Let's handle generic continuation structure:
                 return it
             }
+            
+
+            
+        root.optJSONObject("continuationContents")
+            ?.optJSONObject("musicShelfContinuation")
+            ?.optJSONArray("contents")
+            ?.let { return it }
             
         root.optJSONObject("continuationContents")
             ?.optJSONObject("sectionListContinuation")
