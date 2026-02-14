@@ -150,19 +150,37 @@ class UpdateRepository {
      */
     private fun parseImagesFromMarkdown(markdown: String): List<String> {
         val images = mutableListOf<String>()
-        // Match markdown image syntax: ![alt](url)
-        val regex = Regex("""!\[.*?]\((.*?)\)""")
-        regex.findAll(markdown).forEach { match ->
+        
+        // 1. Match markdown image syntax: ![alt](url)
+        val mdRegex = Regex("""!\[.*?]\((.*?)\)""")
+        mdRegex.findAll(markdown).forEach { match ->
             match.groupValues.getOrNull(1)?.let { url ->
-                if (url.startsWith("http")) images.add(url)
+                if (url.startsWith("http") && url !in images) images.add(url)
             }
         }
-        // Also match raw image URLs from GitHub user-content
+        
+        // 2. Match HTML image syntax: <img ... src="url" ... />
+        val htmlRegex = Regex("""<img\s+[^>]*src=["']([^"']+)["'][^>]*>""")
+        htmlRegex.findAll(markdown).forEach { match ->
+            match.groupValues.getOrNull(1)?.let { url ->
+                if (url.startsWith("http") && url !in images) images.add(url)
+            }
+        }
+        
+        // 3. Match raw image URLs (common extensions)
         val rawUrlRegex = Regex("""(https://(?:user-images\.githubusercontent\.com|github\.com)[^\s)\"]+\.(?:png|jpg|jpeg|gif|webp))""", RegexOption.IGNORE_CASE)
         rawUrlRegex.findAll(markdown).forEach { match ->
             val url = match.groupValues[0]
             if (url !in images) images.add(url)
         }
+        
+        // 4. Match GitHub user-attachments (no extension)
+        val attachmentRegex = Regex("""https://github\.com/user-attachments/assets/[a-f0-9\-]+""")
+        attachmentRegex.findAll(markdown).forEach { match ->
+            val url = match.groupValues[0]
+            if (url !in images) images.add(url)
+        }
+        
         return images
     }
     

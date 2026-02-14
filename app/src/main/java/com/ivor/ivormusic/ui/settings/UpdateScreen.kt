@@ -165,23 +165,6 @@ fun UpdateScreen(
                 }
                 
                 is UpdateResult.UpdateAvailable -> {
-                    // Release Images Gallery
-                    if (result.releaseImages.isNotEmpty()) {
-                        item {
-                            AnimatedVisibility(
-                                visible = isVisible,
-                                enter = fadeIn(tween(400, delayMillis = 200)) + slideInVertically(
-                                    initialOffsetY = { 60 },
-                                    animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy)
-                                )
-                            ) {
-                                ReleaseImageGallery(
-                                    images = result.releaseImages,
-                                    surfaceColor = surfaceColor
-                                )
-                            }
-                        }
-                    }
                     
                     // What's New Section
                     item {
@@ -467,45 +450,6 @@ private fun UpdateHeroSection(
     }
 }
 
-// ===========================
-// RELEASE IMAGE GALLERY  
-// ===========================
-
-@Composable
-private fun ReleaseImageGallery(
-    images: List<String>,
-    surfaceColor: Color
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 8.dp)
-    ) {
-        LazyRow(
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            contentPadding = PaddingValues(horizontal = 4.dp)
-        ) {
-            items(images) { imageUrl ->
-                Surface(
-                    modifier = Modifier
-                        .height(220.dp)
-                        .width(320.dp),
-                    shape = RoundedCornerShape(20.dp),
-                    color = surfaceColor,
-                    tonalElevation = 2.dp,
-                    shadowElevation = 4.dp
-                ) {
-                    AsyncImage(
-                        model = imageUrl,
-                        contentDescription = "Release screenshot",
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                }
-            }
-        }
-    }
-}
 
 // ===========================
 // WHAT'S NEW SECTION
@@ -538,10 +482,24 @@ private fun WhatsNewSection(
             val trimmedLine = line.trim()
             if (trimmedLine.isEmpty()) return@forEach
 
-            // Check for Images: ![alt](url)
-            val imageMatch = Regex("""!\[.*?]\((.*?)\)""").find(trimmedLine)
-            if (imageMatch != null) {
-                items.add(MarkdownItem.Image(imageMatch.groupValues[1]))
+            // Check for Markdown Images: ![alt](url)
+            val mdImageMatch = Regex("""!\[.*?]\((.*?)\)""").find(trimmedLine)
+            if (mdImageMatch != null) {
+                items.add(MarkdownItem.Image(mdImageMatch.groupValues[1]))
+                return@forEach
+            }
+
+            // Check for HTML Images: <img ... src="url" ... />
+            val htmlImageMatch = Regex("""<img\s+[^>]*src=["']([^"']+)["'][^>]*>""").find(trimmedLine)
+            if (htmlImageMatch != null) {
+                items.add(MarkdownItem.Image(htmlImageMatch.groupValues[1]))
+                return@forEach
+            }
+
+            // Check for RAW GitHub Attachment URLs (often used in releases)
+            val rawAttachmentMatch = Regex("""https://github\.com/user-attachments/assets/[a-f0-9\-]+""").find(trimmedLine)
+            if (rawAttachmentMatch != null && !trimmedLine.contains("![") && !trimmedLine.contains("<img")) {
+                items.add(MarkdownItem.Image(rawAttachmentMatch.groupValues[0]))
                 return@forEach
             }
 

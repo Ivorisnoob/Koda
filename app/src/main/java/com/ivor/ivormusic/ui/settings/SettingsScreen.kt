@@ -715,7 +715,7 @@ fun SettingsScreen(
                     ExpressiveSettingsCard(surfaceColor = surfaceColor) {
                         ExpressiveSettingsItem(
                             icon = Icons.Rounded.Info,
-                            title = "IvorMusic",
+                            title = "Koda",
                             subtitle = "Version ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
                             onClick = { showAboutDialog = true },
                             textColor = textColor,
@@ -1532,7 +1532,7 @@ private fun ExpressiveAboutDialog(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
-                        text = "Koda Music",
+                        text = "Koda",
                         color = textColor,
                         fontSize = 24.sp,
                         fontWeight = FontWeight.Bold,
