@@ -1148,8 +1148,7 @@ fun SearchContent(
                         playlist = playlist,
                         onBack = { viewedPlaylist = null },
                         onPlayQueue = onPlayQueue,
-                        viewModel = viewModel,
-                        isDarkMode = isDarkMode
+                        viewModel = viewModel
                     )
                 }
             }
