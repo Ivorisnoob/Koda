@@ -1,0 +1,15 @@
+# Kotlin Android Configuration
+min_sdk: 24
+target_sdk: 34
+compile_sdk: 34
+
+architecture:
+  pattern: MVVM
+  di: Hilt
+  navigation: Compose Navigation
+  
+jetpack:
+  - ViewModel
+  - LiveData
+  - Room
+  - WorkManager
