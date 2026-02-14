@@ -567,6 +567,18 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
 
     fun skipToNext() {
         controller?.let { player ->
+            // Check if there is physically a next item in the implementation list
+            val hasGenuineNextItem = player.currentMediaItemIndex < player.mediaItemCount - 1
+            
+            // Fix: Override 'Repeat One' behavior which normally prevents skipping to next track
+            if (player.repeatMode == Player.REPEAT_MODE_ONE && hasGenuineNextItem) {
+                // Force skip to next index
+                player.seekTo(player.currentMediaItemIndex + 1, 0)
+                player.play()
+                _isBuffering.value = true
+                return
+            }
+
             if (player.hasNextMediaItem()) {
                 player.seekToNextMediaItem()
                 player.play()
@@ -591,15 +603,48 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                     _isBuffering.value = true
                 } else {
                     // Genuine end of playlist
-                    player.seekToNext()
-                    player.play()
+                    if (player.repeatMode == Player.REPEAT_MODE_ONE) {
+                        // Loop to start if desired, or just do nothing (standard behavior is loop for Repeat One)
+                        if (player.mediaItemCount > 0) {
+                            player.seekTo(0, 0)
+                            player.play()
+                            _isBuffering.value = true
+                        }
+                    } else {
+                        player.seekToNext()
+                        player.play()
+                    }
                 }
             }
         }
     }
 
     fun skipToPrevious() {
-        controller?.seekToPrevious()
+        controller?.let { player ->
+            // Fix for Repeat One: Previous button should go to previous song (if < 3s played), not restart current
+            if (player.repeatMode == Player.REPEAT_MODE_ONE) {
+                // If we are well into the song, restart it (standard behavior)
+                if (player.currentPosition > 3000) {
+                    player.seekTo(0)
+                    player.play()
+                } else {
+                    // If at start of song, go to previous track
+                    val prevIndex = player.currentMediaItemIndex - 1
+                    if (prevIndex >= 0) {
+                        player.seekTo(prevIndex, 0)
+                        player.play()
+                    } else {
+                        // Start of list. Loop to end.
+                        if (player.mediaItemCount > 0) {
+                            player.seekTo(player.mediaItemCount - 1, 0)
+                            player.play()
+                        }
+                    }
+                }
+            } else {
+                player.seekToPrevious()
+            }
+        }
     }
 
     /**
