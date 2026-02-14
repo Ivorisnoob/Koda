@@ -32,6 +32,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import coil.compose.AsyncImage
 import com.ivor.ivormusic.BuildConfig
 import com.ivor.ivormusic.data.UpdateRepository
@@ -507,6 +511,14 @@ private fun ReleaseImageGallery(
 // WHAT'S NEW SECTION
 // ===========================
 
+// Markdown Item Types
+sealed class MarkdownItem {
+    data class Header(val text: String, val level: Int) : MarkdownItem()
+    data class Bullet(val content: AnnotatedString) : MarkdownItem()
+    data class Paragraph(val content: AnnotatedString) : MarkdownItem()
+    data class Image(val url: String) : MarkdownItem()
+}
+
 @Composable
 private fun WhatsNewSection(
     releaseNotes: String,
@@ -517,16 +529,40 @@ private fun WhatsNewSection(
 ) {
     var isExpanded by remember { mutableStateOf(false) }
     
-    // Parse release notes into structured items
-    val noteLines = remember(releaseNotes) {
-        releaseNotes
-            .lines()
-            .filter { it.isNotBlank() }
-            .map { line ->
-                // Strip markdown image syntax
-                line.replace(Regex("""!\[.*?]\(.*?\)"""), "").trim()
+    // Comprehensive parsing logic
+    val markdownItems = remember(releaseNotes) {
+        val items = mutableListOf<MarkdownItem>()
+        val lines = releaseNotes.lines()
+        
+        lines.forEach { line ->
+            val trimmedLine = line.trim()
+            if (trimmedLine.isEmpty()) return@forEach
+
+            // Check for Images: ![alt](url)
+            val imageMatch = Regex("""!\[.*?]\((.*?)\)""").find(trimmedLine)
+            if (imageMatch != null) {
+                items.add(MarkdownItem.Image(imageMatch.groupValues[1]))
+                return@forEach
             }
-            .filter { it.isNotBlank() }
+
+            // Check for Headers: #, ##, ###, ####
+            val headerMatch = Regex("""^(#{1,4})\s+(.*)$""").find(trimmedLine)
+            if (headerMatch != null) {
+                items.add(MarkdownItem.Header(headerMatch.groupValues[2], headerMatch.groupValues[1].length))
+                return@forEach
+            }
+
+            // Check for Bullets: -, *, +
+            val bulletMatch = Regex("""^[\-\*\+]\s+(.*)$""").find(trimmedLine)
+            if (bulletMatch != null) {
+                items.add(MarkdownItem.Bullet(parseMarkdownInline(bulletMatch.groupValues[1])))
+                return@forEach
+            }
+
+            // Default: Paragraph
+            items.add(MarkdownItem.Paragraph(parseMarkdownInline(trimmedLine)))
+        }
+        items
     }
     
     Column(
@@ -571,22 +607,21 @@ private fun WhatsNewSection(
                         animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy)
                     )
             ) {
-                val displayLines = if (isExpanded) noteLines else noteLines.take(8)
+                val displayItems = if (isExpanded) markdownItems else markdownItems.take(12)
                 
-                displayLines.forEachIndexed { index, line ->
-                    ReleaseNoteLine(
-                        line = line,
+                displayItems.forEachIndexed { index, item ->
+                    RenderMarkdownItem(
+                        item = item,
                         textColor = textColor,
                         secondaryTextColor = secondaryTextColor,
-                        primaryColor = primaryColor,
-                        index = index
+                        primaryColor = primaryColor
                     )
-                    if (index < displayLines.size - 1) {
-                        Spacer(modifier = Modifier.height(6.dp))
+                    if (index < displayItems.size - 1) {
+                        Spacer(modifier = Modifier.height(8.dp))
                     }
                 }
                 
-                if (noteLines.size > 8 && !isExpanded) {
+                if (markdownItems.size > 12 && !isExpanded) {
                     Spacer(modifier = Modifier.height(12.dp))
                     TextButton(
                         onClick = { isExpanded = true },
@@ -610,59 +645,100 @@ private fun WhatsNewSection(
 }
 
 @Composable
-private fun ReleaseNoteLine(
-    line: String,
+private fun RenderMarkdownItem(
+    item: MarkdownItem,
     textColor: Color,
     secondaryTextColor: Color,
-    primaryColor: Color,
-    index: Int
+    primaryColor: Color
 ) {
-    val cleanLine = line
-        .removePrefix("- ")
-        .removePrefix("* ")
-        .removePrefix("• ")
-        .trim()
-    
-    val isHeader = line.startsWith("##") || line.startsWith("# ")
-    val isBullet = line.startsWith("- ") || line.startsWith("* ") || line.startsWith("• ")
-    
-    if (isHeader) {
-        val headerText = cleanLine.removePrefix("## ").removePrefix("# ").trim()
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            text = headerText,
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.Bold,
-            color = primaryColor
-        )
-        Spacer(modifier = Modifier.height(4.dp))
-    } else if (isBullet) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.Top
-        ) {
-            Box(
-                modifier = Modifier
-                    .padding(top = 8.dp)
-                    .size(6.dp)
-                    .clip(CircleShape)
-                    .background(primaryColor.copy(alpha = 0.6f))
-            )
-            Spacer(modifier = Modifier.width(12.dp))
+    when (item) {
+        is MarkdownItem.Header -> {
+            Spacer(modifier = Modifier.height(if (item.level == 1) 12.dp else 6.dp))
             Text(
-                text = cleanLine,
+                text = item.text,
+                style = when (item.level) {
+                    1 -> MaterialTheme.typography.titleLarge
+                    2 -> MaterialTheme.typography.titleMedium
+                    else -> MaterialTheme.typography.titleSmall
+                },
+                fontWeight = FontWeight.Bold,
+                color = if (item.level <= 2) primaryColor else textColor
+            )
+        }
+        is MarkdownItem.Bullet -> {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.Top
+            ) {
+                Box(
+                    modifier = Modifier
+                        .padding(top = 9.dp)
+                        .size(6.dp)
+                        .clip(CircleShape)
+                        .background(primaryColor)
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    text = item.content,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = textColor,
+                    lineHeight = 22.sp
+                )
+            }
+        }
+        is MarkdownItem.Paragraph -> {
+            Text(
+                text = item.content,
                 style = MaterialTheme.typography.bodyMedium,
                 color = textColor,
                 lineHeight = 22.sp
             )
         }
-    } else {
-        Text(
-            text = line,
-            style = MaterialTheme.typography.bodyMedium,
-            color = secondaryTextColor,
-            lineHeight = 22.sp
-        )
+        is MarkdownItem.Image -> {
+            androidx.compose.material3.Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 240.dp)
+                    .clip(RoundedCornerShape(16.dp)),
+                color = Color.Black.copy(alpha = 0.05f)
+            ) {
+                AsyncImage(
+                    model = item.url,
+                    contentDescription = "Release Image",
+                    modifier = Modifier.fillMaxWidth(),
+                    contentScale = ContentScale.Fit
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Basic inline markdown parser for bold (**text**)
+ */
+private fun parseMarkdownInline(text: String): AnnotatedString {
+    return buildAnnotatedString {
+        var cursor = 0
+        val boldRegex = Regex("""\*\*(.*?)\*\*""")
+        
+        boldRegex.findAll(text).forEach { match ->
+            // Append text before the match
+            append(text.substring(cursor, match.range.first))
+            
+            // Append bold text
+            withStyle(
+                SpanStyle(fontWeight = FontWeight.Bold)
+            ) {
+                append(match.groupValues[1])
+            }
+            
+            cursor = match.range.last + 1
+        }
+        
+        // Append remaining text
+        if (cursor < text.length) {
+            append(text.substring(cursor))
+        }
     }
 }
 
