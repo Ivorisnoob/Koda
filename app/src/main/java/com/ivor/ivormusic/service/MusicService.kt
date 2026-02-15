@@ -1,7 +1,9 @@
 package com.ivor.ivormusic.service
 
 import android.app.PendingIntent
+import android.content.Context
 import android.content.Intent
+import android.media.session.MediaSessionManager
 import android.net.Uri
 import android.util.Log
 import androidx.media3.common.AudioAttributes
@@ -606,6 +608,9 @@ class MusicService : MediaLibraryService() {
             browser: MediaSession.ControllerInfo,
             params: MediaLibraryService.LibraryParams?
         ): ListenableFuture<LibraryResult<MediaItem>> {
+            if (!isTrusted(browser)) {
+                return Futures.immediateFuture(LibraryResult.ofError(LibraryResult.RESULT_ERROR_PERMISSION_DENIED))
+            }
             val rootExtras = android.os.Bundle().apply {
                 putBoolean("android.media.browse.CONTENT_STYLE_SUPPORTED", true)
                 putInt("android.media.browse.CONTENT_STYLE_BROWSABLE_HINT", 1) // Grid
@@ -626,6 +631,17 @@ class MusicService : MediaLibraryService() {
             )
         }
 
+        override fun onGetItem(
+            session: MediaLibrarySession,
+            browser: MediaSession.ControllerInfo,
+            mediaId: String
+        ): ListenableFuture<LibraryResult<MediaItem>> {
+            if (!isTrusted(browser)) {
+                return Futures.immediateFuture(LibraryResult.ofError(LibraryResult.RESULT_ERROR_PERMISSION_DENIED))
+            }
+            return super.onGetItem(session, browser, mediaId)
+        }
+
         override fun onGetChildren(
             session: MediaLibrarySession,
             browser: MediaSession.ControllerInfo,
@@ -634,6 +650,9 @@ class MusicService : MediaLibraryService() {
             pageSize: Int,
             params: MediaLibraryService.LibraryParams?
         ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
+            if (!isTrusted(browser)) {
+                return Futures.immediateFuture(LibraryResult.ofError(LibraryResult.RESULT_ERROR_PERMISSION_DENIED))
+            }
             if (parentId == "root") {
                 return Futures.immediateFuture(LibraryResult.ofItemList(getRootItems(), null))
             }
@@ -741,6 +760,24 @@ class MusicService : MediaLibraryService() {
     }
 
     // --- Helpers ---
+
+    private fun isTrusted(controller: MediaSession.ControllerInfo): Boolean {
+        // 1. Always trust the app itself (verified by UID for robustness)
+        if (controller.uid == android.os.Process.myUid()) return true
+
+        // 2. Trust known system packages (e.g., Android Auto, Assistant, System UI)
+        // We use MediaSessionManager.isTrustedForMediaControl which verifies if the caller
+        // is granted notification access, or is the default dialer/assistant, etc.
+        val manager = getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager
+        // Construct RemoteUserInfo using package name and UID.
+        // PID is set to -1 as it's not strictly required for trust verification in this context.
+        val remoteUserInfo = MediaSessionManager.RemoteUserInfo(
+            controller.packageName,
+            -1,
+            controller.uid
+        )
+        return manager.isTrustedForMediaControl(remoteUserInfo)
+    }
 
     private fun preWarmAutoCache() {
         serviceScope.launch(Dispatchers.IO) {
