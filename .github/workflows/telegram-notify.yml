@@ -1,13 +1,93 @@
-name: Telegram Notify
+name: Telegram Notifications
 
 on:
-  push:
-    branches:
-      - main
+  issues:
+    types: [opened, closed, reopened]
+  issue_comment:
+    types: [created]
+  watch:
+    types: [started]  # Stars
+  fork:
+  release:
+    types: [published]
+
+env:
+  TELEGRAM_CHAT_ID: "@ivorisnoob_projects"
 
 jobs:
-  notify:
+  # Star Milestone (only notify on 10, 20, 30, 40, 50, etc.)
+  notify-star-milestone:
+    if: github.event_name == 'watch' && github.event.action == 'started'
     runs-on: ubuntu-latest
     steps:
-      - name: Send Telegram Notification
-        run: echo 'Telegram Notification: A push has been made to main!'
+      - name: Check if Star Milestone
+        id: check-milestone
+        run: |
+          STAR_COUNT=${{ github.event.repository.stargazers_count }}
+          # Notify on every 10 stars (10, 20, 30, 40, 50, etc.)
+          if [ $((STAR_COUNT % 10)) -eq 0 ] && [ $STAR_COUNT -gt 0 ]; then
+            echo "is_milestone=true" >> $GITHUB_OUTPUT
+          else
+            echo "is_milestone=false" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Send Star Milestone Notification
+        if: steps.check-milestone.outputs.is_milestone == 'true'
+        env:
+          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+            -d "chat_id=${{ env.TELEGRAM_CHAT_ID }}" \
+            -d "parse_mode=HTML" \
+            -d "text=<b>Koda</b> | ⭐ Star Milestone!
+
+          🎉 We reached <b>${{ github.event.repository.stargazers_count }}</b> stars!
+
+          Latest stargazer: <b>${{ github.event.sender.login }}</b>
+
+          Thank you for your amazing support!
+          <a href='https://github.com/${{ github.repository }}'>Visit Repo</a>"
+
+
+  # Fork
+  notify-fork:
+    if: github.event_name == 'fork'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Fork Notification
+        env:
+          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+            -d "chat_id=${{ env.TELEGRAM_CHAT_ID }}" \
+            -d "parse_mode=HTML" \
+            -d "text=<b>Koda</b> | Forked!
+
+          Repository forked!
+
+          <b>${{ github.event.sender.login }}</b> forked the project!
+          Fork: <code>${{ github.event.forkee.full_name }}</code>
+
+          Happy coding!
+          <a href='${{ github.event.forkee.html_url }}'>View Fork</a>"
+
+  # Release
+  notify-release:
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Release Notification
+        env:
+          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+            -d "chat_id=${{ env.TELEGRAM_CHAT_ID }}" \
+            -d "parse_mode=HTML" \
+            -d "text=<b>Koda</b> | New Release!
+
+          Version <b>${{ github.event.release.tag_name }}</b>
+
+          Name: <b>${{ github.event.release.name }}</b>
+          Author: <b>${{ github.event.release.author.login }}</b>
+
+          <a href='${{ github.event.release.html_url }}'>Download Now</a>"
