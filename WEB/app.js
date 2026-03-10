@@ -1,6 +1,6 @@
 // API Configuration
-// Switching to iTunes API for CORS-friendly, reliable search and previews.
-// YouTube APIs (Piped/Invidious) block localhost and have CORS restrictions on browser.
+// Switching to YouTube Data API v3 (Search) via an alternative reliable CORS proxy structure.
+
 
 // State
 let tracks = [];
@@ -9,6 +9,10 @@ let isPlaying = false;
 let isAudioOnly = true;
 let currentTab = 'trending';
 
+// YouTube Iframe Player
+let ytPlayer = null;
+let ytReady = false;
+
 // DOM Elements
 const trackListContainer = document.getElementById('trackList');
 const searchInput = document.getElementById('searchInput');
@@ -16,9 +20,7 @@ const searchBtn = document.getElementById('searchBtn');
 const qualityToggle = document.getElementById('qualityToggle');
 
 // Player Elements
-const audioPlayer = document.getElementById('audioPlayer');
 const videoContainer = document.getElementById('videoContainer');
-const videoPlayer = document.getElementById('videoPlayer');
 const closeVideoBtn = document.getElementById('closeVideoBtn');
 const playerDock = document.getElementById('playerDock');
 
@@ -63,50 +65,73 @@ function setLoader(show) {
     }
 }
 
-// Fetch helper using iTunes API
-async function fetchApi(query, entity = 'song') {
+// Fallback logic for getting YouTube data without auth/CORS
+async function fetchApi(query) {
     try {
-        const res = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(query)}&limit=25&entity=${entity}`);
-        if (!res.ok) throw new Error("API failed");
-        return await res.json();
+        // Since many invidious/piped instances block browser CORS
+        // We use allorigins.win to proxy the request to inv.nadeko.net as backup
+        const proxyUrl = "https://api.allorigins.win/raw?url=";
+        const invidiousUrl = encodeURIComponent("https://inv.nadeko.net/api/v1/search?q=" + encodeURIComponent(query));
+
+        let data = [];
+        try {
+            const res = await fetch(proxyUrl + invidiousUrl);
+            if (res.ok) {
+                 data = await res.json();
+                 return data;
+            }
+        } catch(err) {
+            console.warn("First proxy failed, trying backup...");
+        }
+
+        // Final backup using yewtu.be via proxy
+        const invidiousUrl2 = encodeURIComponent("https://yewtu.be/api/v1/search?q=" + encodeURIComponent(query));
+        const res2 = await fetch(proxyUrl + invidiousUrl2);
+        if(!res2.ok) throw new Error("Search API failed entirely");
+        return await res2.json();
+
     } catch (e) {
         console.error("API failed", e);
         return null;
     }
 }
 
-// Map iTunes track format to our app format
-function mapItunesTrack(item) {
+// Map Invidious track format to our app format
+function mapYoutubeTrack(item) {
+    let thumb = '';
+    if (item.videoThumbnails && item.videoThumbnails.length > 0) {
+        thumb = item.videoThumbnails.find(t => t.quality === 'sddefault') || item.videoThumbnails[0];
+        thumb = thumb.url;
+        if (thumb.startsWith('/')) thumb = "https://invidious.nerdvpn.de" + thumb;
+    }
+
     return {
-        id: item.trackId,
-        title: item.trackName,
-        artist: item.artistName,
-        duration: formatTime(item.trackTimeMillis / 1000),
-        durationSec: item.trackTimeMillis / 1000,
-        art: item.artworkUrl100 ? item.artworkUrl100.replace('100x100', '300x300') : '',
-        streamUrl: item.previewUrl,
-        hasVideo: item.kind === 'music-video'
+        id: item.videoId,
+        title: item.title,
+        artist: item.author,
+        duration: formatTime(item.lengthSeconds),
+        durationSec: item.lengthSeconds,
+        art: thumb,
+        hasVideo: true
     };
 }
 
-// Load Trending (Mocking trending with popular search terms)
+// Load Trending via Search Heuristic
 async function loadTrending(filter = "music") {
     setLoader(true);
 
-    // Use some generic popular terms to simulate trending
-    const terms = ["hits", "pop", "top", "trending", "dance"];
-    const randomTerm = terms[Math.floor(Math.random() * terms.length)];
+    let query = "trending top hits 2026 music video official";
+    if (filter === "video") query = "trending viral videos today";
 
-    const entity = filter === "video" ? "musicVideo" : "song";
-    const data = await fetchApi(randomTerm, entity);
+    const data = await fetchApi(query);
 
-    if (!data || !data.results) {
+    if (!data || data.length === 0) {
         trackListContainer.innerHTML = '<div style="padding: 2rem;"><h3>Failed to load from API. Please try searching instead.</h3></div>';
         setLoader(false);
         return;
     }
 
-    tracks = data.results.map(mapItunesTrack).filter(t => t.streamUrl);
+    tracks = data.filter(t => t.type === 'video' || t.videoId).map(mapYoutubeTrack).slice(0, 20);
 
     renderTracks();
     setLoader(false);
@@ -124,16 +149,17 @@ async function search(query) {
     if (!query) return;
     setLoader(true);
 
-    const entity = currentTab === 'video' ? 'musicVideo' : 'song';
-    const data = await fetchApi(query, entity);
+    if (currentTab === 'music') query += " song official";
 
-    if (!data || !data.results || data.results.length === 0) {
+    const data = await fetchApi(query);
+
+    if (!data || data.length === 0) {
         trackListContainer.innerHTML = '<h3>No results found</h3>';
         setLoader(false);
         return;
     }
 
-    tracks = data.results.map(mapItunesTrack).filter(t => t.streamUrl);
+    tracks = data.filter(t => t.type === 'video' || t.videoId).map(mapYoutubeTrack).slice(0, 20);
 
     renderTracks();
     setLoader(false);
@@ -154,7 +180,7 @@ function renderTracks() {
                 <h3 class="track-title">${track.title}</h3>
                 <p class="track-artist">${track.artist}</p>
             </div>
-            <div class="track-duration">${track.hasVideo ? '🎬 ' : ''}${track.duration}</div>
+            <div class="track-duration">${track.duration}</div>
             <div class="playing-bars">
                 <div class="bar"></div>
                 <div class="bar"></div>
@@ -174,102 +200,146 @@ function renderTracks() {
     });
 }
 
+// --- YOUTUBE IFRAME API INTEGRATION ---
+function initYouTubePlayer() {
+    const oldVideo = document.getElementById('videoPlayer');
+    if (oldVideo) {
+        const div = document.createElement('div');
+        div.id = 'ytplayer';
+        div.className = 'shadow-brutal';
+        div.style.width = '100%';
+        div.style.aspectRatio = '16/9';
+        div.style.borderRadius = '8px';
+        oldVideo.parentNode.replaceChild(div, oldVideo);
+    }
+
+    const oldAudio = document.getElementById('audioPlayer');
+    if (oldAudio) oldAudio.remove();
+
+    var tag = document.createElement('script');
+    tag.src = "https://www.youtube.com/iframe_api";
+    var firstScriptTag = document.getElementsByTagName('script')[0];
+    firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+}
+
+window.onYouTubeIframeAPIReady = function() {
+    ytPlayer = new YT.Player('ytplayer', {
+        height: '100%',
+        width: '100%',
+        playerVars: {
+            'playsinline': 1,
+            'controls': 1,
+            'disablekb': 0,
+            'fs': 1,
+            'modestbranding': 1,
+            'autoplay': 1
+        },
+        events: {
+            'onReady': onPlayerReady,
+            'onStateChange': onPlayerStateChange,
+            'onError': onPlayerError
+        }
+    });
+};
+
+function onPlayerReady(event) {
+    ytReady = true;
+    console.log("YT Player Ready");
+    setInterval(updateProgress, 1000);
+}
+
+function onPlayerStateChange(event) {
+    if (event.data === YT.PlayerState.PLAYING) {
+        isPlaying = true;
+        updateUI(tracks[currentTrackIndex], false);
+    } else if (event.data === YT.PlayerState.PAUSED || event.data === YT.PlayerState.UNSTARTED) {
+        isPlaying = false;
+        updateUI(tracks[currentTrackIndex], false);
+    } else if (event.data === YT.PlayerState.ENDED) {
+        playTrack(currentTrackIndex + 1);
+    }
+}
+
+function onPlayerError(event) {
+    console.error("YT Error", event.data);
+    alert("Video blocked by copyright or unavailable in iframe. Skipping to next.");
+    playTrack(currentTrackIndex + 1);
+}
+
 // Media Logic
-async function playTrack(index) {
+function playTrack(index) {
+    if (!ytReady) {
+        console.warn("Player not ready yet");
+        return;
+    }
     if (index < 0 || index >= tracks.length) return;
 
     currentTrackIndex = index;
     const track = tracks[currentTrackIndex];
 
-    updateUI(track, true); // Set loading state UI
+    updateUI(track, true);
 
-    // Pause both players
-    audioPlayer.pause();
-    videoPlayer.pause();
+    ytPlayer.loadVideoById(track.id);
+    isPlaying = true;
 
-    try {
-        if (!track.streamUrl) {
-            alert("Stream not available for this track right now.");
-            updateUI(track, false);
-            return;
-        }
-
-        // We use iTunes preview URLs which are typically .m4a or .m4v
-        if (track.hasVideo && !isAudioOnly) {
-            videoPlayer.src = track.streamUrl;
-            videoPlayer.play();
-            videoContainer.classList.remove('hidden');
-        } else {
-            audioPlayer.src = track.streamUrl;
-            audioPlayer.play();
-            videoContainer.classList.add('hidden');
-        }
-
-        isPlaying = true;
-        updateUI(track, false); // Clear loading state
-
-    } catch (e) {
-        console.error("Playback error", e);
-        isPlaying = false;
-        updateUI(track, false);
+    // Manage UI for audio-only vs video mode
+    if (isAudioOnly) {
+        videoContainer.classList.add('hidden');
+    } else {
+        videoContainer.classList.remove('hidden');
     }
+
+    updateUI(track, false);
 }
 
 function togglePlay() {
+    if (!ytReady) return;
     if (currentTrackIndex === -1) {
         if (tracks.length > 0) playTrack(0);
         return;
     }
 
-    const track = tracks[currentTrackIndex];
-    const activePlayer = (track.hasVideo && !isAudioOnly) ? videoPlayer : audioPlayer;
-
-    if (activePlayer.paused) {
-        activePlayer.play();
-        isPlaying = true;
-    } else {
-        activePlayer.pause();
+    const state = ytPlayer.getPlayerState();
+    if (state === YT.PlayerState.PLAYING) {
+        ytPlayer.pauseVideo();
         isPlaying = false;
+    } else {
+        ytPlayer.playVideo();
+        isPlaying = true;
     }
-    updateUI(track, false);
+    updateUI(tracks[currentTrackIndex], false);
 }
 
-// Media Event Listeners for sync
-const getActivePlayerObj = () => {
-    if (currentTrackIndex === -1) return audioPlayer;
-    const track = tracks[currentTrackIndex];
-    return (track.hasVideo && !isAudioOnly) ? videoPlayer : audioPlayer;
-};
-
-audioPlayer.addEventListener('timeupdate', updateProgress);
-videoPlayer.addEventListener('timeupdate', updateProgress);
-
-audioPlayer.addEventListener('ended', () => playTrack(currentTrackIndex + 1));
-videoPlayer.addEventListener('ended', () => playTrack(currentTrackIndex + 1));
-
 function updateProgress() {
-    const player = getActivePlayerObj();
-    if (!player.duration || isNaN(player.duration)) return;
+    if (!ytReady || currentTrackIndex === -1) return;
 
-    const percent = (player.currentTime / player.duration) * 100;
+    // Only update if playing or explicitly moved
+    const state = ytPlayer.getPlayerState();
+    if (state !== YT.PlayerState.PLAYING && state !== YT.PlayerState.PAUSED) return;
+
+    const current = ytPlayer.getCurrentTime();
+    const duration = ytPlayer.getDuration();
+
+    if (!duration || isNaN(duration) || duration === 0) return;
+
+    const percent = (current / duration) * 100;
     progressFill.style.width = `${percent}%`;
     progressHandle.style.left = `${percent}%`;
 
-    timeCurrent.textContent = formatTime(player.currentTime);
-
-    // Only update total time if it was missing from metadata
-    if (timeTotal.textContent === "0:00" || timeTotal.textContent.includes("NaN")) {
-        timeTotal.textContent = formatTime(player.duration);
-    }
+    timeCurrent.textContent = formatTime(current);
+    timeTotal.textContent = formatTime(duration);
 }
 
 // Seek
 progressBar.addEventListener('click', (e) => {
-    const player = getActivePlayerObj();
-    if (player.duration) {
+    if (!ytReady || currentTrackIndex === -1) return;
+    const duration = ytPlayer.getDuration();
+    if (duration) {
         const rect = progressBar.getBoundingClientRect();
         const percent = (e.clientX - rect.left) / rect.width;
-        player.currentTime = player.duration * percent;
+        ytPlayer.seekTo(duration * percent, true);
+        progressFill.style.width = `${percent * 100}%`;
+        progressHandle.style.left = `${percent * 100}%`;
     }
 });
 
@@ -283,9 +353,6 @@ function updateUI(track, isLoading) {
     dockArtist.textContent = track.artist;
     dockArt.style.backgroundImage = `url('${track.art}')`;
 
-    // iTunes preview URLs are usually 30 seconds
-    timeTotal.textContent = "0:30"; // track.duration is the full song time
-
     if (isPlaying && !isLoading) {
         iconPlay.classList.add('hidden');
         iconPause.classList.remove('hidden');
@@ -296,7 +363,6 @@ function updateUI(track, isLoading) {
         btnPlayPause.style.backgroundColor = 'var(--accent-yellow)';
     }
 
-    // List rendering is heavy, so just toggle classes instead of re-rendering
     document.querySelectorAll('.track-item').forEach((el, idx) => {
         if (idx === currentTrackIndex && isPlaying && !isLoading) {
             el.classList.add('playing');
@@ -315,10 +381,12 @@ heroPlayBtn.addEventListener('click', () => {
 });
 
 closeVideoBtn.addEventListener('click', () => {
+    // Hide video container but don't pause audio
     videoContainer.classList.add('hidden');
-    videoPlayer.pause();
-    isPlaying = false;
-    updateUI(tracks[currentTrackIndex], false);
+    isAudioOnly = true;
+    qualityToggle.textContent = "Audio Only";
+    qualityToggle.style.backgroundColor = "";
+    qualityToggle.style.color = "";
 });
 
 qualityToggle.addEventListener('click', () => {
@@ -327,15 +395,12 @@ qualityToggle.addEventListener('click', () => {
     qualityToggle.style.backgroundColor = isAudioOnly ? "" : "var(--accent-purple)";
     qualityToggle.style.color = isAudioOnly ? "" : "white";
 
-    // If playing, switch stream
-    if (isPlaying && currentTrackIndex !== -1) {
-        const currentTime = getActivePlayerObj().currentTime;
-        audioPlayer.pause();
-        videoPlayer.pause();
-
-        playTrack(currentTrackIndex).then(() => {
-            getActivePlayerObj().currentTime = currentTime;
-        });
+    if (currentTrackIndex !== -1) {
+        if (!isAudioOnly) {
+            videoContainer.classList.remove('hidden');
+        } else {
+            videoContainer.classList.add('hidden');
+        }
     }
 });
 
@@ -346,7 +411,6 @@ searchInput.addEventListener('keypress', (e) => {
 
 // Tabs
 document.querySelectorAll('.nav-pills .pill').forEach(pill => {
-    // Ignore settings pills
     if (pill.id === 'qualityToggle') return;
 
     pill.addEventListener('click', (e) => {
@@ -363,10 +427,11 @@ document.querySelectorAll('.nav-pills .pill').forEach(pill => {
         } else if (currentTab === 'music') {
             loadTrending('music');
         } else {
-            loadTrending('video'); // Video generic
+            loadTrending('video');
         }
     });
 });
 
 // Init
+initYouTubePlayer();
 loadTrending('all');

@@ -691,3 +691,26 @@ body {
     z-index: 1500;
     backdrop-filter: blur(5px);
 }
+
+/* Fixes for YouTube IFrame Integration */
+#ytplayer {
+    display: block;
+    width: 100%;
+    aspect-ratio: 16/9;
+    border: none;
+    border-radius: 8px;
+    background-color: var(--border-dark);
+}
+
+.video-container {
+    background-color: var(--accent-yellow); /* Bold brutalist color for video backing */
+    border: var(--border-width) solid var(--border-dark);
+    box-shadow: 12px 12px 0 var(--border-dark);
+}
+
+.close-btn {
+    top: -20px;
+    right: -20px;
+    border: var(--border-width) solid var(--border-dark);
+    z-index: 2500;
+}
