@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jukebox PLAY</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=Shrikhand&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="noise-overlay"></div>
+
+    <header class="top-nav">
+        <div class="logo-container">
+            <div class="logo-shape star"></div>
+            <h1 class="logo-text">VIBE<br>MACHINE</h1>
+        </div>
+        <div class="nav-pills">
+            <button class="pill active" data-color="#FF5D73">Tracks</button>
+            <button class="pill" data-color="#4D9DE0">Playlists</button>
+            <button class="pill" data-color="#E1BC29">Radio</button>
+        </div>
+        <div class="user-avatar">
+            <div class="avatar-face">^_^</div>
+        </div>
+    </header>
+
+    <main class="content-grid">
+        <section class="hero-card shadow-brutal">
+            <div class="hero-badge">NOW TRENDING</div>
+            <h2 class="hero-title">Electric<br>Boogaloo<br>Vol. 4</h2>
+            <div class="hero-art">
+                <div class="vinyl-record">
+                    <div class="vinyl-center"></div>
+                </div>
+            </div>
+            <button class="btn-play-massive shadow-brutal" id="heroPlayBtn">
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+            </button>
+        </section>
+
+        <section class="track-list">
+            <!-- Tracks injected by JS -->
+        </section>
+    </main>
+
+    <div class="player-dock shadow-brutal hidden" id="playerDock">
+        <div class="player-info">
+            <div class="now-playing-art shadow-brutal" id="dockArt"></div>
+            <div class="now-playing-text">
+                <div class="scrolling-text-container">
+                    <h3 id="dockTitle">No track playing</h3>
+                </div>
+                <p id="dockArtist">Select a track</p>
+            </div>
+        </div>
+
+        <div class="player-controls">
+            <button class="ctrl-btn shadow-brutal" id="btnPrev">
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
+            </button>
+            <button class="ctrl-btn play-pause shadow-brutal" id="btnPlayPause">
+                <svg viewBox="0 0 24 24" fill="currentColor" id="iconPlay"><path d="M8 5v14l11-7z"/></svg>
+                <svg viewBox="0 0 24 24" fill="currentColor" id="iconPause" class="hidden"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+            </button>
+            <button class="ctrl-btn shadow-brutal" id="btnNext">
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
+            </button>
+        </div>
+
+        <div class="progress-container">
+            <span class="time" id="timeCurrent">0:00</span>
+            <div class="progress-bar shadow-brutal" id="progressBar">
+                <div class="progress-fill" id="progressFill"></div>
+                <div class="progress-handle shadow-brutal" id="progressHandle"></div>
+            </div>
+            <span class="time" id="timeTotal">0:00</span>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
