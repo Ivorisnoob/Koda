@@ -569,17 +569,31 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         controller?.let { player ->
             // Check if there is physically a next item in the implementation list
             val hasGenuineNextItem = player.currentMediaItemIndex < player.mediaItemCount - 1
-            
+            val queue = _currentQueue.value
+            val isAtEndOfQueue = player.currentMediaItemIndex >= queue.lastIndex
+
             // Fix: Override 'Repeat One' behavior which normally prevents skipping to next track
-            if (player.repeatMode == Player.REPEAT_MODE_ONE && hasGenuineNextItem) {
-                // Force skip to next index
-                player.seekTo(player.currentMediaItemIndex + 1, 0)
-                player.play()
-                _isBuffering.value = true
-                return
+            if (player.repeatMode == Player.REPEAT_MODE_ONE) {
+                if (hasGenuineNextItem) {
+                    // Force skip to next index
+                    player.seekTo(player.currentMediaItemIndex + 1, 0)
+                    player.play()
+                    _isBuffering.value = true
+                    return
+                } else if (isAtEndOfQueue) {
+                    // Force wrap around to start if at the end of the logical queue
+                    if (player.mediaItemCount > 0) {
+                        player.seekTo(0, 0)
+                        player.play()
+                        _isBuffering.value = true
+                        return
+                    }
+                }
+                // If not at end of queue but no genuine next item in player,
+                // fall through to fallback logic to add more items from the queue.
             }
 
-            if (player.hasNextMediaItem()) {
+            if (player.hasNextMediaItem() && player.repeatMode != Player.REPEAT_MODE_ONE) {
                 player.seekToNextMediaItem()
                 player.play()
                 _isBuffering.value = true // Expect buffering on skip
@@ -587,7 +601,6 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                 // FALLBACK: The player might not have the full queue loaded yet.
                 // Check if our local queue has more items.
                 val currentIndex = player.currentMediaItemIndex
-                val queue = _currentQueue.value
                 
                 if (currentIndex < queue.lastIndex) {
                     // We have a next song in our list, but Player doesn't know it yet.
@@ -603,17 +616,8 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                     _isBuffering.value = true
                 } else {
                     // Genuine end of playlist
-                    if (player.repeatMode == Player.REPEAT_MODE_ONE) {
-                        // Loop to start if desired, or just do nothing (standard behavior is loop for Repeat One)
-                        if (player.mediaItemCount > 0) {
-                            player.seekTo(0, 0)
-                            player.play()
-                            _isBuffering.value = true
-                        }
-                    } else {
-                        player.seekToNext()
-                        player.play()
-                    }
+                    player.seekToNext()
+                    player.play()
                 }
             }
         }
