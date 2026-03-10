@@ -1,8 +1,13 @@
 // API Configuration
 // Because public Invidious/Piped instances aggressively block CORS from localhost/browsers,
-// we must use a proxy (allorigins) to wrap the request. We wrap multiple instances to ensure resilience.
+// we must use a proxy. Since proxies can fail, we use a robust multi-proxy fallback matrix.
 
-const PROXY_URL = "https://api.allorigins.win/raw?url=";
+const PROXIES = [
+    { url: "https://api.allorigins.win/raw?url=", encode: true },
+    { url: "https://api.codetabs.com/v1/proxy?quest=", encode: true },
+    { url: "https://corsproxy.io/?", encode: true }
+];
+
 const INVIDIOUS_INSTANCES = [
     "https://invidious.nerdvpn.de",
     "https://inv.tux.pizza",
@@ -73,36 +78,45 @@ function setLoader(show) {
     }
 }
 
-// Robust fallback logic for getting YouTube data without auth/CORS
+// Ultra-robust fallback logic: Iterates through all Proxies x all Instances until one works
 async function fetchApi(query) {
-    for (let instance of INVIDIOUS_INSTANCES) {
-        try {
-            const encodedQuery = encodeURIComponent(query);
-            const targetUrl = encodeURIComponent(`${instance}/api/v1/search?q=${encodedQuery}`);
-            const finalUrl = `${PROXY_URL}${targetUrl}`;
+    const encodedQuery = encodeURIComponent(query);
 
-            console.log("Trying:", instance);
-            const res = await fetch(finalUrl, { cache: 'no-store' });
+    for (let proxy of PROXIES) {
+        for (let instance of INVIDIOUS_INSTANCES) {
+            try {
+                const targetUrl = `${instance}/api/v1/search?q=${encodedQuery}`;
+                const finalUrl = proxy.encode ? `${proxy.url}${encodeURIComponent(targetUrl)}` : `${proxy.url}${targetUrl}`;
 
-            if (res.ok) {
-                const text = await res.text();
-                try {
-                    const data = JSON.parse(text);
-                    if (Array.isArray(data) && data.length > 0) {
-                        return data;
+                console.log(`Trying Proxy: ${new URL(proxy.url).hostname} -> Instance: ${new URL(instance).hostname}`);
+
+                // Set a timeout so a hanging proxy doesn't ruin the user experience
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 4000); // 4 sec timeout per attempt
+
+                const res = await fetch(finalUrl, { cache: 'no-store', signal: controller.signal });
+                clearTimeout(timeoutId);
+
+                if (res.ok) {
+                    const text = await res.text();
+                    try {
+                        const data = JSON.parse(text);
+                        if (Array.isArray(data) && data.length > 0) {
+                            return data;
+                        }
+                    } catch (parseError) {
+                        console.warn(`JSON Parse failed from ${instance} via proxy`, parseError);
                     }
-                } catch (parseError) {
-                    console.warn(`JSON Parse failed for ${instance}`, parseError);
                 }
+            } catch (e) {
+                // If abort error or network error, just continue to next combination
+                console.warn(`Fetch failed for combination`, e.name);
             }
-        } catch (e) {
-            console.warn(`Fetch failed for ${instance}`, e);
         }
     }
 
-    // If all Invidious APIs fail via proxy, fallback to a static known good result
-    // to prevent UI breakage and keep the prototype functional.
-    console.error("All YouTube proxy APIs failed. Using fallback mock data.");
+    // If absolutely everything fails, use static fallback mock data to prevent UI from breaking
+    console.error("All Proxy x Instance combinations failed. Using static fallback data.");
     return [
         {
             type: "video",
@@ -176,7 +190,8 @@ async function loadTrending(filter = "music") {
 
     // Update Hero
     if (tracks.length > 0) {
-        heroTitle.innerHTML = tracks[0].title.split(' ').slice(0,3).join('<br>');
+        const safeHeroTitle = tracks[0].title.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        heroTitle.innerHTML = safeHeroTitle.split(' ').slice(0,3).join('<br>');
         heroVinylArt.style.backgroundImage = `url('${tracks[0].art}')`;
         heroVinylArt.style.backgroundSize = 'cover';
     }
