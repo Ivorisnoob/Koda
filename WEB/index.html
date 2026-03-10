@@ -17,23 +17,30 @@
             <div class="logo-shape star"></div>
             <h1 class="logo-text">VIBE<br>MACHINE</h1>
         </div>
-        <div class="nav-pills">
-            <button class="pill active" data-color="#FF5D73">Tracks</button>
-            <button class="pill" data-color="#4D9DE0">Playlists</button>
-            <button class="pill" data-color="#E1BC29">Radio</button>
+
+        <div class="search-container shadow-brutal">
+            <input type="text" id="searchInput" placeholder="Search YouTube Music & Video..." class="search-input">
+            <button id="searchBtn" class="search-btn">🔍</button>
         </div>
-        <div class="user-avatar">
-            <div class="avatar-face">^_^</div>
+
+        <div class="nav-pills">
+            <button class="pill active" data-color="#FF5D73" id="tabTrending">Trending</button>
+            <button class="pill" data-color="#4D9DE0" id="tabMusic">Music</button>
+            <button class="pill" data-color="#E1BC29" id="tabVideo">Videos</button>
+        </div>
+
+        <div class="settings-menu">
+            <button class="pill shadow-brutal" id="qualityToggle">Audio Only</button>
         </div>
     </header>
 
-    <main class="content-grid">
-        <section class="hero-card shadow-brutal">
+    <main class="content-grid" id="mainContent">
+        <section class="hero-card shadow-brutal" id="heroSection">
             <div class="hero-badge">NOW TRENDING</div>
-            <h2 class="hero-title">Electric<br>Boogaloo<br>Vol. 4</h2>
+            <h2 class="hero-title" id="heroTitle">Loading<br>Vibes...</h2>
             <div class="hero-art">
                 <div class="vinyl-record">
-                    <div class="vinyl-center"></div>
+                    <div class="vinyl-center" id="heroVinylArt"></div>
                 </div>
             </div>
             <button class="btn-play-massive shadow-brutal" id="heroPlayBtn">
@@ -41,10 +48,20 @@
             </button>
         </section>
 
-        <section class="track-list">
+        <section class="track-list" id="trackList">
+            <div class="loader-container" id="loader">
+                <div class="bouncy-loader"></div>
+                <div class="bouncy-loader"></div>
+                <div class="bouncy-loader"></div>
+            </div>
             <!-- Tracks injected by JS -->
         </section>
     </main>
+
+    <div class="video-container hidden" id="videoContainer">
+        <video id="videoPlayer" class="shadow-brutal" controls></video>
+        <button id="closeVideoBtn" class="close-btn shadow-brutal">✖ Close Video</button>
+    </div>
 
     <div class="player-dock shadow-brutal hidden" id="playerDock">
         <div class="player-info">
@@ -78,6 +95,9 @@
             </div>
             <span class="time" id="timeTotal">0:00</span>
         </div>
+
+        <!-- Hidden Audio Element -->
+        <audio id="audioPlayer"></audio>
     </div>
 
     <script src="app.js"></script>
