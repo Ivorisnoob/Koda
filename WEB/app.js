@@ -1,8 +1,6 @@
-// API Configuration (Using Piped API which tends to be more stable)
-// Note: In a real app, you'd rotate instances if one fails
-const API_BASE = "https://pipedapi.kavin.rocks";
-// Fallback if Piped is down
-const API_FALLBACK = "https://api.piped.projectsegfau.lt";
+// API Configuration
+// Switching to iTunes API for CORS-friendly, reliable search and previews.
+// YouTube APIs (Piped/Invidious) block localhost and have CORS restrictions on browser.
 
 // State
 let tracks = [];
@@ -48,7 +46,7 @@ const progressBar = document.getElementById('progressBar');
 
 // Format Time (Seconds to MM:SS)
 function formatTime(seconds) {
-    if (isNaN(seconds)) return "0:00";
+    if (isNaN(seconds) || !isFinite(seconds)) return "0:00";
     const m = Math.floor(seconds / 60);
     const s = Math.floor(seconds % 60);
     return `${m}:${s.toString().padStart(2, '0')}`;
@@ -65,55 +63,50 @@ function setLoader(show) {
     }
 }
 
-// Fetch helper with fallback
-async function fetchApi(endpoint) {
+// Fetch helper using iTunes API
+async function fetchApi(query, entity = 'song') {
     try {
-        const res = await fetch(`${API_BASE}${endpoint}`);
-        if (!res.ok) throw new Error("API Base failed");
+        const res = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(query)}&limit=25&entity=${entity}`);
+        if (!res.ok) throw new Error("API failed");
         return await res.json();
     } catch (e) {
-        console.warn("Falling back to secondary API instance");
-        try {
-            const res = await fetch(`${API_FALLBACK}${endpoint}`);
-            if (!res.ok) throw new Error("API Fallback failed");
-            return await res.json();
-        } catch (e2) {
-            console.error("Both APIs failed", e2);
-            return null;
-        }
+        console.error("API failed", e);
+        return null;
     }
 }
 
-// Load Trending
+// Map iTunes track format to our app format
+function mapItunesTrack(item) {
+    return {
+        id: item.trackId,
+        title: item.trackName,
+        artist: item.artistName,
+        duration: formatTime(item.trackTimeMillis / 1000),
+        durationSec: item.trackTimeMillis / 1000,
+        art: item.artworkUrl100 ? item.artworkUrl100.replace('100x100', '300x300') : '',
+        streamUrl: item.previewUrl,
+        hasVideo: item.kind === 'music-video'
+    };
+}
+
+// Load Trending (Mocking trending with popular search terms)
 async function loadTrending(filter = "music") {
     setLoader(true);
-    // Piped trending region
-    const data = await fetchApi(`/trending?region=US`);
 
-    if (!data) {
+    // Use some generic popular terms to simulate trending
+    const terms = ["hits", "pop", "top", "trending", "dance"];
+    const randomTerm = terms[Math.floor(Math.random() * terms.length)];
+
+    const entity = filter === "video" ? "musicVideo" : "song";
+    const data = await fetchApi(randomTerm, entity);
+
+    if (!data || !data.results) {
         trackListContainer.innerHTML = '<div style="padding: 2rem;"><h3>Failed to load from API. Please try searching instead.</h3></div>';
         setLoader(false);
         return;
     }
 
-    // Filter data based on music/video
-    tracks = data.map(item => ({
-        id: item.url.split('v=')[1] || item.url.split('/').pop(),
-        title: item.title,
-        artist: item.uploaderName,
-        duration: formatTime(item.duration),
-        durationSec: item.duration,
-        art: item.thumbnail
-    })).filter(track => track.id); // Ensure ID exists
-
-    if (filter === "music") {
-        // Rough heuristic for music if pure music endpoint isn't available
-        const musicTracks = tracks.filter(t => t.artist.toLowerCase().includes('vevo') || t.title.toLowerCase().includes('music') || t.title.toLowerCase().includes('official'));
-        if (musicTracks.length > 0) tracks = musicTracks;
-        else tracks = tracks.slice(0, 20); // fallback
-    } else {
-        tracks = tracks.slice(0, 20); // Just take top 20
-    }
+    tracks = data.results.map(mapItunesTrack).filter(t => t.streamUrl);
 
     renderTracks();
     setLoader(false);
@@ -131,23 +124,16 @@ async function search(query) {
     if (!query) return;
     setLoader(true);
 
-    const filterStr = currentTab === 'music' ? "&filter=music_songs" : "";
-    const data = await fetchApi(`/search?q=${encodeURIComponent(query)}${filterStr}`);
+    const entity = currentTab === 'video' ? 'musicVideo' : 'song';
+    const data = await fetchApi(query, entity);
 
-    if (!data || !data.items) {
+    if (!data || !data.results || data.results.length === 0) {
         trackListContainer.innerHTML = '<h3>No results found</h3>';
         setLoader(false);
         return;
     }
 
-    tracks = data.items.filter(item => item.type === "stream").map(item => ({
-        id: item.url.split('v=')[1],
-        title: item.title,
-        artist: item.uploaderName,
-        duration: formatTime(item.duration),
-        durationSec: item.duration,
-        art: item.thumbnail
-    }));
+    tracks = data.results.map(mapItunesTrack).filter(t => t.streamUrl);
 
     renderTracks();
     setLoader(false);
@@ -168,7 +154,7 @@ function renderTracks() {
                 <h3 class="track-title">${track.title}</h3>
                 <p class="track-artist">${track.artist}</p>
             </div>
-            <div class="track-duration">${track.duration}</div>
+            <div class="track-duration">${track.hasVideo ? '🎬 ' : ''}${track.duration}</div>
             <div class="playing-bars">
                 <div class="bar"></div>
                 <div class="bar"></div>
@@ -189,32 +175,6 @@ function renderTracks() {
 }
 
 // Media Logic
-async function getStreamUrls(videoId) {
-    const data = await fetchApi(`/streams/${videoId}`);
-    if (!data) return null;
-
-    // Get Audio
-    const audioStreams = data.audioStreams || [];
-    audioStreams.sort((a, b) => b.bitrate - a.bitrate); // Highest quality first
-    const bestAudio = audioStreams.length > 0 ? audioStreams[0].url : null;
-
-    // Get Video (if not audio only)
-    let bestVideo = null;
-    if (!isAudioOnly) {
-        const videoStreams = data.videoStreams || [];
-        // Try to find a good quality mp4 with video+audio
-        const mixed = videoStreams.find(s => s.videoOnly === false && s.quality === '720p');
-        if (mixed) {
-            bestVideo = mixed.url;
-        } else {
-            // fallback to best available
-            bestVideo = videoStreams.length > 0 ? videoStreams[0].url : null;
-        }
-    }
-
-    return { audio: bestAudio, video: bestVideo };
-}
-
 async function playTrack(index) {
     if (index < 0 || index >= tracks.length) return;
 
@@ -228,26 +188,24 @@ async function playTrack(index) {
     videoPlayer.pause();
 
     try {
-        const streams = await getStreamUrls(track.id);
-
-        if (!streams || (!streams.audio && !streams.video)) {
-            alert("Stream not available for this track right now. Trying another server or track.");
+        if (!track.streamUrl) {
+            alert("Stream not available for this track right now.");
             updateUI(track, false);
             return;
         }
 
-        if (isAudioOnly) {
-            audioPlayer.src = streams.audio;
-            audioPlayer.play();
-            videoContainer.classList.add('hidden');
-            isPlaying = true;
-        } else {
-            videoPlayer.src = streams.video || streams.audio; // fallback to audio if no video
+        // We use iTunes preview URLs which are typically .m4a or .m4v
+        if (track.hasVideo && !isAudioOnly) {
+            videoPlayer.src = track.streamUrl;
             videoPlayer.play();
             videoContainer.classList.remove('hidden');
-            isPlaying = true;
+        } else {
+            audioPlayer.src = track.streamUrl;
+            audioPlayer.play();
+            videoContainer.classList.add('hidden');
         }
 
+        isPlaying = true;
         updateUI(track, false); // Clear loading state
 
     } catch (e) {
@@ -263,7 +221,8 @@ function togglePlay() {
         return;
     }
 
-    const activePlayer = isAudioOnly ? audioPlayer : videoPlayer;
+    const track = tracks[currentTrackIndex];
+    const activePlayer = (track.hasVideo && !isAudioOnly) ? videoPlayer : audioPlayer;
 
     if (activePlayer.paused) {
         activePlayer.play();
@@ -272,11 +231,15 @@ function togglePlay() {
         activePlayer.pause();
         isPlaying = false;
     }
-    updateUI(tracks[currentTrackIndex], false);
+    updateUI(track, false);
 }
 
 // Media Event Listeners for sync
-const activePlayerObj = () => isAudioOnly ? audioPlayer : videoPlayer;
+const getActivePlayerObj = () => {
+    if (currentTrackIndex === -1) return audioPlayer;
+    const track = tracks[currentTrackIndex];
+    return (track.hasVideo && !isAudioOnly) ? videoPlayer : audioPlayer;
+};
 
 audioPlayer.addEventListener('timeupdate', updateProgress);
 videoPlayer.addEventListener('timeupdate', updateProgress);
@@ -285,7 +248,7 @@ audioPlayer.addEventListener('ended', () => playTrack(currentTrackIndex + 1));
 videoPlayer.addEventListener('ended', () => playTrack(currentTrackIndex + 1));
 
 function updateProgress() {
-    const player = activePlayerObj();
+    const player = getActivePlayerObj();
     if (!player.duration || isNaN(player.duration)) return;
 
     const percent = (player.currentTime / player.duration) * 100;
@@ -302,7 +265,7 @@ function updateProgress() {
 
 // Seek
 progressBar.addEventListener('click', (e) => {
-    const player = activePlayerObj();
+    const player = getActivePlayerObj();
     if (player.duration) {
         const rect = progressBar.getBoundingClientRect();
         const percent = (e.clientX - rect.left) / rect.width;
@@ -319,7 +282,9 @@ function updateUI(track, isLoading) {
     dockTitle.textContent = isLoading ? "Loading Stream..." : track.title;
     dockArtist.textContent = track.artist;
     dockArt.style.backgroundImage = `url('${track.art}')`;
-    timeTotal.textContent = track.duration;
+
+    // iTunes preview URLs are usually 30 seconds
+    timeTotal.textContent = "0:30"; // track.duration is the full song time
 
     if (isPlaying && !isLoading) {
         iconPlay.classList.add('hidden');
@@ -364,12 +329,12 @@ qualityToggle.addEventListener('click', () => {
 
     // If playing, switch stream
     if (isPlaying && currentTrackIndex !== -1) {
-        const currentTime = activePlayerObj().currentTime;
-        const previousPlayer = isAudioOnly ? videoPlayer : audioPlayer;
-        previousPlayer.pause();
+        const currentTime = getActivePlayerObj().currentTime;
+        audioPlayer.pause();
+        videoPlayer.pause();
 
         playTrack(currentTrackIndex).then(() => {
-            activePlayerObj().currentTime = currentTime;
+            getActivePlayerObj().currentTime = currentTime;
         });
     }
 });
@@ -398,7 +363,7 @@ document.querySelectorAll('.nav-pills .pill').forEach(pill => {
         } else if (currentTab === 'music') {
             loadTrending('music');
         } else {
-            loadTrending('all'); // Video generic
+            loadTrending('video'); // Video generic
         }
     });
 });
