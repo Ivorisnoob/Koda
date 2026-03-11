@@ -1,19 +1,5 @@
-// API Configuration
-// Because public Invidious/Piped instances aggressively block CORS from localhost/browsers,
-// we must use a proxy. Since proxies can fail, we use a robust multi-proxy fallback matrix.
-
-const PROXIES = [
-    { url: "https://api.allorigins.win/raw?url=", encode: true },
-    { url: "https://api.codetabs.com/v1/proxy?quest=", encode: true },
-    { url: "https://corsproxy.io/?", encode: true }
-];
-
-const INVIDIOUS_INSTANCES = [
-    "https://invidious.nerdvpn.de",
-    "https://inv.tux.pizza",
-    "https://yewtu.be",
-    "https://inv.nadeko.net"
-];
+// API Configuration (Local Node Backend)
+const BACKEND_URL = "http://localhost:3000";
 
 // State
 let tracks = [];
@@ -21,10 +7,6 @@ let currentTrackIndex = -1;
 let isPlaying = false;
 let isAudioOnly = true;
 let currentTab = 'trending';
-
-// YouTube Iframe Player
-let ytPlayer = null;
-let ytReady = false;
 
 // DOM Elements
 const trackListContainer = document.getElementById('trackList');
@@ -36,6 +18,29 @@ const qualityToggle = document.getElementById('qualityToggle');
 const videoContainer = document.getElementById('videoContainer');
 const closeVideoBtn = document.getElementById('closeVideoBtn');
 const playerDock = document.getElementById('playerDock');
+
+// HTML5 Media Players (Replacing YouTube IFrame API)
+let audioPlayer = document.getElementById('audioPlayer');
+let videoPlayer = document.getElementById('videoPlayer');
+
+if (!audioPlayer) {
+    audioPlayer = document.createElement('audio');
+    audioPlayer.id = 'audioPlayer';
+    playerDock.appendChild(audioPlayer);
+}
+
+if (!videoPlayer) {
+    videoPlayer = document.createElement('video');
+    videoPlayer.id = 'videoPlayer';
+    videoPlayer.className = 'shadow-brutal';
+    videoPlayer.controls = true;
+
+    // Clear out any leftover iframe or divs
+    const ytDiv = document.getElementById('ytplayer');
+    if (ytDiv) ytDiv.remove();
+
+    videoContainer.insertBefore(videoPlayer, closeVideoBtn);
+}
 
 // UI Elements
 const loader = document.getElementById('loader');
@@ -78,122 +83,32 @@ function setLoader(show) {
     }
 }
 
-// Ultra-robust fallback logic: Iterates through all Proxies x all Instances until one works
-async function fetchApi(query) {
-    const encodedQuery = encodeURIComponent(query);
-
-    for (let proxy of PROXIES) {
-        for (let instance of INVIDIOUS_INSTANCES) {
-            try {
-                const targetUrl = `${instance}/api/v1/search?q=${encodedQuery}`;
-                const finalUrl = proxy.encode ? `${proxy.url}${encodeURIComponent(targetUrl)}` : `${proxy.url}${targetUrl}`;
-
-                console.log(`Trying Proxy: ${new URL(proxy.url).hostname} -> Instance: ${new URL(instance).hostname}`);
-
-                // Set a timeout so a hanging proxy doesn't ruin the user experience
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 4000); // 4 sec timeout per attempt
-
-                const res = await fetch(finalUrl, { cache: 'no-store', signal: controller.signal });
-                clearTimeout(timeoutId);
-
-                if (res.ok) {
-                    const text = await res.text();
-                    try {
-                        const data = JSON.parse(text);
-                        if (Array.isArray(data) && data.length > 0) {
-                            return data;
-                        }
-                    } catch (parseError) {
-                        console.warn(`JSON Parse failed from ${instance} via proxy`, parseError);
-                    }
-                }
-            } catch (e) {
-                // If abort error or network error, just continue to next combination
-                console.warn(`Fetch failed for combination`, e.name);
-            }
-        }
-    }
-
-    // If absolutely everything fails, use static fallback mock data to prevent UI from breaking
-    console.error("All Proxy x Instance combinations failed. Using static fallback data.");
-    return [
-        {
-            type: "video",
-            videoId: "dQw4w9WgXcQ",
-            title: "Never Gonna Give You Up (Official Music Video)",
-            author: "Rick Astley",
-            lengthSeconds: 212,
-            videoThumbnails: [{ url: "https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg" }]
-        },
-        {
-            type: "video",
-            videoId: "kJQP7kiw5Fk",
-            title: "Luis Fonsi - Despacito ft. Daddy Yankee",
-            author: "Luis Fonsi",
-            lengthSeconds: 281,
-            videoThumbnails: [{ url: "https://i.ytimg.com/vi/kJQP7kiw5Fk/hqdefault.jpg" }]
-        },
-        {
-            type: "video",
-            videoId: "jNQXAC9IVRw",
-            title: "Me at the zoo",
-            author: "jawed",
-            lengthSeconds: 19,
-            videoThumbnails: [{ url: "https://i.ytimg.com/vi/jNQXAC9IVRw/hqdefault.jpg" }]
-        }
-    ];
-}
-
-// Map Invidious track format to our app format safely
-function mapYoutubeTrack(item) {
-    let thumb = '';
-    if (item.videoThumbnails && item.videoThumbnails.length > 0) {
-        thumb = item.videoThumbnails.find(t => t.quality === 'sddefault') || item.videoThumbnails[0];
-        thumb = thumb.url;
-        // If relative URL (some invidious instances do this), prepend the host
-        if (thumb.startsWith('/')) {
-            thumb = "https://invidious.nerdvpn.de" + thumb;
-        }
-    }
-
-    return {
-        id: item.videoId || 'dQw4w9WgXcQ', // fallback ID
-        title: item.title || 'Unknown Title',
-        artist: item.author || 'Unknown Artist',
-        duration: formatTime(item.lengthSeconds),
-        durationSec: item.lengthSeconds || 0,
-        art: thumb || 'https://images.unsplash.com/photo-1614149162012-d458dfce3787?w=300&h=300&fit=crop',
-        hasVideo: true
-    };
-}
-
-// Load Trending via Search Heuristic
+// Load Trending
 async function loadTrending(filter = "music") {
     setLoader(true);
 
-    let query = "trending top hits 2026 music video official";
-    if (filter === "video") query = "trending viral videos today";
+    try {
+        const res = await fetch(`${BACKEND_URL}/trending?filter=${filter}`);
+        if (!res.ok) throw new Error("Backend failed");
 
-    const data = await fetchApi(query);
+        const data = await res.json();
+        if (data.length === 0) throw new Error("Empty data");
 
-    if (!data || data.length === 0) {
-        trackListContainer.innerHTML = '<div style="padding: 2rem;"><h3>Failed to load from API. Please try searching instead.</h3></div>';
+        tracks = data;
+        renderTracks();
+
+        // Update Hero
+        if (tracks.length > 0) {
+            const safeHeroTitle = tracks[0].title.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+            heroTitle.innerHTML = safeHeroTitle.split(' ').slice(0,3).join('<br>');
+            heroVinylArt.style.backgroundImage = `url('${tracks[0].art}')`;
+            heroVinylArt.style.backgroundSize = 'cover';
+        }
+    } catch (err) {
+        console.error("Trending Error", err);
+        trackListContainer.innerHTML = '<div style="padding: 2rem;"><h3>Failed to load from Server. Please ensure backend is running.</h3></div>';
+    } finally {
         setLoader(false);
-        return;
-    }
-
-    tracks = data.filter(t => t.type === 'video' || t.videoId).map(mapYoutubeTrack).slice(0, 20);
-
-    renderTracks();
-    setLoader(false);
-
-    // Update Hero
-    if (tracks.length > 0) {
-        const safeHeroTitle = tracks[0].title.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-        heroTitle.innerHTML = safeHeroTitle.split(' ').slice(0,3).join('<br>');
-        heroVinylArt.style.backgroundImage = `url('${tracks[0].art}')`;
-        heroVinylArt.style.backgroundSize = 'cover';
     }
 }
 
@@ -202,20 +117,25 @@ async function search(query) {
     if (!query) return;
     setLoader(true);
 
-    if (currentTab === 'music') query += " song official";
+    try {
+        const searchUrl = `${BACKEND_URL}/search?q=${encodeURIComponent(query)}`;
+        const res = await fetch(searchUrl);
+        if (!res.ok) throw new Error("Search failed");
 
-    const data = await fetchApi(query);
+        const data = await res.json();
+        if (data.length === 0) {
+            trackListContainer.innerHTML = '<h3>No results found</h3>';
+            return;
+        }
 
-    if (!data || data.length === 0) {
-        trackListContainer.innerHTML = '<div style="padding: 2rem;"><h3>No results found</h3></div>';
+        tracks = data;
+        renderTracks();
+    } catch (err) {
+        console.error("Search Error", err);
+        trackListContainer.innerHTML = '<h3>Error searching</h3>';
+    } finally {
         setLoader(false);
-        return;
     }
-
-    tracks = data.filter(t => t.type === 'video' || t.videoId).map(mapYoutubeTrack).slice(0, 20);
-
-    renderTracks();
-    setLoader(false);
 }
 
 // Render Tracks (Safely construct HTML)
@@ -226,7 +146,6 @@ function renderTracks() {
         item.className = `track-item shadow-brutal ${index === currentTrackIndex && isPlaying ? 'playing' : ''}`;
         item.dataset.index = index;
 
-        // Escape HTML to prevent injection if title contains weird chars
         const safeTitle = track.title.replace(/</g, "&lt;").replace(/>/g, "&gt;");
         const safeArtist = track.artist.replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
@@ -257,81 +176,8 @@ function renderTracks() {
     });
 }
 
-// --- YOUTUBE IFRAME API INTEGRATION ---
-function initYouTubePlayer() {
-    // Replace old HTML5 video if it exists
-    const oldVideo = document.getElementById('videoPlayer');
-    if (oldVideo) {
-        const div = document.createElement('div');
-        div.id = 'ytplayer';
-        div.className = 'shadow-brutal';
-        div.style.width = '100%';
-        div.style.aspectRatio = '16/9';
-        div.style.borderRadius = '8px';
-        oldVideo.parentNode.replaceChild(div, oldVideo);
-    }
-
-    // Remove old audio tag if exists
-    const oldAudio = document.getElementById('audioPlayer');
-    if (oldAudio) oldAudio.remove();
-
-    var tag = document.createElement('script');
-    tag.src = "https://www.youtube.com/iframe_api";
-    var firstScriptTag = document.getElementsByTagName('script')[0];
-    firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
-}
-
-window.onYouTubeIframeAPIReady = function() {
-    ytPlayer = new YT.Player('ytplayer', {
-        height: '100%',
-        width: '100%',
-        playerVars: {
-            'playsinline': 1,
-            'controls': 1,
-            'disablekb': 0,
-            'fs': 1,
-            'modestbranding': 1,
-            'autoplay': 1,
-            'rel': 0
-        },
-        events: {
-            'onReady': onPlayerReady,
-            'onStateChange': onPlayerStateChange,
-            'onError': onPlayerError
-        }
-    });
-};
-
-function onPlayerReady(event) {
-    ytReady = true;
-    console.log("YT Player Ready");
-    setInterval(updateProgress, 1000);
-}
-
-function onPlayerStateChange(event) {
-    if (event.data === YT.PlayerState.PLAYING) {
-        isPlaying = true;
-        updateUI(tracks[currentTrackIndex], false);
-    } else if (event.data === YT.PlayerState.PAUSED || event.data === YT.PlayerState.UNSTARTED) {
-        isPlaying = false;
-        updateUI(tracks[currentTrackIndex], false);
-    } else if (event.data === YT.PlayerState.ENDED) {
-        playTrack(currentTrackIndex + 1);
-    }
-}
-
-function onPlayerError(event) {
-    console.error("YT Error", event.data);
-    alert("Video blocked by copyright or unavailable in iframe. Skipping to next.");
-    playTrack(currentTrackIndex + 1);
-}
-
-// Media Logic
-function playTrack(index) {
-    if (!ytReady) {
-        console.warn("Player not ready yet");
-        return;
-    }
+// Media Logic: Fetch stream from backend
+async function playTrack(index) {
     if (index < 0 || index >= tracks.length) return;
 
     currentTrackIndex = index;
@@ -339,67 +185,85 @@ function playTrack(index) {
 
     updateUI(track, true);
 
-    ytPlayer.loadVideoById(track.id);
-    isPlaying = true;
+    // Pause both players
+    audioPlayer.pause();
+    videoPlayer.pause();
 
-    // Manage UI for audio-only vs video mode
-    if (isAudioOnly) {
-        videoContainer.classList.add('hidden');
-    } else {
-        videoContainer.classList.remove('hidden');
+    try {
+        const endpoint = isAudioOnly ? '/audio' : '/video';
+        const res = await fetch(`${BACKEND_URL}${endpoint}?id=${track.id}`);
+
+        if (!res.ok) throw new Error("Failed to extract stream");
+
+        const data = await res.json();
+
+        if (isAudioOnly) {
+            audioPlayer.src = data.url;
+            audioPlayer.play();
+            videoContainer.classList.add('hidden');
+        } else {
+            videoPlayer.src = data.url;
+            videoPlayer.play();
+            videoContainer.classList.remove('hidden');
+        }
+
+        isPlaying = true;
+        updateUI(track, false);
+
+    } catch (err) {
+        console.error("Playback Error:", err);
+        alert("Failed to stream media. It might be age-restricted or blocked.");
+        isPlaying = false;
+        updateUI(track, false);
     }
-
-    updateUI(track, false);
 }
 
 function togglePlay() {
-    if (!ytReady) return;
     if (currentTrackIndex === -1) {
         if (tracks.length > 0) playTrack(0);
         return;
     }
 
-    const state = ytPlayer.getPlayerState();
-    if (state === YT.PlayerState.PLAYING) {
-        ytPlayer.pauseVideo();
-        isPlaying = false;
-    } else {
-        ytPlayer.playVideo();
+    const activePlayer = isAudioOnly ? audioPlayer : videoPlayer;
+
+    if (activePlayer.paused) {
+        activePlayer.play();
         isPlaying = true;
+    } else {
+        activePlayer.pause();
+        isPlaying = false;
     }
     updateUI(tracks[currentTrackIndex], false);
 }
 
+// Media Event Listeners for sync
+const getActivePlayerObj = () => isAudioOnly ? audioPlayer : videoPlayer;
+
+audioPlayer.addEventListener('timeupdate', updateProgress);
+videoPlayer.addEventListener('timeupdate', updateProgress);
+
+audioPlayer.addEventListener('ended', () => playTrack(currentTrackIndex + 1));
+videoPlayer.addEventListener('ended', () => playTrack(currentTrackIndex + 1));
+
 function updateProgress() {
-    if (!ytReady || currentTrackIndex === -1) return;
+    const player = getActivePlayerObj();
+    if (!player.duration || isNaN(player.duration)) return;
 
-    // Only update if playing or explicitly moved
-    const state = ytPlayer.getPlayerState();
-    if (state !== YT.PlayerState.PLAYING && state !== YT.PlayerState.PAUSED) return;
-
-    const current = ytPlayer.getCurrentTime();
-    const duration = ytPlayer.getDuration();
-
-    if (!duration || isNaN(duration) || duration === 0) return;
-
-    const percent = (current / duration) * 100;
+    const percent = (player.currentTime / player.duration) * 100;
     progressFill.style.width = `${percent}%`;
     progressHandle.style.left = `${percent}%`;
 
-    timeCurrent.textContent = formatTime(current);
-    timeTotal.textContent = formatTime(duration);
+    timeCurrent.textContent = formatTime(player.currentTime);
+    timeTotal.textContent = formatTime(player.duration);
 }
 
 // Seek
 progressBar.addEventListener('click', (e) => {
-    if (!ytReady || currentTrackIndex === -1) return;
-    const duration = ytPlayer.getDuration();
-    if (duration) {
+    const player = getActivePlayerObj();
+    if (player.duration) {
         const rect = progressBar.getBoundingClientRect();
         const percent = (e.clientX - rect.left) / rect.width;
-        ytPlayer.seekTo(duration * percent, true);
-        progressFill.style.width = `${percent * 100}%`;
-        progressHandle.style.left = `${percent * 100}%`;
+        player.currentTime = player.duration * percent;
     }
 });
 
@@ -409,7 +273,7 @@ function updateUI(track, isLoading) {
         playerDock.classList.remove('hidden');
     }
 
-    dockTitle.textContent = isLoading ? "Loading Stream..." : track.title.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+    dockTitle.textContent = isLoading ? "Extracting Stream..." : track.title.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
     dockArtist.textContent = track.artist.replace(/&amp;/g, '&');
     dockArt.style.backgroundImage = `url('${track.art}')`;
 
@@ -441,12 +305,22 @@ heroPlayBtn.addEventListener('click', () => {
 });
 
 closeVideoBtn.addEventListener('click', () => {
-    // Hide video container but don't pause audio
+    // Hide video container
     videoContainer.classList.add('hidden');
+    videoPlayer.pause();
+
     isAudioOnly = true;
     qualityToggle.textContent = "Audio Only";
     qualityToggle.style.backgroundColor = "";
     qualityToggle.style.color = "";
+
+    // Resume audio
+    if (currentTrackIndex !== -1 && isPlaying) {
+        const currentTime = videoPlayer.currentTime;
+        playTrack(currentTrackIndex).then(() => {
+            audioPlayer.currentTime = currentTime;
+        });
+    }
 });
 
 qualityToggle.addEventListener('click', () => {
@@ -455,12 +329,14 @@ qualityToggle.addEventListener('click', () => {
     qualityToggle.style.backgroundColor = isAudioOnly ? "" : "var(--accent-purple)";
     qualityToggle.style.color = isAudioOnly ? "" : "white";
 
-    if (currentTrackIndex !== -1) {
-        if (!isAudioOnly) {
-            videoContainer.classList.remove('hidden');
-        } else {
-            videoContainer.classList.add('hidden');
-        }
+    if (currentTrackIndex !== -1 && isPlaying) {
+        const previousPlayer = !isAudioOnly ? audioPlayer : videoPlayer;
+        const currentTime = previousPlayer.currentTime;
+        previousPlayer.pause();
+
+        playTrack(currentTrackIndex).then(() => {
+            getActivePlayerObj().currentTime = currentTime;
+        });
     }
 });
 
@@ -493,5 +369,4 @@ document.querySelectorAll('.nav-pills .pill').forEach(pill => {
 });
 
 // Init
-initYouTubePlayer();
 loadTrending('all');
