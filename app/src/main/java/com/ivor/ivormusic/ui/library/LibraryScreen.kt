@@ -642,7 +642,11 @@ fun ExpressivePlaylistCard(
 }
 
 @Composable
-fun SongListItem(song: Song, onClick: () -> Unit) {
+fun SongListItem(
+    song: Song,
+    onClick: () -> Unit,
+    trailingContent: (@Composable () -> Unit)? = null
+) {
     ListItem(
         headlineContent = { Text(song.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold) },
         supportingContent = { Text(song.artist, maxLines = 1, overflow = TextOverflow.Ellipsis) },
@@ -658,6 +662,7 @@ fun SongListItem(song: Song, onClick: () -> Unit) {
                     Box(contentAlignment = Alignment.Center) { Icon(Icons.Rounded.MusicNote, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
             }
         },
+        trailingContent = trailingContent,
         modifier = Modifier.clickable(onClick = onClick),
         colors = ListItemDefaults.colors(containerColor = Color.Transparent)
     )
@@ -693,10 +698,12 @@ fun PlaylistDetailScreen(
     var songs by remember { mutableStateOf(preloadedSongs ?: emptyList()) }
     val isLoading by viewModel.isLoading.collectAsState()
     val isFetching = remember { mutableStateOf(songs.isEmpty()) }
+    val isLocalPlaylist = remember(playlist.id) { viewModel.isLocalPlaylist(playlist.id) }
     
     // Search State
     var searchQuery by remember { mutableStateOf("") }
     var isSearchActive by remember { mutableStateOf(false) }
+    var showSortMenu by remember { mutableStateOf(false) }
 
     // Scroll State for FAB and App Bar
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
@@ -716,6 +723,12 @@ fun PlaylistDetailScreen(
             isFetching.value = true
             songs = viewModel.fetchPlaylistSongs(playlist.id)
             isFetching.value = false
+        }
+    }
+
+    LaunchedEffect(playlist.id, isLocalPlaylist, isLoading) {
+        if (isLocalPlaylist) {
+            songs = viewModel.fetchPlaylistSongs(playlist.id)
         }
     }
 
@@ -742,6 +755,36 @@ fun PlaylistDetailScreen(
                     }
                 },
                 actions = {
+                    if (isLocalPlaylist) {
+                        Box {
+                            IconButton(onClick = { showSortMenu = true }) {
+                                Icon(
+                                    imageVector = Icons.Rounded.SortByAlpha,
+                                    contentDescription = "Sort playlist"
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = showSortMenu,
+                                onDismissRequest = { showSortMenu = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("Title A-Z") },
+                                    onClick = {
+                                        viewModel.sortLocalPlaylist(playlist.id, ascending = true)
+                                        showSortMenu = false
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Title Z-A") },
+                                    onClick = {
+                                        viewModel.sortLocalPlaylist(playlist.id, ascending = false)
+                                        showSortMenu = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+
                     IconButton(onClick = { isSearchActive = !isSearchActive }) {
                         Icon(
                             imageVector = if (isSearchActive) Icons.Rounded.Close else Icons.Rounded.Search,
@@ -887,7 +930,19 @@ fun PlaylistDetailScreen(
                     items(filteredSongs) { song ->
                         SongListItem(
                             song = song, 
-                            onClick = { onPlayQueue(filteredSongs, song) }
+                            onClick = { onPlayQueue(filteredSongs, song) },
+                            trailingContent = if (isLocalPlaylist) {
+                                {
+                                    IconButton(
+                                        onClick = { viewModel.removeSongFromLocalPlaylist(playlist.id, song.id) }
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Delete,
+                                            contentDescription = "Remove from playlist"
+                                        )
+                                    }
+                                }
+                            } else null
                         )
                     }
                 }

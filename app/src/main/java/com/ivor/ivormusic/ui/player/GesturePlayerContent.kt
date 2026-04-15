@@ -121,6 +121,8 @@ fun GesturePlayerSheetContent(
                     queue = currentQueue,
                     currentSong = currentSong,
                     onSongClick = { song -> viewModel.playQueue(currentQueue, song) },
+                    onRemoveSong = { song -> viewModel.removeFromQueue(song.id) },
+                    onSortQueue = { ascending -> viewModel.sortQueue(ascending) },
                     onCollapse = onCollapse,
                     onBackToPlayer = { showQueue = false },
                     onLoadMore = onLoadMore,
@@ -1011,6 +1013,8 @@ private fun GestureQueueView(
     queue: List<Song>,
     currentSong: Song?,
     onSongClick: (Song) -> Unit,
+    onRemoveSong: (Song) -> Unit,
+    onSortQueue: (Boolean) -> Unit,
     onCollapse: () -> Unit,
     onBackToPlayer: () -> Unit,
     onLoadMore: () -> Unit,
@@ -1022,6 +1026,7 @@ private fun GestureQueueView(
     onSurfaceColor: Color,
     onSurfaceVariantColor: Color
 ) {
+    var showSortMenu by remember { mutableStateOf(false) }
     // Guard against invalid dimensions during transitions
     BoxWithConstraints(
         modifier = Modifier
@@ -1078,16 +1083,51 @@ private fun GestureQueueView(
                     }
                 }
                 
-                FilledIconButton(
-                    onClick = onBackToPlayer,
-                    shape = CircleShape,
-                    colors = IconButtonDefaults.filledIconButtonColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        contentColor = MaterialTheme.colorScheme.onSurface
-                    ),
-                    modifier = Modifier.size(48.dp)
-                ) {
-                    Icon(Icons.Rounded.MusicNote, "Now Playing", modifier = Modifier.size(24.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box {
+                        FilledIconButton(
+                            onClick = { showSortMenu = true },
+                            shape = CircleShape,
+                            colors = IconButtonDefaults.filledIconButtonColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                contentColor = MaterialTheme.colorScheme.onSurface
+                            ),
+                            modifier = Modifier.size(48.dp)
+                        ) {
+                            Icon(Icons.Default.SortByAlpha, "Sort queue", modifier = Modifier.size(22.dp))
+                        }
+                        DropdownMenu(
+                            expanded = showSortMenu,
+                            onDismissRequest = { showSortMenu = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Title A-Z") },
+                                onClick = {
+                                    onSortQueue(true)
+                                    showSortMenu = false
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Title Z-A") },
+                                onClick = {
+                                    onSortQueue(false)
+                                    showSortMenu = false
+                                }
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    FilledIconButton(
+                        onClick = onBackToPlayer,
+                        shape = CircleShape,
+                        colors = IconButtonDefaults.filledIconButtonColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            contentColor = MaterialTheme.colorScheme.onSurface
+                        ),
+                        modifier = Modifier.size(48.dp)
+                    ) {
+                        Icon(Icons.Rounded.MusicNote, "Now Playing", modifier = Modifier.size(24.dp))
+                    }
                 }
             }
             
@@ -1335,6 +1375,14 @@ private fun GestureQueueView(
                                         modifier = Modifier.size(16.dp)
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
+                                }
+
+                                IconButton(onClick = { onRemoveSong(song) }) {
+                                    Icon(
+                                        imageVector = Icons.Default.Delete,
+                                        contentDescription = "Remove from queue",
+                                        tint = onSurfaceVariantColor
+                                    )
                                 }
                             }
                         }

@@ -116,6 +116,8 @@ fun PlayerSheetContent(
                     queue = currentQueue,
                     currentSong = currentSong,
                     onSongClick = { song -> viewModel.playQueue(currentQueue, song) },
+                    onRemoveSong = { song -> viewModel.removeFromQueue(song.id) },
+                    onSortQueue = { ascending -> viewModel.sortQueue(ascending) },
                     onLoadMore = onLoadMore,
                     isLoadingMore = isLoadingMore,
                     onCollapse = onCollapse,
@@ -744,6 +746,8 @@ private fun ExpressiveQueueView(
     queue: List<Song>,
     currentSong: Song?,
     onSongClick: (Song) -> Unit,
+    onRemoveSong: (Song) -> Unit,
+    onSortQueue: (Boolean) -> Unit,
     onLoadMore: () -> Unit,
     isLoadingMore: Boolean,
     onCollapse: () -> Unit,
@@ -757,6 +761,7 @@ private fun ExpressiveQueueView(
     stableShapes: IconButtonShapes
 ) {
     val primaryContainerColor = MaterialTheme.colorScheme.primaryContainer
+    var showSortMenu by remember { mutableStateOf(false) }
     
     Box(
         modifier = Modifier
@@ -810,17 +815,54 @@ private fun ExpressiveQueueView(
                 }
             }
             
-            // Back to player button - static shape
-            FilledIconButton(
-                onClick = onBackToPlayer,
-                shape = CircleShape,
-                colors = IconButtonDefaults.filledIconButtonColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    contentColor = MaterialTheme.colorScheme.onSurface
-                ),
-                modifier = Modifier.size(48.dp)
-            ) {
-                Icon(Icons.Rounded.MusicNote, "Now Playing", modifier = Modifier.size(24.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box {
+                    FilledIconButton(
+                        onClick = { showSortMenu = true },
+                        shape = CircleShape,
+                        colors = IconButtonDefaults.filledIconButtonColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            contentColor = MaterialTheme.colorScheme.onSurface
+                        ),
+                        modifier = Modifier.size(48.dp)
+                    ) {
+                        Icon(Icons.Default.SortByAlpha, "Sort queue", modifier = Modifier.size(22.dp))
+                    }
+                    DropdownMenu(
+                        expanded = showSortMenu,
+                        onDismissRequest = { showSortMenu = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Title A-Z") },
+                            onClick = {
+                                onSortQueue(true)
+                                showSortMenu = false
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Title Z-A") },
+                            onClick = {
+                                onSortQueue(false)
+                                showSortMenu = false
+                            }
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                // Back to player button - static shape
+                FilledIconButton(
+                    onClick = onBackToPlayer,
+                    shape = CircleShape,
+                    colors = IconButtonDefaults.filledIconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        contentColor = MaterialTheme.colorScheme.onSurface
+                    ),
+                    modifier = Modifier.size(48.dp)
+                ) {
+                    Icon(Icons.Rounded.MusicNote, "Now Playing", modifier = Modifier.size(24.dp))
+                }
             }
         }
         
@@ -1093,6 +1135,14 @@ private fun ExpressiveQueueView(
                                         modifier = Modifier.size(16.dp)
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
+                                }
+
+                                IconButton(onClick = { onRemoveSong(song) }) {
+                                    Icon(
+                                        imageVector = Icons.Default.Delete,
+                                        contentDescription = "Remove from queue",
+                                        tint = onSurfaceVariantColor
+                                    )
                                 }
                             }
                         }

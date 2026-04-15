@@ -97,6 +97,20 @@ class PlaylistRepository(private val context: Context) {
         )
         savePlaylist(updatedPlaylist)
     }
+
+    suspend fun sortPlaylistSongs(playlistId: String, ascending: Boolean = true) = withContext(Dispatchers.IO) {
+        val currentList = _userPlaylists.value
+        val playlist = currentList.find { it.id == playlistId } ?: return@withContext
+
+        val sortedSongs = if (ascending) {
+            playlist.songs.sortedBy { it.title.lowercase() }
+        } else {
+            playlist.songs.sortedByDescending { it.title.lowercase() }
+        }
+
+        val updatedPlaylist = playlist.copy(songs = sortedSongs)
+        savePlaylist(updatedPlaylist)
+    }
     
     suspend fun deletePlaylist(playlistId: String) = withContext(Dispatchers.IO) {
         val file = File(playlistDir, "$playlistId.json")
