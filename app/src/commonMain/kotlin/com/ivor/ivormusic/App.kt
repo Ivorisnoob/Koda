@@ -2,16 +2,13 @@ package com.ivor.ivormusic
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -26,21 +23,12 @@ fun App() {
 
     MaterialTheme {
         Surface(modifier = Modifier.fillMaxSize()) {
-            Scaffold(
-                topBar = {
-                    TopAppBar(
-                        title = { Text("IvorMusic") }
-                    )
-                }
-            ) { innerPadding ->
-                DesktopContent(
-                    message = message,
-                    onShowLibrary = { message = "Library coming soon" },
-                    onShowDownloads = { message = "Downloads coming soon" },
-                    onShowSettings = { message = "Settings coming soon" },
-                    contentPadding = innerPadding
-                )
-            }
+            DesktopContent(
+                message = message,
+                onShowLibrary = { message = "Library coming soon" },
+                onShowDownloads = { message = "Downloads coming soon" },
+                onShowSettings = { message = "Settings coming soon" }
+            )
         }
     }
 }
@@ -51,18 +39,21 @@ private fun DesktopContent(
     onShowLibrary: () -> Unit,
     onShowDownloads: () -> Unit,
     onShowSettings: () -> Unit,
-    contentPadding: PaddingValues,
 ) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(contentPadding)
             .padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Text(
-            text = "Desktop preview",
+            text = "IvorMusic",
             style = MaterialTheme.typography.headlineMedium
+        )
+
+        Text(
+            text = "Desktop preview",
+            style = MaterialTheme.typography.titleMedium
         )
 
         Text(
