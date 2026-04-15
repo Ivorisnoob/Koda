@@ -30,9 +30,20 @@ jobs:
     - name: Build Debug APK
       run: ./gradlew assembleDebug
 
-    - name: Upload Debug APK
+    - name: Upload ABI Split Debug APKs
       uses: actions/upload-artifact@v4
       with:
-        name: app-debug
-        path: app/build/outputs/apk/debug/*.apk
+        name: app-debug-splits
+        path: |
+          app/build/outputs/apk/debug/*-arm64-v8a-debug.apk
+          app/build/outputs/apk/debug/*-armeabi-v7a-debug.apk
+        if-no-files-found: error
+        retention-days: 14
+
+    - name: Upload Universal Debug APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: app-debug-universal
+        path: app/build/outputs/apk/debug/*-universal-debug.apk
+        if-no-files-found: error
         retention-days: 14
