@@ -28,10 +28,16 @@ jobs:
             artifact_name: windows-desktop-distributable
             artifact_path: app/build/compose/binaries/main-release/**
 
-          - platform: macOS Desktop
+          - platform: macOS Desktop (Apple Silicon)
             os: macos-latest
             gradle_task: :app:createReleaseDistributable
-            artifact_name: macos-desktop-distributable
+            artifact_name: macos-desktop-arm64-distributable
+            artifact_path: app/build/compose/binaries/main-release/**
+
+          - platform: macOS Desktop (Intel)
+            os: macos-13
+            gradle_task: :app:createReleaseDistributable
+            artifact_name: macos-desktop-x64-distributable
             artifact_path: app/build/compose/binaries/main-release/**
 
           - platform: Linux Desktop
@@ -79,4 +85,62 @@ jobs:
           name: ${{ matrix.artifact_name }}
           path: ${{ matrix.artifact_path }}
           if-no-files-found: warn
+          retention-days: 14
+
+  macos-universal:
+    name: macOS Desktop (Universal)
+    runs-on: macos-latest
+    needs: build
+    if: needs.build.result == 'success'
+
+    steps:
+      - name: Download Apple Silicon distributable
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-desktop-arm64-distributable
+          path: artifacts/arm64
+
+      - name: Download Intel distributable
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-desktop-x64-distributable
+          path: artifacts/x64
+
+      - name: Create universal macOS app bundle
+        run: |
+          set -euo pipefail
+
+          ARM_APP=$(find artifacts/arm64 -name '*.app' -type d | head -n 1)
+          X64_APP=$(find artifacts/x64 -name '*.app' -type d | head -n 1)
+
+          if [ -z "$ARM_APP" ] || [ -z "$X64_APP" ]; then
+            echo "Could not find app bundles in downloaded artifacts"
+            exit 1
+          fi
+
+          mkdir -p universal
+          cp -R "$ARM_APP" "universal/"
+          UNIVERSAL_APP="universal/$(basename "$ARM_APP")"
+
+          while IFS= read -r -d '' ARM_FILE; do
+            REL_PATH="${ARM_FILE#${ARM_APP}/}"
+            X64_FILE="${X64_APP}/${REL_PATH}"
+            UNIVERSAL_FILE="${UNIVERSAL_APP}/${REL_PATH}"
+
+            if [ ! -f "$X64_FILE" ]; then
+              continue
+            fi
+
+            if file "$ARM_FILE" | grep -q 'Mach-O'; then
+              lipo -create "$ARM_FILE" "$X64_FILE" -output "$UNIVERSAL_FILE"
+            fi
+          done < <(find "$ARM_APP" -type f -print0)
+
+          ditto -c -k --sequesterRsrc --keepParent "$UNIVERSAL_APP" universal/macos-desktop-universal.zip
+
+      - name: Upload universal macOS distributable
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-desktop-universal
+          path: universal/macos-desktop-universal.zip
           retention-days: 14
