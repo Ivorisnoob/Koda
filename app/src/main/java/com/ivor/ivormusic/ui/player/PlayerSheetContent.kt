@@ -7,6 +7,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -37,6 +38,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.Player
 import coil.compose.AsyncImage
@@ -117,6 +119,7 @@ fun PlayerSheetContent(
                     currentSong = currentSong,
                     onSongClick = { song -> viewModel.playQueue(currentQueue, song) },
                     onRemoveSong = { song -> viewModel.removeFromQueue(song.id) },
+                    onMoveSong = { fromIndex, toIndex -> viewModel.moveSongInQueue(fromIndex, toIndex) },
                     onSortQueue = { ascending -> viewModel.sortQueue(ascending) },
                     onLoadMore = onLoadMore,
                     isLoadingMore = isLoadingMore,
@@ -747,6 +750,7 @@ private fun ExpressiveQueueView(
     currentSong: Song?,
     onSongClick: (Song) -> Unit,
     onRemoveSong: (Song) -> Unit,
+    onMoveSong: (Int, Int) -> Unit,
     onSortQueue: (Boolean) -> Unit,
     onLoadMore: () -> Unit,
     isLoadingMore: Boolean,
@@ -762,6 +766,9 @@ private fun ExpressiveQueueView(
 ) {
     val primaryContainerColor = MaterialTheme.colorScheme.primaryContainer
     var showSortMenu by remember { mutableStateOf(false) }
+    var draggingIndex by remember { mutableIntStateOf(-1) }
+    var dragOffsetY by remember { mutableFloatStateOf(0f) }
+    val dragStepPx = with(LocalDensity.current) { 72.dp.toPx() }
     
     Box(
         modifier = Modifier
@@ -1144,6 +1151,43 @@ private fun ExpressiveQueueView(
                                         tint = onSurfaceVariantColor
                                     )
                                 }
+
+                                Icon(
+                                    imageVector = Icons.Default.DragHandle,
+                                    contentDescription = "Reorder queue item",
+                                    tint = onSurfaceVariantColor,
+                                    modifier = Modifier
+                                        .pointerInput(queue.size) {
+                                            detectDragGesturesAfterLongPress(
+                                                onDragStart = {
+                                                    draggingIndex = index
+                                                    dragOffsetY = 0f
+                                                },
+                                                onDragEnd = {
+                                                    draggingIndex = -1
+                                                    dragOffsetY = 0f
+                                                },
+                                                onDragCancel = {
+                                                    draggingIndex = -1
+                                                    dragOffsetY = 0f
+                                                }
+                                            ) { change, dragAmount ->
+                                                change.consume()
+                                                if (draggingIndex !in queue.indices) return@detectDragGesturesAfterLongPress
+
+                                                dragOffsetY += dragAmount.y
+                                                if (dragOffsetY > dragStepPx && draggingIndex < queue.lastIndex) {
+                                                    onMoveSong(draggingIndex, draggingIndex + 1)
+                                                    draggingIndex += 1
+                                                    dragOffsetY = 0f
+                                                } else if (dragOffsetY < -dragStepPx && draggingIndex > 0) {
+                                                    onMoveSong(draggingIndex, draggingIndex - 1)
+                                                    draggingIndex -= 1
+                                                    dragOffsetY = 0f
+                                                }
+                                            }
+                                        }
+                                )
                             }
                         }
                     }

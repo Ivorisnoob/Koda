@@ -231,6 +231,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     suspend fun sortLocalPlaylist(playlistId: String, ascending: Boolean) {
         playlistRepository.sortPlaylistSongs(playlistId, ascending)
     }
+
+    suspend fun moveSongInLocalPlaylist(playlistId: String, fromIndex: Int, toIndex: Int) {
+        playlistRepository.moveSongInPlaylist(playlistId, fromIndex, toIndex)
+    }
     
 
     

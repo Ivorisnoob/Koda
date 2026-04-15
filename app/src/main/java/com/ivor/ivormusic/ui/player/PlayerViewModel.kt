@@ -566,6 +566,41 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         _currentSong.value = sortedQueue.find { it.id == currentSongId } ?: sortedQueue.firstOrNull()
     }
 
+    fun moveSongInQueue(fromIndex: Int, toIndex: Int) {
+        val queue = _currentQueue.value
+        if (queue.size < 2) return
+        if (fromIndex == toIndex) return
+        if (fromIndex !in queue.indices || toIndex !in queue.indices) return
+
+        val currentSongId = _currentSong.value?.id
+        val reorderedQueue = queue.toMutableList().apply {
+            val movedSong = removeAt(fromIndex)
+            add(toIndex, movedSong)
+        }
+        _currentQueue.value = reorderedQueue
+
+        controller?.let { player ->
+            val currentIndex = currentSongId
+                ?.let { id -> reorderedQueue.indexOfFirst { it.id == id } }
+                ?.takeIf { it >= 0 }
+                ?: 0
+            val currentPosition = player.currentPosition.coerceAtLeast(0L)
+            val shouldPlay = player.isPlaying || _playWhenReady.value
+
+            player.setMediaItems(
+                reorderedQueue.map { createMediaItem(it) },
+                currentIndex,
+                currentPosition
+            )
+            player.prepare()
+            if (shouldPlay) {
+                player.play()
+            }
+        }
+
+        _currentSong.value = reorderedQueue.find { it.id == currentSongId } ?: reorderedQueue.firstOrNull()
+    }
+
     private fun createMediaItem(song: Song): MediaItem {
         return if (song.source == com.ivor.ivormusic.data.SongSource.LOCAL && song.uri != null) {
             // For local songs, we still need to set mediaId for proper tracking

@@ -6,9 +6,11 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -36,6 +38,7 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.ivor.ivormusic.data.PlaylistDisplayItem
@@ -705,6 +708,8 @@ fun PlaylistDetailScreen(
     var searchQuery by remember { mutableStateOf("") }
     var isSearchActive by remember { mutableStateOf(false) }
     var showSortMenu by remember { mutableStateOf(false) }
+    var draggingSongId by remember { mutableStateOf<String?>(null) }
+    var dragOffsetY by remember { mutableFloatStateOf(0f) }
 
     // Scroll State for FAB and App Bar
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
@@ -934,7 +939,7 @@ fun PlaylistDetailScreen(
                         }
                     }
                 } else {
-                    items(filteredSongs) { song ->
+                    itemsIndexed(filteredSongs, key = { _, song -> "playlist_${song.id}" }) { _, song ->
                         SongListItem(
                             song = song, 
                             onClick = { onPlayQueue(filteredSongs, song) },
@@ -953,6 +958,52 @@ fun PlaylistDetailScreen(
                                             contentDescription = "Remove from playlist"
                                         )
                                     }
+                                    Icon(
+                                        imageVector = Icons.Rounded.DragHandle,
+                                        contentDescription = "Reorder playlist item",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.pointerInput(songs, searchQuery) {
+                                            detectDragGesturesAfterLongPress(
+                                                onDragStart = {
+                                                    draggingSongId = song.id
+                                                    dragOffsetY = 0f
+                                                },
+                                                onDragEnd = {
+                                                    draggingSongId = null
+                                                    dragOffsetY = 0f
+                                                },
+                                                onDragCancel = {
+                                                    draggingSongId = null
+                                                    dragOffsetY = 0f
+                                                }
+                                            ) { change, dragAmount ->
+                                                change.consume()
+                                                if (searchQuery.isNotBlank()) return@detectDragGesturesAfterLongPress
+
+                                                val activeSongId = draggingSongId ?: return@detectDragGesturesAfterLongPress
+                                                val fromIndex = songs.indexOfFirst { it.id == activeSongId }
+                                                if (fromIndex == -1) return@detectDragGesturesAfterLongPress
+
+                                                val dragStepPx = 72.dp.toPx()
+                                                dragOffsetY += dragAmount.y
+                                                if (dragOffsetY > dragStepPx && fromIndex < songs.lastIndex) {
+                                                    coroutineScope.launch {
+                                                        viewModel.moveSongInLocalPlaylist(playlist.id, fromIndex, fromIndex + 1)
+                                                        songs = viewModel.fetchPlaylistSongs(playlist.id)
+                                                        draggingSongId = songs.getOrNull(fromIndex + 1)?.id
+                                                    }
+                                                    dragOffsetY = 0f
+                                                } else if (dragOffsetY < -dragStepPx && fromIndex > 0) {
+                                                    coroutineScope.launch {
+                                                        viewModel.moveSongInLocalPlaylist(playlist.id, fromIndex, fromIndex - 1)
+                                                        songs = viewModel.fetchPlaylistSongs(playlist.id)
+                                                        draggingSongId = songs.getOrNull(fromIndex - 1)?.id
+                                                    }
+                                                    dragOffsetY = 0f
+                                                }
+                                            }
+                                        }
+                                    )
                                 }
                             } else null
                         )

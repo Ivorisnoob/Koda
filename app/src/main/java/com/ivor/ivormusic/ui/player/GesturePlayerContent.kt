@@ -12,6 +12,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
@@ -122,6 +123,7 @@ fun GesturePlayerSheetContent(
                     currentSong = currentSong,
                     onSongClick = { song -> viewModel.playQueue(currentQueue, song) },
                     onRemoveSong = { song -> viewModel.removeFromQueue(song.id) },
+                    onMoveSong = { fromIndex, toIndex -> viewModel.moveSongInQueue(fromIndex, toIndex) },
                     onSortQueue = { ascending -> viewModel.sortQueue(ascending) },
                     onCollapse = onCollapse,
                     onBackToPlayer = { showQueue = false },
@@ -1014,6 +1016,7 @@ private fun GestureQueueView(
     currentSong: Song?,
     onSongClick: (Song) -> Unit,
     onRemoveSong: (Song) -> Unit,
+    onMoveSong: (Int, Int) -> Unit,
     onSortQueue: (Boolean) -> Unit,
     onCollapse: () -> Unit,
     onBackToPlayer: () -> Unit,
@@ -1027,6 +1030,9 @@ private fun GestureQueueView(
     onSurfaceVariantColor: Color
 ) {
     var showSortMenu by remember { mutableStateOf(false) }
+    var draggingIndex by remember { mutableIntStateOf(-1) }
+    var dragOffsetY by remember { mutableFloatStateOf(0f) }
+    val dragStepPx = with(LocalDensity.current) { 72.dp.toPx() }
     // Guard against invalid dimensions during transitions
     BoxWithConstraints(
         modifier = Modifier
@@ -1384,6 +1390,42 @@ private fun GestureQueueView(
                                         tint = onSurfaceVariantColor
                                     )
                                 }
+
+                                Icon(
+                                    imageVector = Icons.Default.DragHandle,
+                                    contentDescription = "Reorder queue item",
+                                    tint = onSurfaceVariantColor,
+                                    modifier = Modifier.pointerInput(queue.size) {
+                                        detectDragGesturesAfterLongPress(
+                                            onDragStart = {
+                                                draggingIndex = index
+                                                dragOffsetY = 0f
+                                            },
+                                            onDragEnd = {
+                                                draggingIndex = -1
+                                                dragOffsetY = 0f
+                                            },
+                                            onDragCancel = {
+                                                draggingIndex = -1
+                                                dragOffsetY = 0f
+                                            }
+                                        ) { change, dragAmount ->
+                                            change.consume()
+                                            if (draggingIndex !in queue.indices) return@detectDragGesturesAfterLongPress
+
+                                            dragOffsetY += dragAmount.y
+                                            if (dragOffsetY > dragStepPx && draggingIndex < queue.lastIndex) {
+                                                onMoveSong(draggingIndex, draggingIndex + 1)
+                                                draggingIndex += 1
+                                                dragOffsetY = 0f
+                                            } else if (dragOffsetY < -dragStepPx && draggingIndex > 0) {
+                                                onMoveSong(draggingIndex, draggingIndex - 1)
+                                                draggingIndex -= 1
+                                                dragOffsetY = 0f
+                                            }
+                                        }
+                                    }
+                                )
                             }
                         }
                     }
