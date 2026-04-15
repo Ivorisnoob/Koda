@@ -1,4 +1,4 @@
-name: Build Debug APK
+name: Cross-Platform Build
 
 on:
   push:
@@ -11,28 +11,73 @@ env:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
-    
+    name: ${{ matrix.platform }} (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: Android
+            os: ubuntu-latest
+            gradle_task: :app:assembleDebug
+            artifact_name: android-debug-apk
+            artifact_path: app/build/outputs/apk/debug/*.apk
+
+          - platform: Windows Desktop
+            os: windows-latest
+            gradle_task: :app:packageReleaseMsi
+            artifact_name: windows-msi
+            artifact_path: app/build/compose/binaries/main-release/msi/*.msi
+
+          - platform: macOS Desktop
+            os: macos-latest
+            gradle_task: :app:packageReleaseDmg
+            artifact_name: macos-dmg
+            artifact_path: app/build/compose/binaries/main-release/dmg/*.dmg
+
+          - platform: Linux Desktop
+            os: ubuntu-latest
+            gradle_task: :app:packageReleaseDeb
+            artifact_name: linux-deb
+            artifact_path: app/build/compose/binaries/main-release/deb/*.deb
+
+          - platform: iOS Framework
+            os: macos-latest
+            gradle_task: :app:linkDebugFrameworkIosSimulatorArm64
+            artifact_name: ios-framework
+            artifact_path: app/build/bin/iosSimulatorArm64/debugFramework/*.framework/**
+
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Set up JDK 17
-      uses: actions/setup-java@v4
-      with:
-        java-version: '17'
-        distribution: 'temurin'
-        cache: gradle
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
 
-    - name: Grant execute permission for gradlew
-      run: chmod +x gradlew
+      - name: Set up Android SDK
+        if: matrix.platform == 'Android'
+        uses: android-actions/setup-android@v3
 
-    - name: Build Debug APK
-      run: ./gradlew assembleDebug
+      - name: Grant execute permission for gradlew
+        if: runner.os != 'Windows'
+        run: chmod +x gradlew
 
-    - name: Upload Debug APK
-      uses: actions/upload-artifact@v4
-      with:
-        name: app-debug
-        path: app/build/outputs/apk/debug/*.apk
-        retention-days: 14
+      - name: Build ${{ matrix.platform }} on Windows
+        if: runner.os == 'Windows'
+        run: .\gradlew.bat ${{ matrix.gradle_task }}
+
+      - name: Build ${{ matrix.platform }}
+        if: runner.os != 'Windows'
+        run: ./gradlew ${{ matrix.gradle_task }}
+
+      - name: Upload ${{ matrix.platform }} artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.artifact_path }}
+          if-no-files-found: warn
+          retention-days: 14
