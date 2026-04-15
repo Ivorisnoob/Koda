@@ -35,7 +35,7 @@ jobs:
             artifact_path: app/build/compose/binaries/main-release/**
 
           - platform: macOS Desktop (Intel)
-            os: macos-13
+            os: macos-15-intel
             gradle_task: :app:createReleaseDistributable
             artifact_name: macos-desktop-x64-distributable
             artifact_path: app/build/compose/binaries/main-release/**
