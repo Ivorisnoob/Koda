@@ -24,21 +24,21 @@ jobs:
 
           - platform: Windows Desktop
             os: windows-latest
-            gradle_task: :app:packageReleaseMsi
-            artifact_name: windows-msi
-            artifact_path: app/build/compose/binaries/main-release/msi/*.msi
+            gradle_task: :app:createReleaseDistributable
+            artifact_name: windows-desktop-distributable
+            artifact_path: app/build/compose/binaries/main-release/**
 
           - platform: macOS Desktop
             os: macos-latest
-            gradle_task: :app:packageReleaseDmg
-            artifact_name: macos-dmg
-            artifact_path: app/build/compose/binaries/main-release/dmg/*.dmg
+            gradle_task: :app:createReleaseDistributable
+            artifact_name: macos-desktop-distributable
+            artifact_path: app/build/compose/binaries/main-release/**
 
           - platform: Linux Desktop
             os: ubuntu-latest
-            gradle_task: :app:packageReleaseDeb
-            artifact_name: linux-deb
-            artifact_path: app/build/compose/binaries/main-release/deb/*.deb
+            gradle_task: :app:createReleaseDistributable
+            artifact_name: linux-desktop-distributable
+            artifact_path: app/build/compose/binaries/main-release/**
 
           - platform: iOS Framework
             os: macos-latest
