@@ -42,9 +42,9 @@ jobs:
 
           - platform: iOS Framework
             os: macos-latest
-            gradle_task: :app:linkDebugFrameworkIosSimulatorArm64
+            gradle_task: :app:assembleSharedXCFramework
             artifact_name: ios-framework
-            artifact_path: app/build/bin/iosSimulatorArm64/debugFramework/*.framework/**
+            artifact_path: app/build/XCFrameworks/**/shared.xcframework/**
 
     steps:
       - name: Checkout code

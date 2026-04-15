@@ -20,21 +20,31 @@ kotlin {
 
     jvm("desktop")
 
-    iosX64()
-    iosArm64()
-    iosSimulatorArm64()
-    listOf(iosX64(), iosArm64(), iosSimulatorArm64(), macosX64(), macosArm64()).forEach {
-        it.binaries.framework {
+    val iosTargets = listOf(
+        iosX64(),
+        iosArm64(),
+        iosSimulatorArm64()
+    )
+    val macosTargets = listOf(
+        macosX64(),
+        macosArm64()
+    )
+    val xcf = XCFramework("shared")
+
+    iosTargets.forEach { target ->
+        target.binaries.framework {
+            baseName = "shared"
+            isStatic = true
+            xcf.add(this)
+        }
+    }
+
+    macosTargets.forEach { target ->
+        target.binaries.framework {
             baseName = "shared"
             isStatic = true
         }
     }
-
-    macosX64()
-    macosArm64()
-
-
-
 
     sourceSets {
         val desktopMain by getting
