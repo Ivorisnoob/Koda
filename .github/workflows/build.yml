@@ -2,12 +2,11 @@ name: Cross-Platform Build
 
 on:
   push:
-    branches: [ main, master, develop ]
   pull_request:
-    branches: [ main, master, develop ]
+  workflow_dispatch:
 
-env:
-  TELEGRAM_CHAT_ID: "@ivorisnoob_projects"
+permissions:
+  contents: read
 
 jobs:
   build:
