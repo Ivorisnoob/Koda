@@ -44,6 +44,7 @@ import com.ivor.ivormusic.ui.artist.ArtistScreen
 import com.ivor.ivormusic.ui.components.ExpressivePullToRefresh
 import androidx.compose.foundation.ExperimentalFoundationApi
 import com.ivor.ivormusic.ui.home.HomeViewModel
+import kotlinx.coroutines.launch
 
 /**
  * The Main Library Navigation Hub.
@@ -696,9 +697,9 @@ fun PlaylistDetailScreen(
     isAlbum: Boolean = false
 ) {
     var songs by remember { mutableStateOf(preloadedSongs ?: emptyList()) }
-    val isLoading by viewModel.isLoading.collectAsState()
     val isFetching = remember { mutableStateOf(songs.isEmpty()) }
     val isLocalPlaylist = remember(playlist.id) { viewModel.isLocalPlaylist(playlist.id) }
+    val coroutineScope = rememberCoroutineScope()
     
     // Search State
     var searchQuery by remember { mutableStateOf("") }
@@ -726,7 +727,7 @@ fun PlaylistDetailScreen(
         }
     }
 
-    LaunchedEffect(playlist.id, isLocalPlaylist, isLoading) {
+    LaunchedEffect(playlist.id, isLocalPlaylist) {
         if (isLocalPlaylist) {
             songs = viewModel.fetchPlaylistSongs(playlist.id)
         }
@@ -770,14 +771,20 @@ fun PlaylistDetailScreen(
                                 DropdownMenuItem(
                                     text = { Text("Title A-Z") },
                                     onClick = {
-                                        viewModel.sortLocalPlaylist(playlist.id, ascending = true)
+                                        coroutineScope.launch {
+                                            viewModel.sortLocalPlaylist(playlist.id, ascending = true)
+                                            songs = viewModel.fetchPlaylistSongs(playlist.id)
+                                        }
                                         showSortMenu = false
                                     }
                                 )
                                 DropdownMenuItem(
                                     text = { Text("Title Z-A") },
                                     onClick = {
-                                        viewModel.sortLocalPlaylist(playlist.id, ascending = false)
+                                        coroutineScope.launch {
+                                            viewModel.sortLocalPlaylist(playlist.id, ascending = false)
+                                            songs = viewModel.fetchPlaylistSongs(playlist.id)
+                                        }
                                         showSortMenu = false
                                     }
                                 )
@@ -934,7 +941,12 @@ fun PlaylistDetailScreen(
                             trailingContent = if (isLocalPlaylist) {
                                 {
                                     IconButton(
-                                        onClick = { viewModel.removeSongFromLocalPlaylist(playlist.id, song.id) }
+                                        onClick = {
+                                            coroutineScope.launch {
+                                                viewModel.removeSongFromLocalPlaylist(playlist.id, song.id)
+                                                songs = viewModel.fetchPlaylistSongs(playlist.id)
+                                            }
+                                        }
                                     ) {
                                         Icon(
                                             imageVector = Icons.Rounded.Delete,

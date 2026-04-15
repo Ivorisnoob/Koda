@@ -224,16 +224,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         return playlistRepository.userPlaylists.value.any { it.id == playlistId }
     }
 
-    fun removeSongFromLocalPlaylist(playlistId: String, songId: String) {
-        viewModelScope.launch {
-            playlistRepository.removeSongFromPlaylist(playlistId, songId)
-        }
+    suspend fun removeSongFromLocalPlaylist(playlistId: String, songId: String) {
+        playlistRepository.removeSongFromPlaylist(playlistId, songId)
     }
 
-    fun sortLocalPlaylist(playlistId: String, ascending: Boolean) {
-        viewModelScope.launch {
-            playlistRepository.sortPlaylistSongs(playlistId, ascending)
-        }
+    suspend fun sortLocalPlaylist(playlistId: String, ascending: Boolean) {
+        playlistRepository.sortPlaylistSongs(playlistId, ascending)
     }
     
 
