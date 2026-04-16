@@ -12,10 +12,12 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.animateItemPlacement
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -52,6 +54,7 @@ import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.data.LyricsResult
 import java.util.Locale
 import kotlin.math.absoluteValue
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
@@ -121,6 +124,9 @@ fun GesturePlayerSheetContent(
                     queue = currentQueue,
                     currentSong = currentSong,
                     onSongClick = { song -> viewModel.playQueue(currentQueue, song) },
+                    onRemoveSong = { song -> viewModel.removeFromQueue(song.id) },
+                    onSortQueue = { ascending -> viewModel.sortQueue(ascending) },
+                    onMoveSong = { from, to -> viewModel.moveQueueItem(from, to) },
                     onCollapse = onCollapse,
                     onBackToPlayer = { showQueue = false },
                     onLoadMore = onLoadMore,
@@ -1011,6 +1017,9 @@ private fun GestureQueueView(
     queue: List<Song>,
     currentSong: Song?,
     onSongClick: (Song) -> Unit,
+    onRemoveSong: (Song) -> Unit,
+    onSortQueue: (Boolean) -> Unit,
+    onMoveSong: (Int, Int) -> Unit,
     onCollapse: () -> Unit,
     onBackToPlayer: () -> Unit,
     onLoadMore: () -> Unit,
@@ -1022,6 +1031,10 @@ private fun GestureQueueView(
     onSurfaceColor: Color,
     onSurfaceVariantColor: Color
 ) {
+    var showSortMenu by remember { mutableStateOf(false) }
+    var draggingSongId by remember { mutableStateOf<String?>(null) }
+    var dragOffsetY by remember { mutableStateOf(0f) }
+    val dragThresholdPx = with(LocalDensity.current) { 56.dp.toPx() }
     // Guard against invalid dimensions during transitions
     BoxWithConstraints(
         modifier = Modifier
@@ -1078,16 +1091,51 @@ private fun GestureQueueView(
                     }
                 }
                 
-                FilledIconButton(
-                    onClick = onBackToPlayer,
-                    shape = CircleShape,
-                    colors = IconButtonDefaults.filledIconButtonColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        contentColor = MaterialTheme.colorScheme.onSurface
-                    ),
-                    modifier = Modifier.size(48.dp)
-                ) {
-                    Icon(Icons.Rounded.MusicNote, "Now Playing", modifier = Modifier.size(24.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box {
+                        FilledIconButton(
+                            onClick = { showSortMenu = true },
+                            shape = CircleShape,
+                            colors = IconButtonDefaults.filledIconButtonColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                contentColor = MaterialTheme.colorScheme.onSurface
+                            ),
+                            modifier = Modifier.size(48.dp)
+                        ) {
+                            Icon(Icons.Default.SortByAlpha, "Sort queue", modifier = Modifier.size(22.dp))
+                        }
+                        DropdownMenu(
+                            expanded = showSortMenu,
+                            onDismissRequest = { showSortMenu = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Title A-Z") },
+                                onClick = {
+                                    onSortQueue(true)
+                                    showSortMenu = false
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Title Z-A") },
+                                onClick = {
+                                    onSortQueue(false)
+                                    showSortMenu = false
+                                }
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    FilledIconButton(
+                        onClick = onBackToPlayer,
+                        shape = CircleShape,
+                        colors = IconButtonDefaults.filledIconButtonColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            contentColor = MaterialTheme.colorScheme.onSurface
+                        ),
+                        modifier = Modifier.size(48.dp)
+                    ) {
+                        Icon(Icons.Rounded.MusicNote, "Now Playing", modifier = Modifier.size(24.dp))
+                    }
                 }
             }
             
@@ -1217,9 +1265,19 @@ private fun GestureQueueView(
                     // Queue items
                     itemsIndexed(queue, key = { index, song -> "gesture_queue_${song.id}_$index" }) { index, song ->
                         val isCurrent = song.id == currentSong?.id
+                        val isDragging = draggingSongId == song.id
                         
                         Surface(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .offset {
+                                    IntOffset(
+                                        x = 0,
+                                        y = if (isDragging) dragOffsetY.roundToInt() else 0
+                                    )
+                                }
+                                .zIndex(if (isDragging) 2f else 0f)
+                                .animateItemPlacement(),
                             shape = RoundedCornerShape(20.dp),
                             color = if (isCurrent) primaryColor.copy(alpha = 0.12f) 
                                    else MaterialTheme.colorScheme.surfaceContainerLow,
@@ -1312,29 +1370,75 @@ private fun GestureQueueView(
                                 
                                 Spacer(modifier = Modifier.width(8.dp))
 
-                                // Download Status Icon
-                                if (isDownloading(song.id)) {
-                                    CircularWavyProgressIndicator(
-                                        modifier = Modifier.size(16.dp),
-                                        color = if (isCurrent) primaryColor else onSurfaceVariantColor
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                } else if (isDownloaded(song.id)) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    // Download Status Icon
+                                    if (isDownloading(song.id)) {
+                                        CircularWavyProgressIndicator(
+                                            modifier = Modifier.size(16.dp),
+                                            color = if (isCurrent) primaryColor else onSurfaceVariantColor
+                                        )
+                                    } else if (isDownloaded(song.id)) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.CheckCircle,
+                                            contentDescription = "Downloaded",
+                                            tint = if (isCurrent) primaryColor else onSurfaceVariantColor,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    } else if (isLocalOriginal(song)) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Smartphone,
+                                            contentDescription = "Local",
+                                            tint = if (isCurrent) primaryColor.copy(alpha = 0.7f) else onSurfaceVariantColor.copy(alpha = 0.7f),
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+
+                                    IconButton(onClick = { onRemoveSong(song) }) {
+                                        Icon(
+                                            imageVector = Icons.Default.Delete,
+                                            contentDescription = "Remove from queue",
+                                            tint = onSurfaceVariantColor
+                                        )
+                                    }
+
                                     Icon(
-                                        imageVector = Icons.Rounded.CheckCircle,
-                                        contentDescription = "Downloaded",
-                                        tint = if (isCurrent) primaryColor else onSurfaceVariantColor,
-                                        modifier = Modifier.size(18.dp)
+                                        imageVector = Icons.Rounded.DragHandle,
+                                        contentDescription = "Drag to reorder",
+                                        tint = onSurfaceVariantColor,
+                                        modifier = Modifier
+                                            .pointerInput(song.id, queue) {
+                                                detectDragGesturesAfterLongPress(
+                                                    onDragStart = {
+                                                        draggingSongId = song.id
+                                                        dragOffsetY = 0f
+                                                    },
+                                                    onDragCancel = {
+                                                        draggingSongId = null
+                                                        dragOffsetY = 0f
+                                                    },
+                                                    onDragEnd = {
+                                                        draggingSongId = null
+                                                        dragOffsetY = 0f
+                                                    }
+                                                ) { change, dragAmount ->
+                                                    change.consume()
+                                                    if (draggingSongId != song.id) return@detectDragGesturesAfterLongPress
+                                                    dragOffsetY += dragAmount.y
+                                                    if (abs(dragOffsetY) >= dragThresholdPx) {
+                                                        val currentIndex = queue.indexOfFirst { it.id == song.id }
+                                                        val direction = if (dragOffsetY > 0) 1 else -1
+                                                        val targetIndex = (currentIndex + direction).coerceIn(0, queue.lastIndex)
+                                                        if (currentIndex != -1 && targetIndex != currentIndex) {
+                                                            onMoveSong(currentIndex, targetIndex)
+                                                        }
+                                                        dragOffsetY = 0f
+                                                    }
+                                                }
+                                            }
                                     )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                } else if (isLocalOriginal(song)) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Smartphone,
-                                        contentDescription = "Local",
-                                        tint = if (isCurrent) primaryColor.copy(alpha = 0.7f) else onSurfaceVariantColor.copy(alpha = 0.7f),
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
                                 }
                             }
                         }

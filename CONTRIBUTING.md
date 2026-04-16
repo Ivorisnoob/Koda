@@ -23,6 +23,13 @@ First off, thank you for considering contributing to **Koda**! It's people like 
 - Follow the existing code style (Kotlin coding conventions).
 - Open a PR with a clear title and description.
 
+#### PR Troubleshooting (Codex)
+- If you see: **"Codex does not currently support updating PRs that are updated outside of Codex"**, create a **new PR** instead of trying to update the existing one.
+- Recommended flow:
+  1. Create a fresh branch from the latest `main`.
+  2. Cherry-pick or re-apply your commits.
+  3. Open a new PR with a short note linking the old PR for context.
+
 ## Development Setup
 
 1. **Clone the repo**: `git clone https://github.com/Ivorisnoob/Koda.git`

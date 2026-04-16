@@ -6,9 +6,11 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.animateItemPlacement
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -31,12 +33,15 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import coil.compose.AsyncImage
 import com.ivor.ivormusic.data.PlaylistDisplayItem
 import com.ivor.ivormusic.data.Song
@@ -44,6 +49,8 @@ import com.ivor.ivormusic.ui.artist.ArtistScreen
 import com.ivor.ivormusic.ui.components.ExpressivePullToRefresh
 import androidx.compose.foundation.ExperimentalFoundationApi
 import com.ivor.ivormusic.ui.home.HomeViewModel
+import kotlin.math.abs
+import kotlin.math.roundToInt
 
 /**
  * The Main Library Navigation Hub.
@@ -642,7 +649,12 @@ fun ExpressivePlaylistCard(
 }
 
 @Composable
-fun SongListItem(song: Song, onClick: () -> Unit) {
+fun SongListItem(
+    song: Song,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    trailingContent: (@Composable () -> Unit)? = null
+) {
     ListItem(
         headlineContent = { Text(song.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold) },
         supportingContent = { Text(song.artist, maxLines = 1, overflow = TextOverflow.Ellipsis) },
@@ -658,7 +670,8 @@ fun SongListItem(song: Song, onClick: () -> Unit) {
                     Box(contentAlignment = Alignment.Center) { Icon(Icons.Rounded.MusicNote, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
             }
         },
-        modifier = Modifier.clickable(onClick = onClick),
+        trailingContent = trailingContent,
+        modifier = modifier.clickable(onClick = onClick),
         colors = ListItemDefaults.colors(containerColor = Color.Transparent)
     )
 }
@@ -693,10 +706,15 @@ fun PlaylistDetailScreen(
     var songs by remember { mutableStateOf(preloadedSongs ?: emptyList()) }
     val isLoading by viewModel.isLoading.collectAsState()
     val isFetching = remember { mutableStateOf(songs.isEmpty()) }
+    val isLocalPlaylist = remember(playlist.id) { viewModel.isLocalPlaylist(playlist.id) }
     
     // Search State
     var searchQuery by remember { mutableStateOf("") }
     var isSearchActive by remember { mutableStateOf(false) }
+    var showSortMenu by remember { mutableStateOf(false) }
+    var draggingSongId by remember { mutableStateOf<String?>(null) }
+    var dragOffsetY by remember { mutableStateOf(0f) }
+    val dragThresholdPx = with(androidx.compose.ui.platform.LocalDensity.current) { 52.dp.toPx() }
 
     // Scroll State for FAB and App Bar
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
@@ -716,6 +734,12 @@ fun PlaylistDetailScreen(
             isFetching.value = true
             songs = viewModel.fetchPlaylistSongs(playlist.id)
             isFetching.value = false
+        }
+    }
+
+    LaunchedEffect(playlist.id, isLocalPlaylist, isLoading) {
+        if (isLocalPlaylist) {
+            songs = viewModel.fetchPlaylistSongs(playlist.id)
         }
     }
 
@@ -742,6 +766,36 @@ fun PlaylistDetailScreen(
                     }
                 },
                 actions = {
+                    if (isLocalPlaylist) {
+                        Box {
+                            IconButton(onClick = { showSortMenu = true }) {
+                                Icon(
+                                    imageVector = Icons.Rounded.SortByAlpha,
+                                    contentDescription = "Sort playlist"
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = showSortMenu,
+                                onDismissRequest = { showSortMenu = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("Title A-Z") },
+                                    onClick = {
+                                        viewModel.sortLocalPlaylist(playlist.id, ascending = true)
+                                        showSortMenu = false
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Title Z-A") },
+                                    onClick = {
+                                        viewModel.sortLocalPlaylist(playlist.id, ascending = false)
+                                        showSortMenu = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+
                     IconButton(onClick = { isSearchActive = !isSearchActive }) {
                         Icon(
                             imageVector = if (isSearchActive) Icons.Rounded.Close else Icons.Rounded.Search,
@@ -884,10 +938,77 @@ fun PlaylistDetailScreen(
                         }
                     }
                 } else {
-                    items(filteredSongs) { song ->
+                    items(filteredSongs, key = { it.id }) { song ->
+                        val isDragging = draggingSongId == song.id
                         SongListItem(
                             song = song, 
-                            onClick = { onPlayQueue(filteredSongs, song) }
+                            onClick = { onPlayQueue(filteredSongs, song) },
+                            modifier = Modifier
+                                .offset {
+                                    IntOffset(
+                                        x = 0,
+                                        y = if (isDragging) dragOffsetY.roundToInt() else 0
+                                    )
+                                }
+                                .zIndex(if (isDragging) 2f else 0f)
+                                .animateItemPlacement(),
+                            trailingContent = if (isLocalPlaylist) {
+                                {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        IconButton(
+                                            onClick = { viewModel.removeSongFromLocalPlaylist(playlist.id, song.id) }
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Rounded.Delete,
+                                                contentDescription = "Remove from playlist"
+                                            )
+                                        }
+                                        Icon(
+                                            imageVector = Icons.Rounded.DragHandle,
+                                            contentDescription = "Drag to reorder",
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.pointerInput(song.id, songs) {
+                                                detectDragGesturesAfterLongPress(
+                                                    onDragStart = {
+                                                        draggingSongId = song.id
+                                                        dragOffsetY = 0f
+                                                    },
+                                                    onDragCancel = {
+                                                        draggingSongId = null
+                                                        dragOffsetY = 0f
+                                                    },
+                                                    onDragEnd = {
+                                                        draggingSongId = null
+                                                        dragOffsetY = 0f
+                                                    }
+                                                ) { change, dragAmount ->
+                                                    change.consume()
+                                                    if (draggingSongId != song.id) return@detectDragGesturesAfterLongPress
+                                                    dragOffsetY += dragAmount.y
+
+                                                    if (abs(dragOffsetY) >= dragThresholdPx) {
+                                                        val fromIndex = songs.indexOfFirst { it.id == song.id }
+                                                        val direction = if (dragOffsetY > 0) 1 else -1
+                                                        val toIndex = (fromIndex + direction).coerceIn(0, songs.lastIndex)
+
+                                                        if (fromIndex != -1 && toIndex != fromIndex) {
+                                                            val mutableSongs = songs.toMutableList()
+                                                            val movedSong = mutableSongs.removeAt(fromIndex)
+                                                            mutableSongs.add(toIndex, movedSong)
+                                                            songs = mutableSongs
+                                                            viewModel.moveSongInLocalPlaylist(playlist.id, fromIndex, toIndex)
+                                                        }
+                                                        dragOffsetY = 0f
+                                                    }
+                                                }
+                                            }
+                                        )
+                                    }
+                                }
+                            } else null
                         )
                     }
                 }

@@ -27,12 +27,12 @@ jobs:
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
 
-    - name: Build Debug APK
+    - name: Build Debug APKs (v7a, v8a, universal)
       run: ./gradlew assembleDebug
 
-    - name: Upload Debug APK
+    - name: Upload Debug APKs
       uses: actions/upload-artifact@v4
       with:
-        name: app-debug
+        name: app-debug-abis
         path: app/build/outputs/apk/debug/*.apk
         retention-days: 14

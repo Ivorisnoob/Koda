@@ -500,6 +500,88 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         }
     }
 
+    fun removeFromQueue(songId: String) {
+        val queue = _currentQueue.value
+        val removeIndex = queue.indexOfFirst { it.id == songId }
+        if (removeIndex < 0) return
+
+        val updatedQueue = queue.toMutableList().apply { removeAt(removeIndex) }
+        _currentQueue.value = updatedQueue
+
+        controller?.let { player ->
+            if (removeIndex < player.mediaItemCount) {
+                player.removeMediaItem(removeIndex)
+            }
+        }
+
+        if (updatedQueue.isEmpty()) {
+            controller?.stop()
+            _currentSong.value = null
+            _isPlaying.value = false
+            _progress.value = 0L
+            _duration.value = 0L
+            return
+        }
+
+        if (_currentSong.value?.id == songId) {
+            val fallbackIndex = removeIndex.coerceAtMost(updatedQueue.lastIndex)
+            val fallbackSong = updatedQueue[fallbackIndex]
+            _currentSong.value = fallbackSong
+            updateCurrentSongLikedStatus()
+            fetchLyrics(fallbackSong)
+        }
+    }
+
+    fun sortQueue(ascending: Boolean) {
+        val queue = _currentQueue.value
+        if (queue.size < 2) return
+
+        val currentSongId = _currentSong.value?.id
+        val sortedQueue = if (ascending) {
+            queue.sortedBy { it.title.lowercase() }
+        } else {
+            queue.sortedByDescending { it.title.lowercase() }
+        }
+        _currentQueue.value = sortedQueue
+
+        controller?.let { player ->
+            val currentIndex = currentSongId
+                ?.let { id -> sortedQueue.indexOfFirst { it.id == id } }
+                ?.takeIf { it >= 0 }
+                ?: 0
+            val currentPosition = player.currentPosition.coerceAtLeast(0L)
+            val shouldPlay = player.isPlaying || _playWhenReady.value
+
+            player.setMediaItems(
+                sortedQueue.map { createMediaItem(it) },
+                currentIndex,
+                currentPosition
+            )
+            player.prepare()
+            if (shouldPlay) {
+                player.play()
+            }
+        }
+
+        _currentSong.value = sortedQueue.find { it.id == currentSongId } ?: sortedQueue.firstOrNull()
+    }
+
+    fun moveQueueItem(fromIndex: Int, toIndex: Int) {
+        val queue = _currentQueue.value
+        if (fromIndex !in queue.indices || toIndex !in queue.indices || fromIndex == toIndex) return
+
+        val mutableQueue = queue.toMutableList()
+        val movedSong = mutableQueue.removeAt(fromIndex)
+        mutableQueue.add(toIndex, movedSong)
+        _currentQueue.value = mutableQueue
+
+        controller?.let { player ->
+            if (fromIndex < player.mediaItemCount && toIndex < player.mediaItemCount) {
+                player.moveMediaItem(fromIndex, toIndex)
+            }
+        }
+    }
+
     private fun createMediaItem(song: Song): MediaItem {
         return if (song.source == com.ivor.ivormusic.data.SongSource.LOCAL && song.uri != null) {
             // For local songs, we still need to set mediaId for proper tracking

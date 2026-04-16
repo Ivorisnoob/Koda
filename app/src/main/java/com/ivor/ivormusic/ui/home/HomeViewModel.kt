@@ -219,6 +219,28 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
 
     }
+
+    fun isLocalPlaylist(playlistId: String): Boolean {
+        return playlistRepository.userPlaylists.value.any { it.id == playlistId }
+    }
+
+    fun removeSongFromLocalPlaylist(playlistId: String, songId: String) {
+        viewModelScope.launch {
+            playlistRepository.removeSongFromPlaylist(playlistId, songId)
+        }
+    }
+
+    fun sortLocalPlaylist(playlistId: String, ascending: Boolean) {
+        viewModelScope.launch {
+            playlistRepository.sortPlaylistSongs(playlistId, ascending)
+        }
+    }
+
+    fun moveSongInLocalPlaylist(playlistId: String, fromIndex: Int, toIndex: Int) {
+        viewModelScope.launch {
+            playlistRepository.moveSongInPlaylist(playlistId, fromIndex, toIndex)
+        }
+    }
     
 
     
