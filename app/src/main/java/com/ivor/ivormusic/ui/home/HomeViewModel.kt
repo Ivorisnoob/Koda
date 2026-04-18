@@ -410,6 +410,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun replaceLocalPlaylistSongs(playlistId: String, songs: List<Song>) {
+        viewModelScope.launch {
+            playlistRepository.replacePlaylistSongs(playlistId, songs)
+        }
+    }
+
     // Stats
     private val statsRepository = com.ivor.ivormusic.data.StatsRepository(application)
     private val _globalStats = MutableStateFlow(com.ivor.ivormusic.data.GlobalStats())

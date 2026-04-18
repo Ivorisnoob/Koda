@@ -875,8 +875,9 @@ fun PlaylistDetailScreen(
     var showEditDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var isReorderMode by remember { mutableStateOf(false) }
-    var draggingIndex by remember { mutableStateOf<Int?>(null) }
+    var draggingSongId by remember { mutableStateOf<String?>(null) }
     var dragOffsetY by remember { mutableFloatStateOf(0f) }
+    var reorderDirty by remember { mutableStateOf(false) }
     val density = androidx.compose.ui.platform.LocalDensity.current
     val itemHeightPx = with(density) { 72.dp.toPx() }
 
@@ -923,7 +924,13 @@ fun PlaylistDetailScreen(
                     }
                 },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(onClick = {
+                        if (reorderDirty) {
+                            viewModel.replaceLocalPlaylistSongs(resolvedPlaylist.id, songs)
+                            reorderDirty = false
+                        }
+                        onBack()
+                    }) {
                         Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back")
                     }
                 },
@@ -933,8 +940,12 @@ fun PlaylistDetailScreen(
                             onClick = {
                                 val enablingReorder = !isReorderMode
                                 isReorderMode = enablingReorder
-                                draggingIndex = null
+                                draggingSongId = null
                                 dragOffsetY = 0f
+                                if (!enablingReorder && reorderDirty) {
+                                    viewModel.replaceLocalPlaylistSongs(resolvedPlaylist.id, songs)
+                                    reorderDirty = false
+                                }
                                 if (enablingReorder) {
                                     isSearchActive = false
                                     searchQuery = ""
@@ -956,8 +967,12 @@ fun PlaylistDetailScreen(
                     IconButton(onClick = {
                         if (isReorderMode) {
                             isReorderMode = false
-                            draggingIndex = null
+                            draggingSongId = null
                             dragOffsetY = 0f
+                            if (reorderDirty) {
+                                viewModel.replaceLocalPlaylistSongs(resolvedPlaylist.id, songs)
+                                reorderDirty = false
+                            }
                         }
                         isSearchActive = !isSearchActive
                     }) {
@@ -974,7 +989,7 @@ fun PlaylistDetailScreen(
             )
         },
         floatingActionButton = {
-            if (filteredSongs.isNotEmpty()) {
+            if (filteredSongs.isNotEmpty() && !isReorderMode) {
                 ExtendedFloatingActionButton(
                     text = { Text("Play All") },
                     icon = { Icon(Icons.Rounded.PlayArrow, null) },
@@ -1051,15 +1066,30 @@ fun PlaylistDetailScreen(
                         )
 
                         if (isLocalPlaylist && isReorderMode) {
-                            Text(
-                                text = "Long-press and drag songs to change the playlist order",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                textAlign = TextAlign.Center,
+                            Surface(
+                                shape = RoundedCornerShape(20.dp),
+                                color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.75f),
                                 modifier = Modifier
                                     .padding(horizontal = 24.dp)
-                                    .padding(top = 12.dp)
-                            )
+                                    .padding(top = 16.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.DragHandle,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSecondaryContainer
+                                    )
+                                    Text(
+                                        text = "Reorder mode is on. Long-press a song and drag it anywhere in the playlist.",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                                    )
+                                }
+                            }
                         }
 
                         if (!resolvedPlaylist.description.isNullOrBlank()) {
@@ -1128,10 +1158,10 @@ fun PlaylistDetailScreen(
                 } else {
                     itemsIndexed(
                         items = filteredSongs,
-                        key = { index, song -> "playlist_${resolvedPlaylist.id}_${song.id}_$index" }
+                        key = { _, song -> "playlist_${resolvedPlaylist.id}_${song.id}" }
                     ) { index, song ->
                         val reorderEnabled = isLocalPlaylist && isReorderMode && searchQuery.isBlank()
-                        val isDragging = draggingIndex == index
+                        val isDragging = draggingSongId == song.id
 
                         SongListItem(
                             song = song,
@@ -1142,43 +1172,51 @@ fun PlaylistDetailScreen(
                                 .offset(y = if (isDragging) with(density) { dragOffsetY.toDp() } else 0.dp)
                                 .then(
                                     if (reorderEnabled) {
-                                        Modifier.pointerInput(song.id, songs.size) {
+                                        Modifier.pointerInput(song.id) {
                                             detectDragGesturesAfterLongPress(
                                                 onDragStart = {
-                                                    val currentIndex = songs.indexOfFirst { it.id == song.id }
-                                                    draggingIndex = if (currentIndex >= 0) currentIndex else index
+                                                    draggingSongId = song.id
                                                     dragOffsetY = 0f
                                                 },
                                                 onDragEnd = {
-                                                    draggingIndex = null
+                                                    draggingSongId = null
                                                     dragOffsetY = 0f
+                                                    if (reorderDirty) {
+                                                        viewModel.replaceLocalPlaylistSongs(resolvedPlaylist.id, songs)
+                                                        reorderDirty = false
+                                                    }
                                                 },
                                                 onDragCancel = {
-                                                    draggingIndex = null
+                                                    draggingSongId = null
                                                     dragOffsetY = 0f
+                                                    if (reorderDirty) {
+                                                        viewModel.replaceLocalPlaylistSongs(resolvedPlaylist.id, songs)
+                                                        reorderDirty = false
+                                                    }
                                                 },
                                                 onDrag = { change, dragAmount ->
                                                     change.consume()
-                                                    if (draggingIndex == null) return@detectDragGesturesAfterLongPress
+                                                    if (draggingSongId == null) return@detectDragGesturesAfterLongPress
                                                     dragOffsetY += dragAmount.y
-                                                    while (dragOffsetY > itemHeightPx && draggingIndex!! < songs.lastIndex) {
-                                                        val fromIndex = draggingIndex!!
+                                                    var activeIndex = songs.indexOfFirst { it.id == draggingSongId }
+                                                    while (dragOffsetY > itemHeightPx && activeIndex in 0 until songs.lastIndex) {
+                                                        val fromIndex = activeIndex
                                                         val toIndex = fromIndex + 1
                                                         songs = songs.toMutableList().apply {
                                                             add(toIndex, removeAt(fromIndex))
                                                         }
-                                                        viewModel.moveSongInLocalPlaylist(resolvedPlaylist.id, fromIndex, toIndex)
-                                                        draggingIndex = toIndex
+                                                        reorderDirty = true
+                                                        activeIndex = toIndex
                                                         dragOffsetY -= itemHeightPx
                                                     }
-                                                    while (dragOffsetY < -itemHeightPx && draggingIndex!! > 0) {
-                                                        val fromIndex = draggingIndex!!
+                                                    while (dragOffsetY < -itemHeightPx && activeIndex > 0) {
+                                                        val fromIndex = activeIndex
                                                         val toIndex = fromIndex - 1
                                                         songs = songs.toMutableList().apply {
                                                             add(toIndex, removeAt(fromIndex))
                                                         }
-                                                        viewModel.moveSongInLocalPlaylist(resolvedPlaylist.id, fromIndex, toIndex)
-                                                        draggingIndex = toIndex
+                                                        reorderDirty = true
+                                                        activeIndex = toIndex
                                                         dragOffsetY += itemHeightPx
                                                     }
                                                 }
@@ -1190,14 +1228,32 @@ fun PlaylistDetailScreen(
                                 ),
                             trailingContent = if (reorderEnabled) {
                                 {
-                                    Icon(
-                                        imageVector = Icons.Rounded.DragHandle,
-                                        contentDescription = "Drag to reorder",
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
+                                    Surface(
+                                        shape = RoundedCornerShape(14.dp),
+                                        color = if (isDragging) {
+                                            MaterialTheme.colorScheme.primaryContainer
+                                        } else {
+                                            MaterialTheme.colorScheme.surfaceContainerHighest
+                                        }
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.DragHandle,
+                                            contentDescription = "Drag to reorder",
+                                            tint = if (isDragging) {
+                                                MaterialTheme.colorScheme.onPrimaryContainer
+                                            } else {
+                                                MaterialTheme.colorScheme.onSurfaceVariant
+                                            },
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
+                                        )
+                                    }
                                 }
                             } else null,
-                            onClick = { onPlayQueue(filteredSongs, song) }
+                            onClick = {
+                                if (!reorderEnabled) {
+                                    onPlayQueue(filteredSongs, song)
+                                }
+                            }
                         )
                     }
                 }

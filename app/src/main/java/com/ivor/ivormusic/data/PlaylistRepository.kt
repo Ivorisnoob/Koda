@@ -114,6 +114,14 @@ class PlaylistRepository(private val context: Context) {
 
         savePlaylist(playlist.copy(songs = reorderedSongs))
     }
+
+    suspend fun replacePlaylistSongs(
+        playlistId: String,
+        songs: List<Song>
+    ) = withContext(Dispatchers.IO) {
+        val playlist = _userPlaylists.value.find { it.id == playlistId } ?: return@withContext
+        savePlaylist(playlist.copy(songs = songs))
+    }
     
     suspend fun deletePlaylist(playlistId: String) = withContext(Dispatchers.IO) {
         val file = File(playlistDir, "$playlistId.json")
