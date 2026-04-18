@@ -2,6 +2,7 @@ package com.ivor.ivormusic.ui.library
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
@@ -38,6 +39,7 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import coil.compose.AsyncImage
@@ -810,28 +812,109 @@ private fun EditPlaylistDialog(
 fun SongListItem(
     song: Song,
     modifier: Modifier = Modifier,
+    containerColor: Color = Color.Transparent,
+    tonalElevation: Dp = 0.dp,
+    shadowElevation: Dp = 0.dp,
+    shape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(0.dp),
     trailingContent: (@Composable () -> Unit)? = null,
     onClick: () -> Unit
 ) {
-    ListItem(
-        headlineContent = { Text(song.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold) },
-        supportingContent = { Text(song.artist, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-        leadingContent = {
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                modifier = Modifier.size(48.dp)
+    Surface(
+        modifier = modifier,
+        color = containerColor,
+        shape = shape,
+        tonalElevation = tonalElevation,
+        shadowElevation = shadowElevation
+    ) {
+        ListItem(
+            headlineContent = { Text(song.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold) },
+            supportingContent = { Text(song.artist, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+            leadingContent = {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    modifier = Modifier.size(48.dp)
+                ) {
+                    if (song.albumArtUri != null || song.thumbnailUrl != null)
+                        AsyncImage(model = song.highResThumbnailUrl ?: song.albumArtUri ?: song.thumbnailUrl, contentDescription = null, contentScale = ContentScale.Crop)
+                    else
+                        Box(contentAlignment = Alignment.Center) { Icon(Icons.Rounded.MusicNote, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+                }
+            },
+            trailingContent = trailingContent,
+            modifier = Modifier.clickable(onClick = onClick),
+            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+        )
+    }
+}
+
+@Composable
+private fun ReorderModeCard(
+    trackCount: Int,
+    onDone: () -> Unit
+) {
+    ElevatedCard(
+        shape = RoundedCornerShape(28.dp),
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer
+        ),
+        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 8.dp),
+        modifier = Modifier
+            .padding(horizontal = 24.dp)
+            .padding(top = 16.dp)
+            .fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                if (song.albumArtUri != null || song.thumbnailUrl != null)
-                    AsyncImage(model = song.highResThumbnailUrl ?: song.albumArtUri ?: song.thumbnailUrl, contentDescription = null, contentScale = ContentScale.Crop)
-                else
-                    Box(contentAlignment = Alignment.Center) { Icon(Icons.Rounded.MusicNote, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.size(44.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Rounded.DragHandle,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSecondary
+                        )
+                    }
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Reorder Playlist",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                    )
+                    Text(
+                        text = "Long-press any track and drag it anywhere. $trackCount tracks will keep this new order.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.82f)
+                    )
+                }
             }
-        },
-        trailingContent = trailingContent,
-        modifier = modifier.clickable(onClick = onClick),
-        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-    )
+
+            FilledTonalButton(
+                onClick = onDone,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(20.dp),
+                colors = ButtonDefaults.filledTonalButtonColors(
+                    containerColor = MaterialTheme.colorScheme.secondary,
+                    contentColor = MaterialTheme.colorScheme.onSecondary
+                )
+            ) {
+                Icon(Icons.Rounded.Done, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text("Done Reordering", style = MaterialTheme.typography.titleMedium)
+            }
+        }
+    }
 }
 
 @Composable
@@ -1066,30 +1149,18 @@ fun PlaylistDetailScreen(
                         )
 
                         if (isLocalPlaylist && isReorderMode) {
-                            Surface(
-                                shape = RoundedCornerShape(20.dp),
-                                color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.75f),
-                                modifier = Modifier
-                                    .padding(horizontal = 24.dp)
-                                    .padding(top = 16.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.DragHandle,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.onSecondaryContainer
-                                    )
-                                    Text(
-                                        text = "Reorder mode is on. Long-press a song and drag it anywhere in the playlist.",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSecondaryContainer
-                                    )
+                            ReorderModeCard(
+                                trackCount = songs.size,
+                                onDone = {
+                                    isReorderMode = false
+                                    draggingSongId = null
+                                    dragOffsetY = 0f
+                                    if (reorderDirty) {
+                                        viewModel.replaceLocalPlaylistSongs(resolvedPlaylist.id, songs)
+                                        reorderDirty = false
+                                    }
                                 }
-                            }
+                            )
                         }
 
                         if (!resolvedPlaylist.description.isNullOrBlank()) {
@@ -1162,12 +1233,36 @@ fun PlaylistDetailScreen(
                     ) { index, song ->
                         val reorderEnabled = isLocalPlaylist && isReorderMode && searchQuery.isBlank()
                         val isDragging = draggingSongId == song.id
+                        val animatedContainerColor by animateColorAsState(
+                            targetValue = when {
+                                isDragging -> MaterialTheme.colorScheme.primaryContainer
+                                reorderEnabled -> MaterialTheme.colorScheme.surfaceContainerLow
+                                else -> Color.Transparent
+                            },
+                            animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow),
+                            label = "playlist_row_container"
+                        )
+                        val animatedTonalElevation by animateDpAsState(
+                            targetValue = when {
+                                isDragging -> 8.dp
+                                reorderEnabled -> 2.dp
+                                else -> 0.dp
+                            },
+                            animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow),
+                            label = "playlist_row_tonal"
+                        )
+                        val animatedShadowElevation by animateDpAsState(
+                            targetValue = if (isDragging) 10.dp else 0.dp,
+                            animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow),
+                            label = "playlist_row_shadow"
+                        )
 
                         SongListItem(
                             song = song,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .animateItem()
+                                .padding(horizontal = 12.dp, vertical = if (reorderEnabled) 4.dp else 0.dp)
+                                .then(if (isDragging) Modifier else Modifier.animateItem())
                                 .zIndex(if (isDragging) 2f else 0f)
                                 .offset(y = if (isDragging) with(density) { dragOffsetY.toDp() } else 0.dp)
                                 .then(
@@ -1226,25 +1321,39 @@ fun PlaylistDetailScreen(
                                         Modifier
                                     }
                                 ),
+                            containerColor = animatedContainerColor,
+                            tonalElevation = animatedTonalElevation,
+                            shadowElevation = animatedShadowElevation,
+                            shape = if (reorderEnabled) RoundedCornerShape(24.dp) else RoundedCornerShape(0.dp),
                             trailingContent = if (reorderEnabled) {
                                 {
-                                    Surface(
-                                        shape = RoundedCornerShape(14.dp),
-                                        color = if (isDragging) {
-                                            MaterialTheme.colorScheme.primaryContainer
-                                        } else {
-                                            MaterialTheme.colorScheme.surfaceContainerHighest
-                                        }
+                                    Column(
+                                        horizontalAlignment = Alignment.End,
+                                        verticalArrangement = Arrangement.spacedBy(6.dp)
                                     ) {
-                                        Icon(
-                                            imageVector = Icons.Rounded.DragHandle,
-                                            contentDescription = "Drag to reorder",
-                                            tint = if (isDragging) {
-                                                MaterialTheme.colorScheme.onPrimaryContainer
+                                        Surface(
+                                            shape = RoundedCornerShape(14.dp),
+                                            color = if (isDragging) {
+                                                MaterialTheme.colorScheme.tertiaryContainer
                                             } else {
-                                                MaterialTheme.colorScheme.onSurfaceVariant
-                                            },
-                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
+                                                MaterialTheme.colorScheme.surfaceContainerHighest
+                                            }
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Rounded.DragHandle,
+                                                contentDescription = "Drag to reorder",
+                                                tint = if (isDragging) {
+                                                    MaterialTheme.colorScheme.onTertiaryContainer
+                                                } else {
+                                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                                },
+                                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
+                                            )
+                                        }
+                                        Text(
+                                            text = if (isDragging) "Moving" else "Hold",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                     }
                                 }
