@@ -8,7 +8,9 @@ import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -252,6 +254,10 @@ fun LibraryMainScreen(
             PlaylistSortOption.TrackCount -> filtered.sortedByDescending { it.itemCount }
         }
     }
+    val artistCount = remember(filteredSongs) { filteredSongs.map { it.artist }.toSet().size }
+    val albumCount = remember(filteredSongs) {
+        filteredSongs.map { it.album }.filter { it.isNotBlank() && it != "Unknown Album" }.toSet().size
+    }
 
     Column(
         modifier = Modifier
@@ -334,32 +340,37 @@ fun LibraryMainScreen(
             }
             
             Spacer(Modifier.height(16.dp))
+
+            LibraryExpressiveHero(
+                songCount = filteredSongs.size,
+                playlistCount = filteredPlaylists.size + if (likedSongs.isNotEmpty()) 1 else 0,
+                artistCount = artistCount,
+                albumCount = albumCount,
+                onStatsClick = onNavigateToStats
+            )
+
+            Spacer(Modifier.height(16.dp))
             
             // Tabs Row
-            LazyRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxWidth()
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
             ) {
-                items(LibraryTab.values()) { tab ->
-                    val selected = selectedTab == tab
-                    FilterChip(
-                        selected = selected,
-                        onClick = { selectedTab = tab },
-                        label = { Text(tab.label) },
-                        leadingIcon = if (selected) {
-                            { Icon(Icons.Rounded.CheckCircle, null, modifier = Modifier.size(16.dp)) }
-                        } else null,
-                        shape = CircleShape,
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
-                        ),
-                        border = FilterChipDefaults.filterChipBorder(
-                            borderColor = Color.Transparent,
-                            selected = selected,
-                            enabled = true
-                        )
-                    )
+                SingleChoiceSegmentedButtonRow {
+                    LibraryTab.entries.forEachIndexed { index, tab ->
+                        SegmentedButton(
+                            selected = selectedTab == tab,
+                            onClick = { selectedTab = tab },
+                            shape = SegmentedButtonDefaults.itemShape(
+                                index = index,
+                                count = LibraryTab.entries.size
+                            ),
+                            icon = { SegmentedButtonDefaults.Icon(active = selectedTab == tab) }
+                        ) {
+                            Text(tab.label)
+                        }
+                    }
                 }
             }
         }
@@ -443,6 +454,7 @@ fun AllSongsList(
     contentPadding: PaddingValues
 ) {
     LazyColumn(
+        verticalArrangement = Arrangement.spacedBy(8.dp),
         contentPadding = PaddingValues(
             top = 8.dp,
             bottom = contentPadding.calculateBottomPadding() + 80.dp,
@@ -470,8 +482,77 @@ fun AllSongsList(
             items(songs, key = { it.id }) { song ->
                 SongListItem(
                     song = song,
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                    shape = RoundedCornerShape(20.dp),
+                    tonalElevation = 2.dp,
                     onClick = { onPlayQueue(songs, song) }
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun LibraryExpressiveHero(
+    songCount: Int,
+    playlistCount: Int,
+    artistCount: Int,
+    albumCount: Int,
+    onStatsClick: () -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(32.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        tonalElevation = 4.dp,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Text(
+                text = "Your music at a glance",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold
+            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                AssistChip(
+                    onClick = {},
+                    label = { Text("$songCount tracks") },
+                    leadingIcon = { Icon(Icons.Rounded.MusicNote, null, modifier = Modifier.size(16.dp)) }
+                )
+                AssistChip(
+                    onClick = {},
+                    label = { Text("$playlistCount playlists") },
+                    leadingIcon = { Icon(Icons.AutoMirrored.Rounded.PlaylistPlay, null, modifier = Modifier.size(16.dp)) }
+                )
+            }
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                AssistChip(
+                    onClick = {},
+                    label = { Text("$artistCount artists") },
+                    leadingIcon = { Icon(Icons.Rounded.Person, null, modifier = Modifier.size(16.dp)) }
+                )
+                AssistChip(
+                    onClick = {},
+                    label = { Text("$albumCount albums") },
+                    leadingIcon = { Icon(Icons.Rounded.Album, null, modifier = Modifier.size(16.dp)) }
+                )
+            }
+            FilledTonalButton(
+                onClick = onStatsClick,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(20.dp)
+            ) {
+                Icon(Icons.Rounded.Insights, null)
+                Spacer(Modifier.width(8.dp))
+                Text("Open listening insights")
             }
         }
     }
