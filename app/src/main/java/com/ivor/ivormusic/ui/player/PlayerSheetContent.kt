@@ -1009,10 +1009,11 @@ private fun ExpressiveQueueView(
                                 .animateItem()
                                 .zIndex(if (isDragging) 2f else 0f)
                                 .offset(y = if (isDragging) with(density) { dragOffsetY.toDp() } else 0.dp)
-                                .pointerInput(index, queue.size) {
+                                .pointerInput(song.id) {
                                     detectDragGesturesAfterLongPress(
                                         onDragStart = {
-                                            draggingIndex = index
+                                            val currentIndex = queue.indexOfFirst { it.id == song.id }
+                                            draggingIndex = if (currentIndex >= 0) currentIndex else index
                                             dragOffsetY = 0f
                                         },
                                         onDragEnd = {
@@ -1025,7 +1026,7 @@ private fun ExpressiveQueueView(
                                         },
                                         onDrag = { change, dragAmount ->
                                             change.consume()
-                                            if (draggingIndex != index) return@detectDragGesturesAfterLongPress
+                                            if (draggingIndex == null) return@detectDragGesturesAfterLongPress
                                             dragOffsetY += dragAmount.y
                                             while (dragOffsetY > itemHeightPx && draggingIndex!! < queue.lastIndex) {
                                                 onMoveSong(draggingIndex!!, draggingIndex!! + 1)

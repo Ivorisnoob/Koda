@@ -404,6 +404,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun moveSongInLocalPlaylist(playlistId: String, fromIndex: Int, toIndex: Int) {
+        viewModelScope.launch {
+            playlistRepository.moveSongInPlaylist(playlistId, fromIndex, toIndex)
+        }
+    }
+
     // Stats
     private val statsRepository = com.ivor.ivormusic.data.StatsRepository(application)
     private val _globalStats = MutableStateFlow(com.ivor.ivormusic.data.GlobalStats())

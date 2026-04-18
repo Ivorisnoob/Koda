@@ -20,7 +20,8 @@ data class UserPlaylist(
             itemCount = songs.size,
             thumbnailUrl = coverUri ?: songs.firstOrNull()?.let { 
                 it.highResThumbnailUrl ?: it.thumbnailUrl ?: it.albumArtUri?.toString() 
-            }
+            },
+            description = description
         )
     }
 }

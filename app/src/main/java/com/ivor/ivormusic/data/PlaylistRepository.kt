@@ -97,6 +97,23 @@ class PlaylistRepository(private val context: Context) {
         )
         savePlaylist(updatedPlaylist)
     }
+
+    suspend fun moveSongInPlaylist(
+        playlistId: String,
+        fromIndex: Int,
+        toIndex: Int
+    ) = withContext(Dispatchers.IO) {
+        val playlist = _userPlaylists.value.find { it.id == playlistId } ?: return@withContext
+        if (fromIndex == toIndex) return@withContext
+        if (fromIndex !in playlist.songs.indices || toIndex !in playlist.songs.indices) return@withContext
+
+        val reorderedSongs = playlist.songs.toMutableList().apply {
+            val movedSong = removeAt(fromIndex)
+            add(toIndex, movedSong)
+        }
+
+        savePlaylist(playlist.copy(songs = reorderedSongs))
+    }
     
     suspend fun deletePlaylist(playlistId: String) = withContext(Dispatchers.IO) {
         val file = File(playlistDir, "$playlistId.json")

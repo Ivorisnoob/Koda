@@ -6,9 +6,11 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -30,18 +32,21 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import coil.compose.AsyncImage
 import com.ivor.ivormusic.data.PlaylistDisplayItem
 import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.ui.artist.ArtistScreen
 import com.ivor.ivormusic.ui.components.ExpressivePullToRefresh
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.runtime.mutableFloatStateOf
 import com.ivor.ivormusic.ui.home.HomeViewModel
 
 /**
@@ -509,6 +514,7 @@ fun PlaylistsGrid(
                 name = playlist.name ?: "Untitled",
                 count = playlist.itemCount,
                 thumbnailUrl = playlist.thumbnailUrl,
+                description = playlist.description,
                 isEditable = isLocalPlaylist,
                 onEditConfirmed = { name, description -> onEditPlaylist(playlist, name, description) },
                 onDeleteConfirmed = { onDeletePlaylist(playlist) },
@@ -658,6 +664,7 @@ fun ExpressivePlaylistCard(
     count: Int,
     thumbnailUrl: String?,
     subtitle: String? = null,
+    description: String? = null,
     isLiked: Boolean = false,
     isEditable: Boolean = false,
     onEditConfirmed: (String, String?) -> Unit = { _, _ -> },
@@ -730,7 +737,7 @@ fun ExpressivePlaylistCard(
     if (showEditDialog) {
         EditPlaylistDialog(
             initialName = name,
-            initialDescription = null,
+            initialDescription = description,
             onDismiss = { showEditDialog = false },
             onConfirm = { newName, newDescription ->
                 onEditConfirmed(newName, newDescription)
@@ -800,7 +807,12 @@ private fun EditPlaylistDialog(
 }
 
 @Composable
-fun SongListItem(song: Song, onClick: () -> Unit) {
+fun SongListItem(
+    song: Song,
+    modifier: Modifier = Modifier,
+    trailingContent: (@Composable () -> Unit)? = null,
+    onClick: () -> Unit
+) {
     ListItem(
         headlineContent = { Text(song.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold) },
         supportingContent = { Text(song.artist, maxLines = 1, overflow = TextOverflow.Ellipsis) },
@@ -816,7 +828,8 @@ fun SongListItem(song: Song, onClick: () -> Unit) {
                     Box(contentAlignment = Alignment.Center) { Icon(Icons.Rounded.MusicNote, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
             }
         },
-        modifier = Modifier.clickable(onClick = onClick),
+        trailingContent = trailingContent,
+        modifier = modifier.clickable(onClick = onClick),
         colors = ListItemDefaults.colors(containerColor = Color.Transparent)
     )
 }
@@ -848,10 +861,25 @@ fun PlaylistDetailScreen(
     preloadedSongs: List<Song>? = null,
     isAlbum: Boolean = false
 ) {
+    val userPlaylists by viewModel.userPlaylists.collectAsState()
+    val localPlaylistIds by viewModel.localPlaylistIds.collectAsState()
+    val resolvedPlaylist = remember(playlist, userPlaylists) {
+        userPlaylists.firstOrNull { it.id == playlist.id } ?: playlist
+    }
+    val isLocalPlaylist = remember(playlist.id, localPlaylistIds, isAlbum) {
+        !isAlbum && localPlaylistIds.contains(playlist.id)
+    }
     var songs by remember { mutableStateOf(preloadedSongs ?: emptyList()) }
     val isLoading by viewModel.isLoading.collectAsState()
     val isFetching = remember { mutableStateOf(songs.isEmpty()) }
-    
+    var showEditDialog by remember { mutableStateOf(false) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    var isReorderMode by remember { mutableStateOf(false) }
+    var draggingIndex by remember { mutableStateOf<Int?>(null) }
+    var dragOffsetY by remember { mutableFloatStateOf(0f) }
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val itemHeightPx = with(density) { 72.dp.toPx() }
+
     // Search State
     var searchQuery by remember { mutableStateOf("") }
     var isSearchActive by remember { mutableStateOf(false) }
@@ -869,10 +897,10 @@ fun PlaylistDetailScreen(
         }
     }
 
-    LaunchedEffect(playlist.id) {
+    LaunchedEffect(resolvedPlaylist.id) {
         if (preloadedSongs == null) {
             isFetching.value = true
-            songs = viewModel.fetchPlaylistSongs(playlist.id)
+            songs = viewModel.fetchPlaylistSongs(resolvedPlaylist.id)
             isFetching.value = false
         }
     }
@@ -887,7 +915,7 @@ fun PlaylistDetailScreen(
                         exit = fadeOut() + slideOutVertically { it / 2 }
                     ) {
                         Text(
-                            playlist.name ?: "Unknown", 
+                            resolvedPlaylist.name ?: "Unknown",
                             maxLines = 1, 
                             overflow = TextOverflow.Ellipsis,
                             style = MaterialTheme.typography.titleMedium
@@ -900,7 +928,39 @@ fun PlaylistDetailScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = { isSearchActive = !isSearchActive }) {
+                    if (isLocalPlaylist) {
+                        IconButton(
+                            onClick = {
+                                val enablingReorder = !isReorderMode
+                                isReorderMode = enablingReorder
+                                draggingIndex = null
+                                dragOffsetY = 0f
+                                if (enablingReorder) {
+                                    isSearchActive = false
+                                    searchQuery = ""
+                                }
+                            }
+                        ) {
+                            Icon(
+                                imageVector = if (isReorderMode) Icons.Rounded.Done else Icons.Rounded.DragHandle,
+                                contentDescription = if (isReorderMode) "Finish reordering" else "Reorder playlist"
+                            )
+                        }
+                        IconButton(onClick = { showEditDialog = true }) {
+                            Icon(Icons.Rounded.Edit, contentDescription = "Rename playlist")
+                        }
+                        IconButton(onClick = { showDeleteDialog = true }) {
+                            Icon(Icons.Rounded.Delete, contentDescription = "Delete playlist")
+                        }
+                    }
+                    IconButton(onClick = {
+                        if (isReorderMode) {
+                            isReorderMode = false
+                            draggingIndex = null
+                            dragOffsetY = 0f
+                        }
+                        isSearchActive = !isSearchActive
+                    }) {
                         Icon(
                             imageVector = if (isSearchActive) Icons.Rounded.Close else Icons.Rounded.Search,
                             contentDescription = "Search in playlist"
@@ -962,8 +1022,8 @@ fun PlaylistDetailScreen(
                             shadowElevation = 12.dp,
                             color = MaterialTheme.colorScheme.surfaceContainerHighest
                         ) {
-                             if (playlist.thumbnailUrl != null && playlist.thumbnailUrl != "null") {
-                                 AsyncImage(model = playlist.thumbnailUrl, contentDescription = null, contentScale = ContentScale.Crop)
+                             if (resolvedPlaylist.thumbnailUrl != null && resolvedPlaylist.thumbnailUrl != "null") {
+                                 AsyncImage(model = resolvedPlaylist.thumbnailUrl, contentDescription = null, contentScale = ContentScale.Crop)
                              } else {
                                 Box(contentAlignment = Alignment.Center) {
                                      Icon(if (isAlbum) Icons.Rounded.Album else Icons.AutoMirrored.Rounded.PlaylistPlay, null, modifier = Modifier.size(80.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -975,7 +1035,7 @@ fun PlaylistDetailScreen(
                         
                         // Title & Subtitle
                         Text(
-                            text = playlist.name ?: "Unknown",
+                            text = resolvedPlaylist.name ?: "Unknown",
                             style = MaterialTheme.typography.displaySmall, // Expressive Typography
                             fontWeight = FontWeight.Bold,
                             textAlign = TextAlign.Center,
@@ -983,12 +1043,36 @@ fun PlaylistDetailScreen(
                         )
                         
                         Text(
-                            text = if (isAlbum) "Album • ${playlist.uploaderName} • ${songs.size} tracks" else "Playlist • ${songs.size} tracks",
+                            text = if (isAlbum) "Album • ${resolvedPlaylist.uploaderName} • ${songs.size} tracks" else "Playlist • ${songs.size} tracks",
                             style = MaterialTheme.typography.titleMedium,
                             color = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.padding(horizontal = 24.dp).padding(top = 8.dp),
                             textAlign = TextAlign.Center
                         )
+
+                        if (isLocalPlaylist && isReorderMode) {
+                            Text(
+                                text = "Long-press and drag songs to change the playlist order",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier
+                                    .padding(horizontal = 24.dp)
+                                    .padding(top = 12.dp)
+                            )
+                        }
+
+                        if (!resolvedPlaylist.description.isNullOrBlank()) {
+                            Text(
+                                text = resolvedPlaylist.description,
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier
+                                    .padding(horizontal = 24.dp)
+                                    .padding(top = 12.dp)
+                            )
+                        }
                     }
                 }
             }
@@ -1042,14 +1126,116 @@ fun PlaylistDetailScreen(
                         }
                     }
                 } else {
-                    items(filteredSongs) { song ->
+                    itemsIndexed(
+                        items = filteredSongs,
+                        key = { index, song -> "playlist_${resolvedPlaylist.id}_${song.id}_$index" }
+                    ) { index, song ->
+                        val reorderEnabled = isLocalPlaylist && isReorderMode && searchQuery.isBlank()
+                        val isDragging = draggingIndex == index
+
                         SongListItem(
-                            song = song, 
+                            song = song,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .animateItem()
+                                .zIndex(if (isDragging) 2f else 0f)
+                                .offset(y = if (isDragging) with(density) { dragOffsetY.toDp() } else 0.dp)
+                                .then(
+                                    if (reorderEnabled) {
+                                        Modifier.pointerInput(song.id, songs.size) {
+                                            detectDragGesturesAfterLongPress(
+                                                onDragStart = {
+                                                    val currentIndex = songs.indexOfFirst { it.id == song.id }
+                                                    draggingIndex = if (currentIndex >= 0) currentIndex else index
+                                                    dragOffsetY = 0f
+                                                },
+                                                onDragEnd = {
+                                                    draggingIndex = null
+                                                    dragOffsetY = 0f
+                                                },
+                                                onDragCancel = {
+                                                    draggingIndex = null
+                                                    dragOffsetY = 0f
+                                                },
+                                                onDrag = { change, dragAmount ->
+                                                    change.consume()
+                                                    if (draggingIndex == null) return@detectDragGesturesAfterLongPress
+                                                    dragOffsetY += dragAmount.y
+                                                    while (dragOffsetY > itemHeightPx && draggingIndex!! < songs.lastIndex) {
+                                                        val fromIndex = draggingIndex!!
+                                                        val toIndex = fromIndex + 1
+                                                        songs = songs.toMutableList().apply {
+                                                            add(toIndex, removeAt(fromIndex))
+                                                        }
+                                                        viewModel.moveSongInLocalPlaylist(resolvedPlaylist.id, fromIndex, toIndex)
+                                                        draggingIndex = toIndex
+                                                        dragOffsetY -= itemHeightPx
+                                                    }
+                                                    while (dragOffsetY < -itemHeightPx && draggingIndex!! > 0) {
+                                                        val fromIndex = draggingIndex!!
+                                                        val toIndex = fromIndex - 1
+                                                        songs = songs.toMutableList().apply {
+                                                            add(toIndex, removeAt(fromIndex))
+                                                        }
+                                                        viewModel.moveSongInLocalPlaylist(resolvedPlaylist.id, fromIndex, toIndex)
+                                                        draggingIndex = toIndex
+                                                        dragOffsetY += itemHeightPx
+                                                    }
+                                                }
+                                            )
+                                        }
+                                    } else {
+                                        Modifier
+                                    }
+                                ),
+                            trailingContent = if (reorderEnabled) {
+                                {
+                                    Icon(
+                                        imageVector = Icons.Rounded.DragHandle,
+                                        contentDescription = "Drag to reorder",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            } else null,
                             onClick = { onPlayQueue(filteredSongs, song) }
                         )
                     }
                 }
             }
         }
+    }
+
+    if (showEditDialog && isLocalPlaylist) {
+        EditPlaylistDialog(
+            initialName = resolvedPlaylist.name,
+            initialDescription = resolvedPlaylist.description,
+            onDismiss = { showEditDialog = false },
+            onConfirm = { newName, newDescription ->
+                viewModel.updateLocalPlaylist(resolvedPlaylist.id, newName, newDescription)
+                showEditDialog = false
+            }
+        )
+    }
+
+    if (showDeleteDialog && isLocalPlaylist) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title = { Text("Delete playlist?") },
+            text = { Text("This will permanently remove \"${resolvedPlaylist.name}\" and its local metadata.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.deleteLocalPlaylist(resolvedPlaylist.id)
+                    showDeleteDialog = false
+                    onBack()
+                }) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }
