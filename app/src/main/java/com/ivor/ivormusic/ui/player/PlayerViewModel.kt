@@ -500,6 +500,30 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         }
     }
 
+    fun moveQueueItem(fromIndex: Int, toIndex: Int) {
+        val currentList = _currentQueue.value
+        if (fromIndex !in currentList.indices || toIndex !in currentList.indices || fromIndex == toIndex) return
+
+        val mutable = currentList.toMutableList()
+        val movedSong = mutable.removeAt(fromIndex)
+        mutable.add(toIndex, movedSong)
+        _currentQueue.value = mutable
+
+        controller?.moveMediaItem(fromIndex, toIndex)
+    }
+
+    fun removeQueueItem(index: Int) {
+        val currentList = _currentQueue.value
+        if (index !in currentList.indices) return
+        if (currentList.size <= 1) return
+
+        val mutable = currentList.toMutableList()
+        mutable.removeAt(index)
+        _currentQueue.value = mutable
+
+        controller?.removeMediaItem(index)
+    }
+
     private fun createMediaItem(song: Song): MediaItem {
         return if (song.source == com.ivor.ivormusic.data.SongSource.LOCAL && song.uri != null) {
             // For local songs, we still need to set mediaId for proper tracking

@@ -108,6 +108,33 @@ class PlaylistRepository(private val context: Context) {
         
         loadPlaylists()
     }
+
+    suspend fun updatePlaylist(
+        playlistId: String,
+        name: String,
+        description: String?
+    ) = withContext(Dispatchers.IO) {
+        val playlist = _userPlaylists.value.find { it.id == playlistId } ?: return@withContext
+        val trimmedName = name.trim()
+        if (trimmedName.isBlank()) return@withContext
+
+        val shouldRegenerateCover = playlist.coverUri?.contains("cover_${playlist.id}.png") == true &&
+            playlist.name.firstOrNull()?.uppercaseChar() != trimmedName.firstOrNull()?.uppercaseChar()
+
+        val updatedCover = if (shouldRegenerateCover) {
+            "file://${generateCoverArt(trimmedName, playlist.id)}"
+        } else {
+            playlist.coverUri
+        }
+
+        savePlaylist(
+            playlist.copy(
+                name = trimmedName,
+                description = description?.trim().takeUnless { it.isNullOrBlank() },
+                coverUri = updatedCover
+            )
+        )
+    }
     
     private suspend fun savePlaylist(playlist: UserPlaylist) {
         val file = File(playlistDir, "${playlist.id}.json")

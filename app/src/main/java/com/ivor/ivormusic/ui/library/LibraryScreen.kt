@@ -19,7 +19,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.List
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
-import androidx.compose.material.icons.automirrored.rounded.Sort
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.*
@@ -198,6 +197,13 @@ enum class LibraryTab(val label: String) {
     Albums("Albums")
 }
 
+enum class PlaylistSortOption(val label: String) {
+    RecentlyAdded("Recently added"),
+    NameAZ("Name A-Z"),
+    NameZA("Name Z-A"),
+    TrackCount("Track count")
+}
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun LibraryMainScreen(
@@ -212,12 +218,14 @@ fun LibraryMainScreen(
     onNavigateToStats: () -> Unit
 ) {
     val userPlaylists by viewModel.userPlaylists.collectAsState()
+    val localPlaylistIds by viewModel.localPlaylistIds.collectAsState()
     val likedSongs by viewModel.likedSongs.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
 
     var selectedTab by rememberSaveable { mutableStateOf(LibraryTab.All) }
     var searchQuery by rememberSaveable { mutableStateOf("") }
     var isSearchActive by rememberSaveable { mutableStateOf(false) }
+    var playlistSort by rememberSaveable { mutableStateOf(PlaylistSortOption.RecentlyAdded) }
 
     // Filtering logic
     val filteredSongs = remember(songs, searchQuery) {
@@ -226,9 +234,15 @@ fun LibraryMainScreen(
         }
     }
     
-    val filteredPlaylists = remember(userPlaylists, searchQuery) {
-        if (searchQuery.isBlank()) userPlaylists else userPlaylists.filter {
+    val filteredPlaylists = remember(userPlaylists, searchQuery, playlistSort) {
+        val filtered = if (searchQuery.isBlank()) userPlaylists else userPlaylists.filter {
             (it.name ?: "").contains(searchQuery, true)
+        }
+        when (playlistSort) {
+            PlaylistSortOption.RecentlyAdded -> filtered
+            PlaylistSortOption.NameAZ -> filtered.sortedBy { it.name?.lowercase() ?: "" }
+            PlaylistSortOption.NameZA -> filtered.sortedByDescending { it.name?.lowercase() ?: "" }
+            PlaylistSortOption.TrackCount -> filtered.sortedByDescending { it.itemCount }
         }
     }
 
@@ -275,6 +289,26 @@ fun LibraryMainScreen(
                         fontWeight = FontWeight.Bold
                     )
                     Row(verticalAlignment = Alignment.CenterVertically) {
+                        var showSortMenu by remember { mutableStateOf(false) }
+                        IconButton(onClick = { showSortMenu = true }) {
+                            Icon(Icons.Rounded.Sort, "Sort playlists")
+                        }
+                        DropdownMenu(expanded = showSortMenu, onDismissRequest = { showSortMenu = false }) {
+                            PlaylistSortOption.entries.forEach { option ->
+                                DropdownMenuItem(
+                                    text = { Text(option.label) },
+                                    onClick = {
+                                        playlistSort = option
+                                        showSortMenu = false
+                                    },
+                                    leadingIcon = {
+                                        if (playlistSort == option) {
+                                            Icon(Icons.Rounded.Check, contentDescription = null)
+                                        }
+                                    }
+                                )
+                            }
+                        }
                         IconButton(onClick = { isSearchActive = true }) {
                             Icon(Icons.Rounded.Search, "Search")
                         }
@@ -355,8 +389,15 @@ fun LibraryMainScreen(
                     LibraryTab.Playlists -> {
                         PlaylistsGrid(
                             playlists = filteredPlaylists,
+                            localPlaylistIds = localPlaylistIds,
                             likedSongs = likedSongs,
                             onPlaylistClick = onNavigateToPlaylist,
+                            onEditPlaylist = { playlist, newName, newDescription ->
+                                viewModel.updateLocalPlaylist(playlist.id, newName, newDescription)
+                            },
+                            onDeletePlaylist = { playlist ->
+                                viewModel.deleteLocalPlaylist(playlist.id)
+                            },
                             onLikedSongsClick = {
                                 onNavigateToPlaylist(PlaylistDisplayItem("Liked Songs", "LM", "You", likedSongs.size, null))
                             },
@@ -432,8 +473,11 @@ fun AllSongsList(
 @Composable
 fun PlaylistsGrid(
     playlists: List<PlaylistDisplayItem>,
+    localPlaylistIds: Set<String>,
     likedSongs: List<Song>,
     onPlaylistClick: (PlaylistDisplayItem) -> Unit,
+    onEditPlaylist: (playlist: PlaylistDisplayItem, newName: String, newDescription: String?) -> Unit,
+    onDeletePlaylist: (playlist: PlaylistDisplayItem) -> Unit,
     onLikedSongsClick: () -> Unit,
     contentPadding: PaddingValues
 ) {
@@ -460,10 +504,14 @@ fun PlaylistsGrid(
             )
         }
         items(playlists) { playlist ->
+            val isLocalPlaylist = localPlaylistIds.contains(playlist.id)
             ExpressivePlaylistCard(
                 name = playlist.name ?: "Untitled",
                 count = playlist.itemCount,
                 thumbnailUrl = playlist.thumbnailUrl,
+                isEditable = isLocalPlaylist,
+                onEditConfirmed = { name, description -> onEditPlaylist(playlist, name, description) },
+                onDeleteConfirmed = { onDeletePlaylist(playlist) },
                 onClick = { onPlaylistClick(playlist) }
             )
         }
@@ -611,8 +659,15 @@ fun ExpressivePlaylistCard(
     thumbnailUrl: String?,
     subtitle: String? = null,
     isLiked: Boolean = false,
+    isEditable: Boolean = false,
+    onEditConfirmed: (String, String?) -> Unit = { _, _ -> },
+    onDeleteConfirmed: () -> Unit = {},
     onClick: () -> Unit
 ) {
+    var showMenu by remember { mutableStateOf(false) }
+    var showEditDialog by remember { mutableStateOf(false) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
+
     Column(modifier = Modifier.clickable { onClick() }) {
         Surface(
             shape = RoundedCornerShape(20.dp),
@@ -636,9 +691,112 @@ fun ExpressivePlaylistCard(
             }
         }
         Spacer(Modifier.height(12.dp))
-        Text(name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Text(subtitle ?: "$count songs", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(subtitle ?: "$count songs", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+            }
+            if (isEditable) {
+                Box {
+                    IconButton(onClick = { showMenu = true }) {
+                        Icon(Icons.Rounded.MoreVert, contentDescription = "Playlist options")
+                    }
+                    DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                        DropdownMenuItem(
+                            text = { Text("Edit") },
+                            onClick = {
+                                showMenu = false
+                                showEditDialog = true
+                            },
+                            leadingIcon = { Icon(Icons.Rounded.Edit, contentDescription = null) }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Delete") },
+                            onClick = {
+                                showMenu = false
+                                showDeleteDialog = true
+                            },
+                            leadingIcon = { Icon(Icons.Rounded.Delete, contentDescription = null) }
+                        )
+                    }
+                }
+            }
+        }
     }
+
+    if (showEditDialog) {
+        EditPlaylistDialog(
+            initialName = name,
+            initialDescription = null,
+            onDismiss = { showEditDialog = false },
+            onConfirm = { newName, newDescription ->
+                onEditConfirmed(newName, newDescription)
+                showEditDialog = false
+            }
+        )
+    }
+    if (showDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title = { Text("Delete playlist?") },
+            text = { Text("This will permanently remove \"$name\" and its local metadata.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    onDeleteConfirmed()
+                    showDeleteDialog = false
+                }) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") }
+            }
+        )
+    }
+}
+
+@Composable
+private fun EditPlaylistDialog(
+    initialName: String,
+    initialDescription: String?,
+    onDismiss: () -> Unit,
+    onConfirm: (name: String, description: String?) -> Unit
+) {
+    var name by remember(initialName) { mutableStateOf(initialName) }
+    var description by remember(initialDescription) { mutableStateOf(initialDescription ?: "") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Edit playlist") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Name") },
+                    singleLine = true
+                )
+                OutlinedTextField(
+                    value = description,
+                    onValueChange = { description = it },
+                    label = { Text("Description") },
+                    maxLines = 2
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onConfirm(name.trim(), description.trim().ifBlank { null }) },
+                enabled = name.isNotBlank()
+            ) { Text("Save") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
 }
 
 @Composable
