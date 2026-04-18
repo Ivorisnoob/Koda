@@ -97,6 +97,31 @@ class PlaylistRepository(private val context: Context) {
         )
         savePlaylist(updatedPlaylist)
     }
+
+    suspend fun moveSongInPlaylist(
+        playlistId: String,
+        fromIndex: Int,
+        toIndex: Int
+    ) = withContext(Dispatchers.IO) {
+        val playlist = _userPlaylists.value.find { it.id == playlistId } ?: return@withContext
+        if (fromIndex == toIndex) return@withContext
+        if (fromIndex !in playlist.songs.indices || toIndex !in playlist.songs.indices) return@withContext
+
+        val reorderedSongs = playlist.songs.toMutableList().apply {
+            val movedSong = removeAt(fromIndex)
+            add(toIndex, movedSong)
+        }
+
+        savePlaylist(playlist.copy(songs = reorderedSongs))
+    }
+
+    suspend fun replacePlaylistSongs(
+        playlistId: String,
+        songs: List<Song>
+    ) = withContext(Dispatchers.IO) {
+        val playlist = _userPlaylists.value.find { it.id == playlistId } ?: return@withContext
+        savePlaylist(playlist.copy(songs = songs))
+    }
     
     suspend fun deletePlaylist(playlistId: String) = withContext(Dispatchers.IO) {
         val file = File(playlistDir, "$playlistId.json")
@@ -107,6 +132,33 @@ class PlaylistRepository(private val context: Context) {
         if (cover.exists()) cover.delete()
         
         loadPlaylists()
+    }
+
+    suspend fun updatePlaylist(
+        playlistId: String,
+        name: String,
+        description: String?
+    ) = withContext(Dispatchers.IO) {
+        val playlist = _userPlaylists.value.find { it.id == playlistId } ?: return@withContext
+        val trimmedName = name.trim()
+        if (trimmedName.isBlank()) return@withContext
+
+        val shouldRegenerateCover = playlist.coverUri?.contains("cover_${playlist.id}.png") == true &&
+            playlist.name.firstOrNull()?.uppercaseChar() != trimmedName.firstOrNull()?.uppercaseChar()
+
+        val updatedCover = if (shouldRegenerateCover) {
+            "file://${generateCoverArt(trimmedName, playlist.id)}"
+        } else {
+            playlist.coverUri
+        }
+
+        savePlaylist(
+            playlist.copy(
+                name = trimmedName,
+                description = description?.trim().takeUnless { it.isNullOrBlank() },
+                coverUri = updatedCover
+            )
+        )
     }
     
     private suspend fun savePlaylist(playlist: UserPlaylist) {

@@ -5,8 +5,10 @@ import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -33,11 +35,13 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import androidx.media3.common.Player
 import coil.compose.AsyncImage
 import com.ivor.ivormusic.data.Song
@@ -116,6 +120,8 @@ fun PlayerSheetContent(
                     queue = currentQueue,
                     currentSong = currentSong,
                     onSongClick = { song -> viewModel.playQueue(currentQueue, song) },
+                    onMoveSong = { from, to -> viewModel.moveQueueItem(from, to) },
+                    onRemoveSong = { index -> viewModel.removeQueueItem(index) },
                     onLoadMore = onLoadMore,
                     isLoadingMore = isLoadingMore,
                     onCollapse = onCollapse,
@@ -738,12 +744,14 @@ private fun ExpressiveNowPlayingView(
  * - Currently playing indicator with expressive icon
  * - Load more button with shape morphing
  */
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalFoundationApi::class)
 @Composable
 private fun ExpressiveQueueView(
     queue: List<Song>,
     currentSong: Song?,
     onSongClick: (Song) -> Unit,
+    onMoveSong: (fromIndex: Int, toIndex: Int) -> Unit,
+    onRemoveSong: (index: Int) -> Unit,
     onLoadMore: () -> Unit,
     isLoadingMore: Boolean,
     onCollapse: () -> Unit,
@@ -757,6 +765,10 @@ private fun ExpressiveQueueView(
     stableShapes: IconButtonShapes
 ) {
     val primaryContainerColor = MaterialTheme.colorScheme.primaryContainer
+    var draggingIndex by remember { mutableStateOf<Int?>(null) }
+    var dragOffsetY by remember { mutableFloatStateOf(0f) }
+    val density = LocalDensity.current
+    val itemHeightPx = with(density) { 80.dp.toPx() }
     
     Box(
         modifier = Modifier
@@ -989,9 +1001,46 @@ private fun ExpressiveQueueView(
                     // ========== QUEUE ITEMS ==========
                     itemsIndexed(queue, key = { _, song -> "queue_${song.id}" }) { index, song ->
                         val isCurrent = song.id == currentSong?.id
+                        val isDragging = draggingIndex == index
                         
                         Surface(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .animateItem()
+                                .zIndex(if (isDragging) 2f else 0f)
+                                .offset(y = if (isDragging) with(density) { dragOffsetY.toDp() } else 0.dp)
+                                .pointerInput(song.id) {
+                                    detectDragGesturesAfterLongPress(
+                                        onDragStart = {
+                                            val currentIndex = queue.indexOfFirst { it.id == song.id }
+                                            draggingIndex = if (currentIndex >= 0) currentIndex else index
+                                            dragOffsetY = 0f
+                                        },
+                                        onDragEnd = {
+                                            draggingIndex = null
+                                            dragOffsetY = 0f
+                                        },
+                                        onDragCancel = {
+                                            draggingIndex = null
+                                            dragOffsetY = 0f
+                                        },
+                                        onDrag = { change, dragAmount ->
+                                            change.consume()
+                                            if (draggingIndex == null) return@detectDragGesturesAfterLongPress
+                                            dragOffsetY += dragAmount.y
+                                            while (dragOffsetY > itemHeightPx && draggingIndex!! < queue.lastIndex) {
+                                                onMoveSong(draggingIndex!!, draggingIndex!! + 1)
+                                                draggingIndex = draggingIndex!! + 1
+                                                dragOffsetY -= itemHeightPx
+                                            }
+                                            while (dragOffsetY < -itemHeightPx && draggingIndex!! > 0) {
+                                                onMoveSong(draggingIndex!!, draggingIndex!! - 1)
+                                                draggingIndex = draggingIndex!! - 1
+                                                dragOffsetY += itemHeightPx
+                                            }
+                                        }
+                                    )
+                                },
                             shape = RoundedCornerShape(20.dp),
                             color = if (isCurrent) primaryColor.copy(alpha = 0.12f) 
                                    else MaterialTheme.colorScheme.surfaceContainerLow,
@@ -1093,6 +1142,18 @@ private fun ExpressiveQueueView(
                                         modifier = Modifier.size(16.dp)
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
+                                }
+
+                                IconButton(
+                                    onClick = { onRemoveSong(index) },
+                                    enabled = queue.size > 1,
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Close,
+                                        contentDescription = "Remove from queue",
+                                        tint = onSurfaceVariantColor
+                                    )
                                 }
                             }
                         }

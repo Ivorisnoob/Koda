@@ -24,7 +24,7 @@ android {
             isEnable = true
             reset()
             include("arm64-v8a", "armeabi-v7a")
-            isUniversalApk = false
+            isUniversalApk = true
         }
     }
     //Only for Release apk that is why I hardcoded cause if you want to make as a maintainer release apk you can change here in future we will make it the correct way

@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -71,6 +72,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         val localItems = localPlaylists.map { it.toDisplayItem() }
         localItems + ytPlaylists
     }.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000), emptyList())
+    
+    val localPlaylistIds: StateFlow<Set<String>> = playlistRepository.userPlaylists
+        .map { playlists -> playlists.map { it.id }.toSet() }
+        .stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000), emptySet())
 
     private val _userAvatar = MutableStateFlow<String?>(sessionManager.getUserAvatar())
     val userAvatar: StateFlow<String?> = _userAvatar.asStateFlow()
@@ -384,6 +389,30 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     fun addSongToLocalPlaylist(playlistId: String, song: Song) {
         viewModelScope.launch {
             playlistRepository.addSongToPlaylist(playlistId, song)
+        }
+    }
+
+    fun updateLocalPlaylist(playlistId: String, name: String, description: String?) {
+        viewModelScope.launch {
+            playlistRepository.updatePlaylist(playlistId, name, description)
+        }
+    }
+
+    fun deleteLocalPlaylist(playlistId: String) {
+        viewModelScope.launch {
+            playlistRepository.deletePlaylist(playlistId)
+        }
+    }
+
+    fun moveSongInLocalPlaylist(playlistId: String, fromIndex: Int, toIndex: Int) {
+        viewModelScope.launch {
+            playlistRepository.moveSongInPlaylist(playlistId, fromIndex, toIndex)
+        }
+    }
+
+    fun replaceLocalPlaylistSongs(playlistId: String, songs: List<Song>) {
+        viewModelScope.launch {
+            playlistRepository.replacePlaylistSongs(playlistId, songs)
         }
     }
 
