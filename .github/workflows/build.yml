@@ -30,9 +30,26 @@ jobs:
     - name: Build Debug APK
       run: ./gradlew assembleDebug
 
-    - name: Upload Debug APK
+    - name: Upload Debug APK (Universal)
       uses: actions/upload-artifact@v4
       with:
-        name: app-debug
-        path: app/build/outputs/apk/debug/*.apk
+        name: app-debug-universal
+        path: app/build/outputs/apk/debug/*universal*.apk
+        if-no-files-found: error
+        retention-days: 14
+
+    - name: Upload Debug APK (arm64-v8a)
+      uses: actions/upload-artifact@v4
+      with:
+        name: app-debug-arm64-v8a
+        path: app/build/outputs/apk/debug/*arm64-v8a*.apk
+        if-no-files-found: error
+        retention-days: 14
+
+    - name: Upload Debug APK (armeabi-v7a)
+      uses: actions/upload-artifact@v4
+      with:
+        name: app-debug-armeabi-v7a
+        path: app/build/outputs/apk/debug/*armeabi-v7a*.apk
+        if-no-files-found: error
         retention-days: 14
