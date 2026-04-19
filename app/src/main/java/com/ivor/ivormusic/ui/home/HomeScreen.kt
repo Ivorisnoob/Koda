@@ -414,55 +414,89 @@ fun HomeScreen(
                 .navigationBarsPadding()
                 .padding(bottom = 20.dp),
             content = {
-                // Home
-                IconToggleButton(
-                    checked = selectedTab == 0,
-                    onCheckedChange = { selectedTab = 0 },
-                    colors = IconButtonDefaults.iconToggleButtonColors(
-                        checkedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                        checkedContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                        containerColor = Color.Transparent,
-                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                ) {
-                    Icon(
-                        imageVector = if (selectedTab == 0) Icons.Rounded.Home else Icons.Outlined.Home,
-                        contentDescription = "Home"
-                    )
-                }
+                val tabs = listOf(
+                    Triple(0, "Home", Pair(Icons.Rounded.Home, Icons.Outlined.Home)),
+                    Triple(1, "Search", Pair(Icons.Filled.Search, Icons.Outlined.Search)),
+                    Triple(2, "Library", Pair(Icons.Filled.LibraryMusic, Icons.Outlined.LibraryMusic))
+                )
 
-                // Search
-                IconToggleButton(
-                    checked = selectedTab == 1,
-                    onCheckedChange = { selectedTab = 1 },
-                    colors = IconButtonDefaults.iconToggleButtonColors(
-                        checkedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                        checkedContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                        containerColor = Color.Transparent,
-                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                tabs.forEach { (index, label, icons) ->
+                    val selected = selectedTab == index
+                    val (filledIcon, outlinedIcon) = icons
+                    
+                    val animatedPadding by androidx.compose.animation.core.animateDpAsState(
+                        targetValue = if (selected) 20.dp else 12.dp,
+                        animationSpec = androidx.compose.animation.core.spring(
+                            dampingRatio = androidx.compose.animation.core.Spring.DampingRatioLowBouncy,
+                            stiffness = androidx.compose.animation.core.Spring.StiffnessLow
+                        ),
+                        label = "padding"
                     )
-                ) {
-                    Icon(
-                        imageVector = if (selectedTab == 1) Icons.Filled.Search else Icons.Outlined.Search,
-                        contentDescription = "Search"
+                    
+                    val animatedContainerColor by androidx.compose.animation.animateColorAsState(
+                        targetValue = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+                        animationSpec = androidx.compose.animation.core.tween(durationMillis = 200),
+                        label = "containerColor"
                     )
-                }
-
-                // Library
-                IconToggleButton(
-                    checked = selectedTab == 2,
-                    onCheckedChange = { selectedTab = 2 },
-                    colors = IconButtonDefaults.iconToggleButtonColors(
-                        checkedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                        checkedContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                        containerColor = Color.Transparent,
-                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    
+                    val animatedContentColor by androidx.compose.animation.animateColorAsState(
+                        targetValue = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                        animationSpec = androidx.compose.animation.core.tween(durationMillis = 200),
+                        label = "contentColor"
                     )
-                ) {
-                    Icon(
-                        imageVector = if (selectedTab == 2) Icons.Filled.LibraryMusic else Icons.Outlined.LibraryMusic,
-                        contentDescription = "Library"
-                    )
+                    
+                    Surface(
+                        selected = selected,
+                        onClick = { selectedTab = index },
+                        shape = CircleShape,
+                        color = animatedContainerColor,
+                        contentColor = animatedContentColor,
+                        modifier = Modifier.height(48.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .padding(horizontal = animatedPadding)
+                                .animateContentSize(
+                                    animationSpec = androidx.compose.animation.core.spring(
+                                        dampingRatio = androidx.compose.animation.core.Spring.DampingRatioLowBouncy,
+                                        stiffness = androidx.compose.animation.core.Spring.StiffnessLow
+                                    )
+                                ),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = if (selected) filledIcon else outlinedIcon,
+                                contentDescription = label,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            androidx.compose.animation.AnimatedVisibility(
+                                visible = selected,
+                                enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.expandHorizontally(
+                                    animationSpec = androidx.compose.animation.core.spring(
+                                        dampingRatio = androidx.compose.animation.core.Spring.DampingRatioLowBouncy,
+                                        stiffness = androidx.compose.animation.core.Spring.StiffnessLow
+                                    )
+                                ),
+                                exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.shrinkHorizontally(
+                                    animationSpec = androidx.compose.animation.core.spring(
+                                        dampingRatio = androidx.compose.animation.core.Spring.DampingRatioNoBouncy,
+                                        stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow
+                                    )
+                                )
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = label,
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
         )

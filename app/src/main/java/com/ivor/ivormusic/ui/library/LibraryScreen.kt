@@ -240,54 +240,63 @@ fun LibraryMainScreen(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 24.dp, vertical = 12.dp)
+                .padding(horizontal = 24.dp, vertical = 20.dp)
         ) {
             // Top Row: Title + Actions
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.Top
             ) {
                 Text(
                     text = "Library",
-                    style = MaterialTheme.typography.displaySmall,
-                    fontWeight = FontWeight.Bold
+                    style = MaterialTheme.typography.displayLarge,
+                    color = MaterialTheme.colorScheme.onBackground
                 )
-                FilledTonalButton(
+                
+                FilledTonalIconButton(
                     onClick = onNavigateToStats,
-                    contentPadding = PaddingValues(horizontal = 16.dp),
-                    shape = CircleShape
+                    modifier = Modifier.size(56.dp),
+                    shapes = IconButtonDefaults.shapes()
                 ) {
-                    Icon(Icons.Rounded.Insights, null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Stats")
+                    Icon(Icons.Rounded.Insights, null, modifier = Modifier.size(24.dp))
                 }
             }
             
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(28.dp))
             
-            // Tabs Row
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState())
-            ) {
-                SingleChoiceSegmentedButtonRow {
-                    LibraryTab.entries.forEachIndexed { index, tab ->
-                        SegmentedButton(
-                            selected = selectedTab == tab,
-                            onClick = { selectedTab = tab },
-                            shape = SegmentedButtonDefaults.itemShape(
-                                index = index,
-                                count = LibraryTab.entries.size
-                            ),
-                            icon = { SegmentedButtonDefaults.Icon(active = selectedTab == tab) }
+            // Expressive Horizontal Toolbar for Tabs
+            HorizontalFloatingToolbar(
+                expanded = true,
+                modifier = Modifier.fillMaxWidth(),
+                shape = CircleShape,
+                content = {
+                    for (tab in LibraryTab.entries) {
+                        val selected = selectedTab == tab
+                        val contentColor = if (selected) 
+                            MaterialTheme.colorScheme.onPrimaryContainer 
+                        else 
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp)
+                                .clip(CircleShape)
+                                .background(if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
+                                .clickable { selectedTab = tab },
+                            contentAlignment = Alignment.Center
                         ) {
-                            Text(tab.label)
+                            Text(
+                                text = tab.label,
+                                style = MaterialTheme.typography.labelLarge,
+                                color = contentColor,
+                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
+                            )
                         }
                     }
                 }
-            }
+            )
         }
 
         // --- Main Content ---
