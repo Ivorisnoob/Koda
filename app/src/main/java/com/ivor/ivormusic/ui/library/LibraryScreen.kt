@@ -206,13 +206,6 @@ enum class LibraryTab(val label: String) {
     Albums("Albums")
 }
 
-enum class PlaylistSortOption(val label: String) {
-    RecentlyAdded("Recently added"),
-    NameAZ("Name A-Z"),
-    NameZA("Name Z-A"),
-    TrackCount("Track count")
-}
-
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun LibraryMainScreen(
@@ -232,32 +225,10 @@ fun LibraryMainScreen(
     val isLoading by viewModel.isLoading.collectAsState()
 
     var selectedTab by rememberSaveable { mutableStateOf(LibraryTab.All) }
-    var searchQuery by rememberSaveable { mutableStateOf("") }
-    var isSearchActive by rememberSaveable { mutableStateOf(false) }
-    var playlistSort by rememberSaveable { mutableStateOf(PlaylistSortOption.RecentlyAdded) }
 
-    // Filtering logic
-    val filteredSongs = remember(songs, searchQuery) {
-        if (searchQuery.isBlank()) songs else songs.filter {
-            it.title.contains(searchQuery, true) || it.artist.contains(searchQuery, true)
-        }
-    }
-    
-    val filteredPlaylists = remember(userPlaylists, searchQuery, playlistSort) {
-        val filtered = if (searchQuery.isBlank()) userPlaylists else userPlaylists.filter {
-            (it.name ?: "").contains(searchQuery, true)
-        }
-        when (playlistSort) {
-            PlaylistSortOption.RecentlyAdded -> filtered
-            PlaylistSortOption.NameAZ -> filtered.sortedBy { it.name?.lowercase() ?: "" }
-            PlaylistSortOption.NameZA -> filtered.sortedByDescending { it.name?.lowercase() ?: "" }
-            PlaylistSortOption.TrackCount -> filtered.sortedByDescending { it.itemCount }
-        }
-    }
-    val artistCount = remember(filteredSongs) { filteredSongs.map { it.artist }.toSet().size }
-    val albumCount = remember(filteredSongs) {
-        filteredSongs.map { it.album }.filter { it.isNotBlank() && it != "Unknown Album" }.toSet().size
-    }
+    // Use raw lists as filtering/sorting is removed from UI
+    val filteredSongs = songs
+    val filteredPlaylists = userPlaylists
 
     Column(
         modifier = Modifier
@@ -272,83 +243,27 @@ fun LibraryMainScreen(
                 .padding(horizontal = 24.dp, vertical = 12.dp)
         ) {
             // Top Row: Title + Actions
-            if (isSearchActive) {
-                SearchBar(
-                    inputField = {
-                        SearchBarDefaults.InputField(
-                            query = searchQuery,
-                            onQueryChange = { searchQuery = it },
-                            onSearch = { },
-                            expanded = false,
-                            onExpandedChange = { if (!it) isSearchActive = false },
-                            placeholder = { Text("Search library...") },
-                            leadingIcon = { Icon(Icons.Rounded.Search, null) },
-                            trailingIcon = { IconButton(onClick = { isSearchActive = false; searchQuery = "" }) { Icon(Icons.Rounded.Close, null) } }
-                        )
-                    },
-                    expanded = false,
-                    onExpandedChange = { if (!it) isSearchActive = false },
-                    modifier = Modifier.fillMaxWidth()
-                ) {}
-            } else {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Library",
+                    style = MaterialTheme.typography.displaySmall,
+                    fontWeight = FontWeight.Bold
+                )
+                FilledTonalButton(
+                    onClick = onNavigateToStats,
+                    contentPadding = PaddingValues(horizontal = 16.dp),
+                    shape = CircleShape
                 ) {
-                    Text(
-                        text = "Library",
-                        style = MaterialTheme.typography.displaySmall,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        var showSortMenu by remember { mutableStateOf(false) }
-                        IconButton(onClick = { showSortMenu = true }) {
-                            Icon(Icons.Rounded.Sort, "Sort playlists")
-                        }
-                        DropdownMenu(expanded = showSortMenu, onDismissRequest = { showSortMenu = false }) {
-                            PlaylistSortOption.entries.forEach { option ->
-                                DropdownMenuItem(
-                                    text = { Text(option.label) },
-                                    onClick = {
-                                        playlistSort = option
-                                        showSortMenu = false
-                                    },
-                                    leadingIcon = {
-                                        if (playlistSort == option) {
-                                            Icon(Icons.Rounded.Check, contentDescription = null)
-                                        }
-                                    }
-                                )
-                            }
-                        }
-                        IconButton(onClick = { isSearchActive = true }) {
-                            Icon(Icons.Rounded.Search, "Search")
-                        }
-                        Spacer(Modifier.width(8.dp))
-                        FilledTonalButton(
-                            onClick = onNavigateToStats,
-                            contentPadding = PaddingValues(horizontal = 16.dp),
-                            shape = CircleShape
-                        ) {
-                            Icon(Icons.Rounded.Insights, null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("Stats")
-                        }
-                    }
+                    Icon(Icons.Rounded.Insights, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Stats")
                 }
             }
             
-            Spacer(Modifier.height(16.dp))
-
-            LibraryExpressiveHero(
-                songCount = filteredSongs.size,
-                playlistCount = filteredPlaylists.size + if (likedSongs.isNotEmpty()) 1 else 0,
-                artistCount = artistCount,
-                albumCount = albumCount,
-                onStatsClick = onNavigateToStats
-            )
-
             Spacer(Modifier.height(16.dp))
             
             // Tabs Row
@@ -487,72 +402,6 @@ fun AllSongsList(
                     tonalElevation = 2.dp,
                     onClick = { onPlayQueue(songs, song) }
                 )
-            }
-        }
-    }
-}
-
-@Composable
-private fun LibraryExpressiveHero(
-    songCount: Int,
-    playlistCount: Int,
-    artistCount: Int,
-    albumCount: Int,
-    onStatsClick: () -> Unit
-) {
-    Surface(
-        shape = RoundedCornerShape(32.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        tonalElevation = 4.dp,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(
-            modifier = Modifier.padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            Text(
-                text = "Your music at a glance",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold
-            )
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                AssistChip(
-                    onClick = {},
-                    label = { Text("$songCount tracks") },
-                    leadingIcon = { Icon(Icons.Rounded.MusicNote, null, modifier = Modifier.size(16.dp)) }
-                )
-                AssistChip(
-                    onClick = {},
-                    label = { Text("$playlistCount playlists") },
-                    leadingIcon = { Icon(Icons.AutoMirrored.Rounded.PlaylistPlay, null, modifier = Modifier.size(16.dp)) }
-                )
-            }
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                AssistChip(
-                    onClick = {},
-                    label = { Text("$artistCount artists") },
-                    leadingIcon = { Icon(Icons.Rounded.Person, null, modifier = Modifier.size(16.dp)) }
-                )
-                AssistChip(
-                    onClick = {},
-                    label = { Text("$albumCount albums") },
-                    leadingIcon = { Icon(Icons.Rounded.Album, null, modifier = Modifier.size(16.dp)) }
-                )
-            }
-            FilledTonalButton(
-                onClick = onStatsClick,
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(20.dp)
-            ) {
-                Icon(Icons.Rounded.Insights, null)
-                Spacer(Modifier.width(8.dp))
-                Text("Open listening insights")
             }
         }
     }
