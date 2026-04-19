@@ -8,7 +8,9 @@ import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -204,13 +206,6 @@ enum class LibraryTab(val label: String) {
     Albums("Albums")
 }
 
-enum class PlaylistSortOption(val label: String) {
-    RecentlyAdded("Recently added"),
-    NameAZ("Name A-Z"),
-    NameZA("Name Z-A"),
-    TrackCount("Track count")
-}
-
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun LibraryMainScreen(
@@ -230,28 +225,10 @@ fun LibraryMainScreen(
     val isLoading by viewModel.isLoading.collectAsState()
 
     var selectedTab by rememberSaveable { mutableStateOf(LibraryTab.All) }
-    var searchQuery by rememberSaveable { mutableStateOf("") }
-    var isSearchActive by rememberSaveable { mutableStateOf(false) }
-    var playlistSort by rememberSaveable { mutableStateOf(PlaylistSortOption.RecentlyAdded) }
 
-    // Filtering logic
-    val filteredSongs = remember(songs, searchQuery) {
-        if (searchQuery.isBlank()) songs else songs.filter {
-            it.title.contains(searchQuery, true) || it.artist.contains(searchQuery, true)
-        }
-    }
-    
-    val filteredPlaylists = remember(userPlaylists, searchQuery, playlistSort) {
-        val filtered = if (searchQuery.isBlank()) userPlaylists else userPlaylists.filter {
-            (it.name ?: "").contains(searchQuery, true)
-        }
-        when (playlistSort) {
-            PlaylistSortOption.RecentlyAdded -> filtered
-            PlaylistSortOption.NameAZ -> filtered.sortedBy { it.name?.lowercase() ?: "" }
-            PlaylistSortOption.NameZA -> filtered.sortedByDescending { it.name?.lowercase() ?: "" }
-            PlaylistSortOption.TrackCount -> filtered.sortedByDescending { it.itemCount }
-        }
-    }
+    // Use raw lists as filtering/sorting is removed from UI
+    val filteredSongs = songs
+    val filteredPlaylists = userPlaylists
 
     Column(
         modifier = Modifier
@@ -263,105 +240,63 @@ fun LibraryMainScreen(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 24.dp, vertical = 12.dp)
+                .padding(horizontal = 24.dp, vertical = 20.dp)
         ) {
             // Top Row: Title + Actions
-            if (isSearchActive) {
-                SearchBar(
-                    inputField = {
-                        SearchBarDefaults.InputField(
-                            query = searchQuery,
-                            onQueryChange = { searchQuery = it },
-                            onSearch = { },
-                            expanded = false,
-                            onExpandedChange = { if (!it) isSearchActive = false },
-                            placeholder = { Text("Search library...") },
-                            leadingIcon = { Icon(Icons.Rounded.Search, null) },
-                            trailingIcon = { IconButton(onClick = { isSearchActive = false; searchQuery = "" }) { Icon(Icons.Rounded.Close, null) } }
-                        )
-                    },
-                    expanded = false,
-                    onExpandedChange = { if (!it) isSearchActive = false },
-                    modifier = Modifier.fillMaxWidth()
-                ) {}
-            } else {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top
+            ) {
+                Text(
+                    text = "Library",
+                    style = MaterialTheme.typography.displayLarge,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+                
+                FilledTonalIconButton(
+                    onClick = onNavigateToStats,
+                    modifier = Modifier.size(56.dp),
+                    shapes = IconButtonDefaults.shapes()
                 ) {
-                    Text(
-                        text = "Library",
-                        style = MaterialTheme.typography.displaySmall,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        var showSortMenu by remember { mutableStateOf(false) }
-                        IconButton(onClick = { showSortMenu = true }) {
-                            Icon(Icons.Rounded.Sort, "Sort playlists")
-                        }
-                        DropdownMenu(expanded = showSortMenu, onDismissRequest = { showSortMenu = false }) {
-                            PlaylistSortOption.entries.forEach { option ->
-                                DropdownMenuItem(
-                                    text = { Text(option.label) },
-                                    onClick = {
-                                        playlistSort = option
-                                        showSortMenu = false
-                                    },
-                                    leadingIcon = {
-                                        if (playlistSort == option) {
-                                            Icon(Icons.Rounded.Check, contentDescription = null)
-                                        }
-                                    }
-                                )
-                            }
-                        }
-                        IconButton(onClick = { isSearchActive = true }) {
-                            Icon(Icons.Rounded.Search, "Search")
-                        }
-                        Spacer(Modifier.width(8.dp))
-                        FilledTonalButton(
-                            onClick = onNavigateToStats,
-                            contentPadding = PaddingValues(horizontal = 16.dp),
-                            shape = CircleShape
+                    Icon(Icons.Rounded.Insights, null, modifier = Modifier.size(24.dp))
+                }
+            }
+            
+            Spacer(Modifier.height(28.dp))
+            
+            // Expressive Horizontal Toolbar for Tabs
+            HorizontalFloatingToolbar(
+                expanded = true,
+                modifier = Modifier.fillMaxWidth(),
+                shape = CircleShape,
+                content = {
+                    for (tab in LibraryTab.entries) {
+                        val selected = selectedTab == tab
+                        val contentColor = if (selected) 
+                            MaterialTheme.colorScheme.onPrimaryContainer 
+                        else 
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp)
+                                .clip(CircleShape)
+                                .background(if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
+                                .clickable { selectedTab = tab },
+                            contentAlignment = Alignment.Center
                         ) {
-                            Icon(Icons.Rounded.Insights, null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("Stats")
+                            Text(
+                                text = tab.label,
+                                style = MaterialTheme.typography.labelLarge,
+                                color = contentColor,
+                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
+                            )
                         }
                     }
                 }
-            }
-            
-            Spacer(Modifier.height(16.dp))
-            
-            // Tabs Row
-            LazyRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                items(LibraryTab.values()) { tab ->
-                    val selected = selectedTab == tab
-                    FilterChip(
-                        selected = selected,
-                        onClick = { selectedTab = tab },
-                        label = { Text(tab.label) },
-                        leadingIcon = if (selected) {
-                            { Icon(Icons.Rounded.CheckCircle, null, modifier = Modifier.size(16.dp)) }
-                        } else null,
-                        shape = CircleShape,
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
-                        ),
-                        border = FilterChipDefaults.filterChipBorder(
-                            borderColor = Color.Transparent,
-                            selected = selected,
-                            enabled = true
-                        )
-                    )
-                }
-            }
+            )
         }
 
         // --- Main Content ---
@@ -443,6 +378,7 @@ fun AllSongsList(
     contentPadding: PaddingValues
 ) {
     LazyColumn(
+        verticalArrangement = Arrangement.spacedBy(8.dp),
         contentPadding = PaddingValues(
             top = 8.dp,
             bottom = contentPadding.calculateBottomPadding() + 80.dp,
@@ -470,6 +406,9 @@ fun AllSongsList(
             items(songs, key = { it.id }) { song ->
                 SongListItem(
                     song = song,
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                    shape = RoundedCornerShape(20.dp),
+                    tonalElevation = 2.dp,
                     onClick = { onPlayQueue(songs, song) }
                 )
             }
