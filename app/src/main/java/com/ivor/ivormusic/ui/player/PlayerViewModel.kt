@@ -28,7 +28,15 @@ import kotlinx.coroutines.Job
 class PlayerViewModel(private val context: Context) : ViewModel() {
 
     private var controllerFuture: ListenableFuture<MediaController>? = null
-    private val controller: MediaController? get() = if (controllerFuture?.isDone == true) controllerFuture?.get() else null
+    private val controller: MediaController?
+        get() = try {
+            if (controllerFuture?.isDone == true) controllerFuture?.get() else null
+        } catch (e: Exception) {
+            // Future may have completed exceptionally if the service connection
+            // failed (e.g. onGetSession returned null during a teardown race).
+            null
+        }
+    private var connectRetryAttempts = 0
 
     private val _currentSong = MutableStateFlow<Song?>(null)
     val currentSong: StateFlow<Song?> = _currentSong.asStateFlow()
@@ -146,15 +154,33 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
 
     private fun initializeController() {
         val sessionToken = SessionToken(context, ComponentName(context, MusicService::class.java))
-        controllerFuture = MediaController.Builder(context, sessionToken).buildAsync()
-        
-        controllerFuture?.addListener({
-            val ctrl = controller ?: return@addListener
-            
+        val future = MediaController.Builder(context, sessionToken).buildAsync()
+        controllerFuture = future
+
+        future.addListener({
+            val ctrl = try {
+                future.get()
+            } catch (e: Exception) {
+                // "Session not found" / connection rejected — usually a race during
+                // service teardown after the app was swiped away. Retry a couple of
+                // times with backoff so the next time the user opens the app the
+                // controller binds cleanly instead of leaving the UI dead.
+                android.util.Log.w("PlayerViewModel", "MediaController connect failed: ${e.message}")
+                if (connectRetryAttempts < 3) {
+                    connectRetryAttempts++
+                    viewModelScope.launch {
+                        delay(300L * connectRetryAttempts)
+                        initializeController()
+                    }
+                }
+                return@addListener
+            }
+            connectRetryAttempts = 0
+
             // SYNC EXISTING SESSION STATE
             // This runs when we reconnect to an already-playing session
             syncStateFromController(ctrl)
-            
+
             // Restore last played song if there's nothing currently playing
             restoreLastPlayedSong()
             
