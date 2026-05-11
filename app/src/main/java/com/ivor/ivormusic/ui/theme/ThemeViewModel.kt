@@ -31,6 +31,7 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
     
     val oemFixEnabled: StateFlow<Boolean> = themePreferences.oemFixEnabled
     val manualScanEnabled: StateFlow<Boolean> = themePreferences.manualScanEnabled
+    val onboardingCompleted: StateFlow<Boolean> = themePreferences.onboardingCompleted
     
     val currentCacheSizeBytes: StateFlow<Long> = com.ivor.ivormusic.data.CacheManager.currentCacheSizeBytes
 
@@ -120,5 +121,9 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setManualScanEnabled(enabled: Boolean) {
         themePreferences.setManualScanEnabled(enabled)
+    }
+
+    fun setOnboardingCompleted(completed: Boolean) {
+        themePreferences.setOnboardingCompleted(completed)
     }
 }

@@ -57,6 +57,9 @@ class ThemePreferences(context: Context) {
     private val _manualScanEnabled = MutableStateFlow(getManualScanEnabledPreference())
     val manualScanEnabled: StateFlow<Boolean> = _manualScanEnabled.asStateFlow()
 
+    private val _onboardingCompleted = MutableStateFlow(getOnboardingCompletedPreference())
+    val onboardingCompleted: StateFlow<Boolean> = _onboardingCompleted.asStateFlow()
+
     companion object {
         private const val PREFS_NAME = "ivor_music_theme_prefs"
         private const val KEY_THEME_MODE = "theme_mode_enum"
@@ -73,6 +76,7 @@ class ThemePreferences(context: Context) {
         private const val KEY_CROSSFADE_DURATION = "crossfade_duration"
         private const val KEY_OEM_FIX_ENABLED = "oem_fix_enabled"
         private const val KEY_MANUAL_SCAN_ENABLED = "manual_scan_enabled"
+        private const val KEY_ONBOARDING_COMPLETED = "onboarding_completed"
         private const val KEY_LAST_SONG_ID = "last_song_id"
         private const val KEY_LAST_SONG_TITLE = "last_song_title"
         private const val KEY_LAST_SONG_ARTIST = "last_song_artist"
@@ -352,6 +356,15 @@ class ThemePreferences(context: Context) {
     fun setManualScanEnabled(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_MANUAL_SCAN_ENABLED, enabled).apply()
         _manualScanEnabled.value = enabled
+    }
+
+    private fun getOnboardingCompletedPreference(): Boolean {
+        return prefs.getBoolean(KEY_ONBOARDING_COMPLETED, false)
+    }
+
+    fun setOnboardingCompleted(completed: Boolean) {
+        prefs.edit().putBoolean(KEY_ONBOARDING_COMPLETED, completed).apply()
+        _onboardingCompleted.value = completed
     }
 }
 

@@ -1,8 +1,5 @@
 package com.ivor.ivormusic
 
-import android.Manifest
-import android.content.pm.PackageManager
-import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -16,11 +13,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.core.app.ActivityCompat
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -42,13 +35,9 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import com.ivor.ivormusic.ui.theme.ThemeMode
 
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import com.ivor.ivormusic.ui.onboarding.OnboardingScreen
 
 class MainActivity : ComponentActivity() {
-    
-    companion object {
-        private const val NOTIFICATION_PERMISSION_REQUEST_CODE = 1001
-    }
-    
     override fun onCreate(savedInstanceState: Bundle?) {
         val splashScreen = installSplashScreen()
         super.onCreate(savedInstanceState)
@@ -57,9 +46,7 @@ class MainActivity : ComponentActivity() {
         splashScreen.setOnExitAnimationListener { it.remove() }
 
         enableEdgeToEdge()
-        
-        requestNotificationPermission()
-        
+
         setContent {
             val themeViewModel: ThemeViewModel = viewModel()
             val themeMode by themeViewModel.themeMode.collectAsState()
@@ -71,6 +58,7 @@ class MainActivity : ComponentActivity() {
             val excludedFolders by themeViewModel.excludedFolders.collectAsState()
             val oemFixEnabled by themeViewModel.oemFixEnabled.collectAsState()
             val manualScanEnabled by themeViewModel.manualScanEnabled.collectAsState()
+            val onboardingCompleted by themeViewModel.onboardingCompleted.collectAsState()
             
             val cacheEnabled by themeViewModel.cacheEnabled.collectAsState()
             val maxCacheSizeMb by themeViewModel.maxCacheSizeMb.collectAsState()
@@ -122,25 +110,11 @@ class MainActivity : ComponentActivity() {
                         crossfadeEnabled = crossfadeEnabled,
                         onCrossfadeEnabledToggle = { themeViewModel.toggleCrossfadeEnabled() },
                         crossfadeDurationMs = crossfadeDurationMs,
-                        onCrossfadeDurationChange = { themeViewModel.setCrossfadeDuration(it) }
+                        onCrossfadeDurationChange = { themeViewModel.setCrossfadeDuration(it) },
+                        onboardingCompleted = onboardingCompleted,
+                        onOnboardingCompleted = { themeViewModel.setOnboardingCompleted(it) }
                     )
                 }
-            }
-        }
-    }
-    
-    private fun requestNotificationPermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(
-                    this,
-                    Manifest.permission.POST_NOTIFICATIONS
-                ) != PackageManager.PERMISSION_GRANTED
-            ) {
-                ActivityCompat.requestPermissions(
-                    this,
-                    arrayOf(Manifest.permission.POST_NOTIFICATIONS),
-                    NOTIFICATION_PERMISSION_REQUEST_CODE
-                )
             }
         }
     }
@@ -178,7 +152,9 @@ fun MusicApp(
     oemFixEnabled: Boolean,
     onOemFixEnabledToggle: (Boolean) -> Unit,
     manualScanEnabled: Boolean,
-    onManualScanEnabledToggle: (Boolean) -> Unit
+    onManualScanEnabledToggle: (Boolean) -> Unit,
+    onboardingCompleted: Boolean,
+    onOnboardingCompleted: (Boolean) -> Unit
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val navController = rememberNavController()
@@ -192,7 +168,35 @@ fun MusicApp(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
-        NavHost(navController = navController, startDestination = "home") {
+        NavHost(
+            navController = navController,
+            startDestination = if (onboardingCompleted) "home" else "onboarding"
+        ) {
+            composable("onboarding") {
+                OnboardingScreen(
+                    currentThemeMode = currentThemeMode,
+                    onThemeModeChange = onThemeModeChange,
+                    loadLocalSongs = loadLocalSongs,
+                    onLoadLocalSongsToggle = onLoadLocalSongsToggle,
+                    ambientBackground = ambientBackground,
+                    onAmbientBackgroundToggle = onAmbientBackgroundToggle,
+                    videoMode = videoMode,
+                    onVideoModeToggle = onVideoModeToggle,
+                    playerStyle = playerStyle,
+                    onPlayerStyleChange = onPlayerStyleChange,
+                    crossfadeEnabled = crossfadeEnabled,
+                    onCrossfadeEnabledToggle = onCrossfadeEnabledToggle,
+                    manualScanEnabled = manualScanEnabled,
+                    onManualScanEnabledToggle = onManualScanEnabledToggle,
+                    onFinish = {
+                        onOnboardingCompleted(true)
+                        navController.navigate("home") {
+                            popUpTo("onboarding") { inclusive = true }
+                            launchSingleTop = true
+                        }
+                    }
+                )
+            }
 
             composable("home") {
                 HomeScreen(

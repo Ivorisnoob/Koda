@@ -245,7 +245,7 @@ fun HomeScreen(
             .background(backgroundColor)
     ) {
         // Main content
-        if (permissionState.status.isGranted) {
+        if (!loadLocalSongs || permissionState.status.isGranted) {
             androidx.compose.animation.AnimatedContent(
                 targetState = selectedTab,
                 label = "TabTransition",
