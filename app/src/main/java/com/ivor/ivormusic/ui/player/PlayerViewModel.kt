@@ -34,6 +34,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         } catch (e: Exception) {
             // Future may have completed exceptionally if the service connection
             // failed (e.g. onGetSession returned null during a teardown race).
+            android.util.Log.w("PlayerViewModel", "controller getter: failed future", e)
             null
         }
     private var connectRetryAttempts = 0
@@ -166,6 +167,11 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                 // times with backoff so the next time the user opens the app the
                 // controller binds cleanly instead of leaving the UI dead.
                 android.util.Log.w("PlayerViewModel", "MediaController connect failed: ${e.message}")
+                // Release the failed future before scheduling a retry so we don't
+                // leak it — Media3 requires every buildAsync() future to be released
+                // exactly once, and initializeController() will overwrite the field.
+                MediaController.releaseFuture(future)
+                controllerFuture = null
                 if (connectRetryAttempts < 3) {
                     connectRetryAttempts++
                     viewModelScope.launch {
