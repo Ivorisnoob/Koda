@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Modifier
 import com.ivor.ivormusic.data.VideoItem
+import com.ivor.ivormusic.ui.onboarding.OnboardingScreen
 import com.ivor.ivormusic.ui.home.HomeScreen
 import com.ivor.ivormusic.ui.home.HomeViewModel
 import com.ivor.ivormusic.ui.player.PlayerViewModel
@@ -71,6 +72,7 @@ class MainActivity : ComponentActivity() {
             val excludedFolders by themeViewModel.excludedFolders.collectAsState()
             val oemFixEnabled by themeViewModel.oemFixEnabled.collectAsState()
             val manualScanEnabled by themeViewModel.manualScanEnabled.collectAsState()
+            val onboardingCompleted by themeViewModel.onboardingCompleted.collectAsState()
             
             val cacheEnabled by themeViewModel.cacheEnabled.collectAsState()
             val maxCacheSizeMb by themeViewModel.maxCacheSizeMb.collectAsState()
@@ -89,7 +91,20 @@ class MainActivity : ComponentActivity() {
             
             IvorMusicTheme(darkTheme = isDarkTheme) {
                 Box(modifier = Modifier.fillMaxSize()) {
-                    MusicApp(
+                    if (!onboardingCompleted) {
+                        OnboardingScreen(
+                            onFinish = { themeViewModel.setOnboardingCompleted(true) },
+                            currentThemeMode = themeMode,
+                            onThemeModeChange = { themeViewModel.setThemeMode(it) },
+                            playerStyle = playerStyle,
+                            onPlayerStyleChange = { themeViewModel.setPlayerStyle(it) },
+                            ambientBackground = ambientBackground,
+                            onAmbientBackgroundToggle = { themeViewModel.setAmbientBackground(it) },
+                            loadLocalSongs = loadLocalSongs,
+                            onLoadLocalSongsToggle = { themeViewModel.setLoadLocalSongs(it) }
+                        )
+                    } else {
+                        MusicApp(
                         currentThemeMode = themeMode,
                         onThemeModeChange = { themeViewModel.setThemeMode(it) },
                         isDarkMode = isDarkTheme, // Derived for compatibility
@@ -124,6 +139,7 @@ class MainActivity : ComponentActivity() {
                         crossfadeDurationMs = crossfadeDurationMs,
                         onCrossfadeDurationChange = { themeViewModel.setCrossfadeDuration(it) }
                     )
+                    }
                 }
             }
         }
