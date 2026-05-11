@@ -1266,34 +1266,57 @@ fun PlaylistDetailScreen(
                             shape = if (reorderEnabled) RoundedCornerShape(24.dp) else RoundedCornerShape(0.dp),
                             trailingContent = if (reorderEnabled) {
                                 {
-                                    Column(
-                                        horizontalAlignment = Alignment.End,
-                                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
                                     ) {
                                         Surface(
                                             shape = RoundedCornerShape(14.dp),
-                                            color = if (isDragging) {
-                                                MaterialTheme.colorScheme.tertiaryContainer
-                                            } else {
-                                                MaterialTheme.colorScheme.surfaceContainerHighest
+                                            color = MaterialTheme.colorScheme.errorContainer,
+                                            modifier = Modifier.clickable(enabled = !isDragging) {
+                                                songs = songs.toMutableList().apply {
+                                                    removeAll { it.id == song.id }
+                                                }
+                                                viewModel.replaceLocalPlaylistSongs(resolvedPlaylist.id, songs)
+                                                reorderDirty = false
                                             }
                                         ) {
                                             Icon(
-                                                imageVector = Icons.Rounded.DragHandle,
-                                                contentDescription = "Drag to reorder",
-                                                tint = if (isDragging) {
-                                                    MaterialTheme.colorScheme.onTertiaryContainer
-                                                } else {
-                                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                                },
+                                                imageVector = Icons.Rounded.Delete,
+                                                contentDescription = "Remove from playlist",
+                                                tint = MaterialTheme.colorScheme.onErrorContainer,
                                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
                                             )
                                         }
-                                        Text(
-                                            text = if (isDragging) "Moving" else "Hold",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
+                                        Column(
+                                            horizontalAlignment = Alignment.End,
+                                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            Surface(
+                                                shape = RoundedCornerShape(14.dp),
+                                                color = if (isDragging) {
+                                                    MaterialTheme.colorScheme.tertiaryContainer
+                                                } else {
+                                                    MaterialTheme.colorScheme.surfaceContainerHighest
+                                                }
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Rounded.DragHandle,
+                                                    contentDescription = "Drag to reorder",
+                                                    tint = if (isDragging) {
+                                                        MaterialTheme.colorScheme.onTertiaryContainer
+                                                    } else {
+                                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                                    },
+                                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
+                                                )
+                                            }
+                                            Text(
+                                                text = if (isDragging) "Moving" else "Hold",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
                                     }
                                 }
                             } else null,
