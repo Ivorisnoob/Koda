@@ -13,8 +13,8 @@ android {
         applicationId = "com.ivor.ivormusic"
         minSdk = 31
         targetSdk = 36
-        versionCode = 14
-        versionName = "2.6"
+        versionCode = 15
+        versionName = "3.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -27,13 +27,12 @@ android {
             isUniversalApk = true
         }
     }
-    //Only for Release apk that is why I hardcoded cause if you want to make as a maintainer release apk you can change here in future we will make it the correct way
     signingConfigs {
         create("release") {
             storeFile = file("${project.rootDir}/keystore/ivormusic.jks")
-            storePassword = "password"
-            keyAlias = "key0"
-            keyPassword = "password"
+            storePassword = System.getenv("KEYSTORE_PASSWORD")
+            keyAlias = System.getenv("KEY_ALIAS")
+            keyPassword = System.getenv("KEY_PASSWORD")
         }
     }
 

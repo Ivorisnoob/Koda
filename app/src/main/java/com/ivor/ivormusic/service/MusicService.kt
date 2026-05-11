@@ -71,7 +71,8 @@ class MusicService : MediaLibraryService() {
     private var isCrossfadeEnabled = true
     private var crossfadeDurationMs = 3000L
     private var fadeVolumeJob: Job? = null
-    
+    private var progressJob: Job? = null
+
     // Live Update (Android 16+)
     private var musicProgressLiveUpdate: MusicProgressLiveUpdate? = null
 
@@ -120,9 +121,18 @@ class MusicService : MediaLibraryService() {
         preWarmAutoCache()
     }
 
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        // When the user swipes the app from recents, pause playback and stop the
+        // service so the foreground notification is dismissed instead of getting
+        // stuck (a foreground-service notification cannot be swiped away by the user).
+        // pauseAllPlayersAndStopSelf() is the official Media3 helper for this.
+        pauseAllPlayersAndStopSelf()
+    }
+
     override fun onDestroy() {
         Log.i(TAG, "MusicService Destroying...")
         fadeVolumeJob?.cancel()
+        progressJob?.cancel()
         musicProgressLiveUpdate?.hide()
         mediaLibrarySession?.run {
             player.release()
@@ -136,6 +146,9 @@ class MusicService : MediaLibraryService() {
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? {
+        // May be null briefly during teardown; Media3 handles this gracefully and
+        // the connecting MediaController will simply receive a connection failure
+        // rather than binding to a released session.
         return mediaLibrarySession
     }
 
@@ -251,7 +264,7 @@ class MusicService : MediaLibraryService() {
     // --- Core Logic: The Player Event Listener ---
 
     private inner class PlayerEventListener : Player.Listener {
-        
+
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             super.onMediaItemTransition(mediaItem, reason)
 
@@ -273,15 +286,34 @@ class MusicService : MediaLibraryService() {
 
         override fun onPlaybackStateChanged(playbackState: Int) {
             super.onPlaybackStateChanged(playbackState)
-            
+
             // Start prefetching as soon as we are ready
             if (playbackState == Player.STATE_READY) {
                 prefetchUpcomingSongs()
             }
 
-            // Android 16 Live Update monitoring
-            if (playbackState == Player.STATE_READY && player.isPlaying) {
+            // Android 16 Live Update: dismiss when playback ends or returns to idle so
+            // the progress chip never lingers on the lock screen / shade after the
+            // queue finishes or the service is paused.
+            if (playbackState == Player.STATE_ENDED || playbackState == Player.STATE_IDLE) {
+                progressJob?.cancel()
+                musicProgressLiveUpdate?.hide()
+            }
+        }
+
+        override fun onIsPlayingChanged(isPlaying: Boolean) {
+            super.onIsPlayingChanged(isPlaying)
+            // Single-flight: only one progress monitor coroutine ever runs. Previous
+            // approach launched a fresh loop on every STATE_READY transition (which
+            // fires multiple times per song due to URI resolution / replaceMediaItem),
+            // resulting in N concurrent loops fighting over crossfade volume and
+            // spamming the Live Update notification.
+            if (isPlaying) {
                 monitorProgress()
+            } else {
+                progressJob?.cancel()
+                progressJob = null
+                musicProgressLiveUpdate?.hide()
             }
         }
 
@@ -777,33 +809,40 @@ class MusicService : MediaLibraryService() {
     }
     
     private fun monitorProgress() {
-        serviceScope.launch {
-            while (isActive && player.isPlaying) {
-                val duration = player.duration
-                val position = player.currentPosition
-                
-                // Android 16 Live Update
-                if (duration > 0) {
-                     val mediaItem = player.currentMediaItem
-                     musicProgressLiveUpdate?.updateProgress(
-                         songTitle = mediaItem?.mediaMetadata?.title?.toString() ?: "Unknown",
-                         artistName = mediaItem?.mediaMetadata?.artist?.toString() ?: "Unknown",
-                         currentPositionMs = position,
-                         durationMs = duration,
-                         isPlaying = true
-                     )
-                }
-                
-                // Crossfade Logic (Fade Out)
-                if (isCrossfadeEnabled && duration > position) {
-                    val remaining = duration - position
-                    if (remaining <= crossfadeDurationMs) {
-                        val volume = (remaining.toFloat() / crossfadeDurationMs).coerceIn(0f, 1f)
-                        player.volume = volume
+        progressJob?.cancel()
+        progressJob = serviceScope.launch {
+            try {
+                while (isActive && player.isPlaying) {
+                    val duration = player.duration
+                    val position = player.currentPosition
+
+                    // Android 16 Live Update
+                    if (duration > 0) {
+                         val mediaItem = player.currentMediaItem
+                         musicProgressLiveUpdate?.updateProgress(
+                             songTitle = mediaItem?.mediaMetadata?.title?.toString() ?: "Unknown",
+                             artistName = mediaItem?.mediaMetadata?.artist?.toString() ?: "Unknown",
+                             currentPositionMs = position,
+                             durationMs = duration,
+                             isPlaying = true
+                         )
                     }
+
+                    // Crossfade Logic (Fade Out)
+                    if (isCrossfadeEnabled && duration > position) {
+                        val remaining = duration - position
+                        if (remaining <= crossfadeDurationMs) {
+                            val volume = (remaining.toFloat() / crossfadeDurationMs).coerceIn(0f, 1f)
+                            player.volume = volume
+                        }
+                    }
+
+                    delay(1000)
                 }
-                
-                delay(1000)
+            } finally {
+                // Loop exited (paused / stopped / cancelled) — drop the live update so
+                // it never freezes at the last reported progress.
+                musicProgressLiveUpdate?.hide()
             }
         }
     }

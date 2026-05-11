@@ -1,4 +1,4 @@
-name: Build Debug APK
+name: Build APKs
 
 on:
   push:
@@ -10,9 +10,10 @@ env:
   TELEGRAM_CHAT_ID: "@ivorisnoob_projects"
 
 jobs:
-  build:
+  build-debug:
+    name: Build Debug APK
     runs-on: ubuntu-latest
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -51,5 +52,59 @@ jobs:
       with:
         name: app-debug-armeabi-v7a
         path: app/build/outputs/apk/debug/*armeabi-v7a*.apk
+        if-no-files-found: error
+        retention-days: 14
+
+  build-release:
+    name: Build Release APK
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+        cache: gradle
+
+    - name: Grant execute permission for gradlew
+      run: chmod +x gradlew
+
+    - name: Decode keystore
+      run: |
+        mkdir -p keystore
+        echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > keystore/ivormusic.jks
+
+    - name: Build Release APK
+      env:
+        KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+        KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+        KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+      run: ./gradlew assembleRelease
+
+    - name: Upload Release APK (Universal)
+      uses: actions/upload-artifact@v4
+      with:
+        name: app-release-universal
+        path: app/build/outputs/apk/release/*universal*.apk
+        if-no-files-found: error
+        retention-days: 14
+
+    - name: Upload Release APK (arm64-v8a)
+      uses: actions/upload-artifact@v4
+      with:
+        name: app-release-arm64-v8a
+        path: app/build/outputs/apk/release/*arm64-v8a*.apk
+        if-no-files-found: error
+        retention-days: 14
+
+    - name: Upload Release APK (armeabi-v7a)
+      uses: actions/upload-artifact@v4
+      with:
+        name: app-release-armeabi-v7a
+        path: app/build/outputs/apk/release/*armeabi-v7a*.apk
         if-no-files-found: error
         retention-days: 14
