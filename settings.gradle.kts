@@ -22,3 +22,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "IvorMusic"
 include(":app")
+include(":shared")

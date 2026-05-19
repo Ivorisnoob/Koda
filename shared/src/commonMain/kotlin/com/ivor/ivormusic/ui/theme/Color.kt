@@ -1,0 +1,38 @@
+package com.ivor.ivormusic.ui.theme
+
+import androidx.compose.ui.graphics.Color
+
+val DarkBackground = Color(0xFF000000)
+val DarkSurface = Color(0xFF121212)
+val DarkSurfaceVariant = Color(0xFF1E1E1E)
+
+val PrimaryBlue = Color(0xFFB8D4FF)
+val PrimaryBlueContainer = Color(0xFFB8D4FF)
+val OnPrimaryBlue = Color(0xFF000000)
+
+val SecondaryPurple = Color(0xFFD0BCFF)
+val SecondaryPurpleContainer = Color(0xFF4A4458)
+
+val TextPrimary = Color(0xFFFFFFFF)
+val TextSecondary = Color(0xFFB3B3B3)
+
+val NavBarContainer = Color(0xFF1A1A1A)
+val NavBarSelected = Color(0xFF3D5AFE)
+val NavBarUnselected = Color(0xFF9E9E9E)
+
+val LightBackground = Color(0xFFF8F8F8)
+val LightSurface = Color(0xFFFFFFFF)
+val LightSurfaceVariant = Color(0xFFF0F0F0)
+val LightPrimary = Color(0xFF6200EE)
+val LightPrimaryContainer = Color(0xFFE8DEF8)
+val LightOnPrimary = Color(0xFFFFFFFF)
+val LightTextPrimary = Color(0xFF1C1B1F)
+val LightTextSecondary = Color(0xFF49454F)
+
+val Purple80 = Color(0xFFD0BCFF)
+val PurpleGrey80 = Color(0xFFCCC2DC)
+val Pink80 = Color(0xFFEFB8C8)
+
+val Purple40 = Color(0xFF6650a4)
+val PurpleGrey40 = Color(0xFF625b71)
+val Pink40 = Color(0xFF7D5260)

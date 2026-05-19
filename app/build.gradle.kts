@@ -64,42 +64,30 @@ android {
     }
 }
 
-// Build info available via BuildConfig
 android.defaultConfig.apply {
     buildConfigField("String", "GITHUB_REPO", "\"ivorisnoob/Koda\"")
     buildConfigField("String", "GITHUB_USERNAME", "\"ivorisnoob\"")
 }
 
 dependencies {
+    // Shared KMP module — all UI, models, ViewModels, networking live here
+    implementation(project(":shared"))
+
+    // Android app-layer only deps
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.core.splashscreen)
     implementation(libs.androidx.activity.compose)
     implementation(platform(libs.androidx.compose.bom))
-    implementation(libs.androidx.compose.ui)
-    implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
-    implementation(libs.androidx.compose.material3)
+
+    // Media3 service (MusicService lives in app/)
     implementation(libs.androidx.media3.exoplayer)
-    implementation(libs.androidx.media3.ui)
     implementation(libs.androidx.media3.session)
-    implementation(libs.accompanist.permissions)
-    implementation(libs.androidx.navigation.compose)
-    implementation(libs.androidx.lifecycle.viewmodel.compose)
-    implementation(libs.androidx.compose.material.icons.extended)
-    implementation(libs.coil.compose)
-    implementation(libs.androidx.graphics.shapes)
-    implementation(libs.androidx.ui.text.google.fonts)
-    implementation("androidx.palette:palette-ktx:1.0.0")
-    
-    // YouTube Music Integration
-    implementation(libs.newpipe.extractor)
-    implementation(libs.okhttp)
-    implementation(libs.ktor.client.okhttp)
-    implementation(libs.ktor.client.content.negotiation)
-    implementation(libs.ktor.serialization.kotlinx.json)
-    implementation(libs.androidx.security.crypto)
     implementation(libs.kotlinx.coroutines.guava)
+
+    // Download manager (lives in app/)
+    implementation(libs.okhttp)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
