@@ -33,12 +33,13 @@ jobs:
 
     # Compile the Android target of the shared module (commonMain + androidMain)
     - name: Compile :shared (Android target)
-      run: ./gradlew :shared:compileKotlinAndroid --no-daemon
+      run: ./gradlew :shared:compileDebugKotlinAndroid --no-daemon
 
     # When iOS targets are uncommented in shared/build.gradle.kts, switch the
     # runner to macos-latest and enable the step below instead.
     # - name: Compile :shared (iOS targets)
     #   run: ./gradlew :shared:compileKotlinIosArm64 :shared:compileKotlinIosSimulatorArm64 --no-daemon
+    #   (these task names are unambiguous once iOS targets are added)
 
   # ── 2. Debug APK ─────────────────────────────────────────────────────────────
   build-debug:
