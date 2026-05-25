@@ -114,7 +114,7 @@ fun ArtistScreen(
     
     // State for fetched songs
     var artistSongs by remember { mutableStateOf<List<Song>>(emptyList()) }
-    var fetchedAlbums by remember { mutableStateOf<List<com.ivor.ivormusic.data.PlaylistDisplayItem>>(emptyList()) }
+    var fetchedAlbums by remember { mutableStateOf<List<com.ivor.ivormusic.domain.PlaylistDisplayItem>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
     var isLoadingMore by remember { mutableStateOf(false) }
     var visibleSongCount by remember { mutableIntStateOf(20) }

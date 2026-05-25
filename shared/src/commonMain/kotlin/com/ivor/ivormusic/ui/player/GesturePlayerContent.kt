@@ -46,7 +46,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
-import androidx.media3.common.Player
 import coil3.compose.AsyncImage
 import com.ivor.ivormusic.domain.Song
 import com.ivor.ivormusic.domain.LyricsResult
@@ -85,7 +84,6 @@ fun GesturePlayerSheetContent(
     val shuffleModeEnabled by viewModel.shuffleModeEnabled.collectAsState()
     val repeatMode by viewModel.repeatMode.collectAsState()
     val currentQueue by viewModel.currentQueue.collectAsState()
-    val playWhenReady by viewModel.playWhenReady.collectAsState()
     val isFavorite by viewModel.isCurrentSongLiked.collectAsState()
     
     // Lyrics state
@@ -137,7 +135,7 @@ fun GesturePlayerSheetContent(
                     currentSong = currentSong,
                     queue = currentQueue,
                     isPlaying = isPlaying,
-                    isBuffering = isBuffering && playWhenReady,
+                    isBuffering = isBuffering,
                     progress = progress,
                     duration = duration,
                     shuffleModeEnabled = shuffleModeEnabled,
@@ -610,12 +608,12 @@ private fun GesturePlayerToolbar(
                 
                 // Repeat toggle
                 IconToggleButton(
-                    checked = repeatMode != Player.REPEAT_MODE_OFF,
+                    checked = repeatMode != 0,
                     onCheckedChange = { onToggleRepeat() }
                 ) {
                     Icon(
                         imageVector = when (repeatMode) {
-                            Player.REPEAT_MODE_ONE -> Icons.Default.RepeatOne
+                            1 -> Icons.Default.RepeatOne // REPEAT_MODE_ONE
                             else -> Icons.Default.Repeat
                         },
                         contentDescription = "Repeat"

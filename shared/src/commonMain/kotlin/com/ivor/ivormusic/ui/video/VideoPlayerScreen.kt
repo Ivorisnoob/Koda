@@ -70,12 +70,9 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
-import androidx.media3.common.util.UnstableApi
-import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.ui.PlayerView
 import coil3.compose.AsyncImage
 import com.ivor.ivormusic.domain.VideoItem
+import com.ivor.ivormusic.platform.PlatformVideoPlayerView
 import java.util.Locale
 
 // VideoPlayerScreen function removed.
@@ -84,10 +81,10 @@ import java.util.Locale
 
 // ---------------- Sub-Composables ----------------
 
-@kotlin.OptIn(UnstableApi::class, ExperimentalMaterial3ExpressiveApi::class)
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun FullscreenPlayerContent(
-    exoPlayer: ExoPlayer,
+    streamUrl: String?,
     showControls: Boolean,
     onToggleControls: () -> Unit,
     hasError: Boolean,
@@ -122,20 +119,15 @@ fun FullscreenPlayerContent(
             ) { onToggleControls() }
     ) {
         // Video View
-        AndroidView(
-            factory = { ctx ->
-                PlayerView(ctx).apply {
-                    player = exoPlayer
-                    useController = false
-                    layoutParams = FrameLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.MATCH_PARENT
-                    )
-                }
-            },
-            modifier = Modifier.fillMaxSize()
+        PlatformVideoPlayerView(
+            modifier = Modifier.fillMaxSize(),
+            videoUrl = streamUrl,
+            audioUrl = null,
+            isPlaying = isPlaying,
+            onPlayerReady = {},
+            onError = {}
         )
-        
+
         // Overlays
         if (hasError) {
             ErrorOverlay(errorMessage)
@@ -144,7 +136,7 @@ fun FullscreenPlayerContent(
                 ContainedLoadingIndicator()
             }
         }
-        
+
         // Controls
         AnimatedVisibility(
             visible = showControls,
@@ -178,7 +170,7 @@ fun FullscreenPlayerContent(
                     ) {
                         Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back")
                     }
-                    
+
                     Text(
                         text = videoTitle,
                         style = MaterialTheme.typography.titleLarge,
@@ -187,7 +179,7 @@ fun FullscreenPlayerContent(
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f)
                     )
-                    
+
                     // Auto Play Toggle
                     FilledTonalIconButton(
                         onClick = onAutoPlayToggle,
@@ -198,7 +190,7 @@ fun FullscreenPlayerContent(
                         shapes = stableShapes
                     ) {
                         Icon(
-                            androidx.compose.material.icons.Icons.Rounded.Autorenew,
+                            Icons.Rounded.Autorenew,
                             contentDescription = "Auto Play"
                         )
                     }
@@ -239,17 +231,17 @@ fun FullscreenPlayerContent(
                         Icon(Icons.Rounded.FullscreenExit, "Exit Fullscreen")
                     }
                 }
-                
+
                 // Center Play/Pause
                 Box(modifier = Modifier.align(Alignment.Center)) {
                     ExpressivePlayPauseButton(
-                        isPlaying = isPlaying, 
-                        isBuffering = isBuffering, 
+                        isPlaying = isPlaying,
+                        isBuffering = isBuffering,
                         onClick = onPlayPause,
                         size = 80.dp
                     )
                 }
-                
+
                 // Bottom Bar
                 Column(
                     modifier = Modifier
@@ -265,7 +257,7 @@ fun FullscreenPlayerContent(
                         horizontalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
                         Text(formatDuration(currentPosition), color = Color.White, style = MaterialTheme.typography.labelLarge)
-                        
+
                         Slider(
                             value = progress,
                             onValueChange = onSeek,
@@ -276,7 +268,7 @@ fun FullscreenPlayerContent(
                             ),
                             modifier = Modifier.weight(1f)
                         )
-                        
+
                         Text(formatDuration(duration), color = Color.White, style = MaterialTheme.typography.labelLarge)
                     }
                 }
@@ -285,10 +277,10 @@ fun FullscreenPlayerContent(
     }
 }
 
-@kotlin.OptIn(UnstableApi::class, ExperimentalMaterial3ExpressiveApi::class)
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun PortraitPlayerContent(
-    exoPlayer: ExoPlayer,
+    streamUrl: String?,
     showControls: Boolean,
     onToggleControls: () -> Unit,
     hasError: Boolean,
@@ -322,25 +314,20 @@ fun PortraitPlayerContent(
                 indication = null
             ) { onToggleControls() }
     ) {
-        AndroidView(
-            factory = { ctx ->
-                PlayerView(ctx).apply {
-                    player = exoPlayer
-                    useController = false
-                    layoutParams = FrameLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.MATCH_PARENT
-                    )
-                }
-            },
-            modifier = Modifier.fillMaxSize()
+        PlatformVideoPlayerView(
+            modifier = Modifier.fillMaxSize(),
+            videoUrl = streamUrl,
+            audioUrl = null,
+            isPlaying = isPlaying,
+            onPlayerReady = {},
+            onError = {}
         )
-        
+
         if (hasError) ErrorOverlay(errorMessage)
         if (isLoading || (isBuffering && !showControls)) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             ContainedLoadingIndicator()
         }
-        
+
         AnimatedVisibility(
             visible = showControls,
             enter = fadeIn(),
@@ -371,7 +358,7 @@ fun PortraitPlayerContent(
                     ) {
                          Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back")
                     }
-                    
+
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         // Auto Play Toggle
                          FilledTonalIconButton(
@@ -387,7 +374,7 @@ fun PortraitPlayerContent(
                                 contentDescription = "Auto Play"
                             )
                         }
-                        
+
                          FilledTonalIconButton(
                             onClick = onLoopToggle,
                             colors = IconButtonDefaults.filledTonalIconButtonColors(
@@ -423,12 +410,12 @@ fun PortraitPlayerContent(
                         }
                     }
                 }
-                
+
                 // Center
                 Box(modifier = Modifier.align(Alignment.Center)) {
                     ExpressivePlayPauseButton(isPlaying = isPlaying, isBuffering = isBuffering, onClick = onPlayPause)
                 }
-                
+
                 // Bottom
                 Column(
                     modifier = Modifier
@@ -443,7 +430,7 @@ fun PortraitPlayerContent(
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         Text(formatDuration(currentPosition), color = Color.White, style = MaterialTheme.typography.labelMedium)
-                        
+
                         Slider(
                             value = progress,
                             onValueChange = onSeek,
@@ -454,7 +441,7 @@ fun PortraitPlayerContent(
                             ),
                             modifier = Modifier.weight(1f)
                         )
-                        
+
                         Text(formatDuration(duration), color = Color.White, style = MaterialTheme.typography.labelMedium)
                     }
                 }
@@ -486,7 +473,7 @@ fun VideoInfoSection(
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.fillMaxWidth()
             )
-            
+
             Text(
                 text = buildString {
                     if (video.viewCount.isNotEmpty()) append("${video.viewCount} views")
@@ -496,7 +483,7 @@ fun VideoInfoSection(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        
+
         // Channel Info Surface
         Surface(
             shape = RoundedCornerShape(16.dp),
@@ -504,12 +491,12 @@ fun VideoInfoSection(
             modifier = Modifier.fillMaxWidth()
         ) {
             ListItem(
-                headlineContent = { 
+                headlineContent = {
                     Text(
                         text = video.channelName,
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold
-                    ) 
+                    )
                 },
                 supportingContent = {
                     Text(
@@ -548,7 +535,7 @@ fun VideoInfoSection(
                 )
             )
         }
-        
+
         // Description Surface
         if (!video.description.isNullOrBlank()) {
             Surface(
@@ -564,17 +551,16 @@ fun VideoInfoSection(
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Spacer(Modifier.height(8.dp))
-                    
+
                     var isDescriptionExpanded by remember { mutableStateOf(false) }
+                    // Strip HTML tags for plain text display
                     val cleanedDescription = remember(video.description) {
-                        if (video.description != null) {
-                            androidx.core.text.HtmlCompat.fromHtml(
-                                video.description,
-                                androidx.core.text.HtmlCompat.FROM_HTML_MODE_LEGACY
-                            ).toString().trim()
-                        } else ""
+                        video.description
+                            ?.replace(Regex("<[^>]+>"), "")
+                            ?.trim()
+                            ?: ""
                     }
-                    
+
                     if (cleanedDescription.isNotEmpty()) {
                         Column(
                             modifier = Modifier
@@ -590,7 +576,7 @@ fun VideoInfoSection(
                                     overflow = TextOverflow.Ellipsis
                                 )
                             }
-                            
+
                             if (cleanedDescription.length > 100 || cleanedDescription.count { it == '\n' } > 2) {
                                 Text(
                                     text = if (isDescriptionExpanded) "Show less" else "Show more",
@@ -605,7 +591,7 @@ fun VideoInfoSection(
                 }
             }
         }
-        
+
         // Related Videos Section
         if (relatedVideos.isNotEmpty()) {
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -614,7 +600,7 @@ fun VideoInfoSection(
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
-                
+
                 relatedVideos.forEach { relatedVideo ->
                     Row(
                         modifier = Modifier
@@ -640,7 +626,7 @@ fun VideoInfoSection(
                                     contentScale = ContentScale.Crop
                                 )
                             }
-                            
+
                             // Duration
                             if (relatedVideo.duration > 0) {
                                 Surface(
@@ -659,7 +645,7 @@ fun VideoInfoSection(
                                 }
                             }
                         }
-                        
+
                         // Info
                         Column(
                             modifier = Modifier.weight(1f),
@@ -723,7 +709,7 @@ fun ExpressivePlayPauseButton(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
-    
+
     // Expressive Spring Animation for Scale
     val scale by animateDpAsState(
         targetValue = if (isPressed) size * 0.9f else size,
@@ -733,7 +719,7 @@ fun ExpressivePlayPauseButton(
         ),
         label = "ButtonScale"
     )
-    
+
     // Shape Morphing
     val cornerRadius by animateDpAsState(
         targetValue = if (isPressed) size / 3 else size / 2, // Morph from circle to squircle
@@ -767,7 +753,6 @@ fun ExpressivePlayPauseButton(
                     )
                 )
             } else {
-                // Animated Icon with Scale/Rotate transition potential (kept simple for now)
                 val iconSize = size * 0.45f
                 Icon(
                     imageVector = if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,

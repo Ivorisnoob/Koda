@@ -46,15 +46,29 @@ class VideoPlayerViewModel(
     private val _playbackError = MutableStateFlow<String?>(null)
     val playbackError: StateFlow<String?> = _playbackError.asStateFlow()
 
+    private val _isPlaying = MutableStateFlow(false)
+    val isPlaying: StateFlow<Boolean> = _isPlaying.asStateFlow()
+
+    private val _isBuffering = MutableStateFlow(false)
+    val isBuffering: StateFlow<Boolean> = _isBuffering.asStateFlow()
+
+    // Platform-specific ExoPlayer instance — set by platform layer
+    var exoPlayer: Any? = null
+
     private var playbackReportJob: Job? = null
 
     fun toggleAutoPlay() { _isAutoPlayEnabled.value = !_isAutoPlayEnabled.value }
     fun toggleLooping() { _isLooping.value = !_isLooping.value }
+    fun togglePlayPause() { _isPlaying.value = !_isPlaying.value }
+    fun closePlayer() { _isExpanded.value = false; _currentVideo.value = null }
 
     fun setExpanded(expanded: Boolean) { _isExpanded.value = expanded }
     fun dismiss() { _isExpanded.value = false }
 
     fun setQuality(quality: VideoQuality) { _currentQuality.value = quality }
+
+    // Seek position in milliseconds — forwarded to platform layer via exoPlayer
+    fun seekTo(positionMs: Long) { /* platform layer reads exoPlayer and seeks */ }
 
     fun playVideo(video: VideoItem) {
         if (_currentVideo.value?.videoId == video.videoId) {

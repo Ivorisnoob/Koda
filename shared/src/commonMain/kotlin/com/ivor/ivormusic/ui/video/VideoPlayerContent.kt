@@ -1,6 +1,5 @@
 package com.ivor.ivormusic.ui.video
 
-import androidx.annotation.OptIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -12,12 +11,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.core.view.WindowCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.WindowInsetsControllerCompat
-import androidx.media3.common.util.UnstableApi
 import com.ivor.ivormusic.domain.VideoItem
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -26,16 +20,13 @@ import kotlinx.coroutines.isActive
  * Content for the full Video Player Overlay.
  * Replaces old VideoPlayerScreen by using VideoPlayerViewModel.
  */
-@OptIn(UnstableApi::class, ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun VideoPlayerContent(
     viewModel: VideoPlayerViewModel,
     onBackClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
-    val activity = context as? Activity
-    
     // State from ViewModel
     val video by viewModel.currentVideo.collectAsState()
     val isPlaying by viewModel.isPlaying.collectAsState()
@@ -47,34 +38,21 @@ fun VideoPlayerContent(
     val isAutoPlayEnabled by viewModel.isAutoPlayEnabled.collectAsState()
     val isLooping by viewModel.isLooping.collectAsState()
     val playbackError by viewModel.playbackError.collectAsState()
-    
+
     // Local UI State
     var showControls by remember { mutableStateOf(false) }
     var isFullscreen by remember { mutableStateOf(false) }
-    
-    // Progress polling (ViewModel doesn't poll, so we do it here or update ViewModel to poll)
-    // Ideally ViewModel should emit progress, but for smoother slider we often poll in UI or VM. 
-    // Let's poll in UI for now as we have the ExoPlayer instance in VM
+
+    // Progress polling
     var currentPosition by remember { mutableLongStateOf(0L) }
     var duration by remember { mutableLongStateOf(0L) }
     var progress by remember { mutableFloatStateOf(0f) }
-    
-    val exoPlayer = viewModel.exoPlayer
+
     val currentVideo = video
+    val streamUrl = currentQuality?.url
 
-    if (currentVideo == null || exoPlayer == null) return
+    if (currentVideo == null) return
 
-    LaunchedEffect(exoPlayer, currentVideo) {
-        while (isActive) {
-            if (exoPlayer.duration > 0) {
-                duration = exoPlayer.duration
-                currentPosition = exoPlayer.currentPosition
-                progress = currentPosition.toFloat() / duration.toFloat()
-            }
-            delay(500)
-        }
-    }
-    
     // Auto-hide controls
     LaunchedEffect(showControls, isPlaying) {
         if (showControls && isPlaying) {
@@ -82,77 +60,56 @@ fun VideoPlayerContent(
             showControls = false
         }
     }
-    
-    // Fullscreen / Immersive
-    DisposableEffect(isFullscreen) {
-        val window = activity?.window
-        val insetsController = window?.let { WindowCompat.getInsetsController(it, it.decorView) }
-        
-        if (isFullscreen) {
-            // Allow content to draw behind system bars first
-            window?.let { WindowCompat.setDecorFitsSystemWindows(it, false) }
-            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-            insetsController?.apply {
-                hide(WindowInsetsCompat.Type.systemBars())
-                systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            }
-        } else {
-            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-            insetsController?.show(WindowInsetsCompat.Type.systemBars())
-        }
-        
-        onDispose {
-            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-            insetsController?.show(WindowInsetsCompat.Type.systemBars())
-            // Restore normal window behavior
-            window?.let { WindowCompat.setDecorFitsSystemWindows(it, true) }
-        }
-    }
-    
+
     // Quality Sheet State
     var showQualitySheet by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState()
 
     // ---------------- UI ----------------
-    
+
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(Color.Black)
-            .clickable(interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null) {
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
                 // Consume clicks to prevent interaction with underlying app
             }
     ) {
         if (isFullscreen) {
-            // Fullscreen Layout - ensure it fills entire screen including cutout areas
+            // Fullscreen Layout
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.Black) // Extra black background to prevent any bleed
+                    .background(Color.Black)
             ) {
                 FullscreenPlayerContent(
-                exoPlayer = exoPlayer,
-                showControls = showControls,
-                onToggleControls = { showControls = !showControls },
-                hasError = playbackError != null,
-                errorMessage = playbackError?.message ?: "",
-                isLoading = isLoading,
-                isBuffering = isBuffering,
-                isPlaying = isPlaying,
-                isLooping = isLooping,
-                currentPosition = currentPosition,
-                duration = duration,
-                progress = progress,
-                videoTitle = currentVideo.title,
-                onPlayPause = { viewModel.togglePlayPause() },
-                onSeek = { newProgress -> exoPlayer.seekTo((newProgress * duration).toLong()) },
-                onBack = { isFullscreen = false },
-                onFullscreenToggle = { isFullscreen = false },
-                onSettings = { showQualitySheet = true },
-                onLoopToggle = { viewModel.toggleLooping() },
-                isAutoPlayEnabled = isAutoPlayEnabled,
-                onAutoPlayToggle = { viewModel.toggleAutoPlay() }
-            )
+                    streamUrl = streamUrl,
+                    isPlaying = isPlaying,
+                    showControls = showControls,
+                    onToggleControls = { showControls = !showControls },
+                    hasError = playbackError != null,
+                    errorMessage = playbackError ?: "",
+                    isLoading = isLoading,
+                    isBuffering = isBuffering,
+                    isLooping = isLooping,
+                    currentPosition = currentPosition,
+                    duration = duration,
+                    progress = progress,
+                    videoTitle = currentVideo.title,
+                    onPlayPause = { viewModel.togglePlayPause() },
+                    onSeek = { newProgress ->
+                        val seekMs = (newProgress * duration).toLong()
+                        currentPosition = seekMs
+                        progress = newProgress
+                        viewModel.seekTo(seekMs)
+                    },
+                    onBack = { isFullscreen = false },
+                    onFullscreenToggle = { isFullscreen = false },
+                    onSettings = { showQualitySheet = true },
+                    onLoopToggle = { viewModel.toggleLooping() },
+                    isAutoPlayEnabled = isAutoPlayEnabled,
+                    onAutoPlayToggle = { viewModel.toggleAutoPlay() }
+                )
             }
         } else {
             // Portrait Layout
@@ -169,21 +126,26 @@ fun VideoPlayerContent(
                         .background(Color.Black)
                 ) {
                     PortraitPlayerContent(
-                        exoPlayer = exoPlayer,
+                        streamUrl = streamUrl,
+                        isPlaying = isPlaying,
                         showControls = showControls,
                         onToggleControls = { showControls = !showControls },
                         hasError = playbackError != null,
-                        errorMessage = playbackError?.message ?: "",
+                        errorMessage = playbackError ?: "",
                         isLoading = isLoading,
                         isBuffering = isBuffering,
-                        isPlaying = isPlaying,
                         isLooping = isLooping,
                         currentPosition = currentPosition,
                         duration = duration,
                         progress = progress,
                         videoTitle = currentVideo.title,
                         onPlayPause = { viewModel.togglePlayPause() },
-                        onSeek = { newProgress -> exoPlayer.seekTo((newProgress * duration).toLong()) },
+                        onSeek = { newProgress ->
+                            val seekMs = (newProgress * duration).toLong()
+                            currentPosition = seekMs
+                            progress = newProgress
+                            viewModel.seekTo(seekMs)
+                        },
                         onBack = onBackClick,
                         onFullscreenToggle = { isFullscreen = true },
                         onSettings = { showQualitySheet = true },
@@ -192,7 +154,7 @@ fun VideoPlayerContent(
                         onAutoPlayToggle = { viewModel.toggleAutoPlay() }
                     )
                 }
-                
+
                 // Info Area
                 VideoInfoSection(
                     video = currentVideo,
@@ -206,7 +168,7 @@ fun VideoPlayerContent(
             }
         }
     }
-    
+
     // Quality Sheet
     if (showQualitySheet) {
         ModalBottomSheet(
@@ -224,7 +186,7 @@ fun VideoPlayerContent(
                     modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp),
                     color = MaterialTheme.colorScheme.onSurface
                 )
-                
+
                 if (isLoading) {
                     Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator()

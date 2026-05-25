@@ -67,7 +67,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.ivor.ivormusic.domain.Song
-import com.ivor.ivormusic.ui.theme.IvorMusicTheme
+import com.ivor.ivormusic.ui.theme.KodaTheme
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -78,7 +78,6 @@ fun PlayerScreen(
     val currentSong by viewModel.currentSong.collectAsState()
     val isPlaying by viewModel.isPlaying.collectAsState()
     val isBuffering by viewModel.isBuffering.collectAsState()
-    val playWhenReady by viewModel.playWhenReady.collectAsState()
     val progress by viewModel.progress.collectAsState()
     val duration by viewModel.duration.collectAsState()
     

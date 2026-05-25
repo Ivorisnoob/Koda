@@ -42,7 +42,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
-import androidx.media3.common.Player
 import coil3.compose.AsyncImage
 import com.ivor.ivormusic.domain.Song
 import com.ivor.ivormusic.domain.LyricsResult
@@ -79,7 +78,6 @@ fun PlayerSheetContent(
     val shuffleModeEnabled by viewModel.shuffleModeEnabled.collectAsState()
     val repeatMode by viewModel.repeatMode.collectAsState()
     val currentQueue by viewModel.currentQueue.collectAsState()
-    val playWhenReady by viewModel.playWhenReady.collectAsState()
     val isFavorite by viewModel.isCurrentSongLiked.collectAsState()
     
     // Download states
@@ -140,7 +138,6 @@ fun PlayerSheetContent(
                     currentSong = currentSong,
                     isPlaying = isPlaying,
                     isBuffering = isBuffering,
-                    playWhenReady = playWhenReady,
                     progress = progress,
                     duration = duration,
                     shuffleModeEnabled = shuffleModeEnabled,
@@ -200,7 +197,6 @@ private fun ExpressiveNowPlayingView(
     currentSong: Song?,
     isPlaying: Boolean,
     isBuffering: Boolean,
-    playWhenReady: Boolean,
     progress: Long,
     duration: Long,
     shuffleModeEnabled: Boolean,
@@ -602,7 +598,7 @@ private fun ExpressiveNowPlayingView(
                         .animateWidth(playInteraction)
                 ) {
                     // FIX: Only show loading if we are NOT playing. If audio is playing, always show Pause.
-                    if (isBuffering && playWhenReady && !isPlaying) {
+                    if (isBuffering && !isPlaying) {
                         // 🌟 Organic morphing loading with MaterialShapes
                         LoadingIndicator(
                             modifier = Modifier.size(40.dp),
@@ -644,7 +640,7 @@ private fun ExpressiveNowPlayingView(
                 // Repeat Toggle - with animateWidth for squishy physics
                 val repeatInteraction = remember { MutableInteractionSource() }
                 FilledTonalIconToggleButton(
-                    checked = repeatMode != Player.REPEAT_MODE_OFF,
+                    checked = repeatMode != 0,
                     onCheckedChange = { viewModel.toggleRepeat() },
                     interactionSource = repeatInteraction,
                     modifier = Modifier
@@ -654,7 +650,7 @@ private fun ExpressiveNowPlayingView(
                 ) {
                     Icon(
                         when (repeatMode) {
-                            Player.REPEAT_MODE_ONE -> Icons.Default.RepeatOne
+                            1 -> Icons.Default.RepeatOne // REPEAT_MODE_ONE
                             else -> Icons.Default.Repeat
                         },
                         contentDescription = "Repeat",

@@ -24,7 +24,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -35,7 +34,6 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withStyle
 import coil3.compose.AsyncImage
-import com.ivor.ivormusic.BuildConfig
 import com.ivor.ivormusic.data.UpdateRepository
 import com.ivor.ivormusic.data.UpdateResult
 import kotlinx.coroutines.delay
@@ -56,7 +54,6 @@ fun UpdateScreen(
     onBack: () -> Unit,
     contentPadding: PaddingValues = PaddingValues()
 ) {
-    val context = LocalContext.current
     val updateRepository = remember { UpdateRepository() }
     var updateResult by remember { mutableStateOf<UpdateResult>(UpdateResult.Checking) }
     
@@ -76,10 +73,7 @@ fun UpdateScreen(
 
     LaunchedEffect(updateResult) {
         if (updateResult is UpdateResult.Checking) {
-            updateResult = updateRepository.checkForUpdate(
-                repoPath = BuildConfig.GITHUB_REPO,
-                currentVersion = BuildConfig.VERSION_NAME
-            )
+            updateResult = updateRepository.checkForUpdate()
         }
     }
     
@@ -206,7 +200,7 @@ fun UpdateScreen(
                 is UpdateResult.UpToDate -> {
                     item {
                         UpToDateSection(
-                            version = result.currentVersion,
+                            version = (result as UpdateResult.UpToDate).currentVersion,
                             primaryColor = primaryColor,
                             surfaceColor = surfaceColor,
                             textColor = textColor,
@@ -387,7 +381,7 @@ private fun UpdateHeroSection(
                             color = secondaryTextColor.copy(alpha = 0.1f)
                         ) {
                             Text(
-                                text = "v${BuildConfig.VERSION_NAME}",
+                                text = "v${"3.0.0"}",
                                 color = secondaryTextColor,
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Medium,
@@ -421,7 +415,7 @@ private fun UpdateHeroSection(
                         color = heroColor.copy(alpha = 0.15f)
                     ) {
                         Text(
-                            text = "v${BuildConfig.VERSION_NAME}",
+                            text = "v${"3.0.0"}",
                             color = heroColor,
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold,
@@ -713,7 +707,6 @@ private fun DownloadSection(
     textColor: Color,
     secondaryTextColor: Color
 ) {
-    val context = LocalContext.current
     val deviceAbi = remember { UpdateRepository.getDeviceAbi() }
     val bestApk = remember(result.apkAssets) { UpdateRepository.findBestApk(result.apkAssets) }
     
@@ -757,8 +750,6 @@ private fun DownloadSection(
                 
                 // Device details
                 DeviceDetailRow("Architecture", deviceAbi, textColor, secondaryTextColor)
-                Spacer(modifier = Modifier.height(6.dp))
-                DeviceDetailRow("Android", "API ${android.os.Build.VERSION.SDK_INT}", textColor, secondaryTextColor)
                 
                 if (bestApk != null) {
                     Spacer(modifier = Modifier.height(6.dp))
@@ -785,11 +776,7 @@ private fun DownloadSection(
         
         // Download Button
         Button(
-            onClick = {
-                val downloadUrl = bestApk?.downloadUrl ?: result.htmlUrl
-                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(downloadUrl))
-                context.startActivity(intent)
-            },
+            onClick = { /* Platform-specific download handled by app layer */ },
             modifier = Modifier
                 .fillMaxWidth()
                 .height(56.dp),
@@ -815,10 +802,7 @@ private fun DownloadSection(
         
         // View on GitHub link
         OutlinedButton(
-            onClick = {
-                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(result.htmlUrl))
-                context.startActivity(intent)
-            },
+            onClick = { /* Platform-specific, handled by app layer */ },
             modifier = Modifier
                 .fillMaxWidth()
                 .height(48.dp),
@@ -855,10 +839,7 @@ private fun DownloadSection(
                         .fillMaxWidth()
                         .padding(vertical = 4.dp)
                         .clip(RoundedCornerShape(16.dp))
-                        .clickable {
-                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(apk.downloadUrl))
-                            context.startActivity(intent)
-                        },
+                        .clickable { /* Platform-specific download */ },
                     shape = RoundedCornerShape(16.dp),
                     color = if (isBest) primaryColor.copy(alpha = 0.1f) else surfaceColor,
                     tonalElevation = 1.dp
@@ -1019,7 +1000,7 @@ private fun UpToDateSection(
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    "Version $version • Build ${BuildConfig.VERSION_CODE}",
+                    "Version $version",
                     style = MaterialTheme.typography.bodySmall,
                     color = secondaryTextColor.copy(alpha = 0.7f),
                     textAlign = TextAlign.Center

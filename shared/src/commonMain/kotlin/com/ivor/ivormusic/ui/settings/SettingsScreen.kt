@@ -101,7 +101,6 @@ import androidx.compose.ui.graphics.asComposePath
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -112,9 +111,8 @@ import androidx.compose.ui.unit.sp
 import androidx.graphics.shapes.RoundedPolygon
 import androidx.graphics.shapes.toPath
 import coil3.compose.AsyncImage
-import com.ivor.ivormusic.BuildConfig
-import com.ivor.ivormusic.data.FolderInfo
 import com.ivor.ivormusic.data.SessionManager
+import com.ivor.ivormusic.domain.FolderInfo
 
 import com.ivor.ivormusic.ui.auth.YouTubeAuthDialog
 import com.ivor.ivormusic.domain.PlayerStyle
@@ -193,14 +191,13 @@ fun SettingsScreen(
     manualScanEnabled: Boolean,
     onManualScanEnabledToggle: (Boolean) -> Unit,
     onNavigateToUpdate: () -> Unit = {},
-    contentPadding: PaddingValues = PaddingValues()
+    contentPadding: PaddingValues = PaddingValues(),
+    sessionManager: SessionManager? = null
 ) {
-    val context = LocalContext.current
-    val sessionManager = remember { SessionManager(context) }
     val coroutineScope = rememberCoroutineScope()
     
     // Check actual login status
-    var isLoggedIn by remember { mutableStateOf(sessionManager.isLoggedIn()) }
+    var isLoggedIn by remember { mutableStateOf(sessionManager?.isLoggedIn() ?: false) }
     
     val backgroundColor = MaterialTheme.colorScheme.background
     val surfaceColor = MaterialTheme.colorScheme.surfaceContainer
@@ -411,49 +408,21 @@ fun SettingsScreen(
                             subtitle = "Bypasses MediaStore (Fixes missing music on HyperOS)",
                             enabled = manualScanEnabled,
                             onToggle = { enabled ->
-                                if (enabled && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
-                                    if (!android.os.Environment.isExternalStorageManager()) {
-                                        val intent = Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
-                                            data = Uri.parse("package:${context.packageName}")
-                                        }
-                                        context.startActivity(intent)
-                                    }
-                                }
                                 onManualScanEnabledToggle(enabled)
                             },
                             textColor = textColor,
                             secondaryTextColor = secondaryTextColor,
                             accentColor = Color(0xFF4CAF50)
                         )
-                        
+
                         SettingsDivider()
-                        
+
                         // Battery Optimization Fix
                         ExpressiveSettingsItem(
                             icon = Icons.Rounded.FlashOn,
                             title = "Ignore Battery Optimizations",
                             subtitle = "Prevents playback from stopping in background",
-                            onClick = {
-                                val packageName = context.packageName
-                                val intent = Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
-                                    data = Uri.parse("package:$packageName")
-                                }
-                                try {
-                                    context.startActivity(intent)
-                                } catch (e: Exception) {
-                                    // Fallback for HyperOS/Restrictive OEMs: Open App Info
-                                    // From here user can manually set "No restrictions" in Battery saver
-                                    try {
-                                        val appInfoIntent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                                            data = Uri.parse("package:$packageName")
-                                        }
-                                        context.startActivity(appInfoIntent)
-                                    } catch (e2: Exception) {
-                                        // Absolute fallback
-                                        context.startActivity(Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
-                                    }
-                                }
-                            },
+                            onClick = { /* Platform-specific, handled by app layer */ },
                             textColor = textColor,
                             secondaryTextColor = secondaryTextColor,
                             iconTint = Color(0xFFFFB300),
@@ -525,7 +494,7 @@ fun SettingsScreen(
                                          fontSize = 16.sp
                                      )
                                      Text(
-                                         text = com.ivor.ivormusic.data.CacheManager.formatSize(currentCacheSize), 
+                                         text = formatCacheSize(currentCacheSize), 
                                          color = accentColor,
                                          fontWeight = FontWeight.Bold,
                                          fontSize = 24.sp
@@ -586,7 +555,7 @@ fun SettingsScreen(
                     delay = 50
                 ) {
                     ExpressiveSettingsCard(surfaceColor = surfaceColor) {
-                    if (isLoggedIn) {
+                    if (isLoggedIn && sessionManager != null) {
                             // Logged in state with user avatar
                             ExpressiveAccountItem(
                                 sessionManager = sessionManager,
@@ -714,7 +683,7 @@ fun SettingsScreen(
                         ExpressiveSettingsItem(
                             icon = Icons.Rounded.Info,
                             title = "Koda",
-                            subtitle = "Version ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+                            subtitle = "Version 3.0.0",
                             onClick = { showAboutDialog = true },
                             textColor = textColor,
                             secondaryTextColor = secondaryTextColor,
@@ -1477,14 +1446,13 @@ private fun ExpressiveAboutDialog(
     onDismiss: () -> Unit,
     onNavigateToUpdate: () -> Unit
 ) {
-    val context = LocalContext.current
     val primaryColor = MaterialTheme.colorScheme.primary
     val backgroundColor = MaterialTheme.colorScheme.surfaceContainerHigh
     val textColor = MaterialTheme.colorScheme.onSurface
     val secondaryTextColor = MaterialTheme.colorScheme.onSurfaceVariant
-    
-    val githubUrl = "https://github.com/${BuildConfig.GITHUB_REPO}"
-    val developerAvatarUrl = "https://github.com/${BuildConfig.GITHUB_USERNAME}.png"
+
+    val githubUrl = "https://github.com/ivorisnoob/koda"
+    val developerAvatarUrl = "https://github.com/ivorisnoob.png"
     
     // Dialog entry animation
     var dialogVisible by remember { mutableStateOf(false) }
@@ -1542,7 +1510,7 @@ private fun ExpressiveAboutDialog(
                         color = primaryColor.copy(alpha = 0.15f)
                     ) {
                         Text(
-                            text = "v${BuildConfig.VERSION_NAME}",
+                            text = "v3.0.0",
                             color = primaryColor,
                             fontSize = 13.sp,
                             fontWeight = FontWeight.SemiBold,
@@ -1577,19 +1545,13 @@ private fun ExpressiveAboutDialog(
                         ) {
                             AboutDetailRow(
                                 label = "Version",
-                                value = BuildConfig.VERSION_NAME,
-                                textColor = textColor,
-                                labelColor = secondaryTextColor
-                            )
-                            AboutDetailRow(
-                                label = "Build",
-                                value = BuildConfig.VERSION_CODE.toString(),
+                                value = "3.0.0",
                                 textColor = textColor,
                                 labelColor = secondaryTextColor
                             )
                             AboutDetailRow(
                                 label = "Build Type",
-                                value = if (BuildConfig.DEBUG) "Debug" else "Release",
+                                value = "Release",
                                 textColor = textColor,
                                 labelColor = secondaryTextColor
                             )
@@ -2083,9 +2045,13 @@ private fun ExpressiveOemToggleItem(
     }
 }
 
-private fun isXiaomiDevice(): Boolean {
-    val manufacturer = android.os.Build.MANUFACTURER.lowercase()
-    val brand = android.os.Build.BRAND.lowercase()
-    return manufacturer.contains("xiaomi") || brand.contains("xiaomi") || 
-           brand.contains("redmi") || brand.contains("poco")
+private fun isXiaomiDevice(): Boolean = false
+
+private fun formatCacheSize(bytes: Long): String {
+    return when {
+        bytes >= 1_000_000_000L -> "%.1f GB".format(bytes / 1_000_000_000.0)
+        bytes >= 1_000_000L -> "%.1f MB".format(bytes / 1_000_000.0)
+        bytes >= 1_000L -> "%.1f KB".format(bytes / 1_000.0)
+        else -> "$bytes B"
+    }
 }

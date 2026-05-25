@@ -20,15 +20,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
-import com.ivor.ivormusic.data.DownloadProgress
-import com.ivor.ivormusic.data.DownloadStatus
 import com.ivor.ivormusic.domain.Song
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun DownloadsScreen(
     downloadedSongs: List<Song>,
-    activeDownloads: Map<String, DownloadProgress>,
+    downloadingIds: Set<String> = emptySet(),
+    downloadProgress: Map<String, Int> = emptyMap(),
+    downloadingSongs: Map<String, Song> = emptyMap(),
     onBack: () -> Unit,
     onPlaySong: (Song) -> Unit,
     onPlayQueue: (List<Song>, Song) -> Unit = { _, song -> onPlaySong(song) },
@@ -37,6 +37,7 @@ fun DownloadsScreen(
     onRetryDownload: (Song) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val activeDownloads = downloadingIds
     val primaryColor = MaterialTheme.colorScheme.primary
     val surfaceColor = MaterialTheme.colorScheme.surface
     val onSurfaceColor = MaterialTheme.colorScheme.onSurface
@@ -49,7 +50,7 @@ fun DownloadsScreen(
                     Column {
                         Text("Downloads")
                         Text(
-                            "${downloadedSongs.size} songs • ${activeDownloads.size} active",
+                            "${downloadedSongs.size} songs • ${activeDownloads.size} downloading",
                             style = MaterialTheme.typography.bodySmall,
                             color = onSurfaceVariantColor
                         )
@@ -82,15 +83,22 @@ fun DownloadsScreen(
                     Spacer(modifier = Modifier.height(8.dp))
                 }
 
-                items(activeDownloads.values.toList(), key = { "active_${it.songId}" }) { progress ->
-                    ActiveDownloadCard(
-                        progress = progress,
-                        onCancel = { onCancelDownload(progress.songId) },
-                        onRetry = { onRetryDownload(progress.song) },
-                        primaryColor = primaryColor,
-                        onSurfaceColor = onSurfaceColor,
-                        onSurfaceVariantColor = onSurfaceVariantColor
-                    )
+                items(activeDownloads.toList(), key = { "active_$it" }) { songId ->
+                    val song = downloadingSongs[songId]
+                    val pct = downloadProgress[songId] ?: 0
+                    if (song != null) {
+                        ActiveDownloadCard(
+                            songId = songId,
+                            song = song,
+                            progressPct = pct,
+                            isFailed = false,
+                            onCancel = { onCancelDownload(songId) },
+                            onRetry = { onRetryDownload(song) },
+                            primaryColor = primaryColor,
+                            onSurfaceColor = onSurfaceColor,
+                            onSurfaceVariantColor = onSurfaceVariantColor
+                        )
+                    }
                 }
 
                 item {
@@ -134,7 +142,7 @@ fun DownloadsScreen(
             }
 
             // Empty State
-            if (downloadedSongs.isEmpty() && activeDownloads.isEmpty()) {
+            if (downloadedSongs.isEmpty() && activeDownloads.isEmpty() && downloadingSongs.isEmpty()) {
                 item {
                     Box(
                         modifier = Modifier
@@ -175,7 +183,10 @@ fun DownloadsScreen(
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun ActiveDownloadCard(
-    progress: DownloadProgress,
+    songId: String,
+    song: Song,
+    progressPct: Int,
+    isFailed: Boolean,
     onCancel: () -> Unit,
     onRetry: () -> Unit,
     primaryColor: Color,
@@ -204,7 +215,7 @@ private fun ActiveDownloadCard(
                     color = MaterialTheme.colorScheme.surfaceVariant
                 ) {
                     AsyncImage(
-                        model = progress.song.thumbnailUrl ?: progress.song.albumArtUri,
+                        model = song.thumbnailUrl ?: song.albumArtUri,
                         contentDescription = null,
                         modifier = Modifier
                             .fillMaxSize()
@@ -218,7 +229,7 @@ private fun ActiveDownloadCard(
                 // Song Info
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = progress.song.title,
+                        text = song.title,
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Medium,
                         color = onSurfaceColor,
@@ -226,38 +237,25 @@ private fun ActiveDownloadCard(
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                        text = progress.song.artist,
+                        text = song.artist,
                         style = MaterialTheme.typography.bodySmall,
                         color = onSurfaceVariantColor,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
-                    
+
                     Spacer(modifier = Modifier.height(4.dp))
-                    
+
                     // Status text
                     Text(
-                        text = when (progress.status) {
-                            DownloadStatus.DOWNLOADING -> {
-                                if (progress.totalBytes > 0) {
-                                    "${(progress.bytesDownloaded / 1024 / 1024)}MB / ${(progress.totalBytes / 1024 / 1024)}MB"
-                                } else {
-                                    "Downloading..."
-                                }
-                            }
-                            DownloadStatus.FAILED -> "Failed - Tap to retry"
-                            else -> ""
-                        },
+                        text = if (isFailed) "Failed - Tap to retry" else if (progressPct > 0) "$progressPct%" else "Downloading...",
                         style = MaterialTheme.typography.labelSmall,
-                        color = if (progress.status == DownloadStatus.FAILED) 
-                            MaterialTheme.colorScheme.error 
-                        else 
-                            primaryColor
+                        color = if (isFailed) MaterialTheme.colorScheme.error else primaryColor
                     )
                 }
 
                 // Action Button
-                if (progress.status == DownloadStatus.FAILED) {
+                if (isFailed) {
                     IconButton(onClick = onRetry) {
                         Icon(
                             Icons.Rounded.Refresh,
@@ -277,10 +275,10 @@ private fun ActiveDownloadCard(
             }
 
             // Progress Bar
-            if (progress.status == DownloadStatus.DOWNLOADING) {
+            if (!isFailed) {
                 Spacer(modifier = Modifier.height(12.dp))
                 LinearProgressIndicator(
-                    progress = { progress.progress },
+                    progress = { progressPct / 100f },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(4.dp)

@@ -18,16 +18,9 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
-import androidx.media3.common.util.UnstableApi
-import androidx.media3.ui.AspectRatioFrameLayout
-import androidx.media3.ui.PlayerView
 import coil3.compose.AsyncImage
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
-import com.ivor.ivormusic.ui.video.VideoPlayerViewModel
 
-@OptIn(UnstableApi::class, ExperimentalMaterial3ExpressiveApi::class)
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun MiniVideoPlayerContent(
     viewModel: VideoPlayerViewModel,
@@ -37,21 +30,8 @@ fun MiniVideoPlayerContent(
     val currentVideo by viewModel.currentVideo.collectAsState()
     val isPlaying by viewModel.isPlaying.collectAsState()
     val isBuffering by viewModel.isBuffering.collectAsState()
-    
+
     if (currentVideo == null) return
-
-    // Progress for mini progress bar
-    var progress by remember { mutableFloatStateOf(0f) }
-    val exoPlayer = viewModel.exoPlayer
-
-    LaunchedEffect(exoPlayer, currentVideo, isPlaying) {
-        while (isActive) {
-            if (isPlaying && exoPlayer != null && exoPlayer.duration > 0) {
-                progress = exoPlayer.currentPosition.toFloat() / exoPlayer.duration.toFloat()
-            }
-            delay(1000)
-        }
-    }
 
     Box(
         modifier = Modifier
@@ -64,38 +44,35 @@ fun MiniVideoPlayerContent(
                 .padding(start = 12.dp, end = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Mini Video Preview with Expressive Shape
+            // Mini Video Thumbnail
             Box(
                 modifier = Modifier
                     .width(100.dp)
                     .aspectRatio(16f / 9f)
                     .clip(RoundedCornerShape(12.dp))
-                    .background(Color.Black)
+                    .background(Color.Black),
+                contentAlignment = Alignment.Center
             ) {
-                AndroidView(
-                    factory = { ctx ->
-                        PlayerView(ctx).apply {
-                            player = viewModel.exoPlayer
-                            useController = false
-                            resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM // Fill the small area
-                        }
-                    },
-                    modifier = Modifier.fillMaxSize()
-                )
-                
+                if (currentVideo?.thumbnailUrl != null) {
+                    AsyncImage(
+                        model = currentVideo!!.thumbnailUrl,
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                }
+
                 if (isBuffering) {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(24.dp),
-                            strokeWidth = 2.dp,
-                            color = Color.White
-                        )
-                    }
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        strokeWidth = 2.dp,
+                        color = Color.White
+                    )
                 }
             }
-            
+
             Spacer(modifier = Modifier.width(16.dp))
-            
+
             // Title and channel with expressive typography
             Column(
                 modifier = Modifier.weight(1f),
@@ -117,8 +94,7 @@ fun MiniVideoPlayerContent(
                     overflow = TextOverflow.Ellipsis
                 )
             }
-            
-            // Reusing the Expressive Play Pause Button but in a smaller variant for mini player
+
             IconButton(
                 onClick = { viewModel.togglePlayPause() },
                 modifier = Modifier.size(48.dp)
@@ -130,7 +106,7 @@ fun MiniVideoPlayerContent(
                     modifier = Modifier.size(28.dp)
                 )
             }
-            
+
             IconButton(
                 onClick = onClose,
                 modifier = Modifier.size(40.dp)
@@ -146,7 +122,7 @@ fun MiniVideoPlayerContent(
 
         // Mini Progress Bar at the bottom
         LinearProgressIndicator(
-            progress = { progress },
+            progress = { 0f },
             modifier = Modifier
                 .fillMaxWidth()
                 .height(2.dp)

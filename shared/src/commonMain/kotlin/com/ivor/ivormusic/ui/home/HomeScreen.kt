@@ -92,9 +92,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.compose.AsyncImage
-import com.google.accompanist.permissions.ExperimentalPermissionsApi
-import com.google.accompanist.permissions.isGranted
-import com.google.accompanist.permissions.rememberPermissionState
 import com.ivor.ivormusic.domain.Song
 import com.ivor.ivormusic.domain.PlayerStyle
 import com.ivor.ivormusic.ui.components.FloatingPillNavBar
@@ -116,12 +113,11 @@ import com.ivor.ivormusic.domain.VideoItem
 import com.ivor.ivormusic.ui.video.VideoHomeContent
 import com.ivor.ivormusic.ui.library.LibraryContent
 import androidx.compose.animation.ExperimentalAnimationApi
-import com.ivor.ivormusic.BuildConfig
-import com.ivor.ivormusic.R
 import com.ivor.ivormusic.data.UpdateRepository
 import com.ivor.ivormusic.data.UpdateResult
+import com.ivor.ivormusic.domain.PlaylistDisplayItem
 
-@OptIn(ExperimentalPermissionsApi::class, ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class, ExperimentalAnimationApi::class)
+@OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class, ExperimentalAnimationApi::class)
 @Composable
 fun HomeScreen(
     onSongClick: (Song) -> Unit,
@@ -141,7 +137,6 @@ fun HomeScreen(
     playerStyle: PlayerStyle = PlayerStyle.CLASSIC,
     manualScan: Boolean = false
 ) {
-    val context = androidx.compose.ui.platform.LocalContext.current
     val localSongs by viewModel.songs.collectAsState()
     val youtubeSongs by viewModel.youtubeSongs.collectAsState()
     val isYouTubeConnected by viewModel.isYouTubeConnected.collectAsState()
@@ -152,7 +147,6 @@ fun HomeScreen(
     val currentSong by playerViewModel.currentSong.collectAsState()
     val isPlaying by playerViewModel.isPlaying.collectAsState()
     val isBuffering by playerViewModel.isBuffering.collectAsState()
-    val playWhenReady by playerViewModel.playWhenReady.collectAsState()
     val progress by playerViewModel.progress.collectAsState()
     val duration by playerViewModel.duration.collectAsState()
     
@@ -163,32 +157,13 @@ fun HomeScreen(
     var showPlayerSheet by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     
-    val permissionState = rememberPermissionState(
-        permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            Manifest.permission.READ_MEDIA_AUDIO
-        } else {
-            Manifest.permission.READ_EXTERNAL_STORAGE
-        }
-    )
-
     // Load songs based on setting
     LaunchedEffect(Unit, loadLocalSongs, excludedFolders, manualScan) {
         viewModel.checkYouTubeConnection()
         if (loadLocalSongs) {
-            if (!permissionState.status.isGranted) {
-                permissionState.launchPermissionRequest()
-            } else {
-                viewModel.loadSongs(excludedFolders, manualScan)
-            }
-        } else {
-            // Load YouTube recommendations when not using local songs
-            viewModel.loadYouTubeRecommendations()
-        }
-    }
-
-    LaunchedEffect(permissionState.status.isGranted, loadLocalSongs, excludedFolders, manualScan) {
-        if (permissionState.status.isGranted && loadLocalSongs) {
             viewModel.loadSongs(excludedFolders, manualScan)
+        } else {
+            viewModel.loadYouTubeRecommendations()
         }
     }
     
@@ -225,15 +200,9 @@ fun HomeScreen(
     // Update check state
     val updateRepository = remember { UpdateRepository() }
     var updateResult by remember { mutableStateOf<UpdateResult?>(null) }
-    
-    // Check for updates on app launch (only for release builds)
+
     LaunchedEffect(Unit) {
-        if (!BuildConfig.DEBUG) {
-            updateResult = updateRepository.checkForUpdate(
-                repoPath = BuildConfig.GITHUB_REPO,
-                currentVersion = BuildConfig.VERSION_NAME
-            )
-        }
+        updateResult = updateRepository.checkForUpdate()
     }
 
     // Use Box overlay instead of Scaffold for truly floating navbar
@@ -243,7 +212,7 @@ fun HomeScreen(
             .background(backgroundColor)
     ) {
         // Main content
-        if (permissionState.status.isGranted) {
+        run {
             androidx.compose.animation.AnimatedContent(
                 targetState = selectedTab,
                 label = "TabTransition",
@@ -355,7 +324,7 @@ fun HomeScreen(
                                     playerViewModel.playQueue(songs, song)
                                     showPlayerSheet = true
                                 },
-                                onPlaylistClick = { playlist: com.ivor.ivormusic.data.PlaylistDisplayItem ->
+                                onPlaylistClick = { playlist: com.ivor.ivormusic.domain.PlaylistDisplayItem ->
                                     // Optional: navigate to playlist detail or handled by parent
                                 },
                                 onPlayQueue = { songs: List<Song>, selectedSong: Song? ->
@@ -370,19 +339,6 @@ fun HomeScreen(
                                 onStatsClick = onNavigateToStats
                             )
                         }
-                    }
-                }
-            }
-        } else {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Permission required to load songs", color = MaterialTheme.colorScheme.onBackground)
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Button(onClick = { permissionState.launchPermissionRequest() }) {
-                        Text("Grant Permission")
                     }
                 }
             }
@@ -506,7 +462,6 @@ fun HomeScreen(
             currentSong = currentSong,
             isPlaying = isPlaying,
             isBuffering = isBuffering,
-            playWhenReady = playWhenReady,
             progress = progressFraction,
             duration = playerViewModel.duration.collectAsState().value,
             onPlayPauseClick = { playerViewModel.togglePlayPause() },
@@ -853,8 +808,7 @@ fun OrganicSongLayout(
         
         val boxWidth = maxWidth
         val boxHeight = maxHeight
-        val context = androidx.compose.ui.platform.LocalContext.current
-        
+
         // Circle sizes - percentage of screen width
         val circle1Size = boxWidth * 0.29f  // Top-left circle
         val circle2Size = boxWidth * 0.26f  // Bottom-right circle
@@ -877,34 +831,11 @@ fun OrganicSongLayout(
                 val localUri = songs[0].albumArtUri
                 
                 if (imageUrl != null || localUri != null) {
-                    coil.compose.SubcomposeAsyncImage(
-                        model = coil.request.ImageRequest.Builder()
-                            .data(localUri ?: imageUrl)
-                            .crossfade(true)
-                            .build(),
+                    AsyncImage(
+                        model = localUri ?: imageUrl,
                         contentDescription = songs[0].title,
                         modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop,
-                        loading = {
-                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = Icons.Rounded.MusicNote,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(48.dp),
-                                    tint = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.5f)
-                                )
-                            }
-                        },
-                        error = {
-                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = Icons.Rounded.MusicNote,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(48.dp),
-                                    tint = MaterialTheme.colorScheme.onSecondaryContainer
-                                )
-                            }
-                        }
+                        contentScale = ContentScale.Crop
                     )
                 } else {
                     Icon(
@@ -934,34 +865,11 @@ fun OrganicSongLayout(
                 val localUri = songs[1].albumArtUri
                 
                 if (imageUrl != null || localUri != null) {
-                    coil.compose.SubcomposeAsyncImage(
-                        model = coil.request.ImageRequest.Builder()
-                            .data(localUri ?: imageUrl)
-                            .crossfade(true)
-                            .build(),
+                    AsyncImage(
+                        model = localUri ?: imageUrl,
                         contentDescription = songs[1].title,
                         modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop,
-                        loading = {
-                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = Icons.Rounded.MusicNote,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(24.dp),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                                )
-                            }
-                        },
-                        error = {
-                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = Icons.Rounded.MusicNote,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(24.dp),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
+                        contentScale = ContentScale.Crop
                     )
                 } else {
                     Icon(
@@ -991,34 +899,11 @@ fun OrganicSongLayout(
                 val localUri = songs[2].albumArtUri
                 
                 if (imageUrl != null || localUri != null) {
-                    coil.compose.SubcomposeAsyncImage(
-                        model = coil.request.ImageRequest.Builder()
-                            .data(localUri ?: imageUrl)
-                            .crossfade(true)
-                            .build(),
+                    AsyncImage(
+                        model = localUri ?: imageUrl,
                         contentDescription = songs[2].title,
                         modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop,
-                        loading = {
-                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = Icons.Rounded.MusicNote,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(24.dp),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                                )
-                            }
-                        },
-                        error = {
-                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = Icons.Rounded.MusicNote,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(24.dp),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
+                        contentScale = ContentScale.Crop
                     )
                 } else {
                     Icon(
@@ -1048,46 +933,13 @@ fun SongStripCard(
     ) {
         val imageUrl = song.highResThumbnailUrl ?: song.thumbnailUrl
         val localUri = song.albumArtUri
-        
+
         if (imageUrl != null || localUri != null) {
-            coil.compose.SubcomposeAsyncImage(
-                model = coil.request.ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current)
-                    .data(localUri ?: imageUrl)
-                    .crossfade(true)
-                    .build(),
+            AsyncImage(
+                model = localUri ?: imageUrl,
                 contentDescription = song.title,
                 modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop,
-                loading = {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(MaterialTheme.colorScheme.surfaceContainer),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.MusicNote,
-                            contentDescription = null,
-                            modifier = Modifier.size(32.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                        )
-                    }
-                },
-                error = {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(MaterialTheme.colorScheme.surfaceContainer),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.MusicNote,
-                            contentDescription = null,
-                            modifier = Modifier.size(32.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                        )
-                    }
-                }
+                contentScale = ContentScale.Crop
             )
         } else {
             Box(
@@ -1119,8 +971,8 @@ fun SearchContent(
     isDarkMode: Boolean,
     videoMode: Boolean = false
 ) {
-    var viewedPlaylist by remember { mutableStateOf<com.ivor.ivormusic.data.PlaylistDisplayItem?>(null) }
-    var viewedArtist by remember { mutableStateOf<com.ivor.ivormusic.data.ArtistItem?>(null) }
+    var viewedPlaylist by remember { mutableStateOf<com.ivor.ivormusic.domain.PlaylistDisplayItem?>(null) }
+    var viewedArtist by remember { mutableStateOf<com.ivor.ivormusic.domain.ArtistItem?>(null) }
 
     // Handle system back button for nested screens
     BackHandler(enabled = viewedPlaylist != null || viewedArtist != null) {
