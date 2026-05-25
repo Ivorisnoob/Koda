@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
@@ -28,7 +27,7 @@ import com.ivor.ivormusic.platform.PlatformWebAuthView
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun YouTubeAuthDialog(
-    sessionManager: SessionManager,
+    sessionManager: SessionManager? = null,
     onDismiss: () -> Unit,
     onAuthSuccess: () -> Unit
 ) {
@@ -63,7 +62,7 @@ fun YouTubeAuthDialog(
                     PlatformWebAuthView(
                         url = "https://accounts.google.com/ServiceLogin?service=youtube&continue=https://music.youtube.com",
                         onCookiesReady = { cookies ->
-                            sessionManager.saveCookies(cookies)
+                            sessionManager?.saveCookies(cookies)
                             onAuthSuccess()
                         }
                     )

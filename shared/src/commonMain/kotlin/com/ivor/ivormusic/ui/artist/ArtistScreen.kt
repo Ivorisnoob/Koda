@@ -146,10 +146,10 @@ fun ArtistScreen(
                  
                  // Fallback: If ID-based fetch returned no songs, try simple search by name
                  if (artistSongs.isEmpty()) {
-                     artistSongs = viewModel.searchArtistSongs(artistName)
+                     artistSongs = viewModel.searchYouTube(artistName)
                  }
             } else {
-                 val fetchedSongs = viewModel.searchArtistSongs(artistName)
+                 val fetchedSongs = viewModel.searchYouTube(artistName)
                  artistSongs = fetchedSongs
             }
             hasLocalSongs = false

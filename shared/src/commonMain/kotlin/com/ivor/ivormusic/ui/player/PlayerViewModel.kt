@@ -123,6 +123,7 @@ class PlayerViewModel(
         playerController.setRepeatMode(next)
     }
     fun seekTo(position: Long) = playerController.seekTo(position)
+    fun loadMoreRecommendations() { /* no-op: recommendations loaded on demand */ }
     fun skipToNext() = playerController.skipToNext()
     fun skipToPrevious() = playerController.skipToPrevious()
     fun addToQueue(songs: List<Song>) = songs.forEach { playerController.addToQueue(it) }
