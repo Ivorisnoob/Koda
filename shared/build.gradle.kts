@@ -23,6 +23,9 @@ kotlin {
         }
     }
 
+    // Desktop (Windows / macOS / Linux) via JVM
+    jvm("desktop")
+
     // iOS targets — uncomment when ready for iOS build
     // listOf(
     //     iosArm64(),
@@ -97,6 +100,20 @@ kotlin {
 
             // Material 3 Expressive (latest alpha for Android)
             implementation(libs.androidx.compose.material3)
+        }
+
+        // Desktop dependencies (JVM-based)
+        val desktopMain by getting {
+            dependencies {
+                // Ktor JVM engine for desktop
+                implementation(libs.ktor.client.java)
+
+                // OkHttp for downloads (JVM)
+                implementation(libs.okhttp)
+
+                // NewPipe Extractor (JVM — same as Android)
+                implementation(libs.newpipe.extractor)
+            }
         }
 
         // iOS dependencies — uncomment with iOS targets

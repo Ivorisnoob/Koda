@@ -1,4 +1,4 @@
-name: Build APKs
+name: Build APKs & Desktop
 
 on:
   push:
@@ -11,8 +11,6 @@ env:
 
 jobs:
   # ── 1. Shared KMP module ─────────────────────────────────────────────────────
-  # Compiles :shared independently so KMP issues are caught before the full
-  # Android build runs.  Runs on every push/PR alongside the Android jobs.
   build-shared:
     name: Compile Shared KMP Module
     runs-on: ubuntu-latest
@@ -31,21 +29,23 @@ jobs:
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
 
-    # Compile the Android target of the shared module (commonMain + androidMain)
+    # Compile both Android and Desktop targets of :shared
     - name: Compile :shared (Android target)
       run: ./gradlew :shared:compileDebugKotlinAndroid --no-daemon
+
+    - name: Compile :shared (Desktop target)
+      run: ./gradlew :shared:compileKotlinDesktop --no-daemon
 
     # When iOS targets are uncommented in shared/build.gradle.kts, switch the
     # runner to macos-latest and enable the step below instead.
     # - name: Compile :shared (iOS targets)
     #   run: ./gradlew :shared:compileKotlinIosArm64 :shared:compileKotlinIosSimulatorArm64 --no-daemon
-    #   (these task names are unambiguous once iOS targets are added)
 
   # ── 2. Debug APK ─────────────────────────────────────────────────────────────
   build-debug:
     name: Build Debug APK
     runs-on: ubuntu-latest
-    needs: build-shared   # don't waste time if shared module doesn't compile
+    needs: build-shared
 
     steps:
     - name: Checkout code
@@ -144,7 +144,103 @@ jobs:
         if-no-files-found: error
         retention-days: 14
 
-  # ── 4. iOS Framework (disabled — enable when iOS targets are uncommented) ────
+  # ── 4. Desktop — Linux (Deb) ──────────────────────────────────────────────────
+  build-desktop-linux:
+    name: Build Desktop App (Linux)
+    runs-on: ubuntu-latest
+    needs: build-shared
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+        cache: gradle
+
+    - name: Grant execute permission for gradlew
+      run: chmod +x gradlew
+
+    - name: Assemble Desktop JAR
+      run: ./gradlew :desktopApp:assemble --no-daemon
+
+    - name: Package Desktop (Deb)
+      run: ./gradlew :desktopApp:packageDeb --no-daemon
+
+    - name: Upload Linux Deb
+      uses: actions/upload-artifact@v4
+      with:
+        name: koda-linux-deb
+        path: desktopApp/build/compose/binaries/main/deb/*.deb
+        if-no-files-found: error
+        retention-days: 14
+
+  # ── 5. Desktop — macOS (Dmg) ─────────────────────────────────────────────────
+  build-desktop-macos:
+    name: Build Desktop App (macOS)
+    runs-on: macos-latest
+    needs: build-shared
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+        cache: gradle
+
+    - name: Grant execute permission for gradlew
+      run: chmod +x gradlew
+
+    - name: Assemble Desktop JAR
+      run: ./gradlew :desktopApp:assemble --no-daemon
+
+    - name: Package Desktop (Dmg)
+      run: ./gradlew :desktopApp:packageDmg --no-daemon
+
+    - name: Upload macOS Dmg
+      uses: actions/upload-artifact@v4
+      with:
+        name: koda-macos-dmg
+        path: desktopApp/build/compose/binaries/main/dmg/*.dmg
+        if-no-files-found: error
+        retention-days: 14
+
+  # ── 6. Desktop — Windows (Msi) ───────────────────────────────────────────────
+  build-desktop-windows:
+    name: Build Desktop App (Windows)
+    runs-on: windows-latest
+    needs: build-shared
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+        cache: gradle
+
+    - name: Build Desktop MSI
+      run: ./gradlew :desktopApp:packageMsi --no-daemon
+
+    - name: Upload Windows Msi
+      uses: actions/upload-artifact@v4
+      with:
+        name: koda-windows-msi
+        path: desktopApp/build/compose/binaries/main/msi/*.msi
+        if-no-files-found: error
+        retention-days: 14
+
+  # ── 7. iOS Framework (disabled — enable when iOS targets are uncommented) ────
   # To activate:
   #   1. Uncomment the iosArm64/iosSimulatorArm64 targets in shared/build.gradle.kts
   #   2. Remove the 'if: false' line below
