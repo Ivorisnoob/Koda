@@ -18,23 +18,11 @@ class YouTubeAuthViewModel(private val sessionManager: SessionManager) : ViewMod
     val authUrl = _authUrl.asStateFlow()
 
     /**
-     * Intercept cookies from WebView and check for login success.
+     * Called when URL changes in the auth WebView.
+     * Cookie extraction is handled platform-specifically; here we check if the URL indicates success.
      */
     fun onUrlChanged(url: String) {
-        val cookies = CookieManager.getInstance().getCookie(url)
-        if (cookies != null && isLoginSuccessful(cookies)) {
-            sessionManager.saveCookies(cookies)
-            _isLoggedIn.value = true
-        }
-    }
-
-    /**
-     * Helper to determine if the captured cookies indicate a successful login.
-     * Looks for key session cookies like "SID", "HSID", "SSID", or "SAPISID".
-     */
-    private fun isLoginSuccessful(cookies: String): Boolean {
-        // These cookies usually indicate an active session
-        return cookies.contains("SID=") && cookies.contains("HSID=") && cookies.contains("SSID=")
+        // No-op in commonMain; platform implementations handle cookie extraction via saveCookies()
     }
 
     /**
@@ -42,7 +30,6 @@ class YouTubeAuthViewModel(private val sessionManager: SessionManager) : ViewMod
      */
     fun logout() {
         sessionManager.clearSession()
-        CookieManager.getInstance().removeAllCookies(null)
         _isLoggedIn.value = false
     }
 

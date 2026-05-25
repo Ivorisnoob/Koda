@@ -58,7 +58,6 @@ fun MiniPlayerContent(
     currentSong: Song,
     isPlaying: Boolean,
     isBuffering: Boolean,
-    playWhenReady: Boolean,
     progress: Float,
     onPlayPauseClick: () -> Unit,
     onNextClick: () -> Unit,
@@ -143,30 +142,11 @@ fun MiniPlayerContent(
                     val localUri = currentSong.albumArtUri
                     
                     if (imageUrl != null || localUri != null) {
-                        coil.compose.SubcomposeAsyncImage(
-                            model = coil.request.ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current)
-                                .data(localUri ?: imageUrl)
-                                .crossfade(true)
-                                .build(),
+                        AsyncImage(
+                            model = localUri ?: imageUrl,
                             contentDescription = "Album Art",
-                            modifier = Modifier.size(44.dp),
-                            contentScale = ContentScale.Crop,
-                            loading = {
-                                Icon(
-                                    imageVector = Icons.Rounded.MusicNote,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(20.dp),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            },
-                            error = {
-                                Icon(
-                                    imageVector = Icons.Rounded.MusicNote,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(20.dp),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
+                            modifier = Modifier.size(44.dp).clip(CircleShape),
+                            contentScale = ContentScale.Crop
                         )
                     } else {
                         Icon(
@@ -200,7 +180,7 @@ fun MiniPlayerContent(
             }
 
             // Play/Pause Button with shape morphing or Loading
-            if (isBuffering && playWhenReady) {
+            if (isBuffering) {
                 Box(
                     modifier = Modifier.size(44.dp),
                     contentAlignment = Alignment.Center

@@ -117,7 +117,7 @@ class AndroidYouTubeRepository(private val sessionManager: SessionManager) : You
      * @param filter The content filter (FILTER_SONGS, FILTER_ALBUMS, etc.)
      * @return List of songs matching the query
      */
-    override suspend fun search(query: String, filter: String = FILTER_SONGS): List<Song> = withContext(Dispatchers.IO) {
+    override suspend fun search(query: String, filter: String): List<Song> = withContext(Dispatchers.IO) {
         try {
             val ytService = ServiceList.all().find { it.serviceInfo.name == "YouTube" } ?: return@withContext emptyList()
             // YouTube Music search often uses the search extractor with specific filters

@@ -12,8 +12,6 @@ import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
-import com.ivor.ivormusic.MainActivity
-import com.ivor.ivormusic.R
 
 /**
  * Helper class for managing download notifications with support for Android 16 Live Updates.
@@ -73,12 +71,14 @@ class DownloadNotificationHelper(private val context: Context) {
         val notificationId = getNotificationId(songId)
         val progressPercent = (progress * 100).toInt()
         
-        val contentIntent = PendingIntent.getActivity(
-            context,
-            0,
-            Intent(context, MainActivity::class.java),
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-        )
+        val contentIntent = try {
+            val mainClass = Class.forName("com.ivor.ivormusic.MainActivity")
+            PendingIntent.getActivity(
+                context, 0,
+                Intent(context, mainClass),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            )
+        } catch (_: Exception) { null }
         
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_sys_download)
@@ -87,7 +87,7 @@ class DownloadNotificationHelper(private val context: Context) {
             .setProgress(100, progressPercent, false)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
-            .setContentIntent(contentIntent)
+            .let { b -> contentIntent?.let { b.setContentIntent(it) } ?: b }
             .setCategory(NotificationCompat.CATEGORY_PROGRESS)
             .setPriority(NotificationCompat.PRIORITY_LOW)
         
@@ -150,19 +150,21 @@ class DownloadNotificationHelper(private val context: Context) {
         
         val notificationId = getNotificationId(songId)
         
-        val contentIntent = PendingIntent.getActivity(
-            context,
-            0,
-            Intent(context, MainActivity::class.java),
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-        )
+        val contentIntent = try {
+            val mainClass = Class.forName("com.ivor.ivormusic.MainActivity")
+            PendingIntent.getActivity(
+                context, 0,
+                Intent(context, mainClass),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            )
+        } catch (_: Exception) { null }
         
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_sys_download_done)
             .setContentTitle("Downloaded: $songTitle")
             .setContentText(artistName)
             .setAutoCancel(true)
-            .setContentIntent(contentIntent)
+            .let { b -> contentIntent?.let { b.setContentIntent(it) } ?: b }
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
         
         notificationManager.notify(notificationId, builder.build())

@@ -3,17 +3,6 @@ package com.ivor.ivormusic.data
 import android.content.Context
 import android.util.Log
 import com.ivor.ivormusic.domain.Song
-
-internal enum class DownloadStatus { NOT_DOWNLOADED, DOWNLOADING, DOWNLOADED, FAILED, LOCAL_ORIGINAL }
-
-internal data class DownloadProgress(
-    val songId: String,
-    val song: Song,
-    val progress: Float,
-    val status: DownloadStatus,
-    val bytesDownloaded: Long = 0,
-    val totalBytes: Long = 0
-)
 import com.ivor.ivormusic.domain.SongSource
 import com.ivor.ivormusic.network.YouTubeRepository
 import kotlinx.coroutines.Dispatchers
@@ -29,6 +18,17 @@ import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
 import java.util.concurrent.TimeUnit
+
+internal enum class DownloadStatus { NOT_DOWNLOADED, DOWNLOADING, DOWNLOADED, FAILED, LOCAL_ORIGINAL }
+
+internal data class DownloadProgress(
+    val songId: String,
+    val song: Song,
+    val progress: Float,
+    val status: DownloadStatus,
+    val bytesDownloaded: Long = 0,
+    val totalBytes: Long = 0
+)
 
 class AndroidDownloadRepository(
     private val context: Context,

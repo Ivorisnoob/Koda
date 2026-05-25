@@ -81,6 +81,7 @@ kotlin {
             // Media3 / ExoPlayer (Android only)
             implementation(libs.androidx.media3.exoplayer)
             implementation(libs.androidx.media3.session)
+            implementation(libs.androidx.media3.ui)
 
             // NewPipe Extractor (Android only — JVM/OkHttp dependent)
             implementation(libs.newpipe.extractor)
