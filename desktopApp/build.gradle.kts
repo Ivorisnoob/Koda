@@ -20,6 +20,12 @@ kotlin {
                 implementation(compose.foundation)
                 implementation(compose.ui)
                 implementation(libs.kotlinx.coroutines.core)
+                implementation(libs.ktor.client.core)
+                implementation(libs.ktor.client.java)
+                implementation(libs.multiplatform.settings)
+                implementation("com.russhwolf:multiplatform-settings-jvm:1.2.0")
+                implementation(libs.androidx.lifecycle.viewmodel.compose)
+                implementation(libs.androidx.lifecycle.runtime.compose)
             }
         }
     }
