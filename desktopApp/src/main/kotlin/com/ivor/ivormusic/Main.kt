@@ -14,38 +14,60 @@ import com.ivor.ivormusic.data.DesktopStatsRepository
 import com.ivor.ivormusic.media.DesktopPlayerController
 import com.ivor.ivormusic.network.DesktopYouTubeRepository
 import com.ivor.ivormusic.ui.theme.KodaTheme
+import java.io.File
+import java.time.LocalDateTime
 
-fun main() = application {
-    val windowState = rememberWindowState(width = 1200.dp, height = 800.dp)
-
-    val sessionManager = remember { DesktopSessionManager() }
-    val youtubeRepository = remember { DesktopYouTubeRepository(sessionManager) }
-    val appPreferences = remember { DesktopAppPreferences() }
-    val playerController = remember { DesktopPlayerController(youtubeRepository) }
-    val downloadRepository = remember { DesktopDownloadRepository(youtubeRepository) }
-    val localSongRepository = remember { DesktopLocalSongRepository() }
-    val playlistRepository = remember { DesktopPlaylistRepository() }
-    val statsRepository = remember { DesktopStatsRepository() }
-
-    Window(
-        onCloseRequest = {
-            playerController.release()
-            exitApplication()
-        },
-        title = "Koda",
-        state = windowState
-    ) {
-        KodaTheme {
-            KodaDesktopApp(
-                appPreferences = appPreferences,
-                sessionManager = sessionManager,
-                youtubeRepository = youtubeRepository,
-                playerController = playerController,
-                downloadRepository = downloadRepository,
-                localSongRepository = localSongRepository,
-                playlistRepository = playlistRepository,
-                statsRepository = statsRepository
-            )
-        }
+fun main() {
+    // Catch any crash before the window even opens and write it to a log
+    // so "nothing happens" silent failures become diagnosable.
+    Thread.setDefaultUncaughtExceptionHandler { _, throwable ->
+        writeCrashLog(throwable)
     }
+
+    try {
+        application {
+            val windowState = rememberWindowState(width = 1200.dp, height = 800.dp)
+
+            val sessionManager = remember { DesktopSessionManager() }
+            val youtubeRepository = remember { DesktopYouTubeRepository(sessionManager) }
+            val appPreferences = remember { DesktopAppPreferences() }
+            val playerController = remember { DesktopPlayerController(youtubeRepository) }
+            val downloadRepository = remember { DesktopDownloadRepository(youtubeRepository) }
+            val localSongRepository = remember { DesktopLocalSongRepository() }
+            val playlistRepository = remember { DesktopPlaylistRepository() }
+            val statsRepository = remember { DesktopStatsRepository() }
+
+            Window(
+                onCloseRequest = {
+                    playerController.release()
+                    exitApplication()
+                },
+                title = "Koda",
+                state = windowState
+            ) {
+                KodaTheme {
+                    KodaDesktopApp(
+                        appPreferences = appPreferences,
+                        sessionManager = sessionManager,
+                        youtubeRepository = youtubeRepository,
+                        playerController = playerController,
+                        downloadRepository = downloadRepository,
+                        localSongRepository = localSongRepository,
+                        playlistRepository = playlistRepository,
+                        statsRepository = statsRepository
+                    )
+                }
+            }
+        }
+    } catch (t: Throwable) {
+        writeCrashLog(t)
+    }
+}
+
+private fun writeCrashLog(t: Throwable) {
+    try {
+        val logDir = File(System.getProperty("user.home"), ".config/koda").also { it.mkdirs() }
+        val logFile = File(logDir, "crash.log")
+        logFile.appendText("[${LocalDateTime.now()}]\n${t.stackTraceToString()}\n\n")
+    } catch (_: Exception) {}
 }

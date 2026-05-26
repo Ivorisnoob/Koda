@@ -25,6 +25,18 @@ compose.desktop {
     application {
         mainClass = "com.ivor.ivormusic.MainKt"
 
+        jvmArgs += listOf(
+            // Allow Skiko to fall back through render APIs (D3D → OpenGL → Software)
+            "-Dskiko.renderApi=OPENGL",
+            // Increase stack size for deep UI trees
+            "-Xss8m",
+            // Encoding
+            "-Dfile.encoding=UTF-8",
+            // Suppress illegal-access warnings on JDK 17
+            "--add-opens=java.desktop/sun.awt=ALL-UNNAMED",
+            "--add-opens=java.desktop/java.awt.peer=ALL-UNNAMED"
+        )
+
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Exe, TargetFormat.Deb)
             packageName = "Koda"
@@ -32,11 +44,12 @@ compose.desktop {
             vendor = "Ivor"
             description = "Koda Music Player"
 
+            // Include all JVM modules so nothing is stripped by jlink
+            includeAllModules = true
+
             macOS {
                 bundleID = "com.ivor.ivormusic"
                 dmgPackageVersion = "3.0.0"
-                // Set via CI env: COMPOSE_MAC_ARCH=x86_64 or arm64
-                // Default builds native arch; CI overrides per job
             }
             windows {
                 msiPackageVersion = "3.0.0"
@@ -46,6 +59,10 @@ compose.desktop {
                 dirChooser = true
                 perUserInstall = true
                 shortcut = true
+                console = false
+            }
+            linux {
+                debMaintainer = "harshnandha63@gmail.com"
             }
         }
     }
