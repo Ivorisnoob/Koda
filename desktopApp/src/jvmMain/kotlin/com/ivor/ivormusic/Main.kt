@@ -26,28 +26,41 @@ import java.io.File
 import java.time.LocalDateTime
 import java.util.prefs.Preferences
 
+private fun trace(msg: String) {
+    val line = "[KODA] $msg"
+    System.err.println(line)
+    try {
+        File(System.getProperty("user.home"), "koda-startup.log")
+            .appendText("[${LocalDateTime.now()}] $line\n")
+    } catch (_: Exception) {}
+}
+
 fun main() {
+    trace("main() entered")
     Thread.setDefaultUncaughtExceptionHandler { _, throwable ->
+        trace("UNCAUGHT in thread: ${throwable.javaClass.name}: ${throwable.message}")
+        throwable.printStackTrace(System.err)
         writeCrashLog(throwable)
     }
 
     try {
-        // Build all dependencies BEFORE application{} so the window
-        // opens instantly and macOS doesn't kill the process during init.
+        trace("building dependencies")
         val settings = PreferencesSettings(Preferences.userRoot().node("com/ivor/koda"))
-        val sessionManager = DesktopSessionManager()
-        val youtubeRepository = DesktopYouTubeRepository(sessionManager)
-        val appPreferences = DesktopAppPreferences()
-        val playerController = DesktopPlayerController(youtubeRepository)
-        val playlistRepository = DesktopPlaylistRepository()
-        val downloadRepository = DesktopDownloadRepository(youtubeRepository)
-        val localSongRepository = DesktopLocalSongRepository()
-        val statsRepository = DesktopStatsRepository()
-        val likedSongsRepository = LikedSongsRepository(settings)
-        val searchHistoryRepository = SearchHistoryRepository(settings)
-        val httpClient = HttpClient(Java)
-        val lyricsRepository = LyricsRepository(httpClient)
+        trace("settings ok")
+        val sessionManager = DesktopSessionManager(); trace("sessionManager ok")
+        val youtubeRepository = DesktopYouTubeRepository(sessionManager); trace("youtubeRepository ok")
+        val appPreferences = DesktopAppPreferences(); trace("appPreferences ok")
+        val playerController = DesktopPlayerController(youtubeRepository); trace("playerController ok")
+        val playlistRepository = DesktopPlaylistRepository(); trace("playlistRepository ok")
+        val downloadRepository = DesktopDownloadRepository(youtubeRepository); trace("downloadRepository ok")
+        val localSongRepository = DesktopLocalSongRepository(); trace("localSongRepository ok")
+        val statsRepository = DesktopStatsRepository(); trace("statsRepository ok")
+        val likedSongsRepository = LikedSongsRepository(settings); trace("likedSongsRepository ok")
+        val searchHistoryRepository = SearchHistoryRepository(settings); trace("searchHistoryRepository ok")
+        val httpClient = HttpClient(Java); trace("httpClient ok")
+        val lyricsRepository = LyricsRepository(httpClient); trace("lyricsRepository ok")
 
+        trace("creating HomeViewModel")
         val homeViewModel = HomeViewModel(
             localRepository = localSongRepository,
             youtubeRepository = youtubeRepository,
@@ -58,6 +71,7 @@ fun main() {
             downloadRepository = downloadRepository,
             statsRepository = statsRepository
         )
+        trace("HomeViewModel ok; creating PlayerViewModel")
         val playerViewModel = PlayerViewModel(
             playerController = playerController,
             likedSongsRepository = likedSongsRepository,
@@ -68,7 +82,9 @@ fun main() {
             prefs = appPreferences
         )
 
+        trace("PlayerViewModel ok; entering application{}")
         application {
+            trace("inside application{} composable")
             val windowState = rememberWindowState(width = 1200.dp, height = 800.dp)
 
             Window(
@@ -89,9 +105,13 @@ fun main() {
                 }
             }
         }
+        trace("application{} returned normally")
     } catch (t: Throwable) {
+        trace("CAUGHT in main: ${t.javaClass.name}: ${t.message}")
+        t.printStackTrace(System.err)
         writeCrashLog(t)
     }
+    trace("main() exiting")
 }
 
 private fun writeCrashLog(t: Throwable) {

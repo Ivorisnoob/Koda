@@ -20,6 +20,9 @@ kotlin {
                 implementation(compose.foundation)
                 implementation(compose.ui)
                 implementation(libs.kotlinx.coroutines.core)
+                // Required so Dispatchers.Main resolves to AWT EDT on desktop
+                // (ViewModel.viewModelScope uses Main.immediate)
+                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.10.1")
                 implementation(libs.ktor.client.core)
                 implementation(libs.ktor.client.java)
                 implementation(libs.multiplatform.settings)
