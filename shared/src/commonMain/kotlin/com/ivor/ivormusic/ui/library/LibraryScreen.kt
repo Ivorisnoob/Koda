@@ -1,6 +1,6 @@
 package com.ivor.ivormusic.ui.library
 
-import androidx.activity.compose.BackHandler
+import com.ivor.ivormusic.platform.PlatformBackHandler
 import androidx.compose.animation.*
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.Spring
@@ -94,7 +94,7 @@ fun LibraryContent(
     }
 
     // Back Handler
-    BackHandler(enabled = currentRoute != LibraryRoute.Main) {
+    PlatformBackHandler(enabled = currentRoute != LibraryRoute.Main) {
         currentRoute = LibraryRoute.Main
     }
 

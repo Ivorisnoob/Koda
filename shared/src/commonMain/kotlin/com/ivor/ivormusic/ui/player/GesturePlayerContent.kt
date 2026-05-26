@@ -1,6 +1,6 @@
 package com.ivor.ivormusic.ui.player
 
-import androidx.activity.compose.BackHandler
+import com.ivor.ivormusic.platform.PlatformBackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.Spring
@@ -72,7 +72,7 @@ fun GesturePlayerSheetContent(
     onLoadMore: () -> Unit = {},
     onArtistClick: (String) -> Unit = {}
 ) {
-    BackHandler(enabled = true) {
+    PlatformBackHandler(enabled = true) {
         onCollapse()
     }
     

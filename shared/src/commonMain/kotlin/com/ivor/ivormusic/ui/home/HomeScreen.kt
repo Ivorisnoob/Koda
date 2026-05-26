@@ -66,7 +66,7 @@ import androidx.compose.material3.HorizontalFloatingToolbar
 import androidx.compose.material3.FloatingToolbarDefaults
 import androidx.compose.material3.IconToggleButton
 import com.ivor.ivormusic.ui.components.ExpressivePullToRefresh
-import androidx.activity.compose.BackHandler
+import com.ivor.ivormusic.platform.PlatformBackHandler
 import androidx.compose.material3.carousel.CarouselDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.ShortNavigationBar
@@ -181,7 +181,7 @@ fun HomeScreen(
     var selectedTab by remember { mutableIntStateOf(0) }
 
     // Handle back button to return to Home tab if on Search or Library
-    BackHandler(enabled = selectedTab != 0) {
+    PlatformBackHandler(enabled = selectedTab != 0) {
         selectedTab = 0
     }
 
@@ -975,7 +975,7 @@ fun SearchContent(
     var viewedArtist by remember { mutableStateOf<com.ivor.ivormusic.domain.ArtistItem?>(null) }
 
     // Handle system back button for nested screens
-    BackHandler(enabled = viewedPlaylist != null || viewedArtist != null) {
+    PlatformBackHandler(enabled = viewedPlaylist != null || viewedArtist != null) {
         when {
             viewedArtist != null -> viewedArtist = null
             viewedPlaylist != null -> viewedPlaylist = null

@@ -78,6 +78,7 @@ class DesktopStatsRepository : StatsRepository {
 
     override suspend fun clearHistory() = withContext(Dispatchers.IO) {
         historyFile.delete()
+        Unit
     }
 
     private suspend fun loadHistoryEntries(): List<PlayHistoryEntry> = withContext(Dispatchers.IO) {

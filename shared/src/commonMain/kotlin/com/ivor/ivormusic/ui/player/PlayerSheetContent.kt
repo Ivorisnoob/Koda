@@ -1,6 +1,6 @@
 package com.ivor.ivormusic.ui.player
 
-import androidx.activity.compose.BackHandler
+import com.ivor.ivormusic.platform.PlatformBackHandler
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
@@ -66,7 +66,7 @@ fun PlayerSheetContent(
     onArtistClick: (String) -> Unit = {}
 ) {
     // Handle back press to collapse player instead of quitting app
-    BackHandler(enabled = true) {
+    PlatformBackHandler(enabled = true) {
         onCollapse()
     }
     
