@@ -65,8 +65,6 @@ import com.ivor.ivormusic.ui.components.ExpressivePullToRefresh
 import com.ivor.ivormusic.platform.PlatformBackHandler
 import androidx.compose.material3.carousel.CarouselDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
-import androidx.compose.material3.ShortNavigationBar
-import androidx.compose.material3.ShortNavigationBarItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect

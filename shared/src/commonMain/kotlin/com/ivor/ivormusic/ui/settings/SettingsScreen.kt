@@ -1456,8 +1456,8 @@ private fun ExpressiveAboutDialog(
             containerColor = backgroundColor,
             shape = RoundedCornerShape(32.dp),
             icon = {
-                // Developer avatar in an organic Clover4Leaf shape
-                val cloverShape = remember { PolygonShape(MaterialShapes.Clover4Leaf) }
+                // Developer avatar in an organic clover shape
+                val cloverShape = remember { PolygonShape(RoundedPolygon(numVertices = 4, rounding = androidx.graphics.shapes.CornerRounding(0.5f))) }
                 Box(
                     modifier = Modifier
                         .size(96.dp)
