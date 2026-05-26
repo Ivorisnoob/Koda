@@ -99,8 +99,9 @@ fun main() {
                 KodaTheme {
                     KodaDesktopApp(
                         appPreferences = appPreferences,
-                        homeViewModel = homeViewModel,
-                        playerViewModel = playerViewModel
+                        homeViewModel  = homeViewModel,
+                        playerViewModel = playerViewModel,
+                        sessionManager = sessionManager
                     )
                 }
             }
