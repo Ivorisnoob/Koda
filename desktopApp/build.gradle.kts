@@ -15,6 +15,10 @@ kotlin {
             dependencies {
                 implementation(project(":shared"))
                 implementation(compose.desktop.currentOs)
+                implementation(compose.material3)
+                implementation(compose.runtime)
+                implementation(compose.foundation)
+                implementation(compose.ui)
                 implementation(libs.kotlinx.coroutines.core)
             }
         }
