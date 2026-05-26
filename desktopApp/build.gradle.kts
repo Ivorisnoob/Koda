@@ -26,8 +26,8 @@ compose.desktop {
         mainClass = "com.ivor.ivormusic.MainKt"
 
         jvmArgs += listOf(
-            // Allow Skiko to fall back through render APIs (D3D → OpenGL → Software)
-            "-Dskiko.renderApi=OPENGL",
+            // SOFTWARE rendering works on every GPU/VM without native driver requirements
+            "-Dskiko.renderApi=SOFTWARE",
             // Increase stack size for deep UI trees
             "-Xss8m",
             // Encoding

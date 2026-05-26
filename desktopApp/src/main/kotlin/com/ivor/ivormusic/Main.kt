@@ -65,9 +65,15 @@ fun main() {
 }
 
 private fun writeCrashLog(t: Throwable) {
-    try {
-        val logDir = File(System.getProperty("user.home"), ".config/koda").also { it.mkdirs() }
-        val logFile = File(logDir, "crash.log")
-        logFile.appendText("[${LocalDateTime.now()}]\n${t.stackTraceToString()}\n\n")
-    } catch (_: Exception) {}
+    val text = "[${LocalDateTime.now()}]\n${t.stackTraceToString()}\n\n"
+    // Write to several locations so it's easy to find regardless of OS
+    val candidates = listOf(
+        File(System.getProperty("user.home"), "koda-crash.log"),
+        File(System.getProperty("user.home"), "Desktop/koda-crash.log"),
+        File(System.getProperty("java.io.tmpdir"), "koda-crash.log"),
+        File(".").absoluteFile.let { File(it, "koda-crash.log") }
+    )
+    for (f in candidates) {
+        try { f.parentFile?.mkdirs(); f.appendText(text) } catch (_: Exception) {}
+    }
 }
