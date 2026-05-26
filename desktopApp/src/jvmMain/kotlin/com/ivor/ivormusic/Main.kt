@@ -32,49 +32,44 @@ fun main() {
     }
 
     try {
+        // Build all dependencies BEFORE application{} so the window
+        // opens instantly and macOS doesn't kill the process during init.
+        val settings = PreferencesSettings(Preferences.userRoot().node("com/ivor/koda"))
+        val sessionManager = DesktopSessionManager()
+        val youtubeRepository = DesktopYouTubeRepository(sessionManager)
+        val appPreferences = DesktopAppPreferences()
+        val playerController = DesktopPlayerController(youtubeRepository)
+        val playlistRepository = DesktopPlaylistRepository()
+        val downloadRepository = DesktopDownloadRepository(youtubeRepository)
+        val localSongRepository = DesktopLocalSongRepository()
+        val statsRepository = DesktopStatsRepository()
+        val likedSongsRepository = LikedSongsRepository(settings)
+        val searchHistoryRepository = SearchHistoryRepository(settings)
+        val httpClient = HttpClient(Java)
+        val lyricsRepository = LyricsRepository(httpClient)
+
+        val homeViewModel = HomeViewModel(
+            localRepository = localSongRepository,
+            youtubeRepository = youtubeRepository,
+            playlistRepository = playlistRepository,
+            sessionManager = sessionManager,
+            searchHistoryRepository = searchHistoryRepository,
+            likedSongsRepository = likedSongsRepository,
+            downloadRepository = downloadRepository,
+            statsRepository = statsRepository
+        )
+        val playerViewModel = PlayerViewModel(
+            playerController = playerController,
+            likedSongsRepository = likedSongsRepository,
+            lyricsRepository = lyricsRepository,
+            downloadRepository = downloadRepository,
+            statsRepository = statsRepository,
+            playlistRepository = playlistRepository,
+            prefs = appPreferences
+        )
+
         application {
             val windowState = rememberWindowState(width = 1200.dp, height = 800.dp)
-
-            val sessionManager = remember { DesktopSessionManager() }
-            val youtubeRepository = remember { DesktopYouTubeRepository(sessionManager) }
-            val appPreferences = remember { DesktopAppPreferences() }
-            val playerController = remember { DesktopPlayerController(youtubeRepository) }
-            val downloadRepository = remember { DesktopDownloadRepository(youtubeRepository) }
-            val localSongRepository = remember { DesktopLocalSongRepository() }
-            val playlistRepository = remember { DesktopPlaylistRepository() }
-            val statsRepository = remember { DesktopStatsRepository() }
-
-            val settings = remember {
-                PreferencesSettings(Preferences.userRoot().node("com/ivor/koda"))
-            }
-            val likedSongsRepository = remember { LikedSongsRepository(settings) }
-            val searchHistoryRepository = remember { SearchHistoryRepository(settings) }
-            val httpClient = remember { HttpClient(Java) }
-            val lyricsRepository = remember { LyricsRepository(httpClient) }
-
-            val homeViewModel = remember {
-                HomeViewModel(
-                    localRepository = localSongRepository,
-                    youtubeRepository = youtubeRepository,
-                    playlistRepository = playlistRepository,
-                    sessionManager = sessionManager,
-                    searchHistoryRepository = searchHistoryRepository,
-                    likedSongsRepository = likedSongsRepository,
-                    downloadRepository = downloadRepository,
-                    statsRepository = statsRepository
-                )
-            }
-            val playerViewModel = remember {
-                PlayerViewModel(
-                    playerController = playerController,
-                    likedSongsRepository = likedSongsRepository,
-                    lyricsRepository = lyricsRepository,
-                    downloadRepository = downloadRepository,
-                    statsRepository = statsRepository,
-                    playlistRepository = playlistRepository,
-                    prefs = appPreferences
-                )
-            }
 
             Window(
                 onCloseRequest = {
