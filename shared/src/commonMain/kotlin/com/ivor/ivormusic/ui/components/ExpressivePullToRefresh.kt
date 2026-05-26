@@ -4,7 +4,6 @@ import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshState
@@ -30,7 +29,6 @@ import androidx.compose.ui.graphics.graphicsLayer
  * @param indicatorColor Optional indicator color for the loading animation
  * @param content The content to display within the pull-to-refresh container
  */
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun ExpressivePullToRefresh(
     isRefreshing: Boolean,
@@ -83,7 +81,6 @@ fun ExpressivePullToRefresh(
 /**
  * Overload that accepts an external PullToRefreshState for more control.
  */
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun ExpressivePullToRefresh(
     state: PullToRefreshState,

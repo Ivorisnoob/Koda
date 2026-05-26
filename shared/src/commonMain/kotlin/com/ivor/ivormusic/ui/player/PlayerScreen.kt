@@ -27,13 +27,12 @@ import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.IconToggleButton
-import androidx.compose.material3.LinearWavyProgressIndicator
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ProgressIndicatorDefaults
 import androidx.compose.material3.Scaffold
@@ -41,7 +40,6 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.Surface
-import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -69,7 +67,7 @@ import coil3.compose.AsyncImage
 import com.ivor.ivormusic.domain.Song
 import com.ivor.ivormusic.ui.theme.KodaTheme
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PlayerScreen(
     onBackClick: () -> Unit,
@@ -227,13 +225,11 @@ fun PlayerScreen(
                     val thickStrokeWidth = with(LocalDensity.current) { 6.dp.toPx() }
                     val thickStroke = Stroke(width = thickStrokeWidth, cap = StrokeCap.Round)
 
-                    LinearWavyProgressIndicator(
+                    LinearProgressIndicator(
                         progress = { animatedProgress },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(12.dp),
-                        stroke = thickStroke,
-                        trackStroke = thickStroke,
                         color = primaryColor,
                         trackColor = onSurfaceVariantColor.copy(alpha = 0.15f)
                     )
@@ -282,7 +278,6 @@ fun PlayerScreen(
                 FilledIconButton(
                     onClick = { viewModel.skipToPrevious() },
                     modifier = Modifier.size(64.dp),
-                    shapes = IconButtonDefaults.shapes(),
                     colors = IconButtonDefaults.filledIconButtonColors(
                         containerColor = secondaryContainerColor
                     )
@@ -293,9 +288,7 @@ fun PlayerScreen(
                 FilledIconButton(
                     onClick = { viewModel.togglePlayPause() },
                     modifier = Modifier.size(96.dp),
-                    shapes = IconButtonDefaults.shapes(
-                        shape = RoundedCornerShape(32.dp)
-                    ),
+                    shape = RoundedCornerShape(32.dp),
                     colors = IconButtonDefaults.filledIconButtonColors(
                         containerColor = primaryColor,
                         contentColor = MaterialTheme.colorScheme.onPrimary
@@ -322,7 +315,6 @@ fun PlayerScreen(
                 FilledIconButton(
                     onClick = { viewModel.skipToNext() },
                     modifier = Modifier.size(64.dp),
-                    shapes = IconButtonDefaults.shapes(),
                     colors = IconButtonDefaults.filledIconButtonColors(
                         containerColor = secondaryContainerColor
                     )

@@ -24,7 +24,17 @@ kotlin {
     }
 
     // Desktop (Windows / macOS / Linux) via JVM
-    jvm("desktop")
+    jvm("desktop") {
+        @OptIn(ExperimentalKotlinGradlePluginApi::class)
+        compilerOptions {
+            freeCompilerArgs.addAll(
+                "-opt-in=androidx.compose.material3.ExperimentalMaterial3ExpressiveApi",
+                "-opt-in=androidx.compose.material3.ExperimentalMaterial3Api",
+                "-opt-in=androidx.compose.foundation.ExperimentalFoundationApi",
+                "-opt-in=androidx.compose.animation.ExperimentalAnimationApi"
+            )
+        }
+    }
 
     // iOS targets — uncomment when ready for iOS build
     // listOf(
@@ -114,6 +124,9 @@ kotlin {
 
                 // NewPipe Extractor (JVM — same as Android)
                 implementation(libs.newpipe.extractor)
+
+                // Graphics shapes for RoundedPolygon/toPath/calculateBounds on desktop
+                implementation("androidx.graphics:graphics-shapes:1.0.1")
             }
         }
 

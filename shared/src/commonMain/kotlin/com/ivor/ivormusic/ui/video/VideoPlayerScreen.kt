@@ -39,17 +39,13 @@ import androidx.compose.material.icons.rounded.Repeat
 import androidx.compose.material.icons.rounded.RepeatOne
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ContainedLoadingIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
-import androidx.compose.material3.LoadingIndicator
-import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -81,7 +77,6 @@ import java.util.Locale
 
 // ---------------- Sub-Composables ----------------
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun FullscreenPlayerContent(
     streamUrl: String?,
@@ -106,9 +101,6 @@ fun FullscreenPlayerContent(
     onLoopToggle: () -> Unit,
     onAutoPlayToggle: () -> Unit
 ) {
-    // Stable shapes to prevent "square flash"
-    val stableShapes = IconButtonDefaults.shapes()
-
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -133,7 +125,7 @@ fun FullscreenPlayerContent(
             ErrorOverlay(errorMessage)
         } else if (isLoading || (isBuffering && !showControls)) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                ContainedLoadingIndicator()
+                CircularProgressIndicator(color = Color.White, strokeWidth = 3.dp)
             }
         }
 
@@ -166,7 +158,6 @@ fun FullscreenPlayerContent(
                             containerColor = Color.Black.copy(0.5f),
                             contentColor = Color.White
                         ),
-                        shapes = stableShapes
                     ) {
                         Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back")
                     }
@@ -187,7 +178,6 @@ fun FullscreenPlayerContent(
                             containerColor = if (isAutoPlayEnabled) MaterialTheme.colorScheme.primary else Color.Black.copy(0.5f),
                             contentColor = if (isAutoPlayEnabled) MaterialTheme.colorScheme.onPrimary else Color.White
                         ),
-                        shapes = stableShapes
                     ) {
                         Icon(
                             Icons.Rounded.Autorenew,
@@ -201,7 +191,6 @@ fun FullscreenPlayerContent(
                             containerColor = if (isLooping) MaterialTheme.colorScheme.primary else Color.Black.copy(0.5f),
                             contentColor = if (isLooping) MaterialTheme.colorScheme.onPrimary else Color.White
                         ),
-                        shapes = stableShapes
                     ) {
                          Icon(
                             if (isLooping) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
@@ -215,7 +204,6 @@ fun FullscreenPlayerContent(
                             containerColor = Color.Black.copy(0.5f),
                             contentColor = Color.White
                         ),
-                        shapes = stableShapes
                     ) {
                         Icon(Icons.Rounded.Settings, "Quality")
                     }
@@ -226,7 +214,6 @@ fun FullscreenPlayerContent(
                             containerColor = Color.Black.copy(0.5f),
                             contentColor = Color.White
                         ),
-                        shapes = stableShapes
                     ) {
                         Icon(Icons.Rounded.FullscreenExit, "Exit Fullscreen")
                     }
@@ -277,7 +264,6 @@ fun FullscreenPlayerContent(
     }
 }
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun PortraitPlayerContent(
     streamUrl: String?,
@@ -302,9 +288,6 @@ fun PortraitPlayerContent(
     onLoopToggle: () -> Unit,
     onAutoPlayToggle: () -> Unit
 ) {
-    // Stable shapes
-    val stableShapes = IconButtonDefaults.shapes()
-
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -325,7 +308,7 @@ fun PortraitPlayerContent(
 
         if (hasError) ErrorOverlay(errorMessage)
         if (isLoading || (isBuffering && !showControls)) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            ContainedLoadingIndicator()
+            CircularProgressIndicator(color = Color.White, strokeWidth = 3.dp)
         }
 
         AnimatedVisibility(
@@ -354,7 +337,6 @@ fun PortraitPlayerContent(
                             containerColor = Color.Black.copy(0.5f),
                             contentColor = Color.White
                         ),
-                        shapes = stableShapes
                     ) {
                          Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back")
                     }
@@ -367,7 +349,6 @@ fun PortraitPlayerContent(
                                 containerColor = if (isAutoPlayEnabled) MaterialTheme.colorScheme.primary else Color.Black.copy(0.5f),
                                 contentColor = if (isAutoPlayEnabled) MaterialTheme.colorScheme.onPrimary else Color.White
                             ),
-                            shapes = stableShapes
                         ) {
                             Icon(
                                 Icons.Rounded.Autorenew,
@@ -381,7 +362,6 @@ fun PortraitPlayerContent(
                                 containerColor = if (isLooping) MaterialTheme.colorScheme.primary else Color.Black.copy(0.5f),
                                 contentColor = if (isLooping) MaterialTheme.colorScheme.onPrimary else Color.White
                             ),
-                            shapes = stableShapes
                         ) {
                              Icon(
                                 if (isLooping) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
@@ -394,7 +374,6 @@ fun PortraitPlayerContent(
                                 containerColor = Color.Black.copy(0.5f),
                                 contentColor = Color.White
                             ),
-                            shapes = stableShapes
                         ) {
                             Icon(Icons.Rounded.Settings, "Quality")
                         }
@@ -404,7 +383,6 @@ fun PortraitPlayerContent(
                                 containerColor = Color.Black.copy(0.5f),
                                 contentColor = Color.White
                             ),
-                            shapes = stableShapes
                         ) {
                             Icon(Icons.Rounded.Fullscreen, "Fullscreen")
                         }
@@ -699,7 +677,6 @@ fun PlayerIconButton(
     }
 }
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun ExpressivePlayPauseButton(
     isPlaying: Boolean,
@@ -741,16 +718,10 @@ fun ExpressivePlayPauseButton(
     ) {
         Box(contentAlignment = Alignment.Center) {
             if (isBuffering && !isPlaying) {
-                // Expressive Loading Indicator
-                 LoadingIndicator(
+                CircularProgressIndicator(
                     modifier = Modifier.size(size * 0.5f),
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
-                    polygons = listOf(
-                        MaterialShapes.SoftBurst,
-                        MaterialShapes.Cookie9Sided,
-                        MaterialShapes.Pill,
-                        MaterialShapes.Sunny
-                    )
+                    strokeWidth = 3.dp
                 )
             } else {
                 val iconSize = size * 0.45f

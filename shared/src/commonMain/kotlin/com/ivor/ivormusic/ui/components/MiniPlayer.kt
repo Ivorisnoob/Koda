@@ -25,12 +25,10 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.rounded.MusicNote
-import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.LoadingIndicator
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
-import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -52,7 +50,6 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.ivor.ivormusic.domain.Song
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun MiniPlayerContent(
     currentSong: Song,
@@ -185,23 +182,16 @@ fun MiniPlayerContent(
                     modifier = Modifier.size(44.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    //Organic morphing loading with MaterialShapes
-                    LoadingIndicator(
+                    CircularProgressIndicator(
                         modifier = Modifier.size(24.dp),
                         color = MaterialTheme.colorScheme.primary,
-                        polygons = listOf(
-                            MaterialShapes.SoftBurst,
-                            MaterialShapes.Cookie9Sided,
-                            MaterialShapes.Pill,
-                            MaterialShapes.Sunny
-                        )
+                        strokeWidth = 2.dp
                     )
                 }
             } else {
                 FilledIconButton(
                     onClick = onPlayPauseClick,
                     modifier = Modifier.size(44.dp),
-                    shapes = IconButtonDefaults.shapes(), // Bouncy shape morphing
                     colors = IconButtonDefaults.filledIconButtonColors(
                         containerColor = MaterialTheme.colorScheme.primaryContainer,
                         contentColor = MaterialTheme.colorScheme.onPrimaryContainer
@@ -217,11 +207,10 @@ fun MiniPlayerContent(
 
             Spacer(modifier = Modifier.width(8.dp))
 
-            // Next Button with shape morphing
+            // Next Button
             FilledIconButton(
                 onClick = onNextClick,
                 modifier = Modifier.size(44.dp),
-                shapes = IconButtonDefaults.shapes(),
                 colors = IconButtonDefaults.filledIconButtonColors(
                     containerColor = MaterialTheme.colorScheme.surfaceVariant,
                     contentColor = MaterialTheme.colorScheme.onSurfaceVariant

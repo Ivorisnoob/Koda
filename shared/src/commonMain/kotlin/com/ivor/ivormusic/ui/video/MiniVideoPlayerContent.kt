@@ -20,7 +20,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun MiniVideoPlayerContent(
     viewModel: VideoPlayerViewModel,

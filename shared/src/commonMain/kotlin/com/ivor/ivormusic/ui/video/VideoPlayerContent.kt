@@ -20,7 +20,7 @@ import kotlinx.coroutines.isActive
  * Content for the full Video Player Overlay.
  * Replaces old VideoPlayerScreen by using VideoPlayerViewModel.
  */
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VideoPlayerContent(
     viewModel: VideoPlayerViewModel,

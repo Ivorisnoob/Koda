@@ -13,7 +13,9 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
@@ -42,7 +44,6 @@ import kotlin.math.roundToInt
  * - Swipe DOWN on full player: Collapse to mini player
  * - Swipe LEFT/RIGHT on mini player: Dismiss/clear player
  */
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun ExpandablePlayer(
     isExpanded: Boolean,
@@ -68,7 +69,7 @@ fun ExpandablePlayer(
     // Using Material Physics slowSpatialSpec for full-screen animations
     val expandProgress by animateFloatAsState(
         targetValue = if (isExpanded) 1f else 0f,
-        animationSpec = MaterialTheme.motionScheme.slowSpatialSpec(),
+        animationSpec = spring(dampingRatio = Spring.DampingRatioLowBouncy, stiffness = Spring.StiffnessLow),
         label = "expandProgress"
     )
 
@@ -125,7 +126,7 @@ fun ExpandablePlayer(
 
         val animatedHorizontalOffset by animateFloatAsState(
             targetValue = if (!isExpanded) dismissOffsetTarget else 0f,
-            animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
+            animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium),
             finishedListener = {
                 if (isDismissing) {
                     viewModel.clearPlayer()
@@ -207,7 +208,7 @@ fun ExpandablePlayer(
             // No shadow/elevation for cleaner look
         ) {
             // Get animation specs from material motion scheme (must be called in composable scope)
-            val fadeSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
+            val fadeSpec = tween<Float>(durationMillis = 200)
             
             // Content with simple crossfade - no scale transforms for performance
             AnimatedContent(

@@ -36,11 +36,10 @@ import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
-import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -70,7 +69,7 @@ import com.ivor.ivormusic.ui.home.HomeViewModel
  * Video Home Screen Content for Video Mode.
  * Displays trending/recommended videos with thumbnails, channel names, views, etc.
  */
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VideoHomeContent(
     videos: List<VideoItem>,
@@ -104,9 +103,10 @@ fun VideoHomeContent(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
             ) {
-                LoadingIndicator(
+                CircularProgressIndicator(
                     modifier = Modifier.size(48.dp),
-                    color = MaterialTheme.colorScheme.primary
+                    color = MaterialTheme.colorScheme.primary,
+                    strokeWidth = 2.dp
                 )
             }
         } else {
@@ -194,7 +194,6 @@ fun VideoHomeContent(
     }
 }
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun VideoTopBarSection(
     onProfileClick: () -> Unit,
@@ -251,7 +250,7 @@ private fun VideoTopBarSection(
             Box {
                 IconButton(
                     onClick = onDownloadsClick,
-                    shapes = IconButtonDefaults.shapes(),
+
                     colors = IconButtonDefaults.iconButtonColors(
                         containerColor = containerColor,
                         contentColor = iconColor
@@ -278,7 +277,6 @@ private fun VideoTopBarSection(
             
             IconButton(
                 onClick = onSettingsClick,
-                shapes = IconButtonDefaults.shapes(),
                 colors = IconButtonDefaults.iconButtonColors(
                     containerColor = containerColor,
                     contentColor = iconColor

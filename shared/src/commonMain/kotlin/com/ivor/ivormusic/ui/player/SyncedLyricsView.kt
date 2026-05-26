@@ -15,6 +15,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.MusicOff
 import androidx.compose.material.icons.rounded.WifiOff
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -43,7 +44,6 @@ import kotlinx.coroutines.launch
  * - Tap to seek functionality
  * - Beautiful gradient fade at top/bottom
  */
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun SyncedLyricsView(
     lyricsResult: LyricsResult,
@@ -284,21 +284,16 @@ private fun LyricLine(
     }
 }
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun LoadingState(primaryColor: Color) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        LoadingIndicator(
+        CircularProgressIndicator(
             modifier = Modifier.size(48.dp),
             color = primaryColor,
-            polygons = listOf(
-                MaterialShapes.Cookie9Sided,
-                MaterialShapes.Pill,
-                MaterialShapes.Sunny
-            )
+            strokeWidth = 2.dp
         )
         Spacer(modifier = Modifier.height(16.dp))
         Text(

@@ -61,15 +61,12 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.foundation.shape.CornerSize
-import androidx.compose.material3.ButtonGroupDefaults
-import androidx.compose.material3.ToggleButton
-import androidx.compose.material3.ToggleButtonDefaults
-import androidx.compose.material3.MaterialShapes
 import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -155,7 +152,7 @@ private class PolygonShape(private val polygon: RoundedPolygon) : Shape {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     currentThemeMode: ThemeMode,
@@ -250,7 +247,6 @@ fun SettingsScreen(
             navigationIcon = {
                 IconButton(
                     onClick = onBackClick,
-                    shapes = IconButtonDefaults.shapes(),
                     colors = IconButtonDefaults.iconButtonColors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                         contentColor = textColor
@@ -792,7 +788,6 @@ private fun ExpressiveSettingsCard(
 }
 
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun ExpressiveThemeSelectGroup(
     currentMode: ThemeMode,
@@ -810,44 +805,36 @@ private fun ExpressiveThemeSelectGroup(
             fontWeight = FontWeight.SemiBold,
             modifier = Modifier.padding(bottom = 12.dp)
         )
-        
+
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             val options = ThemeMode.values()
-            
-            options.forEachIndexed { index, mode ->
-                // Determine shape based on position
-                val shapes = when (index) {
-                    0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
-                    options.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
-                    else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
-                }
-                
-                ToggleButton(
-                    checked = currentMode == mode,
-                    onCheckedChange = { onModeSelected(mode) },
+
+            options.forEach { mode ->
+                FilterChip(
+                    selected = currentMode == mode,
+                    onClick = { onModeSelected(mode) },
+                    label = {
+                        Text(
+                            text = when(mode) {
+                                ThemeMode.SYSTEM -> "System"
+                                ThemeMode.LIGHT -> "Light"
+                                ThemeMode.DARK -> "Dark"
+                            },
+                            fontSize = 14.sp,
+                            fontWeight = if (currentMode == mode) FontWeight.Bold else FontWeight.Medium
+                        )
+                    },
                     modifier = Modifier.weight(1f),
-                    shapes = shapes,
-                    colors = ToggleButtonDefaults.toggleButtonColors(
+                    colors = FilterChipDefaults.filterChipColors(
                         containerColor = MaterialTheme.colorScheme.surface,
-                        checkedContainerColor = accentColor,
-                        contentColor = textColor,
-                        checkedContentColor = MaterialTheme.colorScheme.onPrimary
+                        selectedContainerColor = accentColor,
+                        labelColor = textColor,
+                        selectedLabelColor = MaterialTheme.colorScheme.onPrimary
                     )
-                ) {
-                    // Content
-                    Text(
-                        text = when(mode) {
-                            ThemeMode.SYSTEM -> "System"
-                            ThemeMode.LIGHT -> "Light"
-                            ThemeMode.DARK -> "Dark"
-                        },
-                        fontSize = 14.sp,
-                        fontWeight = if (currentMode == mode) FontWeight.Bold else FontWeight.Medium
-                    )
-                }
+                )
             }
         }
     }
@@ -1019,7 +1006,6 @@ private fun ExpressiveAccountItem(
     }
 }
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun ExpressiveLocalSongsToggleItem(
     loadLocalSongs: Boolean,
@@ -1099,7 +1085,6 @@ private fun ExpressiveLocalSongsToggleItem(
     }
 }
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun ExpressiveAmbientBackgroundToggleItem(
     enabled: Boolean,
@@ -1179,7 +1164,7 @@ private fun ExpressiveAmbientBackgroundToggleItem(
     }
 }
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ExpressiveVideoModeToggleItem(
     enabled: Boolean,
@@ -1267,7 +1252,6 @@ private fun ExpressiveVideoModeToggleItem(
     }
 }
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun ExpressiveSaveHistoryToggleItem(
     enabled: Boolean,
@@ -1347,7 +1331,7 @@ private fun ExpressiveSaveHistoryToggleItem(
     }
 }
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ExpressivePlayerStyleSelectItem(
     currentStyle: PlayerStyle,
@@ -1440,7 +1424,6 @@ private fun ExpressivePlayerStyleSelectItem(
     }
 }
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun ExpressiveAboutDialog(
     onDismiss: () -> Unit,
@@ -1632,7 +1615,6 @@ private fun AboutDetailRow(
     }
 }
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun ExpressiveFolderExclusionItem(
     excludedFoldersCount: Int,
@@ -1711,7 +1693,6 @@ private fun ExpressiveFolderExclusionItem(
     }
 }
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun FolderExclusionDialog(
     availableFolders: List<FolderInfo>,

@@ -33,7 +33,6 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -67,8 +66,6 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.material3.MaterialShapes
-import androidx.compose.material3.toShape
 import coil3.compose.AsyncImage
 import com.ivor.ivormusic.domain.Song
 
@@ -96,7 +93,7 @@ private fun getSegmentedShape(index: Int, count: Int, cornerSize: androidx.compo
  * - Premium segmented song list
  * - Gradient background
  */
-@OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AlbumScreen(
     albumName: String,
@@ -123,7 +120,7 @@ fun AlbumScreen(
     }
     
     // Create 8-sided polygon shape for Play button
-    val octagonShape = MaterialShapes.Cookie9Sided.toShape()
+    val octagonShape = RoundedCornerShape(20.dp)
     
     Box(
         modifier = modifier
@@ -374,7 +371,7 @@ private fun AlbumHeroHeader(
                 .align(Alignment.BottomCenter)
                 .offset(y = 40.dp) // Seat it on the edge of the header (half overlap)
         ) {
-            val octagonShape = MaterialShapes.Cookie9Sided.toShape()
+            val octagonShape = RoundedCornerShape(20.dp)
             val interactionSource = remember { MutableInteractionSource() }
             val isPressed by interactionSource.collectIsPressedAsState()
             val scale by animateFloatAsState(

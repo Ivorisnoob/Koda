@@ -48,7 +48,7 @@ import kotlinx.coroutines.delay
  * - Smart ABI-aware download button
  * - Smooth micro-animations throughout
  */
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun UpdateScreen(
     onBack: () -> Unit,
@@ -141,9 +141,10 @@ fun UpdateScreen(
                             contentAlignment = Alignment.Center
                         ) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                LoadingIndicator(
+                                CircularProgressIndicator(
                                     modifier = Modifier.size(48.dp),
-                                    color = primaryColor
+                                    color = primaryColor,
+                                    strokeWidth = 2.dp
                                 )
                                 Spacer(modifier = Modifier.height(16.dp))
                                 Text(
@@ -698,7 +699,6 @@ private fun parseMarkdownInline(text: String): AnnotatedString {
 // DOWNLOAD SECTION
 // ===========================
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun DownloadSection(
     result: UpdateResult.UpdateAvailable,

@@ -37,14 +37,13 @@ import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
-import androidx.compose.material3.LoadingIndicator
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -69,8 +68,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.material3.MaterialShapes
-import androidx.compose.material3.toShape
 import coil3.compose.AsyncImage
 import com.ivor.ivormusic.domain.Song
 import com.ivor.ivormusic.ui.home.HomeViewModel
@@ -89,7 +86,7 @@ private fun getSegmentedShape(index: Int, count: Int, cornerSize: androidx.compo
     }
 }
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ArtistScreen(
     artistName: String,
@@ -192,9 +189,10 @@ fun ArtistScreen(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
             ) {
-                LoadingIndicator(
+                CircularProgressIndicator(
                     modifier = Modifier.size(48.dp),
-                    color = primaryColor
+                    color = primaryColor,
+                    strokeWidth = 2.dp
                 )
             }
         } else {
@@ -376,9 +374,10 @@ fun ArtistScreen(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     if (isLoadingMore) {
-                                        LoadingIndicator(
+                                        CircularProgressIndicator(
                                             modifier = Modifier.size(24.dp),
-                                            color = primaryColor
+                                            color = primaryColor,
+                                            strokeWidth = 2.dp
                                         )
                                     } else {
                                         Text(
@@ -423,7 +422,6 @@ fun ArtistScreen(
  * - Large artist name with proper typography
  * - Big centered 8-sided play button
  */
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun ArtistHeroHeader(
     artistName: String,
@@ -665,7 +663,7 @@ private fun ArtistHeroHeader(
                 .align(Alignment.BottomCenter)
                 .offset(y = 40.dp) // Seat it on the edge of the header (half overlap)
         ) {
-            val playButtonShape = MaterialShapes.Cookie9Sided.toShape()
+            val playButtonShape = RoundedCornerShape(20.dp)
             val interactionSource = remember { MutableInteractionSource() }
             val isPressed by interactionSource.collectIsPressedAsState()
             val scale by animateFloatAsState(

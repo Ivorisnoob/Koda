@@ -42,13 +42,11 @@ import androidx.compose.material.icons.rounded.SmartDisplay
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
-import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -82,8 +80,7 @@ import com.ivor.ivormusic.domain.VideoItem
 import com.ivor.ivormusic.domain.ArtistItem
 import com.ivor.ivormusic.domain.PlaylistDisplayItem
 import com.ivor.ivormusic.ui.home.HomeViewModel
-import androidx.compose.material3.MaterialShapes
-import androidx.compose.material3.toShape
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.collectAsState
@@ -119,7 +116,7 @@ private fun getSegmentedShape(index: Int, count: Int, hasMore: Boolean = false, 
  * - Premium segmented card design for results
  * - YouTube Music integration with pagination
  */
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SearchScreen(
     songs: List<Song>,
@@ -281,9 +278,10 @@ fun SearchScreen(
                             contentAlignment = Alignment.Center
                         ) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                LoadingIndicator(
+                                CircularProgressIndicator(
                                     modifier = Modifier.size(48.dp),
-                                    color = primaryColor
+                                    color = primaryColor,
+                                    strokeWidth = 2.dp
                                 )
                                 Spacer(modifier = Modifier.height(16.dp))
                                 Text(
@@ -595,9 +593,10 @@ fun SearchScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 if (isLoadingMore) {
-                                    LoadingIndicator(
+                                    CircularProgressIndicator(
                                         modifier = Modifier.size(24.dp),
-                                        color = primaryColor
+                                        color = primaryColor,
+                                        strokeWidth = 2.dp
                                     )
                                 } else {
                                     Icon(
@@ -1162,7 +1161,6 @@ fun SearchFilterChips(
 
 private fun String.capitalize() = replaceFirstChar { if (it.isLowerCase()) it.titlecase(java.util.Locale.getDefault()) else it.toString() }
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun ArtistResultCard(
     artist: ArtistItem,
@@ -1172,22 +1170,7 @@ fun ArtistResultCard(
     secondaryTextColor: Color,
     modifier: Modifier = Modifier
 ) {
-    // List of organic shapes from the library
-    val shapes = remember {
-        listOf(
-            MaterialShapes.Cookie9Sided,
-            MaterialShapes.ClamShell,
-            MaterialShapes.Flower,
-            MaterialShapes.Clover4Leaf,
-            MaterialShapes.Puffy,
-            MaterialShapes.Sunny
-        )
-    }
-    
-    val shapeItem = remember(artist.name) {
-        shapes[Math.abs(artist.name.hashCode()) % shapes.size]
-    }
-    val artistShape = shapeItem.toShape()
+    val artistShape = RoundedCornerShape(20.dp)
 
     Column(
         modifier = modifier
@@ -1254,7 +1237,6 @@ fun ArtistResultCard(
     }
 }
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun PlaylistResultCard(
     item: PlaylistDisplayItem,
@@ -1279,8 +1261,7 @@ fun PlaylistResultCard(
                 .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-             val albumShape = MaterialShapes.Square.toShape()
-             val imageShape = if (isAlbum) albumShape else RoundedCornerShape(20.dp)
+             val imageShape = if (isAlbum) RoundedCornerShape(8.dp) else RoundedCornerShape(20.dp)
              
              AsyncImage(
                 model = item.thumbnailUrl ?: "",

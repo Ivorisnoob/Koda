@@ -26,6 +26,8 @@ import androidx.compose.material.icons.rounded.Smartphone
 import androidx.compose.material.icons.rounded.Lyrics
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.rounded.PlaylistAdd
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -56,7 +58,6 @@ import com.ivor.ivormusic.domain.LyricsResult
  * - Dynamic colors from album artwork
  * - MaterialShapes for loading indicators
  */
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun PlayerSheetContent(
     viewModel: PlayerViewModel,
@@ -90,10 +91,6 @@ fun PlayerSheetContent(
     var showQueue by remember { mutableStateOf(false) }
     var showAddToPlaylist by remember { mutableStateOf(false) }
     val localPlaylists by viewModel.localPlaylists.collectAsState()
-
-    // 🌟 Stable shapes - prevents "square flash" on initial render
-    // IconButtonDefaults.shapes() already uses internal remember/caching
-    val stableIconButtonShapes = IconButtonDefaults.shapes()
 
     // Theme colors
     val surfaceColor = MaterialTheme.colorScheme.background
@@ -131,7 +128,6 @@ fun PlayerSheetContent(
                     primaryColor = primaryColor,
                     onSurfaceColor = onSurfaceColor,
                     onSurfaceVariantColor = onSurfaceVariantColor,
-                    stableShapes = stableIconButtonShapes
                 )
             } else {
                 ExpressiveNowPlayingView(
@@ -165,7 +161,6 @@ fun PlayerSheetContent(
                     tertiaryContainerColor = tertiaryContainerColor,
                     onSurfaceColor = onSurfaceColor,
                     onSurfaceVariantColor = onSurfaceVariantColor,
-                    stableShapes = stableIconButtonShapes
                 )
             }
         }
@@ -191,7 +186,6 @@ fun PlayerSheetContent(
 /**
  * I do not fucking ned that many slop comments thank you
  */
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun ExpressiveNowPlayingView(
     currentSong: Song?,
@@ -220,8 +214,7 @@ private fun ExpressiveNowPlayingView(
     secondaryContainerColor: Color,
     tertiaryContainerColor: Color,
     onSurfaceColor: Color,
-    onSurfaceVariantColor: Color,
-    stableShapes: IconButtonShapes
+    onSurfaceVariantColor: Color
 ) {
     // State for toggling between album art and lyrics
     var showLyrics by remember { mutableStateOf(false) }
@@ -475,11 +468,9 @@ private fun ExpressiveNowPlayingView(
                 
                 val thickStroke = Stroke(width = with(LocalDensity.current) { 6.dp.toPx() }, cap = StrokeCap.Round)
 
-                LinearWavyProgressIndicator(
+                LinearProgressIndicator(
                     progress = { animatedProgress },
                     modifier = Modifier.fillMaxWidth().height(14.dp),
-                    stroke = thickStroke,
-                    trackStroke = thickStroke,
                     color = primaryColor,
                     trackColor = onSurfaceVariantColor.copy(alpha = 0.15f)
                 )
@@ -536,26 +527,21 @@ private fun ExpressiveNowPlayingView(
 
             Spacer(modifier = Modifier.height(32.dp))
 
-            // ========== EXPRESSIVE STANDARD BUTTON GROUP ==========
-            // Using Standard ButtonGroup for squishy physics - buttons expand on press
-            // and neighbors compress to accommodate
-            ButtonGroup(
+            // Controls Row
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(80.dp)
                     .padding(horizontal = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(4.dp) // Minor spacing between buttons
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                // Shuffle Toggle - with animateWidth for squishy physics
-                val shuffleInteraction = remember { MutableInteractionSource() }
+                // Shuffle Toggle
                 FilledTonalIconToggleButton(
                     checked = shuffleModeEnabled,
                     onCheckedChange = { viewModel.toggleShuffle() },
-                    interactionSource = shuffleInteraction,
                     modifier = Modifier
                         .weight(0.8f)
                         .fillMaxHeight()
-                        .animateWidth(shuffleInteraction)
                 ) {
                     Icon(
                         Icons.Default.Shuffle,
@@ -563,17 +549,13 @@ private fun ExpressiveNowPlayingView(
                         modifier = Modifier.size(28.dp)
                     )
                 }
-                
-                // Previous Button - with animateWidth for squishy physics
-                val prevInteraction = remember { MutableInteractionSource() }
+
+                // Previous Button
                 FilledTonalIconButton(
                     onClick = { viewModel.skipToPrevious() },
-                    shapes = stableShapes,
-                    interactionSource = prevInteraction,
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxHeight()
-                        .animateWidth(prevInteraction)
                 ) {
                     Icon(
                         Icons.Default.SkipPrevious,
@@ -581,13 +563,10 @@ private fun ExpressiveNowPlayingView(
                         modifier = Modifier.size(36.dp)
                     )
                 }
-                
-                // 🌟 Play/Pause Button (center, larger weight for emphasis)
-                val playInteraction = remember { MutableInteractionSource() }
+
+                // Play/Pause Button (center, larger weight for emphasis)
                 FilledIconButton(
                     onClick = { viewModel.togglePlayPause() },
-                    shapes = stableShapes,
-                    interactionSource = playInteraction,
                     colors = IconButtonDefaults.filledIconButtonColors(
                         containerColor = primaryContainerColor,
                         contentColor = MaterialTheme.colorScheme.onPrimaryContainer
@@ -595,20 +574,12 @@ private fun ExpressiveNowPlayingView(
                     modifier = Modifier
                         .weight(1.5f)
                         .fillMaxHeight()
-                        .animateWidth(playInteraction)
                 ) {
-                    // FIX: Only show loading if we are NOT playing. If audio is playing, always show Pause.
                     if (isBuffering && !isPlaying) {
-                        // 🌟 Organic morphing loading with MaterialShapes
-                        LoadingIndicator(
+                        CircularProgressIndicator(
                             modifier = Modifier.size(40.dp),
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
-                            polygons = listOf(
-                                MaterialShapes.SoftBurst,
-                                MaterialShapes.Cookie9Sided,
-                                MaterialShapes.Pill,
-                                MaterialShapes.Sunny
-                            )
+                            strokeWidth = 3.dp
                         )
                     } else {
                         Icon(
@@ -618,17 +589,13 @@ private fun ExpressiveNowPlayingView(
                         )
                     }
                 }
-                
-                // Next Button - with animateWidth for squishy physics
-                val nextInteraction = remember { MutableInteractionSource() }
+
+                // Next Button
                 FilledTonalIconButton(
                     onClick = { viewModel.skipToNext() },
-                    shapes = stableShapes,
-                    interactionSource = nextInteraction,
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxHeight()
-                        .animateWidth(nextInteraction)
                 ) {
                     Icon(
                         Icons.Default.SkipNext,
@@ -636,21 +603,18 @@ private fun ExpressiveNowPlayingView(
                         modifier = Modifier.size(36.dp)
                     )
                 }
-                
-                // Repeat Toggle - with animateWidth for squishy physics
-                val repeatInteraction = remember { MutableInteractionSource() }
+
+                // Repeat Toggle
                 FilledTonalIconToggleButton(
                     checked = repeatMode != 0,
                     onCheckedChange = { viewModel.toggleRepeat() },
-                    interactionSource = repeatInteraction,
                     modifier = Modifier
                         .weight(0.8f)
                         .fillMaxHeight()
-                        .animateWidth(repeatInteraction)
                 ) {
                     Icon(
                         when (repeatMode) {
-                            1 -> Icons.Default.RepeatOne // REPEAT_MODE_ONE
+                            1 -> Icons.Default.RepeatOne
                             else -> Icons.Default.Repeat
                         },
                         contentDescription = "Repeat",
@@ -710,9 +674,10 @@ private fun ExpressiveNowPlayingView(
                         )
                     ) {
                         if (isDownloading) {
-                            CircularWavyProgressIndicator(
+                            CircularProgressIndicator(
                                 modifier = Modifier.size(24.dp),
-                                color = primaryColor
+                                color = primaryColor,
+                                strokeWidth = 2.dp
                             )
                         } else {
                             Icon(
@@ -740,7 +705,7 @@ private fun ExpressiveNowPlayingView(
  * - Currently playing indicator with expressive icon
  * - Load more button with shape morphing
  */
-@OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ExpressiveQueueView(
     queue: List<Song>,
@@ -757,8 +722,7 @@ private fun ExpressiveQueueView(
     isLocalOriginal: (Song) -> Boolean,
     primaryColor: Color,
     onSurfaceColor: Color,
-    onSurfaceVariantColor: Color,
-    stableShapes: IconButtonShapes
+    onSurfaceVariantColor: Color
 ) {
     val primaryContainerColor = MaterialTheme.colorScheme.primaryContainer
     var draggingIndex by remember { mutableStateOf<Int?>(null) }
@@ -1117,9 +1081,10 @@ private fun ExpressiveQueueView(
 
                                 // Download Status Icon
                                 if (isDownloading(song.id)) {
-                                    CircularWavyProgressIndicator(
+                                    CircularProgressIndicator(
                                         modifier = Modifier.size(16.dp),
-                                        color = if (isCurrent) primaryColor else onSurfaceVariantColor
+                                        color = if (isCurrent) primaryColor else onSurfaceVariantColor,
+                                        strokeWidth = 2.dp
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
                                 } else if (isDownloaded(song.id)) {
@@ -1166,7 +1131,6 @@ private fun ExpressiveQueueView(
                             Button(
                                 onClick = onLoadMore,
                                 enabled = !isLoadingMore,
-                                shapes = ButtonDefaults.shapes(),
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = MaterialTheme.colorScheme.primaryContainer,
                                     contentColor = MaterialTheme.colorScheme.onPrimaryContainer
@@ -1174,14 +1138,10 @@ private fun ExpressiveQueueView(
                                 contentPadding = PaddingValues(horizontal = 32.dp, vertical = 16.dp)
                             ) {
                                 if (isLoadingMore) {
-                                    LoadingIndicator(
+                                    CircularProgressIndicator(
                                         modifier = Modifier.size(20.dp),
                                         color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                        polygons = listOf(
-                                            MaterialShapes.Cookie9Sided,
-                                            MaterialShapes.Pill,
-                                            MaterialShapes.Sunny
-                                        )
+                                        strokeWidth = 2.dp
                                     )
                                     Spacer(modifier = Modifier.width(12.dp))
                                     Text("Loading...", style = MaterialTheme.typography.titleSmall)

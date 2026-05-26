@@ -25,6 +25,8 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material.icons.rounded.PlaylistAdd
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -63,7 +65,6 @@ import kotlin.math.roundToInt
  * - Slider progress bar
  * - HorizontalFloatingToolbar at the bottom for actions (shuffle, repeat, favorite, download)
  */
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun GesturePlayerSheetContent(
     viewModel: PlayerViewModel,
@@ -187,7 +188,6 @@ fun GesturePlayerSheetContent(
 /**
  * Gesture-based Now Playing View matching the reference design
  */
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun GestureNowPlayingView(
     currentSong: Song?,
@@ -472,11 +472,9 @@ private fun GestureNowPlayingView(
                             
                             // Wavy progress with invisible slider overlay for touch
                             Box(contentAlignment = Alignment.Center) {
-                                LinearWavyProgressIndicator(
+                                LinearProgressIndicator(
                                     progress = { animatedProgress },
                                     modifier = Modifier.fillMaxWidth().height(14.dp),
-                                    stroke = thickStroke,
-                                    trackStroke = thickStroke,
                                     color = primaryColor,
                                     trackColor = onSurfaceVariantColor.copy(alpha = 0.15f)
                                 )
@@ -547,7 +545,7 @@ private fun GestureNowPlayingView(
 /**
  * Floating toolbar using official Material 3 Expressive HorizontalFloatingToolbar
  */
-@OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun GesturePlayerToolbar(
     shuffleModeEnabled: Boolean,
@@ -570,31 +568,16 @@ private fun GesturePlayerToolbar(
             .padding(horizontal = 0.dp),
         contentAlignment = Alignment.Center
     ) {
-        HorizontalFloatingToolbar(
-            expanded = true,
-            modifier = Modifier.scale(1.15f),
-            colors = FloatingToolbarDefaults.standardFloatingToolbarColors(),
-            floatingActionButton = {
-                // Use FAB for the favorite button (highlighted action)
-                FloatingToolbarDefaults.StandardFloatingActionButton(
-                    onClick = onToggleFavorite,
-                    containerColor = if (isFavorite) 
-                        MaterialTheme.colorScheme.primaryContainer 
-                    else 
-                        FloatingActionButtonDefaults.containerColor,
-                    contentColor = if (isFavorite) 
-                        MaterialTheme.colorScheme.primary 
-                    else 
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                ) {
-                    Icon(
-                        imageVector = if (isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
-                        contentDescription = "Favorite",
-                        tint = if (isFavorite) MaterialTheme.colorScheme.primary else onSurfaceVariantColor
-                    )
-                }
-            },
-            content = {
+        Surface(
+            shape = RoundedCornerShape(50),
+            color = MaterialTheme.colorScheme.surfaceContainer,
+            tonalElevation = 3.dp,
+            shadowElevation = 3.dp
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 // Shuffle toggle
                 IconToggleButton(
                     checked = shuffleModeEnabled,
@@ -605,7 +588,7 @@ private fun GesturePlayerToolbar(
                         contentDescription = "Shuffle"
                     )
                 }
-                
+
                 // Repeat toggle
                 IconToggleButton(
                     checked = repeatMode != 0,
@@ -613,13 +596,25 @@ private fun GesturePlayerToolbar(
                 ) {
                     Icon(
                         imageVector = when (repeatMode) {
-                            1 -> Icons.Default.RepeatOne // REPEAT_MODE_ONE
+                            1 -> Icons.Default.RepeatOne
                             else -> Icons.Default.Repeat
                         },
                         contentDescription = "Repeat"
                     )
                 }
-                
+
+                // Favorite button
+                IconToggleButton(
+                    checked = isFavorite,
+                    onCheckedChange = { onToggleFavorite() }
+                ) {
+                    Icon(
+                        imageVector = if (isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                        contentDescription = "Favorite",
+                        tint = if (isFavorite) MaterialTheme.colorScheme.primary else onSurfaceVariantColor
+                    )
+                }
+
                 // Download button (or local indicator)
                 if (isLocalOriginal) {
                     IconButton(onClick = {}) {
@@ -634,9 +629,10 @@ private fun GesturePlayerToolbar(
                         onCheckedChange = { onToggleDownload() }
                     ) {
                         if (isDownloading) {
-                            CircularWavyProgressIndicator(
+                            CircularProgressIndicator(
                                 modifier = Modifier.size(20.dp),
-                                color = primaryColor
+                                color = primaryColor,
+                                strokeWidth = 2.dp
                             )
                         } else {
                             Icon(
@@ -646,7 +642,7 @@ private fun GesturePlayerToolbar(
                         }
                     }
                 }
-                
+
                 // Add to Playlist Button
                 IconButton(onClick = onShowAddToPlaylist) {
                     Icon(
@@ -655,7 +651,7 @@ private fun GesturePlayerToolbar(
                     )
                 }
             }
-        )
+        }
     }
 }
 
@@ -668,7 +664,6 @@ private fun GesturePlayerToolbar(
  * - External changes animate smoothly via spring physics
  * - No flickering, no delayed loading
  */
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun SwipeableAlbumCarousel(
     queue: List<Song>,
@@ -865,15 +860,10 @@ private fun SwipeableAlbumCarousel(
                                     contentAlignment = Alignment.Center
                                 ) {
                                     if (isBuffering) {
-                                        LoadingIndicator(
+                                        CircularProgressIndicator(
                                             modifier = Modifier.size(60.dp),
                                             color = Color.White,
-                                            polygons = listOf(
-                                                MaterialShapes.SoftBurst,
-                                                MaterialShapes.Cookie9Sided,
-                                                MaterialShapes.Pill,
-                                                MaterialShapes.Sunny
-                                            )
+                                            strokeWidth = 3.dp
                                         )
                                     } else {
                                         Icon(
@@ -898,7 +888,6 @@ private fun SwipeableAlbumCarousel(
 /**
  * Single Album Art (fallback when no queue)
  */
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun SingleAlbumArt(
     song: Song?,
@@ -975,15 +964,10 @@ private fun SingleAlbumArt(
                         contentAlignment = Alignment.Center
                     ) {
                         if (isBuffering) {
-                            LoadingIndicator(
+                            CircularProgressIndicator(
                                 modifier = Modifier.size(64.dp),
                                 color = Color.White,
-                                polygons = listOf(
-                                    MaterialShapes.SoftBurst,
-                                    MaterialShapes.Cookie9Sided,
-                                    MaterialShapes.Pill,
-                                    MaterialShapes.Sunny
-                                )
+                                strokeWidth = 3.dp
                             )
                         } else {
                             Icon(
@@ -1003,7 +987,6 @@ private fun SingleAlbumArt(
 /**
  * Gesture Queue View
  */
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun GestureQueueView(
     queue: List<Song>,
@@ -1312,9 +1295,10 @@ private fun GestureQueueView(
 
                                 // Download Status Icon
                                 if (isDownloading(song.id)) {
-                                    CircularWavyProgressIndicator(
+                                    CircularProgressIndicator(
                                         modifier = Modifier.size(16.dp),
-                                        color = if (isCurrent) primaryColor else onSurfaceVariantColor
+                                        color = if (isCurrent) primaryColor else onSurfaceVariantColor,
+                                        strokeWidth = 2.dp
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
                                 } else if (isDownloaded(song.id)) {
@@ -1349,7 +1333,6 @@ private fun GestureQueueView(
                             Button(
                                 onClick = onLoadMore,
                                 enabled = !isLoadingMore,
-                                shapes = ButtonDefaults.shapes(),
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = MaterialTheme.colorScheme.primaryContainer,
                                     contentColor = MaterialTheme.colorScheme.onPrimaryContainer
@@ -1357,14 +1340,10 @@ private fun GestureQueueView(
                                 contentPadding = PaddingValues(horizontal = 32.dp, vertical = 16.dp)
                             ) {
                                 if (isLoadingMore) {
-                                    LoadingIndicator(
+                                    CircularProgressIndicator(
                                         modifier = Modifier.size(20.dp),
                                         color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                        polygons = listOf(
-                                            MaterialShapes.Cookie9Sided,
-                                            MaterialShapes.Pill,
-                                            MaterialShapes.Sunny
-                                        )
+                                        strokeWidth = 2.dp
                                     )
                                     Spacer(modifier = Modifier.width(12.dp))
                                     Text("Loading...", style = MaterialTheme.typography.titleSmall)

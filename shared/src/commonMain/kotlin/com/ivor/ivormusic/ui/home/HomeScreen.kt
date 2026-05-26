@@ -47,23 +47,19 @@ import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.LoadingIndicator
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.NavigationItemIconPosition
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.carousel.HorizontalMultiBrowseCarousel
 import androidx.compose.material3.carousel.HorizontalUncontainedCarousel
 import androidx.compose.material3.carousel.rememberCarouselState
 import androidx.compose.material3.carousel.CarouselState
-import androidx.compose.material3.HorizontalFloatingToolbar
-import androidx.compose.material3.FloatingToolbarDefaults
 import androidx.compose.material3.IconToggleButton
 import com.ivor.ivormusic.ui.components.ExpressivePullToRefresh
 import com.ivor.ivormusic.platform.PlatformBackHandler
@@ -98,15 +94,6 @@ import com.ivor.ivormusic.ui.components.FloatingPillNavBar
 import com.ivor.ivormusic.ui.player.PlayerViewModel
 import com.ivor.ivormusic.ui.player.ExpandablePlayer
 import com.ivor.ivormusic.ui.player.PlayerSheetContent
-import androidx.compose.ui.graphics.Outline
-import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.graphics.asComposePath
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.unit.Density
-import androidx.compose.ui.unit.LayoutDirection
-import androidx.graphics.shapes.RoundedPolygon
-import androidx.graphics.shapes.toPath
-import androidx.compose.material3.MaterialShapes
 import androidx.compose.animation.with
 import kotlinx.coroutines.launch
 import com.ivor.ivormusic.domain.VideoItem
@@ -117,7 +104,7 @@ import com.ivor.ivormusic.data.UpdateRepository
 import com.ivor.ivormusic.data.UpdateResult
 import com.ivor.ivormusic.domain.PlaylistDisplayItem
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class, ExperimentalAnimationApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalAnimationApi::class)
 @Composable
 fun HomeScreen(
     onSongClick: (Song) -> Unit,
@@ -256,9 +243,10 @@ fun HomeScreen(
                         // Music Mode: Show original content
                         else if (isLoading && songs.isEmpty()) {
                              Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                LoadingIndicator(
+                                CircularProgressIndicator(
                                     modifier = Modifier.size(48.dp),
-                                    color = MaterialTheme.colorScheme.primary
+                                    color = MaterialTheme.colorScheme.primary,
+                                    strokeWidth = 2.dp
                                 )
                             }
                         } else {
@@ -353,21 +341,29 @@ fun HomeScreen(
                     .clickable(enabled = false) {}, // Block clicks
                 contentAlignment = Alignment.Center
             ) {
-                LoadingIndicator(
+                CircularProgressIndicator(
                     modifier = Modifier.size(48.dp),
-                    color = Color.White
+                    color = Color.White,
+                    strokeWidth = 2.dp
                 )
             }
         }
         
-        // Floating Navigation bar - truly floating overlay using Material 3 Expressive HorizontalFloatingToolbar
-        HorizontalFloatingToolbar(
-            expanded = true,
+        // Floating Navigation bar
+        Surface(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .navigationBarsPadding()
                 .padding(bottom = 20.dp),
-            content = {
+            shape = RoundedCornerShape(50),
+            color = MaterialTheme.colorScheme.surfaceContainer,
+            tonalElevation = 3.dp,
+            shadowElevation = 3.dp
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 val tabs = listOf(
                     Triple(0, "Home", Pair(Icons.Rounded.Home, Icons.Outlined.Home)),
                     Triple(1, "Search", Pair(Icons.Filled.Search, Icons.Outlined.Search)),
@@ -377,7 +373,7 @@ fun HomeScreen(
                 tabs.forEach { (index, label, icons) ->
                     val selected = selectedTab == index
                     val (filledIcon, outlinedIcon) = icons
-                    
+
                     val animatedPadding by androidx.compose.animation.core.animateDpAsState(
                         targetValue = if (selected) 20.dp else 12.dp,
                         animationSpec = androidx.compose.animation.core.spring(
@@ -386,19 +382,19 @@ fun HomeScreen(
                         ),
                         label = "padding"
                     )
-                    
+
                     val animatedContainerColor by androidx.compose.animation.animateColorAsState(
                         targetValue = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
                         animationSpec = androidx.compose.animation.core.tween(durationMillis = 200),
                         label = "containerColor"
                     )
-                    
+
                     val animatedContentColor by androidx.compose.animation.animateColorAsState(
                         targetValue = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
                         animationSpec = androidx.compose.animation.core.tween(durationMillis = 200),
                         label = "contentColor"
                     )
-                    
+
                     Surface(
                         selected = selected,
                         onClick = { selectedTab = index },
@@ -453,7 +449,7 @@ fun HomeScreen(
                     }
                 }
             }
-        )
+        }
 
         // Expandable Player (Mini <-> Full Screen)
         ExpandablePlayer(
@@ -524,7 +520,6 @@ fun HomeScreen(
     }
 }
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun YourMixContent(
     songs: List<Song>,
@@ -620,7 +615,6 @@ fun YourMixContent(
     }
 }
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun TopBarSection(
     onProfileClick: () -> Unit,
@@ -678,7 +672,6 @@ fun TopBarSection(
             Box {
                 IconButton(
                     onClick = onDownloadsClick,
-                    shapes = IconButtonDefaults.shapes(),
                     colors = IconButtonDefaults.iconButtonColors(
                         containerColor = containerColor,
                         contentColor = iconColor
@@ -706,7 +699,6 @@ fun TopBarSection(
             
             IconButton(
                 onClick = onSettingsClick,
-                shapes = IconButtonDefaults.shapes(),
                 colors = IconButtonDefaults.iconButtonColors(
                     containerColor = containerColor,
                     contentColor = iconColor
@@ -724,7 +716,6 @@ fun TopBarSection(
 }
 
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun HeroSection(
     songs: List<Song>,
@@ -774,8 +765,7 @@ fun HeroSection(
         Box(modifier = Modifier.padding(top = 32.dp)) {
             FilledIconButton(
                 onClick = onPlayClick,
-                modifier = Modifier.size(IconButtonDefaults.largeContainerSize()),
-                shapes = IconButtonDefaults.shapes(), // Enables shape morphing on press
+                modifier = Modifier.size(48.dp),
                 colors = IconButtonDefaults.filledIconButtonColors(
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
                     contentColor = MaterialTheme.colorScheme.onPrimaryContainer
@@ -784,7 +774,7 @@ fun HeroSection(
                 Icon(
                     imageVector = Icons.Default.PlayArrow,
                     contentDescription = "Play",
-                    modifier = Modifier.size(IconButtonDefaults.largeIconSize)
+                    modifier = Modifier.size(24.dp)
                 )
             }
         }
@@ -1055,7 +1045,6 @@ fun SearchContent(
     }
 }
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun RecentAlbumsSection(
     songs: List<Song>,
@@ -1117,7 +1106,6 @@ fun RecentAlbumsSection(
     }
 }
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun QuickPicksSection(
     songs: List<Song>,

@@ -25,7 +25,7 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.List
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material.icons.rounded.*
-import androidx.compose.material3.LoadingIndicator
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -206,7 +206,7 @@ enum class LibraryTab(val label: String) {
     Albums("Albums")
 }
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LibraryMainScreen(
     songs: List<Song>,
@@ -256,8 +256,7 @@ fun LibraryMainScreen(
                 
                 FilledTonalIconButton(
                     onClick = onNavigateToStats,
-                    modifier = Modifier.size(56.dp),
-                    shapes = IconButtonDefaults.shapes()
+                    modifier = Modifier.size(56.dp)
                 ) {
                     Icon(Icons.Rounded.Insights, null, modifier = Modifier.size(24.dp))
                 }
@@ -265,23 +264,28 @@ fun LibraryMainScreen(
             
             Spacer(Modifier.height(28.dp))
             
-            // Expressive Horizontal Toolbar for Tabs
-            HorizontalFloatingToolbar(
-                expanded = true,
+            // Tab row
+            Surface(
                 modifier = Modifier.fillMaxWidth(),
-                shape = CircleShape,
-                content = {
+                shape = RoundedCornerShape(50),
+                color = MaterialTheme.colorScheme.surfaceContainer,
+                tonalElevation = 3.dp
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     for (tab in LibraryTab.entries) {
                         val selected = selectedTab == tab
-                        val contentColor = if (selected) 
-                            MaterialTheme.colorScheme.onPrimaryContainer 
-                        else 
+                        val contentColor = if (selected)
+                            MaterialTheme.colorScheme.onPrimaryContainer
+                        else
                             MaterialTheme.colorScheme.onSurfaceVariant
-                        
+
                         Box(
                             modifier = Modifier
                                 .weight(1f)
-                                .height(48.dp)
+                                .height(40.dp)
                                 .clip(CircleShape)
                                 .background(if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
                                 .clickable { selectedTab = tab },
@@ -296,7 +300,7 @@ fun LibraryMainScreen(
                         }
                     }
                 }
-            )
+            }
         }
 
         // --- Main Content ---
@@ -1152,9 +1156,10 @@ fun PlaylistDetailScreen(
             if (isFetching.value) {
                 item {
                     Box(Modifier.fillMaxWidth().padding(top = 32.dp), contentAlignment = Alignment.Center) {
-                        LoadingIndicator(
-                            modifier = Modifier.width(48.dp),
-                            color = MaterialTheme.colorScheme.primary
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(48.dp),
+                            color = MaterialTheme.colorScheme.primary,
+                            strokeWidth = 2.dp
                         )
                     }
                 }
