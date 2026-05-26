@@ -68,7 +68,7 @@ fun ExpressivePullToRefresh(
                     scaleY = scaleFraction()
                 }
         ) {
-            PullToRefreshDefaults.LoadingIndicator(
+            PullToRefreshDefaults.Indicator(
                 state = state,
                 isRefreshing = isRefreshing,
                 color = indicatorColor,
@@ -119,7 +119,7 @@ fun ExpressivePullToRefresh(
                     scaleY = scaleFraction()
                 }
         ) {
-            PullToRefreshDefaults.LoadingIndicator(
+            PullToRefreshDefaults.Indicator(
                 state = state,
                 isRefreshing = isRefreshing,
                 color = indicatorColor,

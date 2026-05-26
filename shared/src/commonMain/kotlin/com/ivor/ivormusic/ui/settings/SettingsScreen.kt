@@ -92,21 +92,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Outline
-import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.graphics.asComposePath
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Density
-import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.graphics.shapes.RoundedPolygon
-import androidx.graphics.shapes.toPath
 import coil3.compose.AsyncImage
 import com.ivor.ivormusic.data.SessionManager
 import com.ivor.ivormusic.domain.FolderInfo
@@ -117,40 +110,6 @@ import com.ivor.ivormusic.ui.theme.ThemeMode
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-// Helper to convert Expressive Polygons to a Compose Shape
-// Based on official Android Shapes snippets
-private class PolygonShape(private val polygon: RoundedPolygon) : Shape {
-    override fun createOutline(
-        size: androidx.compose.ui.geometry.Size,
-        layoutDirection: LayoutDirection,
-        density: Density
-    ): Outline {
-        val path = polygon.toPath().asComposePath()
-        val matrix = androidx.compose.ui.graphics.Matrix()
-        
-        // Calculate bounds of the polygon
-        // calculateBounds() returns float array [left, top, right, bottom]
-        val bounds = polygon.calculateBounds()
-        val boundsWidth = bounds[2] - bounds[0]
-        val boundsHeight = bounds[3] - bounds[1]
-        
-        // Android Compose Matrix operations are applied in reverse order to the point
-        // We want: Scale * Translate * Point
-        // So we call scale() then translate()
-        
-        // Scale to fit component size
-        // We scale width/boundsWidth and height/boundsHeight to stretch/fit exactly
-        val scaleX = size.width / boundsWidth
-        val scaleY = size.height / boundsHeight
-        matrix.scale(scaleX, scaleY)
-        
-        // Translate to origin (0,0) based on bounds top-left
-        matrix.translate(-bounds[0], -bounds[1])
-        
-        path.transform(matrix)
-        return Outline.Generic(path)
-    }
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -1457,7 +1416,7 @@ private fun ExpressiveAboutDialog(
             shape = RoundedCornerShape(32.dp),
             icon = {
                 // Developer avatar in an organic clover shape
-                val cloverShape = remember { PolygonShape(RoundedPolygon(numVertices = 4, rounding = androidx.graphics.shapes.CornerRounding(0.5f))) }
+                val cloverShape = RoundedCornerShape(40)
                 Box(
                     modifier = Modifier
                         .size(96.dp)
