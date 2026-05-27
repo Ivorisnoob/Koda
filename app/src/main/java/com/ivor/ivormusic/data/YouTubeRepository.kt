@@ -372,45 +372,85 @@ class YouTubeRepository(private val context: Context) {
      * @return Result containing stream URL or error
      */
     suspend fun getStreamUrl(videoId: String): Result<String> = withContext(Dispatchers.IO) {
-        // 1. Try InnerTube (ANDROID_VR -> IOS) first. NewPipe's HTML/JS parsing
-        //    breaks regularly on YouTube's current player ("Page needs to be reloaded"),
-        //    while these mobile clients return direct audio URLs in ~500ms.
-        getStreamUrlFallback(videoId)?.let {
-            android.util.Log.d("YouTubeRepository", "InnerTube resolution success for $videoId")
-            return@withContext Result.success(it)
-        }
+        val startMs = System.currentTimeMillis()
 
-        // 2. Fall back to NewPipe for the cases InnerTube can't handle
-        //    (age-gated, region-locked via cookies, etc.).
+        // Stage 1 — NewPipe StreamExtractor (the original mechanism).
+        // Now on v0.26.2 which contains the recent YouTube player-JS fixes and
+        // supports IOS client + visitorData internally. NewPipe-produced URLs are
+        // the most playback-friendly because they reuse the WEB client signing
+        // (less IP-binding than IOS URLs).
         var attempts = 0
         var lastException: Exception? = null
         while (attempts < 3) {
-            try {
-                val streamUrl = "https://www.youtube.com/watch?v=$videoId"
-                val ytService = ServiceList.all().find { it.serviceInfo.name == "YouTube" }
-                    ?: return@withContext Result.failure(Exception("YouTube Service not found in NewPipe"))
+            val attemptLabel = attempts + 1
+            val outcome: String? = kotlinx.coroutines.withTimeoutOrNull(5_000L) {
+                try {
+                    val streamUrl = "https://www.youtube.com/watch?v=$videoId"
+                    val ytService = ServiceList.all().find { it.serviceInfo.name == "YouTube" }
+                        ?: throw Exception("YouTube Service not found in NewPipe")
 
-                val streamExtractor = ytService.getStreamExtractor(streamUrl)
-                streamExtractor.fetchPage()
+                    val streamExtractor = ytService.getStreamExtractor(streamUrl)
+                    streamExtractor.fetchPage()
 
-                val audioStreams = streamExtractor.audioStreams
-                val bestAudioStream = audioStreams
-                    .maxByOrNull { it.averageBitrate }
-                    ?: audioStreams.maxByOrNull { it.bitrate }
+                    val audioStreams = streamExtractor.audioStreams
+                    val bestAudioStream = audioStreams
+                        .maxByOrNull { it.averageBitrate }
+                        ?: audioStreams.maxByOrNull { it.bitrate }
 
-                val url = bestAudioStream?.content
-                if (url != null) {
-                    android.util.Log.d("YouTubeRepository", "NewPipe resolution success for $videoId")
-                    return@withContext Result.success(url)
+                    bestAudioStream?.content?.takeIf { it.isNotEmpty() }
+                } catch (e: Exception) {
+                    lastException = e
+                    android.util.Log.w(
+                        "YouTubeRepository",
+                        "Resolve[NewPipe] FAIL videoId=$videoId attempt=$attemptLabel: ${e.message}",
+                    )
+                    null
                 }
-            } catch (e: Exception) {
-                lastException = e
-                android.util.Log.e("YouTubeRepository", "NewPipe attempt ${attempts + 1} failed for $videoId: ${e.message}")
             }
+
+            if (!outcome.isNullOrEmpty()) {
+                val dt = System.currentTimeMillis() - startMs
+                android.util.Log.i(
+                    "YouTubeRepository",
+                    "Resolve[NewPipe] OK videoId=$videoId attempt=$attemptLabel dt=${dt}ms",
+                )
+                return@withContext Result.success(outcome)
+            }
+
+            if (outcome == null && lastException == null) {
+                android.util.Log.w(
+                    "YouTubeRepository",
+                    "Resolve[NewPipe] timeout videoId=$videoId attempt=$attemptLabel (>5s)",
+                )
+            }
+
             attempts++
-            kotlinx.coroutines.delay(500L * attempts)
+            if (attempts < 3) kotlinx.coroutines.delay(500L * attempts)
         }
 
+        // Stage 2 — InnerTube fallback chain (ANDROID_VR → WEB_EMBEDDED_PLAYER → IOS).
+        // Only runs when NewPipe couldn't produce a URL. Useful for the videos
+        // where NewPipe's web-page parsing hits "Page needs to be reloaded" or
+        // signature regressions.
+        android.util.Log.w(
+            "YouTubeRepository",
+            "Resolve[NewPipe] exhausted videoId=$videoId after $attempts attempt(s); switching to InnerTube fallback",
+        )
+        val fallbackUrl = getStreamUrlFallback(videoId)
+        if (!fallbackUrl.isNullOrEmpty()) {
+            val dt = System.currentTimeMillis() - startMs
+            android.util.Log.i(
+                "YouTubeRepository",
+                "Resolve[InnerTube] OK videoId=$videoId dt=${dt}ms",
+            )
+            return@withContext Result.success(fallbackUrl)
+        }
+
+        val dt = System.currentTimeMillis() - startMs
+        android.util.Log.e(
+            "YouTubeRepository",
+            "Resolve FAIL videoId=$videoId all paths exhausted dt=${dt}ms",
+        )
         Result.failure(lastException ?: Exception("No audio stream found for $videoId"))
     }
 
@@ -837,7 +877,15 @@ class YouTubeRepository(private val context: Context) {
         ): String? = kotlinx.coroutines.withTimeoutOrNull(4_000L) { block() }
             .also {
                 if (it == null) {
-                    android.util.Log.w("YouTubeRepository", "[$name] gave up (timeout/null) for $videoId")
+                    android.util.Log.w(
+                        "YouTubeRepository",
+                        "Resolve[InnerTube/$name] gave up (null/timeout) videoId=$videoId",
+                    )
+                } else {
+                    android.util.Log.i(
+                        "YouTubeRepository",
+                        "Resolve[InnerTube/$name] produced URL videoId=$videoId",
+                    )
                 }
             }
 
@@ -967,14 +1015,17 @@ class YouTubeRepository(private val context: Context) {
             response.close()
 
             if (code !in 200..299) {
-                android.util.Log.e(
+                android.util.Log.w(
                     "YouTubeRepository",
-                    "[$clientName] HTTP $code for $videoId: ${json.take(200)}",
+                    "Resolve[InnerTube/$clientName] HTTP $code videoId=$videoId body=${json.take(160)}",
                 )
                 return@withContext null
             }
             if (json.isEmpty()) {
-                android.util.Log.e("YouTubeRepository", "[$clientName] empty body for $videoId")
+                android.util.Log.w(
+                    "YouTubeRepository",
+                    "Resolve[InnerTube/$clientName] empty body videoId=$videoId",
+                )
                 return@withContext null
             }
 
@@ -983,15 +1034,18 @@ class YouTubeRepository(private val context: Context) {
             val playability = root.optJSONObject("playabilityStatus")
             val status = playability?.optString("status").orEmpty()
             if (status.isNotEmpty() && status != "OK") {
-                android.util.Log.e(
+                android.util.Log.w(
                     "YouTubeRepository",
-                    "[$clientName] playability=$status reason=${playability?.optString("reason")} for $videoId",
+                    "Resolve[InnerTube/$clientName] playability=$status reason=${playability?.optString("reason")} videoId=$videoId",
                 )
                 return@withContext null
             }
 
             val streamingData = root.optJSONObject("streamingData") ?: run {
-                android.util.Log.e("YouTubeRepository", "[$clientName] no streamingData for $videoId")
+                android.util.Log.w(
+                    "YouTubeRepository",
+                    "Resolve[InnerTube/$clientName] no streamingData videoId=$videoId",
+                )
                 return@withContext null
             }
 
@@ -1010,7 +1064,7 @@ class YouTubeRepository(private val context: Context) {
             }
             android.util.Log.d(
                 "YouTubeRepository",
-                "[$clientName] formats=${formats.size} audioOnly=${audioFormats.size} for $videoId",
+                "Resolve[InnerTube/$clientName] formats=${formats.size} audioOnly=${audioFormats.size} videoId=$videoId",
             )
 
             audioFormats.maxByOrNull { it.optInt("bitrate") }?.optString("url")
@@ -1025,23 +1079,26 @@ class YouTubeRepository(private val context: Context) {
                 ?.takeIf { it.isNotEmpty() }?.let {
                     android.util.Log.w(
                         "YouTubeRepository",
-                        "[$clientName] using muxed video format for $videoId (no audio-only available)",
+                        "Resolve[InnerTube/$clientName] using muxed video format videoId=$videoId (no audio-only)",
                     )
                     return@withContext it
                 }
 
-            // Anything we have left is gated behind signatureCipher (= needs PO Token).
             val cipheredCount = formats.count {
                 !it.optString("signatureCipher").isNullOrEmpty() ||
                     !it.optString("cipher").isNullOrEmpty()
             }
             android.util.Log.w(
                 "YouTubeRepository",
-                "[$clientName] no usable URL; ${cipheredCount}/${formats.size} were signatureCipher-gated",
+                "Resolve[InnerTube/$clientName] no usable URL videoId=$videoId ciphered=${cipheredCount}/${formats.size}",
             )
             null
         } catch (e: Exception) {
-            android.util.Log.e("YouTubeRepository", "[$clientName] InnerTube fetch failed for $videoId", e)
+            android.util.Log.e(
+                "YouTubeRepository",
+                "Resolve[InnerTube/$clientName] exception videoId=$videoId",
+                e,
+            )
             null
         }
     }
