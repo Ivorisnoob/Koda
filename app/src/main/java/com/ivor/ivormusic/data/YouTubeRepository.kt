@@ -90,9 +90,18 @@ class YouTubeRepository(private val context: Context) {
 
         // IOS used as a secondary fallback when ANDROID_VR is rejected (rare).
         private const val IOS_VERSION = "21.02.3"
-        private const val IOS_USER_AGENT =
+        const val IOS_USER_AGENT =
             "com.google.ios.youtube/21.02.3 (iPhone16,2; U; CPU iOS 18_1_0 like Mac OS X)"
         private const val IOS_CLIENT_ID = 5
+
+        // The User-Agent ExoPlayer's HttpDataSource must use when fetching the
+        // resolved stream URL. YouTube binds googlevideo URLs to the client that
+        // requested them (the `c=` query param) and rejects playback (HTTP 403)
+        // if the playback UA doesn't match. We pin this to the IOS UA because
+        // IOS is the most reliable working client in our fallback chain and its
+        // URLs are the strictest about UA binding; ANDROID_VR URLs are UA-agnostic
+        // and accept any reasonable UA, so this is safe for both paths.
+        const val PLAYBACK_USER_AGENT = IOS_USER_AGENT
 
         // WEB_EMBEDDED_PLAYER also bypasses PO Token requirement for embeddable
         // videos and is useful when ANDROID_VR returns only the muxed 360p stream
@@ -853,6 +862,12 @@ class YouTubeRepository(private val context: Context) {
         val webEmbedExtras = org.json.JSONObject().apply {
             put("platform", "DESKTOP")
         }
+        // WEB_EMBEDDED_PLAYER requires a thirdParty.embedUrl context to return
+        // anything other than "video unavailable" — without it YouTube treats
+        // the request as malformed.
+        val webEmbedThirdParty = org.json.JSONObject().apply {
+            put("embedUrl", "https://www.youtube.com/")
+        }
         tryClient("WEB_EMBEDDED_PLAYER") {
             getStreamUrlFromInnerTube(
                 videoId = videoId,
@@ -861,6 +876,7 @@ class YouTubeRepository(private val context: Context) {
                 clientNameId = WEB_EMBED_CLIENT_ID,
                 userAgent = WEB_EMBED_USER_AGENT,
                 extraClientFields = webEmbedExtras,
+                thirdParty = webEmbedThirdParty,
             )
         }?.let { return it }
 
@@ -896,6 +912,7 @@ class YouTubeRepository(private val context: Context) {
         clientNameId: Int,
         userAgent: String,
         extraClientFields: org.json.JSONObject = org.json.JSONObject(),
+        thirdParty: org.json.JSONObject? = null,
     ): String? = withContext(Dispatchers.IO) {
         try {
             val clientObj = org.json.JSONObject().apply {
@@ -911,9 +928,11 @@ class YouTubeRepository(private val context: Context) {
                     put(k, extraClientFields.get(k))
                 }
             }
+            val contextObj = org.json.JSONObject().put("client", clientObj)
+            if (thirdParty != null) contextObj.put("thirdParty", thirdParty)
             val jsonBody = org.json.JSONObject().apply {
                 put("videoId", videoId)
-                put("context", org.json.JSONObject().put("client", clientObj))
+                put("context", contextObj)
                 put(
                     "playbackContext",
                     org.json.JSONObject().put(

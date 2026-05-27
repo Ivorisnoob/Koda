@@ -118,8 +118,11 @@ object CacheManager {
         val cache = simpleCache ?: return null
         
         try {
+            // Use the playback UA (matches the InnerTube client that issued the
+            // googlevideo URL). Using a generic browser UA here makes YouTube
+            // return HTTP 403 for IOS-issued URLs.
             val upstream = upstreamFactory ?: DefaultHttpDataSource.Factory()
-                .setUserAgent(YouTubeRepository.BROWSER_USER_AGENT)
+                .setUserAgent(YouTubeRepository.PLAYBACK_USER_AGENT)
                 .setConnectTimeoutMs(15000)
                 .setReadTimeoutMs(15000)
                 .setAllowCrossProtocolRedirects(true)
