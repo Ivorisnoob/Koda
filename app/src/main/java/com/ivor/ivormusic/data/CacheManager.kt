@@ -1,10 +1,13 @@
 package com.ivor.ivormusic.data
 
 import android.content.Context
+import android.net.Uri
 import android.util.Log
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.database.StandaloneDatabaseProvider
 import androidx.media3.datasource.DataSource
+import androidx.media3.datasource.DataSpec
+import androidx.media3.datasource.TransferListener
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
@@ -118,14 +121,11 @@ object CacheManager {
         val cache = simpleCache ?: return null
         
         try {
-            // Use the playback UA (matches the InnerTube client that issued the
-            // googlevideo URL). Using a generic browser UA here makes YouTube
-            // return HTTP 403 for IOS-issued URLs.
-            val upstream = upstreamFactory ?: DefaultHttpDataSource.Factory()
-                .setUserAgent(YouTubeRepository.PLAYBACK_USER_AGENT)
-                .setConnectTimeoutMs(15000)
-                .setReadTimeoutMs(15000)
-                .setAllowCrossProtocolRedirects(true)
+            // Per-URL UA: googlevideo URLs are tagged with their issuing client
+            // (?c=IOS, ?c=TVHTML5_SIMPLY_EMBEDDED, etc.) and YouTube 403s the
+            // playback if our UA doesn't match. createPerClientHttpFactory()
+            // inspects each request's URI and sets the right UA dynamically.
+            val upstream = upstreamFactory ?: createPerClientHttpFactory()
             
             return CacheDataSource.Factory()
                 .setCache(cache)
@@ -136,6 +136,41 @@ object CacheManager {
         } catch (e: Exception) {
             Log.e(TAG, "Failed to create cache data source factory", e)
             return null
+        }
+    }
+
+    /**
+     * A DataSource.Factory whose User-Agent is chosen per-request based on the
+     * URI's `?c=` query param. This matches each googlevideo URL with the UA
+     * its issuing InnerTube client expects, preventing the cross-client 403s
+     * that a single fixed UA produces.
+     *
+     * Used as the upstream for the playback cache, and from MusicService for
+     * non-cache HTTP fallback.
+     */
+    fun createPerClientHttpFactory(): DataSource.Factory = DataSource.Factory {
+        // Build the delegate with NO setUserAgent — DefaultHttpDataSource
+        // applies the userAgent field last and would otherwise overwrite the
+        // per-request User-Agent we set via setRequestProperty below.
+        val delegate = DefaultHttpDataSource.Factory()
+            .setConnectTimeoutMs(15000)
+            .setReadTimeoutMs(15000)
+            .setAllowCrossProtocolRedirects(true)
+            .createDataSource()
+
+        object : DataSource {
+            override fun open(dataSpec: DataSpec): Long {
+                delegate.setRequestProperty("User-Agent", YouTubeRepository.uaForPlaybackUri(dataSpec.uri))
+                return delegate.open(dataSpec)
+            }
+            override fun read(buffer: ByteArray, offset: Int, length: Int): Int =
+                delegate.read(buffer, offset, length)
+            override fun addTransferListener(transferListener: TransferListener) {
+                delegate.addTransferListener(transferListener)
+            }
+            override fun getUri(): Uri? = delegate.uri
+            override fun getResponseHeaders(): Map<String, List<String>> = delegate.responseHeaders
+            override fun close() = delegate.close()
         }
     }
     

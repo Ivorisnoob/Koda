@@ -12,7 +12,6 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
-import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.TransferListener
@@ -176,14 +175,11 @@ class MusicService : MediaLibraryService() {
         // Logic: Use CacheDataSource for network (http/https), but use valid DefaultDataSource for local files (content/file).
         // This prevents the cache from trying to grasp local content which causes playback failures on some devices.
         
-        // Use the same playback UA as the cache upstream so YouTube doesn't 403
-        // googlevideo URLs whose `c=` client tag doesn't match a default Media3 UA.
-        val httpDataSourceFactory = DefaultHttpDataSource.Factory()
-            .setUserAgent(YouTubeRepository.PLAYBACK_USER_AGENT)
-            .setConnectTimeoutMs(15000)
-            .setReadTimeoutMs(15000)
-            .setAllowCrossProtocolRedirects(true)
-        val defaultDataSourceFactory = DefaultDataSource.Factory(this, httpDataSourceFactory)
+        // Per-URL User-Agent — googlevideo URLs are tagged with their issuing
+        // client (?c=IOS, ?c=TVHTML5_SIMPLY_EMBEDDED, ...) and YouTube answers
+        // 403 if the playback UA doesn't match. CacheManager.createPerClientHttpFactory()
+        // picks the UA per request.
+        val defaultDataSourceFactory = DefaultDataSource.Factory(this, CacheManager.createPerClientHttpFactory())
         val cacheDataSourceFactory = CacheManager.createCacheDataSourceFactory(null)
             ?: defaultDataSourceFactory
 

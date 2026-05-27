@@ -94,14 +94,28 @@ class YouTubeRepository(private val context: Context) {
             "com.google.ios.youtube/21.02.3 (iPhone16,2; U; CPU iOS 18_1_0 like Mac OS X)"
         private const val IOS_CLIENT_ID = 5
 
-        // The User-Agent ExoPlayer's HttpDataSource must use when fetching the
-        // resolved stream URL. YouTube binds googlevideo URLs to the client that
-        // requested them (the `c=` query param) and rejects playback (HTTP 403)
-        // if the playback UA doesn't match. We pin this to the IOS UA because
-        // IOS is the most reliable working client in our fallback chain and its
-        // URLs are the strictest about UA binding; ANDROID_VR URLs are UA-agnostic
-        // and accept any reasonable UA, so this is safe for both paths.
+        // Default UA used when a URL has no recognisable `?c=` client tag.
+        // Most callers should use uaForPlaybackUri() instead, which picks the UA
+        // matching the URL's issuing client so YouTube doesn't 403 on UA mismatch.
         const val PLAYBACK_USER_AGENT = IOS_USER_AGENT
+
+        /**
+         * Returns the User-Agent ExoPlayer must use when fetching a googlevideo
+         * URL. YouTube binds resolved stream URLs to the client tagged in the
+         * `?c=` query param and answers 403 if the playback request's UA doesn't
+         * look like that client. Pick the UA per URL, not globally.
+         */
+        fun uaForPlaybackUri(uri: android.net.Uri): String {
+            val c = try { uri.getQueryParameter("c") } catch (_: Exception) { null }
+            return when (c?.uppercase()) {
+                "IOS" -> IOS_USER_AGENT
+                "ANDROID_VR" -> ANDROID_VR_USER_AGENT
+                "TVHTML5_SIMPLY_EMBEDDED_PLAYER", "TVHTML5_SIMPLY_EMBEDDED", "TVHTML5" ->
+                    TV_EMBED_USER_AGENT
+                "WEB_EMBEDDED_PLAYER", "WEB", "WEB_REMIX" -> BROWSER_USER_AGENT
+                else -> BROWSER_USER_AGENT
+            }
+        }
 
         // WEB_EMBEDDED_PLAYER also bypasses PO Token requirement for embeddable
         // videos and is useful when ANDROID_VR returns only the muxed 360p stream
@@ -110,6 +124,15 @@ class YouTubeRepository(private val context: Context) {
         private const val WEB_EMBED_USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
         private const val WEB_EMBED_CLIENT_ID = 56
+
+        // TVHTML5_SIMPLY_EMBEDDED_PLAYER — TV-embedded client. URLs produced by
+        // this client are signed for roaming TV devices and do not IP-bind, so
+        // they survive IP ranges flagged by YouTube's bot detection (residential
+        // proxies, educational/research networks, etc.). No PO Token required.
+        private const val TV_EMBED_VERSION = "2.0"
+        private const val TV_EMBED_USER_AGENT =
+            "Mozilla/5.0 (PlayStation; PlayStation 4/12.00) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Safari/605.1.15"
+        private const val TV_EMBED_CLIENT_ID = 85
 
         // Anonymous visitorData (base64) — present in YouTube's public bootstrap
         // JS. Many endpoints now require it; without it, ANDROID_VR can return
@@ -889,6 +912,27 @@ class YouTubeRepository(private val context: Context) {
                 }
             }
 
+        // Stage A — TVHTML5_SIMPLY_EMBEDDED_PLAYER. Most permissive on flagged
+        // IP ranges because TV-issued URLs are not IP-bound. Try first.
+        val tvEmbedExtras = org.json.JSONObject().apply {
+            put("platform", "TV")
+            put("clientScreen", "EMBED")
+        }
+        val tvEmbedThirdParty = org.json.JSONObject().apply {
+            put("embedUrl", "https://www.youtube.com/embed/$videoId")
+        }
+        tryClient("TVHTML5_SIMPLY_EMBEDDED_PLAYER") {
+            getStreamUrlFromInnerTube(
+                videoId = videoId,
+                clientName = "TVHTML5_SIMPLY_EMBEDDED_PLAYER",
+                clientVersion = TV_EMBED_VERSION,
+                clientNameId = TV_EMBED_CLIENT_ID,
+                userAgent = TV_EMBED_USER_AGENT,
+                extraClientFields = tvEmbedExtras,
+                thirdParty = tvEmbedThirdParty,
+            )
+        }?.let { return it }
+
         val androidVrExtras = org.json.JSONObject().apply {
             put("androidSdkVersion", 32)
             put("deviceMake", "Oculus")
@@ -910,11 +954,11 @@ class YouTubeRepository(private val context: Context) {
         val webEmbedExtras = org.json.JSONObject().apply {
             put("platform", "DESKTOP")
         }
-        // WEB_EMBEDDED_PLAYER requires a thirdParty.embedUrl context to return
-        // anything other than "video unavailable" — without it YouTube treats
-        // the request as malformed.
+        // WEB_EMBEDDED_PLAYER requires a video-specific thirdParty.embedUrl to
+        // return anything other than "video unavailable". The generic
+        // https://www.youtube.com/ form stopped working in early 2026.
         val webEmbedThirdParty = org.json.JSONObject().apply {
-            put("embedUrl", "https://www.youtube.com/")
+            put("embedUrl", "https://www.youtube.com/embed/$videoId")
         }
         tryClient("WEB_EMBEDDED_PLAYER") {
             getStreamUrlFromInnerTube(
