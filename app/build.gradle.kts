@@ -94,6 +94,7 @@ dependencies {
     
     // YouTube Music Integration
     implementation(libs.newpipe.extractor)
+    implementation(libs.youtubedl.android.library)
     implementation(libs.okhttp)
     implementation(libs.ktor.client.okhttp)
     implementation(libs.ktor.client.content.negotiation)

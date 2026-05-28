@@ -110,6 +110,8 @@ class YouTubeRepository(private val context: Context) {
             return when (c?.uppercase()) {
                 "IOS" -> IOS_USER_AGENT
                 "ANDROID_VR" -> ANDROID_VR_USER_AGENT
+                "ANDROID", "ANDROID_TESTSUITE", "ANDROID_MUSIC" ->
+                    "com.google.android.youtube/19.09.37 (Linux; U; Android 14) gzip"
                 "TVHTML5_SIMPLY_EMBEDDED_PLAYER", "TVHTML5_SIMPLY_EMBEDDED", "TVHTML5" ->
                     TV_EMBED_USER_AGENT
                 "WEB_EMBEDDED_PLAYER", "WEB", "WEB_REMIX" -> BROWSER_USER_AGENT
@@ -397,6 +399,35 @@ class YouTubeRepository(private val context: Context) {
     suspend fun getStreamUrl(videoId: String): Result<String> = withContext(Dispatchers.IO) {
         val startMs = System.currentTimeMillis()
 
+        // Stage 0 — yt-dlp (bundled Python + yt-dlp). Only runs once the
+        // Application's background init has finished unpacking Python. yt-dlp
+        // gets us cookie-authenticated requests + client variants
+        // (android_testsuite, tv, web) that survive bot-flagged IP ranges where
+        // anonymous InnerTube clients return LOGIN_REQUIRED.
+        if (com.ivor.ivormusic.IvorMusicApplication.ytDlpReady.get()) {
+            try {
+                val url = resolveWithYtDlp(videoId)
+                if (!url.isNullOrEmpty()) {
+                    val dt = System.currentTimeMillis() - startMs
+                    android.util.Log.i(
+                        "YouTubeRepository",
+                        "Resolve[yt-dlp] OK videoId=$videoId dt=${dt}ms",
+                    )
+                    return@withContext Result.success(url)
+                }
+            } catch (e: Exception) {
+                android.util.Log.w(
+                    "YouTubeRepository",
+                    "Resolve[yt-dlp] FAIL videoId=$videoId: ${e.message}",
+                )
+            }
+        } else {
+            android.util.Log.d(
+                "YouTubeRepository",
+                "Resolve[yt-dlp] skipped videoId=$videoId (not initialised yet)",
+            )
+        }
+
         // Stage 1 — NewPipe StreamExtractor (the original mechanism).
         // Now on v0.26.2 which contains the recent YouTube player-JS fixes and
         // supports IOS client + visitorData internally. NewPipe-produced URLs are
@@ -475,6 +506,79 @@ class YouTubeRepository(private val context: Context) {
             "Resolve FAIL videoId=$videoId all paths exhausted dt=${dt}ms",
         )
         Result.failure(lastException ?: Exception("No audio stream found for $videoId"))
+    }
+
+    @Volatile private var cookiesFileMtime: Long = 0L
+    private val cookiesFile: java.io.File by lazy {
+        java.io.File(context.cacheDir, "yt-dlp-cookies.txt")
+    }
+
+    /**
+     * Materialise SessionManager's cookie string as a Netscape-format cookies
+     * file for yt-dlp's `--cookies` option. Returns null when the user isn't
+     * logged in. The file is regenerated when the underlying cookie string
+     * changes hash; otherwise the previously-written file is reused.
+     */
+    private fun writeCookiesFileIfAvailable(): java.io.File? {
+        val cookies = sessionManager.getCookies()?.takeIf { it.isNotBlank() } ?: return null
+        val hash = cookies.hashCode().toLong()
+        if (cookiesFile.exists() && cookiesFileMtime == hash) return cookiesFile
+
+        try {
+            cookiesFile.bufferedWriter().use { w ->
+                w.appendLine("# Netscape HTTP Cookie File")
+                w.appendLine("# This file is auto-generated; do not edit.")
+                val expiry = (System.currentTimeMillis() / 1000L) + (365L * 24 * 3600)
+                cookies.split(";").forEach { raw ->
+                    val parts = raw.trim().split("=", limit = 2)
+                    if (parts.size != 2) return@forEach
+                    val name = parts[0].trim()
+                    val value = parts[1].trim()
+                    if (name.isEmpty()) return@forEach
+                    // domain, includeSubdomains, path, secure, expiry, name, value
+                    w.appendLine(".youtube.com\tTRUE\t/\tTRUE\t$expiry\t$name\t$value")
+                }
+            }
+            cookiesFileMtime = hash
+            return cookiesFile
+        } catch (e: Exception) {
+            android.util.Log.w("YouTubeRepository", "writeCookiesFileIfAvailable: ${e.message}")
+            return null
+        }
+    }
+
+    /**
+     * Resolve a stream URL via the bundled yt-dlp. Returns the best audio URL
+     * or null if yt-dlp failed for this video (caller falls back to NewPipe /
+     * InnerTube).
+     */
+    private suspend fun resolveWithYtDlp(videoId: String): String? = withContext(Dispatchers.IO) {
+        val request = com.yausername.youtubedl_android.YoutubeDLRequest(
+            "https://www.youtube.com/watch?v=$videoId"
+        ).apply {
+            addOption("-f", "bestaudio[ext=m4a]/bestaudio/best")
+            addOption("--no-warnings")
+            addOption("--no-call-home")
+            addOption("--no-check-certificate")
+            // Prefer clients that historically survive bot-flagged IPs and
+            // don't require PO Tokens.
+            addOption("--extractor-args", "youtube:player_client=android_testsuite,tv,web,ios")
+            writeCookiesFileIfAvailable()?.let { f ->
+                addOption("--cookies", f.absolutePath)
+            }
+        }
+        try {
+            val info = kotlinx.coroutines.withTimeoutOrNull(8_000L) {
+                com.yausername.youtubedl_android.YoutubeDL.getInstance().getInfo(request)
+            } ?: run {
+                android.util.Log.w("YouTubeRepository", "Resolve[yt-dlp] timeout videoId=$videoId (>8s)")
+                return@withContext null
+            }
+            info.url?.takeIf { it.isNotEmpty() }
+        } catch (e: com.yausername.youtubedl_android.YoutubeDLException) {
+            android.util.Log.w("YouTubeRepository", "Resolve[yt-dlp] ytdl-error videoId=$videoId: ${e.message}")
+            null
+        }
     }
 
     /**
