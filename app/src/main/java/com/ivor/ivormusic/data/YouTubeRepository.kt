@@ -437,6 +437,8 @@ class YouTubeRepository(private val context: Context) {
         var lastException: Exception? = null
         while (attempts < 3) {
             val attemptLabel = attempts + 1
+            var threw = false
+            var completed = false
             val outcome: String? = kotlinx.coroutines.withTimeoutOrNull(5_000L) {
                 try {
                     val streamUrl = "https://www.youtube.com/watch?v=$videoId"
@@ -451,8 +453,11 @@ class YouTubeRepository(private val context: Context) {
                         .maxByOrNull { it.averageBitrate }
                         ?: audioStreams.maxByOrNull { it.bitrate }
 
-                    bestAudioStream?.content?.takeIf { it.isNotEmpty() }
+                    val r = bestAudioStream?.content?.takeIf { it.isNotEmpty() }
+                    completed = true
+                    r
                 } catch (e: Exception) {
+                    threw = true
                     lastException = e
                     android.util.Log.w(
                         "YouTubeRepository",
@@ -471,8 +476,13 @@ class YouTubeRepository(private val context: Context) {
                 return@withContext Result.success(outcome)
             }
 
-            if (outcome == null && lastException == null) {
-                android.util.Log.w(
+            when {
+                threw -> { /* already logged FAIL above */ }
+                completed -> android.util.Log.w(
+                    "YouTubeRepository",
+                    "Resolve[NewPipe] no audio streams videoId=$videoId attempt=$attemptLabel",
+                )
+                else -> android.util.Log.w(
                     "YouTubeRepository",
                     "Resolve[NewPipe] timeout videoId=$videoId attempt=$attemptLabel (>5s)",
                 )

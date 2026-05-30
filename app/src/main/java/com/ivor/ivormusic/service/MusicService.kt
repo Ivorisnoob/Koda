@@ -86,7 +86,10 @@ class MusicService : MediaLibraryService() {
     companion object {
         private const val TAG = "MusicService"
         private const val PREFETCH_AHEAD_COUNT = 3
-        private const val RESOLVE_TIMEOUT_MS = 10_000L // Reduced to 10s
+        // Must fit the full sequential resolution chain in YouTubeRepository:
+        // yt-dlp (8s) -> NewPipe (3 attempts) -> InnerTube (4 clients). A 10s cap
+        // would guillotine the fallbacks if yt-dlp uses its whole budget failing.
+        private const val RESOLVE_TIMEOUT_MS = 25_000L
         private const val PLACEHOLDER_PREFIX = "https://placeholder.ivormusic/"
         private const val CACHED_PREFIX = "https://cached.ivormusic/"
         private const val ANDROID_AUTO_BROWSE_TIMEOUT_MS = 30_000L
