@@ -14,3 +14,5 @@
 .cxx
 local.properties
 keystore/
+# Claude Code local artifacts
+.claude/

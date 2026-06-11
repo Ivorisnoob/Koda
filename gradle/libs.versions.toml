@@ -21,7 +21,6 @@ okhttp = "4.12.0"
 ktorClient = "2.3.7"
 securityCrypto = "1.1.0-alpha06"
 coroutinesGuava = "1.10.1"
-youtubedlAndroid = "0.18.1"
 
 
 [libraries]
@@ -57,7 +56,6 @@ ktor-client-content-negotiation = { group = "io.ktor", name = "ktor-client-conte
 ktor-serialization-kotlinx-json = { group = "io.ktor", name = "ktor-serialization-kotlinx-json", version.ref = "ktorClient" }
 androidx-security-crypto = { group = "androidx.security", name = "security-crypto", version.ref = "securityCrypto" }
 kotlinx-coroutines-guava = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-guava", version.ref = "coroutinesGuava" }
-youtubedl-android-library = { group = "io.github.junkfood02.youtubedl-android", name = "library", version.ref = "youtubedlAndroid" }
 
 
 [plugins]

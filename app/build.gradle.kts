@@ -63,14 +63,6 @@ android {
         buildConfig = true
     }
 
-    packaging {
-        // youtubedl-android ships the Python runtime + yt-dlp as native (.so)
-        // payloads that must be extracted to disk at runtime. Keep them
-        // uncompressed/extractable or YoutubeDL.init() crashes on modern Android.
-        jniLibs {
-            useLegacyPackaging = true
-        }
-    }
 }
 
 // Build info available via BuildConfig
@@ -103,7 +95,6 @@ dependencies {
     
     // YouTube Music Integration
     implementation(libs.newpipe.extractor)
-    implementation(libs.youtubedl.android.library)
     implementation(libs.okhttp)
     implementation(libs.ktor.client.okhttp)
     implementation(libs.ktor.client.content.negotiation)
