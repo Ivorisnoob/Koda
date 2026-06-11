@@ -335,28 +335,30 @@ class MusicService : MediaLibraryService() {
 
         if (isPlaceholder(uri)) {
             Log.w(TAG, "Validation: Hit placeholder for $videoId. Resolving...")
-            
-            // Capture the current playWhenReady state BEFORE resolution
-            // This ensures restored songs don't auto-play if the user hadn't started playback
-            val wasPlayWhenReady = player.playWhenReady
-            
+
             // Launch resolution main-safe
             serviceScope.launch {
                 // Get the deduplicated future (reuses existing if prefetch started it)
                 val deferred = getOrStartResolution(mediaItem)
-                
+
                 try {
                     val resolvedItem = deferred.await()
-                    
+
                     // Apply if still current
                     if (player.currentMediaItem?.mediaId == videoId) {
-                        Log.i(TAG, "Validation: Applied resolved item for $videoId (playWhenReady=$wasPlayWhenReady)")
+                        // Read playWhenReady NOW, at apply time — not before resolution.
+                        // This transition fires during setMediaItem, which races ahead
+                        // of the play() that a user tap issues right after. Capturing
+                        // earlier would latch a stale `false` and clobber the user's
+                        // play() when we wrote it back. By apply time the intent is
+                        // settled: true for a tap, still false for cold-start restore
+                        // (which never calls play()), so playback no longer pauses.
+                        val playWhenReady = player.playWhenReady
+                        Log.i(TAG, "Validation: Applied resolved item for $videoId (playWhenReady=$playWhenReady)")
                         val index = player.currentMediaItemIndex
                         player.replaceMediaItem(index, resolvedItem)
                         player.prepare()
-                        // Restore to previous playWhenReady state, not force to true
-                        // This prevents auto-play on cold start restoration
-                        player.playWhenReady = wasPlayWhenReady
+                        player.playWhenReady = playWhenReady
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Validation: Resolution failed for $videoId", e)
