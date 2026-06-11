@@ -1,12 +1,6 @@
 package com.ivor.ivormusic.ui.player
 
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -206,63 +200,72 @@ fun ExpandablePlayer(
             color = containerColor
             // No shadow/elevation for cleaner look
         ) {
-            // Get animation specs from material motion scheme (must be called in composable scope)
-            val fadeSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
-            
-            // Content with simple crossfade - no scale transforms for performance
-            AnimatedContent(
-                targetState = isExpanded,
-                transitionSpec = {
-                    // Simple fade for better performance
-                    fadeIn(animationSpec = fadeSpec) togetherWith fadeOut(animationSpec = fadeSpec)
-                },
-                contentKey = { it },
-                label = "playerContent"
-            ) { targetExpanded ->
-                if (targetExpanded) {
-                    // Guard: Skip rendering when height is too small during animation
-                    val minSafeHeight = screenHeight * 0.25f
-                    if (height < minSafeHeight) {
-                        Box(modifier = Modifier.fillMaxSize())
-                    } else {
-                        Box(modifier = Modifier.fillMaxSize()) {
-                            when (playerStyle) {
-                                PlayerStyle.CLASSIC -> {
-                                    PlayerSheetContent(
-                                        viewModel = viewModel,
-                                        ambientBackground = ambientBackground,
-                                        onCollapse = { onExpandChange(false) },
-                                        onLoadMore = {
-                                            viewModel.loadMoreRecommendations()
-                                        },
-                                        onArtistClick = onArtistClick
-                                    )
-                                }
-                                PlayerStyle.GESTURE -> {
-                                    GesturePlayerSheetContent(
-                                        viewModel = viewModel,
-                                        ambientBackground = ambientBackground,
-                                        onCollapse = { onExpandChange(false) },
-                                        onLoadMore = {
-                                            viewModel.loadMoreRecommendations()
-                                        },
-                                        onArtistClick = onArtistClick
-                                    )
-                                }
+            // Both layers are positioned in a Box sized to the current (animating)
+            // Surface height, which the Surface shape clips. The expanded content
+            // is given a FIXED full-screen height so it is measured exactly once —
+            // the growing Surface merely reveals/clips it instead of forcing the
+            // whole now-playing screen (and its ambient shader) to re-lay-out every
+            // frame. A single expandProgress value drives the mini/full crossfade.
+            Box(modifier = Modifier.fillMaxSize()) {
+
+                // --- Mini layer: fades out over the first part of the expansion ---
+                if (expandProgress < 0.999f) {
+                    val miniAlpha = (1f - expandProgress / 0.4f).coerceIn(0f, 1f)
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .fillMaxWidth()
+                            .height(collapsedHeight)
+                            .graphicsLayer { alpha = miniAlpha }
+                    ) {
+                        MiniPlayerContent(
+                            currentSong = currentSong,
+                            isPlaying = isPlaying,
+                            isBuffering = isBuffering,
+                            playWhenReady = playWhenReady,
+                            progress = progress,
+                            onPlayPauseClick = onPlayPauseClick,
+                            onNextClick = onNextClick,
+                            onClick = { onExpandChange(true) }
+                        )
+                    }
+                }
+
+                // --- Full layer: fixed height, fades in over the latter part ---
+                if (isExpanded || expandProgress > 0.001f) {
+                    val fullAlpha = ((expandProgress - 0.25f) / 0.75f).coerceIn(0f, 1f)
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .fillMaxWidth()
+                            .height(expandedHeight)
+                            .graphicsLayer { alpha = fullAlpha }
+                    ) {
+                        when (playerStyle) {
+                            PlayerStyle.CLASSIC -> {
+                                PlayerSheetContent(
+                                    viewModel = viewModel,
+                                    ambientBackground = ambientBackground,
+                                    onCollapse = { onExpandChange(false) },
+                                    onLoadMore = {
+                                        viewModel.loadMoreRecommendations()
+                                    },
+                                    onArtistClick = onArtistClick
+                                )
+                            }
+                            PlayerStyle.GESTURE -> {
+                                GesturePlayerSheetContent(
+                                    viewModel = viewModel,
+                                    ambientBackground = ambientBackground,
+                                    onCollapse = { onExpandChange(false) },
+                                    onLoadMore = {
+                                        viewModel.loadMoreRecommendations()
+                                    },
+                                    onArtistClick = onArtistClick
+                                )
                             }
                         }
                     }
-                } else {
-                    MiniPlayerContent(
-                        currentSong = currentSong,
-                        isPlaying = isPlaying,
-                        isBuffering = isBuffering,
-                        playWhenReady = playWhenReady,
-                        progress = progress,
-                        onPlayPauseClick = onPlayPauseClick,
-                        onNextClick = onNextClick,
-                        onClick = { onExpandChange(true) }
-                    )
                 }
             }
         }
