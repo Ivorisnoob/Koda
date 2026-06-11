@@ -86,7 +86,9 @@ class MusicService : MediaLibraryService() {
     companion object {
         private const val TAG = "MusicService"
         private const val PREFETCH_AHEAD_COUNT = 3
-        private const val RESOLVE_TIMEOUT_MS = 10_000L // Reduced to 10s
+        // Resolution is two InnerTube /player calls at most, each hard-capped at
+        // 8s by OkHttp's callTimeout in YouTubeRepository.
+        private const val RESOLVE_TIMEOUT_MS = 20_000L
         private const val PLACEHOLDER_PREFIX = "https://placeholder.ivormusic/"
         private const val CACHED_PREFIX = "https://cached.ivormusic/"
         private const val ANDROID_AUTO_BROWSE_TIMEOUT_MS = 30_000L
@@ -175,10 +177,12 @@ class MusicService : MediaLibraryService() {
         // Logic: Use CacheDataSource for network (http/https), but use valid DefaultDataSource for local files (content/file).
         // This prevents the cache from trying to grasp local content which causes playback failures on some devices.
         
-        val defaultDataSourceFactory = DefaultDataSource.Factory(this)
-        // Use DefaultHttpDataSource for cache upstream to ensure we don't accidentally cache local files inside the cache source itself
-        // (though we will control routing below regardless)
-        val cacheDataSourceFactory = CacheManager.createCacheDataSourceFactory(null) 
+        // Per-URL User-Agent — googlevideo URLs are tagged with their issuing
+        // client (?c=IOS, ?c=TVHTML5_SIMPLY_EMBEDDED, ...) and YouTube answers
+        // 403 if the playback UA doesn't match. CacheManager.createPerClientHttpFactory()
+        // picks the UA per request.
+        val defaultDataSourceFactory = DefaultDataSource.Factory(this, CacheManager.createPerClientHttpFactory())
+        val cacheDataSourceFactory = CacheManager.createCacheDataSourceFactory(null)
             ?: defaultDataSourceFactory
 
         val smartDataSourceFactory = DataSource.Factory {
@@ -331,28 +335,30 @@ class MusicService : MediaLibraryService() {
 
         if (isPlaceholder(uri)) {
             Log.w(TAG, "Validation: Hit placeholder for $videoId. Resolving...")
-            
-            // Capture the current playWhenReady state BEFORE resolution
-            // This ensures restored songs don't auto-play if the user hadn't started playback
-            val wasPlayWhenReady = player.playWhenReady
-            
+
             // Launch resolution main-safe
             serviceScope.launch {
                 // Get the deduplicated future (reuses existing if prefetch started it)
                 val deferred = getOrStartResolution(mediaItem)
-                
+
                 try {
                     val resolvedItem = deferred.await()
-                    
+
                     // Apply if still current
                     if (player.currentMediaItem?.mediaId == videoId) {
-                        Log.i(TAG, "Validation: Applied resolved item for $videoId (playWhenReady=$wasPlayWhenReady)")
+                        // Read playWhenReady NOW, at apply time — not before resolution.
+                        // This transition fires during setMediaItem, which races ahead
+                        // of the play() that a user tap issues right after. Capturing
+                        // earlier would latch a stale `false` and clobber the user's
+                        // play() when we wrote it back. By apply time the intent is
+                        // settled: true for a tap, still false for cold-start restore
+                        // (which never calls play()), so playback no longer pauses.
+                        val playWhenReady = player.playWhenReady
+                        Log.i(TAG, "Validation: Applied resolved item for $videoId (playWhenReady=$playWhenReady)")
                         val index = player.currentMediaItemIndex
                         player.replaceMediaItem(index, resolvedItem)
                         player.prepare()
-                        // Restore to previous playWhenReady state, not force to true
-                        // This prevents auto-play on cold start restoration
-                        player.playWhenReady = wasPlayWhenReady
+                        player.playWhenReady = playWhenReady
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Validation: Resolution failed for $videoId", e)

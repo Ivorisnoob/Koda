@@ -62,6 +62,7 @@ android {
         compose = true
         buildConfig = true
     }
+
 }
 
 // Build info available via BuildConfig

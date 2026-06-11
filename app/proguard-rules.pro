@@ -30,3 +30,10 @@
 # Keep NewPipe Extractor classes if they are being stripped too aggressively
 -keep class org.schabi.newpipe.extractor.** { *; }
 -keep class org.mozilla.javascript.** { *; }
+
+# youtubedl-android (bundled Python + yt-dlp). The library invokes the Python
+# runtime via JNI/reflection, so its classes must not be renamed or stripped.
+-keep class com.yausername.** { *; }
+-dontwarn com.yausername.**
+-keep class org.apache.commons.** { *; }
+-dontwarn org.apache.commons.**

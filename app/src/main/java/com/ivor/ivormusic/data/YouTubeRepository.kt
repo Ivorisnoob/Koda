@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.withLock
 import org.schabi.newpipe.extractor.NewPipe
 import org.schabi.newpipe.extractor.ServiceList
 import org.schabi.newpipe.extractor.stream.StreamInfo
@@ -74,11 +75,74 @@ class YouTubeRepository(private val context: Context) {
          */
         const val BROWSER_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
         private const val INNER_TUBE_API_KEY = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8"
+
+        // Current InnerTube client versions (kept in sync with yt-dlp upstream).
+        // YouTube rejects clients older than a few months; bump these together when refreshing.
+        private const val WEB_REMIX_VERSION = "1.20260114.03.00"
+        private const val WEB_VERSION = "2.20260114.08.00"
+
+        // ANDROID_VR is the recommended client for audio extraction in 2026:
+        //  - Does NOT require a PO Token (unlike WEB / ANDROID / IOS / MWEB).
+        //  - Returns direct, unobfuscated stream URLs (no signatureCipher to decrypt).
+        private const val ANDROID_VR_VERSION = "1.65.10"
+        private const val ANDROID_VR_USER_AGENT =
+            "com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip"
+        private const val ANDROID_VR_CLIENT_ID = 28
+
+        // IOS used as a secondary fallback when ANDROID_VR is rejected (rare).
+        private const val IOS_VERSION = "21.02.3"
+        const val IOS_USER_AGENT =
+            "com.google.ios.youtube/21.02.3 (iPhone16,2; U; CPU iOS 18_1_0 like Mac OS X)"
+        private const val IOS_CLIENT_ID = 5
+
+        // Default UA used when a URL has no recognisable `?c=` client tag.
+        // Most callers should use uaForPlaybackUri() instead, which picks the UA
+        // matching the URL's issuing client so YouTube doesn't 403 on UA mismatch.
+        const val PLAYBACK_USER_AGENT = IOS_USER_AGENT
+
+        /**
+         * Returns the User-Agent ExoPlayer must use when fetching a googlevideo
+         * URL. YouTube binds resolved stream URLs to the client tagged in the
+         * `?c=` query param and answers 403 if the playback request's UA doesn't
+         * look like that client. Pick the UA per URL, not globally.
+         */
+        fun uaForPlaybackUri(uri: android.net.Uri): String {
+            val c = try { uri.getQueryParameter("c") } catch (_: Exception) { null }
+            return when (c?.uppercase()) {
+                "IOS" -> IOS_USER_AGENT
+                "ANDROID_VR" -> ANDROID_VR_USER_AGENT
+                "ANDROID", "ANDROID_TESTSUITE", "ANDROID_MUSIC" ->
+                    "com.google.android.youtube/19.09.37 (Linux; U; Android 14) gzip"
+                "TVHTML5_SIMPLY_EMBEDDED_PLAYER", "TVHTML5_SIMPLY_EMBEDDED", "TVHTML5" ->
+                    TV_EMBED_USER_AGENT
+                "WEB_EMBEDDED_PLAYER", "WEB", "WEB_REMIX" -> BROWSER_USER_AGENT
+                else -> BROWSER_USER_AGENT
+            }
+        }
+
+        // UA kept only for uaForPlaybackUri: previously-resolved TV-client URLs
+        // may still live in the player queue / URI cache and need a matching UA.
+        private const val TV_EMBED_USER_AGENT =
+            "Mozilla/5.0 (PlayStation; PlayStation 4/12.00) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Safari/605.1.15"
+
+        // Anonymous visitorData (base64) — present in YouTube's public bootstrap
+        // JS. Many endpoints now require it; without it, ANDROID_VR can return
+        // empty streamingData under load.
+        private const val DEFAULT_VISITOR_DATA = "Cgt6SUNYVzB2VkJDbyjGrrSmBg=="
     }
 
     private val okHttpClient = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
+        .build()
+
+    // Dedicated client for stream resolution. callTimeout is a hard wall-clock
+    // cap enforced by OkHttp itself — unlike withTimeoutOrNull, it cannot be
+    // defeated by a thread blocked inside execute().
+    private val streamResolveClient = okHttpClient.newBuilder()
+        .connectTimeout(4, TimeUnit.SECONDS)
+        .readTimeout(5, TimeUnit.SECONDS)
+        .callTimeout(8, TimeUnit.SECONDS)
         .build()
 
     private fun getRandomUserAgent(): String {
@@ -331,48 +395,130 @@ class YouTubeRepository(private val context: Context) {
      * @return Result containing stream URL or error
      */
     suspend fun getStreamUrl(videoId: String): Result<String> = withContext(Dispatchers.IO) {
-        var attempts = 0
-        while (attempts < 3) {
-            try {
-                // Determine client type mainly for logs, but NewPipe handles rotation internally usually
-                val streamUrl = "https://www.youtube.com/watch?v=$videoId"
-                val ytService = ServiceList.all().find { it.serviceInfo.name == "YouTube" } 
-                    ?: return@withContext Result.failure(Exception("YouTube Service not found in NewPipe"))
-                
-                val streamExtractor = ytService.getStreamExtractor(streamUrl)
-                streamExtractor.fetchPage()
-                
-                // Get the best audio-only stream
-                val audioStreams = streamExtractor.audioStreams
-                val bestAudioStream = audioStreams
-                    .maxByOrNull { it.averageBitrate }
-                    ?: audioStreams.maxByOrNull { it.bitrate }
-                
-                val url = bestAudioStream?.content
-                if (url != null) {
-                    return@withContext Result.success(url)
-                } else {
-                    // If no stream found, it might be a content restriction (age-gate, region)
-                    if (attempts == 2) return@withContext Result.failure(Exception("No audio stream found for $videoId after 3 attempts"))
-                }
-            } catch (e: Exception) {
-                android.util.Log.e("YouTubeRepository", "Attempt ${attempts+1} failed for $videoId: ${e.message}")
-                if (attempts == 2) {
-                    // Try fallback before giving up purely on NewPipe
-                    android.util.Log.w("YouTubeRepository", "NewPipe failed, trying Internal API fallback for $videoId")
-                    val fallbackUrl = getStreamUrlFallback(videoId)
-                    if (fallbackUrl != null) {
-                         android.util.Log.d("YouTubeRepository", "Fallback success for $videoId")
-                         return@withContext Result.success(fallbackUrl)
-                    }
-                    return@withContext Result.failure(e)
-                }
-            }
-            attempts++
-            // Exponential backoff: 500ms, 1000ms
-            kotlinx.coroutines.delay(500L * attempts)
+        val startMs = System.currentTimeMillis()
+
+        // Single resolution mechanism: direct InnerTube /player calls.
+        //
+        // ANDROID_VR is the primary (and effectively only) client that yields
+        // *fully downloadable* audio URLs without a GVS PO Token: its googlevideo
+        // URLs serve the whole file, where IOS-issued URLs are throttled to the
+        // first ~1 MiB and then return HTTP 403 (GVS PO-Token enforcement).
+        //
+        // The catch is YouTube's bot check: with a stale/shared visitorData,
+        // ANDROID_VR returns playabilityStatus=LOGIN_REQUIRED ("Sign in to
+        // confirm you're not a bot"). A freshly minted, session-unique
+        // visitorData (see getVisitorData) clears that check. We refresh it once
+        // up front and reuse it for both attempts.
+        //
+        // IOS stays only as a last-ditch fallback for the rare videos ANDROID_VR
+        // can't serve (e.g. "made for kids", which ANDROID_VR omits). Its URL may
+        // be throttled, but a few seconds of audio beats a hard failure.
+        //
+        // Each call is hard-capped by streamResolveClient's callTimeout, so the
+        // worst case is bounded regardless of coroutine cancellability.
+        val visitorData = getVisitorData()
+
+        val androidVrExtras = org.json.JSONObject().apply {
+            put("androidSdkVersion", 32)
+            put("deviceMake", "Oculus")
+            put("deviceModel", "Quest 3")
+            put("osName", "Android")
+            put("osVersion", "12L")
         }
-        Result.failure(Exception("Unknown error resolving stream"))
+        val iosExtras = org.json.JSONObject().apply {
+            put("deviceMake", "Apple")
+            put("deviceModel", "iPhone16,2")
+            put("osName", "iPhone")
+            put("osVersion", "18.1.0.22B83")
+        }
+
+        val url = getStreamUrlFromInnerTube(
+            videoId = videoId,
+            clientName = "ANDROID_VR",
+            clientVersion = ANDROID_VR_VERSION,
+            clientNameId = ANDROID_VR_CLIENT_ID,
+            userAgent = ANDROID_VR_USER_AGENT,
+            visitorData = visitorData,
+            extraClientFields = androidVrExtras,
+        ) ?: getStreamUrlFromInnerTube(
+            videoId = videoId,
+            clientName = "IOS",
+            clientVersion = IOS_VERSION,
+            clientNameId = IOS_CLIENT_ID,
+            userAgent = IOS_USER_AGENT,
+            visitorData = visitorData,
+            extraClientFields = iosExtras,
+        )
+
+        val dt = System.currentTimeMillis() - startMs
+        if (!url.isNullOrEmpty()) {
+            android.util.Log.i(
+                "YouTubeRepository",
+                "Resolve[InnerTube] OK videoId=$videoId dt=${dt}ms",
+            )
+            Result.success(url)
+        } else {
+            android.util.Log.e(
+                "YouTubeRepository",
+                "Resolve FAIL videoId=$videoId all clients exhausted dt=${dt}ms",
+            )
+            Result.failure(Exception("No audio stream found for $videoId"))
+        }
+    }
+
+    // --- Fresh visitorData (anti-bot) ---------------------------------------
+    // YouTube's /player bot check keys off visitorData: a stale or shared value
+    // gets flagged (LOGIN_REQUIRED). A visitorData freshly minted from the
+    // youtube.com bootstrap passes. We cache it and refresh on a TTL.
+    @Volatile private var cachedVisitorData: String? = null
+    @Volatile private var visitorDataFetchedAt: Long = 0L
+    private val visitorDataMutex = kotlinx.coroutines.sync.Mutex()
+    private val visitorDataTtlMs = 6 * 60 * 60 * 1000L // 6 hours
+
+    private suspend fun getVisitorData(): String {
+        val now = System.currentTimeMillis()
+        cachedVisitorData?.let { if (now - visitorDataFetchedAt < visitorDataTtlMs) return it }
+        return visitorDataMutex.withLock {
+            val nowInner = System.currentTimeMillis()
+            cachedVisitorData?.let { if (nowInner - visitorDataFetchedAt < visitorDataTtlMs) return it }
+            val fresh = fetchVisitorData()
+            if (!fresh.isNullOrEmpty()) {
+                cachedVisitorData = fresh
+                visitorDataFetchedAt = nowInner
+                android.util.Log.i("YouTubeRepository", "visitorData refreshed (len=${fresh.length})")
+                fresh
+            } else {
+                // Reuse a previously-good value if we have one; otherwise fall
+                // back to the baked-in constant (better than nothing).
+                cachedVisitorData ?: DEFAULT_VISITOR_DATA
+            }
+        }
+    }
+
+    /**
+     * Scrape a fresh visitorData token from the youtube.com bootstrap HTML.
+     * The token is JSON-escaped in the page (e.g. `=` for `=`), so unescape
+     * the two characters that actually appear in base64url visitorData.
+     */
+    private suspend fun fetchVisitorData(): String? = withContext(Dispatchers.IO) {
+        try {
+            val request = okhttp3.Request.Builder()
+                .url("https://www.youtube.com/")
+                .addHeader("User-Agent", BROWSER_USER_AGENT)
+                .addHeader("Accept-Language", "en-US,en;q=0.9")
+                .build()
+            val response = streamResolveClient.newCall(request).execute()
+            val html = response.body?.string().orEmpty()
+            response.close()
+            Regex("\"visitorData\":\"(.*?)\"").find(html)
+                ?.groupValues?.get(1)
+                ?.replace("\\u003d", "=")
+                ?.replace("\\u0026", "&")
+                ?.takeIf { it.isNotEmpty() }
+        } catch (e: Exception) {
+            android.util.Log.w("YouTubeRepository", "fetchVisitorData failed: ${e.message}")
+            null
+        }
     }
 
     /**
@@ -537,7 +683,7 @@ class YouTubeRepository(private val context: Context) {
                 "context": {
                     "client": {
                         "clientName": "WEB_REMIX",
-                        "clientVersion": "1.20240402.09.00",
+                        "clientVersion": "$WEB_REMIX_VERSION",
                         "hl": "en",
                         "gl": "US"
                     }
@@ -784,66 +930,107 @@ class YouTubeRepository(private val context: Context) {
     }
 
     /**
-     * Fallback stream resolution using Internal API.
-     * Bypasses NewPipe HTML parsing which can get stuck on "Page needs to be reloaded" logic.
+     * Single-client InnerTube /player call. Returns the best audio URL or null on any
+     * failure. Falls back to muxed video-only formats (e.g. itag 18) when no audio-only
+     * format is available — ExoPlayer extracts the audio track from the MP4 container,
+     * which is critical because ANDROID_VR can return only format 18 since March 2026
+     * (see yt-dlp issue #16150).
      */
-    /**
-     * Fallback stream resolution using Internal API.
-     * Uses ANDROID_MUSIC client (InnerTube) which is more robust against "reload" errors for music content.
-     */
-    private suspend fun getStreamUrlFallback(videoId: String): String? = withContext(Dispatchers.IO) {
+    private suspend fun getStreamUrlFromInnerTube(
+        videoId: String,
+        clientName: String,
+        clientVersion: String,
+        clientNameId: Int,
+        userAgent: String,
+        visitorData: String,
+        extraClientFields: org.json.JSONObject = org.json.JSONObject(),
+    ): String? = withContext(Dispatchers.IO) {
         try {
-            // Use ANDROID_MUSIC client which is specifically for YouTube Music content
-            // and less prone to bot detection than the generic ANDROID client
-            
-            val jsonBody = """
-               {
-                   "videoId": "$videoId",
-                   "context": {
-                       "client": {
-                           "clientName": "ANDROID_MUSIC",
-                           "clientVersion": "7.20.51",
-                           "androidSdkVersion": 34,
-                           "hl": "en",
-                           "gl": "US",
-                           "utcOffsetMinutes": 0
-                       }
-                   },
-                   "playbackContext": {
-                       "contentPlaybackContext": {
-                           "signatureTimestamp": ${System.currentTimeMillis() / 1000}
-                       }
-                   }
-               }
-            """.trimIndent()
-            
-            val url = "https://youtubei.googleapis.com/youtubei/v1/player?key=$INNER_TUBE_API_KEY"
-            
-            val requestBuilder = okhttp3.Request.Builder()
-               .url(url)
-               .post(jsonBody.toRequestBody("application/json".toMediaType()))
-               .addHeader("User-Agent", "com.google.android.apps.youtube.music/7.20.51 (Linux; U; Android 14; en_US) gzip")
-               .addHeader("X-Goog-Api-Format-Version", "1")
-               
-            val response = okHttpClient.newCall(requestBuilder.build()).execute()
-            val json = response.body?.string() ?: return@withContext null
-            
+            val clientObj = org.json.JSONObject().apply {
+                put("clientName", clientName)
+                put("clientVersion", clientVersion)
+                put("hl", "en")
+                put("gl", "US")
+                put("utcOffsetMinutes", 0)
+                put("visitorData", visitorData)
+                val keys = extraClientFields.keys()
+                while (keys.hasNext()) {
+                    val k = keys.next()
+                    put(k, extraClientFields.get(k))
+                }
+            }
+            val contextObj = org.json.JSONObject().put("client", clientObj)
+            val jsonBody = org.json.JSONObject().apply {
+                put("videoId", videoId)
+                put("context", contextObj)
+                put(
+                    "playbackContext",
+                    org.json.JSONObject().put(
+                        "contentPlaybackContext",
+                        org.json.JSONObject().put(
+                            "signatureTimestamp",
+                            System.currentTimeMillis() / 1000,
+                        ),
+                    ),
+                )
+                put("contentCheckOk", true)
+                put("racyCheckOk", true)
+            }.toString()
+
+            val url = "https://youtubei.googleapis.com/youtubei/v1/player?key=$INNER_TUBE_API_KEY&prettyPrint=false"
+
+            val request = okhttp3.Request.Builder()
+                .url(url)
+                .post(jsonBody.toRequestBody("application/json".toMediaType()))
+                .addHeader("User-Agent", userAgent)
+                .addHeader("X-Goog-Api-Format-Version", "2")
+                .addHeader("X-YouTube-Client-Name", clientNameId.toString())
+                .addHeader("X-YouTube-Client-Version", clientVersion)
+                .addHeader("X-Goog-Visitor-Id", visitorData)
+                .addHeader("Origin", "https://www.youtube.com")
+                .addHeader("Accept", "application/json")
+                .build()
+
+            val response = streamResolveClient.newCall(request).execute()
+            val code = response.code
+            val json = response.body?.string().orEmpty()
+            response.close()
+
+            if (code !in 200..299) {
+                android.util.Log.w(
+                    "YouTubeRepository",
+                    "Resolve[InnerTube/$clientName] HTTP $code videoId=$videoId body=${json.take(160)}",
+                )
+                return@withContext null
+            }
+            if (json.isEmpty()) {
+                android.util.Log.w(
+                    "YouTubeRepository",
+                    "Resolve[InnerTube/$clientName] empty body videoId=$videoId",
+                )
+                return@withContext null
+            }
+
             val root = org.json.JSONObject(json)
-            
-            // Check for playability status error
+
             val playability = root.optJSONObject("playabilityStatus")
-            if (playability != null && playability.optString("status") != "OK") {
-                 android.util.Log.e("YouTubeRepository", "Fallback playability error: ${playability.optString("reason")}")
-                 return@withContext null
+            val status = playability?.optString("status").orEmpty()
+            if (status.isNotEmpty() && status != "OK") {
+                android.util.Log.w(
+                    "YouTubeRepository",
+                    "Resolve[InnerTube/$clientName] playability=$status reason=${playability?.optString("reason")} videoId=$videoId",
+                )
+                return@withContext null
             }
-            
-            val streamingData = root.optJSONObject("streamingData") 
-            if (streamingData == null) {
-                 android.util.Log.e("YouTubeRepository", "Fallback no streamingData found in response.")
-                 return@withContext null
+
+            val streamingData = root.optJSONObject("streamingData") ?: run {
+                android.util.Log.w(
+                    "YouTubeRepository",
+                    "Resolve[InnerTube/$clientName] no streamingData videoId=$videoId",
+                )
+                return@withContext null
             }
-            
-            // Extract formats
+
             val formats = mutableListOf<org.json.JSONObject>()
             streamingData.optJSONArray("adaptiveFormats")?.let { arr ->
                 for (i in 0 until arr.length()) formats.add(arr.getJSONObject(i))
@@ -851,32 +1038,49 @@ class YouTubeRepository(private val context: Context) {
             streamingData.optJSONArray("formats")?.let { arr ->
                 for (i in 0 until arr.length()) formats.add(arr.getJSONObject(i))
             }
-            
-            // Find best audio (Opus preferred, then AAC)
-            val audioFormats = formats.filter { it.optString("mimeType").contains("audio") }
-            
-            // Log for debugging
-            android.util.Log.d("YouTubeRepository", "Fallback found ${audioFormats.size} audio formats")
-            
-            val bestAudio = audioFormats.maxByOrNull { it.optInt("bitrate") }
-                
-            var streamUrl = bestAudio?.optString("url")
-            
-            if (streamUrl.isNullOrEmpty()) {
-                // If URL is missing, it might use signatureCipher
-                val cipher = bestAudio?.optString("signatureCipher") ?: bestAudio?.optString("cipher")
-                if (!cipher.isNullOrEmpty()) {
-                    android.util.Log.w("YouTubeRepository", "Fallback found cipher, but decryption not implemented here. Relying on NewPipe.")
-                    // If we really need to decrypt, we would need a complex Decryptor. 
-                    // Usually NewPipe handles this. If NewPipe failed, we are in trouble unless we fix NewPipe.
-                    // However, ANDROID client usually gives direct URLs for most music content.
-                    return@withContext null
-                }
+
+            fun hasPlayableUrl(f: org.json.JSONObject): Boolean = !f.optString("url").isNullOrEmpty()
+
+            val audioFormats = formats.filter {
+                it.optString("mimeType").contains("audio") && hasPlayableUrl(it)
             }
-            
-            return@withContext streamUrl
+            android.util.Log.d(
+                "YouTubeRepository",
+                "Resolve[InnerTube/$clientName] formats=${formats.size} audioOnly=${audioFormats.size} videoId=$videoId",
+            )
+
+            audioFormats.maxByOrNull { it.optInt("bitrate") }?.optString("url")
+                ?.takeIf { it.isNotEmpty() }?.let { return@withContext it }
+
+            // No audio-only stream available — fall back to a muxed MP4 (itag 18 etc.).
+            // ExoPlayer happily plays just the audio track of these.
+            val muxedFormats = formats.filter {
+                it.optString("mimeType").startsWith("video/") && hasPlayableUrl(it)
+            }
+            muxedFormats.minByOrNull { it.optInt("bitrate") }?.optString("url")
+                ?.takeIf { it.isNotEmpty() }?.let {
+                    android.util.Log.w(
+                        "YouTubeRepository",
+                        "Resolve[InnerTube/$clientName] using muxed video format videoId=$videoId (no audio-only)",
+                    )
+                    return@withContext it
+                }
+
+            val cipheredCount = formats.count {
+                !it.optString("signatureCipher").isNullOrEmpty() ||
+                    !it.optString("cipher").isNullOrEmpty()
+            }
+            android.util.Log.w(
+                "YouTubeRepository",
+                "Resolve[InnerTube/$clientName] no usable URL videoId=$videoId ciphered=${cipheredCount}/${formats.size}",
+            )
+            null
         } catch (e: Exception) {
-            android.util.Log.e("YouTubeRepository", "Fallback failed for $videoId", e)
+            android.util.Log.e(
+                "YouTubeRepository",
+                "Resolve[InnerTube/$clientName] exception videoId=$videoId",
+                e,
+            )
             null
         }
     }
@@ -903,7 +1107,7 @@ class YouTubeRepository(private val context: Context) {
                     "context": {
                         "client": {
                             "clientName": "WEB_REMIX",
-                            "clientVersion": "1.20240402.09.00",
+                            "clientVersion": "$WEB_REMIX_VERSION",
                             "hl": "en",
                             "gl": "US"
                         }
@@ -917,7 +1121,7 @@ class YouTubeRepository(private val context: Context) {
                     "context": {
                         "client": {
                             "clientName": "WEB_REMIX",
-                            "clientVersion": "1.20230102.01.00",
+                            "clientVersion": "$WEB_REMIX_VERSION",
                             "hl": "en",
                             "gl": "US"
                         }
@@ -1414,7 +1618,7 @@ class YouTubeRepository(private val context: Context) {
 
             // Client constants - using WEB_REMIX (web player)
             val clientName = "WEB_REMIX"
-            val clientVersion = "1.20241230.01.00"
+            val clientVersion = WEB_REMIX_VERSION
 
             // Step 1: Call player endpoint to get tracking URLs
             val playerUrl = "https://music.youtube.com/youtubei/v1/player"
@@ -1679,7 +1883,7 @@ class YouTubeRepository(private val context: Context) {
                 "context": {
                     "client": {
                         "clientName": "WEB",
-                        "clientVersion": "2.20240101.00.00",
+                        "clientVersion": "$WEB_VERSION",
                         "hl": "en",
                         "gl": "US",
                         "originalUrl": "https://www.youtube.com/",
@@ -1756,7 +1960,7 @@ class YouTubeRepository(private val context: Context) {
                 "context": {
                     "client": {
                         "clientName": "WEB",
-                        "clientVersion": "2.20240101.00.00",
+                        "clientVersion": "$WEB_VERSION",
                         "hl": "en",
                         "gl": "US",
                         "originalUrl": "https://www.youtube.com/feed/history",
@@ -2228,7 +2432,7 @@ class YouTubeRepository(private val context: Context) {
                 "context": {
                     "client": {
                         "clientName": "WEB",
-                        "clientVersion": "2.20240101.00.00",
+                        "clientVersion": "$WEB_VERSION",
                         "hl": "en",
                         "gl": "US"
                     }
