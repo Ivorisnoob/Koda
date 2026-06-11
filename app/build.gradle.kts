@@ -13,8 +13,8 @@ android {
         applicationId = "com.ivor.ivormusic"
         minSdk = 31
         targetSdk = 36
-        versionCode = 15
-        versionName = "3.0"
+        versionCode = 16
+        versionName = "3.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -92,7 +92,7 @@ dependencies {
     implementation(libs.androidx.graphics.shapes)
     implementation(libs.androidx.ui.text.google.fonts)
     implementation("androidx.palette:palette-ktx:1.0.0")
-    
+
     // YouTube Music Integration
     implementation(libs.newpipe.extractor)
     implementation(libs.okhttp)
