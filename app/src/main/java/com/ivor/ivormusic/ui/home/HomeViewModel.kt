@@ -27,6 +27,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val sessionManager = SessionManager(application)
     private val searchHistoryRepository = com.ivor.ivormusic.data.SearchHistoryRepository(application)
     private val recommendationEngine = com.ivor.ivormusic.data.RecommendationEngine(application, youtubeRepository)
+    private val videoHistoryRepository = com.ivor.ivormusic.data.VideoHistoryRepository(application)
 
     private val _songs = MutableStateFlow<List<Song>>(emptyList())
     val songs: StateFlow<List<Song>> = _songs.asStateFlow()
@@ -79,6 +80,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _userAvatar = MutableStateFlow<String?>(sessionManager.getUserAvatar())
     val userAvatar: StateFlow<String?> = _userAvatar.asStateFlow()
+
+    private val _userName = MutableStateFlow<String?>(sessionManager.getUserName())
+    val userName: StateFlow<String?> = _userName.asStateFlow()
 
     // Downloads
     private val downloadRepository = com.ivor.ivormusic.data.DownloadRepository(application)
@@ -178,6 +182,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             if (_isYouTubeConnected.value) {
                 youtubeRepository.fetchAccountInfo()
                 _userAvatar.value = sessionManager.getUserAvatar()
+                _userName.value = sessionManager.getUserName()
                 loadLibraryData()
             }
         }
@@ -336,6 +341,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     fun logout() {
         sessionManager.clearSession()
         _isYouTubeConnected.value = false
+        _userAvatar.value = null
+        _userName.value = null
         _youtubeSongs.value = emptyList()
         _likedSongs.value = emptyList()
         _youtubePlaylists.value = emptyList()
@@ -402,22 +409,22 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * Load user's watch history.
+     * Load user's watch history. Logged in: YouTube account history
+     * (falling back to local). Logged out: locally persisted history.
      */
     fun loadYouTubeHistory() {
-        // If not logged in, clear history
         if (!sessionManager.isLoggedIn()) {
-             _historyVideos.value = emptyList()
+             _historyVideos.value = videoHistoryRepository.getHistory()
              return
         }
-        
+
         viewModelScope.launch {
             _isHistoryLoading.value = true
             try {
                 val videos = youtubeRepository.getWatchHistory()
-                _historyVideos.value = videos
+                _historyVideos.value = videos.ifEmpty { videoHistoryRepository.getHistory() }
             } catch (e: Exception) {
-                // Handle error silently
+                _historyVideos.value = videoHistoryRepository.getHistory()
             } finally {
                 _isHistoryLoading.value = false
             }

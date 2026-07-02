@@ -74,6 +74,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.ShortNavigationBar
 import androidx.compose.material3.ShortNavigationBarItem
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -214,6 +215,12 @@ fun HomeScreen(
 
     // Auth Dialog State
     var showAuthDialog by remember { mutableStateOf(false) }
+    var showAccountSheet by remember { mutableStateOf(false) }
+
+    // When logged in the profile button shows the account sheet, not the login dialog
+    val onProfileClick: () -> Unit = {
+        if (isYouTubeConnected) showAccountSheet = true else showAuthDialog = true
+    }
 
     val backgroundColor = MaterialTheme.colorScheme.background
     
@@ -277,7 +284,7 @@ fun HomeScreen(
                                     // Navigate to video player screen
                                     onNavigateToVideoPlayer(video)
                                 },
-                                onProfileClick = { showAuthDialog = true },
+                                onProfileClick = onProfileClick,
                                 onSettingsClick = onNavigateToSettings,
                                 onDownloadsClick = onNavigateToDownloads,
                                 onRefresh = { viewModel.refreshVideos() },
@@ -307,7 +314,7 @@ fun HomeScreen(
                                         showPlayerSheet = true
                                     }
                                 },
-                                onProfileClick = { showAuthDialog = true },
+                                onProfileClick = onProfileClick,
                                 onSettingsClick = onNavigateToSettings,
                                 onDownloadsClick = onNavigateToDownloads,
                                 isDarkMode = isDarkMode,
@@ -558,8 +565,98 @@ fun HomeScreen(
     if (showAuthDialog) {
         com.ivor.ivormusic.ui.auth.YouTubeAuthDialog(
             onDismiss = { showAuthDialog = false },
-            onAuthSuccess = { showAuthDialog = false }
+            onAuthSuccess = {
+                showAuthDialog = false
+                // Refresh login state, account info and the feeds so the UI
+                // reflects the account immediately instead of after a restart
+                viewModel.checkYouTubeConnection()
+                if (videoMode) {
+                    viewModel.loadTrendingVideos()
+                    viewModel.loadYouTubeHistory()
+                } else {
+                    viewModel.loadYouTubeRecommendations()
+                }
+            }
         )
+    }
+
+    // Account sheet (shown when tapping the avatar while logged in)
+    if (showAccountSheet) {
+        val userAvatar by viewModel.userAvatar.collectAsState()
+        val userName by viewModel.userName.collectAsState()
+        ModalBottomSheet(
+            onDismissRequest = { showAccountSheet = false },
+            containerColor = MaterialTheme.colorScheme.surfaceContainer
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp)
+                    .padding(bottom = 40.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(72.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (userAvatar != null) {
+                        coil.compose.AsyncImage(
+                            model = userAvatar,
+                            contentDescription = "Profile",
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.Person,
+                            contentDescription = "Profile",
+                            modifier = Modifier.size(36.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                Text(
+                    text = userName ?: "YouTube Account",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+
+                Button(
+                    onClick = {
+                        showAccountSheet = false
+                        viewModel.logout()
+                        if (videoMode) {
+                            viewModel.loadTrendingVideos()
+                            viewModel.loadYouTubeHistory()
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer,
+                        contentColor = MaterialTheme.colorScheme.onErrorContainer
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Log out")
+                }
+
+                TextButton(
+                    onClick = {
+                        showAccountSheet = false
+                        viewModel.logout()
+                        showAuthDialog = true
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Switch account")
+                }
+            }
+        }
     }
 }
 

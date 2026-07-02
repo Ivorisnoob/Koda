@@ -1,0 +1,46 @@
+package com.ivor.ivormusic.data
+
+/**
+ * Engagement data for a video: like state, subscription state and the
+ * entry token for the comments section. Parsed from the InnerTube /next
+ * response (WEB client). likeStatus and isSubscribed only reflect the
+ * user's real state when the request was authenticated.
+ */
+data class VideoEngagement(
+    val videoId: String,
+    val likeCount: String?,          // formatted, e.g. "19M"
+    val likeStatus: LikeStatus,
+    val channelId: String?,          // canonical UC... id (needed for subscribe)
+    val isSubscribed: Boolean,
+    val subscriberCountText: String?,
+    val commentsToken: String?       // continuation token for the first comments page
+)
+
+enum class LikeStatus { LIKE, DISLIKE, INDIFFERENT }
+
+/**
+ * A single comment (top-level or reply), parsed from the modern
+ * commentEntityPayload format used by InnerTube since 2024.
+ */
+data class CommentItem(
+    val commentId: String,
+    val text: String,
+    val author: String,
+    val authorAvatarUrl: String?,
+    val publishedTime: String,
+    val likeCount: String,           // formatted, e.g. "263K"
+    val replyCount: String,          // formatted; empty when no replies
+    val isPinned: Boolean,
+    val isHearted: Boolean,
+    val isCreator: Boolean,
+    val isVerified: Boolean,
+    val repliesToken: String?        // continuation token to load replies
+)
+
+/**
+ * One page of comments plus the token for the next page (null = last page).
+ */
+data class CommentsPage(
+    val comments: List<CommentItem>,
+    val nextPageToken: String?
+)

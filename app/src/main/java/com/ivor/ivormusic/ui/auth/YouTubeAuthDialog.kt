@@ -83,10 +83,23 @@ fun YouTubeAuthDialog(
                                 settings.javaScriptEnabled = true
                                 settings.domStorageEnabled = true
                                 webViewClient = object : WebViewClient() {
+                                    private var completed = false
+
                                     override fun onPageFinished(view: WebView?, url: String?) {
                                         super.onPageFinished(view, url)
-                                        val cookies = CookieManager.getInstance().getCookie(url)
-                                        if (cookies != null && cookies.contains("SAPISID")) {
+                                        if (completed) return
+                                        // Always read the youtube.com cookie jar, NOT the current
+                                        // page's. Mid-login pages live on accounts.google.com whose
+                                        // jar also contains a SAPISID — saving that jar produces a
+                                        // "logged in" state that every YouTube endpoint rejects as
+                                        // anonymous (no feed, no avatar, login loops).
+                                        val cookies = CookieManager.getInstance()
+                                            .getCookie("https://music.youtube.com")
+                                        if (cookies != null &&
+                                            cookies.contains("SAPISID") &&
+                                            cookies.contains("SID=")
+                                        ) {
+                                            completed = true
                                             sessionManager.saveCookies(cookies)
                                             onAuthSuccess()
                                         }

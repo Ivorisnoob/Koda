@@ -29,10 +29,16 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.Comment
+import androidx.compose.material.icons.outlined.ThumbDown
+import androidx.compose.material.icons.outlined.ThumbUp
 import androidx.compose.material.icons.rounded.Autorenew
 import androidx.compose.material.icons.rounded.Error
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Fullscreen
 import androidx.compose.material.icons.rounded.FullscreenExit
 import androidx.compose.material.icons.rounded.Pause
@@ -40,6 +46,10 @@ import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Repeat
 import androidx.compose.material.icons.rounded.RepeatOne
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.ThumbDown
+import androidx.compose.material.icons.rounded.ThumbUp
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ContainedLoadingIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -57,6 +67,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -77,6 +88,8 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
+import com.ivor.ivormusic.data.LikeStatus
+import com.ivor.ivormusic.data.VideoEngagement
 import com.ivor.ivormusic.data.VideoItem
 import java.util.Locale
 
@@ -470,7 +483,12 @@ fun VideoInfoSection(
     video: VideoItem,
     relatedVideos: List<VideoItem>,
     onVideoSelect: (VideoItem) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    engagement: VideoEngagement? = null,
+    onLikeClick: () -> Unit = {},
+    onDislikeClick: () -> Unit = {},
+    onSubscribeClick: () -> Unit = {},
+    onCommentsClick: () -> Unit = {}
 ) {
     Column(
         modifier = modifier
@@ -488,7 +506,7 @@ fun VideoInfoSection(
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.fillMaxWidth()
             )
-            
+
             Text(
                 text = buildString {
                     if (video.viewCount.isNotEmpty()) append("${video.viewCount} views")
@@ -498,7 +516,14 @@ fun VideoInfoSection(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        
+
+        // Like / Dislike Actions
+        LikeDislikeBar(
+            engagement = engagement,
+            onLikeClick = onLikeClick,
+            onDislikeClick = onDislikeClick
+        )
+
         // Channel Info Surface
         Surface(
             shape = RoundedCornerShape(16.dp),
@@ -506,16 +531,18 @@ fun VideoInfoSection(
             modifier = Modifier.fillMaxWidth()
         ) {
             ListItem(
-                headlineContent = { 
+                headlineContent = {
                     Text(
                         text = video.channelName,
                         style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold
-                    ) 
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 },
                 supportingContent = {
                     Text(
-                         text = "${video.subscriberCount ?: "Unknown"}",
+                         text = engagement?.subscriberCountText ?: video.subscriberCount ?: "",
                          style = MaterialTheme.typography.bodySmall
                     )
                 },
@@ -545,10 +572,58 @@ fun VideoInfoSection(
                         }
                     }
                 },
+                trailingContent = {
+                    val isSubscribed = engagement?.isSubscribed == true
+                    Button(
+                        onClick = onSubscribeClick,
+                        enabled = engagement?.channelId != null,
+                        colors = if (isSubscribed) {
+                            ButtonDefaults.filledTonalButtonColors()
+                        } else {
+                            ButtonDefaults.buttonColors()
+                        }
+                    ) {
+                        Text(if (isSubscribed) "Subscribed" else "Subscribe")
+                    }
+                },
                 colors = ListItemDefaults.colors(
                     containerColor = Color.Transparent
                 )
             )
+        }
+
+        // Comments Entry
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.surfaceContainer,
+            modifier = Modifier.fillMaxWidth(),
+            onClick = onCommentsClick,
+            enabled = engagement?.commentsToken != null
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Icon(
+                    Icons.AutoMirrored.Rounded.Comment,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    text = "Comments",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f)
+                )
+                Icon(
+                    Icons.Rounded.ExpandMore,
+                    contentDescription = "Open comments",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
         
         // Description Surface
@@ -690,6 +765,80 @@ fun VideoInfoSection(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+/**
+ * YouTube-style segmented like/dislike pill. Disabled until engagement loads.
+ */
+@Composable
+private fun LikeDislikeBar(
+    engagement: VideoEngagement?,
+    onLikeClick: () -> Unit,
+    onDislikeClick: () -> Unit
+) {
+    val likeStatus = engagement?.likeStatus ?: LikeStatus.INDIFFERENT
+    val enabled = engagement != null
+
+    Surface(
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.surfaceContainer
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.height(IntrinsicSize.Min)
+        ) {
+            // Like segment
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .clickable(enabled = enabled) { onLikeClick() }
+                    .padding(start = 20.dp, end = 16.dp, top = 12.dp, bottom = 12.dp)
+            ) {
+                Icon(
+                    imageVector = if (likeStatus == LikeStatus.LIKE) Icons.Rounded.ThumbUp else Icons.Outlined.ThumbUp,
+                    contentDescription = if (likeStatus == LikeStatus.LIKE) "Remove like" else "Like",
+                    modifier = Modifier.size(20.dp),
+                    tint = if (likeStatus == LikeStatus.LIKE) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurface
+                )
+                val likeCount = engagement?.likeCount
+                if (!likeCount.isNullOrBlank()) {
+                    Text(
+                        text = likeCount,
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (likeStatus == LikeStatus.LIKE) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            }
+
+            VerticalDivider(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .padding(vertical = 10.dp),
+                color = MaterialTheme.colorScheme.outlineVariant
+            )
+
+            // Dislike segment
+            Box(
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .clickable(enabled = enabled) { onDislikeClick() }
+                    .padding(start = 16.dp, end = 20.dp, top = 12.dp, bottom = 12.dp)
+            ) {
+                Icon(
+                    imageVector = if (likeStatus == LikeStatus.DISLIKE) Icons.Rounded.ThumbDown else Icons.Outlined.ThumbDown,
+                    contentDescription = if (likeStatus == LikeStatus.DISLIKE) "Remove dislike" else "Dislike",
+                    modifier = Modifier.size(20.dp),
+                    tint = if (likeStatus == LikeStatus.DISLIKE) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurface
+                )
             }
         }
     }

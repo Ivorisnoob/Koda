@@ -49,6 +49,13 @@ fun VideoPlayerContent(
     val isAutoPlayEnabled by viewModel.isAutoPlayEnabled.collectAsState()
     val isLooping by viewModel.isLooping.collectAsState()
     val playbackError by viewModel.playbackError.collectAsState()
+    val engagement by viewModel.engagement.collectAsState()
+    val isLoggedIn by viewModel.isLoggedIn.collectAsState()
+    val comments by viewModel.comments.collectAsState()
+    val isCommentsLoading by viewModel.isCommentsLoading.collectAsState()
+    val isLoadingMoreComments by viewModel.isLoadingMoreComments.collectAsState()
+    val commentReplies by viewModel.replies.collectAsState()
+    val loadingReplyIds by viewModel.loadingReplyIds.collectAsState()
     
     // Local UI State
     var showControls by remember { mutableStateOf(false) }
@@ -114,6 +121,15 @@ fun VideoPlayerContent(
     // Quality Sheet State
     var showQualitySheet by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState()
+
+    // Comments Sheet + Sign-in Dialog State
+    var showCommentsSheet by remember { mutableStateOf(false) }
+    var showSignInDialog by remember { mutableStateOf(false) }
+
+    // Gate authenticated actions behind login
+    fun requireLogin(action: () -> Unit) {
+        if (isLoggedIn) action() else showSignInDialog = true
+    }
 
     // ---------------- UI ----------------
     
@@ -203,12 +219,46 @@ fun VideoPlayerContent(
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f)
-                        .background(MaterialTheme.colorScheme.surface)
+                        .background(MaterialTheme.colorScheme.surface),
+                    engagement = engagement,
+                    onLikeClick = { requireLogin { viewModel.toggleLike() } },
+                    onDislikeClick = { requireLogin { viewModel.toggleDislike() } },
+                    onSubscribeClick = { requireLogin { viewModel.toggleSubscribe() } },
+                    onCommentsClick = {
+                        viewModel.ensureCommentsLoaded()
+                        showCommentsSheet = true
+                    }
                 )
             }
         }
     }
     
+    // Comments Sheet
+    if (showCommentsSheet) {
+        CommentsSheet(
+            comments = comments,
+            replies = commentReplies,
+            loadingReplyIds = loadingReplyIds,
+            isLoading = isCommentsLoading,
+            isLoadingMore = isLoadingMoreComments,
+            commentsAvailable = engagement?.commentsToken != null,
+            onLoadMore = { viewModel.loadMoreComments() },
+            onLoadReplies = { viewModel.loadReplies(it) },
+            onDismiss = { showCommentsSheet = false }
+        )
+    }
+
+    // Sign-in dialog for like/dislike/subscribe when logged out
+    if (showSignInDialog) {
+        com.ivor.ivormusic.ui.auth.YouTubeAuthDialog(
+            onDismiss = { showSignInDialog = false },
+            onAuthSuccess = {
+                showSignInDialog = false
+                viewModel.onLoginStateChanged()
+            }
+        )
+    }
+
     // Quality Sheet
     if (showQualitySheet) {
         ModalBottomSheet(

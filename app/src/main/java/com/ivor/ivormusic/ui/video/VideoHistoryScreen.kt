@@ -68,18 +68,19 @@ fun VideoHistoryContent(
     val isYouTubeConnected by viewModel.isYouTubeConnected.collectAsState()
     val backgroundColor = MaterialTheme.colorScheme.background
     
-    // Initial fetch
+    // Initial fetch — works logged out too (locally persisted history)
     LaunchedEffect(Unit) {
-        if (isYouTubeConnected && historyVideos.isEmpty()) {
+        if (historyVideos.isEmpty()) {
             viewModel.loadYouTubeHistory()
         }
     }
-    
+
     // Animation state
     var isVisible by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { isVisible = true }
 
-    if (!isYouTubeConnected) {
+    // Login wall only when logged out AND nothing watched locally yet
+    if (!isYouTubeConnected && historyVideos.isEmpty()) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -108,7 +109,7 @@ fun VideoHistoryContent(
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "Log in to see your YouTube watch history here.",
+                    text = "Videos you watch will show up here. Log in to also sync your YouTube history.",
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center

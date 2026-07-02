@@ -3,6 +3,7 @@ package com.ivor.ivormusic.data
 import android.content.Context
 import android.net.Uri
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.withLock
 import org.schabi.newpipe.extractor.NewPipe
@@ -33,6 +34,7 @@ import java.util.concurrent.TimeUnit
 class YouTubeRepository(private val context: Context) {
 
     private val sessionManager = SessionManager(context)
+    private val videoHistoryRepository by lazy { VideoHistoryRepository(context) }
 
     companion object {
         private const val YT_MUSIC_BASE_URL = "https://music.youtube.com"
@@ -2070,80 +2072,97 @@ class YouTubeRepository(private val context: Context) {
     }
 
     /**
-     * Get trending/recommended videos for video mode home screen.
-     * Uses personalized recommendations when logged in, falls back to trending otherwise.
+     * Get recommended videos for the video mode home screen.
+     * 1. Logged in: personalized YouTube home feed.
+     * 2. Otherwise: taste-based mix built from the local watch history.
+     * 3. Cold start: generic popular search.
+     * (YouTube removed the public Trending page in mid-2025 — the InnerTube
+     * FEtrending browseId now returns HTTP 400, so no trending fallback.)
      */
     suspend fun getTrendingVideos(): List<VideoItem> = withContext(Dispatchers.IO) {
-        // Try personalized recommendations first if logged in
         val isLoggedIn = sessionManager.isLoggedIn()
         android.util.Log.d("YouTubeRepo", "getTrendingVideos - isLoggedIn: $isLoggedIn")
-        
+
         if (isLoggedIn) {
             try {
-                android.util.Log.d("YouTubeRepo", "Fetching personalized video recommendations")
                 val videos = getPersonalizedVideoRecommendations()
                 if (videos.isNotEmpty()) {
                     android.util.Log.d("YouTubeRepo", "Got ${videos.size} personalized videos")
                     return@withContext videos
-                } else {
-                    android.util.Log.w("YouTubeRepo", "Personalized recommendations returned empty, falling back to trending")
                 }
+                android.util.Log.w("YouTubeRepo", "Personalized recommendations empty, using taste-based feed")
             } catch (e: Exception) {
                 android.util.Log.e("YouTubeRepo", "Error fetching personalized videos", e)
             }
         }
-        
-        // Fallback to public trending
-        try {
-            val ytService = ServiceList.all().find { it.serviceInfo.name == "YouTube" }
-                ?: return@withContext emptyList()
-            
-            // Try to get trending/kiosk content
-            val kioskList = ytService.kioskList
-            val trendingExtractor = kioskList.getExtractorById("Trending", null)
-            trendingExtractor.fetchPage()
-            
-            val videos = trendingExtractor.initialPage.items.filterIsInstance<StreamInfoItem>().mapNotNull { item ->
-                try {
-                    val uploaderUrl = item.uploaderUrl ?: ""
-                    val channelId = when {
-                        uploaderUrl.contains("/channel/") -> uploaderUrl.substringAfter("/channel/")
-                        uploaderUrl.contains("/@") -> uploaderUrl.substringAfter("/@").let { "@$it" }
-                        uploaderUrl.contains("/user/") -> uploaderUrl.substringAfter("/user/")
-                        else -> null
-                    }
 
-                    VideoItem.fromStreamInfoItem(
-                        videoId = extractVideoId(item.url),
-                        title = item.name ?: "Unknown",
-                        channelName = item.uploaderName ?: "Unknown Channel",
-                        channelId = channelId,
-                        channelIconUrl = item.uploaderAvatars?.maxByOrNull { it.width }?.url,
-                        thumbnailUrl = item.thumbnails?.maxByOrNull { it.width }?.url ?: item.thumbnails?.firstOrNull()?.url,
-                        durationSeconds = item.duration,
-                        viewCount = item.viewCount,
-                        uploadedDate = item.textualUploadDate,
-                        isLive = item.streamType == StreamType.LIVE_STREAM || item.streamType == StreamType.AUDIO_LIVE_STREAM,
-                        subscriberCount = null
-                    )
-                } catch (e: Exception) {
-                    null
-                }
+        try {
+            val tasteFeed = getTasteBasedVideos()
+            if (tasteFeed.isNotEmpty()) {
+                android.util.Log.d("YouTubeRepo", "Got ${tasteFeed.size} taste-based videos")
+                return@withContext tasteFeed
             }
-            
-            if (videos.isNotEmpty()) return@withContext videos
-            
-            // Fallback to search for popular content
+        } catch (e: Exception) {
+            android.util.Log.e("YouTubeRepo", "Error building taste-based feed", e)
+        }
+
+        // Cold start: nothing watched yet and not logged in
+        try {
             searchVideos("trending videos ${java.time.Year.now().value}")
         } catch (e: Exception) {
-            android.util.Log.e("YouTubeRepo", "Error fetching trending videos", e)
-            // Fallback to search
-            try {
-                searchVideos("popular videos")
-            } catch (e2: Exception) {
-                emptyList()
+            android.util.Log.e("YouTubeRepo", "Cold-start search failed", e)
+            emptyList()
+        }
+    }
+
+    /**
+     * Related videos for a seed video from the watch-next endpoint.
+     * Far lighter than a full NewPipe StreamExtractor fetch (one JSON call,
+     * no stream resolution). Related items are lockupViewModels since 2025.
+     */
+    private fun getRelatedVideosLight(videoId: String): List<VideoItem> {
+        return try {
+            val body = org.json.JSONObject()
+                .put("context", webContext())
+                .put("videoId", videoId)
+            val raw = postWatchApi("next", body) ?: return emptyList()
+            val secondary = org.json.JSONObject(raw).optJSONObject("contents")
+                ?.optJSONObject("twoColumnWatchNextResults")
+                ?.optJSONObject("secondaryResults") ?: return emptyList()
+            val lockups = mutableListOf<org.json.JSONObject>()
+            findObjectsByKey(secondary, "lockupViewModel", lockups)
+            lockups.mapNotNull { parseLockupViewModel(it) }
+        } catch (e: Exception) {
+            android.util.Log.w("YouTubeRepo", "getRelatedVideosLight failed for $videoId", e)
+            emptyList()
+        }
+    }
+
+    /**
+     * Build a feed from the related videos of recently watched ones.
+     * Interleaves per-seed results for variety; drops watched videos and dupes.
+     */
+    private suspend fun getTasteBasedVideos(): List<VideoItem> = kotlinx.coroutines.coroutineScope {
+        val history = videoHistoryRepository.getHistory()
+        if (history.isEmpty()) return@coroutineScope emptyList()
+
+        val seeds = history.take(6)
+        val historyIds = history.mapTo(HashSet()) { it.videoId }
+        val perSeed = seeds.map { seed ->
+            async(Dispatchers.IO) { getRelatedVideosLight(seed.videoId) }
+        }.map { it.await() }
+
+        val mixed = mutableListOf<VideoItem>()
+        val seen = HashSet<String>()
+        val longest = perSeed.maxOfOrNull { it.size } ?: 0
+        for (i in 0 until longest) {
+            for (list in perSeed) {
+                val video = list.getOrNull(i) ?: continue
+                if (video.videoId in historyIds || !seen.add(video.videoId)) continue
+                mixed.add(video)
             }
         }
+        mixed
     }
 
     /**
@@ -2959,4 +2978,273 @@ class YouTubeRepository(private val context: Context) {
      * Get available video qualities for a video.
      */
     suspend fun getVideoQualities(videoId: String): List<VideoQuality> = getVideoDetails(videoId).qualities
+
+    // ============================================================
+    // Video engagement: like/dislike, subscribe, comments
+    // (InnerTube WEB client against www.youtube.com)
+    // ============================================================
+
+    fun isLoggedIn(): Boolean = sessionManager.isLoggedIn()
+
+    private fun webContext(): org.json.JSONObject =
+        org.json.JSONObject().put(
+            "client",
+            org.json.JSONObject()
+                .put("clientName", "WEB")
+                .put("clientVersion", WEB_VERSION)
+                .put("hl", "en")
+                .put("gl", "US")
+        )
+
+    /**
+     * POST to an InnerTube endpoint on www.youtube.com, attaching cookies and
+     * SAPISIDHASH when logged in. Returns the raw response body or null on failure.
+     */
+    private fun postWatchApi(endpoint: String, body: org.json.JSONObject): String? {
+        val builder = okhttp3.Request.Builder()
+            .url("https://www.youtube.com/youtubei/v1/$endpoint?prettyPrint=false")
+            .post(body.toString().toRequestBody("application/json".toMediaType()))
+            .addHeader("User-Agent", BROWSER_USER_AGENT)
+            .addHeader("Origin", "https://www.youtube.com")
+            .addHeader("X-Origin", "https://www.youtube.com")
+
+        val cookies = sessionManager.getCookies()
+        if (!cookies.isNullOrBlank()) {
+            builder.addHeader("Cookie", cookies)
+            YouTubeAuthUtils.getAuthorizationHeader(cookies, "https://www.youtube.com")?.let { auth ->
+                builder.addHeader("Authorization", auth)
+                builder.addHeader("X-Goog-AuthUser", "0")
+            }
+        }
+
+        return try {
+            okHttpClient.newCall(builder.build()).execute().use { response ->
+                if (response.isSuccessful) {
+                    response.body?.string()
+                } else {
+                    android.util.Log.w("YouTubeRepo", "watch api $endpoint HTTP ${response.code}")
+                    null
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("YouTubeRepo", "watch api $endpoint failed", e)
+            null
+        }
+    }
+
+    /**
+     * Fetch like count/status, subscription state and the comments entry token
+     * for a video. likeStatus/isSubscribed are only meaningful when logged in.
+     */
+    suspend fun getVideoEngagement(videoId: String): VideoEngagement? = withContext(Dispatchers.IO) {
+        try {
+            val body = org.json.JSONObject()
+                .put("context", webContext())
+                .put("videoId", videoId)
+            val raw = postWatchApi("next", body) ?: return@withContext null
+            val root = org.json.JSONObject(raw)
+
+            // Like count + user's like status live in frameworkUpdates entities
+            val likeCounts = mutableListOf<org.json.JSONObject>()
+            findObjectsByKey(root, "likeCountEntity", likeCounts)
+            var likeCount = likeCounts.firstOrNull()
+                ?.optJSONObject("likeCountIfIndifferent")?.optString("content")
+                ?.takeIf { it.isNotBlank() }
+            if (likeCount == null) {
+                // Fallback: the visible title on the like toggle button ("19M")
+                val likeButtons = mutableListOf<org.json.JSONObject>()
+                findObjectsByKey(root, "segmentedLikeDislikeButtonViewModel", likeButtons)
+                val title = likeButtons.firstOrNull()
+                    ?.optJSONObject("likeButtonViewModel")?.optJSONObject("likeButtonViewModel")
+                    ?.optJSONObject("toggleButtonViewModel")?.optJSONObject("toggleButtonViewModel")
+                    ?.optJSONObject("defaultButtonViewModel")?.optJSONObject("buttonViewModel")
+                    ?.optString("title")
+                // Ignore non-numeric titles like "Like" (count hidden by creator)
+                likeCount = title?.takeIf { it.isNotBlank() && it.any { c -> c.isDigit() } }
+            }
+
+            val likeStatuses = mutableListOf<org.json.JSONObject>()
+            findObjectsByKey(root, "likeStatusEntity", likeStatuses)
+            val likeStatus = when (likeStatuses.firstOrNull()?.optString("likeStatus")) {
+                "LIKE" -> LikeStatus.LIKE
+                "DISLIKE" -> LikeStatus.DISLIKE
+                else -> LikeStatus.INDIFFERENT
+            }
+
+            val subButtons = mutableListOf<org.json.JSONObject>()
+            findObjectsByKey(root, "subscribeButtonRenderer", subButtons)
+            val subButton = subButtons.firstOrNull()
+            val isSubscribed = subButton?.optBoolean("subscribed", false) ?: false
+
+            val owners = mutableListOf<org.json.JSONObject>()
+            findObjectsByKey(root, "videoOwnerRenderer", owners)
+            val owner = owners.firstOrNull()
+            val channelId = subButton?.optString("channelId")?.takeIf { it.isNotBlank() }
+                ?: owner?.optJSONObject("navigationEndpoint")
+                    ?.optJSONObject("browseEndpoint")?.optString("browseId")
+                    ?.takeIf { it.isNotBlank() }
+            val subscriberCountText = getRunText(owner?.optJSONObject("subscriberCountText"))
+
+            // Comments entry token: the itemSectionRenderer tagged comment-item-section.
+            // Two tokens usually appear; the longest is the full comments panel.
+            var commentsToken: String? = null
+            val sections = mutableListOf<org.json.JSONObject>()
+            findObjectsByKey(root, "itemSectionRenderer", sections)
+            for (section in sections) {
+                if (section.optString("sectionIdentifier") == "comment-item-section") {
+                    val tokens = mutableListOf<String>()
+                    findContinuationTokens(section, tokens)
+                    val best = tokens.maxByOrNull { it.length }
+                    if (best != null && best.length > (commentsToken?.length ?: 0)) {
+                        commentsToken = best
+                    }
+                }
+            }
+
+            VideoEngagement(
+                videoId = videoId,
+                likeCount = likeCount,
+                likeStatus = likeStatus,
+                channelId = channelId,
+                isSubscribed = isSubscribed,
+                subscriberCountText = subscriberCountText,
+                commentsToken = commentsToken
+            )
+        } catch (e: Exception) {
+            android.util.Log.e("YouTubeRepo", "getVideoEngagement failed", e)
+            null
+        }
+    }
+
+    /**
+     * Fetch one page of comments (top-level or replies) from a continuation token.
+     * Parses the modern commentEntityPayload format (frameworkUpdates mutations).
+     */
+    suspend fun getCommentsPage(token: String): CommentsPage? = withContext(Dispatchers.IO) {
+        try {
+            val body = org.json.JSONObject()
+                .put("context", webContext())
+                .put("continuation", token)
+            val raw = postWatchApi("next", body) ?: return@withContext null
+            val root = org.json.JSONObject(raw)
+
+            // 1. Collect entity payloads: commentId -> payload, toolbar states by entity key
+            val entities = mutableMapOf<String, org.json.JSONObject>()
+            val toolbarStates = mutableMapOf<String, org.json.JSONObject>()
+            val mutations = root.optJSONObject("frameworkUpdates")
+                ?.optJSONObject("entityBatchUpdate")
+                ?.optJSONArray("mutations")
+            if (mutations != null) {
+                for (i in 0 until mutations.length()) {
+                    val payload = mutations.optJSONObject(i)?.optJSONObject("payload") ?: continue
+                    payload.optJSONObject("commentEntityPayload")?.let { entity ->
+                        val id = entity.optJSONObject("properties")?.optString("commentId")
+                        if (!id.isNullOrBlank()) entities[id] = entity
+                    }
+                    payload.optJSONObject("engagementToolbarStateEntityPayload")?.let { state ->
+                        val key = state.optString("key")
+                        if (key.isNotBlank()) toolbarStates[key] = state
+                    }
+                }
+            }
+
+            // 2. Walk continuationItems in order to keep YouTube's comment ordering
+            val comments = mutableListOf<CommentItem>()
+            var nextToken: String? = null
+            val endpoints = root.optJSONArray("onResponseReceivedEndpoints") ?: org.json.JSONArray()
+            for (i in 0 until endpoints.length()) {
+                val ep = endpoints.optJSONObject(i) ?: continue
+                val items = (ep.optJSONObject("reloadContinuationItemsCommand")
+                    ?: ep.optJSONObject("appendContinuationItemsAction"))
+                    ?.optJSONArray("continuationItems") ?: continue
+                for (j in 0 until items.length()) {
+                    val item = items.optJSONObject(j) ?: continue
+                    val thread = item.optJSONObject("commentThreadRenderer")
+                    // Top-level pages wrap comments in commentThreadRenderer;
+                    // reply pages carry bare commentViewModel items.
+                    val viewModel = (thread ?: item).optJSONObject("commentViewModel")
+                        ?.let { vm -> vm.optJSONObject("commentViewModel") ?: vm }
+                    if (viewModel != null) {
+                        val id = viewModel.optString("commentId")
+                        val entity = entities[id] ?: continue
+                        var repliesToken: String? = null
+                        thread?.optJSONObject("replies")?.let { replies ->
+                            val tokens = mutableListOf<String>()
+                            findContinuationTokens(replies, tokens)
+                            repliesToken = tokens.firstOrNull()
+                        }
+                        comments.add(parseCommentEntity(id, entity, viewModel, toolbarStates, repliesToken))
+                    } else if (item.has("continuationItemRenderer")) {
+                        val tokens = mutableListOf<String>()
+                        findContinuationTokens(item.getJSONObject("continuationItemRenderer"), tokens)
+                        if (nextToken == null) nextToken = tokens.firstOrNull()
+                    }
+                }
+            }
+
+            CommentsPage(comments, nextToken)
+        } catch (e: Exception) {
+            android.util.Log.e("YouTubeRepo", "getCommentsPage failed", e)
+            null
+        }
+    }
+
+    private fun parseCommentEntity(
+        id: String,
+        entity: org.json.JSONObject,
+        viewModel: org.json.JSONObject,
+        toolbarStates: Map<String, org.json.JSONObject>,
+        repliesToken: String?
+    ): CommentItem {
+        val props = entity.optJSONObject("properties")
+        val author = entity.optJSONObject("author")
+        val toolbar = entity.optJSONObject("toolbar")
+        val toolbarStateKey = props?.optString("toolbarStateKey").orEmpty()
+        val heartState = toolbarStates[toolbarStateKey]?.optString("heartState")
+
+        return CommentItem(
+            commentId = id,
+            text = props?.optJSONObject("content")?.optString("content").orEmpty(),
+            author = author?.optString("displayName").orEmpty(),
+            authorAvatarUrl = author?.optString("avatarThumbnailUrl")?.takeIf { it.isNotBlank() },
+            publishedTime = props?.optString("publishedTime").orEmpty(),
+            likeCount = toolbar?.optString("likeCountNotliked").orEmpty().trim(),
+            replyCount = toolbar?.optString("replyCount").orEmpty().trim(),
+            isPinned = viewModel.has("pinnedText"),
+            isHearted = heartState == "TOOLBAR_HEART_STATE_HEARTED",
+            isCreator = author?.optBoolean("isCreator", false) ?: false,
+            isVerified = author?.optBoolean("isVerified", false) ?: false,
+            repliesToken = repliesToken
+        )
+    }
+
+    /**
+     * Rate a video: LIKE, DISLIKE, or INDIFFERENT (removes existing rating).
+     * Requires login. Returns true on success.
+     */
+    suspend fun rateVideo(videoId: String, status: LikeStatus): Boolean = withContext(Dispatchers.IO) {
+        if (!sessionManager.isLoggedIn()) return@withContext false
+        val endpoint = when (status) {
+            LikeStatus.LIKE -> "like/like"
+            LikeStatus.DISLIKE -> "like/dislike"
+            LikeStatus.INDIFFERENT -> "like/removelike"
+        }
+        val body = org.json.JSONObject()
+            .put("context", webContext())
+            .put("target", org.json.JSONObject().put("videoId", videoId))
+        postWatchApi(endpoint, body) != null
+    }
+
+    /**
+     * Subscribe to / unsubscribe from a channel. Requires login and a
+     * canonical UC... channelId (from getVideoEngagement).
+     */
+    suspend fun setSubscribed(channelId: String, subscribe: Boolean): Boolean = withContext(Dispatchers.IO) {
+        if (!sessionManager.isLoggedIn()) return@withContext false
+        val endpoint = if (subscribe) "subscription/subscribe" else "subscription/unsubscribe"
+        val body = org.json.JSONObject()
+            .put("context", webContext())
+            .put("channelIds", org.json.JSONArray().put(channelId))
+        postWatchApi(endpoint, body) != null
+    }
 }

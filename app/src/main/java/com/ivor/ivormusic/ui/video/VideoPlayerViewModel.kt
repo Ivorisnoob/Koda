@@ -11,6 +11,9 @@ import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.MergingMediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
+import com.ivor.ivormusic.data.CommentItem
+import com.ivor.ivormusic.data.LikeStatus
+import com.ivor.ivormusic.data.VideoEngagement
 import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.data.VideoQuality
 import com.ivor.ivormusic.data.YouTubeRepository
@@ -27,6 +30,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     private val context: Context get() = getApplication()
     private val youtubeRepository = YouTubeRepository(context)
     private val themePreferences = ThemePreferences(context)
+    private val videoHistoryRepository = com.ivor.ivormusic.data.VideoHistoryRepository(context)
 
     // Player Instance
     private var _exoPlayer: ExoPlayer? = null
@@ -72,6 +76,33 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     // Error state
     private val _playbackError = MutableStateFlow<Throwable?>(null)
     val playbackError: StateFlow<Throwable?> = _playbackError.asStateFlow()
+
+    // ---------------- Engagement (likes / subscribe / comments) ----------------
+
+    private val _engagement = MutableStateFlow<VideoEngagement?>(null)
+    val engagement: StateFlow<VideoEngagement?> = _engagement.asStateFlow()
+
+    private val _isLoggedIn = MutableStateFlow(youtubeRepository.isLoggedIn())
+    val isLoggedIn: StateFlow<Boolean> = _isLoggedIn.asStateFlow()
+
+    private val _comments = MutableStateFlow<List<CommentItem>>(emptyList())
+    val comments: StateFlow<List<CommentItem>> = _comments.asStateFlow()
+
+    private val _isCommentsLoading = MutableStateFlow(false)
+    val isCommentsLoading: StateFlow<Boolean> = _isCommentsLoading.asStateFlow()
+
+    private val _isLoadingMoreComments = MutableStateFlow(false)
+    val isLoadingMoreComments: StateFlow<Boolean> = _isLoadingMoreComments.asStateFlow()
+
+    // Replies keyed by parent commentId; presence of key = replies loaded (or loading)
+    private val _replies = MutableStateFlow<Map<String, List<CommentItem>>>(emptyMap())
+    val replies: StateFlow<Map<String, List<CommentItem>>> = _replies.asStateFlow()
+
+    private val _loadingReplyIds = MutableStateFlow<Set<String>>(emptySet())
+    val loadingReplyIds: StateFlow<Set<String>> = _loadingReplyIds.asStateFlow()
+
+    private var commentsNextToken: String? = null
+    private var commentsLoadedForVideoId: String? = null
 
     init {
         // Initialize ExoPlayer
@@ -119,6 +150,24 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         _isLoading.value = true
         _relatedVideos.value = emptyList() // Clear previous related
         _playbackError.value = null // Clear previous error
+
+        // Reset engagement + comments state for the new video
+        _engagement.value = null
+        _comments.value = emptyList()
+        _replies.value = emptyMap()
+        _loadingReplyIds.value = emptySet()
+        commentsNextToken = null
+        commentsLoadedForVideoId = null
+        _isLoggedIn.value = youtubeRepository.isLoggedIn()
+
+        // Load like/subscribe state and the comments entry token in parallel
+        viewModelScope.launch {
+            try {
+                _engagement.value = youtubeRepository.getVideoEngagement(video.videoId)
+            } catch (e: Exception) {
+                android.util.Log.w("VideoPlayerVM", "Failed to load engagement", e)
+            }
+        }
         
         // ========== PHASE 1: START PLAYBACK ASAP (fast) ==========
         // Uses lightweight getVideoStreamQualities() which ONLY fetches stream URLs
@@ -204,6 +253,10 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         playbackReportJob = viewModelScope.launch {
             kotlinx.coroutines.delay(10000)
             if (_isPlaying.value && themePreferences.saveVideoHistory.value) {
+                // Local history: works without login and feeds recommendations.
+                // Use the current video state — Phase 2 may have enriched it.
+                val watched = _currentVideo.value?.takeIf { it.videoId == video.videoId } ?: video
+                videoHistoryRepository.addVideo(watched)
                 youtubeRepository.reportPlayback(video.videoId)
             }
         }
@@ -277,6 +330,120 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             _exoPlayer?.pause()
         } else {
             _exoPlayer?.play()
+        }
+    }
+
+    // ---------------- Engagement actions ----------------
+
+    /** Re-check login state and refresh engagement (call after a successful sign-in). */
+    fun onLoginStateChanged() {
+        _isLoggedIn.value = youtubeRepository.isLoggedIn()
+        val video = _currentVideo.value ?: return
+        viewModelScope.launch {
+            _engagement.value = youtubeRepository.getVideoEngagement(video.videoId)
+        }
+    }
+
+    /** Like the video, or remove the like if already liked. Optimistic with rollback. */
+    fun toggleLike() = rate(
+        target = { current -> if (current == LikeStatus.LIKE) LikeStatus.INDIFFERENT else LikeStatus.LIKE }
+    )
+
+    /** Dislike the video, or remove the dislike if already disliked. */
+    fun toggleDislike() = rate(
+        target = { current -> if (current == LikeStatus.DISLIKE) LikeStatus.INDIFFERENT else LikeStatus.DISLIKE }
+    )
+
+    private fun rate(target: (LikeStatus) -> LikeStatus) {
+        val current = _engagement.value ?: return
+        val newStatus = target(current.likeStatus)
+        _engagement.value = current.copy(likeStatus = newStatus)
+        viewModelScope.launch {
+            val ok = youtubeRepository.rateVideo(current.videoId, newStatus)
+            if (!ok) {
+                // Roll back on failure (only if still on the same video)
+                if (_engagement.value?.videoId == current.videoId) {
+                    _engagement.value = _engagement.value?.copy(likeStatus = current.likeStatus)
+                }
+            }
+        }
+    }
+
+    /** Subscribe/unsubscribe to the current video's channel. Optimistic with rollback. */
+    fun toggleSubscribe() {
+        val current = _engagement.value ?: return
+        val channelId = current.channelId ?: return
+        val subscribe = !current.isSubscribed
+        _engagement.value = current.copy(isSubscribed = subscribe)
+        viewModelScope.launch {
+            val ok = youtubeRepository.setSubscribed(channelId, subscribe)
+            if (!ok && _engagement.value?.videoId == current.videoId) {
+                _engagement.value = _engagement.value?.copy(isSubscribed = current.isSubscribed)
+            }
+        }
+    }
+
+    // ---------------- Comments ----------------
+
+    /** Load the first page of comments if not already loaded for this video. */
+    fun ensureCommentsLoaded() {
+        val video = _currentVideo.value ?: return
+        if (commentsLoadedForVideoId == video.videoId || _isCommentsLoading.value) return
+        val token = _engagement.value?.commentsToken ?: return
+        _isCommentsLoading.value = true
+        viewModelScope.launch {
+            try {
+                val page = youtubeRepository.getCommentsPage(token)
+                // Ignore stale results if the user switched videos meanwhile
+                if (_currentVideo.value?.videoId == video.videoId && page != null) {
+                    _comments.value = page.comments
+                    commentsNextToken = page.nextPageToken
+                    commentsLoadedForVideoId = video.videoId
+                }
+            } finally {
+                _isCommentsLoading.value = false
+            }
+        }
+    }
+
+    /** Load the next page of comments (no-op when exhausted or already loading). */
+    fun loadMoreComments() {
+        val video = _currentVideo.value ?: return
+        val token = commentsNextToken ?: return
+        if (_isLoadingMoreComments.value || _isCommentsLoading.value) return
+        _isLoadingMoreComments.value = true
+        viewModelScope.launch {
+            try {
+                val page = youtubeRepository.getCommentsPage(token)
+                if (_currentVideo.value?.videoId == video.videoId && page != null) {
+                    // Guard against duplicates if YouTube repeats items across pages
+                    val known = _comments.value.mapTo(HashSet()) { it.commentId }
+                    _comments.value = _comments.value + page.comments.filter { it.commentId !in known }
+                    commentsNextToken = page.nextPageToken
+                }
+            } finally {
+                _isLoadingMoreComments.value = false
+            }
+        }
+    }
+
+    /** Load replies for a comment (first page only; collapses are handled in UI). */
+    fun loadReplies(comment: CommentItem) {
+        val video = _currentVideo.value ?: return
+        val token = comment.repliesToken ?: return
+        if (_replies.value.containsKey(comment.commentId) ||
+            comment.commentId in _loadingReplyIds.value
+        ) return
+        _loadingReplyIds.value = _loadingReplyIds.value + comment.commentId
+        viewModelScope.launch {
+            try {
+                val page = youtubeRepository.getCommentsPage(token)
+                if (_currentVideo.value?.videoId == video.videoId && page != null) {
+                    _replies.value = _replies.value + (comment.commentId to page.comments)
+                }
+            } finally {
+                _loadingReplyIds.value = _loadingReplyIds.value - comment.commentId
+            }
         }
     }
 
