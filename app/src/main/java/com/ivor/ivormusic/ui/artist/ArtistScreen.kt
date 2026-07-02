@@ -99,6 +99,7 @@ fun ArtistScreen(
     onPlayQueue: (List<Song>, Song?) -> Unit,
     onSongClick: (Song) -> Unit,
     onAlbumClick: ((String, List<Song>) -> Unit)? = null,
+    onOpenAlbum: ((com.ivor.ivormusic.data.PlaylistDisplayItem) -> Unit)? = null,
     viewModel: HomeViewModel? = null,
     modifier: Modifier = Modifier
 ) {
@@ -117,20 +118,23 @@ fun ArtistScreen(
     var fetchedAlbums by remember { mutableStateOf<List<com.ivor.ivormusic.data.PlaylistDisplayItem>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
     var isLoadingMore by remember { mutableStateOf(false) }
+    var canLoadMoreRemote by remember { mutableStateOf(true) }
     var visibleSongCount by remember { mutableIntStateOf(20) }
     var hasLocalSongs by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     
-    // Fetch songs - first check local, then fetch from internet
+    // Fetch songs - first check local files, then fetch from internet
     LaunchedEffect(artistName, artistId, songs) {
         isLoading = true
         visibleSongCount = 20
-        
-        // First, filter local songs by artist
-        val localArtistSongs = songs.filter { 
-            it.artist.equals(artistName, ignoreCase = true) 
+
+        // Only genuinely local files take the offline path. Liked/downloaded
+        // YouTube songs shouldn't block fetching the full artist page.
+        val localArtistSongs = songs.filter {
+            it.artist.equals(artistName, ignoreCase = true) &&
+                    it.source == com.ivor.ivormusic.data.SongSource.LOCAL
         }
-        
+
         if (localArtistSongs.isNotEmpty()) {
             // Use local songs if available
             artistSongs = localArtistSongs
@@ -138,19 +142,22 @@ fun ArtistScreen(
             // Local albums are derived automatically below
             isLoading = false
         } else if (viewModel != null) {
-            // Fetch from internet if no local songs
-            if (artistId != null) {
-                 val (songs, albums) = viewModel.getArtistDetails(artistId)
-                 artistSongs = songs
-                 fetchedAlbums = albums
-                 
-                 // Fallback: If ID-based fetch returned no songs, try simple search by name
-                 if (artistSongs.isEmpty()) {
-                     artistSongs = viewModel.searchArtistSongs(artistName)
-                 }
-            } else {
-                 val fetchedSongs = viewModel.searchArtistSongs(artistName)
-                 artistSongs = fetchedSongs
+            // Resolve a channel id when the caller only knows the name
+            // (e.g. Library navigation passes the artist name as the id).
+            val resolvedId = artistId?.takeIf { it.startsWith("UC") }
+                ?: viewModel.searchArtists(artistName).let { results ->
+                    (results.firstOrNull { it.name.equals(artistName, ignoreCase = true) }
+                        ?: results.firstOrNull())?.id
+                }
+
+            if (resolvedId != null) {
+                val (fetchedSongs, fetchedAlbumsList) = viewModel.getArtistDetails(resolvedId)
+                artistSongs = fetchedSongs
+                fetchedAlbums = fetchedAlbumsList
+            }
+            // Fallback: plain name search if the artist page gave nothing
+            if (artistSongs.isEmpty()) {
+                artistSongs = viewModel.searchArtistSongs(artistName)
             }
             hasLocalSongs = false
             isLoading = false
@@ -180,7 +187,8 @@ fun ArtistScreen(
     val displayedSongs = remember(artistSongs, visibleSongCount) {
         artistSongs.take(visibleSongCount)
     }
-    val hasMoreSongs = artistSongs.size > visibleSongCount || (!hasLocalSongs && viewModel != null)
+    val hasMoreSongs = artistSongs.size > visibleSongCount ||
+            (!hasLocalSongs && viewModel != null && canLoadMoreRemote)
     
     Box(
         modifier = modifier
@@ -200,7 +208,9 @@ fun ArtistScreen(
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = 160.dp)
+                // Extra clearance so the last row ("Show More") sits above
+                // the mini player + floating nav bar + system inset.
+                contentPadding = PaddingValues(bottom = 220.dp)
             ) {
                 // ========== HERO HEADER ==========
                 item {
@@ -248,7 +258,11 @@ fun ArtistScreen(
                                 val albumSongs = if (hasLocalSongs) artistSongs.filter { it.album == albumName } else emptyList()
                                 
                                 val fetchedAlbum = fetchedAlbums.find { it.name == albumName }
-                                val songCount = if (hasLocalSongs) albumSongs.size else (fetchedAlbum?.itemCount ?: 0)
+                                val albumSubtitle = if (hasLocalSongs) {
+                                    "${albumSongs.size} songs"
+                                } else {
+                                    fetchedAlbum?.uploaderName?.takeIf { it.isNotBlank() } ?: "Album"
+                                }
                                 val thumbnailUrl = if (hasLocalSongs) {
                                     albumSongs.firstOrNull()?.let { it.highResThumbnailUrl ?: it.thumbnailUrl ?: it.albumArtUri?.toString() }
                                 } else {
@@ -257,22 +271,19 @@ fun ArtistScreen(
                                 
                                 AlbumCard(
                                     albumName = albumName,
-                                    songCount = songCount,
+                                    subtitle = albumSubtitle,
                                     thumbnailUrl = thumbnailUrl,
                                     primaryColor = primaryColor,
                                     cardColor = cardColor,
                                     textColor = textColor,
                                     secondaryTextColor = secondaryTextColor,
-                                    onClick = { 
+                                    onClick = {
                                         if (hasLocalSongs) {
                                             onAlbumClick?.invoke(albumName, albumSongs) ?: onPlayQueue(albumSongs, null)
                                         } else if (fetchedAlbum != null) {
-                                            // For fetched albums, we navigate to the album detail
-                                            // and let it fetch songs. We use onAlbumClick but with
-                                            // an empty list initially, or better, we pass the URL.
-                                            // For now, let's just use the Callback in a way that
-                                            // can be handled.
-                                            onAlbumClick?.invoke(albumName, emptyList())
+                                            // Fetched albums carry a browse id in their URL;
+                                            // the album detail screen fetches the tracks itself.
+                                            onOpenAlbum?.invoke(fetchedAlbum)
                                         }
                                     }
                                 )
@@ -357,8 +368,10 @@ fun ArtistScreen(
                                                 isLoadingMore = true
                                                 val moreSongs = viewModel.loadMoreResults(artistName)
                                                 if (moreSongs.isNotEmpty()) {
-                                                    artistSongs = artistSongs + moreSongs
+                                                    artistSongs = (artistSongs + moreSongs).distinctBy { it.id }
                                                     visibleSongCount += 20
+                                                } else {
+                                                    canLoadMoreRemote = false
                                                 }
                                                 isLoadingMore = false
                                             }
@@ -712,7 +725,7 @@ private fun ArtistHeroHeader(
 @Composable
 private fun AlbumCard(
     albumName: String,
-    songCount: Int,
+    subtitle: String,
     thumbnailUrl: String?,
     primaryColor: Color,
     cardColor: Color,
@@ -777,9 +790,11 @@ private fun AlbumCard(
             )
             
             Text(
-                "$songCount songs",
+                subtitle,
                 style = MaterialTheme.typography.bodySmall,
-                color = secondaryTextColor
+                color = secondaryTextColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
         }
     }

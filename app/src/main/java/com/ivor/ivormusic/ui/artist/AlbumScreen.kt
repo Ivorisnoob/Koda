@@ -132,7 +132,8 @@ fun AlbumScreen(
     ) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(bottom = 160.dp)
+            // Clearance for mini player + floating nav bar + system inset
+            contentPadding = PaddingValues(bottom = 220.dp)
         ) {
             // ========== HERO HEADER ==========
             item {

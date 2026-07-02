@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -62,39 +63,21 @@ fun MiniPlayerContent(
     progress: Float,
     onPlayPauseClick: () -> Unit,
     onNextClick: () -> Unit,
-    onClick: () -> Unit,
-    dragOffset: Float = 0f,
-    swipeThreshold: Float = -50f,
-    onDragOffsetChange: (Float) -> Unit = {}
+    onClick: () -> Unit
 ) {
+    // Transparent: the ExpandablePlayer container draws the pill background.
+    // A second opaque surface here created a visible "pill behind a pill"
+    // (its own shadow + tonal tint), and its drag handler swallowed the
+    // swipe-up-to-expand gesture the container listens for.
     Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .pointerInput(Unit) {
-                detectVerticalDragGestures(
-                    onDragStart = { onDragOffsetChange(0f) },
-                    onDragEnd = {
-                        if (dragOffset < swipeThreshold) {
-                            onClick()
-                        }
-                        onDragOffsetChange(0f)
-                    },
-                    onDragCancel = { onDragOffsetChange(0f) },
-                    onVerticalDrag = { change, dragAmount ->
-                        change.consume()
-                        onDragOffsetChange(dragOffset + dragAmount)
-                    }
-                )
-            },
+        modifier = Modifier.fillMaxSize(),
         onClick = onClick,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        shape = RoundedCornerShape(50), // Full pill shape
-        shadowElevation = 8.dp,
-        tonalElevation = 4.dp
+        color = Color.Transparent,
+        shape = RoundedCornerShape(50) // Full pill shape
     ) {
         Row(
             modifier = Modifier
-                .fillMaxWidth()
+                .fillMaxSize()
                 .padding(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {

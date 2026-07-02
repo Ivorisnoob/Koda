@@ -86,6 +86,38 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     val downloadingIds = downloadRepository.downloadingIds
     val downloadProgress = downloadRepository.downloadProgress
 
+    // Recently played (from the local play history)
+    private val _recentlyPlayed = MutableStateFlow<List<Song>>(emptyList())
+    val recentlyPlayed: StateFlow<List<Song>> = _recentlyPlayed.asStateFlow()
+
+    fun refreshRecentlyPlayed(limit: Int = 15) {
+        viewModelScope.launch {
+            val history = statsRepository.loadHistory() // newest first
+            val localSongs = _songs.value
+            val seen = mutableSetOf<String>()
+            val recents = mutableListOf<Song>()
+            for (entry in history) {
+                if (!seen.add(entry.songId)) continue
+                val song = if (entry.source == com.ivor.ivormusic.data.SongSource.LOCAL) {
+                    // Local files need a playable URI — resolve from the scanned library
+                    localSongs.find { it.id == entry.songId }
+                } else {
+                    Song.fromYouTube(
+                        videoId = entry.songId,
+                        title = entry.title,
+                        artist = entry.artist,
+                        album = entry.album,
+                        duration = entry.duration,
+                        thumbnailUrl = entry.thumbnailUrl
+                    )
+                }
+                if (song != null) recents.add(song)
+                if (recents.size >= limit) break
+            }
+            _recentlyPlayed.value = recents
+        }
+    }
+
     // Video Mode State
     private val _trendingVideos = MutableStateFlow<List<VideoItem>>(emptyList())
     val trendingVideos: StateFlow<List<VideoItem>> = _trendingVideos.asStateFlow()

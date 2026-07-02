@@ -9,5 +9,10 @@ data class PlaylistDisplayItem(
     val description: String? = null
 ) {
     val id: String
-        get() = if (url.contains("list=")) url.substringAfter("list=") else url
+        get() = when {
+            url.contains("list=") -> url.substringAfter("list=").substringBefore("&")
+            // Album pages use browse ids (MPREb…) instead of playlist ids
+            url.contains("/browse/") -> url.substringAfter("/browse/").substringBefore("?")
+            else -> url
+        }
 }

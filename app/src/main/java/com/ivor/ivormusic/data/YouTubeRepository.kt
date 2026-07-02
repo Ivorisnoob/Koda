@@ -276,67 +276,209 @@ class YouTubeRepository(private val context: Context) {
 
     /**
      * Get details for a specific artist (Songs and Albums).
+     *
+     * Uses InnerTube /browse with the WEB_REMIX client — the same call the
+     * YT Music web app makes — because NewPipe's channel extractor only sees
+     * the plain-YouTube uploads tab (a few videos, no albums or top songs).
      */
     suspend fun getArtistDetails(artistId: String): Pair<List<Song>, List<PlaylistDisplayItem>> = withContext(Dispatchers.IO) {
+        if (!artistId.startsWith("UC")) {
+            // Not a channel browse id (e.g. Library passes the artist *name*);
+            // callers fall back to a name search when we return nothing.
+            return@withContext Pair(emptyList(), emptyList())
+        }
         try {
-            val ytService = ServiceList.all().find { it.serviceInfo.name == "YouTube" } 
+            val body = browseMusic(artistId)
                 ?: return@withContext Pair(emptyList(), emptyList())
-            
-            val url = when {
-                artistId.startsWith("UC") || artistId.startsWith("UU") -> 
-                    "https://www.youtube.com/channel/$artistId"
-                artistId.startsWith("FMW") || artistId.startsWith("MPAD") ->
-                    "https://music.youtube.com/browse/$artistId"
-                else -> if (artistId.startsWith("@")) {
-                    "https://www.youtube.com/$artistId"
-                } else {
-                    "https://www.youtube.com/channel/$artistId" // Default to channel
-                }
-            }
-            android.util.Log.d("YouTubeRepo", "Fetching artist details from: $url")
-            val extractor = ytService.getChannelExtractor(url)
-            extractor.fetchPage()
-            
-            val artistName = extractor.name ?: "Unknown Artist"
-            val initialPage = (extractor as org.schabi.newpipe.extractor.ListExtractor<*>).initialPage
-            val items: List<InfoItem> = initialPage.items
-            
+            val root = org.json.JSONObject(body)
+
             val songs = mutableListOf<Song>()
             val albums = mutableListOf<PlaylistDisplayItem>()
-            
-            items.forEach { item ->
-                if (item is org.schabi.newpipe.extractor.stream.StreamInfoItem) {
-                    try {
-                        songs.add(
-                            Song.fromYouTube(
-                                videoId = extractVideoId(item.url),
-                                title = item.name ?: "Unknown",
-                                artist = item.uploaderName ?: artistName,
-                                album = "",
-                                duration = item.duration * 1000L,
-                                thumbnailUrl = item.thumbnails?.firstOrNull()?.url
-                            )
-                        )
-                    } catch (e: Exception) {}
-                } else if (item is org.schabi.newpipe.extractor.playlist.PlaylistInfoItem) {
-                    try {
-                        albums.add(
-                            PlaylistDisplayItem(
-                                name = item.name ?: "Unknown",
-                                url = item.url,
-                                uploaderName = item.uploaderName ?: artistName,
-                                itemCount = item.streamCount.toInt(),
-                                thumbnailUrl = item.thumbnails?.firstOrNull()?.url
-                            )
-                        )
-                    } catch (e: Exception) {}
+
+            // --- Top songs shelf ("Songs") ---
+            // The shelf itself only holds ~5 entries; its bottomEndpoint links
+            // the artist's full songs playlist which we fetch below.
+            var songsPlaylistBrowseId: String? = null
+            val shelves = mutableListOf<org.json.JSONObject>()
+            findObjectsByKey(root, "musicShelfRenderer", shelves)
+            shelves.firstOrNull()?.let { shelf ->
+                songsPlaylistBrowseId = shelf.optJSONObject("bottomEndpoint")
+                    ?.optJSONObject("browseEndpoint")
+                    ?.optString("browseId")
+                    ?.takeIf { it.isNotEmpty() }
+                val contents = shelf.optJSONArray("contents")
+                if (contents != null) {
+                    for (i in 0 until contents.length()) {
+                        contents.optJSONObject(i)
+                            ?.optJSONObject("musicResponsiveListItemRenderer")
+                            ?.let { renderer ->
+                                parseResponsiveListItem(renderer)?.let { songs.add(it) }
+                            }
+                    }
                 }
             }
-            
-            Pair(songs, albums)
+
+            // --- Albums / Singles carousels ---
+            val carousels = mutableListOf<org.json.JSONObject>()
+            findObjectsByKey(root, "musicCarouselShelfRenderer", carousels)
+            carousels.forEach { carousel ->
+                val headerTitle = getRunText(
+                    carousel.optJSONObject("header")
+                        ?.optJSONObject("musicCarouselShelfBasicHeaderRenderer")
+                        ?.optJSONObject("title")
+                ) ?: ""
+                val isReleaseShelf = headerTitle.contains("Album", ignoreCase = true) ||
+                        headerTitle.contains("Single", ignoreCase = true) ||
+                        headerTitle.contains("EP", ignoreCase = true)
+                if (!isReleaseShelf) return@forEach
+
+                val items = carousel.optJSONArray("contents") ?: return@forEach
+                for (i in 0 until items.length()) {
+                    val twoRow = items.optJSONObject(i)
+                        ?.optJSONObject("musicTwoRowItemRenderer") ?: continue
+                    val browseId = twoRow.optJSONObject("navigationEndpoint")
+                        ?.optJSONObject("browseEndpoint")
+                        ?.optString("browseId") ?: continue
+                    if (!browseId.startsWith("MPRE")) continue
+
+                    val title = getRunText(twoRow.optJSONObject("title")) ?: continue
+                    val subtitle = getRunText(twoRow.optJSONObject("subtitle")) ?: ""
+                    val thumbs = twoRow.optJSONObject("thumbnailRenderer")
+                        ?.optJSONObject("musicThumbnailRenderer")
+                        ?.optJSONObject("thumbnail")
+                        ?.optJSONArray("thumbnails")
+                    val thumbnailUrl = thumbs?.let { it.optJSONObject(it.length() - 1)?.optString("url") }
+
+                    albums.add(
+                        PlaylistDisplayItem(
+                            name = title,
+                            url = "https://music.youtube.com/browse/$browseId",
+                            uploaderName = subtitle.ifBlank { "Album" },
+                            itemCount = -1,
+                            thumbnailUrl = thumbnailUrl
+                        )
+                    )
+                }
+            }
+
+            // --- Full songs list via the shelf's "More" playlist ---
+            songsPlaylistBrowseId?.let { browseId ->
+                val fullList = try {
+                    getPlaylistInternal(browseId.removePrefix("VL"))
+                } catch (e: Exception) {
+                    emptyList()
+                }
+                fullList.forEach { song ->
+                    if (songs.none { it.id == song.id }) songs.add(song)
+                }
+            }
+
+            android.util.Log.d(
+                "YouTubeRepo",
+                "Artist $artistId: ${songs.size} songs, ${albums.size} releases"
+            )
+            Pair(songs.distinctBy { it.id }, albums.distinctBy { it.id })
         } catch (e: Exception) {
             android.util.Log.e("YouTubeRepo", "Error fetching artist details", e)
             Pair(emptyList(), emptyList())
+        }
+    }
+
+    /**
+     * Fetch an album's tracks by its browse id (MPREb…).
+     * Album pages aren't playlists, so they must go through /browse.
+     */
+    suspend fun getAlbumSongs(browseId: String): List<Song> = withContext(Dispatchers.IO) {
+        try {
+            val body = browseMusic(browseId) ?: return@withContext emptyList()
+            val root = org.json.JSONObject(body)
+
+            // Album metadata lives in the header; the renderer differs between
+            // the old detail layout and the newer two-column responsive one.
+            val headers = mutableListOf<org.json.JSONObject>()
+            findObjectsByKey(root, "musicResponsiveHeaderRenderer", headers)
+            findObjectsByKey(root, "musicDetailHeaderRenderer", headers)
+            var albumName = ""
+            var albumArtist = ""
+            var albumThumb: String? = null
+            headers.firstOrNull()?.let { header ->
+                albumName = getRunText(header.optJSONObject("title")) ?: ""
+                albumArtist = getRunText(header.optJSONObject("straplineTextOne"))
+                    ?: getRunText(header.optJSONObject("subtitle"))?.substringAfter("• ")?.substringBefore(" •")
+                    ?: ""
+                val thumbRenderers = mutableListOf<org.json.JSONObject>()
+                findObjectsByKey(header, "musicThumbnailRenderer", thumbRenderers)
+                findObjectsByKey(header, "croppedSquareThumbnailRenderer", thumbRenderers)
+                albumThumb = thumbRenderers.firstOrNull()
+                    ?.optJSONObject("thumbnail")
+                    ?.optJSONArray("thumbnails")
+                    ?.let { it.optJSONObject(it.length() - 1)?.optString("url") }
+            }
+
+            val itemRenderers = mutableListOf<org.json.JSONObject>()
+            findObjectsByKey(root, "musicResponsiveListItemRenderer", itemRenderers)
+
+            itemRenderers.mapNotNull { parseResponsiveListItem(it) }
+                .distinctBy { it.id }
+                .map { song ->
+                    // Album track rows carry no album column and often no
+                    // per-track art; fill both from the album header.
+                    song.copy(
+                        album = albumName.ifBlank { song.album },
+                        artist = song.artist.takeIf {
+                            it.isNotBlank() && it != "Unknown Artist"
+                        } ?: albumArtist.ifBlank { song.artist },
+                        thumbnailUrl = song.thumbnailUrl ?: albumThumb
+                    )
+                }
+        } catch (e: Exception) {
+            android.util.Log.e("YouTubeRepo", "Error fetching album $browseId", e)
+            emptyList()
+        }
+    }
+
+    /**
+     * POST to InnerTube /browse with the WEB_REMIX client. Works anonymously;
+     * cookies are attached when logged in so results are personalized.
+     * Unlike [fetchInternalApi], this does NOT require a login.
+     */
+    private fun browseMusic(browseId: String, params: String? = null): String? {
+        return try {
+            val paramsField = if (params != null) """, "params": "$params"""" else ""
+            val jsonBody = """
+                {
+                    "context": {
+                        "client": {
+                            "clientName": "WEB_REMIX",
+                            "clientVersion": "$WEB_REMIX_VERSION",
+                            "hl": "en",
+                            "gl": "US"
+                        }
+                    },
+                    "browseId": "$browseId"$paramsField
+                }
+            """.trimIndent()
+
+            val requestBuilder = okhttp3.Request.Builder()
+                .url("https://music.youtube.com/youtubei/v1/browse")
+                .post(jsonBody.toRequestBody("application/json".toMediaType()))
+                .addHeader("User-Agent", getRandomUserAgent())
+                .addHeader("Origin", "https://music.youtube.com")
+
+            val cookies = sessionManager.getCookies()
+            if (cookies != null) {
+                requestBuilder.addHeader("Cookie", cookies)
+                YouTubeAuthUtils.getAuthorizationHeader(cookies)?.let { auth ->
+                    requestBuilder.addHeader("Authorization", auth)
+                    requestBuilder.addHeader("X-Goog-AuthUser", "0")
+                }
+            }
+
+            val response = okHttpClient.newCall(requestBuilder.build()).execute()
+            response.body?.string()?.takeIf { it.isNotEmpty() }
+        } catch (e: Exception) {
+            android.util.Log.e("YouTubeRepo", "browseMusic($browseId) failed", e)
+            null
         }
     }
 
@@ -905,7 +1047,12 @@ class YouTubeRepository(private val context: Context) {
         if (playlistId == "LM" || playlistId == "VLLM") {
             return@withContext getLikedMusic()
         }
-        
+
+        // Album browse ids aren't playlists; they only resolve via /browse
+        if (playlistId.startsWith("MPRE")) {
+            return@withContext getAlbumSongs(playlistId)
+        }
+
         // For other playlists, use internal method
         getPlaylistInternal(playlistId)
     }
@@ -955,20 +1102,24 @@ class YouTubeRepository(private val context: Context) {
 
         if (newPipeSongs.isNotEmpty()) return@withContext newPipeSongs
 
-        // Fallback to Internal API (Works for LM, RTM, and public playlists if authenticated)
-        if (sessionManager.isLoggedIn()) {
-             try {
-                 // Ensure ID is browseId format (usually adding VL prefix for playlists if not present, though newer API might just take PL)
-                 // Actually for browse endpoint, usually we send the ID as is, or VL+ID.
-                 val browseId = if (playlistId.startsWith("PL") || playlistId.startsWith("RD")) "VL$playlistId" else playlistId
-                 val json = fetchInternalApi(browseId)
-                 val internalSongs = parseSongsFromInternalJson(json)
-                 if (internalSongs.isNotEmpty()) return@withContext internalSongs
-             } catch (e: Exception) {
-                 e.printStackTrace()
-             }
+        // Fallback to InnerTube /browse. Anonymous WEB_REMIX works for public
+        // playlists and album playlists (OLAK5uy_…); cookies personalize when
+        // logged in (LM, RTM). Playlists browse as "VL<id>".
+        try {
+            val browseId = if (playlistId.startsWith("VL") || playlistId.startsWith("FE")) {
+                playlistId
+            } else {
+                "VL$playlistId"
+            }
+            val json = browseMusic(browseId)
+            if (json != null) {
+                val internalSongs = parseSongsFromInternalJson(json)
+                if (internalSongs.isNotEmpty()) return@withContext internalSongs
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
-        
+
         emptyList()
     }
 
@@ -1337,6 +1488,15 @@ class YouTubeRepository(private val context: Context) {
             ?.optJSONArray("contents")
             ?.let { return it }
 
+        // Path 1b: Two-column Browse (newer playlist/album layout:
+        // contents -> twoColumnBrowseResultsRenderer -> secondaryContents -> sectionList)
+        root.optJSONObject("contents")
+            ?.optJSONObject("twoColumnBrowseResultsRenderer")
+            ?.optJSONObject("secondaryContents")
+            ?.optJSONObject("sectionListRenderer")
+            ?.optJSONArray("contents")
+            ?.let { return it }
+
         // Path 2: Search Results (contents -> tabbedSearchResultsRenderer -> tabs -> tab -> content -> sectionList)
         root.optJSONObject("contents")
             ?.optJSONObject("tabbedSearchResultsRenderer")
@@ -1514,12 +1674,19 @@ class YouTubeRepository(private val context: Context) {
             it.optJSONObject(it.length() - 1)?.optString("url")
         }
 
+        // Duration sits in the trailing fixed column ("3:42")
+        val durationText = item.optJSONArray("fixedColumns")
+            ?.optJSONObject(0)
+            ?.optJSONObject("musicResponsiveListItemFixedColumnRenderer")
+            ?.optJSONObject("text")
+            ?.let { getRunText(it) }
+
         return Song.fromYouTube(
             videoId = videoId!!,
             title = title,
             artist = artist,
             album = album,
-            duration = 0L,
+            duration = parseDurationTextToMs(durationText),
             thumbnailUrl = thumbnailUrl
         )
     }

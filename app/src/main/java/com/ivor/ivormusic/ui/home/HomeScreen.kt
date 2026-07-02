@@ -352,6 +352,8 @@ fun HomeScreen(
                         } else {
                             LibraryContent(
                                 songs = songs,
+                                isLocalLibrary = loadLocalSongs,
+                                onDownloadsClick = onNavigateToDownloads,
                                 onSongClick = { song: Song ->
                                     // Pass all songs to enable Next/Previous navigation
                                     playerViewModel.playQueue(songs, song)
@@ -1124,17 +1126,19 @@ fun SearchContent(
     var viewedPlaylist by remember { mutableStateOf<com.ivor.ivormusic.data.PlaylistDisplayItem?>(null) }
     var viewedArtist by remember { mutableStateOf<com.ivor.ivormusic.data.ArtistItem?>(null) }
 
-    // Handle system back button for nested screens
+    // Handle system back button for nested screens.
+    // Playlist/album is the deepest layer (search → artist → album), so it
+    // pops first; backing out of an album returns to the artist page.
     BackHandler(enabled = viewedPlaylist != null || viewedArtist != null) {
         when {
-            viewedArtist != null -> viewedArtist = null
             viewedPlaylist != null -> viewedPlaylist = null
+            viewedArtist != null -> viewedArtist = null
         }
     }
 
     val currentScreen = when {
-        viewedArtist != null -> "artist"
         viewedPlaylist != null -> "playlist"
+        viewedArtist != null -> "artist"
         else -> "search"
     }
 
@@ -1167,10 +1171,11 @@ fun SearchContent(
                         onBack = { viewedArtist = null },
                         onPlayQueue = onPlayQueue,
                         onSongClick = onSongClick,
-                        onAlbumClick = { album, albumSongs -> 
+                        onAlbumClick = { album, albumSongs ->
                              // Optional: Handle playing album from artist screen
                              onPlayQueue(albumSongs, null)
                         },
+                        onOpenAlbum = { albumItem -> viewedPlaylist = albumItem },
                         viewModel = viewModel
                     )
                 }
