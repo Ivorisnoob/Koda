@@ -323,6 +323,15 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             Pair(emptyList(), emptyList())
         }
     }
+
+    /** Related-songs radio seeded from a YouTube video id (works logged out). */
+    suspend fun getRadioSongs(videoId: String): List<Song> {
+        return try {
+            youtubeRepository.getRelatedSongs(videoId)
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
     
     fun logout() {
         sessionManager.clearSession()

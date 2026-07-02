@@ -21,6 +21,7 @@ import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Smartphone
 import androidx.compose.material.icons.rounded.Lyrics
@@ -680,16 +681,15 @@ private fun ExpressiveNowPlayingView(
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Favorite Button
+                // Favorite Button (bursts on like)
                 OutlinedIconToggleButton(
                     checked = isFavorite,
                     onCheckedChange = onFavoriteToggle,
                     modifier = Modifier.size(56.dp)
                 ) {
-                    Icon(
-                        imageVector = if (isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
-                        contentDescription = "Favorite",
-                        modifier = Modifier.size(28.dp)
+                    com.ivor.ivormusic.ui.components.LikeBurstIcon(
+                        isFavorite = isFavorite,
+                        iconSize = 28.dp
                     )
                 }
                 
@@ -737,6 +737,36 @@ private fun ExpressiveNowPlayingView(
                         }
                         }
                     }
+                }
+
+                Spacer(modifier = Modifier.width(24.dp))
+
+                // Sleep Timer Button
+                val sleepTimerEndsAt by viewModel.sleepTimerEndsAt.collectAsState()
+                var showSleepTimerDialog by remember { mutableStateOf(false) }
+                val sleepTimerActive = sleepTimerEndsAt != null
+                OutlinedIconButton(
+                    onClick = { showSleepTimerDialog = true },
+                    modifier = Modifier.size(56.dp),
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        if (sleepTimerActive) primaryColor else MaterialTheme.colorScheme.outline
+                    )
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Bedtime,
+                        contentDescription = "Sleep timer",
+                        tint = if (sleepTimerActive) primaryColor else onSurfaceVariantColor,
+                        modifier = Modifier.size(26.dp)
+                    )
+                }
+                if (showSleepTimerDialog) {
+                    com.ivor.ivormusic.ui.components.SleepTimerDialog(
+                        endsAt = sleepTimerEndsAt,
+                        onStart = { minutes -> viewModel.startSleepTimer(minutes) },
+                        onStop = { viewModel.cancelSleepTimer() },
+                        onDismiss = { showSleepTimerDialog = false }
+                    )
                 }
             }
         }

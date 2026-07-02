@@ -24,7 +24,9 @@ import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.rounded.*
+import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.PlaylistAdd
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -99,6 +101,10 @@ fun GesturePlayerSheetContent(
     var showAddToPlaylist by remember { mutableStateOf(false) }
     val localPlaylists by viewModel.localPlaylists.collectAsState()
 
+    // Sleep timer
+    val sleepTimerEndsAt by viewModel.sleepTimerEndsAt.collectAsState()
+    var showSleepTimerDialog by remember { mutableStateOf(false) }
+
     val surfaceColor = MaterialTheme.colorScheme.background
     val primaryColor = MaterialTheme.colorScheme.primary
     val onSurfaceColor = MaterialTheme.colorScheme.onSurface
@@ -156,6 +162,8 @@ fun GesturePlayerSheetContent(
                     onToggleRepeat = { viewModel.toggleRepeat() },
                     onToggleFavorite = { viewModel.toggleCurrentSongLike() },
                     onToggleDownload = { currentSong?.let { viewModel.toggleDownload(it) } },
+                    sleepTimerActive = sleepTimerEndsAt != null,
+                    onSleepTimerClick = { showSleepTimerDialog = true },
                     onPlayPauseToggle = { viewModel.togglePlayPause() },
                     onSongChange = { song -> viewModel.skipToSong(song) },
 
@@ -168,6 +176,15 @@ fun GesturePlayerSheetContent(
                 )
             }
         }
+    }
+
+    if (showSleepTimerDialog) {
+        com.ivor.ivormusic.ui.components.SleepTimerDialog(
+            endsAt = sleepTimerEndsAt,
+            onStart = { minutes -> viewModel.startSleepTimer(minutes) },
+            onStop = { viewModel.cancelSleepTimer() },
+            onDismiss = { showSleepTimerDialog = false }
+        )
     }
 
     if (showAddToPlaylist) {
@@ -214,6 +231,8 @@ private fun GestureNowPlayingView(
     onToggleRepeat: () -> Unit,
     onToggleFavorite: () -> Unit,
     onToggleDownload: () -> Unit,
+    sleepTimerActive: Boolean,
+    onSleepTimerClick: () -> Unit,
     onPlayPauseToggle: () -> Unit,
     onSongChange: (Song) -> Unit,
     isDownloaded: Boolean,
@@ -543,10 +562,12 @@ private fun GestureNowPlayingView(
                     onToggleRepeat = onToggleRepeat,
                     onToggleFavorite = onToggleFavorite,
                     onToggleDownload = onToggleDownload,
+                    sleepTimerActive = sleepTimerActive,
+                    onSleepTimerClick = onSleepTimerClick,
                     primaryColor = primaryColor,
                     onSurfaceVariantColor = onSurfaceVariantColor
                 )
-                
+
                 Spacer(modifier = Modifier.height(56.dp))
             }
         }
@@ -571,6 +592,8 @@ private fun GesturePlayerToolbar(
     onToggleRepeat: () -> Unit,
     onToggleFavorite: () -> Unit,
     onToggleDownload: () -> Unit,
+    sleepTimerActive: Boolean,
+    onSleepTimerClick: () -> Unit,
     primaryColor: Color,
     onSurfaceVariantColor: Color
 ) {
@@ -597,9 +620,8 @@ private fun GesturePlayerToolbar(
                     else 
                         MaterialTheme.colorScheme.onSurfaceVariant
                 ) {
-                    Icon(
-                        imageVector = if (isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
-                        contentDescription = "Favorite",
+                    com.ivor.ivormusic.ui.components.LikeBurstIcon(
+                        isFavorite = isFavorite,
                         tint = if (isFavorite) MaterialTheme.colorScheme.primary else onSurfaceVariantColor
                     )
                 }
@@ -662,6 +684,15 @@ private fun GesturePlayerToolbar(
                     Icon(
                         imageVector = Icons.Rounded.PlaylistAdd,
                         contentDescription = "Add to Playlist"
+                    )
+                }
+
+                // Sleep timer
+                IconButton(onClick = onSleepTimerClick) {
+                    Icon(
+                        imageVector = Icons.Rounded.Bedtime,
+                        contentDescription = "Sleep timer",
+                        tint = if (sleepTimerActive) primaryColor else LocalContentColor.current
                     )
                 }
             }

@@ -1102,6 +1102,7 @@ fun SongStripCard(
 }
 
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun SearchContent(
     songs: List<Song>,
@@ -1132,22 +1133,25 @@ fun SearchContent(
         else -> "search"
     }
 
+    // Expressive motion physics for screen pushes/pops
+    val searchNavSpatialSpec = MaterialTheme.motionScheme.defaultSpatialSpec<androidx.compose.ui.unit.IntOffset>()
+    val searchNavEffectsSpec = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
     androidx.compose.animation.AnimatedContent(
         targetState = currentScreen,
         label = "SearchNav",
         transitionSpec = {
             if (targetState != "search") {
                 // Push (Going deeper)
-                (androidx.compose.animation.slideInHorizontally { width -> width } + 
-                        androidx.compose.animation.fadeIn()) togetherWith
-                        (androidx.compose.animation.slideOutHorizontally { width -> -width / 3 } + 
-                                androidx.compose.animation.fadeOut())
+                (androidx.compose.animation.slideInHorizontally(animationSpec = searchNavSpatialSpec) { width -> width } +
+                        androidx.compose.animation.fadeIn(animationSpec = searchNavEffectsSpec)) togetherWith
+                        (androidx.compose.animation.slideOutHorizontally(animationSpec = searchNavSpatialSpec) { width -> -width / 3 } +
+                                androidx.compose.animation.fadeOut(animationSpec = searchNavEffectsSpec))
             } else {
                 // Pop (Going back)
-                (androidx.compose.animation.slideInHorizontally { width -> -width / 3 } + 
-                        androidx.compose.animation.fadeIn()) togetherWith
-                        (androidx.compose.animation.slideOutHorizontally { width -> width } + 
-                                androidx.compose.animation.fadeOut())
+                (androidx.compose.animation.slideInHorizontally(animationSpec = searchNavSpatialSpec) { width -> -width / 3 } +
+                        androidx.compose.animation.fadeIn(animationSpec = searchNavEffectsSpec)) togetherWith
+                        (androidx.compose.animation.slideOutHorizontally(animationSpec = searchNavSpatialSpec) { width -> width } +
+                                androidx.compose.animation.fadeOut(animationSpec = searchNavEffectsSpec))
             }
         }
     ) { screen ->

@@ -22,15 +22,18 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.EmojiEvents
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.LocalFireDepartment
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearWavyProgressIndicator
 import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -217,6 +220,17 @@ fun StatsScreen(
             // ===== 7-day activity chart =====
             item {
                 WeeklyActivityCard(dailyPlays = dailyPlays)
+            }
+
+            // ===== Streak + next milestone =====
+            if (globalStats.totalPlays > 0) {
+                item {
+                    StreakAndMilestoneRow(
+                        currentStreak = globalStats.currentStreakDays,
+                        longestStreak = globalStats.longestStreakDays,
+                        totalPlays = globalStats.totalPlays
+                    )
+                }
             }
 
             // ===== Top songs =====
@@ -513,6 +527,137 @@ private fun ExpressiveStatTile(
                     style = MaterialTheme.typography.bodySmall,
                     color = onContainer.copy(alpha = 0.75f)
                 )
+            }
+        }
+    }
+}
+
+/**
+ * 🔥 Listening streak + progress toward the next play-count milestone.
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun StreakAndMilestoneRow(
+    currentStreak: Int,
+    longestStreak: Int,
+    totalPlays: Int
+) {
+    val milestones = listOf(10, 50, 100, 250, 500, 1_000, 2_500, 5_000, 10_000, 25_000, 50_000, 100_000)
+    val nextMilestone = milestones.firstOrNull { it > totalPlays }
+    val prevMilestone = milestones.lastOrNull { it <= totalPlays } ?: 0
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        // Streak card
+        Surface(
+            shape = RoundedCornerShape(24.dp),
+            color = MaterialTheme.colorScheme.tertiaryContainer,
+            modifier = Modifier
+                .weight(1f)
+                .height(132.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.SpaceBetween
+            ) {
+                Surface(
+                    shape = MaterialShapes.Flower.toShape(),
+                    color = MaterialTheme.colorScheme.tertiary,
+                    modifier = Modifier.size(40.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            Icons.Rounded.LocalFireDepartment,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onTertiary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+                Column {
+                    Text(
+                        if (currentStreak == 1) "1 day" else "$currentStreak days",
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer
+                    )
+                    Text(
+                        if (longestStreak > currentStreak) "Streak • best $longestStreak" else "Listening streak",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.75f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+        }
+
+        // Milestone card with wavy progress
+        Surface(
+            shape = RoundedCornerShape(24.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            modifier = Modifier
+                .weight(1f)
+                .height(132.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.SpaceBetween
+            ) {
+                Surface(
+                    shape = MaterialShapes.Gem.toShape(),
+                    color = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.size(40.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            Icons.Rounded.EmojiEvents,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSecondary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+                if (nextMilestone != null) {
+                    Column {
+                        val fraction = (totalPlays - prevMilestone).toFloat() /
+                                (nextMilestone - prevMilestone).toFloat()
+                        Text(
+                            "${nextMilestone - totalPlays} to go",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1
+                        )
+                        Text(
+                            "Next: $nextMilestone plays",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        LinearWavyProgressIndicator(
+                            progress = { fraction.coerceIn(0f, 1f) },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                } else {
+                    Column {
+                        Text(
+                            "Legend",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            "Every milestone reached",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
             }
         }
     }

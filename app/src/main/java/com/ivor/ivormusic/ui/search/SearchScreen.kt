@@ -1124,7 +1124,7 @@ fun ResultHeader(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun SearchFilterChips(
     selectedCategory: SearchCategory,
@@ -1132,30 +1132,34 @@ fun SearchFilterChips(
     primaryColor: Color,
     modifier: Modifier = Modifier
 ) {
+    // M3 Expressive connected button group (replaces the FilterChip row) —
+    // same pattern as the Library tabs, shape-morphs on select.
     Row(
         modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+        horizontalArrangement = Arrangement.spacedBy(androidx.compose.material3.ButtonGroupDefaults.ConnectedSpaceBetween)
     ) {
-        SearchCategory.values().forEach { category ->
+        SearchCategory.entries.forEachIndexed { index, category ->
             val selected = category == selectedCategory
-            FilterChip(
-                selected = selected,
-                onClick = { onCategorySelected(category) },
-                label = { 
-                    Text(
-                        category.name.lowercase().capitalize(), 
-                        style = MaterialTheme.typography.labelLarge
-                    ) 
+            androidx.compose.material3.ToggleButton(
+                checked = selected,
+                onCheckedChange = { onCategorySelected(category) },
+                modifier = Modifier
+                    .weight(1f)
+                    .height(44.dp),
+                shapes = when (index) {
+                    0 -> androidx.compose.material3.ButtonGroupDefaults.connectedLeadingButtonShapes()
+                    SearchCategory.entries.lastIndex -> androidx.compose.material3.ButtonGroupDefaults.connectedTrailingButtonShapes()
+                    else -> androidx.compose.material3.ButtonGroupDefaults.connectedMiddleButtonShapes()
                 },
-                leadingIcon = if (selected) {
-                    { Icon(androidx.compose.material.icons.Icons.Default.Check, null, modifier = Modifier.size(16.dp)) }
-                } else null,
-                colors = FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = primaryColor.copy(alpha = 0.1f),
-                    selectedLabelColor = primaryColor,
-                    selectedLeadingIconColor = primaryColor
+                contentPadding = PaddingValues(horizontal = 8.dp)
+            ) {
+                Text(
+                    category.name.lowercase().capitalize(),
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                    maxLines = 1
                 )
-            )
+            }
         }
     }
 }

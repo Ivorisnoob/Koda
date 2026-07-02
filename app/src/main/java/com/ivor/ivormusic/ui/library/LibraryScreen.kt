@@ -23,6 +23,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.List
+import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.LoadingIndicator
@@ -34,6 +35,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -52,6 +54,7 @@ import com.ivor.ivormusic.ui.components.ExpressivePullToRefresh
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.runtime.mutableFloatStateOf
 import com.ivor.ivormusic.ui.home.HomeViewModel
+import kotlinx.coroutines.launch
 
 /**
  * The Main Library Navigation Hub.
@@ -61,7 +64,7 @@ import com.ivor.ivormusic.ui.home.HomeViewModel
  * - Artist Details
  * - Statistics
  */
-@OptIn(ExperimentalAnimationApi::class)
+@OptIn(ExperimentalAnimationApi::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun LibraryContent(
     songs: List<Song>,
@@ -100,14 +103,19 @@ fun LibraryContent(
         currentRoute = LibraryRoute.Main
     }
 
+    // Expressive motion physics for screen pushes/pops
+    val spatialSpec = MaterialTheme.motionScheme.defaultSpatialSpec<androidx.compose.ui.unit.IntOffset>()
+    val effectsSpec = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
     AnimatedContent(
         targetState = currentRoute,
         label = "LibraryNavigation",
         transitionSpec = {
             if (targetState == LibraryRoute.Main) {
-                slideInHorizontally { -it } + fadeIn() togetherWith slideOutHorizontally { it } + fadeOut()
+                slideInHorizontally(animationSpec = spatialSpec) { -it } + fadeIn(animationSpec = effectsSpec) togetherWith
+                        slideOutHorizontally(animationSpec = spatialSpec) { it } + fadeOut(animationSpec = effectsSpec)
             } else {
-                slideInHorizontally { it } + fadeIn() togetherWith slideOutHorizontally { -it / 3 } + fadeOut()
+                slideInHorizontally(animationSpec = spatialSpec) { it } + fadeIn(animationSpec = effectsSpec) togetherWith
+                        slideOutHorizontally(animationSpec = spatialSpec) { -it / 3 } + fadeOut(animationSpec = effectsSpec)
             }
         }
     ) { route ->
@@ -268,10 +276,17 @@ fun LibraryMainScreen(
         }
     }
 
-    Column(
+    var fabMenuExpanded by rememberSaveable { mutableStateOf(false) }
+    var showCreatePlaylistDialog by remember { mutableStateOf(false) }
+
+    Box(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
+    ) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
             .windowInsetsPadding(WindowInsets.statusBars)
     ) {
         // --- Header Section ---
@@ -340,14 +355,16 @@ fun LibraryMainScreen(
             isRefreshing = isLoading,
             onRefresh = { viewModel.refresh() }
         ) {
-            // Using AnimatedContent for tab switching
+            // Using AnimatedContent for tab switching (expressive motion physics)
+            val tabSpatialSpec = MaterialTheme.motionScheme.fastSpatialSpec<androidx.compose.ui.unit.IntOffset>()
+            val tabEffectsSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
             AnimatedContent(
                 targetState = selectedTab,
                 transitionSpec = {
-                    fadeIn(animationSpec = spring(stiffness = Spring.StiffnessLow)) +
-                    slideInVertically { it / 20 } togetherWith
-                    fadeOut(animationSpec = spring(stiffness = Spring.StiffnessLow)) + 
-                    slideOutVertically { -it / 20 }
+                    fadeIn(animationSpec = tabEffectsSpec) +
+                    slideInVertically(animationSpec = tabSpatialSpec) { it / 20 } togetherWith
+                    fadeOut(animationSpec = tabEffectsSpec) +
+                    slideOutVertically(animationSpec = tabSpatialSpec) { -it / 20 }
                 },
                 modifier = Modifier.fillMaxSize()
             ) { tab ->
@@ -404,6 +421,67 @@ fun LibraryMainScreen(
                 }
             }
         }
+    }
+
+    // --- M3E FAB menu: quick library actions ---
+    FloatingActionButtonMenu(
+        expanded = fabMenuExpanded,
+        modifier = Modifier
+            .align(Alignment.BottomEnd)
+            .navigationBarsPadding()
+            .padding(end = 4.dp, bottom = 8.dp),
+        button = {
+            ToggleFloatingActionButton(
+                checked = fabMenuExpanded,
+                onCheckedChange = { fabMenuExpanded = it }
+            ) {
+                Icon(
+                    Icons.Rounded.Add,
+                    contentDescription = if (fabMenuExpanded) "Close menu" else "Library actions",
+                    // + rotates into × as the menu blossoms open
+                    modifier = Modifier.graphicsLayer { rotationZ = checkedProgress * 45f }
+                )
+            }
+        }
+    ) {
+        FloatingActionButtonMenuItem(
+            onClick = {
+                fabMenuExpanded = false
+                showCreatePlaylistDialog = true
+            },
+            icon = { Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, null) },
+            text = { Text("New playlist") }
+        )
+        FloatingActionButtonMenuItem(
+            onClick = {
+                fabMenuExpanded = false
+                onDownloadsClick()
+            },
+            icon = { Icon(Icons.Rounded.DownloadDone, null) },
+            text = { Text("Downloads") }
+        )
+        FloatingActionButtonMenuItem(
+            onClick = {
+                fabMenuExpanded = false
+                onNavigateToStats()
+            },
+            icon = { Icon(Icons.Rounded.Insights, null) },
+            text = { Text("Statistics") }
+        )
+    }
+
+    if (showCreatePlaylistDialog) {
+        EditPlaylistDialog(
+            title = "New playlist",
+            initialName = "",
+            initialDescription = null,
+            onDismiss = { showCreatePlaylistDialog = false },
+            onConfirm = { name, description ->
+                viewModel.createLocalPlaylist(name, description)
+                showCreatePlaylistDialog = false
+            }
+        )
+    }
     }
 }
 
@@ -973,14 +1051,15 @@ private fun EditPlaylistDialog(
     initialName: String,
     initialDescription: String?,
     onDismiss: () -> Unit,
-    onConfirm: (name: String, description: String?) -> Unit
+    onConfirm: (name: String, description: String?) -> Unit,
+    title: String = "Edit playlist"
 ) {
     var name by remember(initialName) { mutableStateOf(initialName) }
     var description by remember(initialDescription) { mutableStateOf(initialDescription ?: "") }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Edit playlist") },
+        title = { Text(title) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(
@@ -1331,13 +1410,24 @@ fun PlaylistDetailScreen(
         },
         floatingActionButton = {
             if (filteredSongs.isNotEmpty() && !isReorderMode) {
-                ExtendedFloatingActionButton(
-                    text = { Text("Play All") },
-                    icon = { Icon(Icons.Rounded.PlayArrow, null) },
-                    onClick = { onPlayQueue(filteredSongs, filteredSongs.first()) },
-                    expanded = !isCollapsed,
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                // M3E split button: Play + menu (shuffle, radio)
+                val scope = androidx.compose.runtime.rememberCoroutineScope()
+                val radioSeed = filteredSongs.firstOrNull {
+                    it.source == com.ivor.ivormusic.data.SongSource.YOUTUBE
+                }
+                com.ivor.ivormusic.ui.artist.PlaySplitButton(
+                    onPlay = { onPlayQueue(filteredSongs, filteredSongs.first()) },
+                    onShuffle = { onPlayQueue(filteredSongs.shuffled(), null) },
+                    onStartRadio = if (radioSeed != null) {
+                        {
+                            scope.launch {
+                                val radio = viewModel.getRadioSongs(radioSeed.id)
+                                if (radio.isNotEmpty()) {
+                                    onPlayQueue(listOf(radioSeed) + radio, radioSeed)
+                                }
+                            }
+                        }
+                    } else null
                 )
             }
         }

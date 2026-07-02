@@ -33,9 +33,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.rounded.Album
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Radio
+import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledIconButton
@@ -214,6 +217,9 @@ fun ArtistScreen(
             ) {
                 // ========== HERO HEADER ==========
                 item {
+                    val radioSeed = artistSongs.firstOrNull {
+                        it.source == com.ivor.ivormusic.data.SongSource.YOUTUBE
+                    }
                     ArtistHeroHeader(
                         artistName = artistName,
                         songCount = artistSongs.size,
@@ -225,11 +231,26 @@ fun ArtistScreen(
                         textColor = textColor,
                         secondaryTextColor = secondaryTextColor,
                         onBack = onBack,
-                        onPlayAll = { 
+                        onPlayAll = {
                             if (artistSongs.isNotEmpty()) {
-                                onPlayQueue(artistSongs, null) 
+                                onPlayQueue(artistSongs, null)
                             }
-                        }
+                        },
+                        onShuffle = {
+                            if (artistSongs.isNotEmpty()) {
+                                onPlayQueue(artistSongs.shuffled(), null)
+                            }
+                        },
+                        onStartRadio = if (radioSeed != null && viewModel != null) {
+                            {
+                                scope.launch {
+                                    val radio = viewModel.getRadioSongs(radioSeed.id)
+                                    if (radio.isNotEmpty()) {
+                                        onPlayQueue(listOf(radioSeed) + radio, radioSeed)
+                                    }
+                                }
+                            }
+                        } else null
                     )
                 }
                 
@@ -449,7 +470,9 @@ private fun ArtistHeroHeader(
     textColor: Color,
     secondaryTextColor: Color,
     onBack: () -> Unit,
-    onPlayAll: () -> Unit
+    onPlayAll: () -> Unit,
+    onShuffle: () -> Unit = {},
+    onStartRadio: (() -> Unit)? = null
 ) {
     BoxWithConstraints(
         modifier = Modifier
@@ -672,51 +695,98 @@ private fun ArtistHeroHeader(
             Spacer(modifier = Modifier.height(32.dp))
         }
         
-        // Seated Floating Play Button
+        // Seated Floating Split Button: Play + more play options (M3E split button)
         Box(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .offset(y = 40.dp) // Seat it on the edge of the header (half overlap)
+                .offset(y = 28.dp) // Seat it on the edge of the header (half overlap)
         ) {
-            val playButtonShape = MaterialShapes.Cookie9Sided.toShape()
-            val interactionSource = remember { MutableInteractionSource() }
-            val isPressed by interactionSource.collectIsPressedAsState()
-            val scale by animateFloatAsState(
-                targetValue = if (isPressed) 0.92f else 1f,
-                animationSpec = spring(
-                    dampingRatio = Spring.DampingRatioMediumBouncy,
-                    stiffness = Spring.StiffnessLow
-                ),
-                label = "playAllButtonScale"
+            PlaySplitButton(
+                onPlay = onPlayAll,
+                onShuffle = onShuffle,
+                onStartRadio = onStartRadio
             )
-            
-            Surface(
-                onClick = onPlayAll,
-                modifier = Modifier
-                    .size(80.dp)
-                    .graphicsLayer { 
-                        scaleX = scale
-                        scaleY = scale
-                    },
-                shape = playButtonShape,
-                color = primaryColor,
-                shadowElevation = 8.dp,
-                interactionSource = interactionSource
+        }
+    }
+}
+
+/**
+ * M3 Expressive split button: primary Play action + a spinning menu half
+ * with related play actions (shuffle, radio).
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+internal fun PlaySplitButton(
+    onPlay: () -> Unit,
+    onShuffle: () -> Unit,
+    onStartRadio: (() -> Unit)?,
+    modifier: Modifier = Modifier
+) {
+    var menuOpen by remember { mutableStateOf(false) }
+    androidx.compose.material3.SplitButtonLayout(
+        modifier = modifier,
+        leadingButton = {
+            androidx.compose.material3.SplitButtonDefaults.LeadingButton(
+                onClick = onPlay,
+                modifier = Modifier.height(56.dp),
+                contentPadding = PaddingValues(horizontal = 24.dp)
             ) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
+                Icon(
+                    Icons.Rounded.PlayArrow,
+                    contentDescription = null,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "Play",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+        },
+        trailingButton = {
+            Box {
+                androidx.compose.material3.SplitButtonDefaults.TrailingButton(
+                    checked = menuOpen,
+                    onCheckedChange = { menuOpen = it },
+                    modifier = Modifier.height(56.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Rounded.PlayArrow,
-                        contentDescription = "Play All",
-                        modifier = Modifier.size(40.dp),
-                        tint = MaterialTheme.colorScheme.onPrimary
+                    val rotation by animateFloatAsState(
+                        targetValue = if (menuOpen) 180f else 0f,
+                        label = "playMenuRotation"
                     )
+                    Icon(
+                        Icons.Rounded.KeyboardArrowDown,
+                        contentDescription = "More play options",
+                        modifier = Modifier.graphicsLayer { rotationZ = rotation }
+                    )
+                }
+                androidx.compose.material3.DropdownMenu(
+                    expanded = menuOpen,
+                    onDismissRequest = { menuOpen = false }
+                ) {
+                    androidx.compose.material3.DropdownMenuItem(
+                        text = { Text("Shuffle") },
+                        leadingIcon = { Icon(Icons.Rounded.Shuffle, null) },
+                        onClick = {
+                            menuOpen = false
+                            onShuffle()
+                        }
+                    )
+                    if (onStartRadio != null) {
+                        androidx.compose.material3.DropdownMenuItem(
+                            text = { Text("Start radio") },
+                            leadingIcon = { Icon(Icons.Rounded.Radio, null) },
+                            onClick = {
+                                menuOpen = false
+                                onStartRadio()
+                            }
+                        )
+                    }
                 }
             }
         }
-    }
+    )
 }
 
 /**

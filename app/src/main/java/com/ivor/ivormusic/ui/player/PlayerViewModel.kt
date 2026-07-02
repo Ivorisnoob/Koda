@@ -673,6 +673,30 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         _progress.value = position
     }
 
+    // --- Sleep timer ---
+
+    /** Wall-clock time when the sleep timer fires, or null when inactive. */
+    private val _sleepTimerEndsAt = MutableStateFlow<Long?>(null)
+    val sleepTimerEndsAt: StateFlow<Long?> = _sleepTimerEndsAt.asStateFlow()
+    private var sleepTimerJob: kotlinx.coroutines.Job? = null
+
+    fun startSleepTimer(minutes: Int) {
+        sleepTimerJob?.cancel()
+        val durationMs = minutes * 60_000L
+        _sleepTimerEndsAt.value = System.currentTimeMillis() + durationMs
+        sleepTimerJob = viewModelScope.launch {
+            kotlinx.coroutines.delay(durationMs)
+            controller?.pause()
+            _sleepTimerEndsAt.value = null
+        }
+    }
+
+    fun cancelSleepTimer() {
+        sleepTimerJob?.cancel()
+        sleepTimerJob = null
+        _sleepTimerEndsAt.value = null
+    }
+
     fun skipToNext() {
         controller?.let { player ->
             // Check if there is physically a next item in the implementation list

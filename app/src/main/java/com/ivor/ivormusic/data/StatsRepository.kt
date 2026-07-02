@@ -115,15 +115,40 @@ class StatsRepository(private val context: Context) {
                 songCount = entries.distinctBy { it.songId }.size
             )
         }.sortedByDescending { it.playCount }
+        // Listening streaks: consecutive local-time days with at least one play.
+        val playDays = history.map { localDayOf(it.timestamp) }.toSortedSet()
+        var longestStreak = 0
+        var run = 0
+        var prevDay: Long? = null
+        for (day in playDays) {
+            run = if (prevDay != null && day == prevDay + 1) run + 1 else 1
+            if (run > longestStreak) longestStreak = run
+            prevDay = day
+        }
+        // Current streak stays alive if the last play was today OR yesterday
+        val today = localDayOf(System.currentTimeMillis())
+        var currentStreak = 0
+        var cursor = if (today in playDays) today else today - 1
+        while (cursor in playDays) {
+            currentStreak++
+            cursor--
+        }
+
         GlobalStats(
             totalPlays = totalPlays,
             totalPlayTimeSeconds = totalPlayTime,
             topSongs = songStats.take(10),
             topArtists = artistStats.take(10),
             uniqueArtists = artistStats.size,
-            uniqueSongs = songStats.size
+            uniqueSongs = songStats.size,
+            currentStreakDays = currentStreak,
+            longestStreakDays = longestStreak
         )
     }
+
+    /** Epoch day in the device's local timezone. */
+    private fun localDayOf(timestamp: Long): Long =
+        (timestamp + java.util.TimeZone.getDefault().getOffset(timestamp)) / 86_400_000L
 
     suspend fun getMonthlyPlays(): Map<String, Int> = withContext(Dispatchers.Default) {
         val history = loadHistory()
@@ -160,5 +185,7 @@ data class GlobalStats(
     val topSongs: List<SongStats> = emptyList(),
     val topArtists: List<ArtistStats> = emptyList(),
     val uniqueArtists: Int = 0,
-    val uniqueSongs: Int = 0
+    val uniqueSongs: Int = 0,
+    val currentStreakDays: Int = 0,
+    val longestStreakDays: Int = 0
 )
