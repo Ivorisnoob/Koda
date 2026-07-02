@@ -26,6 +26,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val playlistRepository = com.ivor.ivormusic.data.PlaylistRepository(application)
     private val sessionManager = SessionManager(application)
     private val searchHistoryRepository = com.ivor.ivormusic.data.SearchHistoryRepository(application)
+    private val recommendationEngine = com.ivor.ivormusic.data.RecommendationEngine(application, youtubeRepository)
 
     private val _songs = MutableStateFlow<List<Song>>(emptyList())
     val songs: StateFlow<List<Song>> = _songs.asStateFlow()
@@ -170,10 +171,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                         _youtubeSongs.value = recs
                     }
                 } else {
-                    // Not logged in: Show fallback search results for "Best Cigarettes After Sex songs" as requested
-                    val fallbackResults = youtubeRepository.search("Best Cigarettes After Sex songs")
-                    if (fallbackResults.isNotEmpty()) {
-                        _youtubeSongs.value = fallbackResults
+                    // Not logged in: personalize from the local taste profile
+                    // (play history, likes, searches). Falls back to trending
+                    // internally when there's no listening data yet.
+                    val recs = recommendationEngine.getHomeRecommendations()
+                    if (recs.isNotEmpty()) {
+                        _youtubeSongs.value = recs
                     }
                 }
             } catch (e: Exception) {
@@ -303,6 +306,14 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     // Update library data
                     _likedSongs.value = youtubeRepository.getLikedMusic()
                     _youtubePlaylists.value = youtubeRepository.getUserPlaylists()
+                } else if (_youtubeSongs.value.isNotEmpty()) {
+                    // Logged-out YouTube mode: refresh the taste-based feed too.
+                    // (Gated on a non-empty feed so local-only users don't pay
+                    // for network searches on every pull-to-refresh.)
+                    val recs = recommendationEngine.getHomeRecommendations()
+                    if (recs.isNotEmpty()) {
+                        _youtubeSongs.value = recs
+                    }
                 }
                 // Reload local songs with exclusions and playlists
                 playlistRepository.refreshPlaylists()

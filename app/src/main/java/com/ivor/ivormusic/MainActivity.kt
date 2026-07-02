@@ -158,7 +158,12 @@ fun MusicApp(
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val navController = rememberNavController()
-    val playerViewModel: PlayerViewModel = remember { PlayerViewModel(context) }
+    // Scope the player VM to the ViewModelStore so it survives configuration
+    // changes and onCleared() actually runs (releasing the MediaController).
+    // Application context is used so the Activity isn't retained.
+    val playerViewModel: PlayerViewModel = viewModel {
+        PlayerViewModel(context.applicationContext)
+    }
     val homeViewModel: HomeViewModel = viewModel()
     
     val videoPlayerViewModel: com.ivor.ivormusic.ui.video.VideoPlayerViewModel = viewModel()

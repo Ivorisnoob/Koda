@@ -120,7 +120,7 @@ fun GesturePlayerSheetContent(
                 GestureQueueView(
                     queue = currentQueue,
                     currentSong = currentSong,
-                    onSongClick = { song -> viewModel.playQueue(currentQueue, song) },
+                    onSongClick = { song -> viewModel.skipToSong(song) },
                     onCollapse = onCollapse,
                     onBackToPlayer = { showQueue = false },
                     onLoadMore = onLoadMore,
@@ -157,7 +157,7 @@ fun GesturePlayerSheetContent(
                     onToggleFavorite = { viewModel.toggleCurrentSongLike() },
                     onToggleDownload = { currentSong?.let { viewModel.toggleDownload(it) } },
                     onPlayPauseToggle = { viewModel.togglePlayPause() },
-                    onSongChange = { song -> viewModel.playQueue(currentQueue, song) },
+                    onSongChange = { song -> viewModel.skipToSong(song) },
 
                     isDownloaded = currentSong?.let { viewModel.isDownloaded(it.id) } ?: false,
                     isDownloading = currentSong?.let { viewModel.isDownloading(it.id) } ?: false,
@@ -460,7 +460,11 @@ private fun GestureNowPlayingView(
                             modifier = Modifier
                                 .width(progressBarWidth)
                         ) {
-                            val progressFraction = if (duration > 0) progress.toFloat() / duration.toFloat() else 0f
+                            // Track the finger locally while scrubbing; seek once on
+                            // release instead of on every drag frame (rebuffer storms).
+                            var scrubPosition by remember { mutableStateOf<Float?>(null) }
+                            val displayedProgress = scrubPosition?.toLong() ?: progress
+                            val progressFraction = if (duration > 0) displayedProgress.toFloat() / duration.toFloat() else 0f
                             val animatedProgress by animateFloatAsState(
                                 targetValue = progressFraction,
                                 animationSpec = spring(
@@ -469,9 +473,9 @@ private fun GestureNowPlayingView(
                                 ),
                                 label = "WavyProgress"
                             )
-                            
+
                             val thickStroke = Stroke(width = with(LocalDensity.current) { 6.dp.toPx() }, cap = StrokeCap.Round)
-                            
+
                             // Wavy progress with invisible slider overlay for touch
                             Box(contentAlignment = Alignment.Center) {
                                 LinearWavyProgressIndicator(
@@ -482,11 +486,15 @@ private fun GestureNowPlayingView(
                                     color = primaryColor,
                                     trackColor = onSurfaceVariantColor.copy(alpha = 0.15f)
                                 )
-                                
+
                                 // Invisible slider for touch interaction
                                 Slider(
-                                    value = progress.toFloat(),
-                                    onValueChange = { onSeekTo(it.toLong()) },
+                                    value = scrubPosition ?: progress.toFloat(),
+                                    onValueChange = { scrubPosition = it },
+                                    onValueChangeFinished = {
+                                        scrubPosition?.let { onSeekTo(it.toLong()) }
+                                        scrubPosition = null
+                                    },
                                     valueRange = 0f..(duration.toFloat().coerceAtLeast(1f)),
                                     colors = SliderDefaults.colors(
                                         thumbColor = Color.Transparent,
@@ -496,7 +504,7 @@ private fun GestureNowPlayingView(
                                     modifier = Modifier.fillMaxWidth()
                                 )
                             }
-                            
+
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -504,8 +512,8 @@ private fun GestureNowPlayingView(
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Text(
-                                    text = formatDuration(progress), 
-                                    style = MaterialTheme.typography.labelMedium, 
+                                    text = formatDuration(displayedProgress),
+                                    style = MaterialTheme.typography.labelMedium,
                                     color = onSurfaceVariantColor
                                 )
                                 Text(

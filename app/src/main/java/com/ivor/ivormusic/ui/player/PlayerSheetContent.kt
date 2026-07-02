@@ -119,7 +119,7 @@ fun PlayerSheetContent(
                 ExpressiveQueueView(
                     queue = currentQueue,
                     currentSong = currentSong,
-                    onSongClick = { song -> viewModel.playQueue(currentQueue, song) },
+                    onSongClick = { song -> viewModel.skipToSong(song) },
                     onMoveSong = { from, to -> viewModel.moveQueueItem(from, to) },
                     onRemoveSong = { index -> viewModel.removeQueueItem(index) },
                     onLoadMore = onLoadMore,
@@ -466,8 +466,13 @@ private fun ExpressiveNowPlayingView(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             // 🌟 Wavy Progress Indicator (Expressive!)
+            // While the user is scrubbing we only track the finger locally and
+            // issue a single seek on release — seeking on every drag frame causes
+            // rebuffering storms on streamed tracks.
+            var scrubPosition by remember { mutableStateOf<Float?>(null) }
+            val displayedProgress = scrubPosition?.toLong() ?: progress
             Box(contentAlignment = Alignment.Center) {
-                val progressFraction = if (duration > 0) progress.toFloat() / duration.toFloat() else 0f
+                val progressFraction = if (duration > 0) displayedProgress.toFloat() / duration.toFloat() else 0f
                 val animatedProgress by animateFloatAsState(
                     targetValue = progressFraction,
                     animationSpec = spring(
@@ -476,7 +481,7 @@ private fun ExpressiveNowPlayingView(
                     ),
                     label = "Progress"
                 )
-                
+
                 val thickStroke = Stroke(width = with(LocalDensity.current) { 6.dp.toPx() }, cap = StrokeCap.Round)
 
                 LinearWavyProgressIndicator(
@@ -487,11 +492,15 @@ private fun ExpressiveNowPlayingView(
                     color = primaryColor,
                     trackColor = onSurfaceVariantColor.copy(alpha = 0.15f)
                 )
-                
+
                 // Invisible slider for touch interaction
                 Slider(
-                    value = progress.toFloat(),
-                    onValueChange = { viewModel.seekTo(it.toLong()) },
+                    value = scrubPosition ?: progress.toFloat(),
+                    onValueChange = { scrubPosition = it },
+                    onValueChangeFinished = {
+                        scrubPosition?.let { onSeekTo(it.toLong()) }
+                        scrubPosition = null
+                    },
                     valueRange = 0f..(duration.toFloat().coerceAtLeast(1f)),
                     colors = SliderDefaults.colors(
                         thumbColor = Color.Transparent,
@@ -501,13 +510,13 @@ private fun ExpressiveNowPlayingView(
                     modifier = Modifier.fillMaxWidth()
                 )
             }
-            
+
             // Time Labels
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Text(formatDuration(progress), style = MaterialTheme.typography.labelMedium, color = onSurfaceVariantColor)
+                Text(formatDuration(displayedProgress), style = MaterialTheme.typography.labelMedium, color = onSurfaceVariantColor)
                 Text(formatDuration(duration), style = MaterialTheme.typography.labelMedium, color = onSurfaceVariantColor)
             }
             

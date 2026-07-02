@@ -37,6 +37,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.guava.future
 import kotlinx.coroutines.isActive
@@ -135,6 +136,10 @@ class MusicService : MediaLibraryService() {
         Log.i(TAG, "MusicService Destroying...")
         fadeVolumeJob?.cancel()
         progressJob?.cancel()
+        // Cancel the scopes themselves — they host the preference collectors and
+        // any in-flight resolutions, which would otherwise outlive the service.
+        serviceScope.cancel()
+        resolveScope.cancel()
         musicProgressLiveUpdate?.hide()
         mediaLibrarySession?.run {
             player.release()

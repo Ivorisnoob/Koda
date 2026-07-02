@@ -89,7 +89,10 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
 
     // YouTube Repository for fetching more songs
     private val youTubeRepository = com.ivor.ivormusic.data.YouTubeRepository(context)
-    
+
+    // Taste-profile based recommendations for the auto-queue
+    private val recommendationEngine = com.ivor.ivormusic.data.RecommendationEngine(context, youTubeRepository)
+
     // Loading state for "Load More" button
     private val _isLoadingMore = MutableStateFlow(false)
     val isLoadingMore: StateFlow<Boolean> = _isLoadingMore.asStateFlow()
@@ -490,6 +493,57 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     }
     
     /**
+     * Jump to a song that is already in the queue without rebuilding the
+     * player's timeline, so buffered and prefetched data is kept.
+     * Falls back to [playQueue] if the song isn't in the queue.
+     */
+    fun skipToSong(song: Song) {
+        val queue = _currentQueue.value
+        val index = queue.indexOfFirst { it.id == song.id }
+        if (index < 0) {
+            playQueue(queue.ifEmpty { listOf(song) }, song)
+            return
+        }
+        skipToQueueItem(index)
+    }
+
+    /**
+     * Seek the player to the queue item at [index] and start playback.
+     */
+    fun skipToQueueItem(index: Int) {
+        val queue = _currentQueue.value
+        val song = queue.getOrNull(index) ?: return
+        val player = controller
+        if (player == null) {
+            playQueue(queue, song)
+            return
+        }
+
+        // Guard: if the player's timeline drifted from the UI queue, rebuild.
+        if (index >= player.mediaItemCount || player.getMediaItemAt(index).mediaId != song.id) {
+            playQueue(queue, song)
+            return
+        }
+
+        if (index == player.currentMediaItemIndex) {
+            player.play()
+            return
+        }
+
+        isPlayerCleared = false
+
+        // Update UI state immediately for responsiveness (same as playQueue)
+        _currentSong.value = song
+        _isBuffering.value = true
+        _duration.value = 0L
+        updateCurrentSongLikedStatus()
+        fetchLyrics(song)
+
+        player.seekTo(index, 0)
+        player.play()
+    }
+
+    /**
      * Load more recommendations from YouTube Music and add to queue.
      */
     fun loadMoreRecommendations() {
@@ -498,16 +552,14 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         viewModelScope.launch {
             _isLoadingMore.value = true
             try {
-                // Fetch recommendations - simpler implementation for now:
-                // If we have a current song, search for related content, otherwise generic
-                val seed = _currentSong.value?.title ?: "Popular Music"
-                val newSongs = youTubeRepository.search("Songs related to $seed", com.ivor.ivormusic.data.YouTubeRepository.FILTER_SONGS)
-                    .filter { newSong -> _currentQueue.value.none { it.id == newSong.id } } // Filter duplicates
-                    .take(10)
-                    .map { 
-                        if (it.album.isNullOrEmpty()) it.copy(album = "Related to $seed") else it 
-                    }
-                
+                // Related-songs radio for the current track, falling back to
+                // seeds from the user's local taste profile (top artists).
+                val newSongs = recommendationEngine.getQueueContinuation(
+                    currentSong = _currentSong.value,
+                    excludeIds = _currentQueue.value.map { it.id }.toSet(),
+                    limit = 10
+                )
+
                 if (newSongs.isNotEmpty()) {
                     addToQueue(newSongs)
                 }

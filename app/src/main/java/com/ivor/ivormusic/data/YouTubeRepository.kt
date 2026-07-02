@@ -588,6 +588,136 @@ class YouTubeRepository(private val context: Context) {
     }
 
     /**
+     * Get related songs ("radio") for a video via the InnerTube /next endpoint —
+     * the same source YouTube Music uses for its own autoplay queue.
+     * Works anonymously; when logged in, the attached cookies personalize the mix.
+     */
+    suspend fun getRelatedSongs(videoId: String, limit: Int = 25): List<Song> = withContext(Dispatchers.IO) {
+        try {
+            val jsonBody = """
+                {
+                    "context": {
+                        "client": {
+                            "clientName": "WEB_REMIX",
+                            "clientVersion": "$WEB_REMIX_VERSION",
+                            "hl": "en",
+                            "gl": "US"
+                        }
+                    },
+                    "videoId": "$videoId",
+                    "playlistId": "RDAMVM$videoId",
+                    "isAudioOnly": true,
+                    "tunerSettingValue": "AUTOMIX_SETTING_NORMAL"
+                }
+            """.trimIndent()
+
+            val requestBuilder = okhttp3.Request.Builder()
+                .url("https://music.youtube.com/youtubei/v1/next")
+                .post(jsonBody.toRequestBody("application/json".toMediaType()))
+                .addHeader("User-Agent", getRandomUserAgent())
+                .addHeader("Origin", "https://music.youtube.com")
+
+            // Personalize the radio when logged in; anonymous works fine too.
+            val cookies = sessionManager.getCookies()
+            if (cookies != null) {
+                requestBuilder.addHeader("Cookie", cookies)
+                YouTubeAuthUtils.getAuthorizationHeader(cookies)?.let { auth ->
+                    requestBuilder.addHeader("Authorization", auth)
+                    requestBuilder.addHeader("X-Goog-AuthUser", "0")
+                }
+            }
+
+            val response = okHttpClient.newCall(requestBuilder.build()).execute()
+            val body = response.body?.string()
+            if (body.isNullOrEmpty()) return@withContext emptyList()
+
+            val renderers = mutableListOf<org.json.JSONObject>()
+            findObjectsByKey(org.json.JSONObject(body), "playlistPanelVideoRenderer", renderers)
+
+            renderers.mapNotNull { parsePlaylistPanelVideo(it) }
+                .filter { it.id != videoId } // first radio item is the seed itself
+                .distinctBy { it.id }
+                .take(limit)
+        } catch (e: Exception) {
+            android.util.Log.e("YouTubeRepo", "Error fetching related songs for $videoId", e)
+            emptyList()
+        }
+    }
+
+    /**
+     * Recursively collect every JSONObject stored under [key] anywhere in the tree.
+     * Kept structure-agnostic on purpose — InnerTube nests these renderers
+     * differently across response variants (queue vs. wrapper renderers).
+     */
+    private fun findObjectsByKey(node: Any, key: String, results: MutableList<org.json.JSONObject>) {
+        when (node) {
+            is org.json.JSONObject -> {
+                node.optJSONObject(key)?.let { results.add(it) }
+                val keys = node.keys()
+                while (keys.hasNext()) {
+                    val k = keys.next()
+                    if (k != key) findObjectsByKey(node.get(k), key, results)
+                }
+            }
+            is org.json.JSONArray -> {
+                for (i in 0 until node.length()) {
+                    findObjectsByKey(node.get(i), key, results)
+                }
+            }
+        }
+    }
+
+    private fun parsePlaylistPanelVideo(renderer: org.json.JSONObject): Song? {
+        val id = renderer.optString("videoId")
+        if (id.isEmpty()) return null
+        val title = renderer.optJSONObject("title")
+            ?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
+        if (title.isNullOrEmpty()) return null
+
+        // longBylineText runs alternate: [artist, " • ", album, " • ", views, ...]
+        val bylineRuns = renderer.optJSONObject("longBylineText")?.optJSONArray("runs")
+        val artist = bylineRuns?.optJSONObject(0)?.optString("text")
+            ?.takeIf { it.isNotBlank() } ?: "Unknown Artist"
+        val albumCandidate = if ((bylineRuns?.length() ?: 0) > 2) {
+            bylineRuns!!.optJSONObject(2)?.optString("text").orEmpty()
+        } else ""
+        // Music videos put view counts where songs put the album name
+        val album = albumCandidate.takeUnless { it.contains(" views") || it.contains(" plays") } ?: ""
+
+        val lengthText = renderer.optJSONObject("lengthText")
+            ?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
+
+        val thumbs = renderer.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
+        val thumbnailUrl = if (thumbs != null && thumbs.length() > 0) {
+            thumbs.optJSONObject(thumbs.length() - 1)?.optString("url")
+        } else null
+
+        return Song.fromYouTube(
+            videoId = id,
+            title = title,
+            artist = artist,
+            album = album,
+            duration = parseDurationTextToMs(lengthText),
+            thumbnailUrl = thumbnailUrl
+        )
+    }
+
+    private fun parseDurationTextToMs(text: String?): Long {
+        if (text.isNullOrBlank()) return 0L
+        return try {
+            val parts = text.split(":").map { it.trim().toLong() }
+            when (parts.size) {
+                3 -> (parts[0] * 3600 + parts[1] * 60 + parts[2]) * 1000
+                2 -> (parts[0] * 60 + parts[1]) * 1000
+                1 -> parts[0] * 1000
+                else -> 0L
+            }
+        } catch (e: Exception) {
+            0L
+        }
+    }
+
+    /**
      * Get the user's playlists.
      * Uses Internal YTM API with Cookies.
      */
