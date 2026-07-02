@@ -49,17 +49,16 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     // Combine YouTube liked songs with manually liked songs (local or YT)
     private val likedSongsRepository = LikedSongsRepository(application)
     
-    // We can filter local songs by liked IDs
-    // But ideally we should have a single source. For now, let's expose a combined list.
+    // Combined liked songs: manually liked (full metadata stored on like, so
+    // YouTube songs show without a login) + YT-account liked + liked local songs.
     val likedSongs: StateFlow<List<Song>> = combine(
-        _likedSongs, // YouTube Liked (from API)
-        _songs,      // Local Songs
-        likedSongsRepository.likedSongIds // Manually liked IDs
-    ) { ytLiked, localSongs, manuallyLikedIds ->
+        _likedSongs,                       // YouTube Liked (from API, requires login)
+        _songs,                            // Local Songs
+        likedSongsRepository.likedSongs,   // Manually liked, with metadata (newest first)
+        likedSongsRepository.likedSongIds  // Manually liked IDs (covers legacy likes without metadata)
+    ) { ytLiked, localSongs, manuallyLikedSongs, manuallyLikedIds ->
         val manuallyLikedLocalSongs = localSongs.filter { it.id in manuallyLikedIds }
-        // Note: We can't easily reconstruct YouTube songs from just ID without querying
-        // So for now, we show YouTube Liked (API) + Manually Liked Local Songs
-        (ytLiked + manuallyLikedLocalSongs).distinctBy { it.id }
+        (manuallyLikedSongs + ytLiked + manuallyLikedLocalSongs).distinctBy { it.id }
     }.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000), emptyList())
 
     // YouTube playlists
@@ -214,6 +213,20 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     suspend fun fetchPlaylistSongs(playlistId: String): List<Song> {
+        // "Liked Songs" is assembled locally so it works without a YouTube
+        // login: stored metadata + YT-account likes + liked local songs.
+        if (playlistId == "LM" || playlistId == "VLLM") {
+            val manuallyLiked = likedSongsRepository.likedSongs.value
+            val likedIds = likedSongsRepository.getAllLikedSongIds()
+            val likedLocalSongs = _songs.value.filter { it.id in likedIds }
+            val ytLiked = _likedSongs.value.ifEmpty {
+                if (sessionManager.isLoggedIn()) {
+                    try { youtubeRepository.getLikedMusic() } catch (e: Exception) { emptyList() }
+                } else emptyList()
+            }
+            return (manuallyLiked + ytLiked + likedLocalSongs).distinctBy { it.id }
+        }
+
         // Check local first
         val localPlaylist = playlistRepository.userPlaylists.value.find { it.id == playlistId }
         if (localPlaylist != null) {

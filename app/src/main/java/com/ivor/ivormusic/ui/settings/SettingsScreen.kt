@@ -283,11 +283,9 @@ fun SettingsScreen(
         ) {
             // Appearance Section with staggered animation
             item {
-                AnimatedSettingsSection(
+                SettingsSection(
                     title = "Appearance",
-                    textColor = secondaryTextColor,
-                    visible = isVisible,
-                    delay = 0
+                    textColor = secondaryTextColor
                 ) {
                     ExpressiveSettingsCard(surfaceColor = surfaceColor) {
                         ExpressiveThemeSelectGroup(
@@ -313,11 +311,9 @@ fun SettingsScreen(
             
             // Player UI Section
             item {
-                AnimatedSettingsSection(
+                SettingsSection(
                     title = "Player UI",
-                    textColor = secondaryTextColor,
-                    visible = isVisible,
-                    delay = 25
+                    textColor = secondaryTextColor
                 ) {
                     ExpressiveSettingsCard(surfaceColor = surfaceColor) {
                         ExpressivePlayerStyleSelectItem(
@@ -333,11 +329,9 @@ fun SettingsScreen(
 
             // Playback Section
             item {
-                AnimatedSettingsSection(
+                SettingsSection(
                     title = "Playback",
-                    textColor = secondaryTextColor,
-                    visible = isVisible,
-                    delay = 35
+                    textColor = secondaryTextColor
                 ) {
                     ExpressiveSettingsCard(surfaceColor = surfaceColor) {
                         // Crossfade Toggle
@@ -399,11 +393,9 @@ fun SettingsScreen(
 
             // OEM & HyperOS Fixes Section
             item {
-                AnimatedSettingsSection(
+                SettingsSection(
                     title = "OEM & HyperOS Fixes",
-                    textColor = secondaryTextColor,
-                    visible = isVisible,
-                    delay = 38
+                    textColor = secondaryTextColor
                 ) {
                     ExpressiveSettingsCard(surfaceColor = surfaceColor) {
                         // High Compatibility Scanning (Manual Scan)
@@ -495,11 +487,9 @@ fun SettingsScreen(
             
             // Storage & Cache Section
             item {
-                AnimatedSettingsSection(
+                SettingsSection(
                     title = "Storage & Cache",
-                    textColor = secondaryTextColor,
-                    visible = isVisible,
-                    delay = 40
+                    textColor = secondaryTextColor
                 ) {
                     ExpressiveSettingsCard(surfaceColor = surfaceColor) {
                         // Cache Size Display (Expressive Card)
@@ -581,11 +571,9 @@ fun SettingsScreen(
 
             // YouTube Music Section
             item {
-                AnimatedSettingsSection(
+                SettingsSection(
                     title = "YouTube Music",
-                    textColor = secondaryTextColor,
-                    visible = isVisible,
-                    delay = 50
+                    textColor = secondaryTextColor
                 ) {
                     ExpressiveSettingsCard(surfaceColor = surfaceColor) {
                     if (isLoggedIn) {
@@ -637,11 +625,9 @@ fun SettingsScreen(
 
             // Content Mode Section (Video/Music toggle)
             item {
-                AnimatedSettingsSection(
+                SettingsSection(
                     title = "Content Mode",
-                    textColor = secondaryTextColor,
-                    visible = isVisible,
-                    delay = 75
+                    textColor = secondaryTextColor
                 ) {
                     ExpressiveSettingsCard(surfaceColor = surfaceColor) {
                         ExpressiveVideoModeToggleItem(
@@ -657,11 +643,9 @@ fun SettingsScreen(
 
             // Library Section
             item {
-                AnimatedSettingsSection(
+                SettingsSection(
                     title = "Library",
-                    textColor = secondaryTextColor,
-                    visible = isVisible,
-                    delay = 125
+                    textColor = secondaryTextColor
                 ) {
                     ExpressiveSettingsCard(surfaceColor = surfaceColor) {
                         ExpressiveLocalSongsToggleItem(
@@ -706,11 +690,9 @@ fun SettingsScreen(
 
             // About Section
             item {
-                AnimatedSettingsSection(
+                SettingsSection(
                     title = "About",
-                    textColor = secondaryTextColor,
-                    visible = isVisible,
-                    delay = 150
+                    textColor = secondaryTextColor
                 ) {
                     ExpressiveSettingsCard(surfaceColor = surfaceColor) {
                         ExpressiveSettingsItem(
@@ -766,43 +748,24 @@ fun SettingsScreen(
 }
 
 @Composable
-private fun AnimatedSettingsSection(
+private fun SettingsSection(
     title: String,
     textColor: Color,
-    visible: Boolean,
-    delay: Int,
     content: @Composable () -> Unit
 ) {
-    var sectionVisible by remember { mutableStateOf(false) }
-    
-    LaunchedEffect(visible) {
-        if (visible) {
-            delay(delay.toLong())
-            sectionVisible = true
-        }
-    }
-    
-    AnimatedVisibility(
-        visible = sectionVisible,
-        enter = fadeIn(tween(300)) + slideInVertically(
-            initialOffsetY = { it / 3 },
-            animationSpec = spring(
-                dampingRatio = Spring.DampingRatioMediumBouncy,
-                stiffness = Spring.StiffnessLow
-            )
+    // No entrance animation on purpose: these live in a LazyColumn, which
+    // recomposes items as they scroll into view — any enter animation replays
+    // on every scroll and makes the cards look like they're "loading".
+    Column {
+        Text(
+            text = title.uppercase(),
+            color = textColor,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = 1.2.sp,
+            modifier = Modifier.padding(start = 8.dp, bottom = 10.dp)
         )
-    ) {
-        Column {
-            Text(
-                text = title.uppercase(),
-                color = textColor,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold,
-                letterSpacing = 1.2.sp,
-                modifier = Modifier.padding(start = 8.dp, bottom = 10.dp)
-            )
-            content()
-        }
+        content()
     }
 }
 

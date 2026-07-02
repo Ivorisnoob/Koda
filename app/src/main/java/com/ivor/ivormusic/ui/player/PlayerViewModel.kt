@@ -759,8 +759,10 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
      * Toggle the like status of the current song.
      */
     fun toggleCurrentSongLike() {
-        val songId = _currentSong.value?.id ?: return
-        val isNowLiked = likedSongsRepository.toggleLike(songId)
+        val song = _currentSong.value ?: return
+        // Pass the full song so its metadata is persisted — the Library's
+        // Liked Songs list needs it to display YouTube songs without a login.
+        val isNowLiked = likedSongsRepository.toggleLike(song)
         _isCurrentSongLiked.value = isNowLiked
     }
 
