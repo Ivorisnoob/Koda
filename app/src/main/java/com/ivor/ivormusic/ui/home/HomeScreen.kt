@@ -426,12 +426,11 @@ fun HomeScreen(
                     val selected = selectedTab == index
                     val (filledIcon, outlinedIcon) = icons
                     
+                    // fastSpatialSpec: snappy expressive motion — StiffnessLow
+                    // springs took ~1s to settle and felt sluggish here.
                     val animatedPadding by androidx.compose.animation.core.animateDpAsState(
                         targetValue = if (selected) 20.dp else 12.dp,
-                        animationSpec = androidx.compose.animation.core.spring(
-                            dampingRatio = androidx.compose.animation.core.Spring.DampingRatioLowBouncy,
-                            stiffness = androidx.compose.animation.core.Spring.StiffnessLow
-                        ),
+                        animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
                         label = "padding"
                     )
                     
@@ -459,10 +458,7 @@ fun HomeScreen(
                             modifier = Modifier
                                 .padding(horizontal = animatedPadding)
                                 .animateContentSize(
-                                    animationSpec = androidx.compose.animation.core.spring(
-                                        dampingRatio = androidx.compose.animation.core.Spring.DampingRatioLowBouncy,
-                                        stiffness = androidx.compose.animation.core.Spring.StiffnessLow
-                                    )
+                                    animationSpec = MaterialTheme.motionScheme.fastSpatialSpec()
                                 ),
                             horizontalArrangement = Arrangement.Center,
                             verticalAlignment = Alignment.CenterVertically
@@ -475,16 +471,10 @@ fun HomeScreen(
                             androidx.compose.animation.AnimatedVisibility(
                                 visible = selected,
                                 enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.expandHorizontally(
-                                    animationSpec = androidx.compose.animation.core.spring(
-                                        dampingRatio = androidx.compose.animation.core.Spring.DampingRatioLowBouncy,
-                                        stiffness = androidx.compose.animation.core.Spring.StiffnessLow
-                                    )
+                                    animationSpec = MaterialTheme.motionScheme.fastSpatialSpec()
                                 ),
                                 exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.shrinkHorizontally(
-                                    animationSpec = androidx.compose.animation.core.spring(
-                                        dampingRatio = androidx.compose.animation.core.Spring.DampingRatioNoBouncy,
-                                        stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow
-                                    )
+                                    animationSpec = MaterialTheme.motionScheme.fastSpatialSpec()
                                 )
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {

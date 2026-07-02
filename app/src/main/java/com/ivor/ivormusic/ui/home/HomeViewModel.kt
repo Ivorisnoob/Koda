@@ -477,9 +477,14 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val _globalStats = MutableStateFlow(com.ivor.ivormusic.data.GlobalStats())
     val globalStats: StateFlow<com.ivor.ivormusic.data.GlobalStats> = _globalStats.asStateFlow()
 
+    // Plays per day for the last 7 days, keyed "M/d" (see StatsRepository.getDailyPlays)
+    private val _dailyPlays = MutableStateFlow<Map<String, Int>>(emptyMap())
+    val dailyPlays: StateFlow<Map<String, Int>> = _dailyPlays.asStateFlow()
+
     fun refreshStats() {
         viewModelScope.launch {
             _globalStats.value = statsRepository.getGlobalStats()
+            _dailyPlays.value = statsRepository.getDailyPlays()
         }
     }
 
