@@ -7,8 +7,10 @@ import android.os.Build
 import android.os.Environment
 import android.provider.Settings
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
@@ -17,6 +19,8 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -29,9 +33,9 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.pager.HorizontalPager
@@ -41,8 +45,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.rounded.Album
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.CloudSync
 import androidx.compose.material.icons.rounded.Folder
@@ -51,24 +57,26 @@ import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.PhoneAndroid
-import androidx.compose.material.icons.rounded.Security
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Videocam
 import androidx.compose.material.icons.rounded.Wallpaper
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.LinearWavyProgressIndicator
 import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.ToggleButton
+import androidx.compose.material3.ToggleButtonDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -78,19 +86,23 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Matrix
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.asComposePath
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.graphics.shapes.Morph
 import androidx.graphics.shapes.RoundedPolygon
 import androidx.graphics.shapes.toPath
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
@@ -100,9 +112,10 @@ import com.ivor.ivormusic.data.PlayerStyle
 import com.ivor.ivormusic.data.SessionManager
 import com.ivor.ivormusic.ui.auth.YouTubeAuthDialog
 import com.ivor.ivormusic.ui.theme.ThemeMode
+import kotlin.math.absoluteValue
 import kotlinx.coroutines.launch
 
-private const val ONBOARDING_PAGE_COUNT = 9
+private const val ONBOARDING_PAGE_COUNT = 6
 
 @OptIn(ExperimentalPermissionsApi::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -153,255 +166,396 @@ fun OnboardingScreen(
         )
     }
 
+    val isLastPage = pagerState.currentPage == ONBOARDING_PAGE_COUNT - 1
+
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(
                 brush = Brush.linearGradient(
                     colors = listOf(
-                        MaterialTheme.colorScheme.background,
+                        MaterialTheme.colorScheme.surface,
                         MaterialTheme.colorScheme.surfaceContainerLow,
-                        MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.65f)
+                        MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.35f)
                     ),
                     start = Offset.Zero,
-                    end = Offset(1200f, 1800f)
+                    end = Offset(1400f, 2200f)
                 )
             )
     ) {
-        AnimatedBackdrop()
+        OnboardingBackdrop()
 
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .windowInsetsPadding(WindowInsets.navigationBars)
-                .padding(horizontal = 20.dp, vertical = 24.dp)
+                .windowInsetsPadding(WindowInsets.systemBars)
+                .padding(horizontal = 24.dp)
+                .padding(top = 8.dp, bottom = 20.dp)
         ) {
-            Text(
-                text = "Koda setup",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.primary,
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(modifier = Modifier.height(10.dp))
-            Text(
-                text = "Set the app up your way.",
-                style = MaterialTheme.typography.displayLarge,
-                color = MaterialTheme.colorScheme.onBackground,
-                modifier = Modifier.fillMaxWidth(0.86f)
-            )
-            Spacer(modifier = Modifier.height(10.dp))
-            Text(
-                text = "Local files, streaming, video mode, and sign-in stay optional. You can change everything later in Settings.",
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            HorizontalPager(
-                state = pagerState,
-                contentPadding = PaddingValues(end = 24.dp),
-                pageSpacing = 16.dp,
-                modifier = Modifier.weight(1f)
-            ) { page ->
-                when (page) {
-                    0 -> LocalMusicPage(
-                        loadLocalSongs = loadLocalSongs,
-                        onLoadLocalSongsToggle = onLoadLocalSongsToggle,
-                        storagePermissionGranted = storagePermissionState.status.isGranted,
-                        onRequestStoragePermission = { storagePermissionState.launchPermissionRequest() }
-                    )
-                    1 -> YouTubeConnectionPage(
-                        isLoggedIn = isLoggedIn,
-                        onConnectYouTube = { showAuthDialog = true }
-                    )
-                    2 -> VideoModePage(
-                        videoMode = videoMode,
-                        onVideoModeToggle = onVideoModeToggle
-                    )
-                    3 -> ThemePage(
-                        currentThemeMode = currentThemeMode,
-                        onThemeModeChange = onThemeModeChange
-                    )
-                    4 -> PlayerStylePage(
-                        playerStyle = playerStyle,
-                        onPlayerStyleChange = onPlayerStyleChange
-                    )
-                    5 -> AmbientBackgroundPage(
-                        ambientBackground = ambientBackground,
-                        onAmbientBackgroundToggle = onAmbientBackgroundToggle
-                    )
-                    6 -> CrossfadePage(
-                        crossfadeEnabled = crossfadeEnabled,
-                        onCrossfadeEnabledToggle = onCrossfadeEnabledToggle
-                    )
-                    7 -> PermissionsPage(
-                        loadLocalSongs = loadLocalSongs,
-                        storagePermissionGranted = storagePermissionState.status.isGranted,
-                        onRequestStoragePermission = { storagePermissionState.launchPermissionRequest() },
-                        notificationPermissionGranted = notificationPermissionState?.status?.isGranted ?: true,
-                        onRequestNotificationPermission = { notificationPermissionState?.launchPermissionRequest() }
-                    )
-                    else -> CompatibilityPage(
-                        manualScanEnabled = manualScanEnabled,
-                        onManualScanEnabledToggle = { enabled ->
-                            if (enabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) {
-                                val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
-                                    data = Uri.parse("package:${context.packageName}")
-                                }
-                                context.startActivity(intent)
-                            }
-                            onManualScanEnabledToggle(enabled)
-                        }
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(20.dp))
-
+            // Top bar: wordmark + skip
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    repeat(ONBOARDING_PAGE_COUNT) { index ->
-                        val selected = pagerState.currentPage == index
-                        val width by animateFloatAsState(
-                            targetValue = if (selected) 28f else 10f,
-                            animationSpec = spring(),
-                            label = "pagerIndicatorWidth"
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(34.dp)
+                            .clip(PolygonShape(MaterialShapes.Cookie9Sided))
+                            .background(MaterialTheme.colorScheme.primary),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.MusicNote,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.size(18.dp)
                         )
-                        Box(
-                            modifier = Modifier
-                                .height(10.dp)
-                                .width(width.dp)
-                                .clip(CircleShape)
-                                .background(
-                                    if (selected) MaterialTheme.colorScheme.primary
-                                    else MaterialTheme.colorScheme.surfaceContainerHighest
-                                )
+                    }
+                    Text(
+                        text = "Koda",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+
+                AnimatedVisibility(
+                    visible = !isLastPage,
+                    enter = fadeIn(),
+                    exit = fadeOut()
+                ) {
+                    TextButton(onClick = onFinish) {
+                        Text("Skip")
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.weight(1f),
+                beyondViewportPageCount = 1,
+                verticalAlignment = Alignment.Top
+            ) { page ->
+                val pageOffset =
+                    (pagerState.currentPage - page) + pagerState.currentPageOffsetFraction
+                Box(
+                    modifier = Modifier.graphicsLayer {
+                        val fraction = 1f - pageOffset.absoluteValue.coerceIn(0f, 1f)
+                        alpha = 0.3f + 0.7f * fraction
+                        val scale = 0.94f + 0.06f * fraction
+                        scaleX = scale
+                        scaleY = scale
+                    }
+                ) {
+                    when (page) {
+                        0 -> WelcomePage()
+                        1 -> LibraryPage(
+                            loadLocalSongs = loadLocalSongs,
+                            onLoadLocalSongsToggle = onLoadLocalSongsToggle,
+                            storagePermissionGranted = storagePermissionState.status.isGranted,
+                            onRequestStoragePermission = { storagePermissionState.launchPermissionRequest() }
+                        )
+                        2 -> YouTubePage(
+                            isLoggedIn = isLoggedIn,
+                            onConnectYouTube = { showAuthDialog = true }
+                        )
+                        3 -> VideoModePage(
+                            videoMode = videoMode,
+                            onVideoModeToggle = onVideoModeToggle
+                        )
+                        4 -> LookAndFeelPage(
+                            currentThemeMode = currentThemeMode,
+                            onThemeModeChange = onThemeModeChange,
+                            ambientBackground = ambientBackground,
+                            onAmbientBackgroundToggle = onAmbientBackgroundToggle,
+                            playerStyle = playerStyle,
+                            onPlayerStyleChange = onPlayerStyleChange
+                        )
+                        else -> FinalTouchesPage(
+                            crossfadeEnabled = crossfadeEnabled,
+                            onCrossfadeEnabledToggle = onCrossfadeEnabledToggle,
+                            notificationPermissionGranted = notificationPermissionState?.status?.isGranted ?: true,
+                            onRequestNotificationPermission = { notificationPermissionState?.launchPermissionRequest() },
+                            manualScanEnabled = manualScanEnabled,
+                            onManualScanEnabledToggle = { enabled ->
+                                if (enabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) {
+                                    val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
+                                        data = Uri.parse("package:${context.packageName}")
+                                    }
+                                    context.startActivity(intent)
+                                }
+                                onManualScanEnabledToggle(enabled)
+                            }
                         )
                     }
                 }
+            }
 
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    AnimatedVisibility(
-                        visible = pagerState.currentPage > 0,
-                        enter = fadeIn(),
-                        exit = fadeOut()
-                    ) {
-                        OutlinedButton(
-                            onClick = {
-                                scope.launch {
-                                    pagerState.animateScrollToPage(pagerState.currentPage - 1)
-                                }
-                            },
-                            shape = RoundedCornerShape(18.dp)
-                        ) {
-                            Text("Back")
-                        }
-                    }
+            Spacer(modifier = Modifier.height(18.dp))
 
-                    Button(
+            // Bottom bar: wavy progress + navigation
+            val progress by animateFloatAsState(
+                targetValue = (pagerState.currentPage + 1f) / ONBOARDING_PAGE_COUNT,
+                animationSpec = spring(stiffness = Spring.StiffnessLow),
+                label = "onboardingProgress"
+            )
+
+            Text(
+                text = "Step ${pagerState.currentPage + 1} of $ONBOARDING_PAGE_COUNT",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+            LinearWavyProgressIndicator(
+                progress = { progress },
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(modifier = Modifier.height(18.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                AnimatedVisibility(
+                    visible = pagerState.currentPage > 0,
+                    enter = fadeIn() + scaleIn(),
+                    exit = fadeOut() + scaleOut()
+                ) {
+                    FilledTonalIconButton(
                         onClick = {
-                            if (pagerState.currentPage == ONBOARDING_PAGE_COUNT - 1) {
-                                onFinish()
-                            } else {
-                                scope.launch {
-                                    pagerState.animateScrollToPage(pagerState.currentPage + 1)
-                                }
+                            scope.launch {
+                                pagerState.animateScrollToPage(pagerState.currentPage - 1)
                             }
                         },
-                        shape = RoundedCornerShape(22.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary
-                        )
+                        shapes = IconButtonDefaults.shapes(),
+                        modifier = Modifier.size(56.dp)
                     ) {
-                        Text(if (pagerState.currentPage == ONBOARDING_PAGE_COUNT - 1) "Start listening" else "Continue")
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Icon(
-                            imageVector = if (pagerState.currentPage == ONBOARDING_PAGE_COUNT - 1) Icons.Rounded.CheckCircle else Icons.AutoMirrored.Rounded.ArrowForward,
-                            contentDescription = null
-                        )
+                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back")
                     }
+                }
+
+                Spacer(modifier = Modifier.weight(1f))
+
+                Button(
+                    onClick = {
+                        if (isLastPage) {
+                            onFinish()
+                        } else {
+                            scope.launch {
+                                pagerState.animateScrollToPage(pagerState.currentPage + 1)
+                            }
+                        }
+                    },
+                    shapes = ButtonDefaults.shapes(),
+                    modifier = Modifier.height(56.dp),
+                    contentPadding = PaddingValues(horizontal = 28.dp)
+                ) {
+                    Text(
+                        text = if (isLastPage) "Start listening" else "Continue",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Icon(
+                        imageVector = if (isLastPage) Icons.Rounded.CheckCircle else Icons.AutoMirrored.Rounded.ArrowForward,
+                        contentDescription = null
+                    )
                 }
             }
         }
     }
 }
 
+// ---------------- Pages ----------------
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun LocalMusicPage(
+private fun WelcomePage() {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(bottom = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(24.dp)
+    ) {
+        Spacer(modifier = Modifier.height(8.dp))
+
+        MorphingHero(icon = Icons.Rounded.MusicNote)
+
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(
+                text = "Welcome to Koda",
+                style = MaterialTheme.typography.displaySmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+                textAlign = TextAlign.Center
+            )
+            Text(
+                text = "Music and videos, your local files, and a player that adapts to you. A few quick choices and you are in.",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center
+            )
+        }
+
+        Surface(
+            shape = RoundedCornerShape(28.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(18.dp)
+            ) {
+                FeatureRow(
+                    icon = Icons.Rounded.CloudSync,
+                    shape = MaterialShapes.Flower,
+                    title = "Stream anything",
+                    subtitle = "Music and videos powered by YouTube Music"
+                )
+                FeatureRow(
+                    icon = Icons.Rounded.Folder,
+                    shape = MaterialShapes.Circle,
+                    title = "Your local library",
+                    subtitle = "Songs already on this device play right alongside"
+                )
+                FeatureRow(
+                    icon = Icons.Rounded.Palette,
+                    shape = MaterialShapes.SoftBurst,
+                    title = "Made yours",
+                    subtitle = "Dynamic color, ambient artwork and player styles"
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun LibraryPage(
     loadLocalSongs: Boolean,
     onLoadLocalSongsToggle: (Boolean) -> Unit,
     storagePermissionGranted: Boolean,
     onRequestStoragePermission: () -> Unit
 ) {
-    OnboardingPage(
+    OnboardingPageScaffold(
         icon = Icons.Rounded.Folder,
         iconShape = MaterialShapes.Circle,
-        title = "Local music",
-        body = "Use music already stored on this device. This is best when you want Koda to behave like a normal offline-capable music player.",
-        details = listOf(
-            "When this is on, Home and Search start from your phone's audio library.",
-            "Koda only asks for media access if you choose local music.",
-            "Turn this off if you want the first screen to use YouTube Music discovery instead."
-        )
+        title = "Your music",
+        body = "Bring the songs already stored on this device into Home, Search and Library. Skip it if you want a streaming-first setup."
     ) {
-        ToggleCard(
+        SettingSwitchRow(
             icon = Icons.Rounded.Folder,
             title = "Scan device audio",
-            subtitle = "Show songs from local storage across Home, Search, and Library.",
+            subtitle = "Show local songs across the app",
             checked = loadLocalSongs,
             onCheckedChange = onLoadLocalSongsToggle
         )
 
-        PermissionCard(
-            icon = Icons.Rounded.Album,
-            title = "Music access",
-            subtitle = if (loadLocalSongs) {
-                "Required for local library scanning. You can skip it and grant it later."
-            } else {
-                "Not needed while local audio scanning is off."
-            },
-            granted = storagePermissionGranted || !loadLocalSongs,
-            actionLabel = if (storagePermissionGranted || !loadLocalSongs) "Ready" else "Allow access",
-            onAction = onRequestStoragePermission,
-            actionEnabled = loadLocalSongs && !storagePermissionGranted
-        )
+        AnimatedVisibility(visible = loadLocalSongs) {
+            PermissionRow(
+                icon = Icons.Rounded.Album,
+                title = "Music access",
+                subtitle = if (storagePermissionGranted) {
+                    "Koda can read your audio library."
+                } else {
+                    "Needed to find songs on this device."
+                },
+                granted = storagePermissionGranted,
+                actionLabel = "Allow",
+                onAction = onRequestStoragePermission
+            )
+        }
+
+        HintText("Only your audio files are read. Nothing leaves the device.")
     }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun YouTubeConnectionPage(
+private fun YouTubePage(
     isLoggedIn: Boolean,
     onConnectYouTube: () -> Unit
 ) {
-    OnboardingPage(
+    OnboardingPageScaffold(
         icon = Icons.Rounded.CloudSync,
         iconShape = MaterialShapes.Flower,
         title = "YouTube Music",
-        body = "Connect only if you want personal YouTube Music data. Search and public streaming can still work without making Google account setup part of onboarding.",
-        details = listOf(
-            "Connected accounts can show personalized recommendations, liked songs, and playlists.",
-            "Cookies are stored by the existing secure session manager.",
-            "Skipping sign-in keeps the app usable and avoids forcing account setup."
-        )
+        body = "Connect your account for personalized recommendations, liked songs and playlists. Search and streaming work without it."
     ) {
-        PermissionCard(
-            icon = Icons.Rounded.CloudSync,
-            title = if (isLoggedIn) "Account connected" else "Optional account connection",
-            subtitle = if (isLoggedIn) {
-                "Personalized YouTube Music features are available."
-            } else {
-                "Use this only when playlists, liked songs, and account recommendations matter to you."
-            },
-            granted = isLoggedIn,
-            actionLabel = if (isLoggedIn) "Connected" else "Connect YouTube Music",
-            onAction = onConnectYouTube,
-            actionEnabled = !isLoggedIn
-        )
+        Surface(
+            shape = RoundedCornerShape(24.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(46.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(
+                                if (isLoggedIn) MaterialTheme.colorScheme.primaryContainer
+                                else MaterialTheme.colorScheme.secondaryContainer
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = if (isLoggedIn) Icons.Rounded.Check else Icons.Rounded.CloudSync,
+                            contentDescription = null,
+                            tint = if (isLoggedIn) MaterialTheme.colorScheme.onPrimaryContainer
+                            else MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                    }
+                    Column {
+                        Text(
+                            text = if (isLoggedIn) "Account connected" else "Not connected",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = if (isLoggedIn) {
+                                "Personalized recommendations are ready."
+                            } else {
+                                "Optional, and you can sign in later from Settings."
+                            },
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                if (!isLoggedIn) {
+                    Button(
+                        onClick = onConnectYouTube,
+                        shapes = ButtonDefaults.shapes(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(52.dp)
+                    ) {
+                        Text("Connect YouTube Music")
+                    }
+                }
+            }
+        }
+
+        HintText("Your session is stored securely on this device only.")
     }
 }
 
@@ -410,192 +564,511 @@ private fun VideoModePage(
     videoMode: Boolean,
     onVideoModeToggle: (Boolean) -> Unit
 ) {
-    OnboardingPage(
+    OnboardingPageScaffold(
         icon = Icons.Rounded.Videocam,
         iconShape = MaterialShapes.Arch,
         title = "Video mode",
-        body = "Video mode shifts discovery toward music videos and watch history, while keeping the in-app video player available.",
-        details = listOf(
-            "Turn this on if you want video discovery on the main tab.",
-            "The app can play videos in-app and keep a mini player overlay.",
-            "Turn it off for a cleaner music-first layout."
-        )
+        body = "Turn the Home tab into a video feed with an in-app player, mini player and picture-in-picture. You can flip between music and video any time."
     ) {
-        ToggleCard(
+        SettingSwitchRow(
             icon = Icons.Rounded.Videocam,
             title = "Enable video mode",
-            subtitle = "Show video home, video search results, and video history surfaces.",
+            subtitle = "Video home, video search and watch history",
             checked = videoMode,
             onCheckedChange = onVideoModeToggle
         )
+
+        HintText("Off keeps a cleaner, music-first layout. The video player stays available either way.")
     }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun ThemePage(
+private fun LookAndFeelPage(
     currentThemeMode: ThemeMode,
-    onThemeModeChange: (ThemeMode) -> Unit
-) {
-    OnboardingPage(
-        icon = Icons.Rounded.Palette,
-        iconShape = MaterialShapes.Diamond,
-        title = "Theme",
-        body = "Choose the color mode used on first launch. The app still uses Material 3 dynamic color where the device supports it.",
-        details = listOf(
-            "System follows the phone's light or dark setting.",
-            "Dark gives the player a more focused media-app feel.",
-            "Light keeps library and settings screens brighter in daytime use."
-        )
-    ) {
-        ThemeSelector(
-            currentThemeMode = currentThemeMode,
-            onThemeModeChange = onThemeModeChange
-        )
-    }
-}
-
-@Composable
-private fun PlayerStylePage(
+    onThemeModeChange: (ThemeMode) -> Unit,
+    ambientBackground: Boolean,
+    onAmbientBackgroundToggle: (Boolean) -> Unit,
     playerStyle: PlayerStyle,
     onPlayerStyleChange: (PlayerStyle) -> Unit
 ) {
-    OnboardingPage(
-        icon = Icons.Rounded.MusicNote,
-        iconShape = MaterialShapes.Flower,
-        title = "Player controls",
-        body = "Pick how the now-playing screen should feel. This only changes the player interaction model, not playback quality or queue behavior.",
-        details = listOf(
-            "Classic keeps visible playback controls and is easier to learn.",
-            "Gesture uses swipe-driven movement for a more fluid player.",
-            "You can switch between them later without losing your queue or settings."
-        )
+    OnboardingPageScaffold(
+        icon = Icons.Rounded.Palette,
+        iconShape = MaterialShapes.Diamond,
+        title = "Look and feel",
+        body = "Koda uses Material You dynamic color. Choose how it should behave on this device."
     ) {
-        PlayerStyleSelector(
-            playerStyle = playerStyle,
-            onPlayerStyleChange = onPlayerStyleChange
-        )
-    }
-}
+        ChoiceCard(title = "Theme") {
+            ConnectedChoiceGroup(
+                options = listOf(
+                    ThemeMode.SYSTEM to "System",
+                    ThemeMode.DARK to "Dark",
+                    ThemeMode.LIGHT to "Light"
+                ),
+                selected = currentThemeMode,
+                onSelect = onThemeModeChange
+            )
+        }
 
-@Composable
-private fun AmbientBackgroundPage(
-    ambientBackground: Boolean,
-    onAmbientBackgroundToggle: (Boolean) -> Unit
-) {
-    OnboardingPage(
-        icon = Icons.Rounded.Wallpaper,
-        iconShape = MaterialShapes.SoftBurst,
-        title = "Ambient artwork",
-        body = "Ambient backgrounds let album art influence the visual tone of the player and browse surfaces.",
-        details = listOf(
-            "This makes the app feel more responsive to the song you are playing.",
-            "Keep it on for a richer media-player look.",
-            "Turn it off if you prefer cleaner, steadier backgrounds."
-        )
-    ) {
-        ToggleCard(
+        SettingSwitchRow(
             icon = Icons.Rounded.Wallpaper,
-            title = "Use ambient backgrounds",
-            subtitle = "Let artwork colors subtly influence the interface.",
+            title = "Ambient artwork",
+            subtitle = "Let album art color the player background",
             checked = ambientBackground,
             onCheckedChange = onAmbientBackgroundToggle
         )
+
+        ChoiceCard(title = "Player style") {
+            ConnectedChoiceGroup(
+                options = listOf(
+                    PlayerStyle.CLASSIC to "Classic",
+                    PlayerStyle.GESTURE to "Gesture"
+                ),
+                selected = playerStyle,
+                onSelect = onPlayerStyleChange
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = if (playerStyle == PlayerStyle.GESTURE) {
+                    "Swipe-driven player with fluid, physical motion."
+                } else {
+                    "Familiar buttons for play, pause and skipping."
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 }
 
 @Composable
-private fun CrossfadePage(
+private fun FinalTouchesPage(
     crossfadeEnabled: Boolean,
-    onCrossfadeEnabledToggle: (Boolean) -> Unit
-) {
-    OnboardingPage(
-        icon = Icons.Rounded.GraphicEq,
-        iconShape = MaterialShapes.Pill,
-        title = "Crossfade",
-        body = "Crossfade softens the handoff between songs. It is useful for playlists and long listening sessions, but not everyone wants overlap between tracks.",
-        details = listOf(
-            "When enabled, the player fades from one track into the next.",
-            "It can make shuffled playback feel smoother.",
-            "Disable it if you want album transitions and track endings to stay exact."
-        )
-    ) {
-        ToggleCard(
-            icon = Icons.Rounded.GraphicEq,
-            title = "Crossfade playback",
-            subtitle = "Blend neighboring songs during continuous playback.",
-            checked = crossfadeEnabled,
-            onCheckedChange = onCrossfadeEnabledToggle
-        )
-    }
-}
-
-@Composable
-private fun PermissionsPage(
-    loadLocalSongs: Boolean,
-    storagePermissionGranted: Boolean,
-    onRequestStoragePermission: () -> Unit,
+    onCrossfadeEnabledToggle: (Boolean) -> Unit,
     notificationPermissionGranted: Boolean,
-    onRequestNotificationPermission: () -> Unit
-) {
-    OnboardingPage(
-        icon = Icons.Rounded.Security,
-        iconShape = MaterialShapes.Pentagon,
-        title = "Permissions",
-        body = "Permissions stay tied to the features that need them. This keeps first launch useful even when you skip local files or notification controls.",
-        details = listOf(
-            "Music library access is only needed for device audio scanning.",
-            "Notifications are optional, but they improve lock screen and ongoing playback controls.",
-            "Both can be changed later from Android settings if you skip them here."
-        )
-    ) {
-        PermissionCard(
-            icon = Icons.Rounded.Album,
-            title = "Music library access",
-            subtitle = if (loadLocalSongs) {
-                "Needed only if you want Koda to scan songs stored on this device."
-            } else {
-                "Not required right now because local device audio is turned off."
-            },
-            granted = storagePermissionGranted || !loadLocalSongs,
-            actionLabel = if (storagePermissionGranted || !loadLocalSongs) "Ready" else "Allow access",
-            onAction = onRequestStoragePermission,
-            actionEnabled = loadLocalSongs && !storagePermissionGranted
-        )
-
-        PermissionCard(
-            icon = Icons.Rounded.NotificationsActive,
-            title = "Playback notifications",
-            subtitle = "Optional, but useful for lock screen controls and ongoing playback status.",
-            granted = notificationPermissionGranted,
-            actionLabel = if (notificationPermissionGranted) "Ready" else "Enable",
-            onAction = onRequestNotificationPermission,
-            actionEnabled = !notificationPermissionGranted
-        )
-    }
-}
-
-@Composable
-private fun CompatibilityPage(
+    onRequestNotificationPermission: () -> Unit,
     manualScanEnabled: Boolean,
     onManualScanEnabledToggle: (Boolean) -> Unit
 ) {
-    OnboardingPage(
-        icon = Icons.Rounded.PhoneAndroid,
-        iconShape = MaterialShapes.Boom,
-        title = "Compatibility scanning",
-        body = "This is an escape hatch for devices where Android's normal media index misses songs. It is useful, but it can ask for broader file access.",
-        details = listOf(
-            "Leave it off when your music library appears normally.",
-            "Turn it on for devices that hide music from MediaStore, especially some Xiaomi, Redmi, Poco, or HyperOS builds.",
-            "If Android opens an All Files Access screen, that is only for this high compatibility scan path."
-        )
+    OnboardingPageScaffold(
+        icon = Icons.Rounded.Tune,
+        iconShape = MaterialShapes.Pill,
+        title = "Final touches",
+        body = "A few optional extras. All of this lives in Settings if you change your mind later."
     ) {
-        ToggleCard(
+        SettingSwitchRow(
+            icon = Icons.Rounded.GraphicEq,
+            title = "Crossfade",
+            subtitle = "Blend songs into each other during playback",
+            checked = crossfadeEnabled,
+            onCheckedChange = onCrossfadeEnabledToggle
+        )
+
+        PermissionRow(
+            icon = Icons.Rounded.NotificationsActive,
+            title = "Playback notifications",
+            subtitle = if (notificationPermissionGranted) {
+                "Lock screen controls are ready."
+            } else {
+                "Enables lock screen and background controls."
+            },
+            granted = notificationPermissionGranted,
+            actionLabel = "Enable",
+            onAction = onRequestNotificationPermission
+        )
+
+        SettingSwitchRow(
             icon = Icons.Rounded.PhoneAndroid,
-            title = "High compatibility scanning",
-            subtitle = "Use a broader scan when normal library discovery misses songs.",
+            title = "High compatibility scan",
+            subtitle = "Only for devices that hide music from the system index, like some HyperOS builds",
             checked = manualScanEnabled,
             onCheckedChange = onManualScanEnabledToggle
+        )
+    }
+}
+
+// ---------------- Building blocks ----------------
+
+@Composable
+private fun OnboardingPageScaffold(
+    icon: ImageVector,
+    iconShape: RoundedPolygon,
+    title: String,
+    body: String,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(bottom = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp)
+    ) {
+        ShapeIconBadge(icon = icon, shape = iconShape)
+
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.headlineLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = body,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        content()
+    }
+}
+
+/** Hero for the welcome page: a shape morphing between two expressive forms. */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun MorphingHero(icon: ImageVector) {
+    val transition = rememberInfiniteTransition(label = "heroMorph")
+    val morphProgress by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(4200, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "morphProgress"
+    )
+    val rotation by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(45000, easing = LinearEasing)
+        ),
+        label = "heroRotation"
+    )
+    val morph = remember { Morph(MaterialShapes.Cookie9Sided, MaterialShapes.SoftBurst) }
+
+    Box(contentAlignment = Alignment.Center) {
+        Box(
+            modifier = Modifier
+                .size(132.dp)
+                .graphicsLayer { rotationZ = rotation }
+                .clip(MorphShape(morph, morphProgress))
+                .background(MaterialTheme.colorScheme.primaryContainer)
+        )
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+            modifier = Modifier.size(56.dp)
+        )
+    }
+}
+
+/** Page icon inside a slowly rotating expressive shape. */
+@Composable
+private fun ShapeIconBadge(
+    icon: ImageVector,
+    shape: RoundedPolygon,
+    size: Dp = 76.dp
+) {
+    val transition = rememberInfiniteTransition(label = "badgeSpin")
+    val rotation by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(60000, easing = LinearEasing)
+        ),
+        label = "badgeRotation"
+    )
+
+    Box(contentAlignment = Alignment.Center) {
+        Box(
+            modifier = Modifier
+                .size(size)
+                .graphicsLayer { rotationZ = rotation }
+                .clip(PolygonShape(shape))
+                .background(MaterialTheme.colorScheme.primaryContainer)
+        )
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+            modifier = Modifier.size(size * 0.42f)
+        )
+    }
+}
+
+@Composable
+private fun FeatureRow(
+    icon: ImageVector,
+    shape: RoundedPolygon,
+    title: String,
+    subtitle: String
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(44.dp)
+                .clip(PolygonShape(shape))
+                .background(MaterialTheme.colorScheme.secondaryContainer),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                modifier = Modifier.size(22.dp)
+            )
+        }
+        Column {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun SettingSwitchRow(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        modifier = Modifier.fillMaxWidth(),
+        onClick = { onCheckedChange(!checked) }
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 18.dp, vertical = 16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(46.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(MaterialTheme.colorScheme.secondaryContainer),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSecondaryContainer
+                )
+            }
+            Spacer(modifier = Modifier.width(16.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            Switch(
+                checked = checked,
+                onCheckedChange = onCheckedChange
+            )
+        }
+    }
+}
+
+@Composable
+private fun PermissionRow(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    granted: Boolean,
+    actionLabel: String,
+    onAction: () -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 18.dp, vertical = 16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(46.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(
+                        if (granted) MaterialTheme.colorScheme.primaryContainer
+                        else MaterialTheme.colorScheme.secondaryContainer
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = if (granted) Icons.Rounded.Check else icon,
+                    contentDescription = null,
+                    tint = if (granted) MaterialTheme.colorScheme.onPrimaryContainer
+                    else MaterialTheme.colorScheme.onSecondaryContainer
+                )
+            }
+            Spacer(modifier = Modifier.width(16.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            if (granted) {
+                Icon(
+                    imageVector = Icons.Rounded.CheckCircle,
+                    contentDescription = "Granted",
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            } else {
+                FilledTonalButton(onClick = onAction) {
+                    Text(actionLabel)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChoiceCard(
+    title: String,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(18.dp)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.padding(bottom = 12.dp)
+            )
+            content()
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun <T> ConnectedChoiceGroup(
+    options: List<Pair<T, String>>,
+    selected: T,
+    onSelect: (T) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)
+    ) {
+        options.forEachIndexed { index, (value, label) ->
+            val shapes = when (index) {
+                0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                options.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
+                else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+            }
+            ToggleButton(
+                checked = selected == value,
+                onCheckedChange = { onSelect(value) },
+                modifier = Modifier.weight(1f),
+                shapes = shapes,
+                colors = ToggleButtonDefaults.toggleButtonColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    checkedContainerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                    checkedContentColor = MaterialTheme.colorScheme.onPrimary
+                )
+            ) {
+                Text(
+                    text = label,
+                    fontWeight = if (selected == value) FontWeight.Bold else FontWeight.Medium
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun HintText(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(horizontal = 4.dp)
+    )
+}
+
+// ---------------- Backdrop & shapes ----------------
+
+@Composable
+private fun OnboardingBackdrop() {
+    val transition = rememberInfiniteTransition(label = "onboardingBackdrop")
+    val driftA by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(11000, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "driftA"
+    )
+    val driftB by transition.animateFloat(
+        initialValue = 1f,
+        targetValue = 0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(15000, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "driftB"
+    )
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        Box(
+            modifier = Modifier
+                .padding(start = (24 + driftA * 50).dp, top = (70 + driftB * 40).dp)
+                .size(190.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.08f))
+        )
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = (12 + driftB * 40).dp, bottom = (170 + driftA * 50).dp)
+                .size(230.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.08f))
         )
     }
 }
@@ -607,7 +1080,7 @@ private class PolygonShape(private val polygon: RoundedPolygon) : Shape {
         density: Density
     ): Outline {
         val path = polygon.toPath().asComposePath()
-        val matrix = androidx.compose.ui.graphics.Matrix()
+        val matrix = Matrix()
         val bounds = polygon.calculateBounds()
         val boundsWidth = bounds[2] - bounds[0]
         val boundsHeight = bounds[3] - bounds[1]
@@ -619,343 +1092,24 @@ private class PolygonShape(private val polygon: RoundedPolygon) : Shape {
     }
 }
 
-@Composable
-private fun OnboardingPage(
-    icon: ImageVector,
-    iconShape: RoundedPolygon,
-    title: String,
-    body: String,
-    details: List<String>,
-    content: @Composable ColumnScope.() -> Unit
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(bottom = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        Card(
-            shape = RoundedCornerShape(34.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-            )
-        ) {
-            Column(
-                modifier = Modifier.padding(22.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
-            ) {
-                StaticShapeIcon(
-                    icon = icon,
-                    shape = iconShape
-                )
+private class MorphShape(
+    private val morph: Morph,
+    private val progress: Float
+) : Shape {
+    override fun createOutline(
+        size: Size,
+        layoutDirection: LayoutDirection,
+        density: Density
+    ): Outline {
+        val path = morph.toPath(progress).asComposePath()
+        val matrix = Matrix()
+        val bounds = morph.calculateBounds()
+        val boundsWidth = bounds[2] - bounds[0]
+        val boundsHeight = bounds[3] - bounds[1]
 
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.headlineSmall,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = body,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-
-        Card(
-            shape = RoundedCornerShape(28.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainer
-            )
-        ) {
-            Column(
-                modifier = Modifier.padding(18.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                details.forEach { detail ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.Top
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .padding(top = 8.dp)
-                                .size(7.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.primary)
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text(
-                            text = detail,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.bodyLarge,
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                }
-            }
-        }
-
-        content()
-    }
-}
-
-@Composable
-private fun StaticShapeIcon(
-    icon: ImageVector,
-    shape: RoundedPolygon
-) {
-    Box(
-        modifier = Modifier
-            .size(66.dp)
-            .clip(PolygonShape(shape))
-            .background(MaterialTheme.colorScheme.primaryContainer),
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onPrimaryContainer,
-            modifier = Modifier.size(32.dp)
-        )
-    }
-}
-
-@Composable
-private fun ThemeSelector(
-    currentThemeMode: ThemeMode,
-    onThemeModeChange: (ThemeMode) -> Unit
-) {
-    Surface(
-        shape = RoundedCornerShape(30.dp),
-        color = MaterialTheme.colorScheme.surfaceContainer
-    ) {
-        Column(
-            modifier = Modifier.padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(18.dp)
-        ) {
-            Text("Color mode", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
-            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                val options = listOf(
-                    ThemeMode.SYSTEM to "System",
-                    ThemeMode.DARK to "Dark",
-                    ThemeMode.LIGHT to "Light"
-                )
-                options.forEachIndexed { index, (mode, label) ->
-                    SegmentedButton(
-                        selected = currentThemeMode == mode,
-                        onClick = { onThemeModeChange(mode) },
-                        shape = androidx.compose.material3.SegmentedButtonDefaults.itemShape(
-                            index = index,
-                            count = options.size
-                        ),
-                        icon = {}
-                    ) {
-                        Text(label)
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun PlayerStyleSelector(
-    playerStyle: PlayerStyle,
-    onPlayerStyleChange: (PlayerStyle) -> Unit
-) {
-    Surface(
-        shape = RoundedCornerShape(30.dp),
-        color = MaterialTheme.colorScheme.surfaceContainer
-    ) {
-        Column(
-            modifier = Modifier.padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(18.dp)
-        ) {
-            Text("Player style", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
-            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                val options = listOf(
-                    PlayerStyle.CLASSIC to "Classic",
-                    PlayerStyle.GESTURE to "Gesture"
-                )
-                options.forEachIndexed { index, (style, label) ->
-                    SegmentedButton(
-                        selected = playerStyle == style,
-                        onClick = { onPlayerStyleChange(style) },
-                        shape = androidx.compose.material3.SegmentedButtonDefaults.itemShape(
-                            index = index,
-                            count = options.size
-                        ),
-                        icon = {}
-                    ) {
-                        Text(label)
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ToggleCard(
-    icon: ImageVector,
-    title: String,
-    subtitle: String,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit
-) {
-    Card(
-        shape = RoundedCornerShape(28.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainer
-        )
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(18.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(52.dp)
-                    .clip(RoundedCornerShape(18.dp))
-                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary
-                )
-            }
-            Spacer(modifier = Modifier.width(16.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = title,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Spacer(modifier = Modifier.height(3.dp))
-                Text(
-                    text = subtitle,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodyLarge
-                )
-            }
-            Spacer(modifier = Modifier.width(12.dp))
-            Switch(
-                checked = checked,
-                onCheckedChange = onCheckedChange,
-                colors = SwitchDefaults.colors(
-                    checkedThumbColor = Color.White,
-                    checkedTrackColor = MaterialTheme.colorScheme.primary
-                )
-            )
-        }
-    }
-}
-
-@Composable
-private fun PermissionCard(
-    icon: ImageVector,
-    title: String,
-    subtitle: String,
-    granted: Boolean,
-    actionLabel: String,
-    onAction: () -> Unit,
-    actionEnabled: Boolean
-) {
-    Card(
-        shape = RoundedCornerShape(28.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainer
-        )
-    ) {
-        Column(
-            modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(52.dp)
-                        .clip(RoundedCornerShape(18.dp))
-                        .background(
-                            if (granted) Color(0xFF3D8B40).copy(alpha = 0.16f)
-                            else MaterialTheme.colorScheme.secondaryContainer
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = if (granted) Icons.Rounded.CheckCircle else icon,
-                        contentDescription = null,
-                        tint = if (granted) Color(0xFF3D8B40) else MaterialTheme.colorScheme.onSecondaryContainer
-                    )
-                }
-                Spacer(modifier = Modifier.width(16.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(title, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold)
-                    Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyLarge)
-                }
-            }
-            OutlinedButton(
-                onClick = onAction,
-                enabled = actionEnabled,
-                shape = RoundedCornerShape(18.dp)
-            ) {
-                Text(actionLabel)
-            }
-        }
-    }
-}
-
-@Composable
-private fun AnimatedBackdrop() {
-    val transition = rememberInfiniteTransition(label = "background")
-    val driftA by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(9000, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "driftA"
-    )
-    val driftB by transition.animateFloat(
-        initialValue = 1f,
-        targetValue = 0f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(12000, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "driftB"
-    )
-
-    Box(modifier = Modifier.fillMaxSize()) {
-        Box(
-            modifier = Modifier
-                .padding(start = (20 + driftA * 60).dp, top = (60 + driftB * 30).dp)
-                .size(180.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.10f))
-        )
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(end = (10 + driftB * 50).dp, bottom = (160 + driftA * 40).dp)
-                .size(220.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.10f))
-        )
-        Box(
-            modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .padding(end = (driftA * 30).dp)
-                .size(100.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.08f))
-        )
+        matrix.scale(size.width / boundsWidth, size.height / boundsHeight)
+        matrix.translate(-bounds[0], -bounds[1])
+        path.transform(matrix)
+        return Outline.Generic(path)
     }
 }

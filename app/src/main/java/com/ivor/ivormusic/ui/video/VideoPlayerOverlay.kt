@@ -35,7 +35,8 @@ import com.ivor.ivormusic.R
 @androidx.annotation.OptIn(UnstableApi::class)
 @Composable
 fun VideoPlayerOverlay(
-    viewModel: VideoPlayerViewModel
+    viewModel: VideoPlayerViewModel,
+    timedCommentsEnabled: Boolean = false
 ) {
     val isExpanded by viewModel.isExpanded.collectAsState()
     val currentVideo by viewModel.currentVideo.collectAsState()
@@ -213,9 +214,10 @@ fun VideoPlayerOverlay(
                  // Full Screen Content
                  VideoPlayerContent(
                      viewModel = viewModel,
-                     onBackClick = { 
-                         viewModel.setExpanded(false) 
-                     }
+                     onBackClick = {
+                         viewModel.setExpanded(false)
+                     },
+                     timedCommentsFeatureEnabled = timedCommentsEnabled
                  )
              } else {
                  // Mini Player Content

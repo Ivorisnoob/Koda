@@ -122,7 +122,10 @@ fun FullscreenPlayerContent(
     onFullscreenToggle: () -> Unit,
     onSettings: () -> Unit,
     onLoopToggle: () -> Unit,
-    onAutoPlayToggle: () -> Unit
+    onAutoPlayToggle: () -> Unit,
+    showTimedCommentsButton: Boolean = false,
+    timedCommentsActive: Boolean = false,
+    onTimedCommentsToggle: () -> Unit = {}
 ) {
     // Stable shapes to prevent "square flash"
     val stableShapes = IconButtonDefaults.shapes()
@@ -232,6 +235,22 @@ fun FullscreenPlayerContent(
                         )
                     }
 
+                    if (showTimedCommentsButton) {
+                        FilledTonalIconButton(
+                            onClick = onTimedCommentsToggle,
+                            colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                containerColor = if (timedCommentsActive) MaterialTheme.colorScheme.primary else Color.Black.copy(0.5f),
+                                contentColor = if (timedCommentsActive) MaterialTheme.colorScheme.onPrimary else Color.White
+                            ),
+                            shapes = stableShapes
+                        ) {
+                            Icon(
+                                Icons.AutoMirrored.Rounded.Comment,
+                                contentDescription = "Timed comments"
+                            )
+                        }
+                    }
+
                     FilledIconButton(
                         onClick = onSettings,
                         colors = IconButtonDefaults.filledIconButtonColors(
@@ -323,7 +342,10 @@ fun PortraitPlayerContent(
     onFullscreenToggle: () -> Unit,
     onSettings: () -> Unit,
     onLoopToggle: () -> Unit,
-    onAutoPlayToggle: () -> Unit
+    onAutoPlayToggle: () -> Unit,
+    showTimedCommentsButton: Boolean = false,
+    timedCommentsActive: Boolean = false,
+    onTimedCommentsToggle: () -> Unit = {}
 ) {
     // Stable shapes
     val stableShapes = IconButtonDefaults.shapes()
@@ -415,6 +437,21 @@ fun PortraitPlayerContent(
                                 if (isLooping) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
                                 contentDescription = "Loop"
                             )
+                        }
+                        if (showTimedCommentsButton) {
+                            FilledTonalIconButton(
+                                onClick = onTimedCommentsToggle,
+                                colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                    containerColor = if (timedCommentsActive) MaterialTheme.colorScheme.primary else Color.Black.copy(0.5f),
+                                    contentColor = if (timedCommentsActive) MaterialTheme.colorScheme.onPrimary else Color.White
+                                ),
+                                shapes = stableShapes
+                            ) {
+                                Icon(
+                                    Icons.AutoMirrored.Rounded.Comment,
+                                    contentDescription = "Timed comments"
+                                )
+                            }
                         }
                         FilledIconButton(
                             onClick = onSettings,

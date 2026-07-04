@@ -13,14 +13,18 @@ import androidx.media3.exoplayer.source.MergingMediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import com.ivor.ivormusic.data.CommentItem
 import com.ivor.ivormusic.data.LikeStatus
+import com.ivor.ivormusic.data.TimedComment
 import com.ivor.ivormusic.data.VideoEngagement
 import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.data.VideoQuality
 import com.ivor.ivormusic.data.YouTubeRepository
 import com.ivor.ivormusic.data.ThemePreferences
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 
@@ -87,6 +91,16 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
     private val _comments = MutableStateFlow<List<CommentItem>>(emptyList())
     val comments: StateFlow<List<CommentItem>> = _comments.asStateFlow()
+
+    // Comments that mention a playback timestamp, sorted by that time.
+    // Drives the timed comments overlay in the video player.
+    val timedComments: StateFlow<List<TimedComment>> = _comments
+        .map { list ->
+            list.mapNotNull { comment ->
+                parseFirstTimestampMs(comment.text)?.let { TimedComment(comment, it) }
+            }.sortedBy { it.timeMs }
+        }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     private val _isCommentsLoading = MutableStateFlow(false)
     val isCommentsLoading: StateFlow<Boolean> = _isCommentsLoading.asStateFlow()
@@ -385,6 +399,20 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
     // ---------------- Comments ----------------
 
+    /**
+     * Extract the first playback timestamp mentioned in a comment ("1:23",
+     * "12:05" or "1:02:33") as milliseconds, or null when none is present.
+     */
+    private fun parseFirstTimestampMs(text: String): Long? {
+        val match = TIMESTAMP_REGEX.find(text) ?: return null
+        val hours = match.groupValues[1].toLongOrNull() ?: 0L
+        val minutes = match.groupValues[2].toLongOrNull() ?: return null
+        val seconds = match.groupValues[3].toLongOrNull() ?: return null
+        if (seconds >= 60) return null
+        if (match.groupValues[1].isNotEmpty() && minutes >= 60) return null
+        return ((hours * 60 + minutes) * 60 + seconds) * 1000L
+    }
+
     /** Load the first page of comments if not already loaded for this video. */
     fun ensureCommentsLoaded() {
         val video = _currentVideo.value ?: return
@@ -445,6 +473,10 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                 _loadingReplyIds.value = _loadingReplyIds.value - comment.commentId
             }
         }
+    }
+
+    companion object {
+        private val TIMESTAMP_REGEX = Regex("""(?<!\d)(?:(\d{1,2}):)?(\d{1,2}):(\d{2})(?!\d)""")
     }
 
     override fun onCleared() {

@@ -37,6 +37,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.Comment
 import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.Add
@@ -174,6 +175,8 @@ fun SettingsScreen(
     onPlayerStyleChange: (PlayerStyle) -> Unit,
     saveVideoHistory: Boolean,
     onSaveVideoHistoryToggle: (Boolean) -> Unit,
+    timedCommentsEnabled: Boolean,
+    onTimedCommentsToggle: (Boolean) -> Unit,
     excludedFolders: Set<String>,
     onAddExcludedFolder: (String) -> Unit,
     onRemoveExcludedFolder: (String) -> Unit,
@@ -636,6 +639,16 @@ fun SettingsScreen(
                             textColor = textColor,
                             secondaryTextColor = secondaryTextColor,
                             accentColor = Color(0xFFFF0000) // YouTube red
+                        )
+
+                        SettingsDivider()
+
+                        ExpressiveTimedCommentsToggleItem(
+                            enabled = timedCommentsEnabled,
+                            onToggle = onTimedCommentsToggle,
+                            textColor = textColor,
+                            secondaryTextColor = secondaryTextColor,
+                            accentColor = accentColor
                         )
                     }
                 }
@@ -1260,6 +1273,86 @@ private fun ExpressiveVideoModeToggleItem(
                 }
             }
         }
+    }
+}
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun ExpressiveTimedCommentsToggleItem(
+    enabled: Boolean,
+    onToggle: (Boolean) -> Unit,
+    textColor: Color,
+    secondaryTextColor: Color,
+    accentColor: Color
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.97f else 1f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
+        label = "scale"
+    )
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .scale(scale)
+            .clip(RoundedCornerShape(18.dp))
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null
+            ) { onToggle(!enabled) }
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Icon
+        Box(
+            modifier = Modifier
+                .size(48.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(accentColor.copy(alpha = 0.12f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Rounded.Comment,
+                contentDescription = null,
+                tint = accentColor,
+                modifier = Modifier.size(26.dp)
+            )
+        }
+
+        Spacer(modifier = Modifier.width(16.dp))
+
+        // Text
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "Timed Comments",
+                color = textColor,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = if (enabled) "Timestamped comments briefly appear over videos" else "Adds a comments button to the video player",
+                color = secondaryTextColor,
+                fontSize = 13.sp
+            )
+        }
+
+        // Switch
+        Switch(
+            checked = enabled,
+            onCheckedChange = onToggle,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Color.White,
+                checkedTrackColor = accentColor,
+                uncheckedThumbColor = Color.White,
+                uncheckedTrackColor = secondaryTextColor.copy(alpha = 0.3f),
+                uncheckedBorderColor = Color.Transparent,
+                checkedBorderColor = Color.Transparent
+            )
+        )
     }
 }
 

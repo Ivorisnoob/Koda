@@ -33,6 +33,9 @@ class ThemePreferences(context: Context) {
     
     private val _saveVideoHistory = MutableStateFlow(getSaveVideoHistoryPreference())
     val saveVideoHistory: StateFlow<Boolean> = _saveVideoHistory.asStateFlow()
+
+    private val _timedCommentsEnabled = MutableStateFlow(getTimedCommentsEnabledPreference())
+    val timedCommentsEnabled: StateFlow<Boolean> = _timedCommentsEnabled.asStateFlow()
     
     private val _excludedFolders = MutableStateFlow(getExcludedFoldersPreference())
     val excludedFolders: StateFlow<Set<String>> = _excludedFolders.asStateFlow()
@@ -69,6 +72,7 @@ class ThemePreferences(context: Context) {
         private const val KEY_VIDEO_MODE = "video_mode"
         private const val KEY_PLAYER_STYLE = "player_style"
         private const val KEY_SAVE_VIDEO_HISTORY = "save_video_history"
+        private const val KEY_TIMED_COMMENTS_ENABLED = "timed_comments_enabled"
         private const val KEY_EXCLUDED_FOLDERS = "excluded_folders"
         private const val KEY_CACHE_ENABLED = "cache_enabled"
         private const val KEY_MAX_CACHE_SIZE_MB = "max_cache_size_mb"
@@ -264,6 +268,21 @@ class ThemePreferences(context: Context) {
      */
     fun toggleSaveVideoHistory() {
         setSaveVideoHistory(!_saveVideoHistory.value)
+    }
+
+    /**
+     * Get the stored timed comments preference. Defaults to false (off).
+     */
+    private fun getTimedCommentsEnabledPreference(): Boolean {
+        return prefs.getBoolean(KEY_TIMED_COMMENTS_ENABLED, false)
+    }
+
+    /**
+     * Save timed comments preference and update the flow.
+     */
+    fun setTimedCommentsEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_TIMED_COMMENTS_ENABLED, enabled).apply()
+        _timedCommentsEnabled.value = enabled
     }
     
     /**
