@@ -8,6 +8,7 @@ import androidx.media3.common.MimeTypes
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.MergingMediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
@@ -216,8 +217,9 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                                 isDASH = false,
                                 audioUrl = null
                             )
-                            val mediaItem = MediaItem.fromUri(streamUrl)
-                            _exoPlayer?.setMediaItem(mediaItem)
+                            val source = ProgressiveMediaSource.Factory(dataSourceFactoryFor(streamUrl))
+                                .createMediaSource(MediaItem.fromUri(streamUrl))
+                            _exoPlayer?.setMediaSource(source)
                             _exoPlayer?.prepare()
                             _exoPlayer?.play() // FORCE PLAY
                             _isLoading.value = false
@@ -276,28 +278,43 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         }
     }
 
+    /**
+     * Data source factory whose User-Agent matches the client that issued the
+     * stream URL. YouTube binds googlevideo URLs to the issuing client via the
+     * `?c=` param and answers 403 when the playback UA does not match.
+     */
+    private fun dataSourceFactoryFor(url: String): DefaultDataSource.Factory {
+        val userAgent = YouTubeRepository.uaForPlaybackUri(android.net.Uri.parse(url))
+        val httpFactory = DefaultHttpDataSource.Factory()
+            .setUserAgent(userAgent)
+            .setAllowCrossProtocolRedirects(true)
+        return DefaultDataSource.Factory(context, httpFactory)
+    }
+
     private fun loadQuality(quality: VideoQuality) {
         _currentQuality.value = quality
         val mediaItemBuilder = MediaItem.Builder().setUri(quality.url)
-        
+
         if (quality.isDASH) {
             // DASH streams are adaptive - use directly without merging
             mediaItemBuilder.setMimeType(MimeTypes.APPLICATION_MPD)
             _exoPlayer?.setMediaItem(mediaItemBuilder.build())
         } else {
+            val dataSourceFactory = dataSourceFactoryFor(quality.url)
             val audioUrl = quality.audioUrl
             if (audioUrl != null) {
                 // Non-DASH with separate audio - use MergingMediaSource
-                val dataSourceFactory = DefaultDataSource.Factory(context)
                 val videoSource = ProgressiveMediaSource.Factory(dataSourceFactory)
                     .createMediaSource(MediaItem.fromUri(quality.url))
                 val audioSource = ProgressiveMediaSource.Factory(dataSourceFactory)
                     .createMediaSource(MediaItem.fromUri(audioUrl))
-                
+
                 val mergingSource = MergingMediaSource(videoSource, audioSource)
                 _exoPlayer?.setMediaSource(mergingSource)
             } else {
-                _exoPlayer?.setMediaItem(mediaItemBuilder.build())
+                val source = ProgressiveMediaSource.Factory(dataSourceFactory)
+                    .createMediaSource(mediaItemBuilder.build())
+                _exoPlayer?.setMediaSource(source)
             }
         }
         _exoPlayer?.prepare()

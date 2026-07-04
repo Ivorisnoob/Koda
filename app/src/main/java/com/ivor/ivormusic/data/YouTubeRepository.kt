@@ -1235,6 +1235,70 @@ class YouTubeRepository(private val context: Context) {
         visitorData: String,
         extraClientFields: org.json.JSONObject = org.json.JSONObject(),
     ): String? = withContext(Dispatchers.IO) {
+        val streamingData = fetchPlayerStreamingData(
+            videoId, clientName, clientVersion, clientNameId, userAgent, visitorData, extraClientFields
+        ) ?: return@withContext null
+
+        val formats = mutableListOf<org.json.JSONObject>()
+        streamingData.optJSONArray("adaptiveFormats")?.let { arr ->
+            for (i in 0 until arr.length()) formats.add(arr.getJSONObject(i))
+        }
+        streamingData.optJSONArray("formats")?.let { arr ->
+            for (i in 0 until arr.length()) formats.add(arr.getJSONObject(i))
+        }
+
+        fun hasPlayableUrl(f: org.json.JSONObject): Boolean = !f.optString("url").isNullOrEmpty()
+
+        val audioFormats = formats.filter {
+            it.optString("mimeType").contains("audio") && hasPlayableUrl(it)
+        }
+        android.util.Log.d(
+            "YouTubeRepository",
+            "Resolve[InnerTube/$clientName] formats=${formats.size} audioOnly=${audioFormats.size} videoId=$videoId",
+        )
+
+        audioFormats.maxByOrNull { it.optInt("bitrate") }?.optString("url")
+            ?.takeIf { it.isNotEmpty() }?.let { return@withContext it }
+
+        // No audio-only stream available — fall back to a muxed MP4 (itag 18 etc.).
+        // ExoPlayer happily plays just the audio track of these.
+        val muxedFormats = formats.filter {
+            it.optString("mimeType").startsWith("video/") && hasPlayableUrl(it)
+        }
+        muxedFormats.minByOrNull { it.optInt("bitrate") }?.optString("url")
+            ?.takeIf { it.isNotEmpty() }?.let {
+                android.util.Log.w(
+                    "YouTubeRepository",
+                    "Resolve[InnerTube/$clientName] using muxed video format videoId=$videoId (no audio-only)",
+                )
+                return@withContext it
+            }
+
+        val cipheredCount = formats.count {
+            !it.optString("signatureCipher").isNullOrEmpty() ||
+                !it.optString("cipher").isNullOrEmpty()
+        }
+        android.util.Log.w(
+            "YouTubeRepository",
+            "Resolve[InnerTube/$clientName] no usable URL videoId=$videoId ciphered=${cipheredCount}/${formats.size}",
+        )
+        null
+    }
+
+    /**
+     * Single-client InnerTube /player call returning the raw streamingData
+     * object, or null on any failure (HTTP error, bad playability, missing
+     * streamingData). Shared by audio resolution and video quality listing.
+     */
+    private suspend fun fetchPlayerStreamingData(
+        videoId: String,
+        clientName: String,
+        clientVersion: String,
+        clientNameId: Int,
+        userAgent: String,
+        visitorData: String,
+        extraClientFields: org.json.JSONObject = org.json.JSONObject(),
+    ): org.json.JSONObject? = withContext(Dispatchers.IO) {
         try {
             val clientObj = org.json.JSONObject().apply {
                 put("clientName", clientName)
@@ -1313,58 +1377,13 @@ class YouTubeRepository(private val context: Context) {
                 return@withContext null
             }
 
-            val streamingData = root.optJSONObject("streamingData") ?: run {
+            root.optJSONObject("streamingData") ?: run {
                 android.util.Log.w(
                     "YouTubeRepository",
                     "Resolve[InnerTube/$clientName] no streamingData videoId=$videoId",
                 )
-                return@withContext null
+                null
             }
-
-            val formats = mutableListOf<org.json.JSONObject>()
-            streamingData.optJSONArray("adaptiveFormats")?.let { arr ->
-                for (i in 0 until arr.length()) formats.add(arr.getJSONObject(i))
-            }
-            streamingData.optJSONArray("formats")?.let { arr ->
-                for (i in 0 until arr.length()) formats.add(arr.getJSONObject(i))
-            }
-
-            fun hasPlayableUrl(f: org.json.JSONObject): Boolean = !f.optString("url").isNullOrEmpty()
-
-            val audioFormats = formats.filter {
-                it.optString("mimeType").contains("audio") && hasPlayableUrl(it)
-            }
-            android.util.Log.d(
-                "YouTubeRepository",
-                "Resolve[InnerTube/$clientName] formats=${formats.size} audioOnly=${audioFormats.size} videoId=$videoId",
-            )
-
-            audioFormats.maxByOrNull { it.optInt("bitrate") }?.optString("url")
-                ?.takeIf { it.isNotEmpty() }?.let { return@withContext it }
-
-            // No audio-only stream available — fall back to a muxed MP4 (itag 18 etc.).
-            // ExoPlayer happily plays just the audio track of these.
-            val muxedFormats = formats.filter {
-                it.optString("mimeType").startsWith("video/") && hasPlayableUrl(it)
-            }
-            muxedFormats.minByOrNull { it.optInt("bitrate") }?.optString("url")
-                ?.takeIf { it.isNotEmpty() }?.let {
-                    android.util.Log.w(
-                        "YouTubeRepository",
-                        "Resolve[InnerTube/$clientName] using muxed video format videoId=$videoId (no audio-only)",
-                    )
-                    return@withContext it
-                }
-
-            val cipheredCount = formats.count {
-                !it.optString("signatureCipher").isNullOrEmpty() ||
-                    !it.optString("cipher").isNullOrEmpty()
-            }
-            android.util.Log.w(
-                "YouTubeRepository",
-                "Resolve[InnerTube/$clientName] no usable URL videoId=$videoId ciphered=${cipheredCount}/${formats.size}",
-            )
-            null
         } catch (e: Exception) {
             android.util.Log.e(
                 "YouTubeRepository",
@@ -2531,20 +2550,37 @@ class YouTubeRepository(private val context: Context) {
              val overlays = thumbnailViewModel?.optJSONArray("overlays")
              var durationSeconds = 0L
              var durationText = ""
+             var hasLiveBadge = false
              if (overlays != null) {
-                 for (i in 0 until overlays.length()) {
-                     val overlayItem = overlays.optJSONObject(i)
-                     // Try thumbnailOverlayBadgeViewModel path
-                     val badgeText = overlayItem?.optJSONObject("thumbnailOverlayBadgeViewModel")
-                         ?.optJSONArray("thumbnailBadges")?.optJSONObject(0)
-                         ?.optJSONObject("thumbnailBadgeViewModel")?.optString("text")
-                     if (badgeText != null && badgeText.contains(":")) {
-                         durationText = badgeText
-                         durationSeconds = parseDurationToSeconds(badgeText)
-                         break
+                 overlayLoop@ for (i in 0 until overlays.length()) {
+                     val overlayItem = overlays.optJSONObject(i) ?: continue
+                     // Badge containers: legacy thumbnailOverlayBadgeViewModel.thumbnailBadges
+                     // and the modern (2026) thumbnailBottomOverlayViewModel.badges
+                     val badgeArrays = listOfNotNull(
+                         overlayItem.optJSONObject("thumbnailOverlayBadgeViewModel")
+                             ?.optJSONArray("thumbnailBadges"),
+                         overlayItem.optJSONObject("thumbnailBottomOverlayViewModel")
+                             ?.optJSONArray("badges")
+                     )
+                     for (badges in badgeArrays) {
+                         for (j in 0 until badges.length()) {
+                             val badge = badges.optJSONObject(j)
+                                 ?.optJSONObject("thumbnailBadgeViewModel") ?: continue
+                             val badgeText = badge.optString("text")
+                             if (badge.optString("badgeStyle").contains("LIVE") ||
+                                 badgeText.equals("LIVE", ignoreCase = true)
+                             ) {
+                                 hasLiveBadge = true
+                             }
+                             if (badgeText.contains(":")) {
+                                 durationText = badgeText
+                                 durationSeconds = parseDurationToSeconds(badgeText)
+                                 break@overlayLoop
+                             }
+                         }
                      }
                      // Try thumbnailOverlayTimeStatusRenderer path
-                     val timeStatus = overlayItem?.optJSONObject("thumbnailOverlayTimeStatusRenderer")
+                     val timeStatus = overlayItem.optJSONObject("thumbnailOverlayTimeStatusRenderer")
                          ?.optJSONObject("text")?.optString("simpleText")
                      if (timeStatus != null && timeStatus.contains(":")) {
                          durationText = timeStatus
@@ -2566,7 +2602,8 @@ class YouTubeRepository(private val context: Context) {
              }
              
              // Assume it's not live if we couldn't find duration (most videos have a duration)
-             val isLive = durationText.contains("LIVE", ignoreCase = true) || 
+             val isLive = hasLiveBadge ||
+                         durationText.contains("LIVE", ignoreCase = true) ||
                          viewCount.contains("watching", ignoreCase = true)
              
             return VideoItem(
@@ -2843,6 +2880,24 @@ class YouTubeRepository(private val context: Context) {
      * Use this to start playback ASAP, then call getVideoDetails() for the rest.
      */
     suspend fun getVideoStreamQualities(videoId: String): List<VideoQuality> = withContext(Dispatchers.IO) {
+        // Primary: direct InnerTube /player with the ANDROID_VR client. It returns
+        // the full adaptive ladder (up to 2160p60) with direct, unciphered URLs,
+        // where NewPipe's WEB-based extraction often degrades to the muxed 360p
+        // format 18 (PO-Token enforcement).
+        try {
+            val innerTubeQualities = getVideoQualitiesFromInnerTube(videoId)
+            if (innerTubeQualities.isNotEmpty()) {
+                android.util.Log.i(
+                    "YouTubeRepo",
+                    "Video qualities via InnerTube: ${innerTubeQualities.size} for $videoId"
+                )
+                return@withContext innerTubeQualities
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("YouTubeRepo", "InnerTube quality resolution failed, falling back to NewPipe", e)
+        }
+
+        // Fallback: NewPipe extractor.
         try {
             val streamUrl = "https://www.youtube.com/watch?v=$videoId"
             val ytService = ServiceList.all().find { it.serviceInfo.name == "YouTube" } 
@@ -2888,6 +2943,125 @@ class YouTubeRepository(private val context: Context) {
             android.util.Log.e("YouTubeRepo", "Error getting video stream qualities", e)
             emptyList()
         }
+    }
+
+    /**
+     * Resolve the full video quality ladder via InnerTube: ANDROID_VR first
+     * (no PO token, unciphered URLs), IOS as fallback. Returns an empty list
+     * when neither client yields usable streamingData.
+     */
+    private suspend fun getVideoQualitiesFromInnerTube(videoId: String): List<VideoQuality> {
+        val visitorData = getVisitorData()
+
+        val androidVrExtras = org.json.JSONObject().apply {
+            put("androidSdkVersion", 32)
+            put("deviceMake", "Oculus")
+            put("deviceModel", "Quest 3")
+            put("osName", "Android")
+            put("osVersion", "12L")
+        }
+        val iosExtras = org.json.JSONObject().apply {
+            put("deviceMake", "Apple")
+            put("deviceModel", "iPhone16,2")
+            put("osName", "iPhone")
+            put("osVersion", "18.1.0.22B83")
+        }
+
+        val streamingData = fetchPlayerStreamingData(
+            videoId = videoId,
+            clientName = "ANDROID_VR",
+            clientVersion = ANDROID_VR_VERSION,
+            clientNameId = ANDROID_VR_CLIENT_ID,
+            userAgent = ANDROID_VR_USER_AGENT,
+            visitorData = visitorData,
+            extraClientFields = androidVrExtras,
+        ) ?: fetchPlayerStreamingData(
+            videoId = videoId,
+            clientName = "IOS",
+            clientVersion = IOS_VERSION,
+            clientNameId = IOS_CLIENT_ID,
+            userAgent = IOS_USER_AGENT,
+            visitorData = visitorData,
+            extraClientFields = iosExtras,
+        ) ?: return emptyList()
+
+        return parseQualitiesFromStreamingData(streamingData)
+    }
+
+    private fun parseQualitiesFromStreamingData(streamingData: org.json.JSONObject): List<VideoQuality> {
+        fun org.json.JSONArray.objects(): List<org.json.JSONObject> =
+            (0 until length()).mapNotNull { optJSONObject(it) }
+
+        val adaptive = streamingData.optJSONArray("adaptiveFormats")?.objects() ?: emptyList()
+        val muxed = streamingData.optJSONArray("formats")?.objects() ?: emptyList()
+
+        // Best separate audio track; prefer AAC (mp4a) for broad hardware support,
+        // then highest bitrate.
+        val bestAudioUrl = adaptive
+            .filter { it.optString("mimeType").startsWith("audio/") && it.optString("url").isNotEmpty() }
+            .maxWithOrNull(
+                compareBy(
+                    { if (it.optString("mimeType").contains("mp4a")) 1 else 0 },
+                    { it.optInt("bitrate") }
+                )
+            )
+            ?.optString("url")?.takeIf { it.isNotEmpty() }
+
+        // Codec preference for the video track: H.264 decodes everywhere,
+        // VP9 is widely supported, AV1 only on recent chipsets.
+        fun codecRank(mimeType: String): Int = when {
+            mimeType.contains("avc1") -> 3
+            mimeType.contains("vp9") || mimeType.contains("vp09") -> 2
+            else -> 1
+        }
+
+        fun container(mimeType: String): String =
+            mimeType.substringAfter("video/").substringBefore(";").ifEmpty { "mp4" }
+
+        val qualities = mutableListOf<VideoQuality>()
+
+        // Video-only adaptive formats, one entry per quality label, merged with
+        // the best audio track at playback time.
+        if (bestAudioUrl != null) {
+            adaptive
+                .filter {
+                    it.optString("mimeType").startsWith("video/") &&
+                        it.optString("url").isNotEmpty() &&
+                        it.optString("qualityLabel").isNotEmpty()
+                }
+                .groupBy { it.optString("qualityLabel") }
+                .forEach { (label, formats) ->
+                    val best = formats.maxWithOrNull(
+                        compareBy({ codecRank(it.optString("mimeType")) }, { it.optInt("bitrate") })
+                    ) ?: return@forEach
+                    qualities.add(
+                        VideoQuality(
+                            resolution = label,
+                            url = best.optString("url"),
+                            format = container(best.optString("mimeType")),
+                            isDASH = false,
+                            audioUrl = bestAudioUrl
+                        )
+                    )
+                }
+        }
+
+        // Muxed formats (itag 18 etc.) fill in labels not already covered and
+        // keep playback possible when no audio-only track exists.
+        muxed.forEach { f ->
+            val label = f.optString("qualityLabel")
+            val url = f.optString("url")
+            if (label.isNotEmpty() && url.isNotEmpty() && qualities.none { it.resolution == label }) {
+                qualities.add(VideoQuality(label, url, container(f.optString("mimeType")), false))
+            }
+        }
+
+        // Highest resolution first, 60fps variants before 30fps at equal height.
+        fun height(label: String): Int = label.takeWhile { it.isDigit() }.toIntOrNull() ?: 0
+        fun fps(label: String): Int = label.substringAfter("p", "").takeWhile { it.isDigit() }.toIntOrNull() ?: 30
+        return qualities.sortedWith(
+            compareByDescending<VideoQuality> { height(it.resolution) }.thenByDescending { fps(it.resolution) }
+        )
     }
 
     /**

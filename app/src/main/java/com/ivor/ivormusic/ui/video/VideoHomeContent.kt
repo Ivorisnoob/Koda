@@ -338,8 +338,8 @@ fun VideoCard(
                         )
                 )
                 
-                // Duration badge
-                if (!video.isLive) {
+                // Duration badge (skip entirely when the duration is unknown)
+                if (!video.isLive && video.duration > 0) {
                     Surface(
                         modifier = Modifier
                             .align(Alignment.BottomEnd)
@@ -355,7 +355,7 @@ fun VideoCard(
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                         )
                     }
-                } else {
+                } else if (video.isLive) {
                     // Live badge
                     Surface(
                         modifier = Modifier
