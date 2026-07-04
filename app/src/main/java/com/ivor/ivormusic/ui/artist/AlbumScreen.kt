@@ -50,7 +50,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Matrix
 import androidx.compose.ui.graphics.Outline
@@ -228,43 +227,6 @@ private fun AlbumHeroHeader(
         if (maxWidth <= 0.dp || maxHeight <= 0.dp) {
             return@BoxWithConstraints
         }
-        
-        val width = maxWidth
-        val height = maxHeight
-        
-        // Gradient background
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(
-                            primaryContainerColor.copy(alpha = 0.5f),
-                            tertiaryContainerColor.copy(alpha = 0.25f),
-                            MaterialTheme.colorScheme.background
-                        )
-                    )
-                )
-        )
-        
-        // Decorative shapes in background
-        Box(
-            modifier = Modifier
-                .size(180.dp)
-                .offset(x = width - 60.dp, y = (-30).dp)
-                .graphicsLayer { alpha = 0.12f }
-                .clip(RoundedCornerShape(40.dp))
-                .background(primaryColor)
-        )
-        
-        Box(
-            modifier = Modifier
-                .size(100.dp)
-                .offset(x = (-20).dp, y = height - 160.dp)
-                .graphicsLayer { alpha = 0.08f }
-                .clip(CircleShape)
-                .background(tertiaryContainerColor)
-        )
         
         // Main content
         Column(

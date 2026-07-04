@@ -1130,8 +1130,12 @@ class YouTubeRepository(private val context: Context) {
 
         try {
             val jsonResponse = fetchInternalApi("account/account_menu")
-            
-            if (jsonResponse.isEmpty()) return@withContext
+
+            if (jsonResponse.isEmpty()) {
+                android.util.Log.w("YouTubeRepo", "fetchAccountInfo: empty response from account/account_menu")
+                return@withContext
+            }
+            android.util.Log.d("YouTubeRepo", "fetchAccountInfo response: ${jsonResponse.take(400)}")
             
             var avatarUrl: String? = null
             var userName: String? = null
@@ -1181,10 +1185,11 @@ class YouTubeRepository(private val context: Context) {
                     }
                 }
                 
-                // Fallback: Regex for ggpht if parsing failed
+                // Fallback: Regex for avatar hosts if parsing failed
+                // (yt3.ggpht.com and lh3.googleusercontent.com serve account avatars)
                 if (avatarUrl == null) {
-                    val ggphtRegex = "\"url\"\\s*:\\s*\"(https://ggpht\\.googleusercontent\\.com/[^\"]+)\"".toRegex()
-                    val match = ggphtRegex.find(jsonResponse)
+                    val avatarRegex = "\"url\"\\s*:\\s*\"(https://(?:yt3\\.ggpht\\.com|[a-z0-9]+\\.googleusercontent\\.com)/[^\"]+)\"".toRegex()
+                    val match = avatarRegex.find(jsonResponse)
                     avatarUrl = match?.groupValues?.get(1)
                 }
 
@@ -1192,6 +1197,8 @@ class YouTubeRepository(private val context: Context) {
                 // Ignore
             }
             
+            android.util.Log.d("YouTubeRepo", "fetchAccountInfo parsed name=$userName avatar=$avatarUrl")
+
             // Save avatar if found
             if (!avatarUrl.isNullOrEmpty()) {
                 // Upgrade resolution
@@ -2362,9 +2369,15 @@ class YouTubeRepository(private val context: Context) {
             
             var contents: org.json.JSONArray? = null
             
-            val tabs = root.optJSONObject("contents")
-                ?.optJSONObject("singleColumnBrowseResultsRenderer")
+            // Desktop WEB responses (FEwhat_to_watch) use twoColumnBrowseResultsRenderer;
+            // singleColumn is the mobile/YTM shape. Check both.
+            val browseContents = root.optJSONObject("contents")
+            val tabs = browseContents
+                ?.optJSONObject("twoColumnBrowseResultsRenderer")
                 ?.optJSONArray("tabs")
+                ?: browseContents
+                    ?.optJSONObject("singleColumnBrowseResultsRenderer")
+                    ?.optJSONArray("tabs")
                 
             if (tabs != null && tabs.length() > 0) {
                  val contentObj = tabs.optJSONObject(0)?.optJSONObject("tabRenderer")?.optJSONObject("content")
@@ -2399,7 +2412,21 @@ class YouTubeRepository(private val context: Context) {
                         }
                     }
                     
-                    // 2. RichSectionRenderer (Shelves within Grid)
+                    // 2. ItemSectionRenderer (flat lists, e.g. FEhistory's date-grouped sections)
+                    val itemSection = item.optJSONObject("itemSectionRenderer")?.optJSONArray("contents")
+                    if (itemSection != null) {
+                        for (j in 0 until itemSection.length()) {
+                            val sectionItem = itemSection.optJSONObject(j) ?: continue
+                            sectionItem.optJSONObject("videoRenderer")?.let {
+                                parseVideoRenderer(it)?.let { v -> videos.add(v) }
+                            }
+                            sectionItem.optJSONObject("lockupViewModel")?.let {
+                                parseLockupViewModel(it)?.let { v -> videos.add(v) }
+                            }
+                        }
+                    }
+
+                    // 3. RichSectionRenderer (Shelves within Grid)
                     val richSection = item.optJSONObject("richSectionRenderer")?.optJSONObject("content")
                     if (richSection != null) {
                         val shelfItems = parseItemsFromShelf(richSection)

@@ -31,7 +31,7 @@ import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Login
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -161,7 +161,10 @@ fun VideoHistoryContent(
             if (isHistoryLoading && historyVideos.isEmpty()) {
                 item {
                     Box(Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
-                         CircularProgressIndicator()
+                         LoadingIndicator(
+                             modifier = Modifier.size(48.dp),
+                             color = MaterialTheme.colorScheme.primary
+                         )
                     }
                 }
             } else if (historyVideos.isEmpty()) {
@@ -187,80 +190,23 @@ fun VideoHistoryContent(
 
 @Composable
 private fun HistoryHeroSection() {
-    val accentColor = Color(0xFF9C27B0) // Purple for History
-    val textColor = MaterialTheme.colorScheme.onBackground
-    val secondaryTextColor = MaterialTheme.colorScheme.onSurfaceVariant
-    
-     Box(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(bottom = 16.dp)
             .padding(horizontal = 20.dp)
-            .clip(RoundedCornerShape(32.dp))
-            .background(
-                Brush.linearGradient(
-                    colors = listOf(
-                        accentColor.copy(alpha = 0.08f),
-                        MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.5f)
-                    )
-                )
-            )
-            .padding(24.dp)
+            .padding(top = 16.dp)
     ) {
-        // Abstract shape
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .offset(x = 20.dp, y = (-20).dp)
-                .size(140.dp)
-                .clip(CircleShape)
-                .background(accentColor.copy(alpha = 0.05f))
+        Text(
+            text = "Watch History",
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onBackground
         )
-        
-        Column {
-            Row(
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // History Icon container
-                Surface(
-                    shape = CircleShape,
-                    color = accentColor.copy(alpha = 0.1f),
-                    modifier = Modifier.size(56.dp)
-                ) {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = Icons.Rounded.History,
-                            contentDescription = null,
-                            tint = accentColor,
-                            modifier = Modifier.size(28.dp)
-                        )
-                    }
-                }
-                
-                Spacer(modifier = Modifier.width(16.dp))
-                
-                Column(verticalArrangement = Arrangement.Center) {
-                    Text(
-                        text = "Watch",
-                        style = MaterialTheme.typography.displayLarge,
-                        color = textColor
-                    )
-                    Text(
-                        text = "History",
-                        style = MaterialTheme.typography.displayLarge,
-                        color = accentColor
-                    )
-                }
-            }
-            
-            Spacer(modifier = Modifier.height(12.dp))
-            
-            Text(
-                text = "Pick up where you left off",
-                style = MaterialTheme.typography.titleMedium,
-                color = secondaryTextColor,
-                modifier = Modifier.padding(start = 8.dp)
-            )
-        }
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = "Pick up where you left off",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }

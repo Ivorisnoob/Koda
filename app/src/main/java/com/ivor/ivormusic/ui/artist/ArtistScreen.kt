@@ -62,7 +62,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
@@ -483,43 +482,6 @@ private fun ArtistHeroHeader(
         if (maxWidth <= 0.dp || maxHeight <= 0.dp) {
             return@BoxWithConstraints
         }
-        
-        val width = maxWidth
-        val height = maxHeight
-        
-        // Gradient background with organic color flow
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(
-                            primaryContainerColor.copy(alpha = 0.6f),
-                            tertiaryContainerColor.copy(alpha = 0.3f),
-                            MaterialTheme.colorScheme.background
-                        )
-                    )
-                )
-        )
-        
-        // Decorative circles in background
-        Box(
-            modifier = Modifier
-                .size(200.dp)
-                .offset(x = width - 80.dp, y = (-40).dp)
-                .graphicsLayer { alpha = 0.15f }
-                .clip(CircleShape)
-                .background(primaryColor)
-        )
-        
-        Box(
-            modifier = Modifier
-                .size(120.dp)
-                .offset(x = (-30).dp, y = height - 180.dp)
-                .graphicsLayer { alpha = 0.1f }
-                .clip(CircleShape)
-                .background(tertiaryContainerColor)
-        )
         
         // Main content
         Column(

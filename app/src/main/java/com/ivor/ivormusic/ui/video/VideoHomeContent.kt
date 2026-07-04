@@ -128,7 +128,7 @@ fun VideoHomeContent(
                     )
                 }
                 
-                // Hero Section with "Video" branding
+                // Section title - changes based on whether user is logged in
                 item {
                     AnimatedVisibility(
                         visible = isVisible,
@@ -137,19 +137,14 @@ fun VideoHomeContent(
                             animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy)
                         )
                     ) {
-                        VideoHeroSection(isDarkMode = isDarkMode)
+                        Text(
+                            text = if (isYouTubeConnected) "Recommended For You" else "Trending Videos",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = textColor,
+                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
+                        )
                     }
-                }
-                
-                // Section title - changes based on whether user is logged in
-                item {
-                    Text(
-                        text = if (isYouTubeConnected) "Recommended For You" else "Trending Videos",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = textColor,
-                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
-                    )
                 }
                 
                 // Video cards
@@ -291,86 +286,6 @@ private fun VideoTopBarSection(
                     modifier = Modifier.size(22.dp)
                 )
             }
-        }
-    }
-}
-
-@Composable
-private fun VideoHeroSection(isDarkMode: Boolean) {
-    val textColor = MaterialTheme.colorScheme.onBackground
-    val secondaryTextColor = MaterialTheme.colorScheme.onSurfaceVariant
-    val accentColor = Color(0xFFFF0000) // YouTube red
-    
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(bottom = 16.dp)
-            .padding(horizontal = 20.dp)
-            .clip(RoundedCornerShape(32.dp))
-            .background(
-                Brush.linearGradient(
-                    colors = listOf(
-                        accentColor.copy(alpha = 0.08f),
-                        MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.5f)
-                    )
-                )
-            )
-            .padding(24.dp)
-    ) {
-        // Abstract shape
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .offset(x = 20.dp, y = (-20).dp)
-                .size(140.dp)
-                .clip(CircleShape)
-                .background(accentColor.copy(alpha = 0.05f))
-        )
-        
-        Column {
-            Row(
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Play Icon container
-                Surface(
-                    shape = CircleShape,
-                    color = accentColor.copy(alpha = 0.1f),
-                    modifier = Modifier.size(56.dp)
-                ) {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = Icons.Rounded.PlayCircle,
-                            contentDescription = null,
-                            tint = accentColor,
-                            modifier = Modifier.size(28.dp)
-                        )
-                    }
-                }
-                
-                Spacer(modifier = Modifier.width(16.dp))
-                
-                    Column(verticalArrangement = Arrangement.Center) {
-                        Text(
-                            text = "Video",
-                            style = MaterialTheme.typography.displayLarge,
-                            color = textColor
-                        )
-                        Text(
-                            text = "Mode",
-                            style = MaterialTheme.typography.displayLarge,
-                            color = accentColor
-                        )
-                    }
-            }
-            
-            Spacer(modifier = Modifier.height(12.dp))
-            
-            Text(
-                text = "Literally whole youtube but with no ads",
-                style = MaterialTheme.typography.bodyLarge,
-                color = secondaryTextColor,
-                modifier = Modifier.padding(start = 8.dp)
-            )
         }
     }
 }

@@ -65,7 +65,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
@@ -813,44 +812,13 @@ private fun SearchHeroHeader(
     secondaryTextColor: Color
 ) {
     BoxWithConstraints(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(
-                        primaryContainerColor.copy(alpha = 0.4f),
-                        tertiaryContainerColor.copy(alpha = 0.2f),
-                        Color.Transparent
-                    )
-                )
-            )
+        modifier = Modifier.fillMaxWidth()
     ) {
         // Guard against invalid dimensions during transitions
         if (maxWidth <= 0.dp) {
             return@BoxWithConstraints
         }
-        
-        val width = maxWidth
-        
-        // Decorative shapes
-        Box(
-            modifier = Modifier
-                .size(150.dp)
-                .offset(x = width - 50.dp, y = (-30).dp)
-                .graphicsLayer { alpha = 0.1f }
-                .clip(CircleShape)
-                .background(primaryColor)
-        )
-        
-        Box(
-            modifier = Modifier
-                .size(80.dp)
-                .offset(x = (-20).dp, y = 80.dp)
-                .graphicsLayer { alpha = 0.08f }
-                .clip(CircleShape)
-                .background(tertiaryContainerColor)
-        )
-        
+
         Column(
             modifier = Modifier
                 .fillMaxWidth()
