@@ -383,16 +383,6 @@ private fun ExpressiveNowPlayingView(
                         val cornerRadius = albumSize * 0.15f
                         
                         Box(contentAlignment = Alignment.Center) {
-                            // Outer glow/shadow layer
-                            Surface(
-                                modifier = Modifier
-                                    .size(albumSize)
-                                    .offset(y = 8.dp),
-                                shape = RoundedCornerShape(cornerRadius),
-                                color = primaryContainerColor.copy(alpha = 0.3f),
-                                shadowElevation = 24.dp
-                            ) {}
-                            
                             // Main album art container with expressive squircle shape
                             Surface(
                                 modifier = Modifier.size(albumSize),
@@ -922,16 +912,6 @@ private fun ExpressiveQueueView(
                                         .padding(bottom = 16.dp),
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    // Shadow layer
-                                    Surface(
-                                        modifier = Modifier
-                                            .size(160.dp)
-                                            .offset(y = 4.dp),
-                                        shape = RoundedCornerShape(32.dp),
-                                        color = primaryContainerColor.copy(alpha = 0.3f),
-                                        shadowElevation = 16.dp
-                                    ) {}
-                                    
                                     // Main album art container
                                     Surface(
                                         modifier = Modifier
