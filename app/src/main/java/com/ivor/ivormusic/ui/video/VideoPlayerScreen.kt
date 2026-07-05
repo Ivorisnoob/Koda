@@ -546,7 +546,7 @@ fun VideoInfoSection(
 
             Text(
                 text = buildString {
-                    if (video.viewCount.isNotEmpty()) append("${video.viewCount} views")
+                    if (video.viewCount.isNotEmpty()) append(video.viewCount)
                     if (!video.uploadedDate.isNullOrEmpty()) append(" • ${video.uploadedDate}")
                 },
                 style = MaterialTheme.typography.bodyMedium,

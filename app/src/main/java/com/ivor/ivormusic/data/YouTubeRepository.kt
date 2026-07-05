@@ -2521,6 +2521,29 @@ class YouTubeRepository(private val context: Context) {
                  }
              }
              
+             // Channel avatar lives inline in the lockup metadata:
+             // metadata.image.decoratedAvatarViewModel.avatar.avatarViewModel.image.sources[]
+             val channelIconUrl = metadata
+                 ?.optJSONObject("image")
+                 ?.optJSONObject("decoratedAvatarViewModel")
+                 ?.optJSONObject("avatar")
+                 ?.optJSONObject("avatarViewModel")
+                 ?.optJSONObject("image")
+                 ?.optJSONArray("sources")
+                 ?.let { sources ->
+                     var bestUrl: String? = null
+                     var maxWidth = -1
+                     for (i in 0 until sources.length()) {
+                         val source = sources.optJSONObject(i)
+                         val width = source?.optInt("width", 0) ?: 0
+                         if (width >= maxWidth) {
+                             maxWidth = width
+                             bestUrl = source?.optString("url")
+                         }
+                     }
+                     bestUrl?.takeIf { it.isNotBlank() }
+                 }
+
              // Get thumbnail
              val contentImage = lockupViewModel.optJSONObject("contentImage")
              val thumbnailViewModel = contentImage?.optJSONObject("collectionThumbnailViewModel")
@@ -2611,7 +2634,7 @@ class YouTubeRepository(private val context: Context) {
                 title = title,
                 channelName = channelName,
                 channelId = channelId,
-                channelIconUrl = null, // Skip heavy recursion for icon
+                channelIconUrl = channelIconUrl,
                 thumbnailUrl = thumbnailUrl,
                 duration = durationSeconds,
                 viewCount = viewCount,
