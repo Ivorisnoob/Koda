@@ -10,10 +10,12 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -39,12 +41,14 @@ import androidx.compose.material.icons.outlined.ThumbUp
 import androidx.compose.material.icons.rounded.Autorenew
 import androidx.compose.material.icons.rounded.Error
 import androidx.compose.material.icons.rounded.ExpandMore
+import androidx.compose.material.icons.rounded.Forward10
 import androidx.compose.material.icons.rounded.Fullscreen
 import androidx.compose.material.icons.rounded.FullscreenExit
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Repeat
 import androidx.compose.material.icons.rounded.RepeatOne
+import androidx.compose.material.icons.rounded.Replay10
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.ThumbDown
 import androidx.compose.material.icons.rounded.ThumbUp
@@ -69,13 +73,17 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -91,6 +99,7 @@ import coil.compose.AsyncImage
 import com.ivor.ivormusic.data.LikeStatus
 import com.ivor.ivormusic.data.VideoEngagement
 import com.ivor.ivormusic.data.VideoItem
+import kotlinx.coroutines.delay
 import java.util.Locale
 
 // VideoPlayerScreen function removed.
@@ -118,23 +127,24 @@ fun FullscreenPlayerContent(
     videoTitle: String,
     onPlayPause: () -> Unit,
     onSeek: (Float) -> Unit,
+    onSeekBackward: () -> Unit,
+    onSeekForward: () -> Unit,
     onBack: () -> Unit,
     onFullscreenToggle: () -> Unit,
     onSettings: () -> Unit,
     onLoopToggle: () -> Unit,
-    onAutoPlayToggle: () -> Unit
+    onAutoPlayToggle: () -> Unit,
+    showTimedCommentsButton: Boolean = false,
+    timedCommentsActive: Boolean = false,
+    onTimedCommentsToggle: () -> Unit = {}
 ) {
     // Stable shapes to prevent "square flash"
     val stableShapes = IconButtonDefaults.shapes()
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black)
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null
-            ) { onToggleControls() }
+    PlayerGestureSurface(
+        onToggleControls = onToggleControls,
+        onSeekBackward = onSeekBackward,
+        onSeekForward = onSeekForward
     ) {
         // Video View
         AndroidView(
@@ -232,6 +242,22 @@ fun FullscreenPlayerContent(
                         )
                     }
 
+                    if (showTimedCommentsButton) {
+                        FilledTonalIconButton(
+                            onClick = onTimedCommentsToggle,
+                            colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                containerColor = if (timedCommentsActive) MaterialTheme.colorScheme.primary else Color.Black.copy(0.5f),
+                                contentColor = if (timedCommentsActive) MaterialTheme.colorScheme.onPrimary else Color.White
+                            ),
+                            shapes = stableShapes
+                        ) {
+                            Icon(
+                                Icons.AutoMirrored.Rounded.Comment,
+                                contentDescription = "Timed comments"
+                            )
+                        }
+                    }
+
                     FilledIconButton(
                         onClick = onSettings,
                         colors = IconButtonDefaults.filledIconButtonColors(
@@ -281,14 +307,9 @@ fun FullscreenPlayerContent(
                     ) {
                         Text(formatDuration(currentPosition), color = Color.White, style = MaterialTheme.typography.labelLarge)
                         
-                        Slider(
-                            value = progress,
-                            onValueChange = onSeek,
-                            colors = SliderDefaults.colors(
-                                thumbColor = MaterialTheme.colorScheme.primary,
-                                activeTrackColor = MaterialTheme.colorScheme.primary,
-                                inactiveTrackColor = Color.White.copy(0.3f)
-                            ),
+                        PlayerSeekBar(
+                            progress = progress,
+                            onSeek = onSeek,
                             modifier = Modifier.weight(1f)
                         )
                         
@@ -319,23 +340,24 @@ fun PortraitPlayerContent(
     videoTitle: String,
     onPlayPause: () -> Unit,
     onSeek: (Float) -> Unit,
+    onSeekBackward: () -> Unit,
+    onSeekForward: () -> Unit,
     onBack: () -> Unit,
     onFullscreenToggle: () -> Unit,
     onSettings: () -> Unit,
     onLoopToggle: () -> Unit,
-    onAutoPlayToggle: () -> Unit
+    onAutoPlayToggle: () -> Unit,
+    showTimedCommentsButton: Boolean = false,
+    timedCommentsActive: Boolean = false,
+    onTimedCommentsToggle: () -> Unit = {}
 ) {
     // Stable shapes
     val stableShapes = IconButtonDefaults.shapes()
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black)
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null
-            ) { onToggleControls() }
+    PlayerGestureSurface(
+        onToggleControls = onToggleControls,
+        onSeekBackward = onSeekBackward,
+        onSeekForward = onSeekForward
     ) {
         AndroidView(
             factory = { ctx ->
@@ -416,6 +438,21 @@ fun PortraitPlayerContent(
                                 contentDescription = "Loop"
                             )
                         }
+                        if (showTimedCommentsButton) {
+                            FilledTonalIconButton(
+                                onClick = onTimedCommentsToggle,
+                                colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                    containerColor = if (timedCommentsActive) MaterialTheme.colorScheme.primary else Color.Black.copy(0.5f),
+                                    contentColor = if (timedCommentsActive) MaterialTheme.colorScheme.onPrimary else Color.White
+                                ),
+                                shapes = stableShapes
+                            ) {
+                                Icon(
+                                    Icons.AutoMirrored.Rounded.Comment,
+                                    contentDescription = "Timed comments"
+                                )
+                            }
+                        }
                         FilledIconButton(
                             onClick = onSettings,
                             colors = IconButtonDefaults.filledIconButtonColors(
@@ -459,20 +496,155 @@ fun PortraitPlayerContent(
                     ) {
                         Text(formatDuration(currentPosition), color = Color.White, style = MaterialTheme.typography.labelMedium)
                         
-                        Slider(
-                            value = progress,
-                            onValueChange = onSeek,
-                            colors = SliderDefaults.colors(
-                                thumbColor = MaterialTheme.colorScheme.primary,
-                                activeTrackColor = MaterialTheme.colorScheme.primary,
-                                inactiveTrackColor = Color.White.copy(0.3f)
-                            ),
+                        PlayerSeekBar(
+                            progress = progress,
+                            onSeek = onSeek,
                             modifier = Modifier.weight(1f)
                         )
                         
                         Text(formatDuration(duration), color = Color.White, style = MaterialTheme.typography.labelMedium)
                     }
                 }
+            }
+        }
+    }
+}
+
+/**
+ * Scrubbing seek bar. While the user drags, the thumb follows a local value and
+ * the player is NOT touched, so we don't kick off a buffer/fetch on every pixel.
+ * The actual seek fires once, on release (onValueChangeFinished). The 500ms
+ * progress poll from the parent is ignored during the drag to avoid the thumb
+ * fighting the finger.
+ */
+@Composable
+private fun PlayerSeekBar(
+    progress: Float,
+    onSeek: (Float) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var isScrubbing by remember { mutableStateOf(false) }
+    var scrubValue by remember { mutableFloatStateOf(0f) }
+
+    Slider(
+        value = if (isScrubbing) scrubValue else progress.coerceIn(0f, 1f),
+        onValueChange = {
+            isScrubbing = true
+            scrubValue = it
+        },
+        onValueChangeFinished = {
+            onSeek(scrubValue)
+            isScrubbing = false
+        },
+        colors = SliderDefaults.colors(
+            thumbColor = MaterialTheme.colorScheme.primary,
+            activeTrackColor = MaterialTheme.colorScheme.primary,
+            inactiveTrackColor = Color.White.copy(0.3f)
+        ),
+        modifier = modifier
+    )
+}
+
+/** Seconds jumped per double-tap on either edge of the video surface. */
+private const val DOUBLE_TAP_SEEK_SECONDS = 10
+
+/**
+ * Wraps the video surface with tap gestures: single tap toggles the controls,
+ * a double tap on the left rewinds and on the right fast-forwards (YouTube-style),
+ * with an animated badge that accumulates when tapped repeatedly.
+ */
+@Composable
+private fun PlayerGestureSurface(
+    onToggleControls: () -> Unit,
+    onSeekBackward: () -> Unit,
+    onSeekForward: () -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable BoxScope.() -> Unit
+) {
+    // side: -1 rewind, +1 forward, 0 hidden. seconds accumulates on rapid taps.
+    var side by remember { mutableIntStateOf(0) }
+    var seconds by remember { mutableIntStateOf(0) }
+    var pulse by remember { mutableIntStateOf(0) }
+
+    // Hide the badge a short while after the last tap. Re-runs (and so resets
+    // the timer) every double tap because it is keyed on `pulse`.
+    LaunchedEffect(pulse) {
+        if (side != 0) {
+            delay(650)
+            side = 0
+            seconds = 0
+        }
+    }
+
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(Color.Black)
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onTap = { onToggleControls() },
+                    onDoubleTap = { offset ->
+                        val tappedSide = if (offset.x < size.width / 2f) -1 else 1
+                        seconds = if (tappedSide == side) seconds + DOUBLE_TAP_SEEK_SECONDS else DOUBLE_TAP_SEEK_SECONDS
+                        side = tappedSide
+                        pulse++
+                        if (tappedSide < 0) onSeekBackward() else onSeekForward()
+                    }
+                )
+            }
+    ) {
+        content()
+
+        SeekFeedbackBadge(
+            visible = side < 0,
+            seconds = seconds,
+            forward = false,
+            modifier = Modifier.align(Alignment.CenterStart)
+        )
+        SeekFeedbackBadge(
+            visible = side > 0,
+            seconds = seconds,
+            forward = true,
+            modifier = Modifier.align(Alignment.CenterEnd)
+        )
+    }
+}
+
+@Composable
+private fun SeekFeedbackBadge(
+    visible: Boolean,
+    seconds: Int,
+    forward: Boolean,
+    modifier: Modifier = Modifier
+) {
+    AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn(),
+        exit = fadeOut(),
+        modifier = modifier
+            .fillMaxHeight()
+            .fillMaxWidth(0.5f)
+    ) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.3f))
+                    .padding(horizontal = 20.dp, vertical = 16.dp)
+            ) {
+                Icon(
+                    if (forward) Icons.Rounded.Forward10 else Icons.Rounded.Replay10,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(40.dp)
+                )
+                Text(
+                    text = "$seconds seconds",
+                    color = Color.White,
+                    style = MaterialTheme.typography.labelLarge
+                )
             }
         }
     }
@@ -509,7 +681,7 @@ fun VideoInfoSection(
 
             Text(
                 text = buildString {
-                    if (video.viewCount.isNotEmpty()) append("${video.viewCount} views")
+                    if (video.viewCount.isNotEmpty()) append(video.viewCount)
                     if (!video.uploadedDate.isNullOrEmpty()) append(" • ${video.uploadedDate}")
                 },
                 style = MaterialTheme.typography.bodyMedium,

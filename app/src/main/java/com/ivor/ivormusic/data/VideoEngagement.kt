@@ -44,3 +44,12 @@ data class CommentsPage(
     val comments: List<CommentItem>,
     val nextPageToken: String?
 )
+
+/**
+ * A comment whose text references a playback timestamp (e.g. "2:31 is wild").
+ * timeMs is the first timestamp mentioned in the comment, in milliseconds.
+ */
+data class TimedComment(
+    val comment: CommentItem,
+    val timeMs: Long
+)

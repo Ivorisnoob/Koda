@@ -21,6 +21,7 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
     val videoMode: StateFlow<Boolean> = themePreferences.videoMode
     val playerStyle: StateFlow<PlayerStyle> = themePreferences.playerStyle
     val saveVideoHistory: StateFlow<Boolean> = themePreferences.saveVideoHistory
+    val timedCommentsEnabled: StateFlow<Boolean> = themePreferences.timedCommentsEnabled
     val excludedFolders: StateFlow<Set<String>> = themePreferences.excludedFolders
     
     // Cache & Crossfade
@@ -73,6 +74,10 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
     
     fun toggleSaveVideoHistory() {
         themePreferences.toggleSaveVideoHistory()
+    }
+
+    fun setTimedCommentsEnabled(enabled: Boolean) {
+        themePreferences.setTimedCommentsEnabled(enabled)
     }
     
     fun addExcludedFolder(folderPath: String) {

@@ -3,6 +3,7 @@ package com.ivor.ivormusic.ui.video
 import android.app.Activity
 import android.content.pm.ActivityInfo
 import androidx.annotation.OptIn
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -33,7 +34,8 @@ import kotlinx.coroutines.isActive
 fun VideoPlayerContent(
     viewModel: VideoPlayerViewModel,
     onBackClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    timedCommentsFeatureEnabled: Boolean = false
 ) {
     val context = LocalContext.current
     val activity = context as? Activity
@@ -56,10 +58,13 @@ fun VideoPlayerContent(
     val isLoadingMoreComments by viewModel.isLoadingMoreComments.collectAsState()
     val commentReplies by viewModel.replies.collectAsState()
     val loadingReplyIds by viewModel.loadingReplyIds.collectAsState()
-    
+    val timedComments by viewModel.timedComments.collectAsState()
+
     // Local UI State
     var showControls by remember { mutableStateOf(false) }
     var isFullscreen by remember { mutableStateOf(false) }
+    // Timed comments overlay toggle; persists across videos while the player is open
+    var timedCommentsActive by remember { mutableStateOf(false) }
     
     // Progress polling (ViewModel doesn't poll, so we do it here or update ViewModel to poll)
     // Ideally ViewModel should emit progress, but for smoother slider we often poll in UI or VM. 
@@ -72,6 +77,13 @@ fun VideoPlayerContent(
     val currentVideo = video
 
     if (currentVideo == null || exoPlayer == null) return
+
+    // Double-tap seek helper: jump relative to the live playhead, clamped to the clip.
+    fun seekBy(deltaMs: Long) {
+        val target = (exoPlayer.currentPosition + deltaMs)
+            .coerceIn(0L, if (exoPlayer.duration > 0) exoPlayer.duration else Long.MAX_VALUE)
+        exoPlayer.seekTo(target)
+    }
 
     LaunchedEffect(exoPlayer, currentVideo) {
         while (isActive) {
@@ -89,6 +101,15 @@ fun VideoPlayerContent(
         if (showControls && isPlaying) {
             delay(4000)
             showControls = false
+        }
+    }
+
+    // Fetch the first page of comments once the overlay is active and the
+    // comments entry token has arrived (engagement loads asynchronously)
+    val commentsToken = engagement?.commentsToken
+    LaunchedEffect(timedCommentsActive, commentsToken) {
+        if (timedCommentsFeatureEnabled && timedCommentsActive && commentsToken != null) {
+            viewModel.ensureCommentsLoaded()
         }
     }
     
@@ -164,13 +185,28 @@ fun VideoPlayerContent(
                 videoTitle = currentVideo.title,
                 onPlayPause = { viewModel.togglePlayPause() },
                 onSeek = { newProgress -> exoPlayer.seekTo((newProgress * duration).toLong()) },
+                onSeekBackward = { seekBy(-10_000L) },
+                onSeekForward = { seekBy(10_000L) },
                 onBack = { isFullscreen = false },
                 onFullscreenToggle = { isFullscreen = false },
                 onSettings = { showQualitySheet = true },
                 onLoopToggle = { viewModel.toggleLooping() },
                 isAutoPlayEnabled = isAutoPlayEnabled,
-                onAutoPlayToggle = { viewModel.toggleAutoPlay() }
+                onAutoPlayToggle = { viewModel.toggleAutoPlay() },
+                showTimedCommentsButton = timedCommentsFeatureEnabled,
+                timedCommentsActive = timedCommentsActive,
+                onTimedCommentsToggle = { timedCommentsActive = !timedCommentsActive }
             )
+
+                if (timedCommentsFeatureEnabled && timedCommentsActive) {
+                    TimedCommentsOverlay(
+                        timedComments = timedComments,
+                        positionMs = currentPosition,
+                        modifier = Modifier
+                            .align(Alignment.BottomStart)
+                            .padding(start = 24.dp, end = 24.dp, bottom = 104.dp)
+                    )
+                }
             }
         } else {
             // Portrait Layout
@@ -202,13 +238,33 @@ fun VideoPlayerContent(
                         videoTitle = currentVideo.title,
                         onPlayPause = { viewModel.togglePlayPause() },
                         onSeek = { newProgress -> exoPlayer.seekTo((newProgress * duration).toLong()) },
+                        onSeekBackward = { seekBy(-10_000L) },
+                        onSeekForward = { seekBy(10_000L) },
                         onBack = onBackClick,
                         onFullscreenToggle = { isFullscreen = true },
                         onSettings = { showQualitySheet = true },
                         onLoopToggle = { viewModel.toggleLooping() },
                         isAutoPlayEnabled = isAutoPlayEnabled,
-                        onAutoPlayToggle = { viewModel.toggleAutoPlay() }
+                        onAutoPlayToggle = { viewModel.toggleAutoPlay() },
+                        showTimedCommentsButton = timedCommentsFeatureEnabled,
+                        timedCommentsActive = timedCommentsActive,
+                        onTimedCommentsToggle = { timedCommentsActive = !timedCommentsActive }
                     )
+
+                    if (timedCommentsFeatureEnabled && timedCommentsActive) {
+                        // Keep the card clear of the seek bar while controls are up
+                        val overlayBottomPadding by animateDpAsState(
+                            targetValue = if (showControls) 64.dp else 12.dp,
+                            label = "timedCommentsPadding"
+                        )
+                        TimedCommentsOverlay(
+                            timedComments = timedComments,
+                            positionMs = currentPosition,
+                            modifier = Modifier
+                                .align(Alignment.BottomStart)
+                                .padding(start = 12.dp, end = 12.dp, bottom = overlayBottomPadding)
+                        )
+                    }
                 }
                 
                 // Info Area

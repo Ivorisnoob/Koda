@@ -8,19 +8,24 @@ import androidx.media3.common.MimeTypes
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.MergingMediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import com.ivor.ivormusic.data.CommentItem
 import com.ivor.ivormusic.data.LikeStatus
+import com.ivor.ivormusic.data.TimedComment
 import com.ivor.ivormusic.data.VideoEngagement
 import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.data.VideoQuality
 import com.ivor.ivormusic.data.YouTubeRepository
 import com.ivor.ivormusic.data.ThemePreferences
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 
@@ -87,6 +92,16 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
     private val _comments = MutableStateFlow<List<CommentItem>>(emptyList())
     val comments: StateFlow<List<CommentItem>> = _comments.asStateFlow()
+
+    // Comments that mention a playback timestamp, sorted by that time.
+    // Drives the timed comments overlay in the video player.
+    val timedComments: StateFlow<List<TimedComment>> = _comments
+        .map { list ->
+            list.mapNotNull { comment ->
+                parseFirstTimestampMs(comment.text)?.let { TimedComment(comment, it) }
+            }.sortedBy { it.timeMs }
+        }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     private val _isCommentsLoading = MutableStateFlow(false)
     val isCommentsLoading: StateFlow<Boolean> = _isCommentsLoading.asStateFlow()
@@ -202,8 +217,9 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                                 isDASH = false,
                                 audioUrl = null
                             )
-                            val mediaItem = MediaItem.fromUri(streamUrl)
-                            _exoPlayer?.setMediaItem(mediaItem)
+                            val source = ProgressiveMediaSource.Factory(dataSourceFactoryFor(streamUrl))
+                                .createMediaSource(MediaItem.fromUri(streamUrl))
+                            _exoPlayer?.setMediaSource(source)
                             _exoPlayer?.prepare()
                             _exoPlayer?.play() // FORCE PLAY
                             _isLoading.value = false
@@ -262,28 +278,43 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         }
     }
 
+    /**
+     * Data source factory whose User-Agent matches the client that issued the
+     * stream URL. YouTube binds googlevideo URLs to the issuing client via the
+     * `?c=` param and answers 403 when the playback UA does not match.
+     */
+    private fun dataSourceFactoryFor(url: String): DefaultDataSource.Factory {
+        val userAgent = YouTubeRepository.uaForPlaybackUri(android.net.Uri.parse(url))
+        val httpFactory = DefaultHttpDataSource.Factory()
+            .setUserAgent(userAgent)
+            .setAllowCrossProtocolRedirects(true)
+        return DefaultDataSource.Factory(context, httpFactory)
+    }
+
     private fun loadQuality(quality: VideoQuality) {
         _currentQuality.value = quality
         val mediaItemBuilder = MediaItem.Builder().setUri(quality.url)
-        
+
         if (quality.isDASH) {
             // DASH streams are adaptive - use directly without merging
             mediaItemBuilder.setMimeType(MimeTypes.APPLICATION_MPD)
             _exoPlayer?.setMediaItem(mediaItemBuilder.build())
         } else {
+            val dataSourceFactory = dataSourceFactoryFor(quality.url)
             val audioUrl = quality.audioUrl
             if (audioUrl != null) {
                 // Non-DASH with separate audio - use MergingMediaSource
-                val dataSourceFactory = DefaultDataSource.Factory(context)
                 val videoSource = ProgressiveMediaSource.Factory(dataSourceFactory)
                     .createMediaSource(MediaItem.fromUri(quality.url))
                 val audioSource = ProgressiveMediaSource.Factory(dataSourceFactory)
                     .createMediaSource(MediaItem.fromUri(audioUrl))
-                
+
                 val mergingSource = MergingMediaSource(videoSource, audioSource)
                 _exoPlayer?.setMediaSource(mergingSource)
             } else {
-                _exoPlayer?.setMediaItem(mediaItemBuilder.build())
+                val source = ProgressiveMediaSource.Factory(dataSourceFactory)
+                    .createMediaSource(mediaItemBuilder.build())
+                _exoPlayer?.setMediaSource(source)
             }
         }
         _exoPlayer?.prepare()
@@ -385,6 +416,20 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
     // ---------------- Comments ----------------
 
+    /**
+     * Extract the first playback timestamp mentioned in a comment ("1:23",
+     * "12:05" or "1:02:33") as milliseconds, or null when none is present.
+     */
+    private fun parseFirstTimestampMs(text: String): Long? {
+        val match = TIMESTAMP_REGEX.find(text) ?: return null
+        val hours = match.groupValues[1].toLongOrNull() ?: 0L
+        val minutes = match.groupValues[2].toLongOrNull() ?: return null
+        val seconds = match.groupValues[3].toLongOrNull() ?: return null
+        if (seconds >= 60) return null
+        if (match.groupValues[1].isNotEmpty() && minutes >= 60) return null
+        return ((hours * 60 + minutes) * 60 + seconds) * 1000L
+    }
+
     /** Load the first page of comments if not already loaded for this video. */
     fun ensureCommentsLoaded() {
         val video = _currentVideo.value ?: return
@@ -445,6 +490,10 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                 _loadingReplyIds.value = _loadingReplyIds.value - comment.commentId
             }
         }
+    }
+
+    companion object {
+        private val TIMESTAMP_REGEX = Regex("""(?<!\d)(?:(\d{1,2}):)?(\d{1,2}):(\d{2})(?!\d)""")
     }
 
     override fun onCleared() {

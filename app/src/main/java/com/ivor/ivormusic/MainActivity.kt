@@ -55,6 +55,7 @@ class MainActivity : ComponentActivity() {
             val videoMode by themeViewModel.videoMode.collectAsState()
             val playerStyle by themeViewModel.playerStyle.collectAsState()
             val saveVideoHistory by themeViewModel.saveVideoHistory.collectAsState()
+            val timedCommentsEnabled by themeViewModel.timedCommentsEnabled.collectAsState()
             val excludedFolders by themeViewModel.excludedFolders.collectAsState()
             val oemFixEnabled by themeViewModel.oemFixEnabled.collectAsState()
             val manualScanEnabled by themeViewModel.manualScanEnabled.collectAsState()
@@ -94,6 +95,8 @@ class MainActivity : ComponentActivity() {
                         onPlayerStyleChange = { themeViewModel.setPlayerStyle(it) },
                         saveVideoHistory = saveVideoHistory,
                         onSaveVideoHistoryToggle = { themeViewModel.setSaveVideoHistory(it) },
+                        timedCommentsEnabled = timedCommentsEnabled,
+                        onTimedCommentsToggle = { themeViewModel.setTimedCommentsEnabled(it) },
                         excludedFolders = excludedFolders,
                         onAddExcludedFolder = { themeViewModel.addExcludedFolder(it) },
                         onRemoveExcludedFolder = { themeViewModel.removeExcludedFolder(it) },
@@ -136,6 +139,8 @@ fun MusicApp(
     onPlayerStyleChange: (PlayerStyle) -> Unit,
     saveVideoHistory: Boolean,
     onSaveVideoHistoryToggle: (Boolean) -> Unit,
+    timedCommentsEnabled: Boolean,
+    onTimedCommentsToggle: (Boolean) -> Unit,
     excludedFolders: Set<String>,
     onAddExcludedFolder: (String) -> Unit,
     onRemoveExcludedFolder: (String) -> Unit,
@@ -247,6 +252,8 @@ fun MusicApp(
                     onPlayerStyleChange = onPlayerStyleChange,
                     saveVideoHistory = saveVideoHistory,
                     onSaveVideoHistoryToggle = onSaveVideoHistoryToggle,
+                    timedCommentsEnabled = timedCommentsEnabled,
+                    onTimedCommentsToggle = onTimedCommentsToggle,
                     excludedFolders = excludedFolders,
                     onAddExcludedFolder = onAddExcludedFolder,
                     onRemoveExcludedFolder = onRemoveExcludedFolder,
@@ -350,7 +357,8 @@ fun MusicApp(
         }
         
         com.ivor.ivormusic.ui.video.VideoPlayerOverlay(
-            viewModel = videoPlayerViewModel
+            viewModel = videoPlayerViewModel,
+            timedCommentsEnabled = timedCommentsEnabled
         )
     }
 }

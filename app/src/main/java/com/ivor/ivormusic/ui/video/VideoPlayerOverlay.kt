@@ -35,7 +35,8 @@ import com.ivor.ivormusic.R
 @androidx.annotation.OptIn(UnstableApi::class)
 @Composable
 fun VideoPlayerOverlay(
-    viewModel: VideoPlayerViewModel
+    viewModel: VideoPlayerViewModel,
+    timedCommentsEnabled: Boolean = false
 ) {
     val isExpanded by viewModel.isExpanded.collectAsState()
     val currentVideo by viewModel.currentVideo.collectAsState()
@@ -66,7 +67,7 @@ fun VideoPlayerOverlay(
     val pipPlayAction = "$packageName.PIP_PLAY"
     val pipPauseAction = "$packageName.PIP_PAUSE"
     
-    LaunchedEffect(currentVideo, isPlaying) {
+    LaunchedEffect(currentVideo, isPlaying, isExpanded) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && activity != null) {
              val videoId = currentVideo?.videoId ?: return@LaunchedEffect
              // Use collision-resistant request codes: masked hashcode OR'd with action bit
@@ -98,7 +99,10 @@ fun VideoPlayerOverlay(
                 .setActions(actions)
                 
              if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                 paramsBuilder.setAutoEnterEnabled(true)
+                 // Only auto-enter PiP while the full player is on screen.
+                 // Auto-entering from the mini player captures the whole app UI
+                 // into the PiP window instead of just the video surface.
+                 paramsBuilder.setAutoEnterEnabled(isExpanded)
              }
              
              try {
@@ -213,9 +217,10 @@ fun VideoPlayerOverlay(
                  // Full Screen Content
                  VideoPlayerContent(
                      viewModel = viewModel,
-                     onBackClick = { 
-                         viewModel.setExpanded(false) 
-                     }
+                     onBackClick = {
+                         viewModel.setExpanded(false)
+                     },
+                     timedCommentsFeatureEnabled = timedCommentsEnabled
                  )
              } else {
                  // Mini Player Content
