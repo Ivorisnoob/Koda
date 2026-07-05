@@ -75,6 +75,7 @@ import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -306,14 +307,9 @@ fun FullscreenPlayerContent(
                     ) {
                         Text(formatDuration(currentPosition), color = Color.White, style = MaterialTheme.typography.labelLarge)
                         
-                        Slider(
-                            value = progress,
-                            onValueChange = onSeek,
-                            colors = SliderDefaults.colors(
-                                thumbColor = MaterialTheme.colorScheme.primary,
-                                activeTrackColor = MaterialTheme.colorScheme.primary,
-                                inactiveTrackColor = Color.White.copy(0.3f)
-                            ),
+                        PlayerSeekBar(
+                            progress = progress,
+                            onSeek = onSeek,
                             modifier = Modifier.weight(1f)
                         )
                         
@@ -500,14 +496,9 @@ fun PortraitPlayerContent(
                     ) {
                         Text(formatDuration(currentPosition), color = Color.White, style = MaterialTheme.typography.labelMedium)
                         
-                        Slider(
-                            value = progress,
-                            onValueChange = onSeek,
-                            colors = SliderDefaults.colors(
-                                thumbColor = MaterialTheme.colorScheme.primary,
-                                activeTrackColor = MaterialTheme.colorScheme.primary,
-                                inactiveTrackColor = Color.White.copy(0.3f)
-                            ),
+                        PlayerSeekBar(
+                            progress = progress,
+                            onSeek = onSeek,
                             modifier = Modifier.weight(1f)
                         )
                         
@@ -517,6 +508,41 @@ fun PortraitPlayerContent(
             }
         }
     }
+}
+
+/**
+ * Scrubbing seek bar. While the user drags, the thumb follows a local value and
+ * the player is NOT touched, so we don't kick off a buffer/fetch on every pixel.
+ * The actual seek fires once, on release (onValueChangeFinished). The 500ms
+ * progress poll from the parent is ignored during the drag to avoid the thumb
+ * fighting the finger.
+ */
+@Composable
+private fun PlayerSeekBar(
+    progress: Float,
+    onSeek: (Float) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var isScrubbing by remember { mutableStateOf(false) }
+    var scrubValue by remember { mutableFloatStateOf(0f) }
+
+    Slider(
+        value = if (isScrubbing) scrubValue else progress.coerceIn(0f, 1f),
+        onValueChange = {
+            isScrubbing = true
+            scrubValue = it
+        },
+        onValueChangeFinished = {
+            onSeek(scrubValue)
+            isScrubbing = false
+        },
+        colors = SliderDefaults.colors(
+            thumbColor = MaterialTheme.colorScheme.primary,
+            activeTrackColor = MaterialTheme.colorScheme.primary,
+            inactiveTrackColor = Color.White.copy(0.3f)
+        ),
+        modifier = modifier
+    )
 }
 
 /** Seconds jumped per double-tap on either edge of the video surface. */
