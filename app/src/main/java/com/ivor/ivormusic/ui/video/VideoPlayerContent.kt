@@ -78,6 +78,13 @@ fun VideoPlayerContent(
 
     if (currentVideo == null || exoPlayer == null) return
 
+    // Double-tap seek helper: jump relative to the live playhead, clamped to the clip.
+    fun seekBy(deltaMs: Long) {
+        val target = (exoPlayer.currentPosition + deltaMs)
+            .coerceIn(0L, if (exoPlayer.duration > 0) exoPlayer.duration else Long.MAX_VALUE)
+        exoPlayer.seekTo(target)
+    }
+
     LaunchedEffect(exoPlayer, currentVideo) {
         while (isActive) {
             if (exoPlayer.duration > 0) {
@@ -178,6 +185,8 @@ fun VideoPlayerContent(
                 videoTitle = currentVideo.title,
                 onPlayPause = { viewModel.togglePlayPause() },
                 onSeek = { newProgress -> exoPlayer.seekTo((newProgress * duration).toLong()) },
+                onSeekBackward = { seekBy(-10_000L) },
+                onSeekForward = { seekBy(10_000L) },
                 onBack = { isFullscreen = false },
                 onFullscreenToggle = { isFullscreen = false },
                 onSettings = { showQualitySheet = true },
@@ -229,6 +238,8 @@ fun VideoPlayerContent(
                         videoTitle = currentVideo.title,
                         onPlayPause = { viewModel.togglePlayPause() },
                         onSeek = { newProgress -> exoPlayer.seekTo((newProgress * duration).toLong()) },
+                        onSeekBackward = { seekBy(-10_000L) },
+                        onSeekForward = { seekBy(10_000L) },
                         onBack = onBackClick,
                         onFullscreenToggle = { isFullscreen = true },
                         onSettings = { showQualitySheet = true },
