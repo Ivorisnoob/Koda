@@ -138,7 +138,10 @@ fun AddToPlaylistSheet(
                             )
                         },
                         supportingContent = {
-                            Text("${playlist.itemCount} songs")
+                            Text(
+                                if (playlist.itemCount >= 0) "${playlist.itemCount} songs"
+                                else playlist.uploaderName.ifBlank { "Playlist" }
+                            )
                         },
                         leadingContent = {
                             Surface(

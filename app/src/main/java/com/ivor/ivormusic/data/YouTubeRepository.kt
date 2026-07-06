@@ -869,13 +869,8 @@ class YouTubeRepository(private val context: Context) {
         if (!sessionManager.isLoggedIn()) return@withContext emptyList()
         
         try {
-            // Fetch Library (Liked Playlists)
-            // Note: FEmusic_liked_playlists gets playlists you've saved/liked
-            // FEmusic_library_landing might be better but harder to parse
-            val jsonResponse = fetchInternalApi("FEmusic_liked_playlists")
-            
             val playlists = mutableListOf<PlaylistDisplayItem>()
-            
+
             // Synthesized "Supermix" and "Likes" always useful to have
             playlists.add(PlaylistDisplayItem(
                 name = "My Supermix",
@@ -884,16 +879,31 @@ class YouTubeRepository(private val context: Context) {
                 thumbnailUrl = "https://www.gstatic.com/youtube/media/ytm/images/pbg/liked_music_@576.png"
             ))
             playlists.add(PlaylistDisplayItem(
-                name = "Your Likes", 
-                url = "https://music.youtube.com/playlist?list=LM", 
+                name = "Your Likes",
+                url = "https://music.youtube.com/playlist?list=LM",
                 uploaderName = "You"
             ))
 
-            // Add parsed playlists
-            playlists.addAll(parsePlaylistsFromInternalJson(jsonResponse))
-            
-            playlists
+            // Fetch Library (Liked Playlists), following grid continuations so
+            // large libraries come back in full rather than just the first page.
+            // Note: FEmusic_liked_playlists gets playlists you've saved/liked
+            var json = fetchInternalApi("FEmusic_liked_playlists")
+            var pageCount = 0
+            val maxPages = 20
+            while (json.isNotEmpty() && pageCount < maxPages) {
+                val parsed = parsePlaylistsFromInternalJson(json)
+                playlists.addAll(parsed)
+                pageCount++
+                android.util.Log.d("YouTubeRepo", "Library playlists page $pageCount: ${parsed.size} items")
+                if (parsed.isEmpty()) break
+                val token = extractContinuationToken(json) ?: break
+                json = fetchContinuation(token)
+            }
+
+            // The library grid can include "Your Likes" (VLLM) which we already synthesized
+            playlists.distinctBy { it.id }
         } catch (e: Exception) {
+            android.util.Log.e("YouTubeRepo", "Error fetching user playlists", e)
             emptyList()
         }
     }
@@ -1560,6 +1570,12 @@ class YouTubeRepository(private val context: Context) {
             ?.optJSONArray("contents")
             ?.let { return it }
 
+        // Grid continuation (library playlist/album pages)
+        root.optJSONObject("continuationContents")
+            ?.optJSONObject("gridContinuation")
+            ?.optJSONArray("items")
+            ?.let { return it }
+
         return null
     }
 
@@ -1605,11 +1621,35 @@ class YouTubeRepository(private val context: Context) {
             return items
         }
         
-        // 4. Direct Item (if the "shelf" is actually just an item in a continuation list)
+        // 4. gridRenderer (Library pages: grid of playlists/albums)
+        val grid = shelfWrapper.optJSONObject("gridRenderer")
+        if (grid != null) {
+            val gridItems = grid.optJSONArray("items")
+            if (gridItems != null) {
+                for (j in 0 until gridItems.length()) {
+                    gridItems.optJSONObject(j)?.let { items.add(it) }
+                }
+            }
+            return items
+        }
+
+        // 5. itemSectionRenderer wraps another shelf (e.g. the library grid)
+        val itemSection = shelfWrapper.optJSONObject("itemSectionRenderer")
+        if (itemSection != null) {
+            val contents = itemSection.optJSONArray("contents")
+            if (contents != null) {
+                for (j in 0 until contents.length()) {
+                    contents.optJSONObject(j)?.let { items.addAll(parseItemsFromShelf(it)) }
+                }
+            }
+            return items
+        }
+
+        // 6. Direct Item (if the "shelf" is actually just an item in a continuation list)
         if (shelfWrapper.has("musicResponsiveListItemRenderer") || shelfWrapper.has("musicTwoRowItemRenderer")) {
             items.add(shelfWrapper)
         }
-        
+
         return items
     }
 
