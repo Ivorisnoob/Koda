@@ -21,7 +21,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
@@ -37,8 +40,16 @@ import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.TravelExplore
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Album
+import androidx.compose.material.icons.rounded.LiveTv
+import androidx.compose.material.icons.rounded.Movie
+import androidx.compose.material.icons.rounded.Newspaper
+import androidx.compose.material.icons.rounded.Podcasts
 import androidx.compose.material.icons.rounded.QueueMusic
+import androidx.compose.material.icons.rounded.School
+import androidx.compose.material.icons.rounded.Science
 import androidx.compose.material.icons.rounded.SmartDisplay
+import androidx.compose.material.icons.rounded.SportsBasketball
+import androidx.compose.material.icons.rounded.SportsEsports
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -96,6 +107,19 @@ import com.ivor.ivormusic.ui.video.VideoCard
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+// Quick-search topics shown on the video mode explore state
+private val VIDEO_EXPLORE_TOPICS = listOf(
+    "Gaming" to Icons.Rounded.SportsEsports,
+    "Music" to Icons.Rounded.MusicNote,
+    "News" to Icons.Rounded.Newspaper,
+    "Live" to Icons.Rounded.LiveTv,
+    "Podcasts" to Icons.Rounded.Podcasts,
+    "Movies" to Icons.Rounded.Movie,
+    "Tech" to Icons.Rounded.Science,
+    "Sports" to Icons.Rounded.SportsBasketball,
+    "Learning" to Icons.Rounded.School
+)
+
 /**
  * Segmented list shape helper for Expressive design
  */
@@ -151,6 +175,14 @@ fun SearchScreen(
     // Search history and focus state
     val searchHistory by viewModel.searchHistory.collectAsState()
     var isSearchFocused by remember { mutableStateOf(false) }
+
+    // Video mode browse state: trending feed doubles as the explore list
+    val trendingVideos by viewModel.trendingVideos.collectAsState()
+    LaunchedEffect(videoMode) {
+        if (videoMode && trendingVideos.isEmpty()) {
+            viewModel.loadTrendingVideos()
+        }
+    }
     
     // Theme colors from MaterialTheme
     val backgroundColor = MaterialTheme.colorScheme.background
@@ -224,12 +256,14 @@ fun SearchScreen(
                     query = query,
                     onQueryChange = { query = it },
                     onFocusChanged = { isSearchFocused = it },
-                    onSearch = { 
+                    onSearch = {
                         if (it.isNotBlank()) {
                             viewModel.addToSearchHistory(it)
                             focusManager.clearFocus()
                         }
                     },
+                    placeholderText = if (videoMode) "Search videos, channels..."
+                    else "Search songs, artists, albums...",
                     primaryColor = primaryColor,
                     primaryContainerColor = primaryContainerColor,
                     tertiaryContainerColor = tertiaryContainerColor,
@@ -301,6 +335,92 @@ fun SearchScreen(
                     }
                 }
                 
+                // Video mode browse: explore topics + trending instead of the music library
+                videoMode && query.isEmpty() -> {
+                    item {
+                        Text(
+                            "Explore",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = textColor,
+                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
+                        )
+                    }
+
+                    // Topic chips: one tap starts a search
+                    item {
+                        LazyRow(
+                            contentPadding = PaddingValues(horizontal = 20.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            items(VIDEO_EXPLORE_TOPICS) { (topic, icon) ->
+                                Surface(
+                                    onClick = {
+                                        query = topic
+                                        focusManager.clearFocus()
+                                    },
+                                    shape = CircleShape,
+                                    color = cardColor,
+                                    tonalElevation = 1.dp
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
+                                    ) {
+                                        Icon(
+                                            icon,
+                                            contentDescription = null,
+                                            tint = primaryColor,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Text(
+                                            topic,
+                                            style = MaterialTheme.typography.labelLarge,
+                                            color = textColor
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    item {
+                        Text(
+                            "Trending now",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = textColor,
+                            modifier = Modifier.padding(horizontal = 20.dp)
+                                .padding(top = 20.dp, bottom = 4.dp)
+                        )
+                    }
+
+                    if (trendingVideos.isEmpty()) {
+                        item {
+                            Box(
+                                modifier = Modifier.fillMaxWidth().height(160.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                LoadingIndicator(
+                                    modifier = Modifier.size(40.dp),
+                                    color = primaryColor
+                                )
+                            }
+                        }
+                    } else {
+                        items(trendingVideos) { video ->
+                            CompactVideoRow(
+                                video = video,
+                                onClick = { onVideoClick(video) },
+                                cardColor = cardColor,
+                                textColor = textColor,
+                                secondaryTextColor = secondaryTextColor
+                            )
+                        }
+                    }
+                }
+
                 query.isEmpty() -> {
                     // Browse section when no search
                     item {
@@ -312,10 +432,10 @@ fun SearchScreen(
                             modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
                         )
                     }
-                    
+
                     val displaySongs = songs.take(visibleLocalCount)
                     val hasMoreLocal = songs.size > visibleLocalCount
-                    
+
                     itemsIndexed(displaySongs) { index, song ->
                         SearchSongCard(
                             song = song,
@@ -334,7 +454,7 @@ fun SearchScreen(
                             )
                         }
                     }
-                    
+
                     // Show more button for local browse
                     if (hasMoreLocal) {
                         item {
@@ -804,6 +924,7 @@ private fun SearchHeroHeader(
     onQueryChange: (String) -> Unit,
     onFocusChanged: (Boolean) -> Unit,
     onSearch: (String) -> Unit,
+    placeholderText: String,
     primaryColor: Color,
     primaryContainerColor: Color,
     tertiaryContainerColor: Color,
@@ -850,8 +971,8 @@ private fun SearchHeroHeader(
                 OutlinedTextField(
                     value = query,
                     onValueChange = onQueryChange,
-                    placeholder = { 
-                        Text("Search songs, artists, albums...", color = secondaryTextColor) 
+                    placeholder = {
+                        Text(placeholderText, color = secondaryTextColor)
                     },
                     leadingIcon = {
                         Icon(
@@ -1375,6 +1496,110 @@ fun SearchHistoryList(
                         )
                     }
                 }
+            }
+        }
+    }
+}
+
+/**
+ * Compact video row for the video mode explore list: thumbnail on the
+ * left, title/channel/views on the right. Denser than VideoCard so the
+ * browse state reads as a list, not a feed.
+ */
+@Composable
+private fun CompactVideoRow(
+    video: VideoItem,
+    onClick: () -> Unit,
+    cardColor: Color,
+    textColor: Color,
+    secondaryTextColor: Color
+) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(16.dp),
+        color = cardColor,
+        tonalElevation = 1.dp,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .width(140.dp)
+                    .aspectRatio(16f / 9f)
+                    .clip(RoundedCornerShape(10.dp))
+            ) {
+                AsyncImage(
+                    model = video.thumbnailUrl,
+                    contentDescription = video.title,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
+                if (video.isLive) {
+                    Surface(
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(4.dp),
+                        shape = RoundedCornerShape(4.dp),
+                        color = Color(0xFFFF0000)
+                    ) {
+                        Text(
+                            text = "LIVE",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                        )
+                    }
+                } else if (video.duration > 0) {
+                    Surface(
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(4.dp),
+                        shape = RoundedCornerShape(4.dp),
+                        color = Color.Black.copy(alpha = 0.8f)
+                    ) {
+                        Text(
+                            text = video.formattedDuration,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White,
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                        )
+                    }
+                }
+            }
+
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(top = 2.dp, end = 4.dp)
+            ) {
+                Text(
+                    text = video.title,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = textColor,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = buildString {
+                        append(video.channelName)
+                        if (video.viewCount.isNotEmpty()) {
+                            append(" • ")
+                            append(video.viewCount)
+                        }
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = secondaryTextColor,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
         }
     }
