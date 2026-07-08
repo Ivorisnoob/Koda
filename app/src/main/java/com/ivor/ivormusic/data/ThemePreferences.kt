@@ -256,6 +256,14 @@ class ThemePreferences(context: Context) {
     }
     
     /**
+     * Fresh read of the save-history preference straight from SharedPreferences.
+     * ViewModels hold their own ThemePreferences instances, so their StateFlow
+     * copy goes stale when the toggle is flipped through another instance
+     * (e.g. the settings screen) — use this at decision time instead.
+     */
+    fun isSaveVideoHistoryEnabled(): Boolean = getSaveVideoHistoryPreference()
+
+    /**
      * Save video history preference and update the flow.
      */
     fun setSaveVideoHistory(enabled: Boolean) {

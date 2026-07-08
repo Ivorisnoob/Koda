@@ -83,6 +83,9 @@ class YouTubeRepository(private val context: Context) {
         private const val WEB_REMIX_VERSION = "1.20260114.03.00"
         private const val WEB_VERSION = "2.20260114.08.00"
 
+        // browse params selecting a channel's Videos tab (protobuf: "videos")
+        private const val CHANNEL_VIDEOS_TAB_PARAMS = "EgZ2aWRlb3PyBgQKAjoA"
+
         // ANDROID_VR is the recommended client for audio extraction in 2026:
         //  - Does NOT require a PO Token (unlike WEB / ANDROID / IOS / MWEB).
         //  - Returns direct, unobfuscated stream URLs (no signatureCipher to decrypt).
@@ -869,13 +872,8 @@ class YouTubeRepository(private val context: Context) {
         if (!sessionManager.isLoggedIn()) return@withContext emptyList()
         
         try {
-            // Fetch Library (Liked Playlists)
-            // Note: FEmusic_liked_playlists gets playlists you've saved/liked
-            // FEmusic_library_landing might be better but harder to parse
-            val jsonResponse = fetchInternalApi("FEmusic_liked_playlists")
-            
             val playlists = mutableListOf<PlaylistDisplayItem>()
-            
+
             // Synthesized "Supermix" and "Likes" always useful to have
             playlists.add(PlaylistDisplayItem(
                 name = "My Supermix",
@@ -884,16 +882,31 @@ class YouTubeRepository(private val context: Context) {
                 thumbnailUrl = "https://www.gstatic.com/youtube/media/ytm/images/pbg/liked_music_@576.png"
             ))
             playlists.add(PlaylistDisplayItem(
-                name = "Your Likes", 
-                url = "https://music.youtube.com/playlist?list=LM", 
+                name = "Your Likes",
+                url = "https://music.youtube.com/playlist?list=LM",
                 uploaderName = "You"
             ))
 
-            // Add parsed playlists
-            playlists.addAll(parsePlaylistsFromInternalJson(jsonResponse))
-            
-            playlists
+            // Fetch Library (Liked Playlists), following grid continuations so
+            // large libraries come back in full rather than just the first page.
+            // Note: FEmusic_liked_playlists gets playlists you've saved/liked
+            var json = fetchInternalApi("FEmusic_liked_playlists")
+            var pageCount = 0
+            val maxPages = 20
+            while (json.isNotEmpty() && pageCount < maxPages) {
+                val parsed = parsePlaylistsFromInternalJson(json)
+                playlists.addAll(parsed)
+                pageCount++
+                android.util.Log.d("YouTubeRepo", "Library playlists page $pageCount: ${parsed.size} items")
+                if (parsed.isEmpty()) break
+                val token = extractContinuationToken(json) ?: break
+                json = fetchContinuation(token)
+            }
+
+            // The library grid can include "Your Likes" (VLLM) which we already synthesized
+            playlists.distinctBy { it.id }
         } catch (e: Exception) {
+            android.util.Log.e("YouTubeRepo", "Error fetching user playlists", e)
             emptyList()
         }
     }
@@ -1560,6 +1573,12 @@ class YouTubeRepository(private val context: Context) {
             ?.optJSONArray("contents")
             ?.let { return it }
 
+        // Grid continuation (library playlist/album pages)
+        root.optJSONObject("continuationContents")
+            ?.optJSONObject("gridContinuation")
+            ?.optJSONArray("items")
+            ?.let { return it }
+
         return null
     }
 
@@ -1605,11 +1624,35 @@ class YouTubeRepository(private val context: Context) {
             return items
         }
         
-        // 4. Direct Item (if the "shelf" is actually just an item in a continuation list)
+        // 4. gridRenderer (Library pages: grid of playlists/albums)
+        val grid = shelfWrapper.optJSONObject("gridRenderer")
+        if (grid != null) {
+            val gridItems = grid.optJSONArray("items")
+            if (gridItems != null) {
+                for (j in 0 until gridItems.length()) {
+                    gridItems.optJSONObject(j)?.let { items.add(it) }
+                }
+            }
+            return items
+        }
+
+        // 5. itemSectionRenderer wraps another shelf (e.g. the library grid)
+        val itemSection = shelfWrapper.optJSONObject("itemSectionRenderer")
+        if (itemSection != null) {
+            val contents = itemSection.optJSONArray("contents")
+            if (contents != null) {
+                for (j in 0 until contents.length()) {
+                    contents.optJSONObject(j)?.let { items.addAll(parseItemsFromShelf(it)) }
+                }
+            }
+            return items
+        }
+
+        // 6. Direct Item (if the "shelf" is actually just an item in a continuation list)
         if (shelfWrapper.has("musicResponsiveListItemRenderer") || shelfWrapper.has("musicTwoRowItemRenderer")) {
             items.add(shelfWrapper)
         }
-        
+
         return items
     }
 
@@ -3355,6 +3398,7 @@ class YouTubeRepository(private val context: Context) {
             // 1. Collect entity payloads: commentId -> payload, toolbar states by entity key
             val entities = mutableMapOf<String, org.json.JSONObject>()
             val toolbarStates = mutableMapOf<String, org.json.JSONObject>()
+            val replyParamsList = mutableListOf<String>()
             val mutations = root.optJSONObject("frameworkUpdates")
                 ?.optJSONObject("entityBatchUpdate")
                 ?.optJSONArray("mutations")
@@ -3369,8 +3413,29 @@ class YouTubeRepository(private val context: Context) {
                         val key = state.optString("key")
                         if (key.isNotBlank()) toolbarStates[key] = state
                     }
+                    // Reply-box params live in the toolbar surface entity, one per comment
+                    payload.optJSONObject("engagementToolbarSurfaceEntityPayload")?.let { surface ->
+                        val replyEndpoints = mutableListOf<org.json.JSONObject>()
+                        findObjectsByKey(surface, "createCommentReplyEndpoint", replyEndpoints)
+                        replyEndpoints.firstOrNull()?.optString("createReplyParams")
+                            ?.takeIf { it.isNotBlank() }?.let { replyParamsList.add(it) }
+                    }
                 }
             }
+            // Match reply params to their comment: the decoded protobuf embeds the commentId
+            val replyParamsByCommentId = mutableMapOf<String, String>()
+            for (params in replyParamsList) {
+                val decoded = decodeInnerTubeParams(params) ?: continue
+                entities.keys.firstOrNull { decoded.contains(it) }?.let { id ->
+                    replyParamsByCommentId[id] = params
+                }
+            }
+
+            // Params for posting a new top-level comment (present on first pages only)
+            val createEndpoints = mutableListOf<org.json.JSONObject>()
+            findObjectsByKey(root, "createCommentEndpoint", createEndpoints)
+            val createCommentParams = createEndpoints.firstOrNull()
+                ?.optString("createCommentParams")?.takeIf { it.isNotBlank() }
 
             // 2. Walk continuationItems in order to keep YouTube's comment ordering
             val comments = mutableListOf<CommentItem>()
@@ -3397,7 +3462,12 @@ class YouTubeRepository(private val context: Context) {
                             findContinuationTokens(replies, tokens)
                             repliesToken = tokens.firstOrNull()
                         }
-                        comments.add(parseCommentEntity(id, entity, viewModel, toolbarStates, repliesToken))
+                        comments.add(
+                            parseCommentEntity(
+                                id, entity, viewModel, toolbarStates, repliesToken,
+                                replyParamsByCommentId[id]
+                            )
+                        )
                     } else if (item.has("continuationItemRenderer")) {
                         val tokens = mutableListOf<String>()
                         findContinuationTokens(item.getJSONObject("continuationItemRenderer"), tokens)
@@ -3406,11 +3476,23 @@ class YouTubeRepository(private val context: Context) {
                 }
             }
 
-            CommentsPage(comments, nextToken)
+            CommentsPage(comments, nextToken, createCommentParams)
         } catch (e: Exception) {
             android.util.Log.e("YouTubeRepo", "getCommentsPage failed", e)
             null
         }
+    }
+
+    /**
+     * Decode a URL-encoded, URL-safe base64 InnerTube params blob into a
+     * string for substring matching (embedded ids are plain ASCII).
+     */
+    private fun decodeInnerTubeParams(params: String): String? = try {
+        val unescaped = java.net.URLDecoder.decode(params, "UTF-8")
+        val bytes = android.util.Base64.decode(unescaped, android.util.Base64.URL_SAFE)
+        String(bytes, Charsets.ISO_8859_1)
+    } catch (e: Exception) {
+        null
     }
 
     private fun parseCommentEntity(
@@ -3418,7 +3500,8 @@ class YouTubeRepository(private val context: Context) {
         entity: org.json.JSONObject,
         viewModel: org.json.JSONObject,
         toolbarStates: Map<String, org.json.JSONObject>,
-        repliesToken: String?
+        repliesToken: String?,
+        replyParams: String? = null
     ): CommentItem {
         val props = entity.optJSONObject("properties")
         val author = entity.optJSONObject("author")
@@ -3438,7 +3521,8 @@ class YouTubeRepository(private val context: Context) {
             isHearted = heartState == "TOOLBAR_HEART_STATE_HEARTED",
             isCreator = author?.optBoolean("isCreator", false) ?: false,
             isVerified = author?.optBoolean("isVerified", false) ?: false,
-            repliesToken = repliesToken
+            repliesToken = repliesToken,
+            replyParams = replyParams
         )
     }
 
@@ -3470,5 +3554,275 @@ class YouTubeRepository(private val context: Context) {
             .put("context", webContext())
             .put("channelIds", org.json.JSONArray().put(channelId))
         postWatchApi(endpoint, body) != null
+    }
+
+    /**
+     * Post a new top-level comment. createCommentParams comes from the first
+     * comments page (CommentsPage.createCommentParams). Returns the created
+     * comment parsed from the response, or null on failure. Requires login.
+     */
+    suspend fun createComment(createCommentParams: String, text: String): CommentItem? =
+        withContext(Dispatchers.IO) {
+            if (!sessionManager.isLoggedIn()) return@withContext null
+            val body = org.json.JSONObject()
+                .put("context", webContext())
+                .put("commentText", text)
+                .put("createCommentParams", createCommentParams)
+            parseCreatedComment(postWatchApi("comment/create_comment", body))
+        }
+
+    /**
+     * Post a reply to a comment. createReplyParams comes from the parent
+     * comment (CommentItem.replyParams). Requires login.
+     */
+    suspend fun createCommentReply(createReplyParams: String, text: String): CommentItem? =
+        withContext(Dispatchers.IO) {
+            if (!sessionManager.isLoggedIn()) return@withContext null
+            val body = org.json.JSONObject()
+                .put("context", webContext())
+                .put("commentText", text)
+                .put("createReplyParams", createReplyParams)
+            parseCreatedComment(postWatchApi("comment/create_comment_reply", body))
+        }
+
+    /**
+     * Parse the comment entity out of a create_comment / create_comment_reply
+     * response. Returns null unless the actionResult reports success.
+     */
+    private fun parseCreatedComment(raw: String?): CommentItem? {
+        if (raw == null) return null
+        return try {
+            val root = org.json.JSONObject(raw)
+            val results = mutableListOf<org.json.JSONObject>()
+            findObjectsByKey(root, "actionResult", results)
+            if (results.none { it.optString("status") == "STATUS_SUCCEEDED" }) return null
+
+            val entities = mutableListOf<org.json.JSONObject>()
+            findObjectsByKey(root, "commentEntityPayload", entities)
+            val entity = entities.firstOrNull() ?: return null
+            val id = entity.optJSONObject("properties")?.optString("commentId")
+                ?.takeIf { it.isNotBlank() } ?: return null
+
+            val replyEndpoints = mutableListOf<org.json.JSONObject>()
+            findObjectsByKey(root, "createCommentReplyEndpoint", replyEndpoints)
+            val replyParams = replyEndpoints.firstOrNull()
+                ?.optString("createReplyParams")?.takeIf { it.isNotBlank() }
+
+            parseCommentEntity(
+                id, entity,
+                viewModel = org.json.JSONObject(),
+                toolbarStates = emptyMap(),
+                repliesToken = null,
+                replyParams = replyParams
+            )
+        } catch (e: Exception) {
+            android.util.Log.e("YouTubeRepo", "parseCreatedComment failed", e)
+            null
+        }
+    }
+
+    /**
+     * Record a regular (non-music) video playback into the user's YouTube
+     * watch history. Mirrors reportPlayback but uses the WEB client against
+     * www.youtube.com: the WEB_REMIX/music flow does not register plain
+     * videos. Requires login.
+     */
+    suspend fun reportVideoPlayback(videoId: String) = withContext(Dispatchers.IO) {
+        if (!sessionManager.isLoggedIn()) return@withContext
+        try {
+            val cpn = generateCpn()
+            val raw = postWatchApi(
+                "player",
+                org.json.JSONObject()
+                    .put("context", webContext())
+                    .put("videoId", videoId)
+                    .put("cpn", cpn)
+            ) ?: return@withContext
+            val baseUrl = org.json.JSONObject(raw)
+                .optJSONObject("playbackTracking")
+                ?.optJSONObject("videostatsPlaybackUrl")
+                ?.optString("baseUrl")
+            if (baseUrl.isNullOrEmpty()) {
+                android.util.Log.w("YouTubeRepo", "No videostatsPlaybackUrl for $videoId")
+                return@withContext
+            }
+            val trackingUrl = buildString {
+                append(baseUrl)
+                if (!baseUrl.contains("cpn=")) {
+                    append(if (baseUrl.contains("?")) "&" else "?")
+                    append("cpn=$cpn")
+                }
+                append("&ver=2&c=WEB")
+            }
+            val cookies = sessionManager.getCookies() ?: return@withContext
+            val builder = okhttp3.Request.Builder()
+                .url(trackingUrl)
+                .get()
+                .addHeader("User-Agent", BROWSER_USER_AGENT)
+                .addHeader("Origin", "https://www.youtube.com")
+                .addHeader("Referer", "https://www.youtube.com/watch?v=$videoId")
+                .addHeader("Cookie", cookies)
+            YouTubeAuthUtils.getAuthorizationHeader(cookies, "https://www.youtube.com")?.let {
+                builder.addHeader("Authorization", it)
+                builder.addHeader("X-Goog-AuthUser", "0")
+            }
+            okHttpClient.newCall(builder.build()).execute().use { response ->
+                if (response.isSuccessful) {
+                    android.util.Log.d("YouTubeRepo", "Video history sync SUCCESS for $videoId")
+                } else {
+                    android.util.Log.w("YouTubeRepo", "Video history sync failed: ${response.code}")
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("YouTubeRepo", "Error in reportVideoPlayback", e)
+        }
+    }
+
+    /**
+     * The user's subscriptions feed (FEsubscriptions): latest uploads from
+     * all subscribed channels, newest first. Requires login.
+     */
+    suspend fun getSubscriptionsFeed(): List<VideoItem> = withContext(Dispatchers.IO) {
+        if (!sessionManager.isLoggedIn()) return@withContext emptyList()
+        try {
+            val raw = postWatchApi(
+                "browse",
+                org.json.JSONObject().put("context", webContext()).put("browseId", "FEsubscriptions")
+            ) ?: return@withContext emptyList()
+            parseVideosFromYouTubeJson(raw)
+        } catch (e: Exception) {
+            android.util.Log.e("YouTubeRepo", "getSubscriptionsFeed failed", e)
+            emptyList()
+        }
+    }
+
+    /**
+     * All channels the user is subscribed to, from the FEchannels browse
+     * feed (channelRenderer items), following continuations. Requires login.
+     */
+    suspend fun getSubscribedChannels(): List<SubscribedChannel> = withContext(Dispatchers.IO) {
+        if (!sessionManager.isLoggedIn()) return@withContext emptyList()
+        try {
+            val channels = mutableListOf<SubscribedChannel>()
+            var response = postWatchApi(
+                "browse",
+                org.json.JSONObject().put("context", webContext()).put("browseId", "FEchannels")
+            )
+            var pages = 0
+            while (response != null && pages < 10) {
+                val root = org.json.JSONObject(response)
+                val renderers = mutableListOf<org.json.JSONObject>()
+                findObjectsByKey(root, "channelRenderer", renderers)
+                for (renderer in renderers) {
+                    val channelId = renderer.optString("channelId").takeIf { it.isNotBlank() } ?: continue
+                    val name = renderer.optJSONObject("title")?.optString("simpleText")
+                        ?.takeIf { it.isNotBlank() } ?: continue
+                    val thumbs = renderer.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
+                    var avatarUrl = thumbs?.optJSONObject((thumbs.length() - 1).coerceAtLeast(0))
+                        ?.optString("url")?.takeIf { it.isNotBlank() }
+                    if (avatarUrl?.startsWith("//") == true) avatarUrl = "https:$avatarUrl"
+                    // InnerTube quirk: on FEchannels the subscriber count arrives in
+                    // videoCountText; subscriberCountText carries the @handle.
+                    val subscriberCount = renderer.optJSONObject("videoCountText")
+                        ?.optString("simpleText")?.takeIf { it.isNotBlank() }
+                    channels.add(SubscribedChannel(channelId, name, avatarUrl, subscriberCount))
+                }
+                val token = if (renderers.isNotEmpty()) extractContinuationToken(response) else null
+                response = token?.let {
+                    postWatchApi(
+                        "browse",
+                        org.json.JSONObject().put("context", webContext()).put("continuation", it)
+                    )
+                }
+                pages++
+            }
+            channels.distinctBy { it.channelId }
+        } catch (e: Exception) {
+            android.util.Log.e("YouTubeRepo", "getSubscribedChannels failed", e)
+            emptyList()
+        }
+    }
+
+    /**
+     * Latest uploads of a channel (Videos tab browse). Channel-page lockups
+     * omit the channel row, so the caller's channel identity is stitched in.
+     */
+    suspend fun getChannelVideos(channel: SubscribedChannel): List<VideoItem> = withContext(Dispatchers.IO) {
+        try {
+            val raw = postWatchApi(
+                "browse",
+                org.json.JSONObject()
+                    .put("context", webContext())
+                    .put("browseId", channel.channelId)
+                    .put("params", CHANNEL_VIDEOS_TAB_PARAMS)
+            ) ?: return@withContext emptyList()
+            val root = org.json.JSONObject(raw)
+            val richItems = mutableListOf<org.json.JSONObject>()
+            findObjectsByKey(root, "richItemRenderer", richItems)
+            richItems.mapNotNull { item ->
+                val content = item.optJSONObject("content") ?: return@mapNotNull null
+                val parsed = parseLockupViewModel(content.optJSONObject("lockupViewModel"))
+                    ?: parseVideoRenderer(content.optJSONObject("videoRenderer"))
+                    ?: return@mapNotNull null
+                // On the channel page the first metadata row is "N views • date",
+                // which the generic parser reads as the channel name.
+                val viewCount = if (parsed.viewCount.isBlank() &&
+                    (parsed.channelName.contains("view", ignoreCase = true) ||
+                        parsed.channelName.contains("watching", ignoreCase = true))
+                ) parsed.channelName else parsed.viewCount
+                parsed.copy(
+                    channelName = channel.name,
+                    channelId = channel.channelId,
+                    channelIconUrl = channel.avatarUrl ?: parsed.channelIconUrl,
+                    viewCount = viewCount
+                )
+            }.distinctBy { it.videoId }
+        } catch (e: Exception) {
+            android.util.Log.e("YouTubeRepo", "getChannelVideos failed", e)
+            emptyList()
+        }
+    }
+
+    /**
+     * The user's notification inbox (new uploads from subscribed channels,
+     * replies, etc.). First page only. Requires login.
+     */
+    suspend fun getNotifications(): List<NotificationItem> = withContext(Dispatchers.IO) {
+        if (!sessionManager.isLoggedIn()) return@withContext emptyList()
+        try {
+            val raw = postWatchApi(
+                "notification/get_notification_menu",
+                org.json.JSONObject()
+                    .put("context", webContext())
+                    .put("notificationsMenuRequestType", "NOTIFICATIONS_MENU_REQUEST_TYPE_INBOX")
+            ) ?: return@withContext emptyList()
+            val root = org.json.JSONObject(raw)
+            val renderers = mutableListOf<org.json.JSONObject>()
+            findObjectsByKey(root, "notificationRenderer", renderers)
+            renderers.mapNotNull { renderer ->
+                val message = renderer.optJSONObject("shortMessage")?.optString("simpleText")
+                    ?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                fun lastThumb(key: String): String? {
+                    val thumbs = renderer.optJSONObject(key)?.optJSONArray("thumbnails") ?: return null
+                    var url = thumbs.optJSONObject((thumbs.length() - 1).coerceAtLeast(0))
+                        ?.optString("url")?.takeIf { it.isNotBlank() }
+                    if (url?.startsWith("//") == true) url = "https:$url"
+                    return url
+                }
+                NotificationItem(
+                    message = message,
+                    sentTime = renderer.optJSONObject("sentTimeText")?.optString("simpleText").orEmpty(),
+                    channelAvatarUrl = lastThumb("thumbnail"),
+                    videoThumbnailUrl = lastThumb("videoThumbnail"),
+                    videoId = renderer.optJSONObject("navigationEndpoint")
+                        ?.optJSONObject("watchEndpoint")?.optString("videoId")
+                        ?.takeIf { it.isNotBlank() },
+                    isRead = renderer.optBoolean("read", false)
+                )
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("YouTubeRepo", "getNotifications failed", e)
+            emptyList()
+        }
     }
 }

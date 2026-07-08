@@ -32,8 +32,12 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Subscriptions
+import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Subscriptions
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.People
 import androidx.compose.material.icons.rounded.Home
@@ -213,6 +217,11 @@ fun HomeScreen(
         selectedTab = 0
     }
 
+    // The Subscriptions/History tabs (2/3) only exist in video mode
+    LaunchedEffect(videoMode) {
+        if (!videoMode && selectedTab > 2) selectedTab = 0
+    }
+
     // Auth Dialog State
     var showAuthDialog by remember { mutableStateOf(false) }
     var showAccountSheet by remember { mutableStateOf(false) }
@@ -348,7 +357,7 @@ fun HomeScreen(
                     )
                     2 -> {
                         if (videoMode) {
-                             com.ivor.ivormusic.ui.video.VideoHistoryContent(
+                            com.ivor.ivormusic.ui.video.SubscriptionsContent(
                                 viewModel = viewModel,
                                 onVideoClick = { video ->
                                     onNavigateToVideoPlayer(video)
@@ -379,6 +388,20 @@ fun HomeScreen(
                                 initialArtist = viewedArtistFromPlayer,
                                 onInitialArtistConsumed = { viewedArtistFromPlayer = null },
                                 onStatsClick = onNavigateToStats
+                            )
+                        }
+                    }
+                    3 -> {
+                        // Video mode only: watch history moved here so tab 2
+                        // can host Subscriptions
+                        if (videoMode) {
+                            com.ivor.ivormusic.ui.video.VideoHistoryContent(
+                                viewModel = viewModel,
+                                onVideoClick = { video ->
+                                    onNavigateToVideoPlayer(video)
+                                },
+                                onLoginClick = { showAuthDialog = true },
+                                contentPadding = PaddingValues(bottom = 160.dp)
                             )
                         }
                     }
@@ -423,7 +446,12 @@ fun HomeScreen(
                 .navigationBarsPadding()
                 .padding(bottom = 20.dp),
             content = {
-                val tabs = listOf(
+                val tabs = if (videoMode) listOf(
+                    Triple(0, "Home", Pair(Icons.Rounded.Home, Icons.Outlined.Home)),
+                    Triple(1, "Search", Pair(Icons.Filled.Search, Icons.Outlined.Search)),
+                    Triple(2, "Subs", Pair(Icons.Filled.Subscriptions, Icons.Outlined.Subscriptions)),
+                    Triple(3, "History", Pair(Icons.Filled.History, Icons.Outlined.History))
+                ) else listOf(
                     Triple(0, "Home", Pair(Icons.Rounded.Home, Icons.Outlined.Home)),
                     Triple(1, "Search", Pair(Icons.Filled.Search, Icons.Outlined.Search)),
                     Triple(2, "Library", Pair(Icons.Filled.LibraryMusic, Icons.Outlined.LibraryMusic))

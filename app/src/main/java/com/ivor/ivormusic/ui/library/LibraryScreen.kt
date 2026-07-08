@@ -772,6 +772,7 @@ fun PlaylistsGrid(
             ExpressivePlaylistCard(
                 name = playlist.name ?: "Untitled",
                 count = playlist.itemCount,
+                subtitle = if (playlist.itemCount < 0) playlist.uploaderName.ifBlank { "Playlist" } else null,
                 thumbnailUrl = playlist.thumbnailUrl,
                 description = playlist.description,
                 isEditable = isLocalPlaylist,

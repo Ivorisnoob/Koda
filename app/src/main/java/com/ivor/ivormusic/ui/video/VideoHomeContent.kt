@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -87,11 +88,41 @@ fun VideoHomeContent(
     val backgroundColor = MaterialTheme.colorScheme.background
     val textColor = MaterialTheme.colorScheme.onBackground
     val isYouTubeConnected by viewModel.isYouTubeConnected.collectAsState()
-    
+
+    // Notifications sheet state
+    var showNotificationsSheet by remember { mutableStateOf(false) }
+    val notifications by viewModel.notifications.collectAsState()
+    val isNotificationsLoading by viewModel.isNotificationsLoading.collectAsState()
+
     // Animation state for staggered entry
     var isVisible by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         isVisible = true
+    }
+
+    if (showNotificationsSheet) {
+        NotificationsSheet(
+            notifications = notifications,
+            isLoading = isNotificationsLoading,
+            onNotificationClick = { notification ->
+                val videoId = notification.videoId
+                if (videoId != null) {
+                    showNotificationsSheet = false
+                    onVideoClick(
+                        VideoItem(
+                            videoId = videoId,
+                            title = notification.message,
+                            channelName = "",
+                            channelIconUrl = notification.channelAvatarUrl,
+                            thumbnailUrl = notification.videoThumbnailUrl,
+                            duration = 0L,
+                            viewCount = ""
+                        )
+                    )
+                }
+            },
+            onDismiss = { showNotificationsSheet = false }
+        )
     }
 
     ExpressivePullToRefresh(
@@ -124,6 +155,14 @@ fun VideoHomeContent(
                         onProfileClick = onProfileClick,
                         onSettingsClick = onSettingsClick,
                         onDownloadsClick = onDownloadsClick,
+                        onNotificationsClick = {
+                            if (isYouTubeConnected) {
+                                viewModel.loadNotifications(force = true)
+                                showNotificationsSheet = true
+                            } else {
+                                onProfileClick()
+                            }
+                        },
                         viewModel = viewModel
                     )
                 }
@@ -195,6 +234,7 @@ private fun VideoTopBarSection(
     onProfileClick: () -> Unit,
     onSettingsClick: () -> Unit,
     onDownloadsClick: () -> Unit,
+    onNotificationsClick: () -> Unit,
     viewModel: HomeViewModel
 ) {
     val surfaceColor = MaterialTheme.colorScheme.surfaceContainer
@@ -242,6 +282,23 @@ private fun VideoTopBarSection(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // Notifications Button
+            IconButton(
+                onClick = onNotificationsClick,
+                shapes = IconButtonDefaults.shapes(),
+                colors = IconButtonDefaults.iconButtonColors(
+                    containerColor = containerColor,
+                    contentColor = iconColor
+                ),
+                modifier = Modifier.size(44.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Notifications,
+                    contentDescription = "Notifications",
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+
             // Downloads Button
             Box {
                 IconButton(
