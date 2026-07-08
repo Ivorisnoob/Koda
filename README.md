@@ -5,7 +5,7 @@
 <h1 align="center">Koda</h1>
 
 <p align="center">
-  <b>A modern, feature-rich Android music & video player powered by YouTube Music</b>
+  <b>A modern Android music and video player powered by YouTube Music</b>
 </p>
 
 <p align="center">
@@ -22,172 +22,62 @@
 
 ---
 
-Built entirely with **Kotlin** and **Jetpack Compose**, Koda delivers a premium music and video experience with **Material 3 Expressive** design. Stream music, watch videos, and enjoy personalized recommendations—all without requiring official API keys.
+Koda is built entirely with Kotlin and Jetpack Compose, with a Material 3 Expressive design throughout. It streams music and video from YouTube, learns what you like, and does it without any official API keys. Everything runs through NewPipe Extractor and direct InnerTube calls.
 
-## Screenshots
-
-### Core Screens
-
-<table>
-  <tr>
-    <td align="center"><b>Home - Light</b></td>
-    <td align="center"><b>Home - Dark</b></td>
-  </tr>
-  <tr>
-    <td><img src="screenshots/Home_Light.png" width="250"/></td>
-    <td><img src="screenshots/Home_Dark.png" width="250"/></td>
-  </tr>
-  <tr>
-    <td align="center"><b>Search - Light</b></td>
-    <td align="center"><b>Search - Dark</b></td>
-  </tr>
-  <tr>
-    <td><img src="screenshots/Search_Light.png" width="250"/></td>
-    <td><img src="screenshots/Search_Dark.png" width="250"/></td>
-  </tr>
-  <tr>
-    <td align="center"><b>Library - Light</b></td>
-    <td align="center"><b>Library - Dark</b></td>
-  </tr>
-  <tr>
-    <td><img src="screenshots/Library_Light.png" width="250"/></td>
-    <td><img src="screenshots/Library_Dark.png" width="250"/></td>
-  </tr>
-  <tr>
-    <td align="center"><b>Settings - Light</b></td>
-    <td align="center"><b>Settings - Dark</b></td>
-  </tr>
-  <tr>
-    <td><img src="screenshots/Settings_Light.png" width="250"/></td>
-    <td><img src="screenshots/Settings_Dark.png" width="250"/></td>
-  </tr>
-</table>
-
-### Music Player
-
-<table>
-  <tr>
-    <td align="center"><b>Now Playing - Light</b></td>
-    <td align="center"><b>Now Playing - Dark</b></td>
-  </tr>
-  <tr>
-    <td><img src="screenshots/Player_Light.png" width="250"/></td>
-    <td><img src="screenshots/Player_Dark.png" width="250"/></td>
-  </tr>
-  <tr>
-    <td align="center"><b>Gesture Player - Light</b></td>
-    <td align="center"><b>Gesture Player - Dark</b></td>
-  </tr>
-  <tr>
-    <td><img src="screenshots/GesturePlayer_Light.png" width="250"/></td>
-    <td><img src="screenshots/GesturePlayer_Dark.png" width="250"/></td>
-  </tr>
-  <tr>
-    <td align="center"><b>Queue - Light</b></td>
-    <td align="center"><b>Queue - Dark</b></td>
-  </tr>
-  <tr>
-    <td><img src="screenshots/Queue_Light.png" width="250"/></td>
-    <td><img src="screenshots/Queue_Dark.png" width="250"/></td>
-  </tr>
-  <tr>
-    <td align="center"><b>Lyrics - Light</b></td>
-    <td align="center"><b>Lyrics - Dark</b></td>
-  </tr>
-  <tr>
-    <td><img src="screenshots/Lyrics_Light.png" width="250"/></td>
-    <td><img src="screenshots/Lyrics_Dark.png" width="250"/></td>
-  </tr>
-</table>
-
-### Video Player
-
-<table>
-  <tr>
-    <td align="center"><b>Video Player - Light</b></td>
-    <td align="center"><b>Video Player - Dark</b></td>
-  </tr>
-  <tr>
-    <td><img src="screenshots/Video_Light.png" width="250"/></td>
-    <td><img src="screenshots/Video_Dark.png" width="250"/></td>
-  </tr>
-  <tr>
-    <td align="center"><b>Video Home - Light</b></td>
-    <td align="center"><b>Video Home - Dark</b></td>
-  </tr>
-  <tr>
-    <td><img src="screenshots/VideoHome_Light.png" width="250"/></td>
-    <td><img src="screenshots/VideoHome_Dark.png" width="250"/></td>
-  </tr>
-  <tr>
-    <td align="center"><b>Mini Video Player</b></td>
-    <td align="center"><b>Video History</b></td>
-  </tr>
-  <tr>
-    <td><img src="screenshots/MiniVideoPlayer.png" width="250"/></td>
-    <td><img src="screenshots/VideoHistory.png" width="250"/></td>
-  </tr>
-</table>
-
-### Downloads & Auth
-
-<table>
-  <tr>
-    <td align="center"><b>Downloads</b></td>
-    <td align="center"><b>YouTube Sign In</b></td>
-  </tr>
-  <tr>
-    <td><img src="screenshots/Downloads.png" width="250"/></td>
-    <td><img src="screenshots/SignIn.png" width="250"/></td>
-  </tr>
-</table>
-
----
+There is one app with two modes. Leave the video toggle off and Koda is a full music player with a queue, downloads, and a library. Turn it on and the Home, Search, and Library tabs reshape into a proper video experience with a personalized feed, a real player, comments, subscriptions, and notifications.
 
 ## Features
 
-### YouTube Music Integration
-- **Search** — Find songs, albums, artists, and playlists from the YouTube Music catalog
-- **Personalized Recommendations** — Quick picks and curated suggestions based on your history
-- **Playlist Access** — Browse and play your playlists including "Liked Songs" and "Supermix"
-- **History Sync** — Tracks you play sync with your YouTube Music history
-- **Like/Unlike** — Heart your favorite songs directly from the player
+### Music
 
-### Video Player (NEW!)
-- **In-App Video Playback** — Watch music videos without leaving the app
-- **Picture-in-Picture** — Continue watching in a floating window
-- **Quality Selection** — Choose from available qualities (1080p, 720p, etc.)
-- **Mini Player** — Collapse to a mini bar while browsing
-- **Related Videos** — Discover more content with smart recommendations
-- **Auto-Play** — Seamlessly play the next video
+- Search across the YouTube Music catalog for songs, albums, artists, and playlists.
+- Personalized quick picks and recommendations, with a local taste profile built from your play history, liked songs, and searches so suggestions work even when you are logged out.
+- Access your playlists, including Liked Songs, and browse artist and album pages with play, shuffle, and start-radio actions.
+- Heart tracks straight from the player. Liked songs appear immediately and are kept locally, no login required.
+- Sleep timer with a live countdown, available from both the mini player and the full player sheet.
+- Synced lyrics.
+
+### Video mode
+
+- A personalized video home feed. It shows your real feed when you are signed in, and falls back to a taste based feed built from your watch history when you are not.
+- A video player with the full quality ladder up to 2160p60 and a separate audio track, so it no longer gets stuck at a low muxed quality.
+- Double tap either side to skip forward or back.
+- Picture in Picture that captures just the video, not the whole app.
+- Optional timed comments that fade in over the video as playback reaches the moment they mention.
+- A Subscriptions tab with the latest uploads from channels you follow, a channel avatar rail, a full channel list, and drill in to any channel's uploads.
+- A dedicated watch history tab that syncs your viewing back to YouTube.
+- A notification inbox on the video home screen.
+
+### Comments and engagement
+
+- Read and write comments and replies right from the player. Yours appear instantly.
+- Like, dislike, and subscribe from the player using your account.
 
 ### Playback
-- **High-Quality Streaming** — Optimized audio via NewPipe Extractor
-- **Queue Management** — Full queue control with drag-to-reorder
-- **Shuffle & Repeat** — Standard playback modes (off, one, all)
-- **Media Session** — System-wide controls via notification & lock screen
-- **Local Music Support** — Optional playback of local audio files
 
-### Downloads (NEW!)
-- **Download Songs** — Save tracks for offline listening
-- **Download Playlists** — Batch download entire playlists
-- **Download Manager** — Track progress and manage downloads
+- High quality audio streaming via NewPipe Extractor and direct InnerTube resolution.
+- Full queue control with drag to reorder, shuffle, and repeat modes.
+- Background playback with system controls on the notification and lock screen through a Media3 media session.
+- Optional local audio file playback.
 
-### User Interface
-- **Material 3 Expressive** — Shape morphing, spring physics, dynamic colors
-- **Dynamic Theming** — Album artwork influences the color palette
-- **Light, Dark & System** — Choose your preferred theme
-- **Gesture-Based Navigation** — Intuitive swipe controls
-- **Animated Transitions** — Smooth, physics-based animations
+### Downloads
 
-### Library
-- **YouTube Playlists** — Access all your saved playlists with cover art
-- **Liked Songs** — Dedicated section for hearted tracks
-- **Quick Access Cards** — Fast navigation to frequent sections
+- Download individual songs for offline listening.
+- Batch download entire playlists.
+- A download manager to track progress and manage saved files.
+
+### Interface
+
+- Material 3 Expressive design with shape morphing, spring physics, and dynamic color.
+- Dynamic theming that pulls its palette from album artwork.
+- Light, dark, and system themes.
+- Gesture based navigation and physics based transitions.
+- A rebuilt onboarding flow with a morphing shape hero, wavy progress indicator, and focused steps.
 
 ### Authentication
-- **Cookie-Based Auth** — Sign in via embedded WebView
-- **Secure Storage** — Credentials stored with EncryptedSharedPreferences
+
+- Sign in through an embedded WebView. No password ever leaves the browser.
+- Cookies are stored with EncryptedSharedPreferences.
 
 ---
 
@@ -197,12 +87,13 @@ Built entirely with **Kotlin** and **Jetpack Compose**, Koda delivers a premium 
 |-----------|------------|
 | Language | Kotlin |
 | UI Framework | Jetpack Compose |
+| Design | Material 3 Expressive |
 | Architecture | MVVM with StateFlow |
 | Playback | Media3 ExoPlayer |
 | Networking | OkHttp |
-| Data Extraction | NewPipe Extractor |
+| Data Extraction | NewPipe Extractor and direct InnerTube |
 | Image Loading | Coil |
-| Concurrency | Kotlin Coroutines & Flow |
+| Concurrency | Kotlin Coroutines and Flow |
 | Min SDK | 31 (Android 12) |
 | Target SDK | 36 |
 
@@ -213,21 +104,22 @@ Built entirely with **Kotlin** and **Jetpack Compose**, Koda delivers a premium 
 ```
 app/src/main/java/com/ivor/ivormusic/
 ├── data/                    # Data layer
-│   ├── YouTubeRepository    # YouTube Music API via NewPipe
+│   ├── YouTubeRepository    # YouTube Music and video via NewPipe and InnerTube
 │   ├── DownloadRepository   # Download management
-│   ├── SessionManager       # Auth & cookies
-│   └── Models               # Song, Playlist, VideoItem
+│   ├── SessionManager       # Auth and cookies
+│   └── Models               # Song, Playlist, VideoItem, SubscriptionItem
 ├── service/                 # Background services
 │   └── MusicService         # MediaLibraryService
 └── ui/                      # Presentation layer
-    ├── home/                # Home with recommendations
-    ├── library/             # Playlists & liked songs
-    ├── player/              # Music player & queue
-    ├── video/               # Video player (NEW!)
-    ├── search/              # Search functionality
-    ├── downloads/           # Download manager (NEW!)
+    ├── home/                # Home with recommendations and video feed
+    ├── library/             # Playlists and liked songs
+    ├── player/              # Music player and queue
+    ├── video/               # Video player, comments, subscriptions, notifications
+    ├── search/              # Search and video explore
+    ├── downloads/           # Download manager
     ├── settings/            # App preferences
-    ├── auth/                # YouTube sign-in
+    ├── auth/                # YouTube sign in
+    ├── onboarding/          # First run flow
     ├── components/          # Reusable UI components
     └── theme/               # Material 3 theming
 ```
@@ -235,93 +127,93 @@ app/src/main/java/com/ivor/ivormusic/
 ---
 
 ## Technical Documentation
-For a deep dive into the app's inner workings, internal data flows, and architecture diagrams, see our [Documentation Hub](docs/README.md).
+
+For a deep dive into the app's internals, data flows, and architecture, see the [Documentation Hub](docs/README.md).
 
 ## Getting Started
 
 ### Prerequisites
+
 - Android Studio Ladybug or newer
-- Android device or emulator (API 31+)
+- An Android device or emulator running API 31 or higher
 
 ### Installation
 
-1. **Clone the repository**
+1. Clone the repository
    ```bash
    git clone https://github.com/Ivorisnoob/Koda.git
    ```
+2. Open it in Android Studio.
+3. Sync Gradle to download dependencies.
+4. Run it on your device.
 
-2. **Open in Android Studio**
+### YouTube account (optional)
 
-3. **Sync Gradle** to download dependencies
-
-4. **Run** on your device
-
-### YouTube Account (Optional)
-
-To access personalized features:
-1. Navigate to **Settings**
-2. Tap **"Connect YouTube Account"**
-3. Sign in with your Google account
-4. Enjoy personalized recommendations!
+Personalized feeds, watch history, comments, and engagement need a signed in account. To connect one, open Settings, tap Connect YouTube Account, and sign in with Google. Koda works without an account too, using a local taste profile for recommendations.
 
 ---
 
 ## Building
 
 ### Debug APK
+
 ```bash
 ./gradlew assembleDebug
 ```
 
 ### Release APK
-Configure keystore in `app/build.gradle.kts`, then:
+
+Configure the keystore in `app/build.gradle.kts`, then:
+
 ```bash
 ./gradlew assembleRelease
 ```
 
-APKs are split by ABI for optimized sizes:
-- `armeabi-v7a` — 32-bit ARM
-- `arm64-v8a` — 64-bit ARM
+APKs are split by ABI for smaller downloads:
+
+- `armeabi-v7a` for 32-bit ARM
+- `arm64-v8a` for 64-bit ARM
+- a universal APK containing both
 
 ---
 
 ## Roadmap
 
-- [x] Enhanced Playlist Management — Create & edit playlists
-- [ ] Advanced Audio — Equalizer, gapless playback, crossfade
-- [x] Lyrics Support — Display synced lyrics
-- [ ] Widget — Home screen music controls
-- [ ] Kotlin Multiplatform — Desktop & iOS support
+- [x] Playlist management, create and edit playlists
+- [x] Lyrics support with synced display
+- [x] In app video with a personalized feed
+- [ ] Advanced audio: equalizer, gapless playback, crossfade
+- [ ] Home screen widget for playback controls
+- [ ] Kotlin Multiplatform for desktop and iOS
 
 ---
 
 ## Contributing
 
-Contributions are welcome! Whether it's reporting a bug, suggesting a new feature, or submitting a pull request, your help is appreciated.
-
-Please see our [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to get started.
+Contributions are welcome, whether it is a bug report, a feature idea, or a pull request. See [CONTRIBUTING.md](CONTRIBUTING.md) to get started.
 
 ---
 
-
 ## License
 
-**Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)**
+Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)
 
 You are free to:
-- **Share** — Copy and redistribute in any medium
-- **Adapt** — Remix, transform, and build upon
 
-Under the terms:
-- **Attribution** — Give appropriate credit
-- **NonCommercial** — No commercial use
+- Share, copy, and redistribute in any medium.
+- Adapt, remix, transform, and build upon the work.
 
-See the [LICENSE](LICENSE) file or visit [creativecommons.org/licenses/by-nc/4.0](https://creativecommons.org/licenses/by-nc/4.0/)
+Under these terms:
+
+- Attribution. Give appropriate credit.
+- NonCommercial. No commercial use.
+
+See the [LICENSE](LICENSE) file or visit [creativecommons.org/licenses/by-nc/4.0](https://creativecommons.org/licenses/by-nc/4.0/).
 
 ---
 
 <p align="center">
-  Made with love by <b>ivorisnoob</b>
+  Made by <b>ivorisnoob</b>
   <br/>
   Copyright 2026
 </p>
