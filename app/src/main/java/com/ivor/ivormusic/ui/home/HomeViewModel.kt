@@ -135,8 +135,75 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val _isVideoLoading = MutableStateFlow(false)
     val isVideoLoading: StateFlow<Boolean> = _isVideoLoading.asStateFlow()
 
+    // Subscriptions tab state
+    private val _subscribedChannels = MutableStateFlow<List<com.ivor.ivormusic.data.SubscribedChannel>>(emptyList())
+    val subscribedChannels: StateFlow<List<com.ivor.ivormusic.data.SubscribedChannel>> = _subscribedChannels.asStateFlow()
+
+    private val _isSubscriptionsLoading = MutableStateFlow(false)
+    val isSubscriptionsLoading: StateFlow<Boolean> = _isSubscriptionsLoading.asStateFlow()
+
+    private val _subscriptionFeed = MutableStateFlow<List<VideoItem>>(emptyList())
+    val subscriptionFeed: StateFlow<List<VideoItem>> = _subscriptionFeed.asStateFlow()
+
+    private val _isSubscriptionFeedLoading = MutableStateFlow(false)
+    val isSubscriptionFeedLoading: StateFlow<Boolean> = _isSubscriptionFeedLoading.asStateFlow()
+
+    // Notifications state
+    private val _notifications = MutableStateFlow<List<com.ivor.ivormusic.data.NotificationItem>>(emptyList())
+    val notifications: StateFlow<List<com.ivor.ivormusic.data.NotificationItem>> = _notifications.asStateFlow()
+
+    private val _isNotificationsLoading = MutableStateFlow(false)
+    val isNotificationsLoading: StateFlow<Boolean> = _isNotificationsLoading.asStateFlow()
+
     init {
         checkYouTubeConnection()
+    }
+
+    /** Load the subscribed channels list (FEchannels). Requires login. */
+    fun loadSubscriptions(force: Boolean = false) {
+        if (_isSubscriptionsLoading.value) return
+        if (_subscribedChannels.value.isNotEmpty() && !force) return
+        viewModelScope.launch {
+            _isSubscriptionsLoading.value = true
+            try {
+                _subscribedChannels.value = youtubeRepository.getSubscribedChannels()
+            } finally {
+                _isSubscriptionsLoading.value = false
+            }
+        }
+    }
+
+    /** Load the subscriptions video feed (latest uploads, newest first). Requires login. */
+    fun loadSubscriptionFeed(force: Boolean = false) {
+        if (_isSubscriptionFeedLoading.value) return
+        if (_subscriptionFeed.value.isNotEmpty() && !force) return
+        viewModelScope.launch {
+            _isSubscriptionFeedLoading.value = true
+            try {
+                _subscriptionFeed.value = youtubeRepository.getSubscriptionsFeed()
+            } finally {
+                _isSubscriptionFeedLoading.value = false
+            }
+        }
+    }
+
+    /** Latest uploads of one subscribed channel (for the channel drill-in view). */
+    suspend fun getChannelVideos(channel: com.ivor.ivormusic.data.SubscribedChannel): List<VideoItem> {
+        return youtubeRepository.getChannelVideos(channel)
+    }
+
+    /** Load the notification inbox. Requires login. */
+    fun loadNotifications(force: Boolean = false) {
+        if (_isNotificationsLoading.value) return
+        if (_notifications.value.isNotEmpty() && !force) return
+        viewModelScope.launch {
+            _isNotificationsLoading.value = true
+            try {
+                _notifications.value = youtubeRepository.getNotifications()
+            } finally {
+                _isNotificationsLoading.value = false
+            }
+        }
     }
     
     // --- Download Actions ---

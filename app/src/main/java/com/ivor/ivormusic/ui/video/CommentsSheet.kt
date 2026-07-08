@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -17,6 +19,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.Send
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.ThumbUp
@@ -24,9 +28,11 @@ import androidx.compose.material.icons.rounded.Verified
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -34,19 +40,23 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.ivor.ivormusic.data.CommentItem
 
 /**
  * Bottom sheet showing the comments of the current video, with infinite
- * scroll pagination and expandable replies.
+ * scroll pagination, expandable replies and a composer for writing
+ * comments and replies (login required).
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -57,8 +67,12 @@ fun CommentsSheet(
     isLoading: Boolean,
     isLoadingMore: Boolean,
     commentsAvailable: Boolean,
+    canComment: Boolean,
+    isPosting: Boolean,
     onLoadMore: () -> Unit,
     onLoadReplies: (CommentItem) -> Unit,
+    onPostComment: (String) -> Unit,
+    onPostReply: (CommentItem, String) -> Unit,
     onDismiss: () -> Unit
 ) {
     // Opens half-height (YouTube style), draggable to full
@@ -77,13 +91,20 @@ fun CommentsSheet(
         if (shouldLoadMore) onLoadMore()
     }
 
+    // The comment being replied to; null = composing a top-level comment
+    var replyTarget by remember { mutableStateOf<CommentItem?>(null) }
+
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         containerColor = MaterialTheme.colorScheme.surfaceContainer,
         contentColor = MaterialTheme.colorScheme.onSurface
     ) {
-        Column(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .imePadding()
+        ) {
             Text(
                 text = "Comments",
                 style = MaterialTheme.typography.headlineSmall,
@@ -91,90 +112,212 @@ fun CommentsSheet(
                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
             )
 
-            when {
-                isLoading -> {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(48.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        LoadingIndicator(color = MaterialTheme.colorScheme.primary)
+            Box(modifier = Modifier.weight(1f)) {
+                when {
+                    isLoading -> {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(48.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            LoadingIndicator(color = MaterialTheme.colorScheme.primary)
+                        }
                     }
-                }
-                comments.isEmpty() -> {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(48.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = if (commentsAvailable) "No comments yet" else "Comments are unavailable for this video",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                    comments.isEmpty() -> {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(48.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = if (commentsAvailable) "No comments yet" else "Comments are unavailable for this video",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
-                }
-                else -> {
-                    LazyColumn(
-                        state = listState,
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                            start = 24.dp, end = 24.dp, bottom = 48.dp
-                        ),
-                        verticalArrangement = Arrangement.spacedBy(20.dp)
-                    ) {
-                        items(comments.size, key = { comments[it].commentId }) { index ->
-                            val comment = comments[index]
-                            Column {
-                                CommentRow(comment = comment)
+                    else -> {
+                        LazyColumn(
+                            state = listState,
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                                start = 24.dp, end = 24.dp, bottom = 24.dp
+                            ),
+                            verticalArrangement = Arrangement.spacedBy(20.dp)
+                        ) {
+                            items(comments.size, key = { comments[it].commentId }) { index ->
+                                val comment = comments[index]
+                                Column {
+                                    CommentRow(comment = comment)
 
-                                // Replies
-                                val commentReplies = replies[comment.commentId]
-                                val isLoadingReplies = comment.commentId in loadingReplyIds
-                                if (comment.repliesToken != null && commentReplies == null) {
-                                    Text(
-                                        text = if (isLoadingReplies) "Loading replies…"
-                                        else "View replies" + if (comment.replyCount.isNotEmpty()) " (${comment.replyCount})" else "",
-                                        style = MaterialTheme.typography.labelLarge,
-                                        color = MaterialTheme.colorScheme.primary,
-                                        fontWeight = FontWeight.Bold,
-                                        modifier = Modifier
-                                            .padding(start = 48.dp, top = 8.dp)
-                                            .clip(CircleShape)
-                                            .clickable(enabled = !isLoadingReplies) { onLoadReplies(comment) }
-                                            .padding(horizontal = 8.dp, vertical = 4.dp)
-                                    )
-                                }
-                                if (!commentReplies.isNullOrEmpty()) {
-                                    Column(
-                                        modifier = Modifier.padding(start = 40.dp, top = 12.dp),
-                                        verticalArrangement = Arrangement.spacedBy(16.dp)
-                                    ) {
-                                        commentReplies.forEach { reply ->
-                                            CommentRow(comment = reply, isReply = true)
+                                    // Reply affordance (needs login + reply params)
+                                    if (canComment && comment.replyParams != null) {
+                                        Text(
+                                            text = "Reply",
+                                            style = MaterialTheme.typography.labelLarge,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier
+                                                .padding(start = 48.dp, top = 4.dp)
+                                                .clip(CircleShape)
+                                                .clickable { replyTarget = comment }
+                                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                                        )
+                                    }
+
+                                    // Replies
+                                    val commentReplies = replies[comment.commentId]
+                                    val isLoadingReplies = comment.commentId in loadingReplyIds
+                                    if (comment.repliesToken != null && commentReplies == null) {
+                                        Text(
+                                            text = if (isLoadingReplies) "Loading replies…"
+                                            else "View replies" + if (comment.replyCount.isNotEmpty()) " (${comment.replyCount})" else "",
+                                            style = MaterialTheme.typography.labelLarge,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier
+                                                .padding(start = 48.dp, top = 4.dp)
+                                                .clip(CircleShape)
+                                                .clickable(enabled = !isLoadingReplies) { onLoadReplies(comment) }
+                                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                                        )
+                                    }
+                                    if (!commentReplies.isNullOrEmpty()) {
+                                        Column(
+                                            modifier = Modifier.padding(start = 40.dp, top = 12.dp),
+                                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                                        ) {
+                                            commentReplies.forEach { reply ->
+                                                CommentRow(comment = reply, isReply = true)
+                                            }
                                         }
                                     }
                                 }
                             }
-                        }
 
-                        if (isLoadingMore) {
-                            item(key = "loading-more") {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(16.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    LoadingIndicator(
-                                        modifier = Modifier.size(32.dp),
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
+                            if (isLoadingMore) {
+                                item(key = "loading-more") {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(16.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        LoadingIndicator(
+                                            modifier = Modifier.size(32.dp),
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
                                 }
                             }
                         }
+                    }
+                }
+            }
+
+            if (canComment) {
+                CommentComposer(
+                    replyTarget = replyTarget,
+                    isPosting = isPosting,
+                    onCancelReply = { replyTarget = null },
+                    onSend = { text ->
+                        val target = replyTarget
+                        if (target != null) onPostReply(target, text) else onPostComment(text)
+                        replyTarget = null
+                    }
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Input row pinned under the comments list. Shows a "Replying to" banner
+ * when a reply target is active.
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun CommentComposer(
+    replyTarget: CommentItem?,
+    isPosting: Boolean,
+    onCancelReply: () -> Unit,
+    onSend: (String) -> Unit
+) {
+    var text by remember { mutableStateOf("") }
+
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        modifier = Modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+    ) {
+        Column {
+            if (replyTarget != null) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 16.dp, end = 4.dp, top = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Replying to ${replyTarget.author}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(onClick = onCancelReply) {
+                        Icon(
+                            Icons.Rounded.Close,
+                            contentDescription = "Cancel reply",
+                            modifier = Modifier.size(18.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    modifier = Modifier.weight(1f),
+                    placeholder = {
+                        Text(if (replyTarget != null) "Add a reply…" else "Add a comment…")
+                    },
+                    shape = CircleShape,
+                    maxLines = 4,
+                    enabled = !isPosting
+                )
+                if (isPosting) {
+                    LoadingIndicator(
+                        modifier = Modifier.size(32.dp),
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                } else {
+                    IconButton(
+                        onClick = {
+                            if (text.isNotBlank()) {
+                                onSend(text)
+                                text = ""
+                            }
+                        },
+                        enabled = text.isNotBlank()
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Rounded.Send,
+                            contentDescription = "Post",
+                            tint = if (text.isNotBlank()) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }

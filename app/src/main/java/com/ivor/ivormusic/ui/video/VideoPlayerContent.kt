@@ -59,6 +59,8 @@ fun VideoPlayerContent(
     val commentReplies by viewModel.replies.collectAsState()
     val loadingReplyIds by viewModel.loadingReplyIds.collectAsState()
     val timedComments by viewModel.timedComments.collectAsState()
+    val canComment by viewModel.canComment.collectAsState()
+    val isPostingComment by viewModel.isPostingComment.collectAsState()
 
     // Local UI State
     var showControls by remember { mutableStateOf(false) }
@@ -298,8 +300,12 @@ fun VideoPlayerContent(
             isLoading = isCommentsLoading,
             isLoadingMore = isLoadingMoreComments,
             commentsAvailable = engagement?.commentsToken != null,
+            canComment = canComment,
+            isPosting = isPostingComment,
             onLoadMore = { viewModel.loadMoreComments() },
             onLoadReplies = { viewModel.loadReplies(it) },
+            onPostComment = { viewModel.postComment(it) },
+            onPostReply = { parent, text -> viewModel.postReply(parent, text) },
             onDismiss = { showCommentsSheet = false }
         )
     }

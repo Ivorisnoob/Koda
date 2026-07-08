@@ -34,15 +34,18 @@ data class CommentItem(
     val isHearted: Boolean,
     val isCreator: Boolean,
     val isVerified: Boolean,
-    val repliesToken: String?        // continuation token to load replies
+    val repliesToken: String?,       // continuation token to load replies
+    val replyParams: String? = null  // createReplyParams for posting a reply to this comment
 )
 
 /**
  * One page of comments plus the token for the next page (null = last page).
+ * createCommentParams (top-level pages only) enables posting a new comment.
  */
 data class CommentsPage(
     val comments: List<CommentItem>,
-    val nextPageToken: String?
+    val nextPageToken: String?,
+    val createCommentParams: String? = null
 )
 
 /**

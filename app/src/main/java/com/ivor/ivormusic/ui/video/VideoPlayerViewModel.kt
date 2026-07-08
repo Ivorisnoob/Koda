@@ -119,6 +119,18 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     private var commentsNextToken: String? = null
     private var commentsLoadedForVideoId: String? = null
 
+    // Params for posting a new top-level comment; arrives with the first comments page
+    private val _createCommentParams = MutableStateFlow<String?>(null)
+
+    /** Whether posting a comment is possible (logged in + params available). */
+    val canComment: StateFlow<Boolean> = kotlinx.coroutines.flow.combine(
+        _isLoggedIn, _createCommentParams
+    ) { loggedIn, params -> loggedIn && params != null }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    private val _isPostingComment = MutableStateFlow(false)
+    val isPostingComment: StateFlow<Boolean> = _isPostingComment.asStateFlow()
+
     init {
         // Initialize ExoPlayer
         _exoPlayer = ExoPlayer.Builder(context).build().apply {
@@ -173,6 +185,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         _loadingReplyIds.value = emptySet()
         commentsNextToken = null
         commentsLoadedForVideoId = null
+        _createCommentParams.value = null
         _isLoggedIn.value = youtubeRepository.isLoggedIn()
 
         // Load like/subscribe state and the comments entry token in parallel
@@ -268,12 +281,23 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         playbackReportJob?.cancel()
         playbackReportJob = viewModelScope.launch {
             kotlinx.coroutines.delay(10000)
-            if (_isPlaying.value && themePreferences.saveVideoHistory.value) {
+            // A stream still buffering (or briefly paused) at the 10s mark must
+            // not lose its report — wait up to a minute for playback to run.
+            var waitedMs = 0
+            while (!_isPlaying.value && waitedMs < 60_000) {
+                kotlinx.coroutines.delay(1000)
+                waitedMs += 1000
+            }
+            // Fresh pref read: the settings screen toggles through its own
+            // ThemePreferences instance, so this VM's StateFlow copy is stale.
+            if (_isPlaying.value && themePreferences.isSaveVideoHistoryEnabled()) {
                 // Local history: works without login and feeds recommendations.
                 // Use the current video state — Phase 2 may have enriched it.
                 val watched = _currentVideo.value?.takeIf { it.videoId == video.videoId } ?: video
                 videoHistoryRepository.addVideo(watched)
-                youtubeRepository.reportPlayback(video.videoId)
+                // WEB client flow: the music (WEB_REMIX) reporter does not
+                // register plain videos in YouTube watch history
+                youtubeRepository.reportVideoPlayback(video.videoId)
             }
         }
     }
@@ -444,6 +468,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                     _comments.value = page.comments
                     commentsNextToken = page.nextPageToken
                     commentsLoadedForVideoId = video.videoId
+                    _createCommentParams.value = page.createCommentParams
                 }
             } finally {
                 _isCommentsLoading.value = false
@@ -488,6 +513,59 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                 }
             } finally {
                 _loadingReplyIds.value = _loadingReplyIds.value - comment.commentId
+            }
+        }
+    }
+
+    /**
+     * Post a new top-level comment on the current video. The created comment
+     * is prepended to the list on success. Requires login.
+     */
+    fun postComment(text: String) {
+        val video = _currentVideo.value ?: return
+        val params = _createCommentParams.value ?: return
+        val trimmed = text.trim()
+        if (trimmed.isEmpty() || _isPostingComment.value) return
+        _isPostingComment.value = true
+        viewModelScope.launch {
+            try {
+                val created = youtubeRepository.createComment(params, trimmed)
+                if (created != null && _currentVideo.value?.videoId == video.videoId) {
+                    _comments.value = listOf(created) + _comments.value
+                }
+            } finally {
+                _isPostingComment.value = false
+            }
+        }
+    }
+
+    /**
+     * Post a reply to a top-level comment. The reply is appended to that
+     * comment's visible replies on success. Requires login.
+     */
+    fun postReply(parent: CommentItem, text: String) {
+        val video = _currentVideo.value ?: return
+        val params = parent.replyParams ?: return
+        val trimmed = text.trim()
+        if (trimmed.isEmpty() || _isPostingComment.value) return
+        _isPostingComment.value = true
+        viewModelScope.launch {
+            try {
+                val created = youtubeRepository.createCommentReply(params, trimmed)
+                if (created != null && _currentVideo.value?.videoId == video.videoId) {
+                    val existing = _replies.value[parent.commentId]
+                    if (existing != null || parent.repliesToken == null) {
+                        // Replies already visible (or none exist yet): append inline
+                        _replies.value = _replies.value +
+                            (parent.commentId to (existing ?: emptyList()) + created)
+                    } else {
+                        // Replies exist but are collapsed: fetch the thread so the
+                        // older replies are not hidden behind the local insert
+                        loadReplies(parent)
+                    }
+                }
+            } finally {
+                _isPostingComment.value = false
             }
         }
     }
