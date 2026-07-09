@@ -228,6 +228,7 @@ fun MusicApp(
                     excludedFolders = excludedFolders,
                     ambientBackground = ambientBackground,
                     videoMode = videoMode,
+                    onVideoModeToggle = onVideoModeToggle,
                     playerStyle = playerStyle,
                     manualScan = manualScanEnabled
                 )
