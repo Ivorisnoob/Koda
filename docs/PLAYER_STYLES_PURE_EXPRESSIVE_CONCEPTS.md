@@ -264,7 +264,87 @@ squash feedback must commit actions immediately and animate after
 
 ---
 
-## 5. Comparison and slotting
+## 5. EDITORIAL — the two-tone magazine player
+
+**One sentence:** the player is a full-bleed magazine spread in exactly two
+colors — album art die-cut into a scalloped flower shape up top, the title
+set in a huge editorial italic serif below it, and chunky asymmetric pill
+controls where the word "PLAY" itself is the icon.
+
+**Provenance:** this concept is modeled directly on Google's own Material 3
+Expressive announcement mock (the "Serafina" player screen), which makes it
+the most canonical concept in this gallery — it is what the M3 Expressive
+team themselves picked to show the system's ceiling. Every element in that
+mock maps one-to-one onto APIs already pinned in this repo.
+
+**The two-tone discipline (the whole trick):** the entire screen uses
+exactly two colors plus the artwork — a flat mid-tone field (Palette
+dominant swatch harmonized to the scheme, or `primaryContainer`) and one
+high-contrast accent (`primaryFixed`/`secondaryContainer` family) used for
+type, buttons, and the progress line alike. No third color, no tone ladder,
+no outline strokes. Hierarchy comes from size and shape only. This is the
+strictest palette in the gallery and the reason the style reads as print.
+
+**Anatomy (top to bottom, matching the reference for the first ~70%):**
+
+- **Die-cut art (~40% of height):** album art clipped to
+  `MaterialShapes.Flower` / `Puffy` (the scalloped clover of the mock),
+  centered, flat against the field — no ring, no border, the hard clip edge
+  is the composition. On track change the scallop count morphs (Flower to
+  Clover8Leaf to Puffy), so each song gets its own die-cut like Sticker's
+  per-track identity. Tap = play/pause with a single soft morph pulse.
+- **Title (~20%):** one full-bleed line in a display italic serif, accent
+  color, edge-to-edge with tight side margins, auto-fit stepping down for
+  long titles (marquee only as last resort). This is the style's voice and
+  justifies a player-only display typeface layered over the app's type
+  scale; the rest of the screen stays on the standard scale so the serif
+  reads as a deliberate headline, not a theme change.
+- **Control cluster (~15%, asymmetric bento):** the mock's exact trio —
+  a wide **PLAY pill where the label is the word**, morphing between "PLAY"
+  and "PAUSE" (width springs to fit via `animateContentSize`, letters swap
+  with a hard cut); previous and next as large accent circles with
+  field-colored glyphs. The asymmetry (wide pill + two circles, offset rows)
+  is the layout's expressive move — deliberately not a centered symmetric
+  transport row.
+- **Progress line (~10%):** the mock is literally
+  `LinearWavyProgressIndicator` semantics — played portion drawn as a wavy
+  line, remaining portion flat, separated by a tall bar playhead; the wave
+  flattens when paused. Time labels at both ends in `labelLarge` numerals.
+  Scrub by dragging the line, single `seekTo` on release.
+- **The missing 30% (below the reference crop):** artist name as a tappable
+  accent-outlined pill (existing `onArtistClick`); one row of small flat
+  accent chips — favorite (`LikeBurstIcon`), shuffle, repeat, queue — and a
+  lyrics chip that flips the whole spread into `SyncedLyricsView` set in the
+  same serif, turning lyrics into the magazine's body copy.
+
+**Expressive semantics:**
+
+| Element | Meaning |
+|---|---|
+| Wavy vs flat progress line | Playing vs paused, plus position |
+| PLAY/PAUSE word pill | State as language, not iconography |
+| Die-cut scallop morph on track change | New song, new cut |
+| Soft morph pulse on art tap | Play/pause feedback |
+| Serif headline re-typesetting per track | Each song is a new spread |
+
+**Key APIs:** `MaterialShapes.Flower` / `Clover8Leaf` / `Puffy` +
+`Morph` for the die-cut; `LinearWavyProgressIndicator` (stroke ~4dp, its
+default wavy-active/flat-track behavior is exactly the mock);
+`animateContentSize` with `fastSpatialSpec` for the word pill; a bundled
+display serif via `FontFamily` for the headline. Nothing beyond the pinned
+`material3 1.5.0-alpha13` plus one font asset.
+
+**Risk:** the two-tone contract depends on the accent having sufficient
+contrast against the Palette-derived field in both themes — derive the pair
+through the M3 scheme (e.g. container + onContainer-adjacent fixed roles)
+rather than raw Palette output, and fall back to `primaryContainer` /
+`onPrimaryContainer` when the artwork swatch cannot produce a compliant
+pair. Long titles and non-Latin scripts need the same auto-fit and
+font-fallback care as POSTER.
+
+---
+
+## 6. Comparison and slotting
 
 | Concept | Emotional center | Interaction novelty | Build complexity | Enum value |
 |---|---|---|---|---|
@@ -272,8 +352,9 @@ squash feedback must commit actions immediately and animate after
 | BENTO | Behavioral (tactility) | Medium — everything squishes | Medium (weight-animation discipline) | `BENTO` |
 | DIAL | Behavioral/visceral (instrument) | High — rotary physics | High (fling/decay tuning) | `DIAL` |
 | STICKER | Visceral (playfulness) | Medium — drag toy + peel | Medium-high (particles + drag physics) | `STICKER` |
+| EDITORIAL | Reflective/visceral (print identity) | Low — taps, one scrub | Low-medium (die-cut + word pill + wavy line) | `EDITORIAL` |
 
-All four share the Morph doc's integration path: one new content composable
+All five share the Morph doc's integration path: one new content composable
 per style with the standard signature (`viewModel, ambientBackground,
 onCollapse, onLoadMore, onArtistClick`), a `when` branch in
 `ExpandablePlayer`, an enum value, and a new segment in
@@ -282,14 +363,17 @@ onCollapse, onLoadMore, onArtistClick`), a `when` branch in
 be ignored) rather than `ChromaticMistBackground`, which is gradient-based
 and therefore out of contract here.
 
-**Recommendation:** if only one is built next, build POSTER — it is the
-cheapest to implement, the most visually unlike anything shipping in other
-players, and it turns the already-strong `SyncedLyricsView` into a
-first-class citizen instead of a sub-mode.
+**Recommendation:** if only one is built next, build EDITORIAL — it is the
+canonical Google reference realized with components the repo already ships
+(`MaterialShapes` clip, `LinearWavyProgressIndicator`, word-pill button),
+the lowest-risk to execute, and instantly recognizable as "true" M3
+Expressive. POSTER is the strongest second: it shares EDITORIAL's type-first
+philosophy and turns `SyncedLyricsView` into a first-class citizen, so the
+two styles can share the auto-fit headline machinery.
 
 ---
 
-## 6. Sources
+## 7. Sources
 
 - In-repo: `PLAYER_STYLE_MORPH_RESEARCH.md` (constraint framework and
   integration plan), `Material_3_expressive/Shapes.md` / `Motion.md` /
@@ -300,3 +384,7 @@ first-class citizen instead of a sub-mode.
   glanceability findings and the usability guardrail.
 - Material Design blog, "Start building with Material 3 Expressive" —
   motion scheme and component availability at `material3 1.5.0-alpha13`.
+- Google's Material 3 Expressive announcement mock (the "Serafina" player
+  screen) — direct visual reference for the EDITORIAL concept: flat
+  two-tone field, flower die-cut artwork, editorial serif headline, word
+  pill transport, wavy-played/flat-remaining progress line.
