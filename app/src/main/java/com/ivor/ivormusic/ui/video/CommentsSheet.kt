@@ -21,10 +21,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.ThumbUp
 import androidx.compose.material.icons.rounded.Verified
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
@@ -35,6 +37,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -77,6 +80,7 @@ fun CommentsSheet(
     onPostComment: (String) -> Unit,
     onPostReply: (CommentItem, CommentItem, String) -> Unit,
     onLikeComment: (CommentItem) -> Unit,
+    onDeleteComment: (CommentItem) -> Unit,
     onDismiss: () -> Unit
 ) {
     // Opens fully expanded
@@ -100,6 +104,9 @@ fun CommentsSheet(
     // comment (the reply posts into that thread, YouTube-style).
     var replyTarget by remember { mutableStateOf<CommentItem?>(null) }
     var replyThreadParent by remember { mutableStateOf<CommentItem?>(null) }
+
+    // Own comment awaiting delete confirmation
+    var commentPendingDelete by remember { mutableStateOf<CommentItem?>(null) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -159,7 +166,10 @@ fun CommentsSheet(
                                 Column {
                                     CommentRow(
                                         comment = comment,
-                                        onLikeClick = { onLikeComment(comment) }
+                                        onLikeClick = { onLikeComment(comment) },
+                                        onDeleteClick = if (comment.deleteParams != null) {
+                                            { commentPendingDelete = comment }
+                                        } else null
                                     )
 
                                     // Reply affordance (needs login + reply params)
@@ -207,7 +217,10 @@ fun CommentsSheet(
                                                     CommentRow(
                                                         comment = reply,
                                                         isReply = true,
-                                                        onLikeClick = { onLikeComment(reply) }
+                                                        onLikeClick = { onLikeComment(reply) },
+                                                        onDeleteClick = if (reply.deleteParams != null) {
+                                                            { commentPendingDelete = reply }
+                                                        } else null
                                                     )
                                                     // Replying to a reply posts into the
                                                     // same thread, addressed to its author
@@ -252,6 +265,29 @@ fun CommentsSheet(
                         }
                     }
                 }
+            }
+
+            commentPendingDelete?.let { pending ->
+                AlertDialog(
+                    onDismissRequest = { commentPendingDelete = null },
+                    title = { Text("Delete comment?") },
+                    text = { Text("Your comment will be permanently deleted.") },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                onDeleteComment(pending)
+                                commentPendingDelete = null
+                            }
+                        ) {
+                            Text("Delete", color = MaterialTheme.colorScheme.error)
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { commentPendingDelete = null }) {
+                            Text("Cancel")
+                        }
+                    }
+                )
             }
 
             if (canComment) {
@@ -390,7 +426,8 @@ private fun CommentComposer(
 private fun CommentRow(
     comment: CommentItem,
     isReply: Boolean = false,
-    onLikeClick: (() -> Unit)? = null
+    onLikeClick: (() -> Unit)? = null,
+    onDeleteClick: (() -> Unit)? = null
 ) {
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         // Avatar
@@ -487,34 +524,62 @@ private fun CommentRow(
                 (if (comment.isLiked) comment.unlikeParams else comment.likeParams) != null
             val likeTint = if (comment.isLiked) MaterialTheme.colorScheme.primary
             else MaterialTheme.colorScheme.onSurfaceVariant
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                modifier = Modifier
-                    .clip(CircleShape)
-                    .clickable(enabled = canToggleLike) { onLikeClick?.invoke() }
-                    .padding(horizontal = 4.dp, vertical = 2.dp)
-            ) {
-                Icon(
-                    Icons.Rounded.ThumbUp,
-                    contentDescription = if (comment.isLiked) "Unlike" else "Like",
-                    modifier = Modifier.size(14.dp),
-                    tint = likeTint
-                )
-                Text(
-                    text = (if (comment.isLiked) comment.likeCountLiked.ifEmpty { comment.likeCount }
-                    else comment.likeCount).ifEmpty { "0" },
-                    style = MaterialTheme.typography.labelSmall,
-                    color = likeTint
-                )
-                if (comment.isHearted) {
-                    Spacer(Modifier.width(4.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .clickable(enabled = canToggleLike) { onLikeClick?.invoke() }
+                        .padding(horizontal = 4.dp, vertical = 2.dp)
+                ) {
                     Icon(
-                        Icons.Rounded.Favorite,
-                        contentDescription = "Hearted by creator",
+                        Icons.Rounded.ThumbUp,
+                        contentDescription = if (comment.isLiked) "Unlike" else "Like",
                         modifier = Modifier.size(14.dp),
-                        tint = MaterialTheme.colorScheme.error
+                        tint = likeTint
                     )
+                    Text(
+                        text = (if (comment.isLiked) comment.likeCountLiked.ifEmpty { comment.likeCount }
+                        else comment.likeCount).ifEmpty { "0" },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = likeTint
+                    )
+                    if (comment.isHearted) {
+                        Spacer(Modifier.width(4.dp))
+                        Icon(
+                            Icons.Rounded.Favorite,
+                            contentDescription = "Hearted by creator",
+                            modifier = Modifier.size(14.dp),
+                            tint = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+
+                // Delete affordance — only shown on the user's own comments
+                // (deleteParams exists only for those)
+                if (onDeleteClick != null) {
+                    Spacer(Modifier.width(10.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier
+                            .clip(CircleShape)
+                            .clickable(onClick = onDeleteClick)
+                            .padding(horizontal = 4.dp, vertical = 2.dp)
+                    ) {
+                        Icon(
+                            Icons.Rounded.DeleteOutline,
+                            contentDescription = "Delete comment",
+                            modifier = Modifier.size(14.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "Delete",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
         }

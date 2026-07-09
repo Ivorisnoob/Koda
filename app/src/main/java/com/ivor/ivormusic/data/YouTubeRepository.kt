@@ -3807,6 +3807,21 @@ class YouTubeRepository(private val context: Context) {
                 endpoints.firstOrNull()?.optString("action")?.takeIf { a -> a.isNotBlank() }
             }
 
+        // Own comments carry a "Delete" item in the surface's three-dot menu
+        // (menuCommand -> menuRenderer -> menuNavigationItemRenderer, label is
+        // stable because webContext pins hl=en); its confirm-dialog endpoint
+        // holds the perform_comment_action delete param. Verified July 2026.
+        val deleteParams = surface?.optJSONObject("menuCommand")?.let { menu ->
+            val menuItems = mutableListOf<org.json.JSONObject>()
+            findObjectsByKey(menu, "menuNavigationItemRenderer", menuItems)
+            menuItems.firstOrNull { getRunText(it.optJSONObject("text")) == "Delete" }
+                ?.let { item ->
+                    val endpoints = mutableListOf<org.json.JSONObject>()
+                    findObjectsByKey(item, "performCommentActionEndpoint", endpoints)
+                    endpoints.firstOrNull()?.optString("action")?.takeIf { a -> a.isNotBlank() }
+                }
+        }
+
         return CommentItem(
             commentId = id,
             text = props?.optJSONObject("content")?.optString("content").orEmpty(),
@@ -3824,7 +3839,8 @@ class YouTubeRepository(private val context: Context) {
             likeCountLiked = toolbar?.optString("likeCountLiked").orEmpty().trim(),
             isLiked = likeState == "TOOLBAR_LIKE_STATE_LIKED",
             likeParams = surfaceAction("likeCommand"),
-            unlikeParams = surfaceAction("unlikeCommand")
+            unlikeParams = surfaceAction("unlikeCommand"),
+            deleteParams = deleteParams
         )
     }
 
@@ -3931,12 +3947,29 @@ class YouTubeRepository(private val context: Context) {
             val replyParams = replyEndpoints.firstOrNull()
                 ?.optString("createReplyParams")?.takeIf { it.isNotBlank() }
 
+            // The create response also carries the comment's viewModel and its
+            // toolbar surface — passing them through gives the fresh comment
+            // its like/delete params immediately (no page reload needed)
+            val viewModels = mutableListOf<org.json.JSONObject>()
+            findObjectsByKey(root, "commentViewModel", viewModels)
+            val viewModel = viewModels
+                .map { it.optJSONObject("commentViewModel") ?: it }
+                .firstOrNull { it.optString("commentId") == id }
+                ?: org.json.JSONObject()
+
+            val surfaces = mutableListOf<org.json.JSONObject>()
+            findObjectsByKey(root, "engagementToolbarSurfaceEntityPayload", surfaces)
+            val toolbarSurfaces = surfaces
+                .filter { it.optString("key").isNotBlank() }
+                .associateBy { it.optString("key") }
+
             parseCommentEntity(
                 id, entity,
-                viewModel = org.json.JSONObject(),
+                viewModel = viewModel,
                 toolbarStates = emptyMap(),
                 repliesToken = null,
-                replyParams = replyParams
+                replyParams = replyParams,
+                toolbarSurfaces = toolbarSurfaces
             )
         } catch (e: Exception) {
             android.util.Log.e("YouTubeRepo", "parseCreatedComment failed", e)

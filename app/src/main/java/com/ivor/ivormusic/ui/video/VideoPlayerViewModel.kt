@@ -612,6 +612,27 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         }
     }
 
+    /**
+     * Delete one of the user's own comments (top-level or reply). The delete
+     * param only exists on own comments (CommentItem.deleteParams). Optimistic
+     * removal with restore on failure.
+     */
+    fun deleteComment(comment: CommentItem) {
+        val action = comment.deleteParams ?: return
+        val previousComments = _comments.value
+        val previousReplies = _replies.value
+        _comments.value = _comments.value.filterNot { it.commentId == comment.commentId }
+        _replies.value = _replies.value
+            .mapValues { (_, list) -> list.filterNot { it.commentId == comment.commentId } }
+            .filterKeys { it != comment.commentId }
+        viewModelScope.launch {
+            if (!youtubeRepository.performCommentAction(action)) {
+                _comments.value = previousComments
+                _replies.value = previousReplies
+            }
+        }
+    }
+
     /** Swap a comment (matched by id) in the top-level list and all reply threads. */
     private fun replaceComment(updated: CommentItem) {
         _comments.value = _comments.value.map {

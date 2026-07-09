@@ -309,6 +309,7 @@ fun VideoPlayerContent(
                 viewModel.postReply(target, threadParent, text)
             },
             onLikeComment = { comment -> requireLogin { viewModel.toggleCommentLike(comment) } },
+            onDeleteComment = { comment -> viewModel.deleteComment(comment) },
             onDismiss = { showCommentsSheet = false }
         )
     }
