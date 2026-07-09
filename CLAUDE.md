@@ -32,6 +32,21 @@ MVVM with StateFlow, **no DI framework** — ViewModels instantiate repositories
 - **Music**: `MusicService` (Media3 `MediaLibraryService`) + `PlayerViewModel` talking to it through a `MediaController`. Background playback, notifications, queue.
 - **Video**: `VideoPlayerViewModel` owns its own `ExoPlayer` directly (no service). DASH or merged video+audio progressive streams, PiP support in `VideoPlayerOverlay`.
 
+Video playback loads in two phases (`VideoPlayerViewModel.playVideo`): Phase 1 calls `getVideoStreamQualities()` (stream URLs only, 15s timeout) and starts playback; Phase 2 runs `getWatchNextData()` in parallel — a single `/next` call parsed into engagement + enriched metadata + related videos (do NOT add per-video NewPipe `fetchPage()` calls or extra `/next` calls here; keeping tap-time network minimal is deliberate, YouTube itself does only `/player` + `/next`). The video ExoPlayer uses a tuned `DefaultLoadControl` (1.5s start buffer) like `MusicService` does. `visitorData` is cached at the `YouTubeRepository` companion level (shared across the per-ViewModel instances) and prefetched at `VideoPlayerViewModel` init so first playback doesn't pay for the youtube.com bootstrap download. Quality model is `VideoQuality(resolution, url, format, isDASH, audioUrl)` where `resolution` is a YouTube quality label ("1080p60", "720p", …). `parseQualitiesFromStreamingData` returns the list sorted highest-first with 60fps variants before 30fps, and never contains DASH entries — the DASH "Auto (Best)" entry only comes from Phase 2's `getVideoDetails`. The starting quality comes from the "Default Video Quality" setting (`ThemePreferences.getDefaultVideoQuality()`, fresh pref read; values are `VIDEO_QUALITY_OPTIONS`: "auto" or a label like "1080p") via `VideoPlayerViewModel.pickDefaultQuality` — best label at or below the target height, else lowest available.
+
+### Settings plumbing (adding a new setting)
+
+All app settings live in `data/ThemePreferences.kt` (SharedPreferences `ivor_music_theme_prefs`, one `MutableStateFlow` + KEY constant + private getter + public setter per setting). A new setting must be threaded through **four files**:
+
+1. `ThemePreferences` — StateFlow, KEY constant, getter/setter.
+2. `ui/theme/ThemeViewModel.kt` — exposes the flow + a `setX()` delegate.
+3. `MainActivity.kt` — collect the flow in `setContent`, add a param pair to the `MusicApp` composable, pass through to the `SettingsScreen` call inside the `settings` nav route (the params are threaded twice: setContent → MusicApp → SettingsScreen).
+4. `ui/settings/SettingsScreen.kt` — new params + a UI item.
+
+Because there is no DI, every consumer news up its own `ThemePreferences` — StateFlow updates do NOT cross instances. ViewModels that need a setting at decision time must do a fresh pref read (pattern: `isSaveVideoHistoryEnabled()` reads straight from prefs; `VideoPlayerViewModel` already holds a `themePreferences` instance).
+
+`SettingsScreen` layout conventions: sections are `SettingsSection(title)` wrapping `ExpressiveSettingsCard`, rows separated by `SettingsDivider()`. Row composables to copy: `ExpressiveSettingsItem` (icon + title/subtitle clickable row, optional chevron), the various `Expressive*ToggleItem` (switch rows with 48dp icon box, `RoundedCornerShape(14.dp)`, press-scale spring animation), and segmented-button groups (`ExpressiveVideoModeToggleItem`, `ExpressivePlayerStyleSelectItem`). Dialogs (`ExpressiveAboutDialog`, `FolderExclusionDialog`): `AlertDialog` with `containerColor = surfaceContainerHigh`, `shape = RoundedCornerShape(32.dp)`, 64dp rounded icon box, spring `scaleIn` entry via `AnimatedVisibility`. Video-related settings belong in the "Content Mode" section. Material icons extended is available (`Icons.Rounded.*` like `FolderOff`, `SwipeRight` are already used).
+
 ### YouTube data layer (`data/YouTubeRepository.kt`, ~3k lines — the heart of the app)
 
 Two extraction mechanisms, used side by side:

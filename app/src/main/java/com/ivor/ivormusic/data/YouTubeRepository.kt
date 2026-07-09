@@ -134,6 +134,15 @@ class YouTubeRepository(private val context: Context) {
         // JS. Many endpoints now require it; without it, ANDROID_VR can return
         // empty streamingData under load.
         private const val DEFAULT_VISITOR_DATA = "Cgt6SUNYVzB2VkJDbyjGrrSmBg=="
+
+        // visitorData cache is companion-level: repositories are created per
+        // ViewModel (no DI), so instance-level storage would make every VM pay
+        // the youtube.com bootstrap download once. Shared storage means one
+        // fetch warms it for the whole process.
+        @Volatile private var cachedVisitorData: String? = null
+        @Volatile private var visitorDataFetchedAt: Long = 0L
+        private val visitorDataMutex = kotlinx.coroutines.sync.Mutex()
+        private const val VISITOR_DATA_TTL_MS = 6 * 60 * 60 * 1000L // 6 hours
     }
 
     private val okHttpClient = OkHttpClient.Builder()
@@ -616,18 +625,29 @@ class YouTubeRepository(private val context: Context) {
     // --- Fresh visitorData (anti-bot) ---------------------------------------
     // YouTube's /player bot check keys off visitorData: a stale or shared value
     // gets flagged (LOGIN_REQUIRED). A visitorData freshly minted from the
-    // youtube.com bootstrap passes. We cache it and refresh on a TTL.
-    @Volatile private var cachedVisitorData: String? = null
-    @Volatile private var visitorDataFetchedAt: Long = 0L
-    private val visitorDataMutex = kotlinx.coroutines.sync.Mutex()
-    private val visitorDataTtlMs = 6 * 60 * 60 * 1000L // 6 hours
+    // youtube.com bootstrap passes. We cache it (companion-level, see there)
+    // and refresh on a TTL.
+
+    /**
+     * Warm the visitorData cache off the critical path. The cold fetch
+     * downloads the whole youtube.com bootstrap HTML, so paying for it at
+     * app start instead of on the first playback shaves seconds off the
+     * first video load of a session.
+     */
+    suspend fun prefetchVisitorData() {
+        try {
+            getVisitorData()
+        } catch (e: Exception) {
+            android.util.Log.w("YouTubeRepository", "visitorData prefetch failed: ${e.message}")
+        }
+    }
 
     private suspend fun getVisitorData(): String {
         val now = System.currentTimeMillis()
-        cachedVisitorData?.let { if (now - visitorDataFetchedAt < visitorDataTtlMs) return it }
+        cachedVisitorData?.let { if (now - visitorDataFetchedAt < VISITOR_DATA_TTL_MS) return it }
         return visitorDataMutex.withLock {
             val nowInner = System.currentTimeMillis()
-            cachedVisitorData?.let { if (nowInner - visitorDataFetchedAt < visitorDataTtlMs) return it }
+            cachedVisitorData?.let { if (nowInner - visitorDataFetchedAt < VISITOR_DATA_TTL_MS) return it }
             val fresh = fetchVisitorData()
             if (!fresh.isNullOrEmpty()) {
                 cachedVisitorData = fresh
@@ -1327,19 +1347,13 @@ class YouTubeRepository(private val context: Context) {
                 }
             }
             val contextObj = org.json.JSONObject().put("client", clientObj)
+            // No playbackContext.signatureTimestamp: that field is the player-JS
+            // "sts" value, which only matters for ciphered WEB streams. The
+            // native clients used here (ANDROID_VR / IOS) return unciphered
+            // URLs and don't need it.
             val jsonBody = org.json.JSONObject().apply {
                 put("videoId", videoId)
                 put("context", contextObj)
-                put(
-                    "playbackContext",
-                    org.json.JSONObject().put(
-                        "contentPlaybackContext",
-                        org.json.JSONObject().put(
-                            "signatureTimestamp",
-                            System.currentTimeMillis() / 1000,
-                        ),
-                    ),
-                )
                 put("contentCheckOk", true)
                 put("racyCheckOk", true)
             }.toString()
@@ -2191,20 +2205,25 @@ class YouTubeRepository(private val context: Context) {
      */
     private fun getRelatedVideosLight(videoId: String): List<VideoItem> {
         return try {
-            val body = org.json.JSONObject()
-                .put("context", webContext())
-                .put("videoId", videoId)
-            val raw = postWatchApi("next", body) ?: return emptyList()
-            val secondary = org.json.JSONObject(raw).optJSONObject("contents")
-                ?.optJSONObject("twoColumnWatchNextResults")
-                ?.optJSONObject("secondaryResults") ?: return emptyList()
-            val lockups = mutableListOf<org.json.JSONObject>()
-            findObjectsByKey(secondary, "lockupViewModel", lockups)
-            lockups.mapNotNull { parseLockupViewModel(it) }
+            val root = fetchWatchNextRoot(videoId) ?: return emptyList()
+            parseRelatedFromWatchNext(root)
         } catch (e: Exception) {
             android.util.Log.w("YouTubeRepo", "getRelatedVideosLight failed for $videoId", e)
             emptyList()
         }
+    }
+
+    /**
+     * Related videos from a watch-next response: lockupViewModels under
+     * secondaryResults (the modern shape since 2025).
+     */
+    private fun parseRelatedFromWatchNext(root: org.json.JSONObject): List<VideoItem> {
+        val secondary = root.optJSONObject("contents")
+            ?.optJSONObject("twoColumnWatchNextResults")
+            ?.optJSONObject("secondaryResults") ?: return emptyList()
+        val lockups = mutableListOf<org.json.JSONObject>()
+        findObjectsByKey(secondary, "lockupViewModel", lockups)
+        return lockups.mapNotNull { parseLockupViewModel(it) }
     }
 
     /**
@@ -3305,12 +3324,125 @@ class YouTubeRepository(private val context: Context) {
      */
     suspend fun getVideoEngagement(videoId: String): VideoEngagement? = withContext(Dispatchers.IO) {
         try {
-            val body = org.json.JSONObject()
-                .put("context", webContext())
-                .put("videoId", videoId)
-            val raw = postWatchApi("next", body) ?: return@withContext null
-            val root = org.json.JSONObject(raw)
+            val root = fetchWatchNextRoot(videoId) ?: return@withContext null
+            parseEngagementFromWatchNext(videoId, root)
+        } catch (e: Exception) {
+            android.util.Log.e("YouTubeRepo", "getVideoEngagement failed", e)
+            null
+        }
+    }
 
+    /**
+     * Everything the video player needs from one watch-next call: engagement,
+     * enriched metadata and related videos, all parsed from a single /next
+     * response. Replaces the previous pair of an engagement call plus a full
+     * NewPipe StreamExtractor fetch, halving the network work per video open
+     * and freeing bandwidth for the player's initial buffer.
+     */
+    suspend fun getWatchNextData(
+        videoId: String,
+        baseVideo: VideoItem? = null
+    ): WatchNextData = withContext(Dispatchers.IO) {
+        try {
+            val root = fetchWatchNextRoot(videoId)
+                ?: return@withContext WatchNextData(null, null, emptyList())
+            WatchNextData(
+                engagement = try {
+                    parseEngagementFromWatchNext(videoId, root)
+                } catch (e: Exception) {
+                    android.util.Log.w("YouTubeRepo", "engagement parse failed for $videoId", e)
+                    null
+                },
+                updatedVideoItem = parseVideoMetadataFromWatchNext(videoId, root, baseVideo),
+                relatedVideos = parseRelatedFromWatchNext(root)
+            )
+        } catch (e: Exception) {
+            android.util.Log.e("YouTubeRepo", "getWatchNextData failed", e)
+            WatchNextData(null, null, emptyList())
+        }
+    }
+
+    private fun fetchWatchNextRoot(videoId: String): org.json.JSONObject? {
+        val body = org.json.JSONObject()
+            .put("context", webContext())
+            .put("videoId", videoId)
+        val raw = postWatchApi("next", body) ?: return null
+        return org.json.JSONObject(raw)
+    }
+
+    /**
+     * Enriched video metadata from a watch-next response, layered over
+     * [baseVideo] (feed items lack description, channel avatar and subscriber
+     * count). Shapes verified against the live API July 2026:
+     * videoPrimaryInfoRenderer (title, viewCount.videoViewCountRenderer,
+     * relativeDateText) and videoSecondaryInfoRenderer (owner.videoOwnerRenderer,
+     * attributedDescription.content).
+     */
+    private fun parseVideoMetadataFromWatchNext(
+        videoId: String,
+        root: org.json.JSONObject,
+        baseVideo: VideoItem?
+    ): VideoItem? {
+        return try {
+            val primaries = mutableListOf<org.json.JSONObject>()
+            findObjectsByKey(root, "videoPrimaryInfoRenderer", primaries)
+            val primary = primaries.firstOrNull()
+
+            val secondaries = mutableListOf<org.json.JSONObject>()
+            findObjectsByKey(root, "videoSecondaryInfoRenderer", secondaries)
+            val secondaryInfo = secondaries.firstOrNull()
+
+            if (primary == null && secondaryInfo == null) return baseVideo
+
+            val viewCountRenderer = primary?.optJSONObject("viewCount")
+                ?.optJSONObject("videoViewCountRenderer")
+            val viewCount = getRunText(viewCountRenderer?.optJSONObject("shortViewCount"))
+                ?.takeIf { it.isNotBlank() }
+                ?: getRunText(viewCountRenderer?.optJSONObject("viewCount"))?.takeIf { it.isNotBlank() }
+            val uploadedDate = getRunText(primary?.optJSONObject("relativeDateText"))
+                ?.takeIf { it.isNotBlank() }
+                ?: getRunText(primary?.optJSONObject("dateText"))?.takeIf { it.isNotBlank() }
+
+            val owner = secondaryInfo?.optJSONObject("owner")?.optJSONObject("videoOwnerRenderer")
+            val channelId = owner?.optJSONObject("navigationEndpoint")
+                ?.optJSONObject("browseEndpoint")?.optString("browseId")
+                ?.takeIf { it.isNotBlank() }
+            val avatarThumbs = owner?.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
+            val channelIconUrl = avatarThumbs
+                ?.optJSONObject(avatarThumbs.length() - 1)?.optString("url")
+                ?.takeIf { it.isNotBlank() }
+            val subscriberCount = getRunText(owner?.optJSONObject("subscriberCountText"))
+                ?.takeIf { it.isNotBlank() }
+            val description = secondaryInfo?.optJSONObject("attributedDescription")
+                ?.optString("content")?.takeIf { it.isNotBlank() }
+
+            VideoItem(
+                videoId = videoId,
+                title = getRunText(primary?.optJSONObject("title"))?.takeIf { it.isNotBlank() }
+                    ?: baseVideo?.title ?: "Unknown",
+                channelName = getRunText(owner?.optJSONObject("title"))?.takeIf { it.isNotBlank() }
+                    ?: baseVideo?.channelName ?: "Unknown",
+                channelId = channelId ?: baseVideo?.channelId,
+                channelIconUrl = channelIconUrl ?: baseVideo?.channelIconUrl,
+                thumbnailUrl = baseVideo?.thumbnailUrl
+                    ?: "https://i.ytimg.com/vi/$videoId/hqdefault.jpg",
+                duration = baseVideo?.duration ?: 0L,
+                viewCount = viewCount ?: baseVideo?.viewCount ?: "",
+                uploadedDate = uploadedDate ?: baseVideo?.uploadedDate,
+                isLive = baseVideo?.isLive ?: false,
+                description = description ?: baseVideo?.description,
+                subscriberCount = subscriberCount ?: baseVideo?.subscriberCount
+            )
+        } catch (e: Exception) {
+            android.util.Log.w("YouTubeRepo", "watch-next metadata parse failed for $videoId", e)
+            baseVideo
+        }
+    }
+
+    private fun parseEngagementFromWatchNext(
+        videoId: String,
+        root: org.json.JSONObject
+    ): VideoEngagement {
             // Like count + user's like status live in frameworkUpdates entities
             val likeCounts = mutableListOf<org.json.JSONObject>()
             findObjectsByKey(root, "likeCountEntity", likeCounts)
@@ -3368,7 +3500,7 @@ class YouTubeRepository(private val context: Context) {
                 }
             }
 
-            VideoEngagement(
+            return VideoEngagement(
                 videoId = videoId,
                 likeCount = likeCount,
                 likeStatus = likeStatus,
@@ -3377,10 +3509,6 @@ class YouTubeRepository(private val context: Context) {
                 subscriberCountText = subscriberCountText,
                 commentsToken = commentsToken
             )
-        } catch (e: Exception) {
-            android.util.Log.e("YouTubeRepo", "getVideoEngagement failed", e)
-            null
-        }
     }
 
     /**

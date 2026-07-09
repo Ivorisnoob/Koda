@@ -122,3 +122,13 @@ data class VideoDetails(
     val relatedVideos: List<VideoItem>,
     val updatedVideoItem: VideoItem? = null
 )
+
+/**
+ * Everything the video player needs from a single watch-next (/next) call:
+ * engagement state, enriched metadata and related videos.
+ */
+data class WatchNextData(
+    val engagement: VideoEngagement?,
+    val updatedVideoItem: VideoItem?,
+    val relatedVideos: List<VideoItem>
+)

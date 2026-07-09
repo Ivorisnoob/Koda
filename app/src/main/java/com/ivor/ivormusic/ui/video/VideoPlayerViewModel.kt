@@ -9,6 +9,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.MergingMediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
@@ -132,8 +133,21 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     val isPostingComment: StateFlow<Boolean> = _isPostingComment.asStateFlow()
 
     init {
+        // Faster first frame than the stock 2.5s start buffer: begin playback
+        // after ~1.5s buffered and keep a large max buffer for stability.
+        // Mirrors the tuned LoadControl the music service already uses.
+        val loadControl = DefaultLoadControl.Builder()
+            .setBufferDurationsMs(
+                30_000, // min buffer
+                60_000, // max buffer
+                1_500,  // buffer before first frame
+                3_000   // buffer after a rebuffer
+            )
+            .setPrioritizeTimeOverSizeThresholds(true)
+            .build()
+
         // Initialize ExoPlayer
-        _exoPlayer = ExoPlayer.Builder(context).build().apply {
+        _exoPlayer = ExoPlayer.Builder(context).setLoadControl(loadControl).build().apply {
             playWhenReady = true
             addListener(object : Player.Listener {
                 override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -154,6 +168,10 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                 }
             })
         }
+
+        // Warm the visitorData cache so the first playback doesn't pay for
+        // the youtube.com bootstrap download on its critical path.
+        viewModelScope.launch { youtubeRepository.prefetchVisitorData() }
     }
 
     fun toggleAutoPlay() {
@@ -188,15 +206,6 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         _createCommentParams.value = null
         _isLoggedIn.value = youtubeRepository.isLoggedIn()
 
-        // Load like/subscribe state and the comments entry token in parallel
-        viewModelScope.launch {
-            try {
-                _engagement.value = youtubeRepository.getVideoEngagement(video.videoId)
-            } catch (e: Exception) {
-                android.util.Log.w("VideoPlayerVM", "Failed to load engagement", e)
-            }
-        }
-        
         // ========== PHASE 1: START PLAYBACK ASAP (fast) ==========
         // Uses lightweight getVideoStreamQualities() which ONLY fetches stream URLs
         viewModelScope.launch {
@@ -211,12 +220,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                     _availableQualities.value = qualities
                     
                     if (qualities.isNotEmpty()) {
-                        val bestQuality = qualities.find { it.resolution.contains("1080p60") }
-                            ?: qualities.find { it.resolution.contains("1080p") }
-                            ?: qualities.find { it.isDASH }
-                            ?: qualities.first()
-                            
-                        loadQuality(bestQuality)
+                        loadQuality(pickDefaultQuality(qualities))
                         // FORCE PLAY: Ensure we override any previous paused state
                         _exoPlayer?.play() 
                         _isLoading.value = false // ✅ Playback starting NOW!
@@ -252,27 +256,25 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             }
         }
         
-        // ========== PHASE 2: LOAD METADATA IN BACKGROUND ==========
-        // Runs in parallel - video is already playing by now
+        // ========== PHASE 2: ENGAGEMENT + METADATA + RELATED ==========
+        // One watch-next call answers all three (the old code paid for an
+        // engagement /next call AND a full NewPipe extraction here, competing
+        // with Phase 1's initial buffering for bandwidth).
         viewModelScope.launch {
             try {
-                val details = youtubeRepository.getVideoDetails(video.videoId)
-                
-                // Update metadata (channel icon, description, subscriber count)
-                if (details.updatedVideoItem != null) {
-                    _currentVideo.value = details.updatedVideoItem
+                val watchNext = youtubeRepository.getWatchNextData(video.videoId, video)
+                // Guard against a video switch that happened mid-flight
+                if (_currentVideo.value?.videoId != video.videoId) return@launch
+                _engagement.value = watchNext.engagement
+                if (watchNext.updatedVideoItem != null) {
+                    _currentVideo.value = watchNext.updatedVideoItem
                 }
-                
-                // Update related videos
-                _relatedVideos.value = details.relatedVideos
-                
-                // Update qualities if Phase 1 somehow missed them
-                if (_availableQualities.value.isEmpty() && details.qualities.isNotEmpty()) {
-                    _availableQualities.value = details.qualities
+                if (watchNext.relatedVideos.isNotEmpty()) {
+                    _relatedVideos.value = watchNext.relatedVideos
                 }
             } catch (e: Exception) {
                 // Phase 2 errors are non-critical - playback already started
-                android.util.Log.w("VideoPlayerVM", "Failed to load video metadata", e)
+                android.util.Log.w("VideoPlayerVM", "Failed to load watch-next data", e)
             }
         }
         
@@ -315,6 +317,26 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         return DefaultDataSource.Factory(context, httpFactory)
     }
 
+    /**
+     * Pick the starting quality based on the Settings preference. Fresh pref
+     * read because Settings toggles through its own ThemePreferences instance.
+     * The list from getVideoStreamQualities() is sorted highest-first with
+     * 60fps variants before 30fps, so the first label at or below the target
+     * height is the best match; if the video has nothing at or below it, take
+     * the lowest available.
+     */
+    private fun pickDefaultQuality(qualities: List<VideoQuality>): VideoQuality {
+        fun height(label: String): Int = label.takeWhile { it.isDigit() }.toIntOrNull() ?: 0
+        val preferred = themePreferences.getDefaultVideoQuality()
+        if (preferred == ThemePreferences.VIDEO_QUALITY_AUTO) {
+            return qualities.firstOrNull { height(it.resolution) > 0 } ?: qualities.first()
+        }
+        val targetHeight = height(preferred)
+        return qualities.firstOrNull { height(it.resolution) in 1..targetHeight }
+            ?: qualities.lastOrNull { height(it.resolution) > 0 }
+            ?: qualities.first()
+    }
+
     private fun loadQuality(quality: VideoQuality) {
         _currentQuality.value = quality
         val mediaItemBuilder = MediaItem.Builder().setUri(quality.url)
@@ -333,7 +355,9 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                 val audioSource = ProgressiveMediaSource.Factory(dataSourceFactory)
                     .createMediaSource(MediaItem.fromUri(audioUrl))
 
-                val mergingSource = MergingMediaSource(videoSource, audioSource)
+                // adjustPeriodTimeOffsets aligns the two tracks' start offsets,
+                // preventing A/V desync when they don't begin at the same time.
+                val mergingSource = MergingMediaSource(true, videoSource, audioSource)
                 _exoPlayer?.setMediaSource(mergingSource)
             } else {
                 val source = ProgressiveMediaSource.Factory(dataSourceFactory)
