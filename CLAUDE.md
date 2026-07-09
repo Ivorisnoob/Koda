@@ -61,7 +61,29 @@ Critical InnerTube knowledge (verified July 2026):
 - Feed/related items are `lockupViewModel`s (modern) parsed by `parseLockupViewModel`; `videoRenderer` is legacy but still handled.
 - Parsing is manual `org.json` traversal with recursive key-search helpers (`findObjectsByKey`, `findContinuationTokens`). No kotlinx-serialization for InnerTube responses.
 
-**Before changing any InnerTube parser, probe the live API first** with a Python script (`py` launcher on this machine, not `python`) — response shapes drift. Example probes live in past sessions; the pattern is: POST to `https://www.youtube.com/youtubei/v1/<endpoint>?prettyPrint=false` with a WEB client context and inspect renderer types.
+### Working on InnerTube: the probe-first workflow (follow this recipe exactly)
+
+Never write or modify an InnerTube parser from memory or training data — response shapes drift and renderers get renamed wholesale (`commentRenderer` → `commentEntityPayload`, `videoRenderer` → `lockupViewModel`). The workflow that reliably works:
+
+1. **Probe the live endpoint before touching Kotlin.** Write a throwaway Python script in the scratchpad (`py` launcher on this machine, not `python`). POST JSON to `https://www.youtube.com/youtubei/v1/<endpoint>?prettyPrint=false` with body `{"context": {"client": {"clientName": "WEB", "clientVersion": <WEB_VERSION>, "hl": "en", "gl": "US"}}, ...}`. Read the pinned `WEB_VERSION` out of `YouTubeRepository.kt` with a regex so the probe matches the app's client. Set `sys.stdout.reconfigure(encoding="utf-8", errors="replace")` or emoji in responses crash the Windows console.
+
+2. **For logged-in endpoints, steal the session from the emulator's WebView jar** (EncryptedSharedPreferences can't be read off-device, but WebView cookies are plaintext SQLite):
+   `adb exec-out run-as com.ivor.ivormusic cat app_webview/Default/Cookies > Cookies.db`
+   Read `name,value` rows for `%youtube.com%` hosts, send them all as a `Cookie:` header, and sign with `Authorization: SAPISIDHASH {ts}_{sha1("{ts} {SAPISID} https://www.youtube.com")}` plus `Origin`, `X-Origin`, `X-Goog-AuthUser: 0`. The hash is **per-origin** — `music.youtube.com` and `www.youtube.com` need different hashes.
+
+3. **Inspect shapes with a recursive key search, not by eyeballing.** Save the full response to a JSON file, then use a `find_all(node, key)` helper (dict/list walker) to count candidate renderer keys (`lockupViewModel`, `playlistVideoRenderer`, `richShelfRenderer`, ...). Print one exemplar object's key list and the exact paths to title/thumbnail/id fields. Only then write the parser.
+
+4. **Write parsers the way the file already does:** manual `org.json` traversal with `optJSONObject`/`optString` chains, `findObjectsByKey` for deep renderer collection, `getRunText()` for text (handles both `simpleText` and `runs`), `?.takeIf { it.isNotBlank() }` + fallback for every field, try/catch returning an empty/null result with a `Log.e`. Note "verified <month year>" in the KDoc so staleness is visible.
+
+5. **Client choice cheat sheet:** WEB context (`webContext()`, `postWatchApi()`) for browse//next/engagement on www.youtube.com; WEB_REMIX (`fetchInternalApi()`) for music.youtube.com; ANDROID_VR (fallback IOS) **only** for `/player` stream resolution — it returns unciphered URLs without a PO token. Never fetch streams with WEB. Playback requests must use the UA matching the URL's issuing client (`uaForPlaybackUri()`), or googlevideo answers 403.
+
+6. **When an existing call starts failing:** log HTTP code + first ~200 chars of body and `playabilityStatus.reason`. HTTP 400 on browse usually means the pinned client version constants are too old — bump them. Empty `streamingData` with status OK usually means stale/missing `visitorData`. Don't loop retries; re-probe and compare shapes.
+
+7. **Be frugal with calls per user action.** One `/next` response contains engagement, metadata, related videos and the comments token at once — parse many features from one response (`getWatchNextData` pattern) instead of adding a request per feature.
+
+8. **Clean up write-probe side effects** (e.g. delete test comments) and never commit cookie dumps or response JSONs — keep them in the scratchpad.
+
+Known browse IDs (verified July 2026): `FElibrary` (library shelves), `FEplaylist_aggregation` (all user playlists as `lockupViewModel`s with `contentType: LOCKUP_CONTENT_TYPE_PLAYLIST`), `VL<playlistId>` (playlist contents as `playlistVideoRenderer`s; `VLWL` = Watch Later, `VLLL` = Liked videos), `FEhistory` (watch history), `FEchannels` (subscriptions). The public `FEtrending` is dead (HTTP 400).
 
 ### Authentication
 
