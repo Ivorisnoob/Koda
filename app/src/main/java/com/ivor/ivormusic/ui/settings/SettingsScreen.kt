@@ -32,6 +32,8 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -56,6 +58,7 @@ import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.FlashOn
+import androidx.compose.material.icons.rounded.HighQuality
 import androidx.compose.material.icons.rounded.SwipeRight
 import androidx.compose.material.icons.rounded.ToggleOn
 import androidx.compose.material3.AlertDialog
@@ -77,6 +80,7 @@ import androidx.compose.material3.MaterialShapes
 import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
@@ -119,6 +123,7 @@ import coil.compose.AsyncImage
 import com.ivor.ivormusic.BuildConfig
 import com.ivor.ivormusic.data.FolderInfo
 import com.ivor.ivormusic.data.SessionManager
+import com.ivor.ivormusic.data.ThemePreferences
 
 import com.ivor.ivormusic.ui.auth.YouTubeAuthDialog
 import com.ivor.ivormusic.data.PlayerStyle
@@ -180,6 +185,8 @@ fun SettingsScreen(
     onSaveVideoHistoryToggle: (Boolean) -> Unit,
     timedCommentsEnabled: Boolean,
     onTimedCommentsToggle: (Boolean) -> Unit,
+    defaultVideoQuality: String,
+    onDefaultVideoQualityChange: (String) -> Unit,
     excludedFolders: Set<String>,
     onAddExcludedFolder: (String) -> Unit,
     onRemoveExcludedFolder: (String) -> Unit,
@@ -222,6 +229,9 @@ fun SettingsScreen(
     // Dialog state for About
     var showAboutDialog by remember { mutableStateOf(false) }
     
+    // Dialog state for Default Video Quality
+    var showVideoQualityDialog by remember { mutableStateOf(false) }
+
     // Dialog state for Folder Exclusion
     var showFolderExclusionDialog by remember { mutableStateOf(false) }
     var availableFolders by remember { mutableStateOf<List<FolderInfo>>(emptyList()) }
@@ -663,6 +673,19 @@ fun SettingsScreen(
                             secondaryTextColor = secondaryTextColor,
                             accentColor = accentColor
                         )
+
+                        SettingsDivider()
+
+                        ExpressiveSettingsItem(
+                            icon = Icons.Rounded.HighQuality,
+                            title = "Default Video Quality",
+                            subtitle = videoQualityLabel(defaultVideoQuality),
+                            onClick = { showVideoQualityDialog = true },
+                            textColor = textColor,
+                            secondaryTextColor = secondaryTextColor,
+                            iconTint = accentColor,
+                            showChevron = true
+                        )
                     }
                 }
             }
@@ -760,6 +783,18 @@ fun SettingsScreen(
         )
     }
     
+    // Default Video Quality Dialog
+    if (showVideoQualityDialog) {
+        VideoQualityDialog(
+            currentQuality = defaultVideoQuality,
+            onQualitySelected = {
+                onDefaultVideoQualityChange(it)
+                showVideoQualityDialog = false
+            },
+            onDismiss = { showVideoQualityDialog = false }
+        )
+    }
+
     // Folder Exclusion Dialog
     if (showFolderExclusionDialog) {
         FolderExclusionDialog(
@@ -1619,6 +1654,123 @@ private fun ExpressivePlayerStyleSelectItem(
                 }
             }
         }
+    }
+}
+
+/** Human-readable label for a stored default video quality value. */
+private fun videoQualityLabel(value: String): String =
+    if (value == ThemePreferences.VIDEO_QUALITY_AUTO) "Auto (Highest)" else value
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun VideoQualityDialog(
+    currentQuality: String,
+    onQualitySelected: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val backgroundColor = MaterialTheme.colorScheme.surfaceContainerHigh
+    val textColor = MaterialTheme.colorScheme.onSurface
+    val secondaryTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+
+    // Dialog entry animation
+    var dialogVisible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        dialogVisible = true
+    }
+
+    AnimatedVisibility(
+        visible = dialogVisible,
+        enter = scaleIn(
+            initialScale = 0.8f,
+            animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy)
+        ) + fadeIn(tween(200)),
+        exit = scaleOut(targetScale = 0.8f) + fadeOut(tween(150))
+    ) {
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            containerColor = backgroundColor,
+            shape = RoundedCornerShape(32.dp),
+            icon = {
+                Box(
+                    modifier = Modifier
+                        .size(64.dp)
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(primaryColor.copy(alpha = 0.15f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.HighQuality,
+                        contentDescription = null,
+                        tint = primaryColor,
+                        modifier = Modifier.size(32.dp)
+                    )
+                }
+            },
+            title = {
+                Text(
+                    text = "Default Video Quality",
+                    color = textColor,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    Text(
+                        text = "Videos start at this quality when available, falling back to the closest lower one.",
+                        color = secondaryTextColor,
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp,
+                        modifier = Modifier.padding(bottom = 12.dp)
+                    )
+                    ThemePreferences.VIDEO_QUALITY_OPTIONS.forEach { option ->
+                        val selected = option == currentQuality
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(
+                                    if (selected) primaryColor.copy(alpha = 0.12f)
+                                    else Color.Transparent
+                                )
+                                .clickable { onQualitySelected(option) }
+                                .padding(horizontal = 8.dp, vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = selected,
+                                onClick = { onQualitySelected(option) }
+                            )
+                            Text(
+                                text = videoQualityLabel(option),
+                                color = if (selected) primaryColor else textColor,
+                                fontSize = 15.sp,
+                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                OutlinedButton(
+                    onClick = onDismiss,
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.height(48.dp)
+                ) {
+                    Text(
+                        text = "Close",
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+        )
     }
 }
 

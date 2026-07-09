@@ -39,6 +39,9 @@ class ThemePreferences(context: Context) {
 
     private val _timedCommentsEnabled = MutableStateFlow(getTimedCommentsEnabledPreference())
     val timedCommentsEnabled: StateFlow<Boolean> = _timedCommentsEnabled.asStateFlow()
+
+    private val _defaultVideoQuality = MutableStateFlow(getDefaultVideoQualityPreference())
+    val defaultVideoQuality: StateFlow<String> = _defaultVideoQuality.asStateFlow()
     
     private val _excludedFolders = MutableStateFlow(getExcludedFoldersPreference())
     val excludedFolders: StateFlow<Set<String>> = _excludedFolders.asStateFlow()
@@ -77,6 +80,16 @@ class ThemePreferences(context: Context) {
         private const val KEY_PLAYER_STYLE = "player_style"
         private const val KEY_SAVE_VIDEO_HISTORY = "save_video_history"
         private const val KEY_TIMED_COMMENTS_ENABLED = "timed_comments_enabled"
+        private const val KEY_DEFAULT_VIDEO_QUALITY = "default_video_quality"
+
+        /** Sentinel meaning "highest available quality". */
+        const val VIDEO_QUALITY_AUTO = "auto"
+
+        /** Quality labels offered in Settings, best first. */
+        val VIDEO_QUALITY_OPTIONS = listOf(
+            VIDEO_QUALITY_AUTO, "2160p", "1440p", "1080p", "720p", "480p", "360p", "144p"
+        )
+        private const val DEFAULT_VIDEO_QUALITY = "1080p"
         private const val KEY_EXCLUDED_FOLDERS = "excluded_folders"
         private const val KEY_CACHE_ENABLED = "cache_enabled"
         private const val KEY_MAX_CACHE_SIZE_MB = "max_cache_size_mb"
@@ -313,6 +326,31 @@ class ThemePreferences(context: Context) {
         _timedCommentsEnabled.value = enabled
     }
     
+    /**
+     * Get the stored default video quality preference. Defaults to 1080p,
+     * matching the player's historical hardcoded pick.
+     */
+    private fun getDefaultVideoQualityPreference(): String {
+        return prefs.getString(KEY_DEFAULT_VIDEO_QUALITY, DEFAULT_VIDEO_QUALITY)
+            ?: DEFAULT_VIDEO_QUALITY
+    }
+
+    /**
+     * Fresh read of the default video quality straight from SharedPreferences.
+     * The video player VM holds its own ThemePreferences instance, so its
+     * StateFlow copy goes stale when Settings changes the value — use this at
+     * playback time instead.
+     */
+    fun getDefaultVideoQuality(): String = getDefaultVideoQualityPreference()
+
+    /**
+     * Save default video quality preference and update the flow.
+     */
+    fun setDefaultVideoQuality(quality: String) {
+        prefs.edit().putString(KEY_DEFAULT_VIDEO_QUALITY, quality).apply()
+        _defaultVideoQuality.value = quality
+    }
+
     /**
      * Get the stored excluded folders preference. Defaults to empty set.
      */
