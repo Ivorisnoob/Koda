@@ -295,14 +295,10 @@ private fun CommentComposer(
     val focusRequester = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
 
-    // Focus the input (and raise the keyboard) as soon as the composer appears,
-    // i.e. when the comments sheet is opened.
-    LaunchedEffect(Unit) {
-        focusRequester.requestFocus()
-        keyboard?.show()
-    }
+    // No focus on sheet open: the keyboard should only come up when the user
+    // taps the input themselves or taps "Reply" on a comment.
 
-    // Re-focus the input whenever the user taps "Reply" on a comment.
+    // Focus the input whenever the user taps "Reply" on a comment.
     LaunchedEffect(replyTarget) {
         if (replyTarget != null) {
             focusRequester.requestFocus()
