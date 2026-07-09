@@ -74,6 +74,9 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     private val _isLooping = MutableStateFlow(false)
     val isLooping: StateFlow<Boolean> = _isLooping.asStateFlow()
 
+    private val _playbackSpeed = MutableStateFlow(1f)
+    val playbackSpeed: StateFlow<Float> = _playbackSpeed.asStateFlow()
+
     private var playbackReportJob: kotlinx.coroutines.Job? = null
 
     // Track quality change listener to prevent leaks
@@ -183,6 +186,12 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         _exoPlayer?.repeatMode = if (_isLooping.value) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
     }
 
+    /** Set the playback speed for the current video. Resets to 1x on video change. */
+    fun setPlaybackSpeed(speed: Float) {
+        _playbackSpeed.value = speed
+        _exoPlayer?.setPlaybackSpeed(speed)
+    }
+
     fun playVideo(video: VideoItem) {
         if (_currentVideo.value?.videoId == video.videoId) {
             // Already playing this video, just expand
@@ -205,6 +214,10 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         commentsLoadedForVideoId = null
         _createCommentParams.value = null
         _isLoggedIn.value = youtubeRepository.isLoggedIn()
+
+        // Speed is per-video, like YouTube
+        _playbackSpeed.value = 1f
+        _exoPlayer?.setPlaybackSpeed(1f)
 
         // ========== PHASE 1: START PLAYBACK ASAP (fast) ==========
         // Uses lightweight getVideoStreamQualities() which ONLY fetches stream URLs
@@ -645,6 +658,9 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
     companion object {
         private val TIMESTAMP_REGEX = Regex("""(?<!\d)(?:(\d{1,2}):)?(\d{1,2}):(\d{2})(?!\d)""")
+
+        /** Speeds offered in the player's speed menu. */
+        val PLAYBACK_SPEED_OPTIONS = listOf(0.25f, 0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f)
     }
 
     override fun onCleared() {
