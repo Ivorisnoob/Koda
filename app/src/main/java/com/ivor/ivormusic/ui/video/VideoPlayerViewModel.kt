@@ -540,12 +540,14 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     }
 
     /**
-     * Post a reply to a top-level comment. The reply is appended to that
-     * comment's visible replies on success. Requires login.
+     * Post a reply into a comment thread. `target` is the comment being
+     * replied to (a top-level comment or one of its replies — replying to a
+     * reply posts into the same thread, like YouTube); `threadParent` is the
+     * top-level comment whose replies list shows the result. Requires login.
      */
-    fun postReply(parent: CommentItem, text: String) {
+    fun postReply(target: CommentItem, threadParent: CommentItem, text: String) {
         val video = _currentVideo.value ?: return
-        val params = parent.replyParams ?: return
+        val params = target.replyParams ?: return
         val trimmed = text.trim()
         if (trimmed.isEmpty() || _isPostingComment.value) return
         _isPostingComment.value = true
@@ -553,20 +555,46 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             try {
                 val created = youtubeRepository.createCommentReply(params, trimmed)
                 if (created != null && _currentVideo.value?.videoId == video.videoId) {
-                    val existing = _replies.value[parent.commentId]
-                    if (existing != null || parent.repliesToken == null) {
+                    val existing = _replies.value[threadParent.commentId]
+                    if (existing != null || threadParent.repliesToken == null) {
                         // Replies already visible (or none exist yet): append inline
                         _replies.value = _replies.value +
-                            (parent.commentId to (existing ?: emptyList()) + created)
+                            (threadParent.commentId to (existing ?: emptyList()) + created)
                     } else {
                         // Replies exist but are collapsed: fetch the thread so the
                         // older replies are not hidden behind the local insert
-                        loadReplies(parent)
+                        loadReplies(threadParent)
                     }
                 }
             } finally {
                 _isPostingComment.value = false
             }
+        }
+    }
+
+    /**
+     * Like or unlike a comment (top-level or reply). Optimistically flips the
+     * local state, then reverts if the InnerTube action fails. Requires login
+     * and the action params that only arrive on signed-in comment fetches.
+     */
+    fun toggleCommentLike(comment: CommentItem) {
+        val action = (if (comment.isLiked) comment.unlikeParams else comment.likeParams) ?: return
+        val toggled = comment.copy(isLiked = !comment.isLiked)
+        replaceComment(toggled)
+        viewModelScope.launch {
+            if (!youtubeRepository.performCommentAction(action)) {
+                replaceComment(comment)
+            }
+        }
+    }
+
+    /** Swap a comment (matched by id) in the top-level list and all reply threads. */
+    private fun replaceComment(updated: CommentItem) {
+        _comments.value = _comments.value.map {
+            if (it.commentId == updated.commentId) updated else it
+        }
+        _replies.value = _replies.value.mapValues { (_, list) ->
+            list.map { if (it.commentId == updated.commentId) updated else it }
         }
     }
 

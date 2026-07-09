@@ -305,7 +305,10 @@ fun VideoPlayerContent(
             onLoadMore = { viewModel.loadMoreComments() },
             onLoadReplies = { viewModel.loadReplies(it) },
             onPostComment = { viewModel.postComment(it) },
-            onPostReply = { parent, text -> viewModel.postReply(parent, text) },
+            onPostReply = { target, threadParent, text ->
+                viewModel.postReply(target, threadParent, text)
+            },
+            onLikeComment = { comment -> requireLogin { viewModel.toggleCommentLike(comment) } },
             onDismiss = { showCommentsSheet = false }
         )
     }
