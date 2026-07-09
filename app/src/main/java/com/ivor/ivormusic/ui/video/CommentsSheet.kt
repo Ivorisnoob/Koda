@@ -46,7 +46,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -72,11 +75,12 @@ fun CommentsSheet(
     onLoadMore: () -> Unit,
     onLoadReplies: (CommentItem) -> Unit,
     onPostComment: (String) -> Unit,
-    onPostReply: (CommentItem, String) -> Unit,
+    onPostReply: (CommentItem, CommentItem, String) -> Unit,
+    onLikeComment: (CommentItem) -> Unit,
     onDismiss: () -> Unit
 ) {
-    // Opens half-height (YouTube style), draggable to full
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
+    // Opens fully expanded
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val listState = rememberLazyListState()
 
     // Trigger pagination when the user nears the end of the list
@@ -91,8 +95,11 @@ fun CommentsSheet(
         if (shouldLoadMore) onLoadMore()
     }
 
-    // The comment being replied to; null = composing a top-level comment
+    // The comment being replied to; null = composing a top-level comment.
+    // When replying to a reply, threadParent is the enclosing top-level
+    // comment (the reply posts into that thread, YouTube-style).
     var replyTarget by remember { mutableStateOf<CommentItem?>(null) }
+    var replyThreadParent by remember { mutableStateOf<CommentItem?>(null) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -150,7 +157,10 @@ fun CommentsSheet(
                             items(comments.size, key = { comments[it].commentId }) { index ->
                                 val comment = comments[index]
                                 Column {
-                                    CommentRow(comment = comment)
+                                    CommentRow(
+                                        comment = comment,
+                                        onLikeClick = { onLikeComment(comment) }
+                                    )
 
                                     // Reply affordance (needs login + reply params)
                                     if (canComment && comment.replyParams != null) {
@@ -162,7 +172,10 @@ fun CommentsSheet(
                                             modifier = Modifier
                                                 .padding(start = 48.dp, top = 4.dp)
                                                 .clip(CircleShape)
-                                                .clickable { replyTarget = comment }
+                                                .clickable {
+                                                    replyTarget = comment
+                                                    replyThreadParent = comment
+                                                }
                                                 .padding(horizontal = 8.dp, vertical = 4.dp)
                                         )
                                     }
@@ -190,7 +203,31 @@ fun CommentsSheet(
                                             verticalArrangement = Arrangement.spacedBy(16.dp)
                                         ) {
                                             commentReplies.forEach { reply ->
-                                                CommentRow(comment = reply, isReply = true)
+                                                Column {
+                                                    CommentRow(
+                                                        comment = reply,
+                                                        isReply = true,
+                                                        onLikeClick = { onLikeComment(reply) }
+                                                    )
+                                                    // Replying to a reply posts into the
+                                                    // same thread, addressed to its author
+                                                    if (canComment && reply.replyParams != null) {
+                                                        Text(
+                                                            text = "Reply",
+                                                            style = MaterialTheme.typography.labelLarge,
+                                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                            fontWeight = FontWeight.Bold,
+                                                            modifier = Modifier
+                                                                .padding(start = 40.dp, top = 4.dp)
+                                                                .clip(CircleShape)
+                                                                .clickable {
+                                                                    replyTarget = reply
+                                                                    replyThreadParent = comment
+                                                                }
+                                                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                                                        )
+                                                    }
+                                                }
                                             }
                                         }
                                     }
@@ -221,11 +258,20 @@ fun CommentsSheet(
                 CommentComposer(
                     replyTarget = replyTarget,
                     isPosting = isPosting,
-                    onCancelReply = { replyTarget = null },
+                    onCancelReply = {
+                        replyTarget = null
+                        replyThreadParent = null
+                    },
                     onSend = { text ->
                         val target = replyTarget
-                        if (target != null) onPostReply(target, text) else onPostComment(text)
+                        val thread = replyThreadParent ?: target
+                        if (target != null && thread != null) {
+                            onPostReply(target, thread, text)
+                        } else {
+                            onPostComment(text)
+                        }
                         replyTarget = null
+                        replyThreadParent = null
                     }
                 )
             }
@@ -246,6 +292,23 @@ private fun CommentComposer(
     onSend: (String) -> Unit
 ) {
     var text by remember { mutableStateOf("") }
+    val focusRequester = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+
+    // Focus the input (and raise the keyboard) as soon as the composer appears,
+    // i.e. when the comments sheet is opened.
+    LaunchedEffect(Unit) {
+        focusRequester.requestFocus()
+        keyboard?.show()
+    }
+
+    // Re-focus the input whenever the user taps "Reply" on a comment.
+    LaunchedEffect(replyTarget) {
+        if (replyTarget != null) {
+            focusRequester.requestFocus()
+            keyboard?.show()
+        }
+    }
 
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -289,7 +352,9 @@ private fun CommentComposer(
                 OutlinedTextField(
                     value = text,
                     onValueChange = { text = it },
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .focusRequester(focusRequester),
                     placeholder = {
                         Text(if (replyTarget != null) "Add a reply…" else "Add a comment…")
                     },
@@ -328,7 +393,8 @@ private fun CommentComposer(
 @Composable
 private fun CommentRow(
     comment: CommentItem,
-    isReply: Boolean = false
+    isReply: Boolean = false,
+    onLikeClick: (() -> Unit)? = null
 ) {
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         // Avatar
@@ -419,21 +485,31 @@ private fun CommentRow(
 
             Spacer(Modifier.height(6.dp))
 
-            // Like count + creator heart
+            // Like button + count + creator heart. Tappable only when the
+            // signed-in fetch provided the matching toolbar action params.
+            val canToggleLike = onLikeClick != null &&
+                (if (comment.isLiked) comment.unlikeParams else comment.likeParams) != null
+            val likeTint = if (comment.isLiked) MaterialTheme.colorScheme.primary
+            else MaterialTheme.colorScheme.onSurfaceVariant
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .clickable(enabled = canToggleLike) { onLikeClick?.invoke() }
+                    .padding(horizontal = 4.dp, vertical = 2.dp)
             ) {
                 Icon(
                     Icons.Rounded.ThumbUp,
-                    contentDescription = "Likes",
+                    contentDescription = if (comment.isLiked) "Unlike" else "Like",
                     modifier = Modifier.size(14.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    tint = likeTint
                 )
                 Text(
-                    text = comment.likeCount.ifEmpty { "0" },
+                    text = (if (comment.isLiked) comment.likeCountLiked.ifEmpty { comment.likeCount }
+                    else comment.likeCount).ifEmpty { "0" },
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = likeTint
                 )
                 if (comment.isHearted) {
                     Spacer(Modifier.width(4.dp))

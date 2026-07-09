@@ -35,7 +35,11 @@ data class CommentItem(
     val isCreator: Boolean,
     val isVerified: Boolean,
     val repliesToken: String?,       // continuation token to load replies
-    val replyParams: String? = null  // createReplyParams for posting a reply to this comment
+    val replyParams: String? = null, // createReplyParams for posting a reply to this comment
+    val likeCountLiked: String = "", // formatted count to show while liked (e.g. "264K")
+    val isLiked: Boolean = false,
+    val likeParams: String? = null,  // perform_comment_action param to like (signed-in only)
+    val unlikeParams: String? = null // perform_comment_action param to remove the like
 )
 
 /**

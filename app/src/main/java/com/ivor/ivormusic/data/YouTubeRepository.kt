@@ -3395,9 +3395,11 @@ class YouTubeRepository(private val context: Context) {
             val raw = postWatchApi("next", body) ?: return@withContext null
             val root = org.json.JSONObject(raw)
 
-            // 1. Collect entity payloads: commentId -> payload, toolbar states by entity key
+            // 1. Collect entity payloads: commentId -> payload, toolbar states and
+            // toolbar surfaces (like/reply actions) by their entity keys
             val entities = mutableMapOf<String, org.json.JSONObject>()
             val toolbarStates = mutableMapOf<String, org.json.JSONObject>()
+            val toolbarSurfaces = mutableMapOf<String, org.json.JSONObject>()
             val replyParamsList = mutableListOf<String>()
             val mutations = root.optJSONObject("frameworkUpdates")
                 ?.optJSONObject("entityBatchUpdate")
@@ -3413,8 +3415,11 @@ class YouTubeRepository(private val context: Context) {
                         val key = state.optString("key")
                         if (key.isNotBlank()) toolbarStates[key] = state
                     }
-                    // Reply-box params live in the toolbar surface entity, one per comment
+                    // Reply-box params and like/unlike actions live in the toolbar
+                    // surface entity, one per comment (matched via toolbarSurfaceKey)
                     payload.optJSONObject("engagementToolbarSurfaceEntityPayload")?.let { surface ->
+                        val key = surface.optString("key")
+                        if (key.isNotBlank()) toolbarSurfaces[key] = surface
                         val replyEndpoints = mutableListOf<org.json.JSONObject>()
                         findObjectsByKey(surface, "createCommentReplyEndpoint", replyEndpoints)
                         replyEndpoints.firstOrNull()?.optString("createReplyParams")
@@ -3465,7 +3470,7 @@ class YouTubeRepository(private val context: Context) {
                         comments.add(
                             parseCommentEntity(
                                 id, entity, viewModel, toolbarStates, repliesToken,
-                                replyParamsByCommentId[id]
+                                replyParamsByCommentId[id], toolbarSurfaces
                             )
                         )
                     } else if (item.has("continuationItemRenderer")) {
@@ -3501,13 +3506,26 @@ class YouTubeRepository(private val context: Context) {
         viewModel: org.json.JSONObject,
         toolbarStates: Map<String, org.json.JSONObject>,
         repliesToken: String?,
-        replyParams: String? = null
+        replyParams: String? = null,
+        toolbarSurfaces: Map<String, org.json.JSONObject> = emptyMap()
     ): CommentItem {
         val props = entity.optJSONObject("properties")
         val author = entity.optJSONObject("author")
         val toolbar = entity.optJSONObject("toolbar")
         val toolbarStateKey = props?.optString("toolbarStateKey").orEmpty()
-        val heartState = toolbarStates[toolbarStateKey]?.optString("heartState")
+        val toolbarState = toolbarStates[toolbarStateKey]
+        val heartState = toolbarState?.optString("heartState")
+        val likeState = toolbarState?.optString("likeState")
+
+        // Like/unlike actions come from the comment's toolbar surface entity
+        // (signed-in responses only; signed out the commands are empty stubs)
+        val surface = toolbarSurfaces[viewModel.optString("toolbarSurfaceKey")]
+        fun surfaceAction(command: String): String? =
+            surface?.optJSONObject(command)?.let {
+                val endpoints = mutableListOf<org.json.JSONObject>()
+                findObjectsByKey(it, "performCommentActionEndpoint", endpoints)
+                endpoints.firstOrNull()?.optString("action")?.takeIf { a -> a.isNotBlank() }
+            }
 
         return CommentItem(
             commentId = id,
@@ -3522,7 +3540,11 @@ class YouTubeRepository(private val context: Context) {
             isCreator = author?.optBoolean("isCreator", false) ?: false,
             isVerified = author?.optBoolean("isVerified", false) ?: false,
             repliesToken = repliesToken,
-            replyParams = replyParams
+            replyParams = replyParams,
+            likeCountLiked = toolbar?.optString("likeCountLiked").orEmpty().trim(),
+            isLiked = likeState == "TOOLBAR_LIKE_STATE_LIKED",
+            likeParams = surfaceAction("likeCommand"),
+            unlikeParams = surfaceAction("unlikeCommand")
         )
     }
 
@@ -3584,6 +3606,27 @@ class YouTubeRepository(private val context: Context) {
                 .put("createReplyParams", createReplyParams)
             parseCreatedComment(postWatchApi("comment/create_comment_reply", body))
         }
+
+    /**
+     * Execute a comment toolbar action (like/unlike). The action param comes
+     * from the comment's toolbar surface (CommentItem.likeParams /
+     * unlikeParams, present only on signed-in fetches). Requires login.
+     */
+    suspend fun performCommentAction(action: String): Boolean = withContext(Dispatchers.IO) {
+        if (!sessionManager.isLoggedIn()) return@withContext false
+        val body = org.json.JSONObject()
+            .put("context", webContext())
+            .put("actions", org.json.JSONArray().put(action))
+        val raw = postWatchApi("comment/perform_comment_action", body)
+            ?: return@withContext false
+        try {
+            val results = mutableListOf<org.json.JSONObject>()
+            findObjectsByKey(org.json.JSONObject(raw), "actionResult", results)
+            results.isEmpty() || results.any { it.optString("status") == "STATUS_SUCCEEDED" }
+        } catch (e: Exception) {
+            true
+        }
+    }
 
     /**
      * Parse the comment entity out of a create_comment / create_comment_reply
