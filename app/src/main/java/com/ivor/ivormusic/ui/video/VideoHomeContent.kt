@@ -89,6 +89,7 @@ fun VideoHomeContent(
     viewModel: HomeViewModel,
     videoMode: Boolean = true,
     onVideoModeToggle: (Boolean) -> Unit = {},
+    showModeToggle: Boolean = true,
     modeToggleState: MusicVideoToggleState = rememberMusicVideoToggleState(videoMode)
 ) {
     val backgroundColor = MaterialTheme.colorScheme.background
@@ -172,6 +173,7 @@ fun VideoHomeContent(
                         viewModel = viewModel,
                         videoMode = videoMode,
                         onVideoModeToggle = onVideoModeToggle,
+                        showModeToggle = showModeToggle,
                         modeToggleState = modeToggleState
                     )
                 }
@@ -247,6 +249,7 @@ private fun VideoTopBarSection(
     viewModel: HomeViewModel,
     videoMode: Boolean = true,
     onVideoModeToggle: (Boolean) -> Unit = {},
+    showModeToggle: Boolean = true,
     modeToggleState: MusicVideoToggleState = rememberMusicVideoToggleState(videoMode)
 ) {
     val surfaceColor = MaterialTheme.colorScheme.surfaceContainer
@@ -357,12 +360,15 @@ private fun VideoTopBarSection(
             }
 
             // Music/Video mode switch, anchored in the corner so it stays put
-            // when the home content swaps between modes
-            MusicVideoToggle(
-                videoMode = videoMode,
-                onVideoModeChange = onVideoModeToggle,
-                state = modeToggleState
-            )
+            // when the home content swaps between modes. Can be hidden from
+            // Settings (Home Screen Mode Toggle).
+            if (showModeToggle) {
+                MusicVideoToggle(
+                    videoMode = videoMode,
+                    onVideoModeChange = onVideoModeToggle,
+                    state = modeToggleState
+                )
+            }
         }
     }
 }

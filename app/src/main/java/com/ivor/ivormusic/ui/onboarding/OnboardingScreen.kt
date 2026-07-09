@@ -57,6 +57,7 @@ import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.PhoneAndroid
+import androidx.compose.material.icons.rounded.ToggleOn
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Videocam
 import androidx.compose.material.icons.rounded.Wallpaper
@@ -128,6 +129,8 @@ fun OnboardingScreen(
     onAmbientBackgroundToggle: (Boolean) -> Unit,
     videoMode: Boolean,
     onVideoModeToggle: (Boolean) -> Unit,
+    homeModeToggleEnabled: Boolean = true,
+    onHomeModeToggleEnabledChange: (Boolean) -> Unit = {},
     playerStyle: PlayerStyle,
     onPlayerStyleChange: (PlayerStyle) -> Unit,
     crossfadeEnabled: Boolean,
@@ -268,7 +271,9 @@ fun OnboardingScreen(
                         )
                         3 -> VideoModePage(
                             videoMode = videoMode,
-                            onVideoModeToggle = onVideoModeToggle
+                            onVideoModeToggle = onVideoModeToggle,
+                            homeModeToggleEnabled = homeModeToggleEnabled,
+                            onHomeModeToggleEnabledChange = onHomeModeToggleEnabledChange
                         )
                         4 -> LookAndFeelPage(
                             currentThemeMode = currentThemeMode,
@@ -562,7 +567,9 @@ private fun YouTubePage(
 @Composable
 private fun VideoModePage(
     videoMode: Boolean,
-    onVideoModeToggle: (Boolean) -> Unit
+    onVideoModeToggle: (Boolean) -> Unit,
+    homeModeToggleEnabled: Boolean,
+    onHomeModeToggleEnabledChange: (Boolean) -> Unit
 ) {
     OnboardingPageScaffold(
         icon = Icons.Rounded.Videocam,
@@ -576,6 +583,14 @@ private fun VideoModePage(
             subtitle = "Video home, video search and watch history",
             checked = videoMode,
             onCheckedChange = onVideoModeToggle
+        )
+
+        SettingSwitchRow(
+            icon = Icons.Rounded.ToggleOn,
+            title = "Home screen switch",
+            subtitle = "Quick music/video toggle in the Home top bar",
+            checked = homeModeToggleEnabled,
+            onCheckedChange = onHomeModeToggleEnabledChange
         )
 
         HintText("Off keeps a cleaner, music-first layout. The video player stays available either way.")

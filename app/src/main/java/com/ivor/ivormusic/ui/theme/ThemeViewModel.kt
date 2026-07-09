@@ -19,6 +19,7 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
     val loadLocalSongs: StateFlow<Boolean> = themePreferences.loadLocalSongs
     val ambientBackground: StateFlow<Boolean> = themePreferences.ambientBackground
     val videoMode: StateFlow<Boolean> = themePreferences.videoMode
+    val homeModeToggleEnabled: StateFlow<Boolean> = themePreferences.homeModeToggleEnabled
     val playerStyle: StateFlow<PlayerStyle> = themePreferences.playerStyle
     val saveVideoHistory: StateFlow<Boolean> = themePreferences.saveVideoHistory
     val timedCommentsEnabled: StateFlow<Boolean> = themePreferences.timedCommentsEnabled
@@ -63,7 +64,11 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
     fun toggleVideoMode() {
         themePreferences.toggleVideoMode()
     }
-    
+
+    fun setHomeModeToggleEnabled(enabled: Boolean) {
+        themePreferences.setHomeModeToggleEnabled(enabled)
+    }
+
     fun setPlayerStyle(style: PlayerStyle) {
         themePreferences.setPlayerStyle(style)
     }

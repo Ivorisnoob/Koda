@@ -149,6 +149,7 @@ fun HomeScreen(
     ambientBackground: Boolean = true,
     videoMode: Boolean = false,
     onVideoModeToggle: (Boolean) -> Unit = {},
+    showModeToggle: Boolean = true,
     playerStyle: PlayerStyle = PlayerStyle.CLASSIC,
     manualScan: Boolean = false
 ) {
@@ -331,6 +332,7 @@ fun HomeScreen(
                                     viewModel = viewModel,
                                     videoMode = videoMode,
                                     onVideoModeToggle = onVideoModeToggle,
+                                    showModeToggle = showModeToggle,
                                     modeToggleState = modeToggleState
                                 )
                             }
@@ -365,6 +367,7 @@ fun HomeScreen(
                                     manualScan = manualScan,
                                     videoMode = videoMode,
                                     onVideoModeToggle = onVideoModeToggle,
+                                    showModeToggle = showModeToggle,
                                     modeToggleState = modeToggleState
                                 )
                             }
@@ -740,6 +743,7 @@ fun YourMixContent(
     manualScan: Boolean = false,
     videoMode: Boolean = false,
     onVideoModeToggle: (Boolean) -> Unit = {},
+    showModeToggle: Boolean = true,
     modeToggleState: MusicVideoToggleState = rememberMusicVideoToggleState(videoMode)
 ) {
     val backgroundColor = MaterialTheme.colorScheme.background
@@ -766,7 +770,7 @@ fun YourMixContent(
                     alpha = if (visible) 1f else 0f
                     translationY = if (visible) 0f else -20f
                 }.animateContentSize()) {
-                    TopBarSection(onProfileClick = onProfileClick, onSettingsClick = onSettingsClick, onDownloadsClick = onDownloadsClick, isDarkMode = isDarkMode, viewModel = viewModel, videoMode = videoMode, onVideoModeToggle = onVideoModeToggle, modeToggleState = modeToggleState)
+                    TopBarSection(onProfileClick = onProfileClick, onSettingsClick = onSettingsClick, onDownloadsClick = onDownloadsClick, isDarkMode = isDarkMode, viewModel = viewModel, videoMode = videoMode, onVideoModeToggle = onVideoModeToggle, showModeToggle = showModeToggle, modeToggleState = modeToggleState)
                 }
             }
             
@@ -833,6 +837,7 @@ fun TopBarSection(
     viewModel: HomeViewModel,
     videoMode: Boolean = false,
     onVideoModeToggle: (Boolean) -> Unit = {},
+    showModeToggle: Boolean = true,
     modeToggleState: MusicVideoToggleState = rememberMusicVideoToggleState(videoMode)
 ) {
     val surfaceColor = MaterialTheme.colorScheme.surfaceContainer
@@ -927,12 +932,15 @@ fun TopBarSection(
             }
 
             // Music/Video mode switch, anchored in the corner so it stays put
-            // when the home content swaps between modes
-            MusicVideoToggle(
-                videoMode = videoMode,
-                onVideoModeChange = onVideoModeToggle,
-                state = modeToggleState
-            )
+            // when the home content swaps between modes. Can be hidden from
+            // Settings (Home Screen Mode Toggle).
+            if (showModeToggle) {
+                MusicVideoToggle(
+                    videoMode = videoMode,
+                    onVideoModeChange = onVideoModeToggle,
+                    state = modeToggleState
+                )
+            }
         }
     }
 }
