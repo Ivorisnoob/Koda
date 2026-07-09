@@ -50,6 +50,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             val themeViewModel: ThemeViewModel = viewModel()
             val themeMode by themeViewModel.themeMode.collectAsState()
+            val amoledTheme by themeViewModel.amoledTheme.collectAsState()
             val loadLocalSongs by themeViewModel.loadLocalSongs.collectAsState()
             val ambientBackground by themeViewModel.ambientBackground.collectAsState()
             val videoMode by themeViewModel.videoMode.collectAsState()
@@ -79,11 +80,13 @@ class MainActivity : ComponentActivity() {
                 }
             }
             
-            IvorMusicTheme(darkTheme = isDarkTheme) {
+            IvorMusicTheme(darkTheme = isDarkTheme, amoledDark = amoledTheme) {
                 Box(modifier = Modifier.fillMaxSize()) {
                     MusicApp(
                         currentThemeMode = themeMode,
                         onThemeModeChange = { themeViewModel.setThemeMode(it) },
+                        amoledTheme = amoledTheme,
+                        onAmoledThemeToggle = { themeViewModel.setAmoledTheme(it) },
                         isDarkMode = isDarkTheme, // Derived for compatibility
                         onThemeToggle = { isDark ->
                             themeViewModel.setThemeMode(if (isDark) ThemeMode.DARK else ThemeMode.LIGHT)
@@ -136,6 +139,8 @@ class MainActivity : ComponentActivity() {
 fun MusicApp(
     currentThemeMode: ThemeMode,
     onThemeModeChange: (ThemeMode) -> Unit,
+    amoledTheme: Boolean,
+    onAmoledThemeToggle: (Boolean) -> Unit,
     isDarkMode: Boolean,
     onThemeToggle: (Boolean) -> Unit,
     loadLocalSongs: Boolean,
@@ -261,6 +266,8 @@ fun MusicApp(
                 com.ivor.ivormusic.ui.settings.SettingsScreen(
                     currentThemeMode = currentThemeMode,
                     onThemeModeChange = onThemeModeChange,
+                    amoledTheme = amoledTheme,
+                    onAmoledThemeToggle = onAmoledThemeToggle,
                     loadLocalSongs = loadLocalSongs,
                     onLoadLocalSongsToggle = onLoadLocalSongsToggle,
                     ambientBackground = ambientBackground,

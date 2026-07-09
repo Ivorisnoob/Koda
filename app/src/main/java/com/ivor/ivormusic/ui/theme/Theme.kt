@@ -5,6 +5,7 @@ import android.os.Build
 import androidx.annotation.ChecksSdkIntAtLeast
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MaterialExpressiveTheme
 import androidx.compose.material3.MotionScheme
@@ -39,6 +40,22 @@ private val DarkColorScheme = darkColorScheme(
     onSurfaceVariant = TextSecondary
 )
 
+/**
+ * Pure black variant for AMOLED displays: background and base surface go to
+ * true #000000, and the surface container ramp is compressed toward black so
+ * cards keep a subtle elevation separation without the default grey wash.
+ */
+private fun ColorScheme.toAmoled(): ColorScheme = copy(
+    background = Color.Black,
+    surface = Color.Black,
+    surfaceDim = Color.Black,
+    surfaceContainerLowest = Color.Black,
+    surfaceContainerLow = Color(0xFF0A0A0A),
+    surfaceContainer = Color(0xFF101010),
+    surfaceContainerHigh = Color(0xFF181818),
+    surfaceContainerHighest = Color(0xFF202020)
+)
+
 // Expressive shapes with more rounded corners
 private val ExpressiveShapes = Shapes(
     extraSmall = RoundedCornerShape(8.dp),
@@ -53,9 +70,10 @@ private val ExpressiveShapes = Shapes(
 fun IvorMusicTheme(
     darkTheme: Boolean = true, // Default to dark theme for this music app
     dynamicColor: Boolean = true, // Enable dynamic color by default for expressive Material 3
+    amoledDark: Boolean = false, // Pure black backgrounds when dark theme is active
     content: @Composable () -> Unit
 ) {
-    val colorScheme = when {
+    val baseColorScheme = when {
         dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
             val context = LocalContext.current
             if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
@@ -63,6 +81,7 @@ fun IvorMusicTheme(
         darkTheme -> DarkColorScheme
         else -> expressiveLightColorScheme()
     }
+    val colorScheme = if (darkTheme && amoledDark) baseColorScheme.toAmoled() else baseColorScheme
     
     val view = LocalView.current
     if (!view.isInEditMode) {
