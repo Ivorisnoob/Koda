@@ -53,6 +53,7 @@ class MainActivity : ComponentActivity() {
             val loadLocalSongs by themeViewModel.loadLocalSongs.collectAsState()
             val ambientBackground by themeViewModel.ambientBackground.collectAsState()
             val videoMode by themeViewModel.videoMode.collectAsState()
+            val homeModeToggleEnabled by themeViewModel.homeModeToggleEnabled.collectAsState()
             val playerStyle by themeViewModel.playerStyle.collectAsState()
             val saveVideoHistory by themeViewModel.saveVideoHistory.collectAsState()
             val timedCommentsEnabled by themeViewModel.timedCommentsEnabled.collectAsState()
@@ -91,6 +92,8 @@ class MainActivity : ComponentActivity() {
                         onAmbientBackgroundToggle = { themeViewModel.setAmbientBackground(it) },
                         videoMode = videoMode,
                         onVideoModeToggle = { themeViewModel.setVideoMode(it) },
+                        homeModeToggleEnabled = homeModeToggleEnabled,
+                        onHomeModeToggleEnabledChange = { themeViewModel.setHomeModeToggleEnabled(it) },
                         playerStyle = playerStyle,
                         onPlayerStyleChange = { themeViewModel.setPlayerStyle(it) },
                         saveVideoHistory = saveVideoHistory,
@@ -135,6 +138,8 @@ fun MusicApp(
     onAmbientBackgroundToggle: (Boolean) -> Unit,
     videoMode: Boolean,
     onVideoModeToggle: (Boolean) -> Unit,
+    homeModeToggleEnabled: Boolean,
+    onHomeModeToggleEnabledChange: (Boolean) -> Unit,
     playerStyle: PlayerStyle,
     onPlayerStyleChange: (PlayerStyle) -> Unit,
     saveVideoHistory: Boolean,
@@ -192,6 +197,8 @@ fun MusicApp(
                     onAmbientBackgroundToggle = onAmbientBackgroundToggle,
                     videoMode = videoMode,
                     onVideoModeToggle = onVideoModeToggle,
+                    homeModeToggleEnabled = homeModeToggleEnabled,
+                    onHomeModeToggleEnabledChange = onHomeModeToggleEnabledChange,
                     playerStyle = playerStyle,
                     onPlayerStyleChange = onPlayerStyleChange,
                     crossfadeEnabled = crossfadeEnabled,
@@ -228,6 +235,8 @@ fun MusicApp(
                     excludedFolders = excludedFolders,
                     ambientBackground = ambientBackground,
                     videoMode = videoMode,
+                    onVideoModeToggle = onVideoModeToggle,
+                    showModeToggle = homeModeToggleEnabled,
                     playerStyle = playerStyle,
                     manualScan = manualScanEnabled
                 )
@@ -248,6 +257,8 @@ fun MusicApp(
                     onAmbientBackgroundToggle = onAmbientBackgroundToggle,
                     videoMode = videoMode,
                     onVideoModeToggle = onVideoModeToggle,
+                    homeModeToggleEnabled = homeModeToggleEnabled,
+                    onHomeModeToggleChange = onHomeModeToggleEnabledChange,
                     playerStyle = playerStyle,
                     onPlayerStyleChange = onPlayerStyleChange,
                     saveVideoHistory = saveVideoHistory,

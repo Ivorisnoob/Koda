@@ -105,6 +105,9 @@ import com.google.accompanist.permissions.rememberPermissionState
 import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.data.PlayerStyle
 import com.ivor.ivormusic.ui.components.FloatingPillNavBar
+import com.ivor.ivormusic.ui.components.MusicVideoToggle
+import com.ivor.ivormusic.ui.components.MusicVideoToggleState
+import com.ivor.ivormusic.ui.components.rememberMusicVideoToggleState
 import com.ivor.ivormusic.ui.player.PlayerViewModel
 import com.ivor.ivormusic.ui.player.ExpandablePlayer
 import com.ivor.ivormusic.ui.player.PlayerSheetContent
@@ -145,6 +148,8 @@ fun HomeScreen(
     excludedFolders: Set<String> = emptySet(),
     ambientBackground: Boolean = true,
     videoMode: Boolean = false,
+    onVideoModeToggle: (Boolean) -> Unit = {},
+    showModeToggle: Boolean = true,
     playerStyle: PlayerStyle = PlayerStyle.CLASSIC,
     manualScan: Boolean = false
 ) {
@@ -211,6 +216,10 @@ fun HomeScreen(
     }
 
     var selectedTab by remember { mutableIntStateOf(0) }
+
+    // Lives outside the mode-swapped content so the thumb keeps animating
+    // while the music/video home content cross-fades underneath it
+    val modeToggleState = rememberMusicVideoToggleState(videoMode)
 
     // Handle back button to return to Home tab if on Search or Library
     BackHandler(enabled = selectedTab != 0) {
@@ -284,54 +293,84 @@ fun HomeScreen(
             ) { targetTab ->
                 when (targetTab) {
                     0 -> {
-                        // Video Mode: Show video content
-                        if (videoMode) {
-                            VideoHomeContent(
-                                videos = trendingVideos,
-                                isLoading = isVideoLoading,
-                                onVideoClick = { video ->
-                                    // Navigate to video player screen
-                                    onNavigateToVideoPlayer(video)
-                                },
-                                onProfileClick = onProfileClick,
-                                onSettingsClick = onNavigateToSettings,
-                                onDownloadsClick = onNavigateToDownloads,
-                                onRefresh = { viewModel.refreshVideos() },
-                                isDarkMode = isDarkMode,
-                                contentPadding = PaddingValues(bottom = 160.dp),
-                                viewModel = viewModel
-                            )
-                        } 
-                        // Music Mode: Show original content
-                        else if (isLoading && songs.isEmpty()) {
-                             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                LoadingIndicator(
-                                    modifier = Modifier.size(48.dp),
-                                    color = MaterialTheme.colorScheme.primary
+                        // Mode swap morphs the page while the hoisted toggle
+                        // thumb keeps sliding above it. Spec is read here because
+                        // motionScheme is composable and transitionSpec is not.
+                        val modeScaleSpec = MaterialTheme.motionScheme.fastSpatialSpec<Float>()
+                        androidx.compose.animation.AnimatedContent(
+                            targetState = videoMode,
+                            label = "ModeTransition",
+                            transitionSpec = {
+                                (androidx.compose.animation.fadeIn(
+                                    androidx.compose.animation.core.tween(durationMillis = 260, delayMillis = 60)
+                                ) + androidx.compose.animation.scaleIn(
+                                    initialScale = 0.92f,
+                                    animationSpec = modeScaleSpec
+                                )) togetherWith (androidx.compose.animation.fadeOut(
+                                    androidx.compose.animation.core.tween(durationMillis = 160)
+                                ) + androidx.compose.animation.scaleOut(
+                                    targetScale = 1.05f,
+                                    animationSpec = androidx.compose.animation.core.tween(durationMillis = 220)
+                                ))
+                            }
+                        ) { videoModeContent ->
+                            // Video Mode: Show video content
+                            if (videoModeContent) {
+                                VideoHomeContent(
+                                    videos = trendingVideos,
+                                    isLoading = isVideoLoading,
+                                    onVideoClick = { video ->
+                                        // Navigate to video player screen
+                                        onNavigateToVideoPlayer(video)
+                                    },
+                                    onProfileClick = onProfileClick,
+                                    onSettingsClick = onNavigateToSettings,
+                                    onDownloadsClick = onNavigateToDownloads,
+                                    onRefresh = { viewModel.refreshVideos() },
+                                    isDarkMode = isDarkMode,
+                                    contentPadding = PaddingValues(bottom = 160.dp),
+                                    viewModel = viewModel,
+                                    videoMode = videoMode,
+                                    onVideoModeToggle = onVideoModeToggle,
+                                    showModeToggle = showModeToggle,
+                                    modeToggleState = modeToggleState
                                 )
                             }
-                        } else {
-                            YourMixContent(
-                                songs = songs,
-                                onSongClick = { song ->
-                                    playerViewModel.playQueue(songs, song)
-                                    showPlayerSheet = true
-                                },
-                                onPlayClick = {
-                                    if (songs.isNotEmpty()) {
-                                        playerViewModel.playQueue(songs)
+                            // Music Mode: Show original content
+                            else if (isLoading && songs.isEmpty()) {
+                                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                    LoadingIndicator(
+                                        modifier = Modifier.size(48.dp),
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            } else {
+                                YourMixContent(
+                                    songs = songs,
+                                    onSongClick = { song ->
+                                        playerViewModel.playQueue(songs, song)
                                         showPlayerSheet = true
-                                    }
-                                },
-                                onProfileClick = onProfileClick,
-                                onSettingsClick = onNavigateToSettings,
-                                onDownloadsClick = onNavigateToDownloads,
-                                isDarkMode = isDarkMode,
-                                contentPadding = PaddingValues(bottom = 160.dp), // Space for navbar + miniplayer
-                                viewModel = viewModel,
-                                excludedFolders = excludedFolders,
-                                manualScan = manualScan
-                            )
+                                    },
+                                    onPlayClick = {
+                                        if (songs.isNotEmpty()) {
+                                            playerViewModel.playQueue(songs)
+                                            showPlayerSheet = true
+                                        }
+                                    },
+                                    onProfileClick = onProfileClick,
+                                    onSettingsClick = onNavigateToSettings,
+                                    onDownloadsClick = onNavigateToDownloads,
+                                    isDarkMode = isDarkMode,
+                                    contentPadding = PaddingValues(bottom = 160.dp), // Space for navbar + miniplayer
+                                    viewModel = viewModel,
+                                    excludedFolders = excludedFolders,
+                                    manualScan = manualScan,
+                                    videoMode = videoMode,
+                                    onVideoModeToggle = onVideoModeToggle,
+                                    showModeToggle = showModeToggle,
+                                    modeToggleState = modeToggleState
+                                )
+                            }
                         }
                     }
                     1 -> SearchContent(
@@ -701,7 +740,11 @@ fun YourMixContent(
     contentPadding: PaddingValues,
     viewModel: HomeViewModel,
     excludedFolders: Set<String> = emptySet(),
-    manualScan: Boolean = false
+    manualScan: Boolean = false,
+    videoMode: Boolean = false,
+    onVideoModeToggle: (Boolean) -> Unit = {},
+    showModeToggle: Boolean = true,
+    modeToggleState: MusicVideoToggleState = rememberMusicVideoToggleState(videoMode)
 ) {
     val backgroundColor = MaterialTheme.colorScheme.background
     val textColor = MaterialTheme.colorScheme.onBackground
@@ -727,7 +770,7 @@ fun YourMixContent(
                     alpha = if (visible) 1f else 0f
                     translationY = if (visible) 0f else -20f
                 }.animateContentSize()) {
-                    TopBarSection(onProfileClick = onProfileClick, onSettingsClick = onSettingsClick, onDownloadsClick = onDownloadsClick, isDarkMode = isDarkMode, viewModel = viewModel)
+                    TopBarSection(onProfileClick = onProfileClick, onSettingsClick = onSettingsClick, onDownloadsClick = onDownloadsClick, isDarkMode = isDarkMode, viewModel = viewModel, videoMode = videoMode, onVideoModeToggle = onVideoModeToggle, showModeToggle = showModeToggle, modeToggleState = modeToggleState)
                 }
             }
             
@@ -791,7 +834,11 @@ fun TopBarSection(
     onSettingsClick: () -> Unit,
     onDownloadsClick: () -> Unit = {},
     isDarkMode: Boolean,
-    viewModel: HomeViewModel
+    viewModel: HomeViewModel,
+    videoMode: Boolean = false,
+    onVideoModeToggle: (Boolean) -> Unit = {},
+    showModeToggle: Boolean = true,
+    modeToggleState: MusicVideoToggleState = rememberMusicVideoToggleState(videoMode)
 ) {
     val surfaceColor = MaterialTheme.colorScheme.surfaceContainer
     val iconColor = MaterialTheme.colorScheme.onSurface
@@ -881,6 +928,17 @@ fun TopBarSection(
                     imageVector = Icons.Default.Settings,
                     contentDescription = "Settings",
                     modifier = Modifier.size(22.dp)
+                )
+            }
+
+            // Music/Video mode switch, anchored in the corner so it stays put
+            // when the home content swaps between modes. Can be hidden from
+            // Settings (Home Screen Mode Toggle).
+            if (showModeToggle) {
+                MusicVideoToggle(
+                    videoMode = videoMode,
+                    onVideoModeChange = onVideoModeToggle,
+                    state = modeToggleState
                 )
             }
         }

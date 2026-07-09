@@ -65,6 +65,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.ivor.ivormusic.data.VideoItem
+import com.ivor.ivormusic.ui.components.MusicVideoToggle
+import com.ivor.ivormusic.ui.components.MusicVideoToggleState
+import com.ivor.ivormusic.ui.components.rememberMusicVideoToggleState
 import com.ivor.ivormusic.ui.home.HomeViewModel
 
 /**
@@ -83,7 +86,11 @@ fun VideoHomeContent(
     onRefresh: () -> Unit,
     isDarkMode: Boolean,
     contentPadding: PaddingValues,
-    viewModel: HomeViewModel
+    viewModel: HomeViewModel,
+    videoMode: Boolean = true,
+    onVideoModeToggle: (Boolean) -> Unit = {},
+    showModeToggle: Boolean = true,
+    modeToggleState: MusicVideoToggleState = rememberMusicVideoToggleState(videoMode)
 ) {
     val backgroundColor = MaterialTheme.colorScheme.background
     val textColor = MaterialTheme.colorScheme.onBackground
@@ -163,7 +170,11 @@ fun VideoHomeContent(
                                 onProfileClick()
                             }
                         },
-                        viewModel = viewModel
+                        viewModel = viewModel,
+                        videoMode = videoMode,
+                        onVideoModeToggle = onVideoModeToggle,
+                        showModeToggle = showModeToggle,
+                        modeToggleState = modeToggleState
                     )
                 }
                 
@@ -235,7 +246,11 @@ private fun VideoTopBarSection(
     onSettingsClick: () -> Unit,
     onDownloadsClick: () -> Unit,
     onNotificationsClick: () -> Unit,
-    viewModel: HomeViewModel
+    viewModel: HomeViewModel,
+    videoMode: Boolean = true,
+    onVideoModeToggle: (Boolean) -> Unit = {},
+    showModeToggle: Boolean = true,
+    modeToggleState: MusicVideoToggleState = rememberMusicVideoToggleState(videoMode)
 ) {
     val surfaceColor = MaterialTheme.colorScheme.surfaceContainer
     val iconColor = MaterialTheme.colorScheme.onSurface
@@ -341,6 +356,17 @@ private fun VideoTopBarSection(
                     imageVector = Icons.Default.Settings,
                     contentDescription = "Settings",
                     modifier = Modifier.size(22.dp)
+                )
+            }
+
+            // Music/Video mode switch, anchored in the corner so it stays put
+            // when the home content swaps between modes. Can be hidden from
+            // Settings (Home Screen Mode Toggle).
+            if (showModeToggle) {
+                MusicVideoToggle(
+                    videoMode = videoMode,
+                    onVideoModeChange = onVideoModeToggle,
+                    state = modeToggleState
                 )
             }
         }

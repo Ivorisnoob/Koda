@@ -27,7 +27,10 @@ class ThemePreferences(context: Context) {
     
     private val _videoMode = MutableStateFlow(getVideoModePreference())
     val videoMode: StateFlow<Boolean> = _videoMode.asStateFlow()
-    
+
+    private val _homeModeToggleEnabled = MutableStateFlow(getHomeModeToggleEnabledPreference())
+    val homeModeToggleEnabled: StateFlow<Boolean> = _homeModeToggleEnabled.asStateFlow()
+
     private val _playerStyle = MutableStateFlow(getPlayerStylePreference())
     val playerStyle: StateFlow<PlayerStyle> = _playerStyle.asStateFlow()
     
@@ -70,6 +73,7 @@ class ThemePreferences(context: Context) {
         private const val KEY_LOAD_LOCAL_SONGS = "load_local_songs"
         private const val KEY_AMBIENT_BACKGROUND = "ambient_background"
         private const val KEY_VIDEO_MODE = "video_mode"
+        private const val KEY_HOME_MODE_TOGGLE_ENABLED = "home_mode_toggle_enabled"
         private const val KEY_PLAYER_STYLE = "player_style"
         private const val KEY_SAVE_VIDEO_HISTORY = "save_video_history"
         private const val KEY_TIMED_COMMENTS_ENABLED = "timed_comments_enabled"
@@ -227,7 +231,23 @@ class ThemePreferences(context: Context) {
     fun toggleVideoMode() {
         setVideoMode(!_videoMode.value)
     }
-    
+
+    /**
+     * Get the stored home mode toggle preference. Defaults to true (the
+     * music/video switch is shown in the Home screen top bar).
+     */
+    private fun getHomeModeToggleEnabledPreference(): Boolean {
+        return prefs.getBoolean(KEY_HOME_MODE_TOGGLE_ENABLED, true)
+    }
+
+    /**
+     * Save home mode toggle preference and update the flow.
+     */
+    fun setHomeModeToggleEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_HOME_MODE_TOGGLE_ENABLED, enabled).apply()
+        _homeModeToggleEnabled.value = enabled
+    }
+
     /**
      * Get the stored player style preference. Defaults to CLASSIC.
      */
