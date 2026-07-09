@@ -311,13 +311,19 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                             }
                         }
                         
-                        // AUTO-QUEUE: Check if we need to load more songs
+                        // AUTO-QUEUE: top the queue up with recommendations when
+                        // fewer than 5 songs are left after the current one.
+                        // Fresh pref read: the settings screen toggles through
+                        // its own ThemePreferences instance, so this VM's
+                        // StateFlow copy is stale at decision time.
                         val totalItems = controller?.mediaItemCount ?: 0
                         val currentIndex = controller?.currentMediaItemIndex ?: 0
-                        val itemsRemaining = totalItems - currentIndex
-                        
-                        if (itemsRemaining < 10 && !_isLoadingMore.value) {
-                             android.util.Log.d("PlayerViewModel", "Auto-Queue: $itemsRemaining items remaining, loading more...")
+                        val songsLeft = totalItems - currentIndex - 1
+
+                        if (songsLeft < 5 && !_isLoadingMore.value &&
+                            themePreferences.isAutoLoadQueueEnabled()
+                        ) {
+                             android.util.Log.d("PlayerViewModel", "Auto-Queue: $songsLeft songs left, loading more...")
                              loadMoreRecommendations()
                         }
                     }

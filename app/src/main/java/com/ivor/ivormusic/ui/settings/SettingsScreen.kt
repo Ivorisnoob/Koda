@@ -41,6 +41,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.Comment
 import androidx.compose.material.icons.automirrored.rounded.Logout
+import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.CheckCircle
@@ -199,6 +200,8 @@ fun SettingsScreen(
     onMaxCacheSizeMbChange: (Long) -> Unit,
     currentCacheSize: Long,
     onClearCacheClick: () -> Unit,
+    autoLoadQueue: Boolean,
+    onAutoLoadQueueToggle: (Boolean) -> Unit,
     crossfadeEnabled: Boolean,
     onCrossfadeEnabledToggle: (Boolean) -> Unit,
     crossfadeDurationMs: Int,
@@ -403,6 +406,20 @@ fun SettingsScreen(
                                 )
                             }
                         }
+
+                        SettingsDivider()
+
+                        // Auto-load Queue Toggle
+                        ExpressiveOemToggleItem(
+                            icon = Icons.AutoMirrored.Rounded.QueueMusic,
+                            title = "Auto-load Queue",
+                            subtitle = "Add recommended songs when the queue runs low",
+                            enabled = autoLoadQueue,
+                            onToggle = onAutoLoadQueueToggle,
+                            textColor = textColor,
+                            secondaryTextColor = secondaryTextColor,
+                            accentColor = accentColor
+                        )
                     }
                 }
             }

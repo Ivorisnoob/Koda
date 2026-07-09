@@ -53,6 +53,10 @@ class ThemePreferences(context: Context) {
     private val _maxCacheSizeMb = MutableStateFlow(getMaxCacheSizeMbPreference())
     val maxCacheSizeMb: StateFlow<Long> = _maxCacheSizeMb.asStateFlow()
     
+    // Queue Settings
+    private val _autoLoadQueue = MutableStateFlow(getAutoLoadQueuePreference())
+    val autoLoadQueue: StateFlow<Boolean> = _autoLoadQueue.asStateFlow()
+
     // Crossfade Settings
     private val _crossfadeEnabled = MutableStateFlow(getCrossfadeEnabledPreference())
     val crossfadeEnabled: StateFlow<Boolean> = _crossfadeEnabled.asStateFlow()
@@ -93,6 +97,7 @@ class ThemePreferences(context: Context) {
         private const val KEY_EXCLUDED_FOLDERS = "excluded_folders"
         private const val KEY_CACHE_ENABLED = "cache_enabled"
         private const val KEY_MAX_CACHE_SIZE_MB = "max_cache_size_mb"
+        private const val KEY_AUTO_LOAD_QUEUE = "auto_load_queue"
         private const val KEY_CROSSFADE_ENABLED = "crossfade_enabled"
         private const val KEY_CROSSFADE_DURATION = "crossfade_duration"
         private const val KEY_OEM_FIX_ENABLED = "oem_fix_enabled"
@@ -401,8 +406,26 @@ class ThemePreferences(context: Context) {
         _maxCacheSizeMb.value = sizeMb
     }
     
+    // --- Queue Settings ---
+
+    private fun getAutoLoadQueuePreference(): Boolean {
+        return prefs.getBoolean(KEY_AUTO_LOAD_QUEUE, true)
+    }
+
+    /**
+     * Fresh read of the auto-load-queue preference straight from
+     * SharedPreferences — the player VM's StateFlow copy goes stale when the
+     * toggle is flipped through the settings screen's own instance.
+     */
+    fun isAutoLoadQueueEnabled(): Boolean = getAutoLoadQueuePreference()
+
+    fun setAutoLoadQueue(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_AUTO_LOAD_QUEUE, enabled).apply()
+        _autoLoadQueue.value = enabled
+    }
+
     // --- Crossfade Settings ---
-    
+
     private fun getCrossfadeEnabledPreference(): Boolean {
         return prefs.getBoolean(KEY_CROSSFADE_ENABLED, true)
     }

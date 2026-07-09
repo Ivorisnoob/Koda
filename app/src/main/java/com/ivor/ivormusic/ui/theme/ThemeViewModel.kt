@@ -26,6 +26,8 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
     val defaultVideoQuality: StateFlow<String> = themePreferences.defaultVideoQuality
     val excludedFolders: StateFlow<Set<String>> = themePreferences.excludedFolders
     
+    val autoLoadQueue: StateFlow<Boolean> = themePreferences.autoLoadQueue
+
     // Cache & Crossfade
     val cacheEnabled: StateFlow<Boolean> = themePreferences.cacheEnabled
     val maxCacheSizeMb: StateFlow<Long> = themePreferences.maxCacheSizeMb
@@ -115,6 +117,10 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             com.ivor.ivormusic.data.CacheManager.clearCache()
         }
+    }
+
+    fun setAutoLoadQueue(enabled: Boolean) {
+        themePreferences.setAutoLoadQueue(enabled)
     }
 
     // --- Crossfade Settings ---

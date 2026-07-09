@@ -66,6 +66,7 @@ class MainActivity : ComponentActivity() {
             val cacheEnabled by themeViewModel.cacheEnabled.collectAsState()
             val maxCacheSizeMb by themeViewModel.maxCacheSizeMb.collectAsState()
             val currentCacheSize by themeViewModel.currentCacheSizeBytes.collectAsState()
+            val autoLoadQueue by themeViewModel.autoLoadQueue.collectAsState()
             val crossfadeEnabled by themeViewModel.crossfadeEnabled.collectAsState()
             val crossfadeDurationMs by themeViewModel.crossfadeDurationMs.collectAsState()
             
@@ -116,6 +117,8 @@ class MainActivity : ComponentActivity() {
                         onMaxCacheSizeMbChange = { themeViewModel.setMaxCacheSizeMb(it) },
                         currentCacheSize = currentCacheSize,
                         onClearCacheClick = { themeViewModel.clearCacheAction() },
+                        autoLoadQueue = autoLoadQueue,
+                        onAutoLoadQueueToggle = { themeViewModel.setAutoLoadQueue(it) },
                         crossfadeEnabled = crossfadeEnabled,
                         onCrossfadeEnabledToggle = { themeViewModel.toggleCrossfadeEnabled() },
                         crossfadeDurationMs = crossfadeDurationMs,
@@ -160,6 +163,8 @@ fun MusicApp(
     onMaxCacheSizeMbChange: (Long) -> Unit,
     currentCacheSize: Long,
     onClearCacheClick: () -> Unit,
+    autoLoadQueue: Boolean,
+    onAutoLoadQueueToggle: (Boolean) -> Unit,
     crossfadeEnabled: Boolean,
     onCrossfadeEnabledToggle: (Boolean) -> Unit,
     crossfadeDurationMs: Int,
@@ -286,6 +291,8 @@ fun MusicApp(
                     onMaxCacheSizeMbChange = onMaxCacheSizeMbChange,
                     currentCacheSize = currentCacheSize,
                     onClearCacheClick = onClearCacheClick,
+                    autoLoadQueue = autoLoadQueue,
+                    onAutoLoadQueueToggle = onAutoLoadQueueToggle,
                     crossfadeEnabled = crossfadeEnabled,
                     onCrossfadeEnabledToggle = onCrossfadeEnabledToggle,
                     crossfadeDurationMs = crossfadeDurationMs,
