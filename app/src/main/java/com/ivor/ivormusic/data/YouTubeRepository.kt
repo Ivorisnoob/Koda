@@ -3874,6 +3874,208 @@ class YouTubeRepository(private val context: Context) {
         postWatchApi(endpoint, body) != null
     }
 
+    // ============================================================
+    // Playlist editing: playlist/create, playlist/delete and
+    // browse/edit_playlist. The same InnerTube write endpoints exist
+    // on both hosts — music=true goes through music.youtube.com
+    // (WEB_REMIX) so edits land in the YouTube Music library,
+    // music=false through www.youtube.com (WEB) for video playlists
+    // and Watch Later. These are the long-stable action-based writes
+    // (same family as like/subscribe above); responses are only
+    // checked for a STATUS_SUCCEEDED/playlistId, never deep-parsed.
+    // ============================================================
+
+    private fun musicContext(): org.json.JSONObject =
+        org.json.JSONObject().put(
+            "client",
+            org.json.JSONObject()
+                .put("clientName", "WEB_REMIX")
+                .put("clientVersion", WEB_REMIX_VERSION)
+                .put("hl", "en")
+                .put("gl", "US")
+        )
+
+    /**
+     * POST to an InnerTube endpoint on music.youtube.com with cookies and a
+     * music-origin SAPISIDHASH (the hash is per-origin — a www.youtube.com
+     * hash is rejected here). Returns the raw body or null on failure.
+     */
+    private fun postMusicApi(endpoint: String, body: org.json.JSONObject): String? {
+        val cookies = sessionManager.getCookies() ?: return null
+        val auth = YouTubeAuthUtils.getAuthorizationHeader(cookies, "https://music.youtube.com")
+            ?: return null
+        val request = okhttp3.Request.Builder()
+            .url("https://music.youtube.com/youtubei/v1/$endpoint?prettyPrint=false")
+            .post(body.toString().toRequestBody("application/json".toMediaType()))
+            .addHeader("Cookie", cookies)
+            .addHeader("Authorization", auth)
+            .addHeader("User-Agent", BROWSER_USER_AGENT)
+            .addHeader("Origin", "https://music.youtube.com")
+            .addHeader("X-Origin", "https://music.youtube.com")
+            .addHeader("X-Goog-AuthUser", "0")
+            .build()
+        return try {
+            okHttpClient.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    response.body?.string()
+                } else {
+                    android.util.Log.w("YouTubeRepo", "music api $endpoint HTTP ${response.code}")
+                    null
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("YouTubeRepo", "music api $endpoint failed", e)
+            null
+        }
+    }
+
+    private fun postPlaylistApi(music: Boolean, endpoint: String, body: org.json.JSONObject): String? =
+        if (music) postMusicApi(endpoint, body) else postWatchApi(endpoint, body)
+
+    private fun playlistContext(music: Boolean): org.json.JSONObject =
+        if (music) musicContext() else webContext()
+
+    /** Playlist ids sometimes carry the VL browse prefix — edit calls need it stripped. */
+    private fun normalizePlaylistId(playlistId: String): String = playlistId.removePrefix("VL")
+
+    /** edit_playlist responses report success in a top-level status field. */
+    private fun editStatusOk(raw: String?): Boolean {
+        if (raw == null) return false
+        return try {
+            org.json.JSONObject(raw).optString("status") == "STATUS_SUCCEEDED"
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /**
+     * Create a playlist, optionally with initial videos. Returns the new
+     * playlist id or null. Requires login.
+     */
+    suspend fun createYouTubePlaylist(
+        title: String,
+        music: Boolean,
+        videoIds: List<String> = emptyList()
+    ): String? = withContext(Dispatchers.IO) {
+        if (!sessionManager.isLoggedIn()) return@withContext null
+        val body = org.json.JSONObject()
+            .put("context", playlistContext(music))
+            .put("title", title)
+        if (videoIds.isNotEmpty()) {
+            body.put("videoIds", org.json.JSONArray(videoIds))
+        }
+        val raw = postPlaylistApi(music, "playlist/create", body) ?: return@withContext null
+        try {
+            org.json.JSONObject(raw).optString("playlistId").takeIf { it.isNotBlank() }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /**
+     * Delete a playlist. playlist/delete only works on playlists the user
+     * owns; for saved (someone else's) playlists it fails, so fall back to
+     * removing the playlist from the library instead. Requires login.
+     */
+    suspend fun deleteYouTubePlaylist(playlistId: String, music: Boolean): Boolean =
+        withContext(Dispatchers.IO) {
+            if (!sessionManager.isLoggedIn()) return@withContext false
+            val id = normalizePlaylistId(playlistId)
+            val body = org.json.JSONObject()
+                .put("context", playlistContext(music))
+                .put("playlistId", id)
+            if (postPlaylistApi(music, "playlist/delete", body) != null) return@withContext true
+            val unlikeBody = org.json.JSONObject()
+                .put("context", playlistContext(music))
+                .put("target", org.json.JSONObject().put("playlistId", id))
+            postPlaylistApi(music, "like/removelike", unlikeBody) != null
+        }
+
+    /**
+     * Rename a playlist (and optionally replace its description). Only works
+     * on playlists the user owns. Requires login.
+     */
+    suspend fun renameYouTubePlaylist(
+        playlistId: String,
+        title: String,
+        music: Boolean,
+        description: String? = null
+    ): Boolean = withContext(Dispatchers.IO) {
+        if (!sessionManager.isLoggedIn()) return@withContext false
+        val actions = org.json.JSONArray().put(
+            org.json.JSONObject()
+                .put("action", "ACTION_SET_PLAYLIST_NAME")
+                .put("playlistName", title)
+        )
+        if (description != null) {
+            actions.put(
+                org.json.JSONObject()
+                    .put("action", "ACTION_SET_PLAYLIST_DESCRIPTION")
+                    .put("playlistDescription", description)
+            )
+        }
+        val body = org.json.JSONObject()
+            .put("context", playlistContext(music))
+            .put("playlistId", normalizePlaylistId(playlistId))
+            .put("actions", actions)
+        editStatusOk(postPlaylistApi(music, "browse/edit_playlist", body))
+    }
+
+    /**
+     * Add a video/song to a playlist ("WL" adds to Watch Later). Requires login.
+     */
+    suspend fun addToYouTubePlaylist(
+        playlistId: String,
+        videoId: String,
+        music: Boolean
+    ): Boolean = withContext(Dispatchers.IO) {
+        if (!sessionManager.isLoggedIn()) return@withContext false
+        val body = org.json.JSONObject()
+            .put("context", playlistContext(music))
+            .put("playlistId", normalizePlaylistId(playlistId))
+            .put(
+                "actions",
+                org.json.JSONArray().put(
+                    org.json.JSONObject()
+                        .put("action", "ACTION_ADD_VIDEO")
+                        .put("addedVideoId", videoId)
+                )
+            )
+        editStatusOk(postPlaylistApi(music, "browse/edit_playlist", body))
+    }
+
+    /**
+     * Remove a video/song from a playlist. Works for Watch Later ("WL");
+     * the liked lists ("LL" videos, "LM" music) are not editable playlists —
+     * removing from them means removing the like. Requires login.
+     */
+    suspend fun removeFromYouTubePlaylist(
+        playlistId: String,
+        videoId: String,
+        music: Boolean
+    ): Boolean = withContext(Dispatchers.IO) {
+        if (!sessionManager.isLoggedIn()) return@withContext false
+        val id = normalizePlaylistId(playlistId)
+        if (id == "LL" || id == "LM") {
+            val body = org.json.JSONObject()
+                .put("context", playlistContext(music))
+                .put("target", org.json.JSONObject().put("videoId", videoId))
+            return@withContext postPlaylistApi(music, "like/removelike", body) != null
+        }
+        val body = org.json.JSONObject()
+            .put("context", playlistContext(music))
+            .put("playlistId", id)
+            .put(
+                "actions",
+                org.json.JSONArray().put(
+                    org.json.JSONObject()
+                        .put("action", "ACTION_REMOVE_VIDEO_BY_VIDEO_ID")
+                        .put("removedVideoId", videoId)
+                )
+            )
+        editStatusOk(postPlaylistApi(music, "browse/edit_playlist", body))
+    }
+
     /**
      * Post a new top-level comment. createCommentParams comes from the first
      * comments page (CommentsPage.createCommentParams). Returns the created

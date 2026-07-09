@@ -33,20 +33,27 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Login
+import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.ThumbUp
 import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.material.icons.rounded.WatchLater
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -135,6 +142,8 @@ fun VideoLibraryContent(
                     viewModel.loadPlaylistVideos(playlist.playlistId)
                     page = LibraryPage.Playlist(playlist)
                 },
+                onCreatePlaylist = { name -> viewModel.createVideoPlaylist(name) },
+                onDeletePlaylist = { playlist -> viewModel.deleteVideoPlaylist(playlist.playlistId) },
                 onRefresh = {
                     viewModel.loadYouTubeHistory()
                     if (isYouTubeConnected) viewModel.loadVideoPlaylists(force = true)
@@ -179,9 +188,23 @@ private fun LibraryRoot(
     onLoginClick: () -> Unit,
     onOpenHistory: () -> Unit,
     onOpenPlaylist: (VideoPlaylist) -> Unit,
+    onCreatePlaylist: (String) -> Unit,
+    onDeletePlaylist: (VideoPlaylist) -> Unit,
     onRefresh: () -> Unit,
     contentPadding: PaddingValues
 ) {
+    var showCreateDialog by remember { mutableStateOf(false) }
+
+    if (showCreateDialog) {
+        CreateVideoPlaylistDialog(
+            onDismiss = { showCreateDialog = false },
+            onCreate = { name ->
+                onCreatePlaylist(name)
+                showCreateDialog = false
+            }
+        )
+    }
+
     ExpressivePullToRefresh(
         isRefreshing = isPlaylistsLoading,
         onRefresh = onRefresh,
@@ -275,7 +298,14 @@ private fun LibraryRoot(
 
             // Playlists
             item {
-                SectionHeader(title = "Your Playlists")
+                SectionHeader(
+                    title = "Your Playlists",
+                    actionLabel = if (isLoggedIn) "New" else null,
+                    actionIcon = Icons.Rounded.Add,
+                    onAction = if (isLoggedIn) {
+                        { showCreateDialog = true }
+                    } else null
+                )
             }
             if (!isLoggedIn) {
                 item { LibraryLoginCard(onLoginClick = onLoginClick) }
@@ -312,6 +342,7 @@ private fun LibraryRoot(
                     PlaylistRow(
                         playlist = playlist,
                         onClick = { onOpenPlaylist(playlist) },
+                        onDelete = { onDeletePlaylist(playlist) },
                         modifier = Modifier.padding(horizontal = 16.dp)
                     )
                 }
@@ -326,6 +357,7 @@ private fun LibraryRoot(
 private fun SectionHeader(
     title: String,
     actionLabel: String? = null,
+    actionIcon: ImageVector = Icons.Rounded.ChevronRight,
     onAction: (() -> Unit)? = null
 ) {
     Row(
@@ -345,13 +377,49 @@ private fun SectionHeader(
             TextButton(onClick = onAction) {
                 Text(actionLabel)
                 Icon(
-                    imageVector = Icons.Rounded.ChevronRight,
+                    imageVector = actionIcon,
                     contentDescription = null,
                     modifier = Modifier.size(18.dp)
                 )
             }
         }
     }
+}
+
+@Composable
+private fun CreateVideoPlaylistDialog(
+    onDismiss: () -> Unit,
+    onCreate: (String) -> Unit
+) {
+    var name by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("New playlist") },
+        text = {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text("Name") },
+                singleLine = true,
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth()
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = { onCreate(name) },
+                enabled = name.isNotBlank()
+            ) {
+                Text("Create")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
 }
 
 @Composable
@@ -459,8 +527,31 @@ private fun HistoryPreviewCard(
 private fun PlaylistRow(
     playlist: VideoPlaylist,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onDelete: (() -> Unit)? = null
 ) {
+    var showMenu by remember { mutableStateOf(false) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+
+    if (showDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            title = { Text("Delete playlist?") },
+            text = { Text("This will permanently remove \"${playlist.title}\" from your YouTube account.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDeleteConfirm = false
+                    onDelete?.invoke()
+                }) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }) { Text("Cancel") }
+            }
+        )
+    }
+
     Surface(
         modifier = modifier
             .fillMaxWidth()
@@ -539,11 +630,36 @@ private fun PlaylistRow(
                     )
                 }
             }
-            Icon(
-                imageVector = Icons.Rounded.ChevronRight,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            if (onDelete != null) {
+                Box {
+                    IconButton(onClick = { showMenu = true }) {
+                        Icon(
+                            imageVector = Icons.Rounded.MoreVert,
+                            contentDescription = "Playlist options",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = showMenu,
+                        onDismissRequest = { showMenu = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Delete playlist") },
+                            onClick = {
+                                showMenu = false
+                                showDeleteConfirm = true
+                            },
+                            leadingIcon = { Icon(Icons.Rounded.Delete, contentDescription = null) }
+                        )
+                    }
+                }
+            } else {
+                Icon(
+                    imageVector = Icons.Rounded.ChevronRight,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
     }
 }
@@ -667,6 +783,12 @@ private fun PlaylistDetail(
                     PlaylistVideoRow(
                         video = video,
                         onClick = { onVideoClick(video) },
+                        onRemove = { viewModel.removePlaylistVideo(playlist.playlistId, video) },
+                        removeLabel = when (playlist.playlistId) {
+                            "WL" -> "Remove from Watch Later"
+                            "LL" -> "Remove from Liked videos"
+                            else -> "Remove from playlist"
+                        },
                         modifier = Modifier.padding(horizontal = 16.dp)
                     )
                 }
@@ -680,8 +802,12 @@ private fun PlaylistDetail(
 private fun PlaylistVideoRow(
     video: VideoItem,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onRemove: (() -> Unit)? = null,
+    removeLabel: String = "Remove from playlist"
 ) {
+    var showMenu by remember { mutableStateOf(false) }
+
     Surface(
         modifier = modifier
             .fillMaxWidth()
@@ -753,6 +879,30 @@ private fun PlaylistVideoRow(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
+                }
+            }
+            if (onRemove != null) {
+                Box {
+                    IconButton(onClick = { showMenu = true }) {
+                        Icon(
+                            imageVector = Icons.Rounded.MoreVert,
+                            contentDescription = "Video options",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = showMenu,
+                        onDismissRequest = { showMenu = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text(removeLabel) },
+                            onClick = {
+                                showMenu = false
+                                onRemove()
+                            },
+                            leadingIcon = { Icon(Icons.Rounded.Delete, contentDescription = null) }
+                        )
+                    }
                 }
             }
         }

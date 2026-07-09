@@ -92,7 +92,7 @@ fun PlayerSheetContent(
     
     var showQueue by remember { mutableStateOf(false) }
     var showAddToPlaylist by remember { mutableStateOf(false) }
-    val localPlaylists by viewModel.localPlaylists.collectAsState()
+    val addToPlaylistItems by viewModel.addToPlaylistItems.collectAsState()
 
     // 🌟 Stable shapes - prevents "square flash" on initial render
     // IconButtonDefaults.shapes() already uses internal remember/caching
@@ -160,7 +160,10 @@ fun PlayerSheetContent(
                     
                     onCollapse = onCollapse,
                     onShowQueue = { showQueue = true },
-                    onShowAddToPlaylist = { showAddToPlaylist = true },
+                    onShowAddToPlaylist = {
+                        viewModel.loadYouTubePlaylistsForSheet()
+                        showAddToPlaylist = true
+                    },
                     onArtistClick = onArtistClick,
                     viewModel = viewModel,
                     primaryColor = primaryColor,
@@ -177,7 +180,7 @@ fun PlayerSheetContent(
 
     if (showAddToPlaylist) {
         AddToPlaylistSheet(
-            playlists = localPlaylists,
+            playlists = addToPlaylistItems,
             onPlaylistClick = { playlist ->
                 viewModel.addToPlaylist(playlist.id)
                 showAddToPlaylist = false
