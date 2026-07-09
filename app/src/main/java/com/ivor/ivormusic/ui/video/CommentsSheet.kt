@@ -46,7 +46,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -246,6 +249,23 @@ private fun CommentComposer(
     onSend: (String) -> Unit
 ) {
     var text by remember { mutableStateOf("") }
+    val focusRequester = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+
+    // Focus the input (and raise the keyboard) as soon as the composer appears,
+    // i.e. when the comments sheet is opened.
+    LaunchedEffect(Unit) {
+        focusRequester.requestFocus()
+        keyboard?.show()
+    }
+
+    // Re-focus the input whenever the user taps "Reply" on a comment.
+    LaunchedEffect(replyTarget) {
+        if (replyTarget != null) {
+            focusRequester.requestFocus()
+            keyboard?.show()
+        }
+    }
 
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -289,7 +309,9 @@ private fun CommentComposer(
                 OutlinedTextField(
                     value = text,
                     onValueChange = { text = it },
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .focusRequester(focusRequester),
                     placeholder = {
                         Text(if (replyTarget != null) "Add a reply…" else "Add a comment…")
                     },
