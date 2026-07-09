@@ -196,19 +196,9 @@ Contributions are welcome, whether it is a bug report, a feature idea, or a pull
 
 ## License
 
-Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)
+GNU GPL V3
 
-You are free to:
-
-- Share, copy, and redistribute in any medium.
-- Adapt, remix, transform, and build upon the work.
-
-Under these terms:
-
-- Attribution. Give appropriate credit.
-- NonCommercial. No commercial use.
-
-See the [LICENSE](LICENSE) file or visit [creativecommons.org/licenses/by-nc/4.0](https://creativecommons.org/licenses/by-nc/4.0/).
+See the [LICENSE](LICENSE) file.
 
 ---
 
