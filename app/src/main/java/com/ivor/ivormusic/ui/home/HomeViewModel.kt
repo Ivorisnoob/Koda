@@ -155,6 +155,19 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val _isNotificationsLoading = MutableStateFlow(false)
     val isNotificationsLoading: StateFlow<Boolean> = _isNotificationsLoading.asStateFlow()
 
+    // Video library tab state
+    private val _videoPlaylists = MutableStateFlow<List<com.ivor.ivormusic.data.VideoPlaylist>>(emptyList())
+    val videoPlaylists: StateFlow<List<com.ivor.ivormusic.data.VideoPlaylist>> = _videoPlaylists.asStateFlow()
+
+    private val _isVideoPlaylistsLoading = MutableStateFlow(false)
+    val isVideoPlaylistsLoading: StateFlow<Boolean> = _isVideoPlaylistsLoading.asStateFlow()
+
+    private val _playlistVideos = MutableStateFlow<List<VideoItem>>(emptyList())
+    val playlistVideos: StateFlow<List<VideoItem>> = _playlistVideos.asStateFlow()
+
+    private val _isPlaylistVideosLoading = MutableStateFlow(false)
+    val isPlaylistVideosLoading: StateFlow<Boolean> = _isPlaylistVideosLoading.asStateFlow()
+
     init {
         checkYouTubeConnection()
     }
@@ -190,6 +203,33 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     /** Latest uploads of one subscribed channel (for the channel drill-in view). */
     suspend fun getChannelVideos(channel: com.ivor.ivormusic.data.SubscribedChannel): List<VideoItem> {
         return youtubeRepository.getChannelVideos(channel)
+    }
+
+    /** Load the user's YouTube playlists for the video Library tab. Requires login. */
+    fun loadVideoPlaylists(force: Boolean = false) {
+        if (_isVideoPlaylistsLoading.value) return
+        if (_videoPlaylists.value.isNotEmpty() && !force) return
+        viewModelScope.launch {
+            _isVideoPlaylistsLoading.value = true
+            try {
+                _videoPlaylists.value = youtubeRepository.getVideoPlaylists()
+            } finally {
+                _isVideoPlaylistsLoading.value = false
+            }
+        }
+    }
+
+    /** Load one playlist's videos (also Watch Later "WL" / Liked videos "LL"). */
+    fun loadPlaylistVideos(playlistId: String) {
+        viewModelScope.launch {
+            _playlistVideos.value = emptyList()
+            _isPlaylistVideosLoading.value = true
+            try {
+                _playlistVideos.value = youtubeRepository.getPlaylistVideos(playlistId)
+            } finally {
+                _isPlaylistVideosLoading.value = false
+            }
+        }
     }
 
     /** Load the notification inbox. Requires login. */

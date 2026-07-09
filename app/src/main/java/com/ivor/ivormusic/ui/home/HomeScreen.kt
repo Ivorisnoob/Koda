@@ -32,10 +32,10 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Subscriptions
-import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material.icons.outlined.LibraryMusic
+import androidx.compose.material.icons.outlined.VideoLibrary
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Subscriptions
 import androidx.compose.material.icons.rounded.MusicNote
@@ -431,10 +431,10 @@ fun HomeScreen(
                         }
                     }
                     3 -> {
-                        // Video mode only: watch history moved here so tab 2
-                        // can host Subscriptions
+                        // Video mode only: Library (playlists, Watch Later,
+                        // liked videos, watch history)
                         if (videoMode) {
-                            com.ivor.ivormusic.ui.video.VideoHistoryContent(
+                            com.ivor.ivormusic.ui.video.VideoLibraryContent(
                                 viewModel = viewModel,
                                 onVideoClick = { video ->
                                     onNavigateToVideoPlayer(video)
@@ -489,7 +489,7 @@ fun HomeScreen(
                     Triple(0, "Home", Pair(Icons.Rounded.Home, Icons.Outlined.Home)),
                     Triple(1, "Search", Pair(Icons.Filled.Search, Icons.Outlined.Search)),
                     Triple(2, "Subs", Pair(Icons.Filled.Subscriptions, Icons.Outlined.Subscriptions)),
-                    Triple(3, "History", Pair(Icons.Filled.History, Icons.Outlined.History))
+                    Triple(3, "Library", Pair(Icons.Filled.VideoLibrary, Icons.Outlined.VideoLibrary))
                 ) else listOf(
                     Triple(0, "Home", Pair(Icons.Rounded.Home, Icons.Outlined.Home)),
                     Triple(1, "Search", Pair(Icons.Filled.Search, Icons.Outlined.Search)),

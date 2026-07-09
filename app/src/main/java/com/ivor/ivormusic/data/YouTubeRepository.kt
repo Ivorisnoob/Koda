@@ -2531,8 +2531,160 @@ class YouTubeRepository(private val context: Context) {
         return videos.distinctBy { it.videoId }.take(30)
     }
     
+    // ============================================================
+    // Video library (www.youtube.com): user playlists, Watch Later,
+    // Liked videos. Shapes verified against the live API July 2026.
+    // ============================================================
+
+    /**
+     * The user's playlists from FEplaylist_aggregation (requires login).
+     * Watch Later never appears here and Liked videos ("LL") sometimes does;
+     * the Library UI pins both as fixed entries, so they are filtered out.
+     */
+    suspend fun getVideoPlaylists(): List<VideoPlaylist> = withContext(Dispatchers.IO) {
+        try {
+            val json = fetchYouTubeBrowse("FEplaylist_aggregation")
+                .takeIf { it.isNotEmpty() } ?: return@withContext emptyList()
+            val root = org.json.JSONObject(json)
+            val lockups = mutableListOf<org.json.JSONObject>()
+            findObjectsByKey(root, "lockupViewModel", lockups)
+            lockups.mapNotNull { parsePlaylistLockup(it) }
+                .filter { it.playlistId != "LL" && it.playlistId != "WL" }
+                .distinctBy { it.playlistId }
+        } catch (e: Exception) {
+            android.util.Log.e("YouTubeRepo", "getVideoPlaylists failed", e)
+            emptyList()
+        }
+    }
+
+    /**
+     * Videos of one playlist via browse VL<playlistId> (first page, up to 100).
+     * Works for Watch Later ("WL") and Liked videos ("LL") too — both need
+     * login. The renderer differs per playlist surface: WL and regular
+     * playlists come as playlistVideoRenderers, LL comes as plain video
+     * lockupViewModels — parse whichever the response contains.
+     */
+    suspend fun getPlaylistVideos(playlistId: String): List<VideoItem> = withContext(Dispatchers.IO) {
+        try {
+            val browseId = if (playlistId.startsWith("VL")) playlistId else "VL$playlistId"
+            val json = fetchYouTubeBrowse(browseId)
+                .takeIf { it.isNotEmpty() } ?: return@withContext emptyList()
+            val root = org.json.JSONObject(json)
+            val renderers = mutableListOf<org.json.JSONObject>()
+            findObjectsByKey(root, "playlistVideoRenderer", renderers)
+            if (renderers.isNotEmpty()) {
+                return@withContext renderers.mapNotNull { parsePlaylistVideoRenderer(it) }
+            }
+            val lockups = mutableListOf<org.json.JSONObject>()
+            findObjectsByKey(root, "lockupViewModel", lockups)
+            lockups.mapNotNull { parseLockupViewModel(it) }
+        } catch (e: Exception) {
+            android.util.Log.e("YouTubeRepo", "getPlaylistVideos failed for $playlistId", e)
+            emptyList()
+        }
+    }
+
+    /**
+     * Playlist lockup (LOCKUP_CONTENT_TYPE_PLAYLIST / PODCAST): contentId is
+     * the playlist id, title lives in lockupMetadataViewModel, the video count
+     * is a thumbnailBadgeViewModel text ("28 videos") and the first metadata
+     * row carries privacy/type parts ("Private", "Playlist").
+     */
+    private fun parsePlaylistLockup(lockup: org.json.JSONObject): VideoPlaylist? {
+        val contentType = lockup.optString("contentType")
+        if (contentType != "LOCKUP_CONTENT_TYPE_PLAYLIST" &&
+            contentType != "LOCKUP_CONTENT_TYPE_PODCAST"
+        ) return null
+        val playlistId = lockup.optString("contentId").takeIf { it.isNotBlank() } ?: return null
+        val metadata = lockup.optJSONObject("metadata")?.optJSONObject("lockupMetadataViewModel")
+        val title = metadata?.optJSONObject("title")?.optString("content")
+            ?.takeIf { it.isNotBlank() } ?: return null
+
+        val contentImage = lockup.optJSONObject("contentImage")
+        val thumbnailViewModel = contentImage?.optJSONObject("collectionThumbnailViewModel")
+            ?.optJSONObject("primaryThumbnail")?.optJSONObject("thumbnailViewModel")
+            ?: contentImage?.optJSONObject("thumbnailViewModel")
+        val sources = thumbnailViewModel?.optJSONObject("image")?.optJSONArray("sources")
+        var thumbnailUrl: String? = null
+        var maxWidth = -1
+        if (sources != null) {
+            for (i in 0 until sources.length()) {
+                val source = sources.optJSONObject(i)
+                val width = source?.optInt("width", 0) ?: 0
+                if (width >= maxWidth) {
+                    maxWidth = width
+                    thumbnailUrl = source?.optString("url")
+                }
+            }
+        }
+
+        val badges = mutableListOf<org.json.JSONObject>()
+        findObjectsByKey(lockup, "thumbnailBadgeViewModel", badges)
+        val videoCountText = badges.firstNotNullOfOrNull { badge ->
+            badge.optString("text").takeIf { it.isNotBlank() }
+        }
+
+        val firstRowParts = metadata.optJSONObject("metadata")
+            ?.optJSONObject("contentMetadataViewModel")
+            ?.optJSONArray("metadataRows")?.optJSONObject(0)
+            ?.optJSONArray("metadataParts")
+        val subtitle = firstRowParts?.let { parts ->
+            (0 until parts.length())
+                .mapNotNull { parts.optJSONObject(it)?.optJSONObject("text")?.optString("content") }
+                .filter { it.isNotBlank() }
+                .joinToString(" • ")
+                .takeIf { it.isNotBlank() }
+        }
+
+        return VideoPlaylist(
+            playlistId = playlistId,
+            title = title,
+            thumbnailUrl = thumbnailUrl?.takeIf { it.isNotBlank() },
+            videoCountText = videoCountText,
+            subtitle = subtitle
+        )
+    }
+
+    /**
+     * playlistVideoRenderer: videoId/title/shortBylineText/lengthSeconds plus
+     * a combined videoInfo line ("376K views • 2 days ago"). Unavailable
+     * entries (deleted/private) come with isPlayable=false and are skipped.
+     */
+    private fun parsePlaylistVideoRenderer(renderer: org.json.JSONObject): VideoItem? {
+        val videoId = renderer.optString("videoId").takeIf { it.length == 11 } ?: return null
+        if (!renderer.optBoolean("isPlayable", true)) return null
+        val title = getRunText(renderer.optJSONObject("title"))
+            ?.takeIf { it.isNotBlank() } ?: return null
+
+        val byline = renderer.optJSONObject("shortBylineText")
+        val channelName = getRunText(byline)?.takeIf { it.isNotBlank() } ?: "Unknown Channel"
+        val channelId = byline?.optJSONArray("runs")?.optJSONObject(0)
+            ?.optJSONObject("navigationEndpoint")?.optJSONObject("browseEndpoint")
+            ?.optString("browseId")?.takeIf { it.isNotBlank() }
+
+        val info = getRunText(renderer.optJSONObject("videoInfo")).orEmpty()
+        val infoParts = info.split("•").map { it.trim() }.filter { it.isNotBlank() }
+        val viewCount = infoParts.firstOrNull { it.contains("view", ignoreCase = true) } ?: ""
+        val uploadedDate = infoParts.firstOrNull { !it.contains("view", ignoreCase = true) }
+
+        val thumbs = renderer.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
+        val thumbnailUrl = thumbs?.optJSONObject(thumbs.length() - 1)?.optString("url")
+            ?.takeIf { it.isNotBlank() } ?: "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
+
+        return VideoItem(
+            videoId = videoId,
+            title = title,
+            channelName = channelName,
+            channelId = channelId,
+            thumbnailUrl = thumbnailUrl,
+            duration = renderer.optString("lengthSeconds").toLongOrNull() ?: 0L,
+            viewCount = viewCount,
+            uploadedDate = uploadedDate
+        )
+    }
+
     // --- Video Parsing Helpers ---
-    
+
     private fun parseLockupViewModel(lockupViewModel: org.json.JSONObject?): VideoItem? {
         if (lockupViewModel == null) return null
         try {

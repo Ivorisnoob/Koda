@@ -61,7 +61,8 @@ fun VideoHistoryContent(
     viewModel: HomeViewModel,
     onVideoClick: (VideoItem) -> Unit,
     onLoginClick: () -> Unit,
-    contentPadding: PaddingValues
+    contentPadding: PaddingValues,
+    showHero: Boolean = true
 ) {
     val historyVideos by viewModel.historyVideos.collectAsState()
     val isHistoryLoading by viewModel.isHistoryLoading.collectAsState()
@@ -141,20 +142,26 @@ fun VideoHistoryContent(
             modifier = Modifier
                 .fillMaxSize()
                 .background(backgroundColor)
-                .windowInsetsPadding(WindowInsets.statusBars),
+                .then(
+                    // Embedded in the Library tab a SubPageTopBar already
+                    // handles the status bar inset
+                    if (showHero) Modifier.windowInsetsPadding(WindowInsets.statusBars) else Modifier
+                ),
             contentPadding = PaddingValues(bottom = contentPadding.calculateBottomPadding()),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             // Header
-            item {
-                AnimatedVisibility(
-                    visible = isVisible,
-                    enter = fadeIn() + slideInVertically(
-                        initialOffsetY = { -40 },
-                        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy)
-                    )
-                ) {
-                    HistoryHeroSection()
+            if (showHero) {
+                item {
+                    AnimatedVisibility(
+                        visible = isVisible,
+                        enter = fadeIn() + slideInVertically(
+                            initialOffsetY = { -40 },
+                            animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy)
+                        )
+                    ) {
+                        HistoryHeroSection()
+                    }
                 }
             }
             

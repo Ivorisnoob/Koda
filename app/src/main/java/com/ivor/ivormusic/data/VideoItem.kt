@@ -132,3 +132,15 @@ data class WatchNextData(
     val updatedVideoItem: VideoItem?,
     val relatedVideos: List<VideoItem>
 )
+
+/**
+ * A YouTube playlist shown in the video Library tab. Watch Later ("WL") and
+ * Liked videos ("LL") are pinned entries built locally, not parsed.
+ */
+data class VideoPlaylist(
+    val playlistId: String,
+    val title: String,
+    val thumbnailUrl: String? = null,
+    val videoCountText: String? = null, // e.g. "28 videos"
+    val subtitle: String? = null // e.g. "Private"
+)
