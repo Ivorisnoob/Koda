@@ -665,100 +665,94 @@ private fun ExpressiveNowPlayingView(
             
             Spacer(modifier = Modifier.height(24.dp))
             
-            // 🌟 Favorite & Download Buttons
+            // 🌟 Favorite / Download / Sleep Timer - connected button group
+            val sleepTimerEndsAt by viewModel.sleepTimerEndsAt.collectAsState()
+            var showSleepTimerDialog by remember { mutableStateOf(false) }
+            val sleepTimerActive = sleepTimerEndsAt != null
+            val groupButtonColors = ToggleButtonDefaults.toggleButtonColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                contentColor = onSurfaceVariantColor
+            )
+
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 48.dp)
+                    .height(48.dp),
+                horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)
             ) {
-                // Favorite Button (bursts on like)
-                OutlinedIconToggleButton(
+                // Favorite (bursts on like)
+                ToggleButton(
                     checked = isFavorite,
                     onCheckedChange = onFavoriteToggle,
-                    modifier = Modifier.size(56.dp)
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight(),
+                    shapes = ButtonGroupDefaults.connectedLeadingButtonShapes(),
+                    colors = groupButtonColors
                 ) {
                     com.ivor.ivormusic.ui.components.LikeBurstIcon(
                         isFavorite = isFavorite,
-                        iconSize = 28.dp
+                        iconSize = 22.dp
                     )
                 }
-                
-                Spacer(modifier = Modifier.width(24.dp))
-                
-                // Download Button
-                if (isLocalOriginal) {
-                    // Local file indicator (non-interactive or just info)
-                     Surface(
-                        modifier = Modifier.size(56.dp),
-                        shape = CircleShape,
-                        color = MaterialTheme.colorScheme.surfaceVariant,
-                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = Icons.Rounded.Smartphone,
-                                contentDescription = "Local File",
-                                tint = onSurfaceVariantColor,
-                                modifier = Modifier.size(24.dp)
-                            )
-                        }
-                    }
-                } else {
-                    OutlinedIconButton(
-                        onClick = onDownloadToggle,
-                        modifier = Modifier.size(56.dp),
-                        border = androidx.compose.foundation.BorderStroke(
-                            1.dp, 
-                            if (isDownloaded || isDownloading) primaryColor else MaterialTheme.colorScheme.outline
+
+                // Download (or a local-file indicator for device songs)
+                ToggleButton(
+                    checked = isDownloaded || isDownloading,
+                    onCheckedChange = { if (!isDownloading) onDownloadToggle() },
+                    enabled = !isLocalOriginal,
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight(),
+                    shapes = ButtonGroupDefaults.connectedMiddleButtonShapes(),
+                    colors = groupButtonColors
+                ) {
+                    when {
+                        isLocalOriginal -> Icon(
+                            imageVector = Icons.Rounded.Smartphone,
+                            contentDescription = "Local File",
+                            modifier = Modifier.size(22.dp)
                         )
-                    ) {
-                        if (isDownloading) {
-                            CircularWavyProgressIndicator(
-                                modifier = Modifier.size(24.dp),
-                                color = primaryColor
-                            )
-                        } else {
-                            Icon(
-                                imageVector = if (isDownloaded) Icons.Rounded.CheckCircle else Icons.Rounded.Download,
-                                contentDescription = if (isDownloaded) "Downloaded" else "Download",
-                                tint = if (isDownloaded) primaryColor else onSurfaceVariantColor,
-                                modifier = Modifier.size(28.dp)
-                            )
-                        }
-                        }
+                        isDownloading -> CircularWavyProgressIndicator(
+                            modifier = Modifier.size(22.dp),
+                            color = LocalContentColor.current
+                        )
+                        else -> Icon(
+                            imageVector = if (isDownloaded) Icons.Rounded.CheckCircle else Icons.Rounded.Download,
+                            contentDescription = if (isDownloaded) "Downloaded" else "Download",
+                            modifier = Modifier.size(22.dp)
+                        )
                     }
                 }
 
-                Spacer(modifier = Modifier.width(24.dp))
-
-                // Sleep Timer Button
-                val sleepTimerEndsAt by viewModel.sleepTimerEndsAt.collectAsState()
-                var showSleepTimerDialog by remember { mutableStateOf(false) }
-                val sleepTimerActive = sleepTimerEndsAt != null
-                OutlinedIconButton(
-                    onClick = { showSleepTimerDialog = true },
-                    modifier = Modifier.size(56.dp),
-                    border = androidx.compose.foundation.BorderStroke(
-                        1.dp,
-                        if (sleepTimerActive) primaryColor else MaterialTheme.colorScheme.outline
-                    )
+                // Sleep timer (checked while a timer is running; tap opens the dialog)
+                ToggleButton(
+                    checked = sleepTimerActive,
+                    onCheckedChange = { showSleepTimerDialog = true },
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight(),
+                    shapes = ButtonGroupDefaults.connectedTrailingButtonShapes(),
+                    colors = groupButtonColors
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.Bedtime,
                         contentDescription = "Sleep timer",
-                        tint = if (sleepTimerActive) primaryColor else onSurfaceVariantColor,
-                        modifier = Modifier.size(26.dp)
-                    )
-                }
-                if (showSleepTimerDialog) {
-                    com.ivor.ivormusic.ui.components.SleepTimerDialog(
-                        endsAt = sleepTimerEndsAt,
-                        onStart = { minutes -> viewModel.startSleepTimer(minutes) },
-                        onStop = { viewModel.cancelSleepTimer() },
-                        onDismiss = { showSleepTimerDialog = false }
+                        modifier = Modifier.size(22.dp)
                     )
                 }
             }
+
+            if (showSleepTimerDialog) {
+                com.ivor.ivormusic.ui.components.SleepTimerDialog(
+                    endsAt = sleepTimerEndsAt,
+                    onStart = { minutes -> viewModel.startSleepTimer(minutes) },
+                    onStop = { viewModel.cancelSleepTimer() },
+                    onDismiss = { showSleepTimerDialog = false }
+                )
+            }
+        }
         }
     } // End Box wrapper
 }
