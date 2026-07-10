@@ -1,6 +1,7 @@
 # Player Style Research: "Morph" — A Totally Expressive Third Player UI
 
-**Status:** Research / design proposal (no implementation yet)
+**Status:** Implemented (`ui/player/MorphPlayerContent.kt`, selectable in
+Settings under Player Style)
 **Scope:** A third `PlayerStyle` for the full-screen music player, alongside `CLASSIC` and `GESTURE`
 **Grounding:** Codebase analysis of `ui/player/*`, in-repo M3 Expressive guides (`Material_3_expressive/`, `docs/`), and Google's published Material 3 Expressive research
 
