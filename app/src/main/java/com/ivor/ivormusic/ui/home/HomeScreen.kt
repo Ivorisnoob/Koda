@@ -151,6 +151,7 @@ fun HomeScreen(
     onVideoModeToggle: (Boolean) -> Unit = {},
     showModeToggle: Boolean = true,
     playerStyle: PlayerStyle = PlayerStyle.CLASSIC,
+    onPlayerStyleChange: (PlayerStyle) -> Unit = {},
     manualScan: Boolean = false
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -582,6 +583,7 @@ fun HomeScreen(
             viewModel = playerViewModel,
             ambientBackground = ambientBackground,
             playerStyle = playerStyle,
+            onPlayerStyleChange = onPlayerStyleChange,
             onArtistClick = { artistName ->
                 // Collapse player and navigate to Library tab to show artist
                 showPlayerSheet = false

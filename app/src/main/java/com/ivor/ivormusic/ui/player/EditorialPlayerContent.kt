@@ -9,6 +9,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -80,6 +81,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.asComposePath
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
@@ -125,7 +127,8 @@ fun EditorialPlayerSheetContent(
     ambientBackground: Boolean = true,
     onCollapse: () -> Unit,
     onLoadMore: () -> Unit = {},
-    onArtistClick: (String) -> Unit = {}
+    onArtistClick: (String) -> Unit = {},
+    onRequestStyleSwitcher: () -> Unit = {}
 ) {
     BackHandler(enabled = true) { onCollapse() }
 
@@ -199,6 +202,7 @@ fun EditorialPlayerSheetContent(
                     onShowQueue = { showQueue = true },
                     onShowAddToPlaylist = { showAddToPlaylist = true },
                     onArtistClick = onArtistClick,
+                    onRequestStyleSwitcher = onRequestStyleSwitcher,
                     field = field,
                     accent = accent
                 )
@@ -252,6 +256,7 @@ private fun EditorialNowPlayingView(
     onShowQueue: () -> Unit,
     onShowAddToPlaylist: () -> Unit,
     onArtistClick: (String) -> Unit,
+    onRequestStyleSwitcher: () -> Unit,
     field: Color,
     accent: Color
 ) {
@@ -319,6 +324,7 @@ private fun EditorialNowPlayingView(
                         currentSong = currentSong,
                         isPlaying = isPlaying,
                         onTap = onPlayPause,
+                        onLongPress = onRequestStyleSwitcher,
                         accent = accent,
                         field = field
                     )
@@ -601,6 +607,7 @@ private fun EditorialDieCutArt(
     currentSong: Song?,
     isPlaying: Boolean,
     onTap: () -> Unit,
+    onLongPress: () -> Unit,
     accent: Color,
     field: Color
 ) {
@@ -665,7 +672,12 @@ private fun EditorialDieCutArt(
                 }
                 .clip(dieCutShape)
                 .background(accent)
-                .clickable { onTap() },
+                .pointerInput(Unit) {
+                    detectTapGestures(
+                        onTap = { onTap() },
+                        onLongPress = { onLongPress() }
+                    )
+                },
             contentAlignment = Alignment.Center
         ) {
             val artModel = currentSong?.highResThumbnailUrl

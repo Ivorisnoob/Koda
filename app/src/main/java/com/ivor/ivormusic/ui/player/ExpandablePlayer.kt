@@ -1,6 +1,9 @@
 package com.ivor.ivormusic.ui.player
 
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -53,10 +56,19 @@ fun ExpandablePlayer(
     viewModel: PlayerViewModel,
     ambientBackground: Boolean = true,
     playerStyle: PlayerStyle = PlayerStyle.CLASSIC,
+    onPlayerStyleChange: (PlayerStyle) -> Unit = {},
     onArtistClick: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     if (currentSong == null) return
+
+    // Long-pressing the artwork in any style summons the style wheel; it
+    // lives here, above whichever style is active, so the player can morph
+    // live underneath it.
+    var showStyleWheel by remember { mutableStateOf(false) }
+    LaunchedEffect(isExpanded) {
+        if (!isExpanded) showStyleWheel = false
+    }
 
     val configuration = LocalConfiguration.current
     val screenHeight = configuration.screenHeightDp.dp
@@ -241,7 +253,14 @@ fun ExpandablePlayer(
                             .height(expandedHeight)
                             .graphicsLayer { alpha = fullAlpha }
                     ) {
-                        when (playerStyle) {
+                        // Crossfade makes a live style swap (from the style
+                        // wheel or Settings) a soft morph instead of a cut.
+                        Crossfade(
+                            targetState = playerStyle,
+                            animationSpec = MaterialTheme.motionScheme.slowEffectsSpec(),
+                            label = "PlayerStyleSwap"
+                        ) { activeStyle ->
+                        when (activeStyle) {
                             PlayerStyle.CLASSIC -> {
                                 PlayerSheetContent(
                                     viewModel = viewModel,
@@ -250,7 +269,8 @@ fun ExpandablePlayer(
                                     onLoadMore = {
                                         viewModel.loadMoreRecommendations()
                                     },
-                                    onArtistClick = onArtistClick
+                                    onArtistClick = onArtistClick,
+                                    onRequestStyleSwitcher = { showStyleWheel = true }
                                 )
                             }
                             PlayerStyle.GESTURE -> {
@@ -261,7 +281,8 @@ fun ExpandablePlayer(
                                     onLoadMore = {
                                         viewModel.loadMoreRecommendations()
                                     },
-                                    onArtistClick = onArtistClick
+                                    onArtistClick = onArtistClick,
+                                    onRequestStyleSwitcher = { showStyleWheel = true }
                                 )
                             }
                             PlayerStyle.EDITORIAL -> {
@@ -272,7 +293,8 @@ fun ExpandablePlayer(
                                     onLoadMore = {
                                         viewModel.loadMoreRecommendations()
                                     },
-                                    onArtistClick = onArtistClick
+                                    onArtistClick = onArtistClick,
+                                    onRequestStyleSwitcher = { showStyleWheel = true }
                                 )
                             }
                             PlayerStyle.POSTER -> {
@@ -283,7 +305,8 @@ fun ExpandablePlayer(
                                     onLoadMore = {
                                         viewModel.loadMoreRecommendations()
                                     },
-                                    onArtistClick = onArtistClick
+                                    onArtistClick = onArtistClick,
+                                    onRequestStyleSwitcher = { showStyleWheel = true }
                                 )
                             }
                             PlayerStyle.BENTO -> {
@@ -294,7 +317,8 @@ fun ExpandablePlayer(
                                     onLoadMore = {
                                         viewModel.loadMoreRecommendations()
                                     },
-                                    onArtistClick = onArtistClick
+                                    onArtistClick = onArtistClick,
+                                    onRequestStyleSwitcher = { showStyleWheel = true }
                                 )
                             }
                             PlayerStyle.STICKER -> {
@@ -305,7 +329,8 @@ fun ExpandablePlayer(
                                     onLoadMore = {
                                         viewModel.loadMoreRecommendations()
                                     },
-                                    onArtistClick = onArtistClick
+                                    onArtistClick = onArtistClick,
+                                    onRequestStyleSwitcher = { showStyleWheel = true }
                                 )
                             }
                             PlayerStyle.MORPH -> {
@@ -316,7 +341,8 @@ fun ExpandablePlayer(
                                     onLoadMore = {
                                         viewModel.loadMoreRecommendations()
                                     },
-                                    onArtistClick = onArtistClick
+                                    onArtistClick = onArtistClick,
+                                    onRequestStyleSwitcher = { showStyleWheel = true }
                                 )
                             }
                             PlayerStyle.DIAL -> {
@@ -327,9 +353,23 @@ fun ExpandablePlayer(
                                     onLoadMore = {
                                         viewModel.loadMoreRecommendations()
                                     },
-                                    onArtistClick = onArtistClick
+                                    onArtistClick = onArtistClick,
+                                    onRequestStyleSwitcher = { showStyleWheel = true }
                                 )
                             }
+                        }
+                        }
+
+                        androidx.compose.animation.AnimatedVisibility(
+                            visible = showStyleWheel,
+                            enter = fadeIn(MaterialTheme.motionScheme.fastEffectsSpec()),
+                            exit = fadeOut(MaterialTheme.motionScheme.fastEffectsSpec())
+                        ) {
+                            PlayerStyleWheel(
+                                currentStyle = playerStyle,
+                                onStyleSelected = onPlayerStyleChange,
+                                onDismiss = { showStyleWheel = false }
+                            )
                         }
                     }
                 }

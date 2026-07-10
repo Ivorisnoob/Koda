@@ -19,6 +19,7 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -103,7 +104,8 @@ fun PosterPlayerSheetContent(
     ambientBackground: Boolean = true,
     onCollapse: () -> Unit,
     onLoadMore: () -> Unit = {},
-    onArtistClick: (String) -> Unit = {}
+    onArtistClick: (String) -> Unit = {},
+    onRequestStyleSwitcher: () -> Unit = {}
 ) {
     BackHandler(enabled = true) { onCollapse() }
 
@@ -244,6 +246,7 @@ fun PosterPlayerSheetContent(
                                     progress = progress,
                                     duration = duration,
                                     onSeekTo = { viewModel.seekTo(it) },
+                                    onLongPress = onRequestStyleSwitcher,
                                     ink = ink,
                                     accent = accent
                                 )
@@ -407,6 +410,7 @@ private fun PosterTitleStack(
     progress: Long,
     duration: Long,
     onSeekTo: (Long) -> Unit,
+    onLongPress: () -> Unit,
     ink: Color,
     accent: Color
 ) {
@@ -439,6 +443,9 @@ private fun PosterTitleStack(
             .fillMaxSize()
             .padding(horizontal = 24.dp)
             .onSizeChanged { stackWidthPx = it.width.toFloat().coerceAtLeast(1f) }
+            .pointerInput(Unit) {
+                detectTapGestures(onLongPress = { onLongPress() })
+            }
             .pointerInput(Unit) {
                 detectHorizontalDragGestures(
                     onDragStart = {

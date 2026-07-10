@@ -85,7 +85,8 @@ import kotlin.math.sin
  * dots and flat fills only.
  *
  * The center puck is the album art die-cut per track; it morphs to a
- * circle on pause, tap toggles playback and long-press opens the queue.
+ * circle on pause, tap toggles playback and long-press opens the style
+ * wheel (the queue lives behind its top-bar button).
  *
  * See docs/PLAYER_STYLES_PURE_EXPRESSIVE_CONCEPTS.md section 3.
  */
@@ -96,7 +97,8 @@ fun DialPlayerSheetContent(
     ambientBackground: Boolean = true,
     onCollapse: () -> Unit,
     onLoadMore: () -> Unit = {},
-    onArtistClick: (String) -> Unit = {}
+    onArtistClick: (String) -> Unit = {},
+    onRequestStyleSwitcher: () -> Unit = {}
 ) {
     BackHandler(enabled = true) { onCollapse() }
 
@@ -224,7 +226,7 @@ fun DialPlayerSheetContent(
                                     duration = duration,
                                     onSeekTo = { viewModel.seekTo(it) },
                                     onPlayPause = { viewModel.togglePlayPause() },
-                                    onLongPress = { showQueue = true }
+                                    onLongPress = onRequestStyleSwitcher
                                 )
                             }
                         }

@@ -119,7 +119,8 @@ fun MorphPlayerSheetContent(
     ambientBackground: Boolean = true,
     onCollapse: () -> Unit,
     onLoadMore: () -> Unit = {},
-    onArtistClick: (String) -> Unit = {}
+    onArtistClick: (String) -> Unit = {},
+    onRequestStyleSwitcher: () -> Unit = {}
 ) {
     BackHandler(enabled = true) { onCollapse() }
 
@@ -262,6 +263,7 @@ fun MorphPlayerSheetContent(
                                     onPlayPause = { viewModel.togglePlayPause() },
                                     onNext = { viewModel.skipToNext() },
                                     onPrevious = { viewModel.skipToPrevious() },
+                                    onLongPress = onRequestStyleSwitcher,
                                     ringColor = primaryColor,
                                     ringTrackColor = onSurfaceVariantColor.copy(alpha = 0.2f)
                                 )
@@ -479,6 +481,7 @@ private fun MorphHero(
     onPlayPause: () -> Unit,
     onNext: () -> Unit,
     onPrevious: () -> Unit,
+    onLongPress: () -> Unit,
     ringColor: Color,
     ringTrackColor: Color
 ) {
@@ -565,6 +568,7 @@ private fun MorphHero(
     val currentOnNext by rememberUpdatedState(onNext)
     val currentOnPrevious by rememberUpdatedState(onPrevious)
     val currentOnPlayPause by rememberUpdatedState(onPlayPause)
+    val currentOnLongPress by rememberUpdatedState(onLongPress)
 
     BoxWithConstraints(
         modifier = Modifier.fillMaxSize(),
@@ -595,7 +599,10 @@ private fun MorphHero(
                 .clip(heroShape)
                 .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                 .pointerInput(Unit) {
-                    detectTapGestures(onTap = { currentOnPlayPause() })
+                    detectTapGestures(
+                        onTap = { currentOnPlayPause() },
+                        onLongPress = { currentOnLongPress() }
+                    )
                 }
                 .pointerInput(Unit) {
                     detectHorizontalDragGestures(
