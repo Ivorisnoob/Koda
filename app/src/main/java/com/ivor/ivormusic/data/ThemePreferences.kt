@@ -487,5 +487,7 @@ enum class PlayerStyle {
     /** Two-tone magazine player with die-cut art and a word-pill transport */
     EDITORIAL,
     /** Kinetic type player where the title itself is the progress display */
-    POSTER
+    POSTER,
+    /** Squish grid of flat tonal tiles with press physics */
+    BENTO
 }

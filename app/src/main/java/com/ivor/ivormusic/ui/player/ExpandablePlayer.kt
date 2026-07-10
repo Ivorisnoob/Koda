@@ -286,6 +286,17 @@ fun ExpandablePlayer(
                                     onArtistClick = onArtistClick
                                 )
                             }
+                            PlayerStyle.BENTO -> {
+                                BentoPlayerSheetContent(
+                                    viewModel = viewModel,
+                                    ambientBackground = ambientBackground,
+                                    onCollapse = { onExpandChange(false) },
+                                    onLoadMore = {
+                                        viewModel.loadMoreRecommendations()
+                                    },
+                                    onArtistClick = onArtistClick
+                                )
+                            }
                         }
                     }
                 }

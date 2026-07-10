@@ -17,6 +17,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -52,6 +54,7 @@ import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.FolderOff
+import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.MusicNote
@@ -84,6 +87,7 @@ import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
@@ -1583,7 +1587,22 @@ private fun ExpressiveSaveHistoryToggleItem(
     }
 }
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class)
+private data class PlayerStyleOption(
+    val style: PlayerStyle,
+    val label: String,
+    val subtitle: String,
+    val icon: androidx.compose.ui.graphics.vector.ImageVector
+)
+
+private val playerStyleOptions = listOf(
+    PlayerStyleOption(PlayerStyle.CLASSIC, "Classic", "Button controls for playback", Icons.Rounded.PlayCircle),
+    PlayerStyleOption(PlayerStyle.GESTURE, "Gesture", "Swipe album art to navigate", Icons.Rounded.SwipeRight),
+    PlayerStyleOption(PlayerStyle.EDITORIAL, "Editorial", "Two-tone magazine layout", Icons.Rounded.Newspaper),
+    PlayerStyleOption(PlayerStyle.POSTER, "Poster", "Kinetic type, title as progress", Icons.Rounded.TextFields),
+    PlayerStyleOption(PlayerStyle.BENTO, "Bento", "Squishy grid of flat tiles", Icons.Rounded.GridView)
+)
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun ExpressivePlayerStyleSelectItem(
     currentStyle: PlayerStyle,
@@ -1592,13 +1611,9 @@ private fun ExpressivePlayerStyleSelectItem(
     secondaryTextColor: Color,
     accentColor: Color
 ) {
-    val options = listOf(
-        "Classic" to PlayerStyle.CLASSIC,
-        "Gesture" to PlayerStyle.GESTURE,
-        "Editorial" to PlayerStyle.EDITORIAL,
-        "Poster" to PlayerStyle.POSTER
-    )
-    
+    val current = playerStyleOptions.firstOrNull { it.style == currentStyle }
+        ?: playerStyleOptions.first()
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -1618,12 +1633,7 @@ private fun ExpressivePlayerStyleSelectItem(
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    imageVector = when (currentStyle) {
-                        PlayerStyle.CLASSIC -> Icons.Rounded.PlayCircle
-                        PlayerStyle.GESTURE -> Icons.Rounded.SwipeRight
-                        PlayerStyle.EDITORIAL -> Icons.Rounded.Newspaper
-                        PlayerStyle.POSTER -> Icons.Rounded.TextFields
-                    },
+                    imageVector = current.icon,
                     contentDescription = null,
                     tint = accentColor,
                     modifier = Modifier.size(26.dp)
@@ -1642,49 +1652,34 @@ private fun ExpressivePlayerStyleSelectItem(
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
-                    text = when (currentStyle) {
-                        PlayerStyle.CLASSIC -> "Button controls for playback"
-                        PlayerStyle.GESTURE -> "Swipe album art to navigate"
-                        PlayerStyle.EDITORIAL -> "Two-tone magazine layout"
-                        PlayerStyle.POSTER -> "Kinetic type, title as progress"
-                    },
+                    text = current.subtitle,
                     color = secondaryTextColor,
                     fontSize = 13.sp
                 )
             }
         }
-        
-        Spacer(modifier = Modifier.height(16.dp))
-        
-        // Segmented Button Row
-        SingleChoiceSegmentedButtonRow(
-            modifier = Modifier.fillMaxWidth()
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Wrapping chip grid - scales past the point where a segmented row
+        // stops fitting.
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            options.forEachIndexed { index, (label, style) ->
-                SegmentedButton(
-                    selected = currentStyle == style,
-                    onClick = { onStyleSelected(style) },
-                    shape = SegmentedButtonDefaults.itemShape(
-                        index = index,
-                        count = options.size
-                    ),
-                    icon = {
-                        SegmentedButtonDefaults.Icon(active = currentStyle == style) {
-                            Icon(
-                                imageVector = when (style) {
-                                    PlayerStyle.CLASSIC -> Icons.Rounded.PlayCircle
-                                    PlayerStyle.GESTURE -> Icons.Rounded.SwipeRight
-                                    PlayerStyle.EDITORIAL -> Icons.Rounded.Newspaper
-                                    PlayerStyle.POSTER -> Icons.Rounded.TextFields
-                                },
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
+            playerStyleOptions.forEach { option ->
+                FilterChip(
+                    selected = currentStyle == option.style,
+                    onClick = { onStyleSelected(option.style) },
+                    label = { Text(option.label) },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = option.icon,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
                     }
-                ) {
-                    Text(label)
-                }
+                )
             }
         }
     }
