@@ -81,6 +81,97 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
     private var playJob: Job? = null
     private var historyReportJob: Job? = null
 
+    // ---------------- Background prefetch ----------------
+    // Swiping must not show a loading spinner, so stream URLs for the next
+    // few Shorts (and one behind, for swipe-back) resolve in the background
+    // the moment a Short is opened or settled on. Watch-next payloads for
+    // the immediate next Shorts are warmed too, so the title/channel/like
+    // rail appears instantly. Both caches are LRU-capped; googlevideo URLs
+    // stay valid for hours, far beyond a browsing session's needs.
+
+    private val qualitiesCache = object : LinkedHashMap<String, List<VideoQuality>>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<VideoQuality>>) =
+            size > 30
+    }
+    private val watchNextCache = object : LinkedHashMap<String, com.ivor.ivormusic.data.WatchNextData>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, com.ivor.ivormusic.data.WatchNextData>) =
+            size > 20
+    }
+    private val prefetchingIds = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+    private val prefetchSemaphore = kotlinx.coroutines.sync.Semaphore(2)
+
+    private fun cachedQualities(videoId: String): List<VideoQuality>? =
+        synchronized(qualitiesCache) { qualitiesCache[videoId] }
+
+    private fun cacheQualities(videoId: String, qualities: List<VideoQuality>) {
+        if (qualities.isEmpty()) return
+        synchronized(qualitiesCache) { qualitiesCache[videoId] = qualities }
+    }
+
+    private fun cachedWatchNext(videoId: String): com.ivor.ivormusic.data.WatchNextData? =
+        synchronized(watchNextCache) { watchNextCache[videoId] }
+
+    private fun cacheWatchNext(videoId: String, data: com.ivor.ivormusic.data.WatchNextData) {
+        synchronized(watchNextCache) { watchNextCache[videoId] = data }
+    }
+
+    /**
+     * Warm the caches around [index]: stream URLs for the next
+     * [STREAM_PREFETCH_AHEAD] Shorts plus the previous one, watch-next for
+     * the next [WATCH_NEXT_PREFETCH_AHEAD]. Bounded to two concurrent
+     * fetches so prefetch never starves the playing Short's buffer.
+     */
+    private fun prefetchAround(index: Int) {
+        val list = _shorts.value
+        val streamTargets =
+            ((index + 1)..(index + STREAM_PREFETCH_AHEAD)).mapNotNull { list.getOrNull(it) } +
+                listOfNotNull(list.getOrNull(index - 1))
+        for (item in streamTargets) {
+            val id = item.videoId
+            if (cachedQualities(id) != null || !prefetchingIds.add("s:$id")) continue
+            viewModelScope.launch {
+                try {
+                    prefetchSemaphore.acquire()
+                    try {
+                        // Skip if a later prefetch/playback already filled it
+                        if (cachedQualities(id) == null) {
+                            cacheQualities(id, youtubeRepository.getVideoStreamQualities(id))
+                        }
+                    } finally {
+                        prefetchSemaphore.release()
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.w("ShortsPlayerVM", "stream prefetch failed for $id", e)
+                } finally {
+                    prefetchingIds.remove("s:$id")
+                }
+            }
+        }
+
+        val watchNextTargets =
+            ((index + 1)..(index + WATCH_NEXT_PREFETCH_AHEAD)).mapNotNull { list.getOrNull(it) }
+        for (item in watchNextTargets) {
+            val id = item.videoId
+            if (cachedWatchNext(id) != null || !prefetchingIds.add("w:$id")) continue
+            viewModelScope.launch {
+                try {
+                    prefetchSemaphore.acquire()
+                    try {
+                        if (cachedWatchNext(id) == null) {
+                            cacheWatchNext(id, youtubeRepository.getWatchNextData(id, item.toVideoItem()))
+                        }
+                    } finally {
+                        prefetchSemaphore.release()
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.w("ShortsPlayerVM", "watch-next prefetch failed for $id", e)
+                } finally {
+                    prefetchingIds.remove("w:$id")
+                }
+            }
+        }
+    }
+
     // ---------------- Engagement ----------------
 
     private val _engagement = MutableStateFlow<VideoEngagement?>(null)
@@ -164,6 +255,7 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
         _isActive.value = true
         _isLoggedIn.value = youtubeRepository.isLoggedIn()
         playIndex(index)
+        prefetchAround(index)
     }
 
     /** Called by the pager when the user settles on a page. */
@@ -173,6 +265,7 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
             _currentIndex.value = index
             playIndex(index)
         }
+        prefetchAround(index)
         maybeLoadMore(index)
     }
 
@@ -210,13 +303,16 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
         resetEngagementState()
 
         // Phase 1: streams only, playback ASAP (same two-phase pattern and
-        // 15s stuck-buffering guard as VideoPlayerViewModel.playVideo)
+        // 15s stuck-buffering guard as VideoPlayerViewModel.playVideo).
+        // Prefetched Shorts skip the network entirely and start immediately.
         playJob = viewModelScope.launch {
             try {
                 _exoPlayer?.stop()
                 _exoPlayer?.clearMediaItems()
                 kotlinx.coroutines.withTimeout(15_000L) {
-                    val qualities = youtubeRepository.getVideoStreamQualities(item.videoId)
+                    val qualities = cachedQualities(item.videoId)
+                        ?: youtubeRepository.getVideoStreamQualities(item.videoId)
+                            .also { cacheQualities(item.videoId, it) }
                     if (_currentIndex.value != index) return@withTimeout
                     if (qualities.isNotEmpty()) {
                         loadQuality(pickDefaultQuality(qualities))
@@ -244,10 +340,13 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
         }
 
         // Phase 2: one watch-next call fills engagement + real metadata
-        // (title, channel, avatar) — sequence entries arrive with id only
+        // (title, channel, avatar) — sequence entries arrive with id only.
+        // Prefetched payloads make the metadata and like rail appear at once.
         viewModelScope.launch {
             try {
-                val watchNext = youtubeRepository.getWatchNextData(item.videoId, item.toVideoItem())
+                val watchNext = cachedWatchNext(item.videoId)
+                    ?: youtubeRepository.getWatchNextData(item.videoId, item.toVideoItem())
+                        .also { cacheWatchNext(item.videoId, it) }
                 if (_currentIndex.value != index) return@launch
                 _engagement.value = watchNext.engagement
                 if (watchNext.updatedVideoItem != null) {
@@ -288,6 +387,9 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
                 val fresh = page.items.filter { it.videoId !in known }
                 if (fresh.isNotEmpty()) {
                     _shorts.value = _shorts.value + fresh
+                    // Newly appended entries may fall inside the prefetch
+                    // window of the Short being watched right now
+                    prefetchAround(_currentIndex.value)
                 }
                 // A page of only duplicates still advances the continuation,
                 // so the next trigger asks for genuinely new entries
@@ -537,6 +639,14 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
         _replies.value = _replies.value.mapValues { (_, list) ->
             list.map { if (it.commentId == updated.commentId) updated else it }
         }
+    }
+
+    companion object {
+        /** Stream URLs resolved ahead of the current Short (plus one behind). */
+        private const val STREAM_PREFETCH_AHEAD = 5
+
+        /** Watch-next payloads (metadata + engagement) warmed ahead. */
+        private const val WATCH_NEXT_PREFETCH_AHEAD = 2
     }
 
     override fun onCleared() {
