@@ -73,8 +73,7 @@ fun GesturePlayerSheetContent(
     ambientBackground: Boolean = true,
     onCollapse: () -> Unit,
     onLoadMore: () -> Unit = {},
-    onArtistClick: (String) -> Unit = {},
-    onRequestStyleSwitcher: () -> Unit = {}
+    onArtistClick: (String) -> Unit = {}
 ) {
     BackHandler(enabled = true) {
         onCollapse()
@@ -167,7 +166,6 @@ fun GesturePlayerSheetContent(
                     onSleepTimerClick = { showSleepTimerDialog = true },
                     onPlayPauseToggle = { viewModel.togglePlayPause() },
                     onSongChange = { song -> viewModel.skipToSong(song) },
-                    onRequestStyleSwitcher = onRequestStyleSwitcher,
 
                     isDownloaded = currentSong?.let { viewModel.isDownloaded(it.id) } ?: false,
                     isDownloading = currentSong?.let { viewModel.isDownloading(it.id) } ?: false,
@@ -237,7 +235,6 @@ private fun GestureNowPlayingView(
     onSleepTimerClick: () -> Unit,
     onPlayPauseToggle: () -> Unit,
     onSongChange: (Song) -> Unit,
-    onRequestStyleSwitcher: () -> Unit,
     isDownloaded: Boolean,
     isDownloading: Boolean,
     isLocalOriginal: Boolean,
@@ -421,8 +418,7 @@ private fun GestureNowPlayingView(
                                         isPlaying = isPlaying,
                                         isBuffering = isBuffering,
                                         onPlayPauseToggle = onPlayPauseToggle,
-                                        onSongChange = onSongChange,
-                                        onLongPress = onRequestStyleSwitcher
+                                        onSongChange = onSongChange
                                     )
                                 } else if (currentSong != null) {
                                     // Single album art
@@ -430,8 +426,7 @@ private fun GestureNowPlayingView(
                                         song = currentSong,
                                         isPlaying = isPlaying,
                                         isBuffering = isBuffering,
-                                        onPlayPauseToggle = onPlayPauseToggle,
-                                        onLongPress = onRequestStyleSwitcher
+                                        onPlayPauseToggle = onPlayPauseToggle
                                     )
                                 }
                             }
@@ -722,9 +717,9 @@ private fun SwipeableAlbumCarousel(
     isPlaying: Boolean,
     isBuffering: Boolean,
     onPlayPauseToggle: () -> Unit,
-    onSongChange: (Song) -> Unit,
-    onLongPress: () -> Unit = {}
+    onSongChange: (Song) -> Unit
 ) {
+    val styleWheel = LocalPlayerStyleWheelController.current
     // The carousel position as a continuous float
     // Position 0 = first song centered, Position 1 = second song centered, etc.
     var targetPosition by remember { mutableFloatStateOf(currentIndex.toFloat()) }
@@ -858,12 +853,11 @@ private fun SwipeableAlbumCarousel(
                             .graphicsLayer { rotationZ = rotation }
                             .then(
                                 if (isCentered) {
-                                    Modifier.pointerInput(Unit) {
-                                        detectTapGestures(
-                                            onTap = { onPlayPauseToggle() },
-                                            onLongPress = { onLongPress() }
-                                        )
-                                    }
+                                    Modifier
+                                        .pointerInput(Unit) {
+                                            detectTapGestures(onTap = { onPlayPauseToggle() })
+                                        }
+                                        .styleWheelHold(styleWheel)
                                 } else Modifier
                             ),
                         shape = RoundedCornerShape(currentCornerRadius),
@@ -954,9 +948,9 @@ private fun SingleAlbumArt(
     song: Song?,
     isPlaying: Boolean,
     isBuffering: Boolean,
-    onPlayPauseToggle: () -> Unit,
-    onLongPress: () -> Unit = {}
+    onPlayPauseToggle: () -> Unit
 ) {
+    val styleWheel = LocalPlayerStyleWheelController.current
     BoxWithConstraints(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
@@ -975,11 +969,9 @@ private fun SingleAlbumArt(
             modifier = Modifier
                 .size(albumSize)
                 .pointerInput(Unit) {
-                    detectTapGestures(
-                        onTap = { onPlayPauseToggle() },
-                        onLongPress = { onLongPress() }
-                    )
-                },
+                    detectTapGestures(onTap = { onPlayPauseToggle() })
+                }
+                .styleWheelHold(styleWheel),
             shape = RoundedCornerShape(cornerRadius),
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
             shadowElevation = 16.dp

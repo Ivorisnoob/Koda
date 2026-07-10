@@ -3,8 +3,12 @@ package com.ivor.ivormusic.ui.player
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitLongPressOrCancellation
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -31,13 +35,23 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
@@ -46,6 +60,8 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.graphics.shapes.RoundedPolygon
 import com.ivor.ivormusic.data.PlayerStyle
+import kotlin.math.abs
+import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.roundToInt
 import kotlin.math.sin
@@ -55,8 +71,12 @@ import kotlinx.coroutines.launch
 /**
  * The style wheel: long-press the artwork in any player style and every
  * style blooms out of the press point as its own die-cut MaterialShapes
- * button, arranged in a ring. Tap one and the player morphs into that
- * style live.
+ * button, arranged in a ring, while the live player blurs beneath it.
+ *
+ * Two ways to pick:
+ * - Keep holding after the long-press, drag toward a style (it grows and
+ *   ticks as you aim), and release on it - one continuous gesture.
+ * - Or release in the center: the wheel stays open, tap a style.
  *
  * Expressive contract:
  * - Shape signals identity: each style is cut into the polygon that best
@@ -64,9 +84,9 @@ import kotlinx.coroutines.launch
  *   Morph is a soft burst, ...).
  * - Motion is physics: items bloom outward on staggered underdamped
  *   springs with visible overshoot while the whole ring settles from a
- *   slight counter-rotation; icons stay upright throughout.
- * - The overlay is a flat high-alpha surface, no blur, no gradient scrim.
- * - Haptics mark the open (long-press) and the pick (confirm).
+ *   slight counter-rotation.
+ * - Haptics mark the open (long-press), each aim change (tick), and the
+ *   pick (confirm).
  */
 internal data class PlayerStyleWheelEntry(
     val style: PlayerStyle,
@@ -74,6 +94,93 @@ internal data class PlayerStyleWheelEntry(
     val icon: ImageVector,
     val polygon: RoundedPolygon
 )
+
+/**
+ * Bridges the artwork's hold gesture into the wheel. The artwork opens the
+ * wheel on long-press and keeps streaming drag deltas while the finger is
+ * down; the wheel turns the accumulated offset into an aimed item and
+ * commits it when the finger lifts.
+ */
+class PlayerStyleWheelController {
+    var isOpen by mutableStateOf(false)
+        private set
+    var isHolding by mutableStateOf(false)
+        private set
+    var dragOffset by mutableStateOf(Offset.Zero)
+        private set
+
+    /** Incremented on every hold release so the wheel can commit the aim. */
+    var releaseTick by mutableIntStateOf(0)
+        private set
+
+    fun openFromHold() {
+        isOpen = true
+        isHolding = true
+        dragOffset = Offset.Zero
+    }
+
+    fun dragBy(delta: Offset) {
+        if (isHolding) dragOffset += delta
+    }
+
+    fun releaseHold() {
+        if (!isHolding) return
+        isHolding = false
+        releaseTick++
+    }
+
+    fun dismiss() {
+        isOpen = false
+        isHolding = false
+        dragOffset = Offset.Zero
+    }
+}
+
+@Composable
+fun rememberPlayerStyleWheelController(): PlayerStyleWheelController =
+    remember { PlayerStyleWheelController() }
+
+/**
+ * Provided by ExpandablePlayer around the active style content so any
+ * artwork can host the hold gesture without per-style plumbing. Null when
+ * no wheel is available (previews, standalone usage).
+ */
+val LocalPlayerStyleWheelController =
+    staticCompositionLocalOf<PlayerStyleWheelController?> { null }
+
+/**
+ * Hold gesture for artwork: long-press opens the style wheel and, while
+ * the finger stays down, streams drag deltas to it; the release commits
+ * the aimed style. Consumes the post-long-press stream (including the up)
+ * so sibling tap/drag detectors on the same artwork stay quiet. A no-op
+ * when no controller is provided.
+ */
+fun Modifier.styleWheelHold(controller: PlayerStyleWheelController?): Modifier {
+    if (controller == null) return this
+    return this.pointerInput(controller) {
+        awaitEachGesture {
+            val down = awaitFirstDown(requireUnconsumed = false)
+            val longPress = awaitLongPressOrCancellation(down.id)
+            if (longPress != null) {
+                controller.openFromHold()
+                while (true) {
+                    val event = awaitPointerEvent()
+                    val change = event.changes.firstOrNull { it.id == longPress.id }
+                        ?: event.changes.first()
+                    if (change.changedToUpIgnoreConsumed()) {
+                        change.consume()
+                        controller.releaseHold()
+                        break
+                    }
+                    if (change.positionChanged()) {
+                        controller.dragBy(change.positionChange())
+                        change.consume()
+                    }
+                }
+            }
+        }
+    }
+}
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -94,16 +201,58 @@ internal fun rememberPlayerStyleWheelEntries(): List<PlayerStyleWheelEntry> = re
 @Composable
 fun PlayerStyleWheel(
     currentStyle: PlayerStyle,
+    controller: PlayerStyleWheelController,
     onStyleSelected: (PlayerStyle) -> Unit,
     onDismiss: () -> Unit
 ) {
     BackHandler(enabled = true) { onDismiss() }
     val entries = rememberPlayerStyleWheelEntries()
     val haptics = LocalHapticFeedback.current
+    val density = LocalDensity.current
 
     // Mark the open with the long-press haptic the gesture earned.
     LaunchedEffect(Unit) {
         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+    }
+
+    // Aim: while the finger is still down, the accumulated drag direction
+    // picks the nearest item once it clears a dead zone around the center.
+    val aimThresholdPx = with(density) { 56.dp.toPx() }
+    val aimedIndex: Int? = if (
+        controller.isHolding &&
+        controller.dragOffset.getDistance() > aimThresholdPx
+    ) {
+        val dragAngle = Math.toDegrees(
+            atan2(controller.dragOffset.y.toDouble(), controller.dragOffset.x.toDouble())
+        ).toFloat()
+        entries.indices.minByOrNull { index ->
+            val itemAngle = (index * 360f / entries.size) - 90f
+            var diff = abs(dragAngle - itemAngle) % 360f
+            if (diff > 180f) diff = 360f - diff
+            diff
+        }
+    } else null
+
+    // Tick as the aim moves between items.
+    LaunchedEffect(aimedIndex) {
+        if (aimedIndex != null) {
+            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        }
+    }
+
+    // Releasing the hold commits the aim; releasing in the dead zone keeps
+    // the wheel open for tap selection.
+    val currentAimedIndex by rememberUpdatedState(aimedIndex)
+    val currentOnStyleSelected by rememberUpdatedState(onStyleSelected)
+    val currentOnDismiss by rememberUpdatedState(onDismiss)
+    LaunchedEffect(controller.releaseTick) {
+        if (controller.releaseTick == 0) return@LaunchedEffect
+        val aimed = currentAimedIndex
+        if (aimed != null) {
+            haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+            currentOnStyleSelected(entries[aimed].style)
+            currentOnDismiss()
+        }
     }
 
     // Staggered radial bloom: every item springs outward with overshoot.
@@ -134,12 +283,13 @@ fun PlayerStyleWheel(
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // Flat dismiss field: solid high-alpha surface, no blur, no scrim
-        // gradient. First child, so item touches never reach it.
+        // Light tint over the blurred player beneath (ExpandablePlayer
+        // blurs the live content while the wheel is open). First child, so
+        // item touches never reach it.
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.96f))
+                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.45f))
                 .pointerInput(Unit) {
                     detectTapGestures(onTap = { onDismiss() })
                 }
@@ -150,21 +300,22 @@ fun PlayerStyleWheel(
             contentAlignment = Alignment.Center
         ) {
             val radius = minOf(maxWidth, maxHeight) * 0.36f
-            val radiusPx = with(LocalDensity.current) { radius.toPx() }
-            val ringRotation = (1f - wheelSettle.value) * -24f
+            val radiusPx = with(density) { radius.toPx() }
 
-            // Center readout: what you are on now.
+            // Center readout: what you are on, or what you are aiming at.
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
-                    text = "Player style",
+                    text = if (aimedIndex != null) "Release for" else "Player style",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center
                 )
                 Text(
-                    text = entries.firstOrNull { it.style == currentStyle }?.label ?: "",
+                    text = aimedIndex?.let { entries[it].label }
+                        ?: (entries.firstOrNull { it.style == currentStyle }?.label ?: ""),
                     style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.onSurface,
+                    color = if (aimedIndex != null) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurface,
                     textAlign = TextAlign.Center
                 )
             }
@@ -172,12 +323,26 @@ fun PlayerStyleWheel(
             entries.forEachIndexed { index, entry ->
                 val progress = bloom[index].value
                 val angleRad = Math.toRadians((index * 360.0 / entries.size) - 90.0)
-                val itemX = (cos(angleRad) * radiusPx * progress * wheelRotationCos(ringRotation) -
-                    sin(angleRad) * radiusPx * progress * wheelRotationSin(ringRotation)).roundToInt()
-                val itemY = (sin(angleRad) * radiusPx * progress * wheelRotationCos(ringRotation) +
-                    cos(angleRad) * radiusPx * progress * wheelRotationSin(ringRotation)).roundToInt()
+                val itemX = (cos(angleRad) * radiusPx * progress).roundToInt()
+                val itemY = (sin(angleRad) * radiusPx * progress).roundToInt()
                 val selected = entry.style == currentStyle
+                val aimed = aimedIndex == index
                 val itemShape = remember(entry.polygon) { EditorialPolygonShape(entry.polygon) }
+
+                // Aimed items grow toward the finger; the emphasis is a
+                // spring, so sweeping the aim feels alive.
+                val emphasis by animateFloatAsState(
+                    targetValue = when {
+                        aimed -> 1.28f
+                        selected -> 1.12f
+                        else -> 1f
+                    },
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioMediumBouncy,
+                        stiffness = Spring.StiffnessMedium
+                    ),
+                    label = "WheelItemEmphasis"
+                )
 
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -185,7 +350,7 @@ fun PlayerStyleWheel(
                         .offset { IntOffset(itemX, itemY) }
                         .graphicsLayer {
                             alpha = progress.coerceIn(0f, 1f)
-                            val scale = progress * (if (selected) 1.12f else 1f)
+                            val scale = progress * emphasis
                             scaleX = scale
                             scaleY = scale
                         }
@@ -198,9 +363,12 @@ fun PlayerStyleWheel(
                         },
                         modifier = Modifier.size(64.dp),
                         shape = itemShape,
-                        color = if (selected) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.surfaceContainerHigh,
-                        contentColor = if (selected) MaterialTheme.colorScheme.onPrimary
+                        color = when {
+                            aimed -> MaterialTheme.colorScheme.primary
+                            selected -> MaterialTheme.colorScheme.primary
+                            else -> MaterialTheme.colorScheme.surfaceContainerHigh
+                        },
+                        contentColor = if (aimed || selected) MaterialTheme.colorScheme.onPrimary
                         else MaterialTheme.colorScheme.onSurface
                     ) {
                         Box(contentAlignment = Alignment.Center) {
@@ -215,7 +383,7 @@ fun PlayerStyleWheel(
                     Text(
                         text = entry.label,
                         style = MaterialTheme.typography.labelMedium,
-                        color = if (selected) MaterialTheme.colorScheme.primary
+                        color = if (aimed || selected) MaterialTheme.colorScheme.primary
                         else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
@@ -223,9 +391,3 @@ fun PlayerStyleWheel(
         }
     }
 }
-
-private fun wheelRotationCos(degrees: Float): Float =
-    cos(Math.toRadians(degrees.toDouble())).toFloat()
-
-private fun wheelRotationSin(degrees: Float): Float =
-    sin(Math.toRadians(degrees.toDouble())).toFloat()

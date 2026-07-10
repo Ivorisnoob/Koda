@@ -19,7 +19,6 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -104,8 +103,7 @@ fun PosterPlayerSheetContent(
     ambientBackground: Boolean = true,
     onCollapse: () -> Unit,
     onLoadMore: () -> Unit = {},
-    onArtistClick: (String) -> Unit = {},
-    onRequestStyleSwitcher: () -> Unit = {}
+    onArtistClick: (String) -> Unit = {}
 ) {
     BackHandler(enabled = true) { onCollapse() }
 
@@ -246,7 +244,6 @@ fun PosterPlayerSheetContent(
                                     progress = progress,
                                     duration = duration,
                                     onSeekTo = { viewModel.seekTo(it) },
-                                    onLongPress = onRequestStyleSwitcher,
                                     ink = ink,
                                     accent = accent
                                 )
@@ -410,10 +407,10 @@ private fun PosterTitleStack(
     progress: Long,
     duration: Long,
     onSeekTo: (Long) -> Unit,
-    onLongPress: () -> Unit,
     ink: Color,
     accent: Color
 ) {
+    val styleWheel = LocalPlayerStyleWheelController.current
     val allWords = remember(title) { title.trim().split(Regex("\\s+")).filter { it.isNotBlank() } }
     val words = remember(allWords) {
         if (allWords.size > 5) allWords.take(4) + "…" else allWords.ifEmpty { listOf("Untitled") }
@@ -444,9 +441,6 @@ private fun PosterTitleStack(
             .padding(horizontal = 24.dp)
             .onSizeChanged { stackWidthPx = it.width.toFloat().coerceAtLeast(1f) }
             .pointerInput(Unit) {
-                detectTapGestures(onLongPress = { onLongPress() })
-            }
-            .pointerInput(Unit) {
                 detectHorizontalDragGestures(
                     onDragStart = {
                         scrubFraction = if (liveDuration > 0) {
@@ -464,7 +458,11 @@ private fun PosterTitleStack(
                             .coerceIn(0f, 1f)
                     }
                 )
-            },
+            }
+            // Last in the chain: processes the pointer stream first, so the
+            // post-long-press hold-drag is consumed before the scrub
+            // detector can see it.
+            .styleWheelHold(styleWheel),
         verticalArrangement = Arrangement.Center
     ) {
         val wordStyle = when {
