@@ -1,6 +1,8 @@
 # Player Style Concepts: The Pure Expressive Gallery
 
-**Status:** Research / concept gallery (no implementation yet)
+**Status:** EDITORIAL and POSTER are implemented (`ui/player/EditorialPlayerContent.kt`,
+`ui/player/PosterPlayerContent.kt`, selectable in Settings under Player Style);
+BENTO, DIAL and STICKER remain concepts
 **Companion to:** `PLAYER_STYLE_MORPH_RESEARCH.md` (the Morph deep dive)
 **Hard constraints for every concept here:** no gradients, no drop shadows,
 no scrims, no blur. Depth, hierarchy and mood come exclusively from tonal

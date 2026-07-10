@@ -483,5 +483,9 @@ enum class PlayerStyle {
     /** Classic button-based player with play/pause/next/previous controls */
     CLASSIC,
     /** Gesture-based carousel player with swipe navigation */
-    GESTURE
+    GESTURE,
+    /** Two-tone magazine player with die-cut art and a word-pill transport */
+    EDITORIAL,
+    /** Kinetic type player where the title itself is the progress display */
+    POSTER
 }

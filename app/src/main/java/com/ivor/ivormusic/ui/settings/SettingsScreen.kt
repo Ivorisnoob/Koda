@@ -55,12 +55,14 @@ import androidx.compose.material.icons.rounded.FolderOff
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.Newspaper
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.FlashOn
 import androidx.compose.material.icons.rounded.HighQuality
 import androidx.compose.material.icons.rounded.SwipeRight
+import androidx.compose.material.icons.rounded.TextFields
 import androidx.compose.material.icons.rounded.ToggleOn
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -1590,7 +1592,12 @@ private fun ExpressivePlayerStyleSelectItem(
     secondaryTextColor: Color,
     accentColor: Color
 ) {
-    val options = listOf("Classic" to PlayerStyle.CLASSIC, "Gesture" to PlayerStyle.GESTURE)
+    val options = listOf(
+        "Classic" to PlayerStyle.CLASSIC,
+        "Gesture" to PlayerStyle.GESTURE,
+        "Editorial" to PlayerStyle.EDITORIAL,
+        "Poster" to PlayerStyle.POSTER
+    )
     
     Column(
         modifier = Modifier
@@ -1611,10 +1618,12 @@ private fun ExpressivePlayerStyleSelectItem(
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    imageVector = if (currentStyle == PlayerStyle.GESTURE) 
-                        Icons.Rounded.SwipeRight 
-                    else 
-                        Icons.Rounded.PlayCircle,
+                    imageVector = when (currentStyle) {
+                        PlayerStyle.CLASSIC -> Icons.Rounded.PlayCircle
+                        PlayerStyle.GESTURE -> Icons.Rounded.SwipeRight
+                        PlayerStyle.EDITORIAL -> Icons.Rounded.Newspaper
+                        PlayerStyle.POSTER -> Icons.Rounded.TextFields
+                    },
                     contentDescription = null,
                     tint = accentColor,
                     modifier = Modifier.size(26.dp)
@@ -1636,6 +1645,8 @@ private fun ExpressivePlayerStyleSelectItem(
                     text = when (currentStyle) {
                         PlayerStyle.CLASSIC -> "Button controls for playback"
                         PlayerStyle.GESTURE -> "Swipe album art to navigate"
+                        PlayerStyle.EDITORIAL -> "Two-tone magazine layout"
+                        PlayerStyle.POSTER -> "Kinetic type, title as progress"
                     },
                     color = secondaryTextColor,
                     fontSize = 13.sp
@@ -1660,7 +1671,12 @@ private fun ExpressivePlayerStyleSelectItem(
                     icon = {
                         SegmentedButtonDefaults.Icon(active = currentStyle == style) {
                             Icon(
-                                imageVector = if (index == 0) Icons.Rounded.PlayCircle else Icons.Rounded.SwipeRight,
+                                imageVector = when (style) {
+                                    PlayerStyle.CLASSIC -> Icons.Rounded.PlayCircle
+                                    PlayerStyle.GESTURE -> Icons.Rounded.SwipeRight
+                                    PlayerStyle.EDITORIAL -> Icons.Rounded.Newspaper
+                                    PlayerStyle.POSTER -> Icons.Rounded.TextFields
+                                },
                                 contentDescription = null,
                                 modifier = Modifier.size(18.dp)
                             )
