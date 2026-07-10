@@ -3,9 +3,12 @@ package com.ivor.ivormusic.ui.shorts
 import android.content.Intent
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -27,10 +30,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.outlined.ThumbDown
@@ -47,13 +52,17 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
-import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.LinearWavyProgressIndicator
 import androidx.compose.material3.LoadingIndicator
+import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -67,12 +76,14 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -83,12 +94,19 @@ import coil.compose.AsyncImage
 import com.ivor.ivormusic.data.LikeStatus
 import com.ivor.ivormusic.ui.video.CommentsSheet
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.isActive as coroutineIsActive
 
 /**
  * Fullscreen vertical-swipe Shorts player, layered above the NavHost like
  * VideoPlayerOverlay. One shared ExoPlayer follows the settled pager page;
  * neighbouring pages show their portrait thumbnails.
+ *
+ * Speaks Koda's Material 3 Expressive dialect: a floating tonal pill for the
+ * action rail (like FloatingPillNavBar), secondaryContainer active states, a
+ * Burst-shape flash on like (LikeBurstIcon pattern), MaterialShapes for the
+ * pause badge and channel avatar, and a wavy progress line that flattens
+ * while paused.
  */
 @androidx.annotation.OptIn(UnstableApi::class)
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
@@ -150,7 +168,7 @@ fun ShortsPlayerOverlay(viewModel: ShortsPlayerViewModel) {
         }
     }
 
-    // Thin playback progress bar at the very bottom, YouTube-style
+    // Playback progress for the wavy line at the bottom
     var progress by remember { mutableFloatStateOf(0f) }
     LaunchedEffect(currentVideo) {
         progress = 0f
@@ -214,20 +232,29 @@ fun ShortsPlayerOverlay(viewModel: ShortsPlayerViewModel) {
                 }
 
                 if (isCurrent) {
-                    // Buffering: expressive shape-morphing loader
+                    // Buffering: the expressive shape-morphing loader on a
+                    // tonal puck so it reads on any video frame
                     AnimatedVisibility(
                         visible = isBuffering && playbackError == null,
                         enter = fadeIn(),
                         exit = fadeOut(),
                         modifier = Modifier.align(Alignment.Center)
                     ) {
-                        LoadingIndicator(
-                            modifier = Modifier.size(56.dp),
-                            color = Color.White
-                        )
+                        Box(
+                            modifier = Modifier
+                                .size(72.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.92f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            LoadingIndicator(
+                                modifier = Modifier.size(44.dp),
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
                     }
 
-                    // Paused badge with a springy pop
+                    // Paused badge: expressive cookie shape with a springy pop
                     AnimatedVisibility(
                         visible = !isPlaying && !isBuffering && playbackError == null,
                         enter = scaleIn(
@@ -239,58 +266,69 @@ fun ShortsPlayerOverlay(viewModel: ShortsPlayerViewModel) {
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(72.dp)
-                                .clip(CircleShape)
-                                .background(Color.Black.copy(alpha = 0.55f)),
+                                .size(80.dp)
+                                .clip(MaterialShapes.Cookie12Sided.toShape())
+                                .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.95f)),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 imageVector = Icons.Rounded.PlayArrow,
                                 contentDescription = "Play",
-                                tint = Color.White,
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
                                 modifier = Modifier.size(40.dp)
                             )
                         }
                     }
 
                     if (playbackError != null) {
-                        Column(
-                            modifier = Modifier.align(Alignment.Center),
-                            horizontalAlignment = Alignment.CenterHorizontally
+                        Surface(
+                            modifier = Modifier
+                                .align(Alignment.Center)
+                                .padding(horizontal = 32.dp),
+                            shape = RoundedCornerShape(28.dp),
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.95f)
                         ) {
-                            Icon(
-                                imageVector = Icons.Rounded.ErrorOutline,
-                                contentDescription = null,
-                                tint = Color.White,
-                                modifier = Modifier.size(48.dp)
-                            )
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Text(
-                                text = playbackError?.message ?: "Playback failed",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = Color.White.copy(alpha = 0.85f)
-                            )
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Button(
-                                onClick = { viewModel.retryCurrent() },
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = Color.White,
-                                    contentColor = Color.Black
-                                )
+                            Column(
+                                modifier = Modifier.padding(24.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
                             ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Refresh,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp)
+                                Box(
+                                    modifier = Modifier
+                                        .size(56.dp)
+                                        .clip(MaterialShapes.Cookie9Sided.toShape())
+                                        .background(MaterialTheme.colorScheme.errorContainer),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.ErrorOutline,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onErrorContainer,
+                                        modifier = Modifier.size(28.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(14.dp))
+                                Text(
+                                    text = playbackError?.message ?: "Playback failed",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    textAlign = TextAlign.Center
                                 )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("Retry")
+                                Spacer(modifier = Modifier.height(16.dp))
+                                FilledTonalButton(onClick = { viewModel.retryCurrent() }) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Refresh,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("Retry")
+                                }
                             }
                         }
                     }
                 }
 
-                // Bottom scrim for metadata + action legibility
+                // Bottom scrim for metadata legibility
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -298,7 +336,7 @@ fun ShortsPlayerOverlay(viewModel: ShortsPlayerViewModel) {
                         .align(Alignment.BottomCenter)
                         .background(
                             Brush.verticalGradient(
-                                colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.7f))
+                                colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.65f))
                             )
                         )
                 )
@@ -312,7 +350,7 @@ fun ShortsPlayerOverlay(viewModel: ShortsPlayerViewModel) {
                 .height(140.dp)
                 .background(
                     Brush.verticalGradient(
-                        colors = listOf(Color.Black.copy(alpha = 0.55f), Color.Transparent)
+                        colors = listOf(Color.Black.copy(alpha = 0.5f), Color.Transparent)
                     )
                 )
         )
@@ -327,8 +365,8 @@ fun ShortsPlayerOverlay(viewModel: ShortsPlayerViewModel) {
                 onClick = { viewModel.close() },
                 shapes = IconButtonDefaults.shapes(),
                 colors = IconButtonDefaults.iconButtonColors(
-                    containerColor = Color.Black.copy(alpha = 0.35f),
-                    contentColor = Color.White
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.9f),
+                    contentColor = MaterialTheme.colorScheme.onSurface
                 )
             ) {
                 Icon(
@@ -336,7 +374,7 @@ fun ShortsPlayerOverlay(viewModel: ShortsPlayerViewModel) {
                     contentDescription = "Close Shorts"
                 )
             }
-            Spacer(modifier = Modifier.width(8.dp))
+            Spacer(modifier = Modifier.width(10.dp))
             Text(
                 text = "Shorts",
                 style = MaterialTheme.typography.titleLarge,
@@ -345,24 +383,26 @@ fun ShortsPlayerOverlay(viewModel: ShortsPlayerViewModel) {
             )
         }
 
-        // Metadata (bottom-left) + action rail (bottom-right)
+        // Metadata (bottom-left) + floating action pill (bottom-right)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .align(Alignment.BottomCenter)
                 .windowInsetsPadding(WindowInsets.navigationBars)
-                .padding(start = 16.dp, end = 8.dp, bottom = 12.dp),
+                .padding(start = 16.dp, end = 10.dp, bottom = 18.dp),
             verticalAlignment = Alignment.Bottom
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 val video = currentVideo
                 if (video != null && video.channelName.isNotBlank()) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
+                        // Expressive avatar, cookie-clipped like the design
+                        // guide's shaped avatars
                         Box(
                             modifier = Modifier
-                                .size(36.dp)
-                                .clip(CircleShape)
-                                .background(Color.White.copy(alpha = 0.2f)),
+                                .size(38.dp)
+                                .clip(MaterialShapes.Cookie9Sided.toShape())
+                                .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.8f)),
                             contentAlignment = Alignment.Center
                         ) {
                             if (!video.channelIconUrl.isNullOrBlank()) {
@@ -376,7 +416,7 @@ fun ShortsPlayerOverlay(viewModel: ShortsPlayerViewModel) {
                                 Icon(
                                     imageVector = Icons.Rounded.Person,
                                     contentDescription = null,
-                                    tint = Color.White,
+                                    tint = MaterialTheme.colorScheme.onSurface,
                                     modifier = Modifier.size(20.dp)
                                 )
                             }
@@ -397,19 +437,19 @@ fun ShortsPlayerOverlay(viewModel: ShortsPlayerViewModel) {
                             onClick = { requireLogin { viewModel.toggleSubscribe() } },
                             colors = if (isSubscribed) {
                                 ButtonDefaults.buttonColors(
-                                    containerColor = Color.White.copy(alpha = 0.2f),
-                                    contentColor = Color.White
+                                    containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.92f),
+                                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer
                                 )
                             } else {
                                 ButtonDefaults.buttonColors(
-                                    containerColor = Color.White,
-                                    contentColor = Color.Black
+                                    containerColor = MaterialTheme.colorScheme.primary,
+                                    contentColor = MaterialTheme.colorScheme.onPrimary
                                 )
                             },
                             contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                                horizontal = 14.dp, vertical = 6.dp
+                                horizontal = 16.dp, vertical = 6.dp
                             ),
-                            modifier = Modifier.height(32.dp)
+                            modifier = Modifier.height(34.dp)
                         ) {
                             Text(
                                 text = if (isSubscribed) "Subscribed" else "Subscribe",
@@ -433,62 +473,76 @@ fun ShortsPlayerOverlay(viewModel: ShortsPlayerViewModel) {
 
             Spacer(modifier = Modifier.width(12.dp))
 
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+            // Floating tonal pill, same language as FloatingPillNavBar
+            val likeStatus = engagement?.likeStatus ?: LikeStatus.INDIFFERENT
+            Surface(
+                shape = RoundedCornerShape(32.dp),
+                color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.92f)
             ) {
-                val likeStatus = engagement?.likeStatus ?: LikeStatus.INDIFFERENT
-                ShortsAction(
-                    icon = if (likeStatus == LikeStatus.LIKE) Icons.Rounded.ThumbUp
-                        else Icons.Outlined.ThumbUp,
-                    label = engagement?.likeCount ?: "Like",
-                    active = likeStatus == LikeStatus.LIKE,
-                    contentDescription = "Like",
-                    onClick = { requireLogin { viewModel.toggleLike() } }
-                )
-                ShortsAction(
-                    icon = if (likeStatus == LikeStatus.DISLIKE) Icons.Rounded.ThumbDown
-                        else Icons.Outlined.ThumbDown,
-                    label = "Dislike",
-                    active = likeStatus == LikeStatus.DISLIKE,
-                    contentDescription = "Dislike",
-                    onClick = { requireLogin { viewModel.toggleDislike() } }
-                )
-                ShortsAction(
-                    icon = Icons.Rounded.ChatBubble,
-                    label = "Comments",
-                    contentDescription = "Comments",
-                    onClick = {
-                        viewModel.ensureCommentsLoaded()
-                        showCommentsSheet = true
-                    }
-                )
-                ShortsAction(
-                    icon = Icons.Rounded.Share,
-                    label = "Share",
-                    contentDescription = "Share",
-                    onClick = {
-                        val videoId = currentVideo?.videoId ?: return@ShortsAction
-                        val send = Intent(Intent.ACTION_SEND).apply {
-                            type = "text/plain"
-                            putExtra(Intent.EXTRA_TEXT, "https://youtube.com/shorts/$videoId")
+                Column(
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 10.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    ShortsAction(
+                        icon = if (likeStatus == LikeStatus.LIKE) Icons.Rounded.ThumbUp
+                            else Icons.Outlined.ThumbUp,
+                        label = engagement?.likeCount ?: "Like",
+                        active = likeStatus == LikeStatus.LIKE,
+                        burstOnActivate = true,
+                        contentDescription = "Like",
+                        onClick = { requireLogin { viewModel.toggleLike() } }
+                    )
+                    ShortsAction(
+                        icon = if (likeStatus == LikeStatus.DISLIKE) Icons.Rounded.ThumbDown
+                            else Icons.Outlined.ThumbDown,
+                        label = "Dislike",
+                        active = likeStatus == LikeStatus.DISLIKE,
+                        contentDescription = "Dislike",
+                        onClick = { requireLogin { viewModel.toggleDislike() } }
+                    )
+                    ShortsAction(
+                        icon = Icons.Rounded.ChatBubble,
+                        label = "Comments",
+                        contentDescription = "Comments",
+                        onClick = {
+                            viewModel.ensureCommentsLoaded()
+                            showCommentsSheet = true
                         }
-                        context.startActivity(Intent.createChooser(send, "Share Short"))
-                    }
-                )
+                    )
+                    ShortsAction(
+                        icon = Icons.Rounded.Share,
+                        label = "Share",
+                        contentDescription = "Share",
+                        onClick = {
+                            val videoId = currentVideo?.videoId ?: return@ShortsAction
+                            val send = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_TEXT, "https://youtube.com/shorts/$videoId")
+                            }
+                            context.startActivity(Intent.createChooser(send, "Share Short"))
+                        }
+                    )
+                }
             }
         }
 
-        // Thin progress line hugging the bottom edge
-        LinearProgressIndicator(
+        // Wavy playback progress, Koda's player signature; the wave settles
+        // flat while paused
+        val waveAmplitude by animateFloatAsState(
+            targetValue = if (isPlaying) 1f else 0f,
+            animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy),
+            label = "waveAmplitude"
+        )
+        LinearWavyProgressIndicator(
             progress = { progress.coerceIn(0f, 1f) },
             modifier = Modifier
                 .fillMaxWidth()
-                .height(2.dp)
+                .height(12.dp)
                 .align(Alignment.BottomCenter),
             color = MaterialTheme.colorScheme.primary,
             trackColor = Color.White.copy(alpha = 0.25f),
-            drawStopIndicator = {}
+            amplitude = { waveAmplitude }
         )
     }
 
@@ -526,48 +580,102 @@ fun ShortsPlayerOverlay(viewModel: ShortsPlayerViewModel) {
 }
 
 /**
- * One button of the right-hand action rail: circular translucent icon
- * button with a spring scale bump when it becomes active, label underneath.
+ * One row of the floating action pill: a circular icon target that fills
+ * with secondaryContainer while active (FloatingPillNavBar's selected
+ * treatment), a springy icon pop, and — for the like action — a one-shot
+ * Burst-shape flash borrowed from LikeBurstIcon.
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun ShortsAction(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    icon: ImageVector,
     label: String,
     contentDescription: String,
     active: Boolean = false,
+    burstOnActivate: Boolean = false,
     onClick: () -> Unit
 ) {
-    val scale by animateFloatAsState(
-        targetValue = if (active) 1.12f else 1f,
-        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
-        label = "actionScale"
-    )
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        IconButton(
-            onClick = onClick,
-            shapes = IconButtonDefaults.shapes(),
-            colors = IconButtonDefaults.iconButtonColors(
-                containerColor = Color.Black.copy(alpha = 0.35f),
-                contentColor = if (active) MaterialTheme.colorScheme.primary else Color.White
-            ),
+    val iconScale = remember { Animatable(1f) }
+    val burstProgress = remember { Animatable(0f) }
+    var isInitial by remember { mutableStateOf(true) }
+
+    LaunchedEffect(active) {
+        if (isInitial) {
+            isInitial = false
+            return@LaunchedEffect
+        }
+        if (active) {
+            launch {
+                iconScale.snapTo(0.5f)
+                iconScale.animateTo(
+                    targetValue = 1f,
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioMediumBouncy,
+                        stiffness = Spring.StiffnessMedium
+                    )
+                )
+            }
+            if (burstOnActivate) {
+                burstProgress.snapTo(0.01f)
+                burstProgress.animateTo(1f, tween(durationMillis = 450, easing = FastOutSlowInEasing))
+                burstProgress.snapTo(0f)
+            }
+        }
+    }
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .clip(RoundedCornerShape(24.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 8.dp, vertical = 4.dp)
+    ) {
+        Box(
             modifier = Modifier
-                .size(48.dp)
-                .scale(scale)
+                .size(44.dp)
+                .clip(CircleShape)
+                .background(
+                    if (active) MaterialTheme.colorScheme.secondaryContainer
+                    else Color.Transparent
+                ),
+            contentAlignment = Alignment.Center
         ) {
+            val p = burstProgress.value
+            if (p > 0f) {
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .graphicsLayer {
+                            scaleX = 0.3f + p * 1.2f
+                            scaleY = 0.3f + p * 1.2f
+                            alpha = 1f - p
+                        }
+                        .clip(MaterialShapes.Burst.toShape())
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.35f))
+                )
+            }
             Icon(
                 imageVector = icon,
                 contentDescription = contentDescription,
-                modifier = Modifier.size(24.dp)
+                tint = if (active) MaterialTheme.colorScheme.onSecondaryContainer
+                    else MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier
+                    .size(22.dp)
+                    .graphicsLayer {
+                        scaleX = iconScale.value
+                        scaleY = iconScale.value
+                    }
             )
         }
-        Spacer(modifier = Modifier.height(4.dp))
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
             fontWeight = FontWeight.Medium,
-            color = Color.White,
-            maxLines = 1
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.widthIn(max = 64.dp)
         )
     }
 }

@@ -63,13 +63,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.rounded.Bolt
-import androidx.compose.ui.draw.scale
+import androidx.compose.material3.MaterialShapes
+import androidx.compose.material3.carousel.HorizontalMultiBrowseCarousel
+import androidx.compose.material3.carousel.rememberCarouselState
+import androidx.compose.material3.toShape
 import coil.compose.AsyncImage
 import com.ivor.ivormusic.data.ShortsItem
 import com.ivor.ivormusic.data.VideoItem
@@ -405,9 +403,12 @@ private fun VideoTopBarSection(
 }
 
 /**
- * Horizontal Shorts shelf: header with a bolt icon chip plus a row of
- * portrait 9:16 cards. Tapping a card opens the fullscreen Shorts player.
+ * Shorts shelf: an expressive bolt badge header plus the same
+ * MultiBrowseCarousel treatment the music home uses for albums — masked
+ * items that morph between sizes as they scroll. Tapping a card opens the
+ * fullscreen Shorts player.
  */
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun ShortsShelf(
     shorts: List<ShortsItem>,
@@ -421,19 +422,19 @@ fun ShortsShelf(
         ) {
             Box(
                 modifier = Modifier
-                    .size(36.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
+                    .size(38.dp)
+                    .clip(MaterialShapes.Cookie9Sided.toShape())
+                    .background(MaterialTheme.colorScheme.primaryContainer),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = Icons.Rounded.Bolt,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(24.dp)
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.size(22.dp)
                 )
             }
-            Spacer(modifier = Modifier.width(10.dp))
+            Spacer(modifier = Modifier.width(12.dp))
             Text(
                 text = "Shorts",
                 style = MaterialTheme.typography.titleLarge,
@@ -444,88 +445,67 @@ fun ShortsShelf(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        LazyRow(
-            contentPadding = PaddingValues(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            itemsIndexed(shorts, key = { _, item -> item.videoId }) { index, item ->
-                ShortsCard(
-                    item = item,
-                    onClick = { onShortClick(index) }
-                )
-            }
-        }
-    }
-}
-
-/**
- * One portrait Shorts card with a press-scale spring, bottom gradient and
- * title/view-count overlay.
- */
-@Composable
-private fun ShortsCard(
-    item: ShortsItem,
-    onClick: () -> Unit
-) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.95f else 1f,
-        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
-        label = "shortsCardScale"
-    )
-
-    Box(
-        modifier = Modifier
-            .width(150.dp)
-            .aspectRatio(9f / 16f)
-            .scale(scale)
-            .clip(RoundedCornerShape(16.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-            .clickable(interactionSource = interactionSource, indication = null, onClick = onClick)
-    ) {
-        AsyncImage(
-            model = item.portraitThumbnailUrl,
-            contentDescription = item.title,
-            modifier = Modifier.fillMaxSize(),
-            contentScale = ContentScale.Crop
-        )
-
-        Box(
+        val carouselState = rememberCarouselState { shorts.size }
+        HorizontalMultiBrowseCarousel(
+            state = carouselState,
+            preferredItemWidth = 160.dp,
+            itemSpacing = 8.dp,
+            contentPadding = PaddingValues(horizontal = 20.dp),
             modifier = Modifier
                 .fillMaxWidth()
-                .height(96.dp)
-                .align(Alignment.BottomCenter)
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.75f))
-                    )
+                .height(280.dp)
+        ) { index ->
+            val item = shorts[index]
+            Box(
+                modifier = Modifier
+                    .maskClip(MaterialTheme.shapes.large)
+                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                    .clickable { onShortClick(index) }
+            ) {
+                AsyncImage(
+                    model = item.portraitThumbnailUrl,
+                    contentDescription = item.title,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
                 )
-        )
 
-        Column(
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(10.dp)
-        ) {
-            if (item.title.isNotBlank()) {
-                Text(
-                    text = item.title,
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color.White,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(96.dp)
+                        .align(Alignment.BottomCenter)
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.75f))
+                            )
+                        )
                 )
-            }
-            if (item.viewCount.isNotBlank()) {
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = item.viewCount,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color.White.copy(alpha = 0.75f),
-                    maxLines = 1
-                )
+
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(12.dp)
+                ) {
+                    if (item.title.isNotBlank()) {
+                        Text(
+                            text = item.title,
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color.White,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    if (item.viewCount.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = item.viewCount,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White.copy(alpha = 0.75f),
+                            maxLines = 1
+                        )
+                    }
+                }
             }
         }
     }
