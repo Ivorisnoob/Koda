@@ -493,5 +493,7 @@ enum class PlayerStyle {
     /** Die-cut sticker with drag, peel and squash-and-stretch physics */
     STICKER,
     /** Living hero shape that cycles organic cuts while playing */
-    MORPH
+    MORPH,
+    /** Rotary instrument: a tick-ring dial spun to scrub */
+    DIAL
 }

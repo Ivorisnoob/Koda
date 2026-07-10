@@ -63,6 +63,7 @@ import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Newspaper
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.PlayCircle
+import androidx.compose.material.icons.rounded.RadioButtonChecked
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.FlashOn
 import androidx.compose.material.icons.rounded.HighQuality
@@ -1603,7 +1604,8 @@ private val playerStyleOptions = listOf(
     PlayerStyleOption(PlayerStyle.POSTER, "Poster", "Kinetic type, title as progress", Icons.Rounded.TextFields),
     PlayerStyleOption(PlayerStyle.BENTO, "Bento", "Squishy grid of flat tiles", Icons.Rounded.GridView),
     PlayerStyleOption(PlayerStyle.STICKER, "Sticker", "Die-cut art with toy physics", Icons.Rounded.Interests),
-    PlayerStyleOption(PlayerStyle.MORPH, "Morph", "Living shape that breathes", Icons.Rounded.Animation)
+    PlayerStyleOption(PlayerStyle.MORPH, "Morph", "Living shape that breathes", Icons.Rounded.Animation),
+    PlayerStyleOption(PlayerStyle.DIAL, "Dial", "Rotary ring, spin to scrub", Icons.Rounded.RadioButtonChecked)
 )
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
