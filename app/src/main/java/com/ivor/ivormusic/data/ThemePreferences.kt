@@ -489,5 +489,7 @@ enum class PlayerStyle {
     /** Kinetic type player where the title itself is the progress display */
     POSTER,
     /** Squish grid of flat tonal tiles with press physics */
-    BENTO
+    BENTO,
+    /** Die-cut sticker with drag, peel and squash-and-stretch physics */
+    STICKER
 }

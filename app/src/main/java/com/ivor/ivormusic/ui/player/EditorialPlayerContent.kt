@@ -947,6 +947,31 @@ internal class EditorialMorphShape(
     }
 }
 
+/**
+ * Shape backed by a single RoundedPolygon scaled to fill the composable
+ * bounds. Static sibling of EditorialMorphShape.
+ */
+internal class EditorialPolygonShape(
+    private val polygon: RoundedPolygon
+) : Shape {
+    override fun createOutline(
+        size: Size,
+        layoutDirection: LayoutDirection,
+        density: Density
+    ): Outline {
+        val path = polygon.toPath().asComposePath()
+        val matrix = Matrix()
+        val bounds = polygon.calculateBounds()
+        val boundsWidth = bounds[2] - bounds[0]
+        val boundsHeight = bounds[3] - bounds[1]
+
+        matrix.scale(size.width / boundsWidth, size.height / boundsHeight)
+        matrix.translate(-bounds[0], -bounds[1])
+        path.transform(matrix)
+        return Outline.Generic(path)
+    }
+}
+
 internal fun formatEditorialTime(durationMs: Long): String {
     val totalSeconds = durationMs / 1000
     val minutes = totalSeconds / 60

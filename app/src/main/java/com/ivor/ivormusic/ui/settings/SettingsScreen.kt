@@ -56,6 +56,7 @@ import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.FolderOff
 import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Interests
 import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Newspaper
@@ -1599,7 +1600,8 @@ private val playerStyleOptions = listOf(
     PlayerStyleOption(PlayerStyle.GESTURE, "Gesture", "Swipe album art to navigate", Icons.Rounded.SwipeRight),
     PlayerStyleOption(PlayerStyle.EDITORIAL, "Editorial", "Two-tone magazine layout", Icons.Rounded.Newspaper),
     PlayerStyleOption(PlayerStyle.POSTER, "Poster", "Kinetic type, title as progress", Icons.Rounded.TextFields),
-    PlayerStyleOption(PlayerStyle.BENTO, "Bento", "Squishy grid of flat tiles", Icons.Rounded.GridView)
+    PlayerStyleOption(PlayerStyle.BENTO, "Bento", "Squishy grid of flat tiles", Icons.Rounded.GridView),
+    PlayerStyleOption(PlayerStyle.STICKER, "Sticker", "Die-cut art with toy physics", Icons.Rounded.Interests)
 )
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)

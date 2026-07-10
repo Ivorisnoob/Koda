@@ -297,6 +297,17 @@ fun ExpandablePlayer(
                                     onArtistClick = onArtistClick
                                 )
                             }
+                            PlayerStyle.STICKER -> {
+                                StickerPlayerSheetContent(
+                                    viewModel = viewModel,
+                                    ambientBackground = ambientBackground,
+                                    onCollapse = { onExpandChange(false) },
+                                    onLoadMore = {
+                                        viewModel.loadMoreRecommendations()
+                                    },
+                                    onArtistClick = onArtistClick
+                                )
+                            }
                         }
                     }
                 }
