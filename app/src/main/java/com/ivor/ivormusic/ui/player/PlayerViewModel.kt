@@ -108,13 +108,33 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     
     // Playlist Repository (Local Playlists)
     private val playlistRepository = com.ivor.ivormusic.data.PlaylistRepository(context)
-    
-    // Expose only local playlists for "Add to Playlist" feature (since we can only write to local ones)
+
     private val _localPlaylists = playlistRepository.userPlaylists
-    val localPlaylists: StateFlow<List<com.ivor.ivormusic.data.PlaylistDisplayItem>> = 
+    val localPlaylists: StateFlow<List<com.ivor.ivormusic.data.PlaylistDisplayItem>> =
         _localPlaylists.map { list ->
             list.map { it.toDisplayItem() }
         }.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // YouTube playlists songs can be added to (loaded on demand when the
+    // Add to Playlist sheet opens; only real "PL..." playlists are editable,
+    // not the synthesized Supermix/Likes entries)
+    private val _youtubeAddablePlaylists =
+        MutableStateFlow<List<com.ivor.ivormusic.data.PlaylistDisplayItem>>(emptyList())
+
+    /** Local playlists followed by editable YouTube playlists, for the Add to Playlist sheet. */
+    val addToPlaylistItems: StateFlow<List<com.ivor.ivormusic.data.PlaylistDisplayItem>> =
+        kotlinx.coroutines.flow.combine(localPlaylists, _youtubeAddablePlaylists) { local, youtube ->
+            local + youtube
+        }.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** Fetch the user's YouTube playlists for the Add to Playlist sheet (once per session). */
+    fun loadYouTubePlaylistsForSheet() {
+        if (_youtubeAddablePlaylists.value.isNotEmpty() || !youTubeRepository.isLoggedIn()) return
+        viewModelScope.launch {
+            _youtubeAddablePlaylists.value = youTubeRepository.getUserPlaylists()
+                .filter { it.id.startsWith("PL") }
+        }
+    }
         
     // Cache & Crossfade Settings exposed for UI
     private val themePreferences = com.ivor.ivormusic.data.ThemePreferences(context)
@@ -884,7 +904,13 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     fun addToPlaylist(playlistId: String, song: Song? = _currentSong.value) {
         if (song == null) return
         viewModelScope.launch {
-            playlistRepository.addSongToPlaylist(playlistId, song)
+            val isLocal = playlistRepository.userPlaylists.value.any { it.id == playlistId }
+            if (isLocal) {
+                playlistRepository.addSongToPlaylist(playlistId, song)
+            } else if (song.source == com.ivor.ivormusic.data.SongSource.YOUTUBE) {
+                // YouTube playlist target: the song id is the videoId
+                youTubeRepository.addToYouTubePlaylist(playlistId, song.id, music = true)
+            }
         }
     }
     

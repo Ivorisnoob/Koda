@@ -6,6 +6,8 @@ import androidx.annotation.OptIn
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
@@ -50,6 +52,7 @@ fun VideoPlayerContent(
     val relatedVideos by viewModel.relatedVideos.collectAsState()
     val isAutoPlayEnabled by viewModel.isAutoPlayEnabled.collectAsState()
     val isLooping by viewModel.isLooping.collectAsState()
+    val playbackSpeed by viewModel.playbackSpeed.collectAsState()
     val playbackError by viewModel.playbackError.collectAsState()
     val engagement by viewModel.engagement.collectAsState()
     val isLoggedIn by viewModel.isLoggedIn.collectAsState()
@@ -380,6 +383,45 @@ fun VideoPlayerContent(
                             colors = ListItemDefaults.colors(
                                 containerColor = Color.Transparent
                             )
+                        )
+                    }
+                }
+
+                HorizontalDivider(
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant
+                )
+
+                Text(
+                    text = "Playback speed",
+                    style = MaterialTheme.typography.headlineSmall,
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp),
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                        .padding(horizontal = 24.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    VideoPlayerViewModel.PLAYBACK_SPEED_OPTIONS.forEach { speed ->
+                        val label = if (speed == 1f) "Normal"
+                            else "${speed.toString().removeSuffix(".0")}x"
+                        FilterChip(
+                            selected = speed == playbackSpeed,
+                            onClick = { viewModel.setPlaybackSpeed(speed) },
+                            label = { Text(label) },
+                            leadingIcon = if (speed == playbackSpeed) {
+                                {
+                                    Icon(
+                                        Icons.Rounded.Check,
+                                        contentDescription = "Selected",
+                                        modifier = Modifier.size(FilterChipDefaults.IconSize)
+                                    )
+                                }
+                            } else null
                         )
                     }
                 }

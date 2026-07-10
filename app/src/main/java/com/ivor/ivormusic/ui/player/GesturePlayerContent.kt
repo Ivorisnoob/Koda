@@ -99,7 +99,7 @@ fun GesturePlayerSheetContent(
     var showQueue by remember { mutableStateOf(false) }
     var showLyrics by remember { mutableStateOf(false) }
     var showAddToPlaylist by remember { mutableStateOf(false) }
-    val localPlaylists by viewModel.localPlaylists.collectAsState()
+    val addToPlaylistItems by viewModel.addToPlaylistItems.collectAsState()
 
     // Sleep timer
     val sleepTimerEndsAt by viewModel.sleepTimerEndsAt.collectAsState()
@@ -156,7 +156,10 @@ fun GesturePlayerSheetContent(
                     ambientBackground = ambientBackground,
                     onCollapse = onCollapse,
                     onShowQueue = { showQueue = true },
-                    onShowAddToPlaylist = { showAddToPlaylist = true }, // Pass callback
+                    onShowAddToPlaylist = {
+                        viewModel.loadYouTubePlaylistsForSheet()
+                        showAddToPlaylist = true
+                    },
                     onArtistClick = onArtistClick,
                     onToggleShuffle = { viewModel.toggleShuffle() },
                     onToggleRepeat = { viewModel.toggleRepeat() },
@@ -189,7 +192,7 @@ fun GesturePlayerSheetContent(
 
     if (showAddToPlaylist) {
         AddToPlaylistSheet(
-            playlists = localPlaylists,
+            playlists = addToPlaylistItems,
             onPlaylistClick = { playlist ->
                 viewModel.addToPlaylist(playlist.id)
                 showAddToPlaylist = false

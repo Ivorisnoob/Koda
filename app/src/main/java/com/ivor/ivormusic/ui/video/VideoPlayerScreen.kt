@@ -1,6 +1,10 @@
 package com.ivor.ivormusic.ui.video
 
+import android.app.Activity
+import android.content.Context
+import android.media.AudioManager
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.widget.FrameLayout
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
@@ -10,6 +14,9 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -36,9 +43,13 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.Comment
+import androidx.compose.material.icons.automirrored.rounded.VolumeOff
+import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.outlined.ThumbDown
 import androidx.compose.material.icons.outlined.ThumbUp
 import androidx.compose.material.icons.rounded.Autorenew
+import androidx.compose.material.icons.rounded.BrightnessHigh
+import androidx.compose.material.icons.rounded.BrightnessLow
 import androidx.compose.material.icons.rounded.Error
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Forward10
@@ -73,6 +84,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -84,6 +96,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChanged
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -94,8 +108,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
+import kotlin.math.abs
+import kotlin.math.roundToInt
 import com.ivor.ivormusic.data.LikeStatus
 import com.ivor.ivormusic.data.VideoEngagement
 import com.ivor.ivormusic.data.VideoItem
@@ -141,10 +158,15 @@ fun FullscreenPlayerContent(
     // Stable shapes to prevent "square flash"
     val stableShapes = IconButtonDefaults.shapes()
 
+    // Pinch-to-zoom: fill the screen (crop) vs fit inside it
+    var isZoomedToFill by remember { mutableStateOf(false) }
+
     PlayerGestureSurface(
         onToggleControls = onToggleControls,
         onSeekBackward = onSeekBackward,
-        onSeekForward = onSeekForward
+        onSeekForward = onSeekForward,
+        fullscreenGesturesEnabled = true,
+        onZoomedToFillChange = { isZoomedToFill = it }
     ) {
         // Video View
         AndroidView(
@@ -156,6 +178,13 @@ fun FullscreenPlayerContent(
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.MATCH_PARENT
                     )
+                }
+            },
+            update = { playerView ->
+                playerView.resizeMode = if (isZoomedToFill) {
+                    AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                } else {
+                    AspectRatioFrameLayout.RESIZE_MODE_FIT
                 }
             },
             modifier = Modifier.fillMaxSize()
@@ -548,10 +577,24 @@ private fun PlayerSeekBar(
 /** Seconds jumped per double-tap on either edge of the video surface. */
 private const val DOUBLE_TAP_SEEK_SECONDS = 10
 
+/** Which level a vertical drag is adjusting, for the feedback overlay. */
+private enum class LevelAdjustment { Brightness, Volume }
+
+/** Accumulated pinch ratios beyond these thresholds toggle zoom-to-fill. */
+private const val PINCH_ZOOM_IN_THRESHOLD = 1.15f
+private const val PINCH_ZOOM_OUT_THRESHOLD = 0.87f
+
 /**
  * Wraps the video surface with tap gestures: single tap toggles the controls,
  * a double tap on the left rewinds and on the right fast-forwards (YouTube-style),
  * with an animated badge that accumulates when tapped repeatedly.
+ *
+ * With [fullscreenGesturesEnabled] it also recognizes, like most video players:
+ * - vertical drag on the left half = screen brightness (window-level override,
+ *   restored when the surface leaves composition);
+ * - vertical drag on the right half = media volume;
+ * - pinch open/closed = zoom the video to fill the screen / fit inside it,
+ *   reported through [onZoomedToFillChange].
  */
 @Composable
 private fun PlayerGestureSurface(
@@ -559,6 +602,8 @@ private fun PlayerGestureSurface(
     onSeekBackward: () -> Unit,
     onSeekForward: () -> Unit,
     modifier: Modifier = Modifier,
+    fullscreenGesturesEnabled: Boolean = false,
+    onZoomedToFillChange: (Boolean) -> Unit = {},
     content: @Composable BoxScope.() -> Unit
 ) {
     // side: -1 rewind, +1 forward, 0 hidden. seconds accumulates on rapid taps.
@@ -573,6 +618,35 @@ private fun PlayerGestureSurface(
             delay(650)
             side = 0
             seconds = 0
+        }
+    }
+
+    val context = LocalContext.current
+    val activity = context as? Activity
+    val audioManager = remember(context) {
+        context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+    }
+
+    // Brightness/volume feedback overlay: which level is being adjusted and
+    // its current 0..1 value. adjustPulse restarts the auto-hide timer.
+    var adjustment by remember { mutableStateOf<LevelAdjustment?>(null) }
+    var adjustmentLevel by remember { mutableFloatStateOf(0f) }
+    var adjustPulse by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(adjustPulse) {
+        if (adjustment != null) {
+            delay(800)
+            adjustment = null
+        }
+    }
+
+    // The brightness gesture overrides the window brightness; hand control
+    // back to the system when the fullscreen surface goes away.
+    if (fullscreenGesturesEnabled) {
+        DisposableEffect(activity) {
+            onDispose {
+                activity?.let { setWindowBrightness(it, WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE) }
+            }
         }
     }
 
@@ -592,6 +666,68 @@ private fun PlayerGestureSurface(
                     }
                 )
             }
+            .then(
+                if (!fullscreenGesturesEnabled) Modifier
+                else Modifier.pointerInput(activity) {
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        val leftSide = down.position.x < size.width / 2f
+                        // 0 = undecided, 1 = vertical level drag, 2 = pinch
+                        var mode = 0
+                        var accumulatedZoom = 1f
+                        var level = 0f
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            val pressed = event.changes.filter { it.pressed }
+                            if (pressed.isEmpty()) break
+                            // A child (slider, button) claimed the gesture
+                            if (mode == 0 && event.changes.any { it.isConsumed }) break
+
+                            if (pressed.size > 1 && mode != 1) {
+                                mode = 2
+                                accumulatedZoom *= event.calculateZoom()
+                                if (accumulatedZoom > PINCH_ZOOM_IN_THRESHOLD) {
+                                    onZoomedToFillChange(true)
+                                } else if (accumulatedZoom < PINCH_ZOOM_OUT_THRESHOLD) {
+                                    onZoomedToFillChange(false)
+                                }
+                                event.changes.forEach { if (it.positionChanged()) it.consume() }
+                            } else if (pressed.size == 1 && mode != 2) {
+                                val change = pressed.first()
+                                if (mode == 0) {
+                                    val totalDx = change.position.x - down.position.x
+                                    val totalDy = change.position.y - down.position.y
+                                    if (abs(totalDy) > viewConfiguration.touchSlop &&
+                                        abs(totalDy) > abs(totalDx)
+                                    ) {
+                                        mode = 1
+                                        level = if (leftSide) {
+                                            activity?.let { currentWindowBrightness(it) } ?: 0.5f
+                                        } else {
+                                            currentVolumeFraction(audioManager)
+                                        }
+                                    }
+                                }
+                                if (mode == 1) {
+                                    val dy = change.position.y - change.previousPosition.y
+                                    // Dragging ~70% of the surface height sweeps the full range
+                                    level = (level - dy / (size.height * 0.7f)).coerceIn(0f, 1f)
+                                    if (leftSide) {
+                                        activity?.let { setWindowBrightness(it, level.coerceAtLeast(0.01f)) }
+                                        adjustment = LevelAdjustment.Brightness
+                                    } else {
+                                        setVolumeFraction(audioManager, level)
+                                        adjustment = LevelAdjustment.Volume
+                                    }
+                                    adjustmentLevel = level
+                                    adjustPulse++
+                                    change.consume()
+                                }
+                            }
+                        }
+                    }
+                }
+            )
     ) {
         content()
 
@@ -607,6 +743,96 @@ private fun PlayerGestureSurface(
             forward = true,
             modifier = Modifier.align(Alignment.CenterEnd)
         )
+
+        adjustment?.let { kind ->
+            LevelIndicator(
+                kind = kind,
+                level = adjustmentLevel,
+                modifier = Modifier
+                    .align(if (kind == LevelAdjustment.Brightness) Alignment.CenterStart else Alignment.CenterEnd)
+                    .padding(horizontal = 48.dp)
+            )
+        }
+    }
+}
+
+/** Vertical level bar + icon shown while a brightness/volume drag is active. */
+@Composable
+private fun LevelIndicator(
+    kind: LevelAdjustment,
+    level: Float,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = modifier
+            .clip(RoundedCornerShape(20.dp))
+            .background(Color.Black.copy(alpha = 0.55f))
+            .padding(horizontal = 14.dp, vertical = 18.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .width(6.dp)
+                .height(110.dp)
+                .clip(CircleShape)
+                .background(Color.White.copy(alpha = 0.3f)),
+            contentAlignment = Alignment.BottomCenter
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(level.coerceIn(0f, 1f))
+                    .clip(CircleShape)
+                    .background(Color.White)
+            )
+        }
+        Icon(
+            imageVector = when {
+                kind == LevelAdjustment.Volume && level <= 0.001f -> Icons.AutoMirrored.Rounded.VolumeOff
+                kind == LevelAdjustment.Volume -> Icons.AutoMirrored.Rounded.VolumeUp
+                level < 0.3f -> Icons.Rounded.BrightnessLow
+                else -> Icons.Rounded.BrightnessHigh
+            },
+            contentDescription = null,
+            tint = Color.White,
+            modifier = Modifier.size(22.dp)
+        )
+    }
+}
+
+/** Current window brightness, falling back to the system setting when unset. */
+private fun currentWindowBrightness(activity: Activity): Float {
+    val fromWindow = activity.window.attributes.screenBrightness
+    if (fromWindow >= 0f) return fromWindow
+    return try {
+        android.provider.Settings.System.getInt(
+            activity.contentResolver,
+            android.provider.Settings.System.SCREEN_BRIGHTNESS
+        ) / 255f
+    } catch (e: Exception) {
+        0.5f
+    }
+}
+
+private fun setWindowBrightness(activity: Activity, value: Float) {
+    val window = activity.window
+    val attributes = window.attributes
+    attributes.screenBrightness = value
+    window.attributes = attributes
+}
+
+private fun currentVolumeFraction(audioManager: AudioManager): Float {
+    val max = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+    if (max <= 0) return 0f
+    return audioManager.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat() / max
+}
+
+private fun setVolumeFraction(audioManager: AudioManager, fraction: Float) {
+    val max = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+    val target = (fraction * max).roundToInt().coerceIn(0, max)
+    if (target != audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)) {
+        audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, target, 0)
     }
 }
 

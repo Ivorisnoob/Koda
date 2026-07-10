@@ -50,6 +50,7 @@ import androidx.compose.material.icons.rounded.Animation
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Contrast
 import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.SystemUpdate
@@ -181,6 +182,8 @@ private class PolygonShape(private val polygon: RoundedPolygon) : Shape {
 fun SettingsScreen(
     currentThemeMode: ThemeMode,
     onThemeModeChange: (ThemeMode) -> Unit,
+    amoledTheme: Boolean,
+    onAmoledThemeToggle: (Boolean) -> Unit,
     loadLocalSongs: Boolean,
     onLoadLocalSongsToggle: (Boolean) -> Unit,
     ambientBackground: Boolean,
@@ -324,7 +327,18 @@ fun SettingsScreen(
                         )
                         
                         SettingsDivider()
-                        
+
+                        // AMOLED pure black toggle
+                        ExpressiveAmoledThemeToggleItem(
+                            enabled = amoledTheme,
+                            onToggle = onAmoledThemeToggle,
+                            textColor = textColor,
+                            secondaryTextColor = secondaryTextColor,
+                            accentColor = accentColor
+                        )
+
+                        SettingsDivider()
+
                         // Ambient Background toggle
                         ExpressiveAmbientBackgroundToggleItem(
                             enabled = ambientBackground,
@@ -1183,6 +1197,85 @@ private fun ExpressiveLocalSongsToggleItem(
 }
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun ExpressiveAmoledThemeToggleItem(
+    enabled: Boolean,
+    onToggle: (Boolean) -> Unit,
+    textColor: Color,
+    secondaryTextColor: Color,
+    accentColor: Color
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.97f else 1f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
+        label = "scale"
+    )
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .scale(scale)
+            .clip(RoundedCornerShape(18.dp))
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null
+            ) { onToggle(!enabled) }
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Icon
+        Box(
+            modifier = Modifier
+                .size(48.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(accentColor.copy(alpha = 0.12f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Contrast,
+                contentDescription = null,
+                tint = accentColor,
+                modifier = Modifier.size(26.dp)
+            )
+        }
+
+        Spacer(modifier = Modifier.width(16.dp))
+
+        // Text
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "AMOLED Black",
+                color = textColor,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = if (enabled) "Pure black backgrounds in dark theme" else "Standard dark backgrounds",
+                color = secondaryTextColor,
+                fontSize = 13.sp
+            )
+        }
+
+        // Switch
+        Switch(
+            checked = enabled,
+            onCheckedChange = onToggle,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Color.White,
+                checkedTrackColor = accentColor,
+                uncheckedThumbColor = Color.White,
+                uncheckedTrackColor = secondaryTextColor.copy(alpha = 0.3f),
+                uncheckedBorderColor = Color.Transparent,
+                checkedBorderColor = Color.Transparent
+            )
+        )
+    }
+}
+
 @Composable
 private fun ExpressiveAmbientBackgroundToggleItem(
     enabled: Boolean,

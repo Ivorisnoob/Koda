@@ -393,10 +393,18 @@ fun LibraryMainScreen(
                             likedSongs = likedSongs,
                             onPlaylistClick = onNavigateToPlaylist,
                             onEditPlaylist = { playlist, newName, newDescription ->
-                                viewModel.updateLocalPlaylist(playlist.id, newName, newDescription)
+                                if (localPlaylistIds.contains(playlist.id)) {
+                                    viewModel.updateLocalPlaylist(playlist.id, newName, newDescription)
+                                } else {
+                                    viewModel.renameYouTubePlaylist(playlist.id, newName, newDescription)
+                                }
                             },
                             onDeletePlaylist = { playlist ->
-                                viewModel.deleteLocalPlaylist(playlist.id)
+                                if (localPlaylistIds.contains(playlist.id)) {
+                                    viewModel.deleteLocalPlaylist(playlist.id)
+                                } else {
+                                    viewModel.deleteYouTubePlaylist(playlist.id)
+                                }
                             },
                             onLikedSongsClick = {
                                 onNavigateToPlaylist(PlaylistDisplayItem("Liked Songs", "LM", "You", likedSongs.size, null))
@@ -769,13 +777,17 @@ fun PlaylistsGrid(
         }
         items(playlists) { playlist ->
             val isLocalPlaylist = localPlaylistIds.contains(playlist.id)
+            // YouTube playlists are editable through InnerTube; the synthesized
+            // Supermix ("RTM") and Your Likes ("LM") entries are not real playlists
+            val isYouTubeEditable = !isLocalPlaylist &&
+                playlist.id != "RTM" && playlist.id != "LM"
             ExpressivePlaylistCard(
                 name = playlist.name ?: "Untitled",
                 count = playlist.itemCount,
                 subtitle = if (playlist.itemCount < 0) playlist.uploaderName.ifBlank { "Playlist" } else null,
                 thumbnailUrl = playlist.thumbnailUrl,
                 description = playlist.description,
-                isEditable = isLocalPlaylist,
+                isEditable = isLocalPlaylist || isYouTubeEditable,
                 onEditConfirmed = { name, description -> onEditPlaylist(playlist, name, description) },
                 onDeleteConfirmed = { onDeletePlaylist(playlist) },
                 onClick = { onPlaylistClick(playlist) }
@@ -1031,7 +1043,7 @@ fun ExpressivePlaylistCard(
         AlertDialog(
             onDismissRequest = { showDeleteDialog = false },
             title = { Text("Delete playlist?") },
-            text = { Text("This will permanently remove \"$name\" and its local metadata.") },
+            text = { Text("This will permanently remove \"$name\".") },
             confirmButton = {
                 TextButton(onClick = {
                     onDeleteConfirmed()
@@ -1290,6 +1302,13 @@ fun PlaylistDetailScreen(
     val isLocalPlaylist = remember(playlist.id, localPlaylistIds, isAlbum) {
         !isAlbum && localPlaylistIds.contains(playlist.id)
     }
+    // YouTube playlists can be edited through InnerTube. "LM" (Your Likes) only
+    // supports song removal (= removing the like), not rename/delete, and the
+    // synthesized Supermix ("RTM") and radio mixes are not editable at all.
+    val isYouTubePlaylist = !isAlbum && !isLocalPlaylist
+    val canEditYouTubeSongs = isYouTubePlaylist &&
+        (playlist.id.startsWith("PL") || playlist.id == "LM")
+    val canRenameDeleteYouTube = isYouTubePlaylist && playlist.id.startsWith("PL")
     var songs by remember { mutableStateOf(preloadedSongs ?: emptyList()) }
     val isLoading by viewModel.isLoading.collectAsState()
     val isFetching = remember { mutableStateOf(songs.isEmpty()) }
@@ -1356,7 +1375,7 @@ fun PlaylistDetailScreen(
                     }
                 },
                 actions = {
-                    if (isLocalPlaylist) {
+                    if (isLocalPlaylist || canEditYouTubeSongs) {
                         IconButton(
                             onClick = {
                                 val enablingReorder = !isReorderMode
@@ -1375,9 +1394,11 @@ fun PlaylistDetailScreen(
                         ) {
                             Icon(
                                 imageVector = if (isReorderMode) Icons.Rounded.Done else Icons.Rounded.DragHandle,
-                                contentDescription = if (isReorderMode) "Finish reordering" else "Reorder playlist"
+                                contentDescription = if (isReorderMode) "Finish editing" else "Edit songs"
                             )
                         }
+                    }
+                    if (isLocalPlaylist || canRenameDeleteYouTube) {
                         IconButton(onClick = { showEditDialog = true }) {
                             Icon(Icons.Rounded.Edit, contentDescription = "Rename playlist")
                         }
@@ -1580,12 +1601,17 @@ fun PlaylistDetailScreen(
                         items = filteredSongs,
                         key = { _, song -> "playlist_${resolvedPlaylist.id}_${song.id}" }
                     ) { index, song ->
-                        val reorderEnabled = isLocalPlaylist && isReorderMode && searchQuery.isBlank()
+                        // Manage mode: song removal for local and YouTube playlists;
+                        // drag reordering stays local-only (InnerTube move needs
+                        // setVideoIds the parser does not keep).
+                        val manageEnabled = isReorderMode && searchQuery.isBlank() &&
+                            (isLocalPlaylist || canEditYouTubeSongs)
+                        val reorderEnabled = manageEnabled && isLocalPlaylist
                         val isDragging = draggingSongId == song.id
                         val animatedContainerColor by animateColorAsState(
                             targetValue = when {
                                 isDragging -> MaterialTheme.colorScheme.primaryContainer
-                                reorderEnabled -> MaterialTheme.colorScheme.surfaceContainerLow
+                                manageEnabled -> MaterialTheme.colorScheme.surfaceContainerLow
                                 else -> Color.Transparent
                             },
                             animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow),
@@ -1594,7 +1620,7 @@ fun PlaylistDetailScreen(
                         val animatedTonalElevation by animateDpAsState(
                             targetValue = when {
                                 isDragging -> 8.dp
-                                reorderEnabled -> 2.dp
+                                manageEnabled -> 2.dp
                                 else -> 0.dp
                             },
                             animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow),
@@ -1610,7 +1636,7 @@ fun PlaylistDetailScreen(
                             song = song,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 12.dp, vertical = if (reorderEnabled) 4.dp else 0.dp)
+                                .padding(horizontal = 12.dp, vertical = if (manageEnabled) 4.dp else 0.dp)
                                 .then(if (isDragging) Modifier else Modifier.animateItem())
                                 .zIndex(if (isDragging) 2f else 0f)
                                 .offset(y = if (isDragging) with(density) { dragOffsetY.toDp() } else 0.dp)
@@ -1673,8 +1699,8 @@ fun PlaylistDetailScreen(
                             containerColor = animatedContainerColor,
                             tonalElevation = animatedTonalElevation,
                             shadowElevation = animatedShadowElevation,
-                            shape = if (reorderEnabled) RoundedCornerShape(24.dp) else RoundedCornerShape(0.dp),
-                            trailingContent = if (reorderEnabled) {
+                            shape = if (manageEnabled) RoundedCornerShape(24.dp) else RoundedCornerShape(0.dp),
+                            trailingContent = if (manageEnabled) {
                                 {
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
@@ -1687,8 +1713,12 @@ fun PlaylistDetailScreen(
                                                 songs = songs.toMutableList().apply {
                                                     removeAll { it.id == song.id }
                                                 }
-                                                viewModel.replaceLocalPlaylistSongs(resolvedPlaylist.id, songs)
-                                                reorderDirty = false
+                                                if (isLocalPlaylist) {
+                                                    viewModel.replaceLocalPlaylistSongs(resolvedPlaylist.id, songs)
+                                                    reorderDirty = false
+                                                } else {
+                                                    viewModel.removeSongFromYouTubePlaylist(resolvedPlaylist.id, song)
+                                                }
                                             }
                                         ) {
                                             Icon(
@@ -1698,40 +1728,42 @@ fun PlaylistDetailScreen(
                                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
                                             )
                                         }
-                                        Column(
-                                            horizontalAlignment = Alignment.End,
-                                            verticalArrangement = Arrangement.spacedBy(6.dp)
-                                        ) {
-                                            Surface(
-                                                shape = RoundedCornerShape(14.dp),
-                                                color = if (isDragging) {
-                                                    MaterialTheme.colorScheme.tertiaryContainer
-                                                } else {
-                                                    MaterialTheme.colorScheme.surfaceContainerHighest
-                                                }
+                                        if (reorderEnabled) {
+                                            Column(
+                                                horizontalAlignment = Alignment.End,
+                                                verticalArrangement = Arrangement.spacedBy(6.dp)
                                             ) {
-                                                Icon(
-                                                    imageVector = Icons.Rounded.DragHandle,
-                                                    contentDescription = "Drag to reorder",
-                                                    tint = if (isDragging) {
-                                                        MaterialTheme.colorScheme.onTertiaryContainer
+                                                Surface(
+                                                    shape = RoundedCornerShape(14.dp),
+                                                    color = if (isDragging) {
+                                                        MaterialTheme.colorScheme.tertiaryContainer
                                                     } else {
-                                                        MaterialTheme.colorScheme.onSurfaceVariant
-                                                    },
-                                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
+                                                        MaterialTheme.colorScheme.surfaceContainerHighest
+                                                    }
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Rounded.DragHandle,
+                                                        contentDescription = "Drag to reorder",
+                                                        tint = if (isDragging) {
+                                                            MaterialTheme.colorScheme.onTertiaryContainer
+                                                        } else {
+                                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                                        },
+                                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
+                                                    )
+                                                }
+                                                Text(
+                                                    text = if (isDragging) "Moving" else "Hold",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                                 )
                                             }
-                                            Text(
-                                                text = if (isDragging) "Moving" else "Hold",
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
                                         }
                                     }
                                 }
                             } else null,
                             onClick = {
-                                if (!reorderEnabled) {
+                                if (!manageEnabled) {
                                     onPlayQueue(filteredSongs, song)
                                 }
                             }
@@ -1742,26 +1774,34 @@ fun PlaylistDetailScreen(
         }
     }
 
-    if (showEditDialog && isLocalPlaylist) {
+    if (showEditDialog && (isLocalPlaylist || canRenameDeleteYouTube)) {
         EditPlaylistDialog(
             initialName = resolvedPlaylist.name,
             initialDescription = resolvedPlaylist.description,
             onDismiss = { showEditDialog = false },
             onConfirm = { newName, newDescription ->
-                viewModel.updateLocalPlaylist(resolvedPlaylist.id, newName, newDescription)
+                if (isLocalPlaylist) {
+                    viewModel.updateLocalPlaylist(resolvedPlaylist.id, newName, newDescription)
+                } else {
+                    viewModel.renameYouTubePlaylist(resolvedPlaylist.id, newName, newDescription)
+                }
                 showEditDialog = false
             }
         )
     }
 
-    if (showDeleteDialog && isLocalPlaylist) {
+    if (showDeleteDialog && (isLocalPlaylist || canRenameDeleteYouTube)) {
         AlertDialog(
             onDismissRequest = { showDeleteDialog = false },
             title = { Text("Delete playlist?") },
-            text = { Text("This will permanently remove \"${resolvedPlaylist.name}\" and its local metadata.") },
+            text = { Text("This will permanently remove \"${resolvedPlaylist.name}\".") },
             confirmButton = {
                 TextButton(onClick = {
-                    viewModel.deleteLocalPlaylist(resolvedPlaylist.id)
+                    if (isLocalPlaylist) {
+                        viewModel.deleteLocalPlaylist(resolvedPlaylist.id)
+                    } else {
+                        viewModel.deleteYouTubePlaylist(resolvedPlaylist.id)
+                    }
                     showDeleteDialog = false
                     onBack()
                 }) {

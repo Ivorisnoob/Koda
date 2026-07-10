@@ -232,6 +232,42 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /** Create a new YouTube playlist from the video Library tab. Requires login. */
+    fun createVideoPlaylist(name: String) {
+        val trimmed = name.trim()
+        if (trimmed.isEmpty()) return
+        viewModelScope.launch {
+            if (youtubeRepository.createYouTubePlaylist(trimmed, music = false) != null) {
+                loadVideoPlaylists(force = true)
+            }
+        }
+    }
+
+    /** Delete a YouTube playlist. Optimistic removal, restored on failure. */
+    fun deleteVideoPlaylist(playlistId: String) {
+        val previous = _videoPlaylists.value
+        _videoPlaylists.value = previous.filterNot { it.playlistId == playlistId }
+        viewModelScope.launch {
+            if (!youtubeRepository.deleteYouTubePlaylist(playlistId, music = false)) {
+                _videoPlaylists.value = previous
+            }
+        }
+    }
+
+    /**
+     * Remove a video from a playlist, Watch Later ("WL") or Liked videos
+     * ("LL", removes the like). Optimistic removal, restored on failure.
+     */
+    fun removePlaylistVideo(playlistId: String, video: VideoItem) {
+        val previous = _playlistVideos.value
+        _playlistVideos.value = previous.filterNot { it.videoId == video.videoId }
+        viewModelScope.launch {
+            if (!youtubeRepository.removeFromYouTubePlaylist(playlistId, video.videoId, music = false)) {
+                _playlistVideos.value = previous
+            }
+        }
+    }
+
     /** Load the notification inbox. Requires login. */
     fun loadNotifications(force: Boolean = false) {
         if (_isNotificationsLoading.value) return
@@ -592,6 +628,42 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     fun replaceLocalPlaylistSongs(playlistId: String, songs: List<Song>) {
         viewModelScope.launch {
             playlistRepository.replacePlaylistSongs(playlistId, songs)
+        }
+    }
+
+    // --- YouTube Music playlist editing (music.youtube.com side) ---
+
+    /** Rename a YouTube Music playlist; the local list entry updates on success. */
+    fun renameYouTubePlaylist(playlistId: String, name: String, description: String?) {
+        val trimmed = name.trim()
+        if (trimmed.isEmpty()) return
+        viewModelScope.launch {
+            val ok = youtubeRepository.renameYouTubePlaylist(
+                playlistId, trimmed, music = true, description = description
+            )
+            if (ok) {
+                _youtubePlaylists.value = _youtubePlaylists.value.map {
+                    if (it.id == playlistId) it.copy(name = trimmed, description = description) else it
+                }
+            }
+        }
+    }
+
+    /** Delete a YouTube Music playlist. Optimistic removal, restored on failure. */
+    fun deleteYouTubePlaylist(playlistId: String) {
+        val previous = _youtubePlaylists.value
+        _youtubePlaylists.value = previous.filterNot { it.id == playlistId }
+        viewModelScope.launch {
+            if (!youtubeRepository.deleteYouTubePlaylist(playlistId, music = true)) {
+                _youtubePlaylists.value = previous
+            }
+        }
+    }
+
+    /** Remove a song from a YouTube Music playlist ("LM" removes the like). */
+    fun removeSongFromYouTubePlaylist(playlistId: String, song: Song) {
+        viewModelScope.launch {
+            youtubeRepository.removeFromYouTubePlaylist(playlistId, song.id, music = true)
         }
     }
 

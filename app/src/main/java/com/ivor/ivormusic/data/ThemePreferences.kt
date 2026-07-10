@@ -19,6 +19,9 @@ class ThemePreferences(context: Context) {
     private val _themeMode = MutableStateFlow(getThemeModePreference())
     val themeMode: StateFlow<ThemeMode> = _themeMode.asStateFlow()
 
+    private val _amoledTheme = MutableStateFlow(getAmoledThemePreference())
+    val amoledTheme: StateFlow<Boolean> = _amoledTheme.asStateFlow()
+
     private val _loadLocalSongs = MutableStateFlow(getLoadLocalSongsPreference())
     val loadLocalSongs: StateFlow<Boolean> = _loadLocalSongs.asStateFlow()
     
@@ -77,6 +80,7 @@ class ThemePreferences(context: Context) {
         private const val PREFS_NAME = "ivor_music_theme_prefs"
         private const val KEY_THEME_MODE = "theme_mode_enum"
         private const val KEY_OLD_DARK_MODE = "dark_mode" // For migration
+        private const val KEY_AMOLED_THEME = "amoled_theme"
         private const val KEY_LOAD_LOCAL_SONGS = "load_local_songs"
         private const val KEY_AMBIENT_BACKGROUND = "ambient_background"
         private const val KEY_VIDEO_MODE = "video_mode"
@@ -174,6 +178,21 @@ class ThemePreferences(context: Context) {
         }
         
         return ThemeMode.SYSTEM
+    }
+
+    /**
+     * Get the stored AMOLED theme preference. Defaults to false.
+     */
+    private fun getAmoledThemePreference(): Boolean {
+        return prefs.getBoolean(KEY_AMOLED_THEME, false)
+    }
+
+    /**
+     * Save AMOLED theme preference and update the flow.
+     */
+    fun setAmoledTheme(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_AMOLED_THEME, enabled).apply()
+        _amoledTheme.value = enabled
     }
 
     /**
