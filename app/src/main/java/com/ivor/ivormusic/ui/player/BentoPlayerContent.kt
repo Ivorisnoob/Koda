@@ -100,10 +100,10 @@ fun BentoPlayerSheetContent(
     ambientBackground: Boolean = true,
     onCollapse: () -> Unit,
     onLoadMore: () -> Unit = {},
-    onArtistClick: (String) -> Unit = {},
-    onRequestStyleSwitcher: () -> Unit = {}
+    onArtistClick: (String) -> Unit = {}
 ) {
     BackHandler(enabled = true) { onCollapse() }
+    val styleWheel = LocalPlayerStyleWheelController.current
 
     val currentSong by viewModel.currentSong.collectAsState()
     val isPlaying by viewModel.isPlaying.collectAsState()
@@ -235,11 +235,9 @@ fun BentoPlayerSheetContent(
                             .clip(RoundedCornerShape(artCorner.dp))
                             .background(tileColor)
                             .pointerInput(Unit) {
-                                detectTapGestures(
-                                    onTap = { viewModel.togglePlayPause() },
-                                    onLongPress = { onRequestStyleSwitcher() }
-                                )
+                                detectTapGestures(onTap = { viewModel.togglePlayPause() })
                             }
+                            .styleWheelHold(styleWheel)
                     ) {
                         Crossfade(targetState = showLyrics, label = "BentoArtLyrics") { lyricsVisible ->
                             if (lyricsVisible) {

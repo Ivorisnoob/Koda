@@ -113,8 +113,7 @@ fun StickerPlayerSheetContent(
     ambientBackground: Boolean = true,
     onCollapse: () -> Unit,
     onLoadMore: () -> Unit = {},
-    onArtistClick: (String) -> Unit = {},
-    onRequestStyleSwitcher: () -> Unit = {}
+    onArtistClick: (String) -> Unit = {}
 ) {
     BackHandler(enabled = true) { onCollapse() }
 
@@ -257,7 +256,6 @@ fun StickerPlayerSheetContent(
                                     onLike = { viewModel.toggleCurrentSongLike() },
                                     onNext = { viewModel.skipToNext() },
                                     onPrevious = { viewModel.skipToPrevious() },
-                                    onLongPress = onRequestStyleSwitcher,
                                     ringColor = chipColor,
                                     placeholderColor = chipColor,
                                     placeholderIconColor = onChip
@@ -471,7 +469,6 @@ private fun DraggableSticker(
     onLike: () -> Unit,
     onNext: () -> Unit,
     onPrevious: () -> Unit,
-    onLongPress: () -> Unit,
     ringColor: Color,
     placeholderColor: Color,
     placeholderIconColor: Color
@@ -501,7 +498,7 @@ private fun DraggableSticker(
     val currentOnPrevious by rememberUpdatedState(onPrevious)
     val currentOnPlayPause by rememberUpdatedState(onPlayPause)
     val currentOnLike by rememberUpdatedState(onLike)
-    val currentOnLongPress by rememberUpdatedState(onLongPress)
+    val styleWheel = LocalPlayerStyleWheelController.current
 
     // New track: the fresh sticker slaps on with an overshooting entrance.
     LaunchedEffect(currentSong?.id) {
@@ -564,7 +561,6 @@ private fun DraggableSticker(
                 .background(placeholderColor)
                 .pointerInput(Unit) {
                     detectTapGestures(
-                        onLongPress = { currentOnLongPress() },
                         onTap = {
                             currentOnPlayPause()
                             scope.launch {
@@ -656,7 +652,10 @@ private fun DraggableSticker(
                             }
                         }
                     )
-                },
+                }
+                // Last in the chain: consumes the post-long-press hold
+                // stream before the tap and drag detectors see it.
+                .styleWheelHold(styleWheel),
             contentAlignment = Alignment.Center
         ) {
             val artModel = currentSong?.highResThumbnailUrl

@@ -97,8 +97,7 @@ fun DialPlayerSheetContent(
     ambientBackground: Boolean = true,
     onCollapse: () -> Unit,
     onLoadMore: () -> Unit = {},
-    onArtistClick: (String) -> Unit = {},
-    onRequestStyleSwitcher: () -> Unit = {}
+    onArtistClick: (String) -> Unit = {}
 ) {
     BackHandler(enabled = true) { onCollapse() }
 
@@ -225,8 +224,7 @@ fun DialPlayerSheetContent(
                                     progress = progress,
                                     duration = duration,
                                     onSeekTo = { viewModel.seekTo(it) },
-                                    onPlayPause = { viewModel.togglePlayPause() },
-                                    onLongPress = onRequestStyleSwitcher
+                                    onPlayPause = { viewModel.togglePlayPause() }
                                 )
                             }
                         }
@@ -385,9 +383,9 @@ private fun RotaryDial(
     progress: Long,
     duration: Long,
     onSeekTo: (Long) -> Unit,
-    onPlayPause: () -> Unit,
-    onLongPress: () -> Unit
+    onPlayPause: () -> Unit
 ) {
+    val styleWheel = LocalPlayerStyleWheelController.current
     val tickColor = MaterialTheme.colorScheme.primary
     val tickTrackColor = MaterialTheme.colorScheme.outlineVariant
     val needleColor = MaterialTheme.colorScheme.onSurface
@@ -530,11 +528,9 @@ private fun RotaryDial(
                 .clip(puckShape)
                 .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                 .pointerInput(Unit) {
-                    detectTapGestures(
-                        onTap = { onPlayPause() },
-                        onLongPress = { onLongPress() }
-                    )
-                },
+                    detectTapGestures(onTap = { onPlayPause() })
+                }
+                .styleWheelHold(styleWheel),
             contentAlignment = Alignment.Center
         ) {
             val artModel = currentSong?.highResThumbnailUrl

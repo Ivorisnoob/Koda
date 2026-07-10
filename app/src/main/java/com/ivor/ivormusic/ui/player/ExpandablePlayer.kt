@@ -1,6 +1,7 @@
 package com.ivor.ivormusic.ui.player
 
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -16,6 +17,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -64,10 +66,11 @@ fun ExpandablePlayer(
 
     // Long-pressing the artwork in any style summons the style wheel; it
     // lives here, above whichever style is active, so the player can morph
-    // live underneath it.
-    var showStyleWheel by remember { mutableStateOf(false) }
+    // live underneath it. The controller streams the hold-drag-release
+    // gesture from the artwork into the wheel.
+    val styleWheel = rememberPlayerStyleWheelController()
     LaunchedEffect(isExpanded) {
-        if (!isExpanded) showStyleWheel = false
+        if (!isExpanded) styleWheel.dismiss()
     }
 
     val configuration = LocalConfiguration.current
@@ -253,6 +256,22 @@ fun ExpandablePlayer(
                             .height(expandedHeight)
                             .graphicsLayer { alpha = fullAlpha }
                     ) {
+                        // The live player blurs beneath the style wheel.
+                        val wheelBlur by animateDpAsState(
+                            targetValue = if (styleWheel.isOpen) 24.dp else 0.dp,
+                            animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
+                            label = "StyleWheelBlur"
+                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .then(if (wheelBlur > 0.5.dp) Modifier.blur(wheelBlur) else Modifier)
+                        ) {
+                        // Any artwork can host the wheel's hold gesture
+                        // through this local, without per-style plumbing.
+                        CompositionLocalProvider(
+                            LocalPlayerStyleWheelController provides styleWheel
+                        ) {
                         // Crossfade makes a live style swap (from the style
                         // wheel or Settings) a soft morph instead of a cut.
                         Crossfade(
@@ -269,8 +288,7 @@ fun ExpandablePlayer(
                                     onLoadMore = {
                                         viewModel.loadMoreRecommendations()
                                     },
-                                    onArtistClick = onArtistClick,
-                                    onRequestStyleSwitcher = { showStyleWheel = true }
+                                    onArtistClick = onArtistClick
                                 )
                             }
                             PlayerStyle.GESTURE -> {
@@ -281,8 +299,7 @@ fun ExpandablePlayer(
                                     onLoadMore = {
                                         viewModel.loadMoreRecommendations()
                                     },
-                                    onArtistClick = onArtistClick,
-                                    onRequestStyleSwitcher = { showStyleWheel = true }
+                                    onArtistClick = onArtistClick
                                 )
                             }
                             PlayerStyle.EDITORIAL -> {
@@ -293,8 +310,7 @@ fun ExpandablePlayer(
                                     onLoadMore = {
                                         viewModel.loadMoreRecommendations()
                                     },
-                                    onArtistClick = onArtistClick,
-                                    onRequestStyleSwitcher = { showStyleWheel = true }
+                                    onArtistClick = onArtistClick
                                 )
                             }
                             PlayerStyle.POSTER -> {
@@ -305,8 +321,7 @@ fun ExpandablePlayer(
                                     onLoadMore = {
                                         viewModel.loadMoreRecommendations()
                                     },
-                                    onArtistClick = onArtistClick,
-                                    onRequestStyleSwitcher = { showStyleWheel = true }
+                                    onArtistClick = onArtistClick
                                 )
                             }
                             PlayerStyle.BENTO -> {
@@ -317,8 +332,7 @@ fun ExpandablePlayer(
                                     onLoadMore = {
                                         viewModel.loadMoreRecommendations()
                                     },
-                                    onArtistClick = onArtistClick,
-                                    onRequestStyleSwitcher = { showStyleWheel = true }
+                                    onArtistClick = onArtistClick
                                 )
                             }
                             PlayerStyle.STICKER -> {
@@ -329,8 +343,7 @@ fun ExpandablePlayer(
                                     onLoadMore = {
                                         viewModel.loadMoreRecommendations()
                                     },
-                                    onArtistClick = onArtistClick,
-                                    onRequestStyleSwitcher = { showStyleWheel = true }
+                                    onArtistClick = onArtistClick
                                 )
                             }
                             PlayerStyle.MORPH -> {
@@ -341,8 +354,7 @@ fun ExpandablePlayer(
                                     onLoadMore = {
                                         viewModel.loadMoreRecommendations()
                                     },
-                                    onArtistClick = onArtistClick,
-                                    onRequestStyleSwitcher = { showStyleWheel = true }
+                                    onArtistClick = onArtistClick
                                 )
                             }
                             PlayerStyle.DIAL -> {
@@ -353,22 +365,24 @@ fun ExpandablePlayer(
                                     onLoadMore = {
                                         viewModel.loadMoreRecommendations()
                                     },
-                                    onArtistClick = onArtistClick,
-                                    onRequestStyleSwitcher = { showStyleWheel = true }
+                                    onArtistClick = onArtistClick
                                 )
                             }
                         }
                         }
+                        }
+                        }
 
                         androidx.compose.animation.AnimatedVisibility(
-                            visible = showStyleWheel,
+                            visible = styleWheel.isOpen,
                             enter = fadeIn(MaterialTheme.motionScheme.fastEffectsSpec()),
                             exit = fadeOut(MaterialTheme.motionScheme.fastEffectsSpec())
                         ) {
                             PlayerStyleWheel(
                                 currentStyle = playerStyle,
+                                controller = styleWheel,
                                 onStyleSelected = onPlayerStyleChange,
-                                onDismiss = { showStyleWheel = false }
+                                onDismiss = { styleWheel.dismiss() }
                             )
                         }
                     }

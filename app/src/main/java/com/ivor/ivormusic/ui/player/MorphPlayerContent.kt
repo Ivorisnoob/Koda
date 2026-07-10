@@ -119,8 +119,7 @@ fun MorphPlayerSheetContent(
     ambientBackground: Boolean = true,
     onCollapse: () -> Unit,
     onLoadMore: () -> Unit = {},
-    onArtistClick: (String) -> Unit = {},
-    onRequestStyleSwitcher: () -> Unit = {}
+    onArtistClick: (String) -> Unit = {}
 ) {
     BackHandler(enabled = true) { onCollapse() }
 
@@ -263,7 +262,6 @@ fun MorphPlayerSheetContent(
                                     onPlayPause = { viewModel.togglePlayPause() },
                                     onNext = { viewModel.skipToNext() },
                                     onPrevious = { viewModel.skipToPrevious() },
-                                    onLongPress = onRequestStyleSwitcher,
                                     ringColor = primaryColor,
                                     ringTrackColor = onSurfaceVariantColor.copy(alpha = 0.2f)
                                 )
@@ -481,7 +479,6 @@ private fun MorphHero(
     onPlayPause: () -> Unit,
     onNext: () -> Unit,
     onPrevious: () -> Unit,
-    onLongPress: () -> Unit,
     ringColor: Color,
     ringTrackColor: Color
 ) {
@@ -568,7 +565,7 @@ private fun MorphHero(
     val currentOnNext by rememberUpdatedState(onNext)
     val currentOnPrevious by rememberUpdatedState(onPrevious)
     val currentOnPlayPause by rememberUpdatedState(onPlayPause)
-    val currentOnLongPress by rememberUpdatedState(onLongPress)
+    val styleWheel = LocalPlayerStyleWheelController.current
 
     BoxWithConstraints(
         modifier = Modifier.fillMaxSize(),
@@ -599,10 +596,7 @@ private fun MorphHero(
                 .clip(heroShape)
                 .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                 .pointerInput(Unit) {
-                    detectTapGestures(
-                        onTap = { currentOnPlayPause() },
-                        onLongPress = { currentOnLongPress() }
-                    )
+                    detectTapGestures(onTap = { currentOnPlayPause() })
                 }
                 .pointerInput(Unit) {
                     detectHorizontalDragGestures(
@@ -629,7 +623,10 @@ private fun MorphHero(
                             scope.launch { dragX.animateTo(0f, spring()) }
                         }
                     )
-                },
+                }
+                // Last in the chain: consumes the post-long-press hold
+                // stream before the tap and skip-drag detectors see it.
+                .styleWheelHold(styleWheel),
             contentAlignment = Alignment.Center
         ) {
             val artModel = currentSong?.highResThumbnailUrl

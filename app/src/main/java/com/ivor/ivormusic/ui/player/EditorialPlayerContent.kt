@@ -127,8 +127,7 @@ fun EditorialPlayerSheetContent(
     ambientBackground: Boolean = true,
     onCollapse: () -> Unit,
     onLoadMore: () -> Unit = {},
-    onArtistClick: (String) -> Unit = {},
-    onRequestStyleSwitcher: () -> Unit = {}
+    onArtistClick: (String) -> Unit = {}
 ) {
     BackHandler(enabled = true) { onCollapse() }
 
@@ -202,7 +201,6 @@ fun EditorialPlayerSheetContent(
                     onShowQueue = { showQueue = true },
                     onShowAddToPlaylist = { showAddToPlaylist = true },
                     onArtistClick = onArtistClick,
-                    onRequestStyleSwitcher = onRequestStyleSwitcher,
                     field = field,
                     accent = accent
                 )
@@ -256,7 +254,6 @@ private fun EditorialNowPlayingView(
     onShowQueue: () -> Unit,
     onShowAddToPlaylist: () -> Unit,
     onArtistClick: (String) -> Unit,
-    onRequestStyleSwitcher: () -> Unit,
     field: Color,
     accent: Color
 ) {
@@ -324,7 +321,6 @@ private fun EditorialNowPlayingView(
                         currentSong = currentSong,
                         isPlaying = isPlaying,
                         onTap = onPlayPause,
-                        onLongPress = onRequestStyleSwitcher,
                         accent = accent,
                         field = field
                     )
@@ -607,10 +603,10 @@ private fun EditorialDieCutArt(
     currentSong: Song?,
     isPlaying: Boolean,
     onTap: () -> Unit,
-    onLongPress: () -> Unit,
     accent: Color,
     field: Color
 ) {
+    val styleWheel = LocalPlayerStyleWheelController.current
     val dieCuts = remember {
         listOf(
             MaterialShapes.Flower,
@@ -673,11 +669,9 @@ private fun EditorialDieCutArt(
                 .clip(dieCutShape)
                 .background(accent)
                 .pointerInput(Unit) {
-                    detectTapGestures(
-                        onTap = { onTap() },
-                        onLongPress = { onLongPress() }
-                    )
-                },
+                    detectTapGestures(onTap = { onTap() })
+                }
+                .styleWheelHold(styleWheel),
             contentAlignment = Alignment.Center
         ) {
             val artModel = currentSong?.highResThumbnailUrl
