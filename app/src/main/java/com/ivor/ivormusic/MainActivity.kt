@@ -58,6 +58,7 @@ class MainActivity : ComponentActivity() {
             val playerStyle by themeViewModel.playerStyle.collectAsState()
             val saveVideoHistory by themeViewModel.saveVideoHistory.collectAsState()
             val timedCommentsEnabled by themeViewModel.timedCommentsEnabled.collectAsState()
+            val shortsEnabled by themeViewModel.shortsEnabled.collectAsState()
             val defaultVideoQuality by themeViewModel.defaultVideoQuality.collectAsState()
             val excludedFolders by themeViewModel.excludedFolders.collectAsState()
             val oemFixEnabled by themeViewModel.oemFixEnabled.collectAsState()
@@ -105,6 +106,8 @@ class MainActivity : ComponentActivity() {
                         onSaveVideoHistoryToggle = { themeViewModel.setSaveVideoHistory(it) },
                         timedCommentsEnabled = timedCommentsEnabled,
                         onTimedCommentsToggle = { themeViewModel.setTimedCommentsEnabled(it) },
+                        shortsEnabled = shortsEnabled,
+                        onShortsEnabledToggle = { themeViewModel.setShortsEnabled(it) },
                         defaultVideoQuality = defaultVideoQuality,
                         onDefaultVideoQualityChange = { themeViewModel.setDefaultVideoQuality(it) },
                         excludedFolders = excludedFolders,
@@ -157,6 +160,8 @@ fun MusicApp(
     onSaveVideoHistoryToggle: (Boolean) -> Unit,
     timedCommentsEnabled: Boolean,
     onTimedCommentsToggle: (Boolean) -> Unit,
+    shortsEnabled: Boolean,
+    onShortsEnabledToggle: (Boolean) -> Unit,
     defaultVideoQuality: String,
     onDefaultVideoQualityChange: (String) -> Unit,
     excludedFolders: Set<String>,
@@ -215,6 +220,8 @@ fun MusicApp(
                     onVideoModeToggle = onVideoModeToggle,
                     homeModeToggleEnabled = homeModeToggleEnabled,
                     onHomeModeToggleEnabledChange = onHomeModeToggleEnabledChange,
+                    shortsEnabled = shortsEnabled,
+                    onShortsEnabledToggle = onShortsEnabledToggle,
                     playerStyle = playerStyle,
                     onPlayerStyleChange = onPlayerStyleChange,
                     crossfadeEnabled = crossfadeEnabled,
@@ -253,6 +260,7 @@ fun MusicApp(
                         videoPlayerViewModel.exoPlayer?.pause()
                         shortsPlayerViewModel.open(shorts, index)
                     },
+                    shortsEnabled = shortsEnabled,
                     loadLocalSongs = loadLocalSongs,
                     excludedFolders = excludedFolders,
                     ambientBackground = ambientBackground,
@@ -290,6 +298,8 @@ fun MusicApp(
                     onSaveVideoHistoryToggle = onSaveVideoHistoryToggle,
                     timedCommentsEnabled = timedCommentsEnabled,
                     onTimedCommentsToggle = onTimedCommentsToggle,
+                    shortsEnabled = shortsEnabled,
+                    onShortsEnabledToggle = onShortsEnabledToggle,
                     defaultVideoQuality = defaultVideoQuality,
                     onDefaultVideoQualityChange = onDefaultVideoQualityChange,
                     excludedFolders = excludedFolders,

@@ -45,6 +45,7 @@ import androidx.compose.material.icons.automirrored.rounded.Comment
 import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.AccountCircle
+import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Animation
 import androidx.compose.material.icons.rounded.CheckCircle
@@ -198,6 +199,8 @@ fun SettingsScreen(
     onSaveVideoHistoryToggle: (Boolean) -> Unit,
     timedCommentsEnabled: Boolean,
     onTimedCommentsToggle: (Boolean) -> Unit,
+    shortsEnabled: Boolean,
+    onShortsEnabledToggle: (Boolean) -> Unit,
     defaultVideoQuality: String,
     onDefaultVideoQualityChange: (String) -> Unit,
     excludedFolders: Set<String>,
@@ -709,6 +712,16 @@ fun SettingsScreen(
                         ExpressiveTimedCommentsToggleItem(
                             enabled = timedCommentsEnabled,
                             onToggle = onTimedCommentsToggle,
+                            textColor = textColor,
+                            secondaryTextColor = secondaryTextColor,
+                            accentColor = accentColor
+                        )
+
+                        SettingsDivider()
+
+                        ExpressiveShortsToggleItem(
+                            enabled = shortsEnabled,
+                            onToggle = onShortsEnabledToggle,
                             textColor = textColor,
                             secondaryTextColor = secondaryTextColor,
                             accentColor = accentColor
@@ -1583,6 +1596,95 @@ private fun ExpressiveTimedCommentsToggleItem(
             Text(
                 text = if (enabled) "Timestamped comments briefly appear over videos" else "Adds a comments button to the video player",
                 color = secondaryTextColor,
+                fontSize = 13.sp
+            )
+        }
+
+        // Switch
+        Switch(
+            checked = enabled,
+            onCheckedChange = onToggle,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Color.White,
+                checkedTrackColor = accentColor,
+                uncheckedThumbColor = Color.White,
+                uncheckedTrackColor = secondaryTextColor.copy(alpha = 0.3f),
+                uncheckedBorderColor = Color.Transparent,
+                checkedBorderColor = Color.Transparent
+            )
+        )
+    }
+}
+
+/**
+ * Opt-in toggle for YouTube Shorts, off by default. The subtitle carries a
+ * deliberate warning: short-form feeds are engineered to be compulsive, so
+ * the user should choose them consciously rather than get them by default.
+ */
+@Composable
+private fun ExpressiveShortsToggleItem(
+    enabled: Boolean,
+    onToggle: (Boolean) -> Unit,
+    textColor: Color,
+    secondaryTextColor: Color,
+    accentColor: Color
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.97f else 1f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
+        label = "scale"
+    )
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .scale(scale)
+            .clip(RoundedCornerShape(18.dp))
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null
+            ) { onToggle(!enabled) }
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Icon
+        Box(
+            modifier = Modifier
+                .size(48.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(accentColor.copy(alpha = 0.12f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Bolt,
+                contentDescription = null,
+                tint = accentColor,
+                modifier = Modifier.size(26.dp)
+            )
+        }
+
+        Spacer(modifier = Modifier.width(16.dp))
+
+        // Text
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "Shorts",
+                color = textColor,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = if (enabled) {
+                    "Shorts shelf shown in video mode. Mind your screen time"
+                } else {
+                    "Off by default. Endless short-form feeds are designed to keep you scrolling"
+                },
+                color = if (enabled) MaterialTheme.colorScheme.error.copy(alpha = 0.9f)
+                    else secondaryTextColor,
                 fontSize = 13.sp
             )
         }

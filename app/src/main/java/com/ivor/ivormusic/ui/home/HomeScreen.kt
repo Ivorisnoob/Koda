@@ -145,6 +145,7 @@ fun HomeScreen(
     onNavigateToUpdate: () -> Unit = {},
     onNavigateToVideoPlayer: (VideoItem) -> Unit = {},
     onOpenShorts: (List<com.ivor.ivormusic.data.ShortsItem>, Int) -> Unit = { _, _ -> },
+    shortsEnabled: Boolean = false,
     loadLocalSongs: Boolean = true,
     excludedFolders: Set<String> = emptySet(),
     ambientBackground: Boolean = true,
@@ -215,6 +216,14 @@ fun HomeScreen(
     LaunchedEffect(videoMode) {
         if (videoMode) {
             viewModel.loadTrendingVideos()
+        }
+    }
+
+    // Fetch the Shorts shelf when the user opts in mid-session (the load
+    // itself also gates on the preference)
+    LaunchedEffect(videoMode, shortsEnabled) {
+        if (videoMode && shortsEnabled) {
+            viewModel.loadShortsFeed()
         }
     }
 
@@ -326,7 +335,7 @@ fun HomeScreen(
                                         // Navigate to video player screen
                                         onNavigateToVideoPlayer(video)
                                     },
-                                    shorts = shortsFeed,
+                                    shorts = if (shortsEnabled) shortsFeed else emptyList(),
                                     onShortClick = { index -> onOpenShorts(shortsFeed, index) },
                                     onProfileClick = onProfileClick,
                                     onSettingsClick = onNavigateToSettings,

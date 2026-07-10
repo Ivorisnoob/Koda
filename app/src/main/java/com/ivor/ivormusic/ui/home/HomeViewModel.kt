@@ -28,6 +28,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val searchHistoryRepository = com.ivor.ivormusic.data.SearchHistoryRepository(application)
     private val recommendationEngine = com.ivor.ivormusic.data.RecommendationEngine(application, youtubeRepository)
     private val videoHistoryRepository = com.ivor.ivormusic.data.VideoHistoryRepository(application)
+    private val themePreferences = com.ivor.ivormusic.data.ThemePreferences(application)
 
     private val _songs = MutableStateFlow<List<Song>>(emptyList())
     val songs: StateFlow<List<Song>> = _songs.asStateFlow()
@@ -558,9 +559,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     /**
      * Load the Shorts shelf (personalized when logged in, search-seeded
-     * otherwise). Failures leave the previous shelf in place.
+     * otherwise). No-op unless the user opted into Shorts — fresh pref read,
+     * since the settings screen toggles through its own ThemePreferences
+     * instance. Failures leave the previous shelf in place.
      */
     fun loadShortsFeed() {
+        if (!themePreferences.isShortsEnabled()) return
         viewModelScope.launch {
             try {
                 val shorts = youtubeRepository.getShortsFeed()
