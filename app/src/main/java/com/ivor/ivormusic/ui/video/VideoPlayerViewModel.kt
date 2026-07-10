@@ -3,6 +3,8 @@ package com.ivor.ivormusic.ui.video
 import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.media3.common.AudioAttributes
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.Player
@@ -149,8 +151,18 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             .setPrioritizeTimeOverSizeThresholds(true)
             .build()
 
-        // Initialize ExoPlayer
-        _exoPlayer = ExoPlayer.Builder(context).setLoadControl(loadControl).build().apply {
+        // Initialize ExoPlayer.
+        // WAKE_MODE_NETWORK holds CPU + WiFi locks while playing: without it,
+        // locking the screen lets the device sleep, the network stalls, the
+        // buffer drains and playback dies in a stuck-buffering state.
+        // Audio focus + becoming-noisy mirror MusicService, so video playback
+        // pauses the music player (and vice versa) instead of playing over it.
+        _exoPlayer = ExoPlayer.Builder(context)
+            .setLoadControl(loadControl)
+            .setWakeMode(C.WAKE_MODE_NETWORK)
+            .setAudioAttributes(AudioAttributes.DEFAULT, true)
+            .setHandleAudioBecomingNoisy(true)
+            .build().apply {
             playWhenReady = true
             addListener(object : Player.Listener {
                 override fun onIsPlayingChanged(isPlaying: Boolean) {

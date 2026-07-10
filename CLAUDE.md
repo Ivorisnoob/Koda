@@ -15,6 +15,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 .\gradlew assembleRelease        # needs KEYSTORE_PASSWORD / KEY_ALIAS / KEY_PASSWORD env vars
 ```
 
+- **Never compile or build (any `gradlew`/`gradle` invocation) unless the user explicitly asks for it.** Finish the code changes and stop — the user decides when to build.
 - There is no meaningful test suite (only the template instrumented test). Verification = compile + run on emulator.
 - Emulator: `emulator -avd Pixel_8_API36` (tools are on PATH), then `adb wait-for-device`. `Agents.md` documents an older `E:\sdk` setup — the current SDK lives at `E:\Android\Sdk`.
 - Version bumps happen in `app/build.gradle.kts` (`versionCode` / `versionName`). Dependency versions live only in `gradle/libs.versions.toml`.

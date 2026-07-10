@@ -62,6 +62,21 @@ fun VideoPlayerOverlay(
 
     if (currentVideo == null) return
 
+    // Keep the screen awake while a video is actually playing (mini, full or
+    // fullscreen). Cleared when paused, when the player closes, or in system
+    // PiP (the PiP window should not block the lock screen timeout).
+    DisposableEffect(isPlaying, isInPipMode) {
+        val window = activity?.window
+        if (isPlaying && !isInPipMode) {
+            window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } else {
+            window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+        onDispose {
+            window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+    }
+
     // Update PiP Params (Active when video is present)
     val packageName = context.packageName
     val pipPlayAction = "$packageName.PIP_PLAY"
