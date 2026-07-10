@@ -308,6 +308,17 @@ fun ExpandablePlayer(
                                     onArtistClick = onArtistClick
                                 )
                             }
+                            PlayerStyle.MORPH -> {
+                                MorphPlayerSheetContent(
+                                    viewModel = viewModel,
+                                    ambientBackground = ambientBackground,
+                                    onCollapse = { onExpandChange(false) },
+                                    onLoadMore = {
+                                        viewModel.loadMoreRecommendations()
+                                    },
+                                    onArtistClick = onArtistClick
+                                )
+                            }
                         }
                     }
                 }

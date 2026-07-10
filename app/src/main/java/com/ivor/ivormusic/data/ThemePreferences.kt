@@ -491,5 +491,7 @@ enum class PlayerStyle {
     /** Squish grid of flat tonal tiles with press physics */
     BENTO,
     /** Die-cut sticker with drag, peel and squash-and-stretch physics */
-    STICKER
+    STICKER,
+    /** Living hero shape that cycles organic cuts while playing */
+    MORPH
 }
