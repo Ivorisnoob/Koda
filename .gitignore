@@ -16,3 +16,6 @@ local.properties
 keystore/
 # Claude Code local artifacts
 .claude/
+
+# Kotlin build session data
+.kotlin/

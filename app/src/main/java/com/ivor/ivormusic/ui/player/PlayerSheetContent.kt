@@ -9,6 +9,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -65,7 +66,8 @@ fun PlayerSheetContent(
     ambientBackground: Boolean = true,
     onCollapse: () -> Unit,
     onLoadMore: () -> Unit = {},
-    onArtistClick: (String) -> Unit = {}
+    onArtistClick: (String) -> Unit = {},
+    onRequestStyleSwitcher: () -> Unit = {}
 ) {
     // Handle back press to collapse player instead of quitting app
     BackHandler(enabled = true) {
@@ -162,6 +164,7 @@ fun PlayerSheetContent(
                     onShowQueue = { showQueue = true },
                     onShowAddToPlaylist = { showAddToPlaylist = true },
                     onArtistClick = onArtistClick,
+                    onRequestStyleSwitcher = onRequestStyleSwitcher,
                     viewModel = viewModel,
                     primaryColor = primaryColor,
                     primaryContainerColor = primaryContainerColor,
@@ -219,6 +222,7 @@ private fun ExpressiveNowPlayingView(
     onShowQueue: () -> Unit,
     onShowAddToPlaylist: () -> Unit,
     onArtistClick: (String) -> Unit,
+    onRequestStyleSwitcher: () -> Unit,
     viewModel: PlayerViewModel,
     primaryColor: Color,
     primaryContainerColor: Color,
@@ -385,7 +389,13 @@ private fun ExpressiveNowPlayingView(
                         Box(contentAlignment = Alignment.Center) {
                             // Main album art container with expressive squircle shape
                             Surface(
-                                modifier = Modifier.size(albumSize),
+                                modifier = Modifier
+                                    .size(albumSize)
+                                    .pointerInput(Unit) {
+                                        detectTapGestures(
+                                            onLongPress = { onRequestStyleSwitcher() }
+                                        )
+                                    },
                                 shape = RoundedCornerShape(cornerRadius),
                                 color = MaterialTheme.colorScheme.surfaceContainerHigh
                             ) {

@@ -73,7 +73,8 @@ fun GesturePlayerSheetContent(
     ambientBackground: Boolean = true,
     onCollapse: () -> Unit,
     onLoadMore: () -> Unit = {},
-    onArtistClick: (String) -> Unit = {}
+    onArtistClick: (String) -> Unit = {},
+    onRequestStyleSwitcher: () -> Unit = {}
 ) {
     BackHandler(enabled = true) {
         onCollapse()
@@ -166,6 +167,7 @@ fun GesturePlayerSheetContent(
                     onSleepTimerClick = { showSleepTimerDialog = true },
                     onPlayPauseToggle = { viewModel.togglePlayPause() },
                     onSongChange = { song -> viewModel.skipToSong(song) },
+                    onRequestStyleSwitcher = onRequestStyleSwitcher,
 
                     isDownloaded = currentSong?.let { viewModel.isDownloaded(it.id) } ?: false,
                     isDownloading = currentSong?.let { viewModel.isDownloading(it.id) } ?: false,
@@ -235,6 +237,7 @@ private fun GestureNowPlayingView(
     onSleepTimerClick: () -> Unit,
     onPlayPauseToggle: () -> Unit,
     onSongChange: (Song) -> Unit,
+    onRequestStyleSwitcher: () -> Unit,
     isDownloaded: Boolean,
     isDownloading: Boolean,
     isLocalOriginal: Boolean,
@@ -418,7 +421,8 @@ private fun GestureNowPlayingView(
                                         isPlaying = isPlaying,
                                         isBuffering = isBuffering,
                                         onPlayPauseToggle = onPlayPauseToggle,
-                                        onSongChange = onSongChange
+                                        onSongChange = onSongChange,
+                                        onLongPress = onRequestStyleSwitcher
                                     )
                                 } else if (currentSong != null) {
                                     // Single album art
@@ -426,7 +430,8 @@ private fun GestureNowPlayingView(
                                         song = currentSong,
                                         isPlaying = isPlaying,
                                         isBuffering = isBuffering,
-                                        onPlayPauseToggle = onPlayPauseToggle
+                                        onPlayPauseToggle = onPlayPauseToggle,
+                                        onLongPress = onRequestStyleSwitcher
                                     )
                                 }
                             }
@@ -717,7 +722,8 @@ private fun SwipeableAlbumCarousel(
     isPlaying: Boolean,
     isBuffering: Boolean,
     onPlayPauseToggle: () -> Unit,
-    onSongChange: (Song) -> Unit
+    onSongChange: (Song) -> Unit,
+    onLongPress: () -> Unit = {}
 ) {
     // The carousel position as a continuous float
     // Position 0 = first song centered, Position 1 = second song centered, etc.
@@ -853,7 +859,10 @@ private fun SwipeableAlbumCarousel(
                             .then(
                                 if (isCentered) {
                                     Modifier.pointerInput(Unit) {
-                                        detectTapGestures(onTap = { onPlayPauseToggle() })
+                                        detectTapGestures(
+                                            onTap = { onPlayPauseToggle() },
+                                            onLongPress = { onLongPress() }
+                                        )
                                     }
                                 } else Modifier
                             ),
@@ -945,7 +954,8 @@ private fun SingleAlbumArt(
     song: Song?,
     isPlaying: Boolean,
     isBuffering: Boolean,
-    onPlayPauseToggle: () -> Unit
+    onPlayPauseToggle: () -> Unit,
+    onLongPress: () -> Unit = {}
 ) {
     BoxWithConstraints(
         modifier = Modifier.fillMaxSize(),
@@ -965,7 +975,10 @@ private fun SingleAlbumArt(
             modifier = Modifier
                 .size(albumSize)
                 .pointerInput(Unit) {
-                    detectTapGestures(onTap = { onPlayPauseToggle() })
+                    detectTapGestures(
+                        onTap = { onPlayPauseToggle() },
+                        onLongPress = { onLongPress() }
+                    )
                 },
             shape = RoundedCornerShape(cornerRadius),
             color = MaterialTheme.colorScheme.surfaceContainerHigh,

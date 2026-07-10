@@ -483,5 +483,17 @@ enum class PlayerStyle {
     /** Classic button-based player with play/pause/next/previous controls */
     CLASSIC,
     /** Gesture-based carousel player with swipe navigation */
-    GESTURE
+    GESTURE,
+    /** Two-tone magazine player with die-cut art and a word-pill transport */
+    EDITORIAL,
+    /** Kinetic type player where the title itself is the progress display */
+    POSTER,
+    /** Squish grid of flat tonal tiles with press physics */
+    BENTO,
+    /** Die-cut sticker with drag, peel and squash-and-stretch physics */
+    STICKER,
+    /** Living hero shape that cycles organic cuts while playing */
+    MORPH,
+    /** Rotary instrument: a tick-ring dial spun to scrub */
+    DIAL
 }

@@ -17,6 +17,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -44,6 +46,7 @@ import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Animation
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Close
@@ -52,15 +55,20 @@ import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.FolderOff
+import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Interests
 import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.Newspaper
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.PlayCircle
+import androidx.compose.material.icons.rounded.RadioButtonChecked
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.FlashOn
 import androidx.compose.material.icons.rounded.HighQuality
 import androidx.compose.material.icons.rounded.SwipeRight
+import androidx.compose.material.icons.rounded.TextFields
 import androidx.compose.material.icons.rounded.ToggleOn
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -82,6 +90,7 @@ import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
@@ -1581,7 +1590,25 @@ private fun ExpressiveSaveHistoryToggleItem(
     }
 }
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class)
+private data class PlayerStyleOption(
+    val style: PlayerStyle,
+    val label: String,
+    val subtitle: String,
+    val icon: androidx.compose.ui.graphics.vector.ImageVector
+)
+
+private val playerStyleOptions = listOf(
+    PlayerStyleOption(PlayerStyle.CLASSIC, "Classic", "Button controls for playback", Icons.Rounded.PlayCircle),
+    PlayerStyleOption(PlayerStyle.GESTURE, "Gesture", "Swipe album art to navigate", Icons.Rounded.SwipeRight),
+    PlayerStyleOption(PlayerStyle.EDITORIAL, "Editorial", "Two-tone magazine layout", Icons.Rounded.Newspaper),
+    PlayerStyleOption(PlayerStyle.POSTER, "Poster", "Kinetic type, title as progress", Icons.Rounded.TextFields),
+    PlayerStyleOption(PlayerStyle.BENTO, "Bento", "Squishy grid of flat tiles", Icons.Rounded.GridView),
+    PlayerStyleOption(PlayerStyle.STICKER, "Sticker", "Die-cut art with toy physics", Icons.Rounded.Interests),
+    PlayerStyleOption(PlayerStyle.MORPH, "Morph", "Living shape that breathes", Icons.Rounded.Animation),
+    PlayerStyleOption(PlayerStyle.DIAL, "Dial", "Rotary ring, spin to scrub", Icons.Rounded.RadioButtonChecked)
+)
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun ExpressivePlayerStyleSelectItem(
     currentStyle: PlayerStyle,
@@ -1590,8 +1617,9 @@ private fun ExpressivePlayerStyleSelectItem(
     secondaryTextColor: Color,
     accentColor: Color
 ) {
-    val options = listOf("Classic" to PlayerStyle.CLASSIC, "Gesture" to PlayerStyle.GESTURE)
-    
+    val current = playerStyleOptions.firstOrNull { it.style == currentStyle }
+        ?: playerStyleOptions.first()
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -1611,10 +1639,7 @@ private fun ExpressivePlayerStyleSelectItem(
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    imageVector = if (currentStyle == PlayerStyle.GESTURE) 
-                        Icons.Rounded.SwipeRight 
-                    else 
-                        Icons.Rounded.PlayCircle,
+                    imageVector = current.icon,
                     contentDescription = null,
                     tint = accentColor,
                     modifier = Modifier.size(26.dp)
@@ -1633,42 +1658,34 @@ private fun ExpressivePlayerStyleSelectItem(
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
-                    text = when (currentStyle) {
-                        PlayerStyle.CLASSIC -> "Button controls for playback"
-                        PlayerStyle.GESTURE -> "Swipe album art to navigate"
-                    },
+                    text = current.subtitle,
                     color = secondaryTextColor,
                     fontSize = 13.sp
                 )
             }
         }
-        
-        Spacer(modifier = Modifier.height(16.dp))
-        
-        // Segmented Button Row
-        SingleChoiceSegmentedButtonRow(
-            modifier = Modifier.fillMaxWidth()
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Wrapping chip grid - scales past the point where a segmented row
+        // stops fitting.
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            options.forEachIndexed { index, (label, style) ->
-                SegmentedButton(
-                    selected = currentStyle == style,
-                    onClick = { onStyleSelected(style) },
-                    shape = SegmentedButtonDefaults.itemShape(
-                        index = index,
-                        count = options.size
-                    ),
-                    icon = {
-                        SegmentedButtonDefaults.Icon(active = currentStyle == style) {
-                            Icon(
-                                imageVector = if (index == 0) Icons.Rounded.PlayCircle else Icons.Rounded.SwipeRight,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
+            playerStyleOptions.forEach { option ->
+                FilterChip(
+                    selected = currentStyle == option.style,
+                    onClick = { onStyleSelected(option.style) },
+                    label = { Text(option.label) },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = option.icon,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
                     }
-                ) {
-                    Text(label)
-                }
+                )
             }
         }
     }

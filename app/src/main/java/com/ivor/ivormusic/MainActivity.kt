@@ -248,6 +248,7 @@ fun MusicApp(
                     onVideoModeToggle = onVideoModeToggle,
                     showModeToggle = homeModeToggleEnabled,
                     playerStyle = playerStyle,
+                    onPlayerStyleChange = onPlayerStyleChange,
                     manualScan = manualScanEnabled
                 )
             }
