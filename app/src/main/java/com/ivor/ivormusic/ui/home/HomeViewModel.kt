@@ -28,6 +28,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val searchHistoryRepository = com.ivor.ivormusic.data.SearchHistoryRepository(application)
     private val recommendationEngine = com.ivor.ivormusic.data.RecommendationEngine(application, youtubeRepository)
     private val videoHistoryRepository = com.ivor.ivormusic.data.VideoHistoryRepository(application)
+    private val themePreferences = com.ivor.ivormusic.data.ThemePreferences(application)
 
     private val _songs = MutableStateFlow<List<Song>>(emptyList())
     val songs: StateFlow<List<Song>> = _songs.asStateFlow()
@@ -128,6 +129,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     
     private val _historyVideos = MutableStateFlow<List<VideoItem>>(emptyList())
     val historyVideos: StateFlow<List<VideoItem>> = _historyVideos.asStateFlow()
+
+    private val _shortsFeed = MutableStateFlow<List<com.ivor.ivormusic.data.ShortsItem>>(emptyList())
+    val shortsFeed: StateFlow<List<com.ivor.ivormusic.data.ShortsItem>> = _shortsFeed.asStateFlow()
     
     private val _isHistoryLoading = MutableStateFlow(false)
     val isHistoryLoading: StateFlow<Boolean> = _isHistoryLoading.asStateFlow()
@@ -534,8 +538,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     /**
      * Load trending/recommended videos for video mode home screen.
+     * Also refreshes the Shorts shelf in parallel.
      */
     fun loadTrendingVideos() {
+        loadShortsFeed()
         viewModelScope.launch {
             _isVideoLoading.value = true
             try {
@@ -547,6 +553,26 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 // Handle error silently
             } finally {
                 _isVideoLoading.value = false
+            }
+        }
+    }
+
+    /**
+     * Load the Shorts shelf (personalized when logged in, search-seeded
+     * otherwise). No-op unless the user opted into Shorts — fresh pref read,
+     * since the settings screen toggles through its own ThemePreferences
+     * instance. Failures leave the previous shelf in place.
+     */
+    fun loadShortsFeed() {
+        if (!themePreferences.isShortsEnabled()) return
+        viewModelScope.launch {
+            try {
+                val shorts = youtubeRepository.getShortsFeed()
+                if (shorts.isNotEmpty()) {
+                    _shortsFeed.value = shorts
+                }
+            } catch (e: Exception) {
+                // Keep whatever shelf we already have
             }
         }
     }

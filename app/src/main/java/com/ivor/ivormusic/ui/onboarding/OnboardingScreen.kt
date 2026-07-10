@@ -48,6 +48,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.rounded.Album
+import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.CloudSync
@@ -59,6 +60,7 @@ import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material.icons.rounded.ToggleOn
 import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material.icons.rounded.Videocam
 import androidx.compose.material.icons.rounded.Wallpaper
 import androidx.compose.material3.Button
@@ -131,6 +133,8 @@ fun OnboardingScreen(
     onVideoModeToggle: (Boolean) -> Unit,
     homeModeToggleEnabled: Boolean = true,
     onHomeModeToggleEnabledChange: (Boolean) -> Unit = {},
+    shortsEnabled: Boolean = false,
+    onShortsEnabledToggle: (Boolean) -> Unit = {},
     playerStyle: PlayerStyle,
     onPlayerStyleChange: (PlayerStyle) -> Unit,
     crossfadeEnabled: Boolean,
@@ -271,6 +275,8 @@ fun OnboardingScreen(
                         )
                         3 -> VideoModePage(
                             videoMode = videoMode,
+                            shortsEnabled = shortsEnabled,
+                            onShortsEnabledToggle = onShortsEnabledToggle,
                             onVideoModeToggle = onVideoModeToggle,
                             homeModeToggleEnabled = homeModeToggleEnabled,
                             onHomeModeToggleEnabledChange = onHomeModeToggleEnabledChange
@@ -569,7 +575,9 @@ private fun VideoModePage(
     videoMode: Boolean,
     onVideoModeToggle: (Boolean) -> Unit,
     homeModeToggleEnabled: Boolean,
-    onHomeModeToggleEnabledChange: (Boolean) -> Unit
+    onHomeModeToggleEnabledChange: (Boolean) -> Unit,
+    shortsEnabled: Boolean,
+    onShortsEnabledToggle: (Boolean) -> Unit
 ) {
     OnboardingPageScaffold(
         icon = Icons.Rounded.Videocam,
@@ -593,7 +601,49 @@ private fun VideoModePage(
             onCheckedChange = onHomeModeToggleEnabledChange
         )
 
+        SettingSwitchRow(
+            icon = Icons.Rounded.Bolt,
+            title = "Shorts",
+            subtitle = "A Shorts shelf and vertical swipe player in video mode",
+            checked = shortsEnabled,
+            onCheckedChange = onShortsEnabledToggle
+        )
+
+        ShortsWarningCard()
+
         HintText("Off keeps a cleaner, music-first layout. The video player stays available either way.")
+    }
+}
+
+/**
+ * Deliberate friction before enabling Shorts: endless short-form feeds are
+ * engineered to be compulsive, so Koda ships them off and warns before the
+ * user opts in.
+ */
+@Composable
+private fun ShortsWarningCard() {
+    Surface(
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.errorContainer,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.WarningAmber,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onErrorContainer,
+                modifier = Modifier.size(24.dp)
+            )
+            Spacer(modifier = Modifier.width(14.dp))
+            Text(
+                text = "Endless short-form feeds are designed to keep you scrolling. Shorts stay off unless you choose them, and you can turn them off again any time in Settings.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onErrorContainer
+            )
+        }
     }
 }
 

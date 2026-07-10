@@ -63,7 +63,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.material.icons.rounded.Bolt
+import androidx.compose.material3.MaterialShapes
+import androidx.compose.material3.carousel.HorizontalMultiBrowseCarousel
+import androidx.compose.material3.carousel.rememberCarouselState
+import androidx.compose.material3.toShape
 import coil.compose.AsyncImage
+import com.ivor.ivormusic.data.ShortsItem
 import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.ui.components.MusicVideoToggle
 import com.ivor.ivormusic.ui.components.MusicVideoToggleState
@@ -80,6 +86,8 @@ fun VideoHomeContent(
     videos: List<VideoItem>,
     isLoading: Boolean,
     onVideoClick: (VideoItem) -> Unit,
+    shorts: List<ShortsItem> = emptyList(),
+    onShortClick: (Int) -> Unit = {},
     onProfileClick: () -> Unit,
     onSettingsClick: () -> Unit,
     onDownloadsClick: () -> Unit = {},
@@ -197,8 +205,29 @@ fun VideoHomeContent(
                     }
                 }
                 
-                // Video cards
-                items(videos) { video ->
+                // Video cards, with the Shorts shelf slotted in after the
+                // first two like the YouTube home feed
+                val leadingVideos = if (shorts.isEmpty()) videos else videos.take(2)
+                val trailingVideos = if (shorts.isEmpty()) emptyList() else videos.drop(2)
+
+                items(leadingVideos) { video ->
+                    VideoCard(
+                        video = video,
+                        onClick = { onVideoClick(video) },
+                        modifier = Modifier.padding(horizontal = 16.dp)
+                    )
+                }
+
+                if (shorts.isNotEmpty()) {
+                    item {
+                        ShortsShelf(
+                            shorts = shorts,
+                            onShortClick = onShortClick
+                        )
+                    }
+                }
+
+                items(trailingVideos) { video ->
                     VideoCard(
                         video = video,
                         onClick = { onVideoClick(video) },
@@ -368,6 +397,115 @@ private fun VideoTopBarSection(
                     onVideoModeChange = onVideoModeToggle,
                     state = modeToggleState
                 )
+            }
+        }
+    }
+}
+
+/**
+ * Shorts shelf: an expressive bolt badge header plus the same
+ * MultiBrowseCarousel treatment the music home uses for albums — masked
+ * items that morph between sizes as they scroll. Tapping a card opens the
+ * fullscreen Shorts player.
+ */
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+fun ShortsShelf(
+    shorts: List<ShortsItem>,
+    onShortClick: (Int) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier = modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(38.dp)
+                    .clip(MaterialShapes.Cookie9Sided.toShape())
+                    .background(MaterialTheme.colorScheme.primaryContainer),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Bolt,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            Text(
+                text = "Shorts",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        val carouselState = rememberCarouselState { shorts.size }
+        HorizontalMultiBrowseCarousel(
+            state = carouselState,
+            preferredItemWidth = 160.dp,
+            itemSpacing = 8.dp,
+            contentPadding = PaddingValues(horizontal = 20.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(280.dp)
+        ) { index ->
+            val item = shorts[index]
+            Box(
+                modifier = Modifier
+                    .maskClip(MaterialTheme.shapes.large)
+                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                    .clickable { onShortClick(index) }
+            ) {
+                AsyncImage(
+                    model = item.portraitThumbnailUrl,
+                    contentDescription = item.title,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(96.dp)
+                        .align(Alignment.BottomCenter)
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.75f))
+                            )
+                        )
+                )
+
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(12.dp)
+                ) {
+                    if (item.title.isNotBlank()) {
+                        Text(
+                            text = item.title,
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color.White,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    if (item.viewCount.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = item.viewCount,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White.copy(alpha = 0.75f),
+                            maxLines = 1
+                        )
+                    }
+                }
             }
         }
     }

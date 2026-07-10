@@ -43,6 +43,9 @@ class ThemePreferences(context: Context) {
     private val _timedCommentsEnabled = MutableStateFlow(getTimedCommentsEnabledPreference())
     val timedCommentsEnabled: StateFlow<Boolean> = _timedCommentsEnabled.asStateFlow()
 
+    private val _shortsEnabled = MutableStateFlow(getShortsEnabledPreference())
+    val shortsEnabled: StateFlow<Boolean> = _shortsEnabled.asStateFlow()
+
     private val _defaultVideoQuality = MutableStateFlow(getDefaultVideoQualityPreference())
     val defaultVideoQuality: StateFlow<String> = _defaultVideoQuality.asStateFlow()
     
@@ -88,6 +91,7 @@ class ThemePreferences(context: Context) {
         private const val KEY_PLAYER_STYLE = "player_style"
         private const val KEY_SAVE_VIDEO_HISTORY = "save_video_history"
         private const val KEY_TIMED_COMMENTS_ENABLED = "timed_comments_enabled"
+        private const val KEY_SHORTS_ENABLED = "shorts_enabled"
         private const val KEY_DEFAULT_VIDEO_QUALITY = "default_video_quality"
 
         /** Sentinel meaning "highest available quality". */
@@ -333,6 +337,30 @@ class ThemePreferences(context: Context) {
      */
     fun toggleSaveVideoHistory() {
         setSaveVideoHistory(!_saveVideoHistory.value)
+    }
+
+    /**
+     * Get the stored Shorts preference. Defaults to false: short-form feeds
+     * are engineered to be compulsive, so Shorts stay hidden until the user
+     * deliberately opts in.
+     */
+    private fun getShortsEnabledPreference(): Boolean {
+        return prefs.getBoolean(KEY_SHORTS_ENABLED, false)
+    }
+
+    /**
+     * Fresh read of the Shorts preference straight from SharedPreferences —
+     * ViewModels hold their own ThemePreferences instances, so their StateFlow
+     * copy goes stale when the toggle flips through the settings screen.
+     */
+    fun isShortsEnabled(): Boolean = getShortsEnabledPreference()
+
+    /**
+     * Save Shorts preference and update the flow.
+     */
+    fun setShortsEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_SHORTS_ENABLED, enabled).apply()
+        _shortsEnabled.value = enabled
     }
 
     /**
