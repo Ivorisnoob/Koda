@@ -63,7 +63,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.material.icons.rounded.Bolt
+import androidx.compose.ui.draw.scale
 import coil.compose.AsyncImage
+import com.ivor.ivormusic.data.ShortsItem
 import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.ui.components.MusicVideoToggle
 import com.ivor.ivormusic.ui.components.MusicVideoToggleState
@@ -80,6 +88,8 @@ fun VideoHomeContent(
     videos: List<VideoItem>,
     isLoading: Boolean,
     onVideoClick: (VideoItem) -> Unit,
+    shorts: List<ShortsItem> = emptyList(),
+    onShortClick: (Int) -> Unit = {},
     onProfileClick: () -> Unit,
     onSettingsClick: () -> Unit,
     onDownloadsClick: () -> Unit = {},
@@ -197,8 +207,29 @@ fun VideoHomeContent(
                     }
                 }
                 
-                // Video cards
-                items(videos) { video ->
+                // Video cards, with the Shorts shelf slotted in after the
+                // first two like the YouTube home feed
+                val leadingVideos = if (shorts.isEmpty()) videos else videos.take(2)
+                val trailingVideos = if (shorts.isEmpty()) emptyList() else videos.drop(2)
+
+                items(leadingVideos) { video ->
+                    VideoCard(
+                        video = video,
+                        onClick = { onVideoClick(video) },
+                        modifier = Modifier.padding(horizontal = 16.dp)
+                    )
+                }
+
+                if (shorts.isNotEmpty()) {
+                    item {
+                        ShortsShelf(
+                            shorts = shorts,
+                            onShortClick = onShortClick
+                        )
+                    }
+                }
+
+                items(trailingVideos) { video ->
                     VideoCard(
                         video = video,
                         onClick = { onVideoClick(video) },
@@ -367,6 +398,133 @@ private fun VideoTopBarSection(
                     videoMode = videoMode,
                     onVideoModeChange = onVideoModeToggle,
                     state = modeToggleState
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Horizontal Shorts shelf: header with a bolt icon chip plus a row of
+ * portrait 9:16 cards. Tapping a card opens the fullscreen Shorts player.
+ */
+@Composable
+fun ShortsShelf(
+    shorts: List<ShortsItem>,
+    onShortClick: (Int) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier = modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Bolt,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+            Spacer(modifier = Modifier.width(10.dp))
+            Text(
+                text = "Shorts",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            itemsIndexed(shorts, key = { _, item -> item.videoId }) { index, item ->
+                ShortsCard(
+                    item = item,
+                    onClick = { onShortClick(index) }
+                )
+            }
+        }
+    }
+}
+
+/**
+ * One portrait Shorts card with a press-scale spring, bottom gradient and
+ * title/view-count overlay.
+ */
+@Composable
+private fun ShortsCard(
+    item: ShortsItem,
+    onClick: () -> Unit
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.95f else 1f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
+        label = "shortsCardScale"
+    )
+
+    Box(
+        modifier = Modifier
+            .width(150.dp)
+            .aspectRatio(9f / 16f)
+            .scale(scale)
+            .clip(RoundedCornerShape(16.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .clickable(interactionSource = interactionSource, indication = null, onClick = onClick)
+    ) {
+        AsyncImage(
+            model = item.portraitThumbnailUrl,
+            contentDescription = item.title,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop
+        )
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(96.dp)
+                .align(Alignment.BottomCenter)
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.75f))
+                    )
+                )
+        )
+
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(10.dp)
+        ) {
+            if (item.title.isNotBlank()) {
+                Text(
+                    text = item.title,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.White,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            if (item.viewCount.isNotBlank()) {
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = item.viewCount,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.White.copy(alpha = 0.75f),
+                    maxLines = 1
                 )
             }
         }

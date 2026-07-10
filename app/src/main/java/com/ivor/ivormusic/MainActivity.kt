@@ -192,7 +192,8 @@ fun MusicApp(
     val homeViewModel: HomeViewModel = viewModel()
     
     val videoPlayerViewModel: com.ivor.ivormusic.ui.video.VideoPlayerViewModel = viewModel()
-    
+    val shortsPlayerViewModel: com.ivor.ivormusic.ui.shorts.ShortsPlayerViewModel = viewModel()
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -245,6 +246,12 @@ fun MusicApp(
                     onNavigateToUpdate = { navController.navigate("update") },
                     onNavigateToVideoPlayer = { video ->
                         videoPlayerViewModel.playVideo(video)
+                    },
+                    onOpenShorts = { shorts, index ->
+                        // Shorts take over the screen; pause the video player
+                        // so the two ExoPlayers don't fight for audio focus
+                        videoPlayerViewModel.exoPlayer?.pause()
+                        shortsPlayerViewModel.open(shorts, index)
                     },
                     loadLocalSongs = loadLocalSongs,
                     excludedFolders = excludedFolders,
@@ -392,6 +399,11 @@ fun MusicApp(
         com.ivor.ivormusic.ui.video.VideoPlayerOverlay(
             viewModel = videoPlayerViewModel,
             timedCommentsEnabled = timedCommentsEnabled
+        )
+
+        // Shorts sit above everything, including the video player overlay
+        com.ivor.ivormusic.ui.shorts.ShortsPlayerOverlay(
+            viewModel = shortsPlayerViewModel
         )
     }
 }

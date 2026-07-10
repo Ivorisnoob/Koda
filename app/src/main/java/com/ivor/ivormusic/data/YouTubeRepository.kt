@@ -2532,6 +2532,147 @@ class YouTubeRepository(private val context: Context) {
     }
     
     // ============================================================
+    // YouTube Shorts (www.youtube.com): shelf feed + endless
+    // reel_watch_sequence pager. Shapes verified against the live
+    // API July 2026.
+    // ============================================================
+
+    /**
+     * Shorts for the video home shelf. Logged in: the personalized Shorts
+     * shelf inside the FEwhat_to_watch home response (postWatchApi signs the
+     * call, so the shelf matches the account's recommendations). Logged out
+     * or shelf missing: an InnerTube search seeded from local watch history,
+     * which surfaces the same shortsLockupViewModel items.
+     */
+    suspend fun getShortsFeed(): List<ShortsItem> = withContext(Dispatchers.IO) {
+        if (sessionManager.isLoggedIn()) {
+            try {
+                val body = org.json.JSONObject()
+                    .put("context", webContext())
+                    .put("browseId", "FEwhat_to_watch")
+                val raw = postWatchApi("browse", body)
+                if (raw != null) {
+                    val shorts = parseShortsLockups(org.json.JSONObject(raw))
+                    if (shorts.isNotEmpty()) return@withContext shorts
+                }
+                android.util.Log.w("YouTubeRepo", "No Shorts shelf on home, using search fallback")
+            } catch (e: Exception) {
+                android.util.Log.e("YouTubeRepo", "Shorts home shelf failed", e)
+            }
+        }
+        try {
+            val seedChannel = videoHistoryRepository.getHistory()
+                .firstOrNull { it.channelName.isNotBlank() && it.channelName != "Unknown Channel" }
+                ?.channelName
+            val query = seedChannel?.let { "$it shorts" } ?: "trending shorts"
+            val body = org.json.JSONObject()
+                .put("context", webContext())
+                .put("query", query)
+            val raw = postWatchApi("search", body) ?: return@withContext emptyList()
+            parseShortsLockups(org.json.JSONObject(raw))
+        } catch (e: Exception) {
+            android.util.Log.e("YouTubeRepo", "Shorts search fallback failed", e)
+            emptyList()
+        }
+    }
+
+    /**
+     * One page of the endless swipe feed from reel/reel_watch_sequence.
+     * [sequenceParams] is either a shelf item's seed params or the
+     * continuation token of a previous page (the endpoint accepts both in
+     * the same field). Signed calls return the personalized sequence.
+     * Entries carry no title/views — the player enriches the current Short
+     * from its watch-next call.
+     */
+    suspend fun getShortsSequence(sequenceParams: String): ShortsFeedPage = withContext(Dispatchers.IO) {
+        try {
+            val body = org.json.JSONObject()
+                .put("context", webContext())
+                .put("sequenceParams", sequenceParams)
+            val raw = postWatchApi("reel/reel_watch_sequence", body)
+                ?: return@withContext ShortsFeedPage(emptyList(), null)
+            val root = org.json.JSONObject(raw)
+
+            val items = mutableListOf<ShortsItem>()
+            val entries = root.optJSONArray("entries")
+            if (entries != null) {
+                for (i in 0 until entries.length()) {
+                    val reel = entries.optJSONObject(i)
+                        ?.optJSONObject("command")
+                        ?.optJSONObject("reelWatchEndpoint") ?: continue
+                    parseReelWatchEndpoint(reel)?.let { items.add(it) }
+                }
+            }
+            val continuation = root.optJSONObject("continuationEndpoint")
+                ?.optJSONObject("continuationCommand")
+                ?.optString("token")?.takeIf { it.isNotBlank() }
+            ShortsFeedPage(items, continuation)
+        } catch (e: Exception) {
+            android.util.Log.e("YouTubeRepo", "getShortsSequence failed", e)
+            ShortsFeedPage(emptyList(), null)
+        }
+    }
+
+    /** All shortsLockupViewModels of a response, deduped, in shelf order. */
+    private fun parseShortsLockups(root: org.json.JSONObject): List<ShortsItem> {
+        val lockups = mutableListOf<org.json.JSONObject>()
+        findObjectsByKey(root, "shortsLockupViewModel", lockups)
+        return lockups.mapNotNull { parseShortsLockup(it) }
+            .distinctBy { it.videoId }
+            .take(30)
+    }
+
+    /**
+     * shortsLockupViewModel: videoId + sequenceParams live in
+     * onTap.innertubeCommand.reelWatchEndpoint, title/views in
+     * overlayMetadata.primaryText/secondaryText, portrait thumbnail in the
+     * reelWatchEndpoint (1080x1920 frame0).
+     */
+    private fun parseShortsLockup(lockup: org.json.JSONObject): ShortsItem? {
+        return try {
+            val reel = lockup.optJSONObject("onTap")
+                ?.optJSONObject("innertubeCommand")
+                ?.optJSONObject("reelWatchEndpoint") ?: return null
+            val base = parseReelWatchEndpoint(reel) ?: return null
+
+            val overlay = lockup.optJSONObject("overlayMetadata")
+            val title = overlay?.optJSONObject("primaryText")?.optString("content")
+                ?.takeIf { it.isNotBlank() } ?: ""
+            val viewCount = overlay?.optJSONObject("secondaryText")?.optString("content")
+                ?.takeIf { it.isNotBlank() } ?: ""
+
+            // Prefer the lockup's own thumbnailViewModel (sized variants) over
+            // the reel endpoint's single 1080x1920 frame
+            val sources = lockup.optJSONObject("thumbnailViewModel")
+                ?.optJSONObject("image")?.optJSONArray("sources")
+            val lockupThumb = sources?.optJSONObject(sources.length() - 1)
+                ?.optString("url")?.takeIf { it.isNotBlank() }
+
+            base.copy(
+                title = title,
+                viewCount = viewCount,
+                thumbnailUrl = lockupThumb ?: base.thumbnailUrl
+            )
+        } catch (e: Exception) {
+            android.util.Log.w("YouTubeRepo", "parseShortsLockup failed", e)
+            null
+        }
+    }
+
+    /** reelWatchEndpoint: videoId, portrait thumbnail and sequence seed. */
+    private fun parseReelWatchEndpoint(reel: org.json.JSONObject): ShortsItem? {
+        val videoId = reel.optString("videoId").takeIf { it.length == 11 } ?: return null
+        val thumbs = reel.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
+        val thumbnailUrl = thumbs?.optJSONObject(0)?.optString("url")
+            ?.takeIf { it.isNotBlank() }
+        return ShortsItem(
+            videoId = videoId,
+            thumbnailUrl = thumbnailUrl,
+            sequenceParams = reel.optString("sequenceParams").takeIf { it.isNotBlank() }
+        )
+    }
+
+    // ============================================================
     // Video library (www.youtube.com): user playlists, Watch Later,
     // Liked videos. Shapes verified against the live API July 2026.
     // ============================================================

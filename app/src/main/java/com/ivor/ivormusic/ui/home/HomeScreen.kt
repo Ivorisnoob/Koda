@@ -144,6 +144,7 @@ fun HomeScreen(
     onNavigateToStats: () -> Unit = {},
     onNavigateToUpdate: () -> Unit = {},
     onNavigateToVideoPlayer: (VideoItem) -> Unit = {},
+    onOpenShorts: (List<com.ivor.ivormusic.data.ShortsItem>, Int) -> Unit = { _, _ -> },
     loadLocalSongs: Boolean = true,
     excludedFolders: Set<String> = emptySet(),
     ambientBackground: Boolean = true,
@@ -208,6 +209,7 @@ fun HomeScreen(
     // Video mode state
     val trendingVideos by viewModel.trendingVideos.collectAsState()
     val isVideoLoading by viewModel.isVideoLoading.collectAsState()
+    val shortsFeed by viewModel.shortsFeed.collectAsState()
     
     // Load videos when video mode is enabled
     LaunchedEffect(videoMode) {
@@ -324,6 +326,8 @@ fun HomeScreen(
                                         // Navigate to video player screen
                                         onNavigateToVideoPlayer(video)
                                     },
+                                    shorts = shortsFeed,
+                                    onShortClick = { index -> onOpenShorts(shortsFeed, index) },
                                     onProfileClick = onProfileClick,
                                     onSettingsClick = onNavigateToSettings,
                                     onDownloadsClick = onNavigateToDownloads,
