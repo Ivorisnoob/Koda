@@ -25,6 +25,7 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
     val saveVideoHistory: StateFlow<Boolean> = themePreferences.saveVideoHistory
     val timedCommentsEnabled: StateFlow<Boolean> = themePreferences.timedCommentsEnabled
     val shortsEnabled: StateFlow<Boolean> = themePreferences.shortsEnabled
+    val shortsHiddenActions: StateFlow<Set<String>> = themePreferences.shortsHiddenActions
     val defaultVideoQuality: StateFlow<String> = themePreferences.defaultVideoQuality
     val excludedFolders: StateFlow<Set<String>> = themePreferences.excludedFolders
     
@@ -96,6 +97,10 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setShortsEnabled(enabled: Boolean) {
         themePreferences.setShortsEnabled(enabled)
+    }
+
+    fun setShortsHiddenActions(hidden: Set<String>) {
+        themePreferences.setShortsHiddenActions(hidden)
     }
 
     fun setDefaultVideoQuality(quality: String) {

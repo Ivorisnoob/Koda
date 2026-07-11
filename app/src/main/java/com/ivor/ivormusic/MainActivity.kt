@@ -59,6 +59,7 @@ class MainActivity : ComponentActivity() {
             val saveVideoHistory by themeViewModel.saveVideoHistory.collectAsState()
             val timedCommentsEnabled by themeViewModel.timedCommentsEnabled.collectAsState()
             val shortsEnabled by themeViewModel.shortsEnabled.collectAsState()
+            val shortsHiddenActions by themeViewModel.shortsHiddenActions.collectAsState()
             val defaultVideoQuality by themeViewModel.defaultVideoQuality.collectAsState()
             val excludedFolders by themeViewModel.excludedFolders.collectAsState()
             val oemFixEnabled by themeViewModel.oemFixEnabled.collectAsState()
@@ -108,6 +109,8 @@ class MainActivity : ComponentActivity() {
                         onTimedCommentsToggle = { themeViewModel.setTimedCommentsEnabled(it) },
                         shortsEnabled = shortsEnabled,
                         onShortsEnabledToggle = { themeViewModel.setShortsEnabled(it) },
+                        shortsHiddenActions = shortsHiddenActions,
+                        onShortsHiddenActionsChange = { themeViewModel.setShortsHiddenActions(it) },
                         defaultVideoQuality = defaultVideoQuality,
                         onDefaultVideoQualityChange = { themeViewModel.setDefaultVideoQuality(it) },
                         excludedFolders = excludedFolders,
@@ -162,6 +165,8 @@ fun MusicApp(
     onTimedCommentsToggle: (Boolean) -> Unit,
     shortsEnabled: Boolean,
     onShortsEnabledToggle: (Boolean) -> Unit,
+    shortsHiddenActions: Set<String>,
+    onShortsHiddenActionsChange: (Set<String>) -> Unit,
     defaultVideoQuality: String,
     onDefaultVideoQualityChange: (String) -> Unit,
     excludedFolders: Set<String>,
@@ -300,6 +305,8 @@ fun MusicApp(
                     onTimedCommentsToggle = onTimedCommentsToggle,
                     shortsEnabled = shortsEnabled,
                     onShortsEnabledToggle = onShortsEnabledToggle,
+                    shortsHiddenActions = shortsHiddenActions,
+                    onShortsHiddenActionsChange = onShortsHiddenActionsChange,
                     defaultVideoQuality = defaultVideoQuality,
                     onDefaultVideoQualityChange = onDefaultVideoQualityChange,
                     excludedFolders = excludedFolders,
@@ -413,7 +420,8 @@ fun MusicApp(
 
         // Shorts sit above everything, including the video player overlay
         com.ivor.ivormusic.ui.shorts.ShortsPlayerOverlay(
-            viewModel = shortsPlayerViewModel
+            viewModel = shortsPlayerViewModel,
+            hiddenActions = shortsHiddenActions
         )
     }
 }

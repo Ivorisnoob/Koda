@@ -71,7 +71,12 @@ import androidx.compose.material.icons.rounded.FlashOn
 import androidx.compose.material.icons.rounded.HighQuality
 import androidx.compose.material.icons.rounded.SwipeRight
 import androidx.compose.material.icons.rounded.TextFields
+import androidx.compose.material.icons.rounded.ThumbDown
+import androidx.compose.material.icons.rounded.ThumbUp
 import androidx.compose.material.icons.rounded.ToggleOn
+import androidx.compose.material.icons.rounded.ChatBubble
+import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -201,6 +206,8 @@ fun SettingsScreen(
     onTimedCommentsToggle: (Boolean) -> Unit,
     shortsEnabled: Boolean,
     onShortsEnabledToggle: (Boolean) -> Unit,
+    shortsHiddenActions: Set<String> = emptySet(),
+    onShortsHiddenActionsChange: (Set<String>) -> Unit = {},
     defaultVideoQuality: String,
     onDefaultVideoQualityChange: (String) -> Unit,
     excludedFolders: Set<String>,
@@ -252,6 +259,7 @@ fun SettingsScreen(
 
     // Dialog state for Folder Exclusion
     var showFolderExclusionDialog by remember { mutableStateOf(false) }
+    var showShortsButtonsDialog by remember { mutableStateOf(false) }
     var availableFolders by remember { mutableStateOf<List<FolderInfo>>(emptyList()) }
     var isFoldersLoading by remember { mutableStateOf(false) }
     
@@ -727,6 +735,31 @@ fun SettingsScreen(
                             accentColor = accentColor
                         )
 
+                        // Shorts button visibility - only relevant while Shorts are on
+                        AnimatedVisibility(
+                            visible = shortsEnabled,
+                            enter = fadeIn(tween(200)) + slideInVertically(
+                                initialOffsetY = { -it / 4 },
+                                animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy)
+                            ),
+                            exit = fadeOut(tween(150))
+                        ) {
+                            Column {
+                                SettingsDivider()
+                                ExpressiveSettingsItem(
+                                    icon = Icons.Rounded.Visibility,
+                                    title = "Shorts Buttons",
+                                    subtitle = if (shortsHiddenActions.isEmpty()) "All buttons shown"
+                                        else "${shortsHiddenActions.size} hidden",
+                                    onClick = { showShortsButtonsDialog = true },
+                                    textColor = textColor,
+                                    secondaryTextColor = secondaryTextColor,
+                                    iconTint = accentColor,
+                                    showChevron = true
+                                )
+                            }
+                        }
+
                         SettingsDivider()
 
                         ExpressiveSettingsItem(
@@ -857,6 +890,14 @@ fun SettingsScreen(
             onAddExcludedFolder = onAddExcludedFolder,
             onRemoveExcludedFolder = onRemoveExcludedFolder,
             onDismiss = { showFolderExclusionDialog = false }
+        )
+    }
+
+    if (showShortsButtonsDialog) {
+        ShortsButtonsDialog(
+            hiddenActions = shortsHiddenActions,
+            onHiddenActionsChange = onShortsHiddenActionsChange,
+            onDismiss = { showShortsButtonsDialog = false }
         )
     }
 }
@@ -2530,6 +2571,196 @@ private fun FolderItem(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun ShortsButtonsDialog(
+    hiddenActions: Set<String>,
+    onHiddenActionsChange: (Set<String>) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val backgroundColor = MaterialTheme.colorScheme.surfaceContainerHigh
+    val textColor = MaterialTheme.colorScheme.onSurface
+    val secondaryTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+
+    // Dialog entry animation
+    var dialogVisible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        dialogVisible = true
+    }
+
+    fun toggle(action: String) {
+        onHiddenActionsChange(
+            if (action in hiddenActions) hiddenActions - action else hiddenActions + action
+        )
+    }
+
+    AnimatedVisibility(
+        visible = dialogVisible,
+        enter = scaleIn(
+            initialScale = 0.8f,
+            animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy)
+        ) + fadeIn(tween(200)),
+        exit = scaleOut(targetScale = 0.8f) + fadeOut(tween(150))
+    ) {
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            containerColor = backgroundColor,
+            shape = RoundedCornerShape(32.dp),
+            icon = {
+                Box(
+                    modifier = Modifier
+                        .size(64.dp)
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(primaryColor.copy(alpha = 0.15f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Visibility,
+                        contentDescription = null,
+                        tint = primaryColor,
+                        modifier = Modifier.size(32.dp)
+                    )
+                }
+            },
+            title = {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "Shorts Buttons",
+                        color = textColor,
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Choose which buttons appear next to Shorts",
+                        color = secondaryTextColor,
+                        fontSize = 13.sp,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            },
+            text = {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(20.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainer
+                ) {
+                    Column(modifier = Modifier.padding(8.dp)) {
+                        ShortsButtonRow(
+                            icon = Icons.Rounded.ThumbUp,
+                            label = "Like",
+                            shown = ThemePreferences.SHORTS_ACTION_LIKE !in hiddenActions,
+                            onToggle = { toggle(ThemePreferences.SHORTS_ACTION_LIKE) },
+                            textColor = textColor,
+                            accentColor = primaryColor,
+                            secondaryTextColor = secondaryTextColor
+                        )
+                        ShortsButtonRow(
+                            icon = Icons.Rounded.ThumbDown,
+                            label = "Dislike",
+                            shown = ThemePreferences.SHORTS_ACTION_DISLIKE !in hiddenActions,
+                            onToggle = { toggle(ThemePreferences.SHORTS_ACTION_DISLIKE) },
+                            textColor = textColor,
+                            accentColor = primaryColor,
+                            secondaryTextColor = secondaryTextColor
+                        )
+                        ShortsButtonRow(
+                            icon = Icons.Rounded.ChatBubble,
+                            label = "Comments",
+                            shown = ThemePreferences.SHORTS_ACTION_COMMENTS !in hiddenActions,
+                            onToggle = { toggle(ThemePreferences.SHORTS_ACTION_COMMENTS) },
+                            textColor = textColor,
+                            accentColor = primaryColor,
+                            secondaryTextColor = secondaryTextColor
+                        )
+                        ShortsButtonRow(
+                            icon = Icons.Rounded.Share,
+                            label = "Share",
+                            shown = ThemePreferences.SHORTS_ACTION_SHARE !in hiddenActions,
+                            onToggle = { toggle(ThemePreferences.SHORTS_ACTION_SHARE) },
+                            textColor = textColor,
+                            accentColor = primaryColor,
+                            secondaryTextColor = secondaryTextColor
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = onDismiss,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = primaryColor
+                    ),
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.height(48.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.CheckCircle,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Done",
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun ShortsButtonRow(
+    icon: ImageVector,
+    label: String,
+    shown: Boolean,
+    onToggle: () -> Unit,
+    textColor: Color,
+    accentColor: Color,
+    secondaryTextColor: Color
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onToggle)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = if (shown) accentColor else secondaryTextColor.copy(alpha = 0.6f),
+            modifier = Modifier.size(22.dp)
+        )
+        Spacer(modifier = Modifier.width(14.dp))
+        Text(
+            text = label,
+            color = textColor,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.weight(1f)
+        )
+        Switch(
+            checked = shown,
+            onCheckedChange = { onToggle() },
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Color.White,
+                checkedTrackColor = accentColor,
+                uncheckedThumbColor = Color.White,
+                uncheckedTrackColor = secondaryTextColor.copy(alpha = 0.3f),
+                uncheckedBorderColor = Color.Transparent,
+                checkedBorderColor = Color.Transparent
+            )
+        )
     }
 }
 

@@ -3,6 +3,7 @@ package com.ivor.ivormusic.ui.shorts
 import android.content.Intent
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
@@ -92,6 +93,7 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
 import com.ivor.ivormusic.data.LikeStatus
+import com.ivor.ivormusic.data.ThemePreferences
 import com.ivor.ivormusic.ui.video.CommentsSheet
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -102,16 +104,22 @@ import kotlinx.coroutines.isActive as coroutineIsActive
  * VideoPlayerOverlay. One shared ExoPlayer follows the settled pager page;
  * neighbouring pages show their portrait thumbnails.
  *
- * Speaks Koda's Material 3 Expressive dialect: a floating tonal pill for the
- * action rail (like FloatingPillNavBar), secondaryContainer active states, a
- * Burst-shape flash on like (LikeBurstIcon pattern), MaterialShapes for the
- * pause badge and channel avatar, and a wavy progress line that flattens
- * while paused.
+ * Speaks Koda's Material 3 Expressive dialect: standalone round action
+ * buttons that morph to a cookie shape while active, secondaryContainer
+ * active states, a Burst-shape flash on like (LikeBurstIcon pattern),
+ * MaterialShapes for the pause badge and channel avatar, and a wavy
+ * progress line that flattens while paused.
+ *
+ * [hiddenActions] holds ThemePreferences.SHORTS_ACTION_* ids the user chose
+ * to hide from the action rail in Settings.
  */
 @androidx.annotation.OptIn(UnstableApi::class)
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-fun ShortsPlayerOverlay(viewModel: ShortsPlayerViewModel) {
+fun ShortsPlayerOverlay(
+    viewModel: ShortsPlayerViewModel,
+    hiddenActions: Set<String> = emptySet()
+) {
     val isActive by viewModel.isActive.collectAsState()
     if (!isActive) return
 
@@ -473,17 +481,13 @@ fun ShortsPlayerOverlay(viewModel: ShortsPlayerViewModel) {
 
             Spacer(modifier = Modifier.width(12.dp))
 
-            // Floating tonal pill, same language as FloatingPillNavBar
+            // Standalone round action buttons; each can be hidden in Settings
             val likeStatus = engagement?.likeStatus ?: LikeStatus.INDIFFERENT
-            Surface(
-                shape = RoundedCornerShape(32.dp),
-                color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.92f)
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                Column(
-                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 10.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(2.dp)
-                ) {
+                if (ThemePreferences.SHORTS_ACTION_LIKE !in hiddenActions) {
                     ShortsAction(
                         icon = if (likeStatus == LikeStatus.LIKE) Icons.Rounded.ThumbUp
                             else Icons.Outlined.ThumbUp,
@@ -493,6 +497,8 @@ fun ShortsPlayerOverlay(viewModel: ShortsPlayerViewModel) {
                         contentDescription = "Like",
                         onClick = { requireLogin { viewModel.toggleLike() } }
                     )
+                }
+                if (ThemePreferences.SHORTS_ACTION_DISLIKE !in hiddenActions) {
                     ShortsAction(
                         icon = if (likeStatus == LikeStatus.DISLIKE) Icons.Rounded.ThumbDown
                             else Icons.Outlined.ThumbDown,
@@ -501,6 +507,8 @@ fun ShortsPlayerOverlay(viewModel: ShortsPlayerViewModel) {
                         contentDescription = "Dislike",
                         onClick = { requireLogin { viewModel.toggleDislike() } }
                     )
+                }
+                if (ThemePreferences.SHORTS_ACTION_COMMENTS !in hiddenActions) {
                     ShortsAction(
                         icon = Icons.Rounded.ChatBubble,
                         label = "Comments",
@@ -510,6 +518,8 @@ fun ShortsPlayerOverlay(viewModel: ShortsPlayerViewModel) {
                             showCommentsSheet = true
                         }
                     )
+                }
+                if (ThemePreferences.SHORTS_ACTION_SHARE !in hiddenActions) {
                     ShortsAction(
                         icon = Icons.Rounded.Share,
                         label = "Share",
@@ -580,10 +590,11 @@ fun ShortsPlayerOverlay(viewModel: ShortsPlayerViewModel) {
 }
 
 /**
- * One row of the floating action pill: a circular icon target that fills
- * with secondaryContainer while active (FloatingPillNavBar's selected
- * treatment), a springy icon pop, and — for the like action — a one-shot
- * Burst-shape flash borrowed from LikeBurstIcon.
+ * One standalone action button of the Shorts rail: a round tonal button
+ * that morphs to a MaterialShapes cookie and fills with secondaryContainer
+ * while active, a springy icon pop, and — for the like action — a one-shot
+ * Burst-shape flash borrowed from LikeBurstIcon. The label floats below
+ * the button, over the video.
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -623,21 +634,20 @@ private fun ShortsAction(
         }
     }
 
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier
-            .clip(RoundedCornerShape(24.dp))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 8.dp, vertical = 4.dp)
-    ) {
+    val containerColor by animateColorAsState(
+        targetValue = if (active) MaterialTheme.colorScheme.secondaryContainer
+            else MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.85f),
+        label = "shortsActionContainer"
+    )
+    val buttonShape = if (active) MaterialShapes.Cookie9Sided.toShape() else CircleShape
+
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
             modifier = Modifier
-                .size(44.dp)
-                .clip(CircleShape)
-                .background(
-                    if (active) MaterialTheme.colorScheme.secondaryContainer
-                    else Color.Transparent
-                ),
+                .size(48.dp)
+                .clip(buttonShape)
+                .background(containerColor)
+                .clickable(onClick = onClick),
             contentAlignment = Alignment.Center
         ) {
             val p = burstProgress.value
@@ -667,11 +677,12 @@ private fun ShortsAction(
                     }
             )
         }
+        Spacer(modifier = Modifier.height(4.dp))
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
             fontWeight = FontWeight.Medium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = Color.White.copy(alpha = 0.95f),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center,

@@ -46,6 +46,9 @@ class ThemePreferences(context: Context) {
     private val _shortsEnabled = MutableStateFlow(getShortsEnabledPreference())
     val shortsEnabled: StateFlow<Boolean> = _shortsEnabled.asStateFlow()
 
+    private val _shortsHiddenActions = MutableStateFlow(getShortsHiddenActionsPreference())
+    val shortsHiddenActions: StateFlow<Set<String>> = _shortsHiddenActions.asStateFlow()
+
     private val _defaultVideoQuality = MutableStateFlow(getDefaultVideoQualityPreference())
     val defaultVideoQuality: StateFlow<String> = _defaultVideoQuality.asStateFlow()
     
@@ -92,6 +95,14 @@ class ThemePreferences(context: Context) {
         private const val KEY_SAVE_VIDEO_HISTORY = "save_video_history"
         private const val KEY_TIMED_COMMENTS_ENABLED = "timed_comments_enabled"
         private const val KEY_SHORTS_ENABLED = "shorts_enabled"
+        private const val KEY_SHORTS_HIDDEN_ACTIONS = "shorts_hidden_actions"
+
+        /** Ids for the Shorts action-rail buttons that can be hidden. */
+        const val SHORTS_ACTION_LIKE = "like"
+        const val SHORTS_ACTION_DISLIKE = "dislike"
+        const val SHORTS_ACTION_COMMENTS = "comments"
+        const val SHORTS_ACTION_SHARE = "share"
+
         private const val KEY_DEFAULT_VIDEO_QUALITY = "default_video_quality"
 
         /** Sentinel meaning "highest available quality". */
@@ -361,6 +372,22 @@ class ThemePreferences(context: Context) {
     fun setShortsEnabled(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_SHORTS_ENABLED, enabled).apply()
         _shortsEnabled.value = enabled
+    }
+
+    /**
+     * Get the Shorts action buttons the user chose to hide (ids from
+     * SHORTS_ACTION_OPTIONS). Defaults to empty: all buttons visible.
+     */
+    private fun getShortsHiddenActionsPreference(): Set<String> {
+        return prefs.getStringSet(KEY_SHORTS_HIDDEN_ACTIONS, emptySet()) ?: emptySet()
+    }
+
+    /**
+     * Save which Shorts action buttons are hidden and update the flow.
+     */
+    fun setShortsHiddenActions(hidden: Set<String>) {
+        prefs.edit().putStringSet(KEY_SHORTS_HIDDEN_ACTIONS, hidden).apply()
+        _shortsHiddenActions.value = hidden
     }
 
     /**
