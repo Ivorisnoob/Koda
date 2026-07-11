@@ -57,6 +57,7 @@ fun ExpandablePlayer(
     onNextClick: () -> Unit,
     viewModel: PlayerViewModel,
     ambientBackground: Boolean = true,
+    artworkColors: Boolean = false,
     playerStyle: PlayerStyle = PlayerStyle.CLASSIC,
     onPlayerStyleChange: (PlayerStyle) -> Unit = {},
     onArtistClick: (String) -> Unit = {},
@@ -249,6 +250,20 @@ fun ExpandablePlayer(
                 // --- Full layer: fixed height, fades in over the latter part ---
                 if (isExpanded || expandProgress > 0.001f) {
                     val fullAlpha = ((expandProgress - 0.25f) / 0.75f).coerceIn(0f, 1f)
+                    // Optionally re-theme the expanded player's accent roles
+                    // from the album cover; every style's buttons read
+                    // MaterialTheme.colorScheme, so one wrapper covers them
+                    // all. The mini player stays on the app theme.
+                    // Local songs carry albumArtUri, YouTube songs only a
+                    // thumbnailUrl (Palette samples at 128px, so the normal
+                    // -res thumbnail is plenty and never 404s like maxres)
+                    val playerColorScheme = rememberArtworkColorScheme(
+                        enabled = artworkColors,
+                        albumArtUri = currentSong.albumArtUri?.toString()
+                            ?: currentSong.thumbnailUrl,
+                        base = MaterialTheme.colorScheme
+                    )
+                    MaterialTheme(colorScheme = playerColorScheme) {
                     Box(
                         modifier = Modifier
                             .align(Alignment.TopCenter)
@@ -385,6 +400,7 @@ fun ExpandablePlayer(
                                 onDismiss = { styleWheel.dismiss() }
                             )
                         }
+                    }
                     }
                 }
             }

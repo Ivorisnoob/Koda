@@ -149,6 +149,7 @@ fun HomeScreen(
     loadLocalSongs: Boolean = true,
     excludedFolders: Set<String> = emptySet(),
     ambientBackground: Boolean = true,
+    playerArtworkColors: Boolean = false,
     videoMode: Boolean = false,
     onVideoModeToggle: (Boolean) -> Unit = {},
     showModeToggle: Boolean = true,
@@ -595,6 +596,7 @@ fun HomeScreen(
             onNextClick = { playerViewModel.skipToNext() },
             viewModel = playerViewModel,
             ambientBackground = ambientBackground,
+            artworkColors = playerArtworkColors,
             playerStyle = playerStyle,
             onPlayerStyleChange = onPlayerStyleChange,
             onArtistClick = { artistName ->

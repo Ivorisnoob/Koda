@@ -53,6 +53,7 @@ class MainActivity : ComponentActivity() {
             val amoledTheme by themeViewModel.amoledTheme.collectAsState()
             val loadLocalSongs by themeViewModel.loadLocalSongs.collectAsState()
             val ambientBackground by themeViewModel.ambientBackground.collectAsState()
+            val playerArtworkColors by themeViewModel.playerArtworkColors.collectAsState()
             val videoMode by themeViewModel.videoMode.collectAsState()
             val homeModeToggleEnabled by themeViewModel.homeModeToggleEnabled.collectAsState()
             val playerStyle by themeViewModel.playerStyle.collectAsState()
@@ -97,6 +98,8 @@ class MainActivity : ComponentActivity() {
                         onLoadLocalSongsToggle = { themeViewModel.setLoadLocalSongs(it) },
                         ambientBackground = ambientBackground,
                         onAmbientBackgroundToggle = { themeViewModel.setAmbientBackground(it) },
+                        playerArtworkColors = playerArtworkColors,
+                        onPlayerArtworkColorsToggle = { themeViewModel.setPlayerArtworkColors(it) },
                         videoMode = videoMode,
                         onVideoModeToggle = { themeViewModel.setVideoMode(it) },
                         homeModeToggleEnabled = homeModeToggleEnabled,
@@ -153,6 +156,8 @@ fun MusicApp(
     onLoadLocalSongsToggle: (Boolean) -> Unit,
     ambientBackground: Boolean,
     onAmbientBackgroundToggle: (Boolean) -> Unit,
+    playerArtworkColors: Boolean,
+    onPlayerArtworkColorsToggle: (Boolean) -> Unit,
     videoMode: Boolean,
     onVideoModeToggle: (Boolean) -> Unit,
     homeModeToggleEnabled: Boolean,
@@ -269,6 +274,7 @@ fun MusicApp(
                     loadLocalSongs = loadLocalSongs,
                     excludedFolders = excludedFolders,
                     ambientBackground = ambientBackground,
+                    playerArtworkColors = playerArtworkColors,
                     videoMode = videoMode,
                     onVideoModeToggle = onVideoModeToggle,
                     showModeToggle = homeModeToggleEnabled,
@@ -293,6 +299,8 @@ fun MusicApp(
                     onLoadLocalSongsToggle = onLoadLocalSongsToggle,
                     ambientBackground = ambientBackground,
                     onAmbientBackgroundToggle = onAmbientBackgroundToggle,
+                    playerArtworkColors = playerArtworkColors,
+                    onPlayerArtworkColorsToggle = onPlayerArtworkColorsToggle,
                     videoMode = videoMode,
                     onVideoModeToggle = onVideoModeToggle,
                     homeModeToggleEnabled = homeModeToggleEnabled,

@@ -196,6 +196,8 @@ fun SettingsScreen(
     onLoadLocalSongsToggle: (Boolean) -> Unit,
     ambientBackground: Boolean,
     onAmbientBackgroundToggle: (Boolean) -> Unit,
+    playerArtworkColors: Boolean = false,
+    onPlayerArtworkColorsToggle: (Boolean) -> Unit = {},
     videoMode: Boolean,
     onVideoModeToggle: (Boolean) -> Unit,
     homeModeToggleEnabled: Boolean = true,
@@ -374,6 +376,20 @@ fun SettingsScreen(
                         ExpressivePlayerStyleSelectItem(
                             currentStyle = playerStyle,
                             onStyleSelected = onPlayerStyleChange,
+                            textColor = textColor,
+                            secondaryTextColor = secondaryTextColor,
+                            accentColor = accentColor
+                        )
+
+                        SettingsDivider()
+
+                        // Album-art button colors, applies to every player style
+                        ExpressiveOemToggleItem(
+                            icon = Icons.Rounded.Palette,
+                            title = "Album Art Colors",
+                            subtitle = "Color the expanded player's buttons from the current cover",
+                            enabled = playerArtworkColors,
+                            onToggle = onPlayerArtworkColorsToggle,
                             textColor = textColor,
                             secondaryTextColor = secondaryTextColor,
                             accentColor = accentColor

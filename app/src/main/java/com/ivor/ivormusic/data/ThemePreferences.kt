@@ -27,6 +27,9 @@ class ThemePreferences(context: Context) {
     
     private val _ambientBackground = MutableStateFlow(getAmbientBackgroundPreference())
     val ambientBackground: StateFlow<Boolean> = _ambientBackground.asStateFlow()
+
+    private val _playerArtworkColors = MutableStateFlow(getPlayerArtworkColorsPreference())
+    val playerArtworkColors: StateFlow<Boolean> = _playerArtworkColors.asStateFlow()
     
     private val _videoMode = MutableStateFlow(getVideoModePreference())
     val videoMode: StateFlow<Boolean> = _videoMode.asStateFlow()
@@ -89,6 +92,7 @@ class ThemePreferences(context: Context) {
         private const val KEY_AMOLED_THEME = "amoled_theme"
         private const val KEY_LOAD_LOCAL_SONGS = "load_local_songs"
         private const val KEY_AMBIENT_BACKGROUND = "ambient_background"
+        private const val KEY_PLAYER_ARTWORK_COLORS = "player_artwork_colors"
         private const val KEY_VIDEO_MODE = "video_mode"
         private const val KEY_HOME_MODE_TOGGLE_ENABLED = "home_mode_toggle_enabled"
         private const val KEY_PLAYER_STYLE = "player_style"
@@ -253,6 +257,22 @@ class ThemePreferences(context: Context) {
     fun setAmbientBackground(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_AMBIENT_BACKGROUND, enabled).apply()
         _ambientBackground.value = enabled
+    }
+
+    /**
+     * Get the stored album-art player colors preference. Defaults to false:
+     * expanded player buttons stay on the app theme.
+     */
+    private fun getPlayerArtworkColorsPreference(): Boolean {
+        return prefs.getBoolean(KEY_PLAYER_ARTWORK_COLORS, false)
+    }
+
+    /**
+     * Save the album-art player colors preference and update the flow.
+     */
+    fun setPlayerArtworkColors(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_PLAYER_ARTWORK_COLORS, enabled).apply()
+        _playerArtworkColors.value = enabled
     }
     
     /**

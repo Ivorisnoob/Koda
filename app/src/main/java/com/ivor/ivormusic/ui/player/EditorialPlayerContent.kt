@@ -372,7 +372,7 @@ private fun EditorialNowPlayingView(
                 .fillMaxWidth()
                 .padding(horizontal = 20.dp)
         ) {
-            // Row 1: word pill + previous circle
+            // Row 1: word pill + next circle
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -418,30 +418,30 @@ private fun EditorialNowPlayingView(
                     }
                 }
                 EditorialCircleButton(
-                    onClick = onPrevious,
-                    accent = accent,
-                    field = field,
-                    size = 80.dp
-                ) {
-                    Icon(Icons.Default.SkipPrevious, "Previous", modifier = Modifier.size(34.dp))
-                }
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Row 2: next circle + progress line with times
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                EditorialCircleButton(
                     onClick = onNext,
                     accent = accent,
                     field = field,
                     size = 80.dp
                 ) {
                     Icon(Icons.Default.SkipNext, "Next", modifier = Modifier.size(34.dp))
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Row 2: previous circle + progress line with times
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                EditorialCircleButton(
+                    onClick = onPrevious,
+                    accent = accent,
+                    field = field,
+                    size = 80.dp
+                ) {
+                    Icon(Icons.Default.SkipPrevious, "Previous", modifier = Modifier.size(34.dp))
                 }
 
                 Column(modifier = Modifier.weight(1f)) {
