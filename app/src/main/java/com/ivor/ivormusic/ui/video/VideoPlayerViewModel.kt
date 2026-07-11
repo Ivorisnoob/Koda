@@ -70,9 +70,6 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     private val _relatedVideos = MutableStateFlow<List<VideoItem>>(emptyList())
     val relatedVideos: StateFlow<List<VideoItem>> = _relatedVideos
 
-    private val _isAutoPlayEnabled = MutableStateFlow(false)
-    val isAutoPlayEnabled: StateFlow<Boolean> = _isAutoPlayEnabled.asStateFlow()
-
     private val _isLooping = MutableStateFlow(false)
     val isLooping: StateFlow<Boolean> = _isLooping.asStateFlow()
 
@@ -172,7 +169,10 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                 override fun onPlaybackStateChanged(playbackState: Int) {
                     _isBuffering.value = playbackState == Player.STATE_BUFFERING
                     if (playbackState == Player.STATE_ENDED) {
-                        if (_isAutoPlayEnabled.value) {
+                        // Repeat and auto-play are mutually exclusive: looping
+                        // repeats the current video, otherwise auto-play moves
+                        // to the next related one.
+                        if (!_isLooping.value) {
                             val nextVideo = _relatedVideos.value.firstOrNull()
                             // Guard: ensure ViewModel/player is still valid before launching
                             if (nextVideo != null && _exoPlayer != null) {
@@ -187,10 +187,6 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         // Warm the visitorData cache so the first playback doesn't pay for
         // the youtube.com bootstrap download on its critical path.
         viewModelScope.launch { youtubeRepository.prefetchVisitorData() }
-    }
-
-    fun toggleAutoPlay() {
-        _isAutoPlayEnabled.value = !_isAutoPlayEnabled.value
     }
 
     fun toggleLooping() {

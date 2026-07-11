@@ -2,16 +2,28 @@ package com.ivor.ivormusic.ui.video
 
 import android.app.Activity
 import android.content.pm.ActivityInfo
+import android.os.Build
+import android.view.WindowManager
 import androidx.annotation.OptIn
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Speed
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -24,6 +36,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.media3.common.util.UnstableApi
 import com.ivor.ivormusic.data.VideoItem
+import com.ivor.ivormusic.data.VideoQuality
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 
@@ -50,7 +63,6 @@ fun VideoPlayerContent(
     val availableQualities by viewModel.availableQualities.collectAsState()
     val currentQuality by viewModel.currentQuality.collectAsState()
     val relatedVideos by viewModel.relatedVideos.collectAsState()
-    val isAutoPlayEnabled by viewModel.isAutoPlayEnabled.collectAsState()
     val isLooping by viewModel.isLooping.collectAsState()
     val playbackSpeed by viewModel.playbackSpeed.collectAsState()
     val playbackError by viewModel.playbackError.collectAsState()
@@ -122,10 +134,19 @@ fun VideoPlayerContent(
     DisposableEffect(isFullscreen) {
         val window = activity?.window
         val insetsController = window?.let { WindowCompat.getInsetsController(it, it.decorView) }
-        
+
+        fun setCutoutMode(mode: Int) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && window != null) {
+                window.attributes = window.attributes.also { it.layoutInDisplayCutoutMode = mode }
+            }
+        }
+
         if (isFullscreen) {
             // Allow content to draw behind system bars first
             window?.let { WindowCompat.setDecorFitsSystemWindows(it, false) }
+            // Draw into the camera cutout area too, otherwise the system
+            // letterboxes the window and background shows around the notch
+            setCutoutMode(WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES)
             activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
             insetsController?.apply {
                 hide(WindowInsetsCompat.Type.systemBars())
@@ -134,11 +155,13 @@ fun VideoPlayerContent(
         } else {
             activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             insetsController?.show(WindowInsetsCompat.Type.systemBars())
+            setCutoutMode(WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT)
         }
-        
+
         onDispose {
             activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             insetsController?.show(WindowInsetsCompat.Type.systemBars())
+            setCutoutMode(WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT)
             // Restore normal window behavior
             window?.let { WindowCompat.setDecorFitsSystemWindows(it, true) }
         }
@@ -196,8 +219,6 @@ fun VideoPlayerContent(
                 onFullscreenToggle = { isFullscreen = false },
                 onSettings = { showQualitySheet = true },
                 onLoopToggle = { viewModel.toggleLooping() },
-                isAutoPlayEnabled = isAutoPlayEnabled,
-                onAutoPlayToggle = { viewModel.toggleAutoPlay() },
                 showTimedCommentsButton = timedCommentsFeatureEnabled,
                 timedCommentsActive = timedCommentsActive,
                 onTimedCommentsToggle = { timedCommentsActive = !timedCommentsActive }
@@ -249,8 +270,6 @@ fun VideoPlayerContent(
                         onFullscreenToggle = { isFullscreen = true },
                         onSettings = { showQualitySheet = true },
                         onLoopToggle = { viewModel.toggleLooping() },
-                        isAutoPlayEnabled = isAutoPlayEnabled,
-                        onAutoPlayToggle = { viewModel.toggleAutoPlay() },
                         showTimedCommentsButton = timedCommentsFeatureEnabled,
                         timedCommentsActive = timedCommentsActive,
                         onTimedCommentsToggle = { timedCommentsActive = !timedCommentsActive }
@@ -328,8 +347,79 @@ fun VideoPlayerContent(
         )
     }
 
-    // Quality Sheet
-    if (showQualitySheet) {
+    // Playback settings: bottom sheet in portrait, side panel over the video
+    // in fullscreen landscape so the video stays visible while adjusting
+    androidx.activity.compose.BackHandler(enabled = showQualitySheet && isFullscreen) {
+        showQualitySheet = false
+    }
+
+    if (isFullscreen) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            AnimatedVisibility(
+                visible = showQualitySheet,
+                enter = fadeIn(),
+                exit = fadeOut()
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.45f))
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null
+                        ) { showQualitySheet = false }
+                )
+            }
+            AnimatedVisibility(
+                visible = showQualitySheet,
+                modifier = Modifier.align(Alignment.CenterEnd),
+                enter = slideInHorizontally(
+                    animationSpec = spring(stiffness = 300f, dampingRatio = 0.8f),
+                    initialOffsetX = { it }
+                ) + fadeIn(),
+                exit = slideOutHorizontally(targetOffsetX = { it }) + fadeOut()
+            ) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.End))
+                        .padding(12.dp)
+                        .width(360.dp),
+                    shape = RoundedCornerShape(28.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    contentColor = MaterialTheme.colorScheme.onSurface
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .verticalScroll(rememberScrollState())
+                            .padding(horizontal = 20.dp, vertical = 16.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "Playback settings",
+                                style = MaterialTheme.typography.titleLarge,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.weight(1f)
+                            )
+                            FilledTonalIconButton(onClick = { showQualitySheet = false }) {
+                                Icon(Icons.Rounded.Close, contentDescription = "Close")
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(16.dp))
+                        PlayerSettingsSections(
+                            isLoading = isLoading,
+                            qualities = availableQualities,
+                            currentQualityUrl = currentQuality?.url,
+                            onQualitySelected = { viewModel.setQuality(it) },
+                            playbackSpeed = playbackSpeed,
+                            onSpeedSelected = { viewModel.setPlaybackSpeed(it) }
+                        )
+                    }
+                }
+            }
+        }
+    } else if (showQualitySheet) {
         ModalBottomSheet(
             onDismissRequest = { showQualitySheet = false },
             sheetState = sheetState,
@@ -337,95 +427,133 @@ fun VideoPlayerContent(
             contentColor = MaterialTheme.colorScheme.onSurface
         ) {
             Column(
-                modifier = Modifier.padding(bottom = 32.dp)
+                modifier = Modifier
+                    .padding(horizontal = 24.dp)
+                    .padding(bottom = 32.dp)
             ) {
                 Text(
-                    text = "Quality",
+                    text = "Playback settings",
                     style = MaterialTheme.typography.headlineSmall,
-                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp),
+                    modifier = Modifier.padding(vertical = 8.dp),
                     color = MaterialTheme.colorScheme.onSurface
                 )
-                
-                if (isLoading) {
-                    Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator()
-                    }
-                } else if (availableQualities.isEmpty()) {
-                    Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
-                        Text(
-                            text = "No qualities available",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                } else {
-                    availableQualities.forEach { quality ->
-                        ListItem(
-                            headlineContent = { Text(
-                                text = quality.resolution,
-                                style = MaterialTheme.typography.bodyLarge
-                            ) },
-                            leadingContent = {
-                                if (quality.url == currentQuality?.url) {
-                                    Icon(
-                                        Icons.Rounded.Check,
-                                        contentDescription = "Selected",
-                                        tint = MaterialTheme.colorScheme.primary
-                                    )
-                                } else {
-                                    Spacer(modifier = Modifier.size(24.dp))
-                                }
-                            },
-                            modifier = Modifier.clickable {
-                                viewModel.setQuality(quality)
-                                showQualitySheet = false
-                            },
-                            colors = ListItemDefaults.colors(
-                                containerColor = Color.Transparent
-                            )
-                        )
-                    }
-                }
-
-                HorizontalDivider(
-                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
-                    color = MaterialTheme.colorScheme.outlineVariant
+                Spacer(modifier = Modifier.height(12.dp))
+                PlayerSettingsSections(
+                    isLoading = isLoading,
+                    qualities = availableQualities,
+                    currentQualityUrl = currentQuality?.url,
+                    onQualitySelected = { viewModel.setQuality(it) },
+                    playbackSpeed = playbackSpeed,
+                    onSpeedSelected = { viewModel.setPlaybackSpeed(it) }
                 )
+            }
+        }
+    }
+}
 
-                Text(
-                    text = "Playback speed",
-                    style = MaterialTheme.typography.headlineSmall,
-                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp),
-                    color = MaterialTheme.colorScheme.onSurface
-                )
+/**
+ * Shared quality + speed pickers for the playback settings surface. Options
+ * are expressive ToggleButton pills (shape-morph on select) laid out in a
+ * FlowRow, so they wrap to the available width in both the portrait sheet
+ * and the landscape side panel.
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalLayoutApi::class)
+@Composable
+private fun PlayerSettingsSections(
+    isLoading: Boolean,
+    qualities: List<VideoQuality>,
+    currentQualityUrl: String?,
+    onQualitySelected: (VideoQuality) -> Unit,
+    playbackSpeed: Float,
+    onSpeedSelected: (Float) -> Unit
+) {
+    val optionColors = ToggleButtonDefaults.toggleButtonColors(
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+    )
 
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState())
-                        .padding(horizontal = 24.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+    SettingsSectionLabel(icon = Icons.Rounded.Tune, label = "Quality")
+    Spacer(modifier = Modifier.height(12.dp))
+    if (isLoading) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 24.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            ContainedLoadingIndicator()
+        }
+    } else if (qualities.isEmpty()) {
+        Text(
+            text = "No qualities available",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(vertical = 16.dp)
+        )
+    } else {
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            qualities.forEach { quality ->
+                val selected = quality.url == currentQualityUrl
+                ToggleButton(
+                    checked = selected,
+                    onCheckedChange = { if (!selected) onQualitySelected(quality) },
+                    colors = optionColors
                 ) {
-                    VideoPlayerViewModel.PLAYBACK_SPEED_OPTIONS.forEach { speed ->
-                        val label = if (speed == 1f) "Normal"
-                            else "${speed.toString().removeSuffix(".0")}x"
-                        FilterChip(
-                            selected = speed == playbackSpeed,
-                            onClick = { viewModel.setPlaybackSpeed(speed) },
-                            label = { Text(label) },
-                            leadingIcon = if (speed == playbackSpeed) {
-                                {
-                                    Icon(
-                                        Icons.Rounded.Check,
-                                        contentDescription = "Selected",
-                                        modifier = Modifier.size(FilterChipDefaults.IconSize)
-                                    )
-                                }
-                            } else null
+                    if (selected) {
+                        Icon(
+                            Icons.Rounded.Check,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
                         )
+                        Spacer(modifier = Modifier.width(6.dp))
                     }
+                    Text(quality.resolution)
                 }
             }
         }
+    }
+
+    Spacer(modifier = Modifier.height(24.dp))
+    SettingsSectionLabel(icon = Icons.Rounded.Speed, label = "Playback speed")
+    Spacer(modifier = Modifier.height(12.dp))
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        VideoPlayerViewModel.PLAYBACK_SPEED_OPTIONS.forEach { speed ->
+            val selected = speed == playbackSpeed
+            val label = if (speed == 1f) "Normal"
+                else "${speed.toString().removeSuffix(".0")}x"
+            ToggleButton(
+                checked = selected,
+                onCheckedChange = { if (!selected) onSpeedSelected(speed) },
+                colors = optionColors
+            ) {
+                Text(label)
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsSectionLabel(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Icon(
+            icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(18.dp)
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }

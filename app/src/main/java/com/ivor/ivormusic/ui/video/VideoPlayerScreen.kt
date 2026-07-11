@@ -57,7 +57,6 @@ import androidx.compose.material.icons.rounded.Fullscreen
 import androidx.compose.material.icons.rounded.FullscreenExit
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
-import androidx.compose.material.icons.rounded.Repeat
 import androidx.compose.material.icons.rounded.RepeatOne
 import androidx.compose.material.icons.rounded.Replay10
 import androidx.compose.material.icons.rounded.Settings
@@ -137,7 +136,6 @@ fun FullscreenPlayerContent(
     isBuffering: Boolean,
     isPlaying: Boolean,
     isLooping: Boolean,
-    isAutoPlayEnabled: Boolean,
     currentPosition: Long,
     duration: Long,
     progress: Float,
@@ -150,7 +148,6 @@ fun FullscreenPlayerContent(
     onFullscreenToggle: () -> Unit,
     onSettings: () -> Unit,
     onLoopToggle: () -> Unit,
-    onAutoPlayToggle: () -> Unit,
     showTimedCommentsButton: Boolean = false,
     timedCommentsActive: Boolean = false,
     onTimedCommentsToggle: () -> Unit = {}
@@ -242,21 +239,7 @@ fun FullscreenPlayerContent(
                         modifier = Modifier.weight(1f)
                     )
                     
-                    // Auto Play Toggle
-                    FilledTonalIconButton(
-                        onClick = onAutoPlayToggle,
-                        colors = IconButtonDefaults.filledTonalIconButtonColors(
-                            containerColor = if (isAutoPlayEnabled) MaterialTheme.colorScheme.primary else Color.Black.copy(0.5f),
-                            contentColor = if (isAutoPlayEnabled) MaterialTheme.colorScheme.onPrimary else Color.White
-                        ),
-                        shapes = stableShapes
-                    ) {
-                        Icon(
-                            androidx.compose.material.icons.Icons.Rounded.Autorenew,
-                            contentDescription = "Auto Play"
-                        )
-                    }
-
+                    // Combined mode toggle: repeat off = auto-play next, repeat on = loop this video
                     FilledTonalIconButton(
                         onClick = onLoopToggle,
                         colors = IconButtonDefaults.filledTonalIconButtonColors(
@@ -265,9 +248,9 @@ fun FullscreenPlayerContent(
                         ),
                         shapes = stableShapes
                     ) {
-                         Icon(
-                            if (isLooping) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
-                            contentDescription = "Loop"
+                        Icon(
+                            if (isLooping) Icons.Rounded.RepeatOne else Icons.Rounded.Autorenew,
+                            contentDescription = if (isLooping) "Repeat" else "Auto Play"
                         )
                     }
 
@@ -362,7 +345,6 @@ fun PortraitPlayerContent(
     isBuffering: Boolean,
     isPlaying: Boolean,
     isLooping: Boolean,
-    isAutoPlayEnabled: Boolean,
     currentPosition: Long,
     duration: Long,
     progress: Float,
@@ -375,7 +357,6 @@ fun PortraitPlayerContent(
     onFullscreenToggle: () -> Unit,
     onSettings: () -> Unit,
     onLoopToggle: () -> Unit,
-    onAutoPlayToggle: () -> Unit,
     showTimedCommentsButton: Boolean = false,
     timedCommentsActive: Boolean = false,
     onTimedCommentsToggle: () -> Unit = {}
@@ -439,21 +420,7 @@ fun PortraitPlayerContent(
                     }
                     
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        // Auto Play Toggle
-                         FilledTonalIconButton(
-                            onClick = onAutoPlayToggle,
-                            colors = IconButtonDefaults.filledTonalIconButtonColors(
-                                containerColor = if (isAutoPlayEnabled) MaterialTheme.colorScheme.primary else Color.Black.copy(0.5f),
-                                contentColor = if (isAutoPlayEnabled) MaterialTheme.colorScheme.onPrimary else Color.White
-                            ),
-                            shapes = stableShapes
-                        ) {
-                            Icon(
-                                Icons.Rounded.Autorenew,
-                                contentDescription = "Auto Play"
-                            )
-                        }
-                        
+                        // Combined mode toggle: repeat off = auto-play next, repeat on = loop this video
                          FilledTonalIconButton(
                             onClick = onLoopToggle,
                             colors = IconButtonDefaults.filledTonalIconButtonColors(
@@ -463,8 +430,8 @@ fun PortraitPlayerContent(
                             shapes = stableShapes
                         ) {
                              Icon(
-                                if (isLooping) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
-                                contentDescription = "Loop"
+                                if (isLooping) Icons.Rounded.RepeatOne else Icons.Rounded.Autorenew,
+                                contentDescription = if (isLooping) "Repeat" else "Auto Play"
                             )
                         }
                         if (showTimedCommentsButton) {

@@ -18,7 +18,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
@@ -181,41 +180,44 @@ fun VideoPlayerOverlay(
     }
 
     val transition = updateTransition(isExpanded, label = "VideoExpand")
-    val configuration = LocalConfiguration.current
-    val screenHeight = configuration.screenHeightDp.dp
-    
+
     val density = LocalDensity.current
     val bottomWindowInsets = WindowInsets.navigationBars
     val bottomInset = with(density) { bottomWindowInsets.getBottom(this).toDp() }
-    
-    // Animate dimensions
-    val height by transition.animateDp(
-        transitionSpec = { spring(stiffness = 300f, dampingRatio = 0.8f) },
-        label = "height"
-    ) { expanded ->
-        if (expanded) screenHeight else 88.dp 
-    }
-    
-    val widthPadding by transition.animateDp(
-        transitionSpec = { spring(stiffness = 300f, dampingRatio = 0.8f) },
-        label = "widthPadding"
-    ) { expanded ->
-        if (expanded) 0.dp else 16.dp
-    }
 
-    // Position above nav bar when minimized
-    val bottomPadding by transition.animateDp(
-        transitionSpec = { spring(stiffness = 300f, dampingRatio = 0.8f) },
-        label = "bottomPadding"
-    ) { expanded ->
-        if (expanded) 0.dp else (100.dp + bottomInset)
-    }
-
-    // Container
-    Box(
+    // Container. BoxWithConstraints so the expanded height matches the real
+    // window height — Configuration.screenHeightDp excludes system bar areas,
+    // which left a background strip visible at the top in edge-to-edge
+    // fullscreen landscape.
+    BoxWithConstraints(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.BottomCenter
     ) {
+        val fullHeight = this.maxHeight
+
+        // Animate dimensions
+        val height by transition.animateDp(
+            transitionSpec = { spring(stiffness = 300f, dampingRatio = 0.8f) },
+            label = "height"
+        ) { expanded ->
+            if (expanded) fullHeight else 88.dp
+        }
+
+        val widthPadding by transition.animateDp(
+            transitionSpec = { spring(stiffness = 300f, dampingRatio = 0.8f) },
+            label = "widthPadding"
+        ) { expanded ->
+            if (expanded) 0.dp else 16.dp
+        }
+
+        // Position above nav bar when minimized
+        val bottomPadding by transition.animateDp(
+            transitionSpec = { spring(stiffness = 300f, dampingRatio = 0.8f) },
+            label = "bottomPadding"
+        ) { expanded ->
+            if (expanded) 0.dp else (100.dp + bottomInset)
+        }
+
         Surface(
             modifier = Modifier
                 .padding(bottom = bottomPadding.coerceAtLeast(0.dp))
