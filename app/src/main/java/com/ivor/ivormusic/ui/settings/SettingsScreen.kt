@@ -4,6 +4,7 @@ import android.content.Intent
 import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -129,6 +130,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
@@ -2574,6 +2576,13 @@ private fun FolderItem(
     }
 }
 
+/**
+ * Playful picker for the Shorts action rail: each action is a large shaped
+ * toggle that previews the real rail button — shown buttons sit plump in
+ * the same cookie shape the rail uses for its active state, hidden ones
+ * deflate into a small dimmed circle. Tap to flip; changes apply live.
+ */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ShortsButtonsDialog(
     hiddenActions: Set<String>,
@@ -2610,18 +2619,20 @@ private fun ShortsButtonsDialog(
             containerColor = backgroundColor,
             shape = RoundedCornerShape(32.dp),
             icon = {
+                // Sunny hero badge, echoing the rail's shaped buttons
+                val heroShape = remember { PolygonShape(MaterialShapes.Sunny) }
                 Box(
                     modifier = Modifier
                         .size(64.dp)
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(primaryColor.copy(alpha = 0.15f)),
+                        .clip(heroShape)
+                        .background(primaryColor.copy(alpha = 0.18f)),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.Visibility,
                         contentDescription = null,
                         tint = primaryColor,
-                        modifier = Modifier.size(32.dp)
+                        modifier = Modifier.size(28.dp)
                     )
                 }
             },
@@ -2639,7 +2650,7 @@ private fun ShortsButtonsDialog(
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "Choose which buttons appear next to Shorts",
+                        text = "Tap a button to show or hide it in Shorts",
                         color = secondaryTextColor,
                         fontSize = 13.sp,
                         textAlign = TextAlign.Center
@@ -2647,49 +2658,36 @@ private fun ShortsButtonsDialog(
                 }
             },
             text = {
-                Surface(
+                FlowRow(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainer
+                    maxItemsInEachRow = 2,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    Column(modifier = Modifier.padding(8.dp)) {
-                        ShortsButtonRow(
-                            icon = Icons.Rounded.ThumbUp,
-                            label = "Like",
-                            shown = ThemePreferences.SHORTS_ACTION_LIKE !in hiddenActions,
-                            onToggle = { toggle(ThemePreferences.SHORTS_ACTION_LIKE) },
-                            textColor = textColor,
-                            accentColor = primaryColor,
-                            secondaryTextColor = secondaryTextColor
-                        )
-                        ShortsButtonRow(
-                            icon = Icons.Rounded.ThumbDown,
-                            label = "Dislike",
-                            shown = ThemePreferences.SHORTS_ACTION_DISLIKE !in hiddenActions,
-                            onToggle = { toggle(ThemePreferences.SHORTS_ACTION_DISLIKE) },
-                            textColor = textColor,
-                            accentColor = primaryColor,
-                            secondaryTextColor = secondaryTextColor
-                        )
-                        ShortsButtonRow(
-                            icon = Icons.Rounded.ChatBubble,
-                            label = "Comments",
-                            shown = ThemePreferences.SHORTS_ACTION_COMMENTS !in hiddenActions,
-                            onToggle = { toggle(ThemePreferences.SHORTS_ACTION_COMMENTS) },
-                            textColor = textColor,
-                            accentColor = primaryColor,
-                            secondaryTextColor = secondaryTextColor
-                        )
-                        ShortsButtonRow(
-                            icon = Icons.Rounded.Share,
-                            label = "Share",
-                            shown = ThemePreferences.SHORTS_ACTION_SHARE !in hiddenActions,
-                            onToggle = { toggle(ThemePreferences.SHORTS_ACTION_SHARE) },
-                            textColor = textColor,
-                            accentColor = primaryColor,
-                            secondaryTextColor = secondaryTextColor
-                        )
-                    }
+                    ShortsButtonShapeToggle(
+                        icon = Icons.Rounded.ThumbUp,
+                        label = "Like",
+                        shown = ThemePreferences.SHORTS_ACTION_LIKE !in hiddenActions,
+                        onToggle = { toggle(ThemePreferences.SHORTS_ACTION_LIKE) }
+                    )
+                    ShortsButtonShapeToggle(
+                        icon = Icons.Rounded.ThumbDown,
+                        label = "Dislike",
+                        shown = ThemePreferences.SHORTS_ACTION_DISLIKE !in hiddenActions,
+                        onToggle = { toggle(ThemePreferences.SHORTS_ACTION_DISLIKE) }
+                    )
+                    ShortsButtonShapeToggle(
+                        icon = Icons.Rounded.ChatBubble,
+                        label = "Comments",
+                        shown = ThemePreferences.SHORTS_ACTION_COMMENTS !in hiddenActions,
+                        onToggle = { toggle(ThemePreferences.SHORTS_ACTION_COMMENTS) }
+                    )
+                    ShortsButtonShapeToggle(
+                        icon = Icons.Rounded.Share,
+                        label = "Share",
+                        shown = ThemePreferences.SHORTS_ACTION_SHARE !in hiddenActions,
+                        onToggle = { toggle(ThemePreferences.SHORTS_ACTION_SHARE) }
+                    )
                 }
             },
             confirmButton = {
@@ -2717,49 +2715,74 @@ private fun ShortsButtonsDialog(
     }
 }
 
+/**
+ * One shaped toggle of the Shorts buttons dialog. Shown = plump cookie
+ * (the rail's active shape) filled with secondaryContainer and a bouncy
+ * pop; hidden = deflated dim circle with a struck-through label.
+ */
 @Composable
-private fun ShortsButtonRow(
+private fun ShortsButtonShapeToggle(
     icon: ImageVector,
     label: String,
     shown: Boolean,
-    onToggle: () -> Unit,
-    textColor: Color,
-    accentColor: Color,
-    secondaryTextColor: Color
+    onToggle: () -> Unit
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .clickable(onClick = onToggle)
-            .padding(horizontal = 12.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically
+    val cookieShape = remember { PolygonShape(MaterialShapes.Cookie9Sided) }
+    val shape = if (shown) cookieShape else CircleShape
+
+    val scale by animateFloatAsState(
+        targetValue = if (shown) 1f else 0.78f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMediumLow
+        ),
+        label = "shortsToggleScale"
+    )
+    val containerColor by animateColorAsState(
+        targetValue = if (shown) MaterialTheme.colorScheme.secondaryContainer
+            else MaterialTheme.colorScheme.surfaceContainerHighest,
+        label = "shortsToggleColor"
+    )
+    val iconColor by animateColorAsState(
+        targetValue = if (shown) MaterialTheme.colorScheme.onSecondaryContainer
+            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
+        label = "shortsToggleIcon"
+    )
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.width(108.dp)
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = if (shown) accentColor else secondaryTextColor.copy(alpha = 0.6f),
-            modifier = Modifier.size(22.dp)
-        )
-        Spacer(modifier = Modifier.width(14.dp))
+        Box(
+            modifier = Modifier.size(72.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(72.dp)
+                    .scale(scale)
+                    .clip(shape)
+                    .background(containerColor)
+                    .clickable(onClick = onToggle),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = "$label: ${if (shown) "shown" else "hidden"}",
+                    tint = iconColor,
+                    modifier = Modifier.size(26.dp)
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(6.dp))
         Text(
             text = label,
-            color = textColor,
-            fontSize = 15.sp,
-            fontWeight = FontWeight.Medium,
-            modifier = Modifier.weight(1f)
-        )
-        Switch(
-            checked = shown,
-            onCheckedChange = { onToggle() },
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = Color.White,
-                checkedTrackColor = accentColor,
-                uncheckedThumbColor = Color.White,
-                uncheckedTrackColor = secondaryTextColor.copy(alpha = 0.3f),
-                uncheckedBorderColor = Color.Transparent,
-                checkedBorderColor = Color.Transparent
-            )
+            color = if (shown) MaterialTheme.colorScheme.onSurface
+                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold,
+            textDecoration = if (shown) null else TextDecoration.LineThrough,
+            textAlign = TextAlign.Center
         )
     }
 }
