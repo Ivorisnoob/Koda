@@ -5,8 +5,10 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.slideInVertically
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -109,6 +111,21 @@ fun VideoHomeContent(
     val notifications by viewModel.notifications.collectAsState()
     val isNotificationsLoading by viewModel.isNotificationsLoading.collectAsState()
 
+    // Save-to-playlist sheet (long-press on a video card)
+    var saveTargetVideo by remember { mutableStateOf<VideoItem?>(null) }
+    val videoPlaylists by viewModel.videoPlaylists.collectAsState()
+    val isVideoPlaylistsLoading by viewModel.isVideoPlaylistsLoading.collectAsState()
+
+    fun onVideoLongPress(video: VideoItem) {
+        if (isYouTubeConnected) {
+            viewModel.loadVideoPlaylists()
+            saveTargetVideo = video
+        } else {
+            // Saving needs a YouTube session; route to the sign-in flow
+            onProfileClick()
+        }
+    }
+
     // Animation state for staggered entry
     var isVisible by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
@@ -137,6 +154,18 @@ fun VideoHomeContent(
                 }
             },
             onDismiss = { showNotificationsSheet = false }
+        )
+    }
+
+    saveTargetVideo?.let { video ->
+        SaveToPlaylistSheet(
+            video = video,
+            playlists = videoPlaylists,
+            isLoading = isVideoPlaylistsLoading,
+            onSave = { playlistId, onResult ->
+                viewModel.addVideoToPlaylist(playlistId, video, onResult)
+            },
+            onDismiss = { saveTargetVideo = null }
         )
     }
 
@@ -214,6 +243,7 @@ fun VideoHomeContent(
                     VideoCard(
                         video = video,
                         onClick = { onVideoClick(video) },
+                        onLongClick = { onVideoLongPress(video) },
                         modifier = Modifier.padding(horizontal = 16.dp)
                     )
                 }
@@ -231,6 +261,7 @@ fun VideoHomeContent(
                     VideoCard(
                         video = video,
                         onClick = { onVideoClick(video) },
+                        onLongClick = { onVideoLongPress(video) },
                         modifier = Modifier.padding(horizontal = 16.dp)
                     )
                 }
@@ -513,20 +544,23 @@ fun ShortsShelf(
 
 /**
  * Video Card component - displays a single video with thumbnail, title, channel, views.
+ * [onLongClick] is optional; the home feed uses it for the save-to-playlist sheet.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun VideoCard(
     video: VideoItem,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onLongClick: (() -> Unit)? = null
 ) {
     val textColor = MaterialTheme.colorScheme.onBackground
     val secondaryTextColor = MaterialTheme.colorScheme.onSurfaceVariant
-    
+
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick),
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
         shape = RoundedCornerShape(16.dp),
         color = MaterialTheme.colorScheme.surfaceContainer,
         tonalElevation = 1.dp

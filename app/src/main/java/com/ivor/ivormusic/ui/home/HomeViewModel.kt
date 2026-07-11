@@ -272,6 +272,17 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * Add a video to a YouTube playlist ("WL" = Watch Later). Reports the
+     * outcome on the main thread so the save sheet can show inline
+     * feedback. Requires login.
+     */
+    fun addVideoToPlaylist(playlistId: String, video: VideoItem, onResult: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            onResult(youtubeRepository.addToYouTubePlaylist(playlistId, video.videoId, music = false))
+        }
+    }
+
     /** Load the notification inbox. Requires login. */
     fun loadNotifications(force: Boolean = false) {
         if (_isNotificationsLoading.value) return
