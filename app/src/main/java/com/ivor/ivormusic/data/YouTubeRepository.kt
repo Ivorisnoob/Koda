@@ -130,11 +130,6 @@ class YouTubeRepository(private val context: Context) {
         private const val TV_EMBED_USER_AGENT =
             "Mozilla/5.0 (PlayStation; PlayStation 4/12.00) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Safari/605.1.15"
 
-        // Anonymous visitorData (base64) — present in YouTube's public bootstrap
-        // JS. Many endpoints now require it; without it, ANDROID_VR can return
-        // empty streamingData under load.
-        private const val DEFAULT_VISITOR_DATA = "Cgt6SUNYVzB2VkJDbyjGrrSmBg=="
-
         // visitorData cache is companion-level: repositories are created per
         // ViewModel (no DI), so instance-level storage would make every VM pay
         // the youtube.com bootstrap download once. Shared storage means one
@@ -553,58 +548,11 @@ class YouTubeRepository(private val context: Context) {
     suspend fun getStreamUrl(videoId: String): Result<String> = withContext(Dispatchers.IO) {
         val startMs = System.currentTimeMillis()
 
-        // Single resolution mechanism: direct InnerTube /player calls.
-        //
-        // ANDROID_VR is the primary (and effectively only) client that yields
-        // *fully downloadable* audio URLs without a GVS PO Token: its googlevideo
-        // URLs serve the whole file, where IOS-issued URLs are throttled to the
-        // first ~1 MiB and then return HTTP 403 (GVS PO-Token enforcement).
-        //
-        // The catch is YouTube's bot check: with a stale/shared visitorData,
-        // ANDROID_VR returns playabilityStatus=LOGIN_REQUIRED ("Sign in to
-        // confirm you're not a bot"). A freshly minted, session-unique
-        // visitorData (see getVisitorData) clears that check. We refresh it once
-        // up front and reuse it for both attempts.
-        //
-        // IOS stays only as a last-ditch fallback for the rare videos ANDROID_VR
-        // can't serve (e.g. "made for kids", which ANDROID_VR omits). Its URL may
-        // be throttled, but a few seconds of audio beats a hard failure.
-        //
-        // Each call is hard-capped by streamResolveClient's callTimeout, so the
-        // worst case is bounded regardless of coroutine cancellability.
-        val visitorData = getVisitorData()
-
-        val androidVrExtras = org.json.JSONObject().apply {
-            put("androidSdkVersion", 32)
-            put("deviceMake", "Oculus")
-            put("deviceModel", "Quest 3")
-            put("osName", "Android")
-            put("osVersion", "12L")
-        }
-        val iosExtras = org.json.JSONObject().apply {
-            put("deviceMake", "Apple")
-            put("deviceModel", "iPhone16,2")
-            put("osName", "iPhone")
-            put("osVersion", "18.1.0.22B83")
-        }
-
-        val url = getStreamUrlFromInnerTube(
-            videoId = videoId,
-            clientName = "ANDROID_VR",
-            clientVersion = ANDROID_VR_VERSION,
-            clientNameId = ANDROID_VR_CLIENT_ID,
-            userAgent = ANDROID_VR_USER_AGENT,
-            visitorData = visitorData,
-            extraClientFields = androidVrExtras,
-        ) ?: getStreamUrlFromInnerTube(
-            videoId = videoId,
-            clientName = "IOS",
-            clientVersion = IOS_VERSION,
-            clientNameId = IOS_CLIENT_ID,
-            userAgent = IOS_USER_AGENT,
-            visitorData = visitorData,
-            extraClientFields = iosExtras,
-        )
+        // Single resolution mechanism: direct InnerTube /player calls
+        // (ANDROID_VR primary, IOS fallback — see runPlayerClientChain), with a
+        // one-shot visitorData remint + retry when YouTube's bot check flags
+        // the current token (see resolvePlayerStreamingData).
+        val url = resolvePlayerStreamingData(videoId)?.let { pickAudioStreamUrl(videoId, it) }
 
         val dt = System.currentTimeMillis() - startMs
         if (!url.isNullOrEmpty()) {
@@ -625,8 +573,11 @@ class YouTubeRepository(private val context: Context) {
     // --- Fresh visitorData (anti-bot) ---------------------------------------
     // YouTube's /player bot check keys off visitorData: a stale or shared value
     // gets flagged (LOGIN_REQUIRED). A visitorData freshly minted from the
-    // youtube.com bootstrap passes. We cache it (companion-level, see there)
-    // and refresh on a TTL.
+    // youtube.com bootstrap passes. We cache it (companion-level, see there),
+    // refresh on a TTL, persist the last good token per install, and remint
+    // immediately when a /player response shows the current token got flagged
+    // mid-TTL (remintVisitorData) — otherwise every resolution keeps failing
+    // for hours, which users experience as "music suddenly stops playing".
 
     /**
      * Warm the visitorData cache off the critical path. The cold fetch
@@ -652,13 +603,63 @@ class YouTubeRepository(private val context: Context) {
             if (!fresh.isNullOrEmpty()) {
                 cachedVisitorData = fresh
                 visitorDataFetchedAt = nowInner
+                persistVisitorData(fresh)
                 android.util.Log.i("YouTubeRepository", "visitorData refreshed (len=${fresh.length})")
                 fresh
             } else {
-                // Reuse a previously-good value if we have one; otherwise fall
-                // back to the baked-in constant (better than nothing).
-                cachedVisitorData ?: DEFAULT_VISITOR_DATA
+                // Reuse a previously-good value: this session's, else the last
+                // one this install successfully minted. Never a token shared
+                // across installs — the bot check flags shared visitorData,
+                // which kills all stream resolution. Empty means "send the
+                // /player call without visitorData", which mostly still works.
+                cachedVisitorData ?: loadPersistedVisitorData() ?: ""
             }
+        }
+    }
+
+    /**
+     * Drop [flagged] from the in-memory and persisted caches and mint a fresh
+     * visitorData right now. Called when a /player response shows YouTube's
+     * bot check rejected the current token (LOGIN_REQUIRED / missing
+     * streamingData). Returns null when the bootstrap fetch fails.
+     */
+    private suspend fun remintVisitorData(flagged: String): String? =
+        visitorDataMutex.withLock {
+            // A concurrent resolution may have already reminted while this one
+            // waited on the lock — reuse its token instead of re-fetching.
+            cachedVisitorData?.takeIf { it != flagged }?.let { return@withLock it }
+            cachedVisitorData = null
+            visitorDataFetchedAt = 0L
+            clearPersistedVisitorData(flagged)
+            val fresh = fetchVisitorData()
+            if (!fresh.isNullOrEmpty()) {
+                cachedVisitorData = fresh
+                visitorDataFetchedAt = System.currentTimeMillis()
+                persistVisitorData(fresh)
+                android.util.Log.i("YouTubeRepository", "visitorData reminted after bot-check flag")
+                fresh
+            } else {
+                android.util.Log.w("YouTubeRepository", "visitorData remint failed (bootstrap fetch)")
+                null
+            }
+        }
+
+    // Last successfully minted token, persisted per install so a cold start on
+    // a flaky network still has a usable, install-unique token to fall back on.
+    private val visitorDataPrefs by lazy {
+        context.getSharedPreferences("ivor_visitor_data", Context.MODE_PRIVATE)
+    }
+
+    private fun loadPersistedVisitorData(): String? =
+        visitorDataPrefs.getString("visitor_data", null)?.takeIf { it.isNotBlank() }
+
+    private fun persistVisitorData(value: String) {
+        visitorDataPrefs.edit().putString("visitor_data", value).apply()
+    }
+
+    private fun clearPersistedVisitorData(flagged: String) {
+        if (visitorDataPrefs.getString("visitor_data", null) == flagged) {
+            visitorDataPrefs.edit().remove("visitor_data").apply()
         }
     }
 
@@ -674,7 +675,10 @@ class YouTubeRepository(private val context: Context) {
                 .addHeader("User-Agent", BROWSER_USER_AGENT)
                 .addHeader("Accept-Language", "en-US,en;q=0.9")
                 .build()
-            val response = streamResolveClient.newCall(request).execute()
+            // The bootstrap page is ~1.5 MB — use the general 30s client, not
+            // streamResolveClient whose 8s callTimeout kills the download on
+            // slow connections and left those users without a usable token.
+            val response = okHttpClient.newCall(request).execute()
             val html = response.body?.string().orEmpty()
             response.close()
             Regex("\"visitorData\":\"(.*?)\"").find(html)
@@ -1253,25 +1257,105 @@ class YouTubeRepository(private val context: Context) {
     }
 
     /**
-     * Single-client InnerTube /player call. Returns the best audio URL or null on any
-     * failure. Falls back to muxed video-only formats (e.g. itag 18) when no audio-only
-     * format is available — ExoPlayer extracts the audio track from the MP4 container,
-     * which is critical because ANDROID_VR can return only format 18 since March 2026
-     * (see yt-dlp issue #16150).
+     * Outcome of one InnerTube /player call. [visitorDataSuspect] is true when
+     * the response indicates YouTube's bot check flagged our visitorData:
+     * playability LOGIN_REQUIRED ("Sign in to confirm you're not a bot"), or a
+     * 200/OK response with streamingData missing (stale/missing visitorData).
      */
-    private suspend fun getStreamUrlFromInnerTube(
-        videoId: String,
-        clientName: String,
-        clientVersion: String,
-        clientNameId: Int,
-        userAgent: String,
-        visitorData: String,
-        extraClientFields: org.json.JSONObject = org.json.JSONObject(),
-    ): String? = withContext(Dispatchers.IO) {
-        val streamingData = fetchPlayerStreamingData(
-            videoId, clientName, clientVersion, clientNameId, userAgent, visitorData, extraClientFields
-        ) ?: return@withContext null
+    private class PlayerResponse(
+        val streamingData: org.json.JSONObject?,
+        val visitorDataSuspect: Boolean,
+    )
 
+    /**
+     * Resolve /player streamingData for [videoId], reminting the visitorData
+     * and retrying once when the responses show the current token has been
+     * flagged by YouTube's bot check. Without the remint, a token flagged
+     * mid-TTL poisons every resolution until it expires — the "music played
+     * fine, then nothing plays anymore" failure mode.
+     */
+    private suspend fun resolvePlayerStreamingData(videoId: String): org.json.JSONObject? {
+        val visitorData = getVisitorData()
+        val first = runPlayerClientChain(videoId, visitorData)
+        first.streamingData?.let { return it }
+        if (!first.visitorDataSuspect) return null
+
+        android.util.Log.w(
+            "YouTubeRepository",
+            "Resolve: visitorData flagged by bot check, reminting and retrying videoId=$videoId",
+        )
+        val fresh = remintVisitorData(flagged = visitorData) ?: return null
+        if (fresh == visitorData) return null
+        return runPlayerClientChain(videoId, fresh).streamingData
+    }
+
+    /**
+     * The two-client /player chain.
+     *
+     * ANDROID_VR is the primary (and effectively only) client that yields
+     * *fully downloadable* audio URLs without a GVS PO Token: its googlevideo
+     * URLs serve the whole file, where IOS-issued URLs are throttled to the
+     * first ~1 MiB and then return HTTP 403 (GVS PO-Token enforcement).
+     *
+     * IOS stays only as a last-ditch fallback for the rare videos ANDROID_VR
+     * can't serve (e.g. "made for kids", which ANDROID_VR omits). Its URL may
+     * be throttled, but a few seconds of audio beats a hard failure.
+     *
+     * Each call is hard-capped by streamResolveClient's callTimeout, so the
+     * worst case is bounded regardless of coroutine cancellability.
+     */
+    private suspend fun runPlayerClientChain(videoId: String, visitorData: String): PlayerResponse {
+        val androidVrExtras = org.json.JSONObject().apply {
+            put("androidSdkVersion", 32)
+            put("deviceMake", "Oculus")
+            put("deviceModel", "Quest 3")
+            put("osName", "Android")
+            put("osVersion", "12L")
+        }
+        val iosExtras = org.json.JSONObject().apply {
+            put("deviceMake", "Apple")
+            put("deviceModel", "iPhone16,2")
+            put("osName", "iPhone")
+            put("osVersion", "18.1.0.22B83")
+        }
+
+        val vr = fetchPlayerResponse(
+            videoId = videoId,
+            clientName = "ANDROID_VR",
+            clientVersion = ANDROID_VR_VERSION,
+            clientNameId = ANDROID_VR_CLIENT_ID,
+            userAgent = ANDROID_VR_USER_AGENT,
+            visitorData = visitorData,
+            extraClientFields = androidVrExtras,
+        )
+        vr.streamingData?.let { return vr }
+
+        val ios = fetchPlayerResponse(
+            videoId = videoId,
+            clientName = "IOS",
+            clientVersion = IOS_VERSION,
+            clientNameId = IOS_CLIENT_ID,
+            userAgent = IOS_USER_AGENT,
+            visitorData = visitorData,
+            extraClientFields = iosExtras,
+        )
+        return PlayerResponse(
+            streamingData = ios.streamingData,
+            visitorDataSuspect = vr.visitorDataSuspect || ios.visitorDataSuspect,
+        )
+    }
+
+    /**
+     * Select the best audio URL from a /player streamingData object. Falls back
+     * to muxed video formats (e.g. itag 18) when no audio-only format is
+     * available — ExoPlayer extracts the audio track from the MP4 container,
+     * which is critical because ANDROID_VR can return only format 18 since
+     * March 2026 (see yt-dlp issue #16150).
+     */
+    private fun pickAudioStreamUrl(
+        videoId: String,
+        streamingData: org.json.JSONObject,
+    ): String? {
         val formats = mutableListOf<org.json.JSONObject>()
         streamingData.optJSONArray("adaptiveFormats")?.let { arr ->
             for (i in 0 until arr.length()) formats.add(arr.getJSONObject(i))
@@ -1287,11 +1371,11 @@ class YouTubeRepository(private val context: Context) {
         }
         android.util.Log.d(
             "YouTubeRepository",
-            "Resolve[InnerTube/$clientName] formats=${formats.size} audioOnly=${audioFormats.size} videoId=$videoId",
+            "Resolve[InnerTube] formats=${formats.size} audioOnly=${audioFormats.size} videoId=$videoId",
         )
 
         audioFormats.maxByOrNull { it.optInt("bitrate") }?.optString("url")
-            ?.takeIf { it.isNotEmpty() }?.let { return@withContext it }
+            ?.takeIf { it.isNotEmpty() }?.let { return it }
 
         // No audio-only stream available — fall back to a muxed MP4 (itag 18 etc.).
         // ExoPlayer happily plays just the audio track of these.
@@ -1302,9 +1386,9 @@ class YouTubeRepository(private val context: Context) {
             ?.takeIf { it.isNotEmpty() }?.let {
                 android.util.Log.w(
                     "YouTubeRepository",
-                    "Resolve[InnerTube/$clientName] using muxed video format videoId=$videoId (no audio-only)",
+                    "Resolve[InnerTube] using muxed video format videoId=$videoId (no audio-only)",
                 )
-                return@withContext it
+                return it
             }
 
         val cipheredCount = formats.count {
@@ -1313,17 +1397,17 @@ class YouTubeRepository(private val context: Context) {
         }
         android.util.Log.w(
             "YouTubeRepository",
-            "Resolve[InnerTube/$clientName] no usable URL videoId=$videoId ciphered=${cipheredCount}/${formats.size}",
+            "Resolve[InnerTube] no usable URL videoId=$videoId ciphered=${cipheredCount}/${formats.size}",
         )
-        null
+        return null
     }
 
     /**
      * Single-client InnerTube /player call returning the raw streamingData
-     * object, or null on any failure (HTTP error, bad playability, missing
-     * streamingData). Shared by audio resolution and video quality listing.
+     * object plus a bot-check verdict (see [PlayerResponse]). Shared by audio
+     * resolution and video quality listing.
      */
-    private suspend fun fetchPlayerStreamingData(
+    private suspend fun fetchPlayerResponse(
         videoId: String,
         clientName: String,
         clientVersion: String,
@@ -1331,7 +1415,7 @@ class YouTubeRepository(private val context: Context) {
         userAgent: String,
         visitorData: String,
         extraClientFields: org.json.JSONObject = org.json.JSONObject(),
-    ): org.json.JSONObject? = withContext(Dispatchers.IO) {
+    ): PlayerResponse = withContext(Dispatchers.IO) {
         try {
             val clientObj = org.json.JSONObject().apply {
                 put("clientName", clientName)
@@ -1339,7 +1423,7 @@ class YouTubeRepository(private val context: Context) {
                 put("hl", "en")
                 put("gl", "US")
                 put("utcOffsetMinutes", 0)
-                put("visitorData", visitorData)
+                if (visitorData.isNotBlank()) put("visitorData", visitorData)
                 val keys = extraClientFields.keys()
                 while (keys.hasNext()) {
                     val k = keys.next()
@@ -1360,17 +1444,19 @@ class YouTubeRepository(private val context: Context) {
 
             val url = "https://youtubei.googleapis.com/youtubei/v1/player?key=$INNER_TUBE_API_KEY&prettyPrint=false"
 
-            val request = okhttp3.Request.Builder()
+            val requestBuilder = okhttp3.Request.Builder()
                 .url(url)
                 .post(jsonBody.toRequestBody("application/json".toMediaType()))
                 .addHeader("User-Agent", userAgent)
                 .addHeader("X-Goog-Api-Format-Version", "2")
                 .addHeader("X-YouTube-Client-Name", clientNameId.toString())
                 .addHeader("X-YouTube-Client-Version", clientVersion)
-                .addHeader("X-Goog-Visitor-Id", visitorData)
                 .addHeader("Origin", "https://www.youtube.com")
                 .addHeader("Accept", "application/json")
-                .build()
+            if (visitorData.isNotBlank()) {
+                requestBuilder.addHeader("X-Goog-Visitor-Id", visitorData)
+            }
+            val request = requestBuilder.build()
 
             val response = streamResolveClient.newCall(request).execute()
             val code = response.code
@@ -1382,14 +1468,14 @@ class YouTubeRepository(private val context: Context) {
                     "YouTubeRepository",
                     "Resolve[InnerTube/$clientName] HTTP $code videoId=$videoId body=${json.take(160)}",
                 )
-                return@withContext null
+                return@withContext PlayerResponse(null, false)
             }
             if (json.isEmpty()) {
                 android.util.Log.w(
                     "YouTubeRepository",
                     "Resolve[InnerTube/$clientName] empty body videoId=$videoId",
                 )
-                return@withContext null
+                return@withContext PlayerResponse(null, false)
             }
 
             val root = org.json.JSONObject(json)
@@ -1401,23 +1487,29 @@ class YouTubeRepository(private val context: Context) {
                     "YouTubeRepository",
                     "Resolve[InnerTube/$clientName] playability=$status reason=${playability?.optString("reason")} videoId=$videoId",
                 )
-                return@withContext null
+                // LOGIN_REQUIRED here is the bot check rejecting our
+                // visitorData ("Sign in to confirm you're not a bot").
+                return@withContext PlayerResponse(null, status == "LOGIN_REQUIRED")
             }
 
-            root.optJSONObject("streamingData") ?: run {
+            val streamingData = root.optJSONObject("streamingData")
+            if (streamingData == null) {
                 android.util.Log.w(
                     "YouTubeRepository",
                     "Resolve[InnerTube/$clientName] no streamingData videoId=$videoId",
                 )
-                null
+                // Status OK with no streamingData is the other known signature
+                // of a stale/missing visitorData.
+                return@withContext PlayerResponse(null, true)
             }
+            PlayerResponse(streamingData, false)
         } catch (e: Exception) {
             android.util.Log.e(
                 "YouTubeRepository",
                 "Resolve[InnerTube/$clientName] exception videoId=$videoId",
                 e,
             )
-            null
+            PlayerResponse(null, false)
         }
     }
 
@@ -3325,44 +3417,12 @@ class YouTubeRepository(private val context: Context) {
 
     /**
      * Resolve the full video quality ladder via InnerTube: ANDROID_VR first
-     * (no PO token, unciphered URLs), IOS as fallback. Returns an empty list
-     * when neither client yields usable streamingData.
+     * (no PO token, unciphered URLs), IOS as fallback, with a one-shot
+     * visitorData remint when the bot check flags the current token. Returns
+     * an empty list when neither client yields usable streamingData.
      */
     private suspend fun getVideoQualitiesFromInnerTube(videoId: String): List<VideoQuality> {
-        val visitorData = getVisitorData()
-
-        val androidVrExtras = org.json.JSONObject().apply {
-            put("androidSdkVersion", 32)
-            put("deviceMake", "Oculus")
-            put("deviceModel", "Quest 3")
-            put("osName", "Android")
-            put("osVersion", "12L")
-        }
-        val iosExtras = org.json.JSONObject().apply {
-            put("deviceMake", "Apple")
-            put("deviceModel", "iPhone16,2")
-            put("osName", "iPhone")
-            put("osVersion", "18.1.0.22B83")
-        }
-
-        val streamingData = fetchPlayerStreamingData(
-            videoId = videoId,
-            clientName = "ANDROID_VR",
-            clientVersion = ANDROID_VR_VERSION,
-            clientNameId = ANDROID_VR_CLIENT_ID,
-            userAgent = ANDROID_VR_USER_AGENT,
-            visitorData = visitorData,
-            extraClientFields = androidVrExtras,
-        ) ?: fetchPlayerStreamingData(
-            videoId = videoId,
-            clientName = "IOS",
-            clientVersion = IOS_VERSION,
-            clientNameId = IOS_CLIENT_ID,
-            userAgent = IOS_USER_AGENT,
-            visitorData = visitorData,
-            extraClientFields = iosExtras,
-        ) ?: return emptyList()
-
+        val streamingData = resolvePlayerStreamingData(videoId) ?: return emptyList()
         return parseQualitiesFromStreamingData(streamingData)
     }
 

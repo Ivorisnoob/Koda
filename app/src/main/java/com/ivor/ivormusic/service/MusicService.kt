@@ -62,11 +62,19 @@ class MusicService : MediaLibraryService() {
     private val resolveScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     // --- State & Cache ---
-    // --- State & Cache ---
     // Deduplicated active resolutions: VideoID -> Deferred result
     private val activeResolutions = ConcurrentHashMap<String, kotlinx.coroutines.Deferred<MediaItem>>()
-    // Cache for resolved URIs (VideoID -> URI)
-    private val uriCache = ConcurrentHashMap<String, String>()
+
+    // Cache for resolved stream URIs. googlevideo URLs die after ~6h (their
+    // `expire` param) and on network/IP changes, so each entry carries an
+    // expiry and is dropped instead of being replayed as a guaranteed 403.
+    private class CachedUri(val uri: String, val expiresAtMs: Long)
+    private val uriCache = ConcurrentHashMap<String, CachedUri>()
+
+    // Per-song playback error retries. Kept separate from uriCache and reset
+    // on successful playback so a song can't permanently exhaust its budget
+    // over the lifetime of the service.
+    private val retryCounts = ConcurrentHashMap<String, Int>()
     
     // --- Configuration ---
     private var isCrossfadeEnabled = true
@@ -93,6 +101,28 @@ class MusicService : MediaLibraryService() {
         private const val PLACEHOLDER_PREFIX = "https://placeholder.ivormusic/"
         private const val CACHED_PREFIX = "https://cached.ivormusic/"
         private const val ANDROID_AUTO_BROWSE_TIMEOUT_MS = 30_000L
+        // Safety margin before a googlevideo URL's `expire` timestamp, and the
+        // fallback lifetime when the URL carries no readable expire param.
+        private const val URI_EXPIRY_SAFETY_MS = 5 * 60 * 1000L
+        private const val URI_DEFAULT_TTL_MS = 4 * 60 * 60 * 1000L
+    }
+
+    /**
+     * When the cached URI for a googlevideo URL stops being usable. Prefers the
+     * URL's own `expire` query param (epoch seconds, ~6h out) minus a safety
+     * margin; falls back to a conservative fixed TTL.
+     */
+    private fun streamUrlExpiryMs(url: String): Long {
+        val expireSec = try {
+            Uri.parse(url).getQueryParameter("expire")?.toLongOrNull()
+        } catch (_: Exception) {
+            null
+        }
+        return if (expireSec != null && expireSec > 0) {
+            expireSec * 1000L - URI_EXPIRY_SAFETY_MS
+        } else {
+            System.currentTimeMillis() + URI_DEFAULT_TTL_MS
+        }
     }
 
     override fun onCreate() {
@@ -149,6 +179,7 @@ class MusicService : MediaLibraryService() {
         CacheManager.release()
         activeResolutions.clear()
         uriCache.clear()
+        retryCounts.clear()
         super.onDestroy()
     }
 
@@ -298,6 +329,10 @@ class MusicService : MediaLibraryService() {
 
             // Start prefetching as soon as we are ready
             if (playbackState == Player.STATE_READY) {
+                // The current song plays — give it back its full retry budget
+                // so one bad stretch (expired URL, network blip) months of
+                // uptime ago can't permanently blacklist it.
+                player.currentMediaItem?.mediaId?.let { retryCounts.remove(it) }
                 prefetchUpcomingSongs()
             }
 
@@ -438,10 +473,15 @@ class MusicService : MediaLibraryService() {
             return buildMediaItemWithUri(originalItem, downloaded.uri, downloaded.duration)
         }
 
-        // 2. Cache (Memory)
-        uriCache[videoId]?.let { cachedUri ->
-            Log.d(TAG, "Resolution: Found cached URI for $videoId")
-            return buildMediaItemWithUri(originalItem, Uri.parse(cachedUri))
+        // 2. Cache (Memory) — only while the underlying googlevideo URL is
+        // still valid; expired entries are re-resolved instead of replayed.
+        uriCache[videoId]?.let { cached ->
+            if (cached.expiresAtMs > System.currentTimeMillis()) {
+                Log.d(TAG, "Resolution: Found cached URI for $videoId")
+                return buildMediaItemWithUri(originalItem, Uri.parse(cached.uri))
+            }
+            Log.d(TAG, "Resolution: Cached URI expired for $videoId, re-resolving")
+            uriCache.remove(videoId)
         }
 
         // 3. Disk Cache (Fully Cached - Instant Playback)
@@ -460,7 +500,7 @@ class MusicService : MediaLibraryService() {
             
             val streamUrl = result?.getOrNull()
             if (!streamUrl.isNullOrEmpty()) {
-                uriCache[videoId] = streamUrl
+                uriCache[videoId] = CachedUri(streamUrl, streamUrlExpiryMs(streamUrl))
                 Log.d(TAG, "Resolution: Network success for $videoId")
                 buildMediaItemWithUri(originalItem, Uri.parse(streamUrl))
             } else {
@@ -531,12 +571,11 @@ class MusicService : MediaLibraryService() {
         }
 
         // 2. Retry Logic (YouTube songs only)
-        val retryCountKey = "retry_count_$videoId"
-        val retryCount = uriCache[retryCountKey]?.toIntOrNull() ?: 0
+        val retryCount = retryCounts[videoId] ?: 0
 
         if (retryCount < 2) {
             Log.w(TAG, "Error: Retrying ($retryCount/2) for $videoId...")
-            uriCache[retryCountKey] = (retryCount + 1).toString()
+            retryCounts[videoId] = retryCount + 1
             uriCache.remove(videoId) // Clear bad cache
             
             serviceScope.launch {

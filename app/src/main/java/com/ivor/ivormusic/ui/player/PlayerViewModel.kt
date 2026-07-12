@@ -19,6 +19,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
@@ -53,6 +54,16 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
 
     private val _isBuffering = MutableStateFlow(false)
     val isBuffering: StateFlow<Boolean> = _isBuffering.asStateFlow()
+
+    // One-shot user-facing playback error message. The UI shows it (toast) and
+    // calls clearPlaybackError(). Without this, resolution/network failures
+    // were completely silent and the player sat on the buffering spinner.
+    private val _playbackError = MutableStateFlow<String?>(null)
+    val playbackError: StateFlow<String?> = _playbackError.asStateFlow()
+
+    fun clearPlaybackError() {
+        _playbackError.value = null
+    }
 
     private val _shuffleModeEnabled = MutableStateFlow(false)
     val shuffleModeEnabled: StateFlow<Boolean> = _shuffleModeEnabled.asStateFlow()
@@ -148,6 +159,27 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     init {
         initializeController()
         startProgressUpdates()
+        startBufferingWatchdog()
+    }
+
+    /**
+     * Global buffering watchdog: whenever the spinner has been showing for 30s
+     * without playback starting, clear it. Covers every path that sets
+     * _isBuffering (playQueue, skip, auto-advance) so a failed resolution can
+     * never leave the UI on an eternal loading state.
+     */
+    private fun startBufferingWatchdog() {
+        viewModelScope.launch {
+            _isBuffering.collectLatest { buffering ->
+                if (buffering) {
+                    delay(30_000)
+                    if (_isBuffering.value && !_isPlaying.value) {
+                        android.util.Log.w("PlayerViewModel", "Buffering watchdog: clearing stuck state")
+                        _isBuffering.value = false
+                    }
+                }
+            }
+        }
     }
     
     /**
@@ -259,6 +291,21 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                             // especially for local songs that transition through IDLE->READY
                             // almost instantly.
                         }
+                    }
+                }
+
+                override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                    android.util.Log.e("PlayerViewModel", "Playback error: ${error.errorCodeName}", error)
+                    // MusicService retries and skips on its own; if it recovers,
+                    // the player re-enters BUFFERING and the flag comes back.
+                    // Clearing here guarantees the spinner can't outlive a
+                    // playback that is never going to start.
+                    _isBuffering.value = false
+                    val title = _currentSong.value?.title
+                    _playbackError.value = if (title != null) {
+                        "Couldn't play \"$title\". Check your connection and try again."
+                    } else {
+                        "Playback failed. Check your connection and try again."
                     }
                 }
 
@@ -504,17 +551,9 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
             }
             
             // 3. NOW prepare and play - notification will see complete queue
+            // (the buffering watchdog in init covers the stuck-spinner case)
             player.prepare()
             player.play()
-            
-            // Safety timeout for buffering state - if stuck for 30 seconds, clear it
-            viewModelScope.launch {
-                delay(30_000)
-                if (_isBuffering.value && !_isPlaying.value) {
-                    android.util.Log.w("PlayerViewModel", "Buffering timeout - clearing stuck state")
-                    _isBuffering.value = false
-                }
-            }
         }
     }
     
