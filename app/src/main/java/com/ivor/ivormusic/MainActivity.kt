@@ -205,9 +205,19 @@ fun MusicApp(
         PlayerViewModel(context.applicationContext)
     }
     val homeViewModel: HomeViewModel = viewModel()
-    
+
     val videoPlayerViewModel: com.ivor.ivormusic.ui.video.VideoPlayerViewModel = viewModel()
     val shortsPlayerViewModel: com.ivor.ivormusic.ui.shorts.ShortsPlayerViewModel = viewModel()
+
+    // Surface music playback failures. Before this, a song that could not be
+    // resolved failed silently and the player looked stuck on loading forever.
+    val playbackError by playerViewModel.playbackError.collectAsState()
+    androidx.compose.runtime.LaunchedEffect(playbackError) {
+        playbackError?.let { message ->
+            android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show()
+            playerViewModel.clearPlaybackError()
+        }
+    }
 
     Box(
         modifier = Modifier
