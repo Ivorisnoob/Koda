@@ -101,7 +101,6 @@ Plus an **ambient artwork background**, an optional **chromatic-mist** effect, a
 ### Downloads
 
 - Download individual songs for offline listening.
-- Batch-download entire playlists.
 - A download manager to track progress, cancel, delete, and clear failed downloads, with progress notifications.
 
 ### Interface and theming
