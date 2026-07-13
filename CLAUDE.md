@@ -108,4 +108,4 @@ Known browse IDs (verified July 2026): `FElibrary` (library shelves), `FEplaylis
 
 ### Reference docs in-repo
 
-`docs/` contains deep dives (ARCHITECTURE, DEEP_DIVE_YOUTUBE, DEEP_DIVE_PLAYBACK, NEWPIPE_INTEGRATION_GUIDE) and `Material_3_expressive/` + `docs/*.md` hold M3 Expressive component guides. GitHub repo for releases/issues: `ivorisnoob/Koda`.
+`Material_3_expressive/` holds the M3 Expressive component guides (Buttons, Carousel, Lists, Menus, Motion, Overview, ProgressIndicators, Shapes, Theming, Toolbars). `.agent/rules/` and `.agent/skills/` (Kotlin skill, code-style guide) carry the coding conventions. There is no `docs/` directory in the repo today — the deep-dive docs (ARCHITECTURE, DEEP_DIVE_YOUTUBE, DEEP_DIVE_PLAYBACK, NEWPIPE_INTEGRATION_GUIDE) referenced in older notes do not exist; the source files themselves plus this file are the reference. GitHub repo for releases/issues: `ivorisnoob/Koda`.
