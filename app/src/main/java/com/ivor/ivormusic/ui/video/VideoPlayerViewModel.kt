@@ -12,9 +12,12 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.MergingMediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
+import androidx.media3.exoplayer.source.SingleSampleMediaSource
+import com.ivor.ivormusic.data.CaptionTrack
 import com.ivor.ivormusic.data.CommentItem
 import com.ivor.ivormusic.data.LikeStatus
 import com.ivor.ivormusic.data.TimedComment
@@ -69,6 +72,23 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
     private val _relatedVideos = MutableStateFlow<List<VideoItem>>(emptyList())
     val relatedVideos: StateFlow<List<VideoItem>> = _relatedVideos
+
+    // Chapter markers for the current video (empty when the video has none)
+    private val _chapters = MutableStateFlow<List<com.ivor.ivormusic.data.VideoChapter>>(emptyList())
+    val chapters: StateFlow<List<com.ivor.ivormusic.data.VideoChapter>> = _chapters.asStateFlow()
+
+    // Caption/subtitle tracks (loaded lazily when the user opens the CC menu)
+    private val _captionTracks = MutableStateFlow<List<CaptionTrack>>(emptyList())
+    val captionTracks: StateFlow<List<CaptionTrack>> = _captionTracks.asStateFlow()
+
+    // Currently displayed caption track, or null when captions are off
+    private val _selectedCaption = MutableStateFlow<CaptionTrack?>(null)
+    val selectedCaption: StateFlow<CaptionTrack?> = _selectedCaption.asStateFlow()
+
+    private val _isCaptionsLoading = MutableStateFlow(false)
+    val isCaptionsLoading: StateFlow<Boolean> = _isCaptionsLoading.asStateFlow()
+
+    private var captionsLoadedForVideoId: String? = null
 
     private val _isLooping = MutableStateFlow(false)
     val isLooping: StateFlow<Boolean> = _isLooping.asStateFlow()
@@ -154,7 +174,27 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         // buffer drains and playback dies in a stuck-buffering state.
         // Audio focus + becoming-noisy mirror MusicService, so video playback
         // pauses the music player (and vice versa) instead of playing over it.
-        _exoPlayer = ExoPlayer.Builder(context)
+        // Media3 1.4+ parses subtitles at extraction time and disables the
+        // render-time text path by default, so a sideloaded text/vtt sample
+        // throws "Legacy decoding is disabled". Our captions are sideloaded as
+        // SingleSampleMediaSource, so re-enable legacy decoding on the text
+        // renderer. DefaultRenderersFactory only exposes a toggle for this from
+        // Media3 1.6; on 1.5 we flip it on the TextRenderer directly.
+        val renderersFactory = object : DefaultRenderersFactory(context) {
+            override fun buildTextRenderers(
+                context: Context,
+                output: androidx.media3.exoplayer.text.TextOutput,
+                outputLooper: android.os.Looper,
+                extensionRendererMode: Int,
+                out: ArrayList<androidx.media3.exoplayer.Renderer>
+            ) {
+                super.buildTextRenderers(context, output, outputLooper, extensionRendererMode, out)
+                out.filterIsInstance<androidx.media3.exoplayer.text.TextRenderer>()
+                    .forEach { it.experimentalSetLegacyDecodingEnabled(true) }
+            }
+        }
+
+        _exoPlayer = ExoPlayer.Builder(context, renderersFactory)
             .setLoadControl(loadControl)
             .setWakeMode(C.WAKE_MODE_NETWORK)
             .setAudioAttributes(AudioAttributes.DEFAULT, true)
@@ -181,6 +221,33 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                         }
                     }
                 }
+
+                override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                    // Captions are best-effort: a failing sideloaded subtitle
+                    // source fails the whole MergingMediaSource, which would
+                    // otherwise leave the player stuck buffering. If a caption is
+                    // active when playback errors, drop it and reload the video so
+                    // it recovers instead of hanging.
+                    if (_selectedCaption.value != null && _currentQuality.value != null) {
+                        android.util.Log.w(
+                            "VideoPlayerVM",
+                            "Playback error with captions on; retrying without captions",
+                            error
+                        )
+                        val quality = _currentQuality.value ?: return
+                        _selectedCaption.value = null
+                        _exoPlayer?.let { p ->
+                            p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
+                                .setPreferredTextLanguage(null)
+                                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                                .build()
+                        }
+                        reloadPreservingPosition(quality, null)
+                    } else {
+                        _playbackError.value = error
+                        _isBuffering.value = false
+                    }
+                }
             })
         }
 
@@ -200,6 +267,11 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         _exoPlayer?.setPlaybackSpeed(speed)
     }
 
+    /** Jump to a chapter's start position. */
+    fun seekToChapter(chapter: com.ivor.ivormusic.data.VideoChapter) {
+        _exoPlayer?.seekTo(chapter.startMs)
+    }
+
     fun playVideo(video: VideoItem) {
         if (_currentVideo.value?.videoId == video.videoId) {
             // Already playing this video, just expand
@@ -211,6 +283,11 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         _isExpanded.value = true
         _isLoading.value = true
         _relatedVideos.value = emptyList() // Clear previous related
+        _chapters.value = emptyList() // Clear previous chapters
+        _captionTracks.value = emptyList() // Clear previous caption tracks
+        _selectedCaption.value = null // Captions default off per video
+        _isCaptionsLoading.value = false
+        captionsLoadedForVideoId = null
         _playbackError.value = null // Clear previous error
 
         // Reset engagement + comments state for the new video
@@ -293,6 +370,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                 if (watchNext.relatedVideos.isNotEmpty()) {
                     _relatedVideos.value = watchNext.relatedVideos
                 }
+                _chapters.value = watchNext.chapters
             } catch (e: Exception) {
                 // Phase 2 errors are non-critical - playback already started
                 android.util.Log.w("VideoPlayerVM", "Failed to load watch-next data", e)
@@ -358,46 +436,96 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             ?: qualities.first()
     }
 
-    private fun loadQuality(quality: VideoQuality) {
+    /**
+     * Build the media source for [quality], optionally sideloading [caption] as
+     * a WebVTT subtitle track. DASH carries the subtitle via a MediaItem
+     * SubtitleConfiguration (the player's default source factory sideloads it);
+     * the progressive/merged paths wrap a SingleSampleMediaSource into the
+     * MergingMediaSource. PlayerView renders the selected text cues in its
+     * built-in SubtitleView, so no extra UI is needed.
+     */
+    private fun loadQuality(quality: VideoQuality, caption: CaptionTrack? = _selectedCaption.value) {
         _currentQuality.value = quality
-        val mediaItemBuilder = MediaItem.Builder().setUri(quality.url)
+
+        val subtitleConfig = caption?.let {
+            MediaItem.SubtitleConfiguration.Builder(android.net.Uri.parse(it.vttUrl))
+                .setMimeType(MimeTypes.TEXT_VTT)
+                .setLanguage(it.languageCode)
+                .setSelectionFlags(C.SELECTION_FLAG_DEFAULT)
+                .build()
+        }
 
         if (quality.isDASH) {
             // DASH streams are adaptive - use directly without merging
-            mediaItemBuilder.setMimeType(MimeTypes.APPLICATION_MPD)
-            _exoPlayer?.setMediaItem(mediaItemBuilder.build())
+            val builder = MediaItem.Builder()
+                .setUri(quality.url)
+                .setMimeType(MimeTypes.APPLICATION_MPD)
+            if (subtitleConfig != null) {
+                builder.setSubtitleConfigurations(listOf(subtitleConfig))
+            }
+            _exoPlayer?.setMediaItem(builder.build())
         } else {
             val dataSourceFactory = dataSourceFactoryFor(quality.url)
             val audioUrl = quality.audioUrl
-            if (audioUrl != null) {
-                // Non-DASH with separate audio - use MergingMediaSource
+            val primarySource = if (audioUrl != null) {
+                // Non-DASH with separate audio - use MergingMediaSource.
+                // adjustPeriodTimeOffsets aligns the two tracks' start offsets,
+                // preventing A/V desync when they don't begin at the same time.
                 val videoSource = ProgressiveMediaSource.Factory(dataSourceFactory)
                     .createMediaSource(MediaItem.fromUri(quality.url))
                 val audioSource = ProgressiveMediaSource.Factory(dataSourceFactory)
                     .createMediaSource(MediaItem.fromUri(audioUrl))
-
-                // adjustPeriodTimeOffsets aligns the two tracks' start offsets,
-                // preventing A/V desync when they don't begin at the same time.
-                val mergingSource = MergingMediaSource(true, videoSource, audioSource)
-                _exoPlayer?.setMediaSource(mergingSource)
+                MergingMediaSource(true, videoSource, audioSource)
             } else {
-                val source = ProgressiveMediaSource.Factory(dataSourceFactory)
-                    .createMediaSource(mediaItemBuilder.build())
-                _exoPlayer?.setMediaSource(source)
+                ProgressiveMediaSource.Factory(dataSourceFactory)
+                    .createMediaSource(MediaItem.fromUri(quality.url))
+            }
+
+            if (subtitleConfig != null) {
+                val subtitleSource = SingleSampleMediaSource.Factory(subtitleDataSourceFactory())
+                    .createMediaSource(subtitleConfig, C.TIME_UNSET)
+                // Documented sideloading pattern: merge the subtitle as an extra
+                // source. The default MergingMediaSource ignores the subtitle's
+                // unknown (TIME_UNSET) duration when clipping, so it does not
+                // truncate the video/audio timeline.
+                _exoPlayer?.setMediaSource(MergingMediaSource(primarySource, subtitleSource))
+            } else {
+                _exoPlayer?.setMediaSource(primarySource)
             }
         }
         _exoPlayer?.prepare()
     }
-    
+
+    /**
+     * HTTP factory for the timedtext subtitle request. The endpoint is on
+     * www.youtube.com (not googlevideo), so a plain browser User-Agent works.
+     */
+    private fun subtitleDataSourceFactory(): DefaultHttpDataSource.Factory =
+        DefaultHttpDataSource.Factory()
+            .setUserAgent(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+                    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            )
+            .setAllowCrossProtocolRedirects(true)
+
     fun setQuality(quality: VideoQuality) {
+        reloadPreservingPosition(quality, _selectedCaption.value)
+    }
+
+    /**
+     * Rebuild the media source for a new quality and/or caption selection while
+     * keeping the current playback position. Used by both quality switches and
+     * caption toggles.
+     */
+    private fun reloadPreservingPosition(quality: VideoQuality, caption: CaptionTrack?) {
         val player = _exoPlayer ?: return
         val position = player.currentPosition
-        
+
         // Remove any existing quality change listener to prevent leaks
         qualityChangeListener?.let { player.removeListener(it) }
-        
-        loadQuality(quality)
-        
+
+        loadQuality(quality, caption)
+
         // Wait for player to be ready before seeking to preserved position
         val listener = object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
@@ -410,6 +538,44 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         }
         qualityChangeListener = listener
         player.addListener(listener)
+    }
+
+    /** Load the caption track list for the current video, once, on demand. */
+    fun ensureCaptionsLoaded() {
+        val video = _currentVideo.value ?: return
+        if (captionsLoadedForVideoId == video.videoId) return
+        captionsLoadedForVideoId = video.videoId
+        _isCaptionsLoading.value = true
+        viewModelScope.launch {
+            try {
+                val tracks = youtubeRepository.getCaptionTracks(video.videoId)
+                // Ignore stale results if the user switched videos meanwhile
+                if (_currentVideo.value?.videoId == video.videoId) {
+                    _captionTracks.value = tracks
+                }
+            } finally {
+                if (_currentVideo.value?.videoId == video.videoId) {
+                    _isCaptionsLoading.value = false
+                }
+            }
+        }
+    }
+
+    /**
+     * Select a caption track (or null to turn captions off). Rebuilds the media
+     * source to add/remove the sideloaded subtitle, preserving position, and
+     * updates the player's preferred text language so the track is auto-shown.
+     */
+    fun setCaptionTrack(track: CaptionTrack?) {
+        if (_selectedCaption.value == track) return
+        _selectedCaption.value = track
+        val player = _exoPlayer ?: return
+        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+            .setPreferredTextLanguage(track?.languageCode)
+            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, track == null)
+            .build()
+        val quality = _currentQuality.value ?: return
+        reloadPreservingPosition(quality, track)
     }
 
     fun setExpanded(expanded: Boolean) {

@@ -2,6 +2,7 @@ package com.ivor.ivormusic.ui.video
 
 import android.app.Activity
 import android.content.Context
+import android.content.Intent
 import android.media.AudioManager
 import android.view.ViewGroup
 import android.view.WindowManager
@@ -12,6 +13,7 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -50,6 +52,8 @@ import androidx.compose.material.icons.outlined.ThumbUp
 import androidx.compose.material.icons.rounded.Autorenew
 import androidx.compose.material.icons.rounded.BrightnessHigh
 import androidx.compose.material.icons.rounded.BrightnessLow
+import androidx.compose.material.icons.rounded.ClosedCaption
+import androidx.compose.material.icons.rounded.ClosedCaptionOff
 import androidx.compose.material.icons.rounded.Error
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Forward10
@@ -60,6 +64,7 @@ import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.RepeatOne
 import androidx.compose.material.icons.rounded.Replay10
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.ThumbDown
 import androidx.compose.material.icons.rounded.ThumbUp
 import androidx.compose.material3.Button
@@ -94,6 +99,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.platform.LocalContext
@@ -113,6 +119,7 @@ import coil.compose.AsyncImage
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import com.ivor.ivormusic.data.LikeStatus
+import com.ivor.ivormusic.data.VideoChapter
 import com.ivor.ivormusic.data.VideoEngagement
 import com.ivor.ivormusic.data.VideoItem
 import kotlinx.coroutines.delay
@@ -150,7 +157,11 @@ fun FullscreenPlayerContent(
     onLoopToggle: () -> Unit,
     showTimedCommentsButton: Boolean = false,
     timedCommentsActive: Boolean = false,
-    onTimedCommentsToggle: () -> Unit = {}
+    onTimedCommentsToggle: () -> Unit = {},
+    chapters: List<VideoChapter> = emptyList(),
+    onOpenChapters: () -> Unit = {},
+    captionsActive: Boolean = false,
+    onCaptionsClick: () -> Unit = {}
 ) {
     // Stable shapes to prevent "square flash"
     val stableShapes = IconButtonDefaults.shapes()
@@ -158,12 +169,20 @@ fun FullscreenPlayerContent(
     // Pinch-to-zoom: fill the screen (crop) vs fit inside it
     var isZoomedToFill by remember { mutableStateOf(false) }
 
+    // Speed captured when a hold-to-2x begins, restored when the finger lifts
+    var speedBeforeBoost by remember { mutableFloatStateOf(1f) }
+
     PlayerGestureSurface(
         onToggleControls = onToggleControls,
         onSeekBackward = onSeekBackward,
         onSeekForward = onSeekForward,
         fullscreenGesturesEnabled = true,
-        onZoomedToFillChange = { isZoomedToFill = it }
+        onZoomedToFillChange = { isZoomedToFill = it },
+        onSpeedBoostStart = {
+            speedBeforeBoost = exoPlayer.playbackParameters.speed
+            exoPlayer.setPlaybackSpeed(2f)
+        },
+        onSpeedBoostEnd = { exoPlayer.setPlaybackSpeed(speedBeforeBoost) }
     ) {
         // Video View
         AndroidView(
@@ -270,6 +289,20 @@ fun FullscreenPlayerContent(
                         }
                     }
 
+                    FilledTonalIconButton(
+                        onClick = onCaptionsClick,
+                        colors = IconButtonDefaults.filledTonalIconButtonColors(
+                            containerColor = if (captionsActive) MaterialTheme.colorScheme.primary else Color.Black.copy(0.5f),
+                            contentColor = if (captionsActive) MaterialTheme.colorScheme.onPrimary else Color.White
+                        ),
+                        shapes = stableShapes
+                    ) {
+                        Icon(
+                            if (captionsActive) Icons.Rounded.ClosedCaption else Icons.Rounded.ClosedCaptionOff,
+                            contentDescription = "Captions"
+                        )
+                    }
+
                     FilledIconButton(
                         onClick = onSettings,
                         colors = IconButtonDefaults.filledIconButtonColors(
@@ -312,19 +345,28 @@ fun FullscreenPlayerContent(
                         .padding(horizontal = 32.dp, vertical = 32.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    if (chapters.isNotEmpty()) {
+                        ChapterTitleChip(
+                            chapters = chapters,
+                            currentPositionMs = currentPosition,
+                            onClick = onOpenChapters
+                        )
+                    }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
                         Text(formatDuration(currentPosition), color = Color.White, style = MaterialTheme.typography.labelLarge)
-                        
+
                         PlayerSeekBar(
                             progress = progress,
                             onSeek = onSeek,
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.weight(1f),
+                            chapters = chapters,
+                            durationMs = duration
                         )
-                        
+
                         Text(formatDuration(duration), color = Color.White, style = MaterialTheme.typography.labelLarge)
                     }
                 }
@@ -359,15 +401,27 @@ fun PortraitPlayerContent(
     onLoopToggle: () -> Unit,
     showTimedCommentsButton: Boolean = false,
     timedCommentsActive: Boolean = false,
-    onTimedCommentsToggle: () -> Unit = {}
+    onTimedCommentsToggle: () -> Unit = {},
+    chapters: List<VideoChapter> = emptyList(),
+    onOpenChapters: () -> Unit = {},
+    captionsActive: Boolean = false,
+    onCaptionsClick: () -> Unit = {}
 ) {
     // Stable shapes
     val stableShapes = IconButtonDefaults.shapes()
 
+    // Speed captured when a hold-to-2x begins, restored when the finger lifts
+    var speedBeforeBoost by remember { mutableFloatStateOf(1f) }
+
     PlayerGestureSurface(
         onToggleControls = onToggleControls,
         onSeekBackward = onSeekBackward,
-        onSeekForward = onSeekForward
+        onSeekForward = onSeekForward,
+        onSpeedBoostStart = {
+            speedBeforeBoost = exoPlayer.playbackParameters.speed
+            exoPlayer.setPlaybackSpeed(2f)
+        },
+        onSpeedBoostEnd = { exoPlayer.setPlaybackSpeed(speedBeforeBoost) }
     ) {
         AndroidView(
             factory = { ctx ->
@@ -449,6 +503,19 @@ fun PortraitPlayerContent(
                                 )
                             }
                         }
+                        FilledTonalIconButton(
+                            onClick = onCaptionsClick,
+                            colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                containerColor = if (captionsActive) MaterialTheme.colorScheme.primary else Color.Black.copy(0.5f),
+                                contentColor = if (captionsActive) MaterialTheme.colorScheme.onPrimary else Color.White
+                            ),
+                            shapes = stableShapes
+                        ) {
+                            Icon(
+                                if (captionsActive) Icons.Rounded.ClosedCaption else Icons.Rounded.ClosedCaptionOff,
+                                contentDescription = "Captions"
+                            )
+                        }
                         FilledIconButton(
                             onClick = onSettings,
                             colors = IconButtonDefaults.filledIconButtonColors(
@@ -485,19 +552,29 @@ fun PortraitPlayerContent(
                         .background(Brush.verticalGradient(colors = listOf(Color.Transparent, Color.Black.copy(0.8f))))
                         .padding(horizontal = 16.dp, vertical = 16.dp)
                 ) {
+                    if (chapters.isNotEmpty()) {
+                        ChapterTitleChip(
+                            chapters = chapters,
+                            currentPositionMs = currentPosition,
+                            onClick = onOpenChapters
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                    }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         Text(formatDuration(currentPosition), color = Color.White, style = MaterialTheme.typography.labelMedium)
-                        
+
                         PlayerSeekBar(
                             progress = progress,
                             onSeek = onSeek,
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.weight(1f),
+                            chapters = chapters,
+                            durationMs = duration
                         )
-                        
+
                         Text(formatDuration(duration), color = Color.White, style = MaterialTheme.typography.labelMedium)
                     }
                 }
@@ -517,28 +594,94 @@ fun PortraitPlayerContent(
 private fun PlayerSeekBar(
     progress: Float,
     onSeek: (Float) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    chapters: List<VideoChapter> = emptyList(),
+    durationMs: Long = 0L
 ) {
     var isScrubbing by remember { mutableStateOf(false) }
     var scrubValue by remember { mutableFloatStateOf(0f) }
 
-    Slider(
-        value = if (isScrubbing) scrubValue else progress.coerceIn(0f, 1f),
-        onValueChange = {
-            isScrubbing = true
-            scrubValue = it
-        },
-        onValueChangeFinished = {
-            onSeek(scrubValue)
-            isScrubbing = false
-        },
-        colors = SliderDefaults.colors(
-            thumbColor = MaterialTheme.colorScheme.primary,
-            activeTrackColor = MaterialTheme.colorScheme.primary,
-            inactiveTrackColor = Color.White.copy(0.3f)
-        ),
-        modifier = modifier
-    )
+    Box(modifier = modifier) {
+        Slider(
+            value = if (isScrubbing) scrubValue else progress.coerceIn(0f, 1f),
+            onValueChange = {
+                isScrubbing = true
+                scrubValue = it
+            },
+            onValueChangeFinished = {
+                onSeek(scrubValue)
+                isScrubbing = false
+            },
+            colors = SliderDefaults.colors(
+                thumbColor = MaterialTheme.colorScheme.primary,
+                activeTrackColor = MaterialTheme.colorScheme.primary,
+                inactiveTrackColor = Color.White.copy(0.3f)
+            ),
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        // Chapter boundary ticks drawn over the track. Purely decorative; the
+        // Canvas has no pointer input so touches still reach the Slider.
+        if (chapters.size > 1 && durationMs > 0) {
+            Canvas(modifier = Modifier.matchParentSize()) {
+                val centerY = size.height / 2f
+                val half = 5.dp.toPx()
+                val stroke = 2.5.dp.toPx()
+                chapters.forEach { chapter ->
+                    val fraction = chapter.startMs.toFloat() / durationMs.toFloat()
+                    if (fraction > 0.001f && fraction < 0.999f) {
+                        val x = fraction * size.width
+                        drawLine(
+                            color = Color.Black.copy(alpha = 0.85f),
+                            start = Offset(x, centerY - half),
+                            end = Offset(x, centerY + half),
+                            strokeWidth = stroke
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Pill above the seek bar showing the current chapter title; tapping it opens
+ * the full chapters list.
+ */
+@Composable
+private fun ChapterTitleChip(
+    chapters: List<VideoChapter>,
+    currentPositionMs: Long,
+    onClick: () -> Unit
+) {
+    val index = currentChapterIndex(chapters, currentPositionMs)
+    val title = chapters.getOrNull(index)?.title ?: return
+    Surface(
+        onClick = onClick,
+        shape = CircleShape,
+        color = Color.Black.copy(alpha = 0.5f),
+        contentColor = Color.White
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            modifier = Modifier.padding(start = 12.dp, end = 8.dp, top = 6.dp, bottom = 6.dp)
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.labelMedium,
+                color = Color.White,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Icon(
+                Icons.Rounded.ExpandMore,
+                contentDescription = "Chapters",
+                tint = Color.White,
+                modifier = Modifier.size(16.dp)
+            )
+        }
+    }
 }
 
 /** Seconds jumped per double-tap on either edge of the video surface. */
@@ -571,12 +714,17 @@ private fun PlayerGestureSurface(
     modifier: Modifier = Modifier,
     fullscreenGesturesEnabled: Boolean = false,
     onZoomedToFillChange: (Boolean) -> Unit = {},
+    onSpeedBoostStart: () -> Unit = {},
+    onSpeedBoostEnd: () -> Unit = {},
     content: @Composable BoxScope.() -> Unit
 ) {
     // side: -1 rewind, +1 forward, 0 hidden. seconds accumulates on rapid taps.
     var side by remember { mutableIntStateOf(0) }
     var seconds by remember { mutableIntStateOf(0) }
     var pulse by remember { mutableIntStateOf(0) }
+
+    // Press-and-hold anywhere temporarily boosts playback to 2x (YouTube-style).
+    var isBoosting by remember { mutableStateOf(false) }
 
     // Hide the badge a short while after the last tap. Re-runs (and so resets
     // the timer) every double tap because it is keyed on `pulse`.
@@ -624,6 +772,19 @@ private fun PlayerGestureSurface(
             .pointerInput(Unit) {
                 detectTapGestures(
                     onTap = { onToggleControls() },
+                    onLongPress = {
+                        isBoosting = true
+                        onSpeedBoostStart()
+                    },
+                    onPress = {
+                        // Suspends until the finger lifts (or the gesture is
+                        // cancelled); undo the boost if this press started one.
+                        tryAwaitRelease()
+                        if (isBoosting) {
+                            isBoosting = false
+                            onSpeedBoostEnd()
+                        }
+                    },
                     onDoubleTap = { offset ->
                         val tappedSide = if (offset.x < size.width / 2f) -1 else 1
                         seconds = if (tappedSide == side) seconds + DOUBLE_TAP_SEEK_SECONDS else DOUBLE_TAP_SEEK_SECONDS
@@ -697,6 +858,14 @@ private fun PlayerGestureSurface(
             )
     ) {
         content()
+
+        // "2x" pill shown at the top while the hold-to-speed-up is active
+        SpeedBoostBadge(
+            visible = isBoosting,
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = 24.dp)
+        )
 
         SeekFeedbackBadge(
             visible = side < 0,
@@ -803,6 +972,42 @@ private fun setVolumeFraction(audioManager: AudioManager, fraction: Float) {
     }
 }
 
+/** "2x" indicator shown at the top of the video while hold-to-speed-up is active. */
+@Composable
+private fun SpeedBoostBadge(
+    visible: Boolean,
+    modifier: Modifier = Modifier
+) {
+    AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn(),
+        exit = fadeOut(),
+        modifier = modifier
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            modifier = Modifier
+                .clip(CircleShape)
+                .background(Color.Black.copy(alpha = 0.55f))
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+        ) {
+            Icon(
+                Icons.Rounded.Forward10,
+                contentDescription = null,
+                tint = Color.White,
+                modifier = Modifier.size(18.dp)
+            )
+            Text(
+                text = "2x",
+                color = Color.White,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold
+            )
+        }
+    }
+}
+
 @Composable
 private fun SeekFeedbackBadge(
     visible: Boolean,
@@ -882,12 +1087,18 @@ fun VideoInfoSection(
             )
         }
 
-        // Like / Dislike Actions
-        LikeDislikeBar(
-            engagement = engagement,
-            onLikeClick = onLikeClick,
-            onDislikeClick = onDislikeClick
-        )
+        // Like / Dislike + Share Actions
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            LikeDislikeBar(
+                engagement = engagement,
+                onLikeClick = onLikeClick,
+                onDislikeClick = onDislikeClick
+            )
+            ShareVideoButton(video = video)
+        }
 
         // Channel Info Surface
         Surface(
@@ -1131,6 +1342,45 @@ fun VideoInfoSection(
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * Share pill that fires the system share sheet with the video's watch URL,
+ * matching the pill shape of the like/dislike bar it sits beside.
+ */
+@Composable
+private fun ShareVideoButton(video: VideoItem) {
+    val context = LocalContext.current
+    Surface(
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        onClick = {
+            val send = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_TEXT, "https://youtube.com/watch?v=${video.videoId}")
+            }
+            context.startActivity(Intent.createChooser(send, "Share video"))
+        }
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 12.dp)
+        ) {
+            Icon(
+                Icons.Rounded.Share,
+                contentDescription = "Share",
+                modifier = Modifier.size(20.dp),
+                tint = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = "Share",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
         }
     }
 }

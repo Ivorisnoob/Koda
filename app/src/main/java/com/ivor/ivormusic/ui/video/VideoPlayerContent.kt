@@ -18,23 +18,31 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.media3.common.util.UnstableApi
+import coil.compose.AsyncImage
+import com.ivor.ivormusic.data.CaptionTrack
+import com.ivor.ivormusic.data.VideoChapter
 import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.data.VideoQuality
 import kotlinx.coroutines.delay
@@ -63,6 +71,10 @@ fun VideoPlayerContent(
     val availableQualities by viewModel.availableQualities.collectAsState()
     val currentQuality by viewModel.currentQuality.collectAsState()
     val relatedVideos by viewModel.relatedVideos.collectAsState()
+    val chapters by viewModel.chapters.collectAsState()
+    val captionTracks by viewModel.captionTracks.collectAsState()
+    val selectedCaption by viewModel.selectedCaption.collectAsState()
+    val isCaptionsLoading by viewModel.isCaptionsLoading.collectAsState()
     val isLooping by viewModel.isLooping.collectAsState()
     val playbackSpeed by viewModel.playbackSpeed.collectAsState()
     val playbackError by viewModel.playbackError.collectAsState()
@@ -80,6 +92,8 @@ fun VideoPlayerContent(
     // Local UI State
     var showControls by remember { mutableStateOf(false) }
     var isFullscreen by remember { mutableStateOf(false) }
+    var showChaptersSheet by remember { mutableStateOf(false) }
+    var showCaptionsSheet by remember { mutableStateOf(false) }
     // Timed comments overlay toggle; persists across videos while the player is open
     var timedCommentsActive by remember { mutableStateOf(false) }
     
@@ -221,7 +235,14 @@ fun VideoPlayerContent(
                 onLoopToggle = { viewModel.toggleLooping() },
                 showTimedCommentsButton = timedCommentsFeatureEnabled,
                 timedCommentsActive = timedCommentsActive,
-                onTimedCommentsToggle = { timedCommentsActive = !timedCommentsActive }
+                onTimedCommentsToggle = { timedCommentsActive = !timedCommentsActive },
+                chapters = chapters,
+                onOpenChapters = { showChaptersSheet = true },
+                captionsActive = selectedCaption != null,
+                onCaptionsClick = {
+                    viewModel.ensureCaptionsLoaded()
+                    showCaptionsSheet = true
+                }
             )
 
                 if (timedCommentsFeatureEnabled && timedCommentsActive) {
@@ -272,7 +293,14 @@ fun VideoPlayerContent(
                         onLoopToggle = { viewModel.toggleLooping() },
                         showTimedCommentsButton = timedCommentsFeatureEnabled,
                         timedCommentsActive = timedCommentsActive,
-                        onTimedCommentsToggle = { timedCommentsActive = !timedCommentsActive }
+                        onTimedCommentsToggle = { timedCommentsActive = !timedCommentsActive },
+                        chapters = chapters,
+                        onOpenChapters = { showChaptersSheet = true },
+                        captionsActive = selectedCaption != null,
+                        onCaptionsClick = {
+                            viewModel.ensureCaptionsLoaded()
+                            showCaptionsSheet = true
+                        }
                     )
 
                     if (timedCommentsFeatureEnabled && timedCommentsActive) {
@@ -333,6 +361,33 @@ fun VideoPlayerContent(
             onLikeComment = { comment -> requireLogin { viewModel.toggleCommentLike(comment) } },
             onDeleteComment = { comment -> viewModel.deleteComment(comment) },
             onDismiss = { showCommentsSheet = false }
+        )
+    }
+
+    // Chapters list sheet
+    if (showChaptersSheet) {
+        ChaptersSheet(
+            chapters = chapters,
+            currentPositionMs = currentPosition,
+            onChapterClick = {
+                viewModel.seekToChapter(it)
+                showChaptersSheet = false
+            },
+            onDismiss = { showChaptersSheet = false }
+        )
+    }
+
+    // Captions / subtitles sheet
+    if (showCaptionsSheet) {
+        CaptionsSheet(
+            tracks = captionTracks,
+            selected = selectedCaption,
+            isLoading = isCaptionsLoading,
+            onSelect = {
+                viewModel.setCaptionTrack(it)
+                showCaptionsSheet = false
+            },
+            onDismiss = { showCaptionsSheet = false }
         )
     }
 
@@ -536,6 +591,194 @@ private fun PlayerSettingsSections(
             }
         }
     }
+}
+
+/**
+ * Bottom sheet listing the video's chapters. The chapter containing the
+ * current playback position is highlighted; tapping a row seeks to it.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ChaptersSheet(
+    chapters: List<VideoChapter>,
+    currentPositionMs: Long,
+    onChapterClick: (VideoChapter) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val activeIndex = currentChapterIndex(chapters, currentPositionMs)
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+        contentColor = MaterialTheme.colorScheme.onSurface
+    ) {
+        Text(
+            text = "Chapters",
+            style = MaterialTheme.typography.headlineSmall,
+            modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 8.dp)
+        )
+        LazyColumn(
+            modifier = Modifier.fillMaxWidth(),
+            contentPadding = PaddingValues(bottom = 32.dp)
+        ) {
+            itemsIndexed(chapters) { index, chapter ->
+                val isActive = index == activeIndex
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onChapterClick(chapter) }
+                        .background(
+                            if (isActive) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
+                            else Color.Transparent
+                        )
+                        .padding(horizontal = 24.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    if (!chapter.thumbnailUrl.isNullOrBlank()) {
+                        AsyncImage(
+                            model = chapter.thumbnailUrl,
+                            contentDescription = null,
+                            modifier = Modifier
+                                .width(96.dp)
+                                .aspectRatio(16f / 9f)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                        )
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = chapter.title,
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = if (isActive) FontWeight.Bold else FontWeight.Medium,
+                            color = if (isActive) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurface,
+                            maxLines = 2
+                        )
+                        Text(
+                            text = formatChapterTime(chapter.startMs),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    if (isActive) {
+                        Icon(
+                            Icons.Rounded.PlayArrow,
+                            contentDescription = "Now playing",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Bottom sheet listing available caption tracks with an "Off" option at the
+ * top. The selected track is checked. Shows a spinner while the track list is
+ * still loading and an empty-state when the video has no captions.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CaptionsSheet(
+    tracks: List<CaptionTrack>,
+    selected: CaptionTrack?,
+    isLoading: Boolean,
+    onSelect: (CaptionTrack?) -> Unit,
+    onDismiss: () -> Unit
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+        contentColor = MaterialTheme.colorScheme.onSurface
+    ) {
+        Text(
+            text = "Captions",
+            style = MaterialTheme.typography.headlineSmall,
+            modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 8.dp)
+        )
+        when {
+            isLoading && tracks.isEmpty() -> {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 32.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    ContainedLoadingIndicator()
+                }
+            }
+            tracks.isEmpty() -> {
+                Text(
+                    text = "No captions available for this video",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 24.dp)
+                )
+            }
+            else -> {
+                Column(modifier = Modifier.padding(bottom = 32.dp)) {
+                    CaptionRow(
+                        label = "Off",
+                        checked = selected == null,
+                        onClick = { onSelect(null) }
+                    )
+                    tracks.forEach { track ->
+                        val label = if (track.isAutoGenerated) "${track.name} (auto)" else track.name
+                        CaptionRow(
+                            label = label,
+                            checked = selected == track,
+                            onClick = { onSelect(track) }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CaptionRow(label: String, checked: Boolean, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 24.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = if (checked) FontWeight.Bold else FontWeight.Medium,
+            color = if (checked) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(1f)
+        )
+        if (checked) {
+            Icon(
+                Icons.Rounded.Check,
+                contentDescription = "Selected",
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+    }
+}
+
+/** Index of the chapter that contains [positionMs], or -1 when none applies. */
+internal fun currentChapterIndex(chapters: List<VideoChapter>, positionMs: Long): Int =
+    chapters.indexOfLast { positionMs >= it.startMs }
+
+/** mm:ss or h:mm:ss for a chapter start time. */
+internal fun formatChapterTime(millis: Long): String {
+    val totalSeconds = millis / 1000
+    val h = totalSeconds / 3600
+    val m = (totalSeconds % 3600) / 60
+    val s = totalSeconds % 60
+    return if (h > 0) String.format(java.util.Locale.US, "%d:%02d:%02d", h, m, s)
+    else String.format(java.util.Locale.US, "%d:%02d", m, s)
 }
 
 @Composable

@@ -97,8 +97,11 @@ import androidx.compose.material3.toShape
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Close
@@ -287,8 +290,10 @@ fun SearchScreen(
             
             // ========== CONTENT ==========
             when {
-                // Show search history if focused and query is empty
-                isSearchFocused && query.isEmpty() && searchHistory.isNotEmpty() -> {
+                // Show search history if focused and query is empty. Skipped in
+                // video mode so the field auto-focusing on entry doesn't hide the
+                // video Explore browse behind the recent-searches list.
+                !videoMode && isSearchFocused && query.isEmpty() && searchHistory.isNotEmpty() -> {
                     item {
                         SearchHistoryList(
                             history = searchHistory,
@@ -932,6 +937,15 @@ private fun SearchHeroHeader(
     textColor: Color,
     secondaryTextColor: Color
 ) {
+    // Auto-focus the search field (and pop the keyboard) when the screen appears
+    val focusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
+    LaunchedEffect(Unit) {
+        delay(150) // let the enter transition settle so focus/IME lands reliably
+        focusRequester.requestFocus()
+        keyboardController?.show()
+    }
+
     BoxWithConstraints(
         modifier = Modifier.fillMaxWidth()
     ) {
@@ -1013,7 +1027,9 @@ private fun SearchHeroHeader(
                     ),
                     shape = RoundedCornerShape(28.dp),
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(focusRequester)
                 )
             }
             

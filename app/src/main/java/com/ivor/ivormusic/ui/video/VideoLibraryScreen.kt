@@ -39,6 +39,7 @@ import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Login
 import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.ThumbUp
 import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.material.icons.rounded.WatchLater
@@ -708,7 +709,11 @@ private fun LibraryLoginCard(onLoginClick: () -> Unit) {
 }
 
 @Composable
-private fun SubPageTopBar(title: String, onBack: () -> Unit) {
+private fun SubPageTopBar(
+    title: String,
+    onBack: () -> Unit,
+    actions: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {}
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -732,8 +737,10 @@ private fun SubPageTopBar(title: String, onBack: () -> Unit) {
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onBackground,
             maxLines = 1,
-            overflow = TextOverflow.Ellipsis
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f)
         )
+        actions()
     }
 }
 
@@ -754,7 +761,32 @@ private fun PlaylistDetail(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
-        SubPageTopBar(title = playlist.title, onBack = onBack)
+        // Watch Later ("WL") and Liked ("LL") are private, non-shareable feeds;
+        // only real YouTube playlists have a public URL.
+        val isShareable = playlist.playlistId != "WL" && playlist.playlistId != "LL"
+        SubPageTopBar(
+            title = playlist.title,
+            onBack = onBack,
+            actions = {
+                if (isShareable) {
+                    val shareContext = androidx.compose.ui.platform.LocalContext.current
+                    IconButton(onClick = {
+                        val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(
+                                android.content.Intent.EXTRA_TEXT,
+                                "https://youtube.com/playlist?list=${playlist.playlistId}"
+                            )
+                        }
+                        shareContext.startActivity(
+                            android.content.Intent.createChooser(send, "Share playlist")
+                        )
+                    }) {
+                        Icon(Icons.Rounded.Share, contentDescription = "Share playlist")
+                    }
+                }
+            }
+        )
 
         if (isLoading && videos.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {

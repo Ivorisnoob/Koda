@@ -1406,6 +1406,27 @@ fun PlaylistDetailScreen(
                             Icon(Icons.Rounded.Delete, contentDescription = "Delete playlist")
                         }
                     }
+                    // Share is only meaningful for YouTube-hosted playlists/albums;
+                    // local playlists have no public URL.
+                    if (!isLocalPlaylist) {
+                        val shareContext = androidx.compose.ui.platform.LocalContext.current
+                        IconButton(onClick = {
+                            val shareUrl = if (isAlbum) {
+                                "https://music.youtube.com/browse/${resolvedPlaylist.id}"
+                            } else {
+                                "https://music.youtube.com/playlist?list=${resolvedPlaylist.id}"
+                            }
+                            val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(android.content.Intent.EXTRA_TEXT, shareUrl)
+                            }
+                            shareContext.startActivity(
+                                android.content.Intent.createChooser(send, "Share playlist")
+                            )
+                        }) {
+                            Icon(Icons.Rounded.Share, contentDescription = "Share playlist")
+                        }
+                    }
                     IconButton(onClick = {
                         if (isReorderMode) {
                             isReorderMode = false

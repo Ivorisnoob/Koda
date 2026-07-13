@@ -17,5 +17,8 @@ keystore/
 # Claude Code local artifacts
 .claude/
 
+# Local InnerTube probing session (contains live account cookies)
+.probe/
+
 # Kotlin build session data
 .kotlin/
