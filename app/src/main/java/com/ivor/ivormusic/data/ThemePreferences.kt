@@ -22,6 +22,9 @@ class ThemePreferences(context: Context) {
     private val _amoledTheme = MutableStateFlow(getAmoledThemePreference())
     val amoledTheme: StateFlow<Boolean> = _amoledTheme.asStateFlow()
 
+    private val _colorPalette = MutableStateFlow(getColorPalettePreference())
+    val colorPalette: StateFlow<String> = _colorPalette.asStateFlow()
+
     private val _loadLocalSongs = MutableStateFlow(getLoadLocalSongsPreference())
     val loadLocalSongs: StateFlow<Boolean> = _loadLocalSongs.asStateFlow()
     
@@ -90,6 +93,9 @@ class ThemePreferences(context: Context) {
         private const val KEY_THEME_MODE = "theme_mode_enum"
         private const val KEY_OLD_DARK_MODE = "dark_mode" // For migration
         private const val KEY_AMOLED_THEME = "amoled_theme"
+        private const val KEY_COLOR_PALETTE = "color_palette"
+        /** Default palette id: wallpaper-based dynamic color (Android 12+). */
+        const val DEFAULT_COLOR_PALETTE = "dynamic"
         private const val KEY_LOAD_LOCAL_SONGS = "load_local_songs"
         private const val KEY_AMBIENT_BACKGROUND = "ambient_background"
         private const val KEY_PLAYER_ARTWORK_COLORS = "player_artwork_colors"
@@ -212,6 +218,22 @@ class ThemePreferences(context: Context) {
     fun setAmoledTheme(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_AMOLED_THEME, enabled).apply()
         _amoledTheme.value = enabled
+    }
+
+    /**
+     * Get the stored color palette id. Defaults to "dynamic" (wallpaper color)
+     * to preserve the app's historical dynamic-color behavior.
+     */
+    private fun getColorPalettePreference(): String {
+        return prefs.getString(KEY_COLOR_PALETTE, DEFAULT_COLOR_PALETTE) ?: DEFAULT_COLOR_PALETTE
+    }
+
+    /**
+     * Save color palette preference and update the flow.
+     */
+    fun setColorPalette(paletteId: String) {
+        prefs.edit().putString(KEY_COLOR_PALETTE, paletteId).apply()
+        _colorPalette.value = paletteId
     }
 
     /**

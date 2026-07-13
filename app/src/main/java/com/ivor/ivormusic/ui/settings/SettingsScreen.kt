@@ -192,6 +192,8 @@ fun SettingsScreen(
     onThemeModeChange: (ThemeMode) -> Unit,
     amoledTheme: Boolean,
     onAmoledThemeToggle: (Boolean) -> Unit,
+    colorPalette: String = ThemePreferences.DEFAULT_COLOR_PALETTE,
+    onNavigateToColorPalette: () -> Unit = {},
     loadLocalSongs: Boolean,
     onLoadLocalSongsToggle: (Boolean) -> Unit,
     ambientBackground: Boolean,
@@ -340,7 +342,26 @@ fun SettingsScreen(
                             textColor = textColor,
                             accentColor = accentColor
                         )
-                        
+
+                        SettingsDivider()
+
+                        // Color palette picker link
+                        val paletteName = if (colorPalette == ThemePreferences.DEFAULT_COLOR_PALETTE) {
+                            "Dynamic (from wallpaper)"
+                        } else {
+                            com.ivor.ivormusic.ui.theme.findPalette(colorPalette)?.name ?: "Dynamic"
+                        }
+                        ExpressiveSettingsItem(
+                            icon = Icons.Rounded.Palette,
+                            title = "Color palette",
+                            subtitle = paletteName,
+                            onClick = onNavigateToColorPalette,
+                            textColor = textColor,
+                            secondaryTextColor = secondaryTextColor,
+                            iconTint = accentColor,
+                            showChevron = true
+                        )
+
                         SettingsDivider()
 
                         // AMOLED pure black toggle

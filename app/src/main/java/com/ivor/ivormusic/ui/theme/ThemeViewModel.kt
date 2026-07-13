@@ -17,6 +17,7 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
 
     val themeMode: StateFlow<ThemeMode> = themePreferences.themeMode
     val amoledTheme: StateFlow<Boolean> = themePreferences.amoledTheme
+    val colorPalette: StateFlow<String> = themePreferences.colorPalette
     val loadLocalSongs: StateFlow<Boolean> = themePreferences.loadLocalSongs
     val ambientBackground: StateFlow<Boolean> = themePreferences.ambientBackground
     val playerArtworkColors: StateFlow<Boolean> = themePreferences.playerArtworkColors
@@ -50,6 +51,10 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setAmoledTheme(enabled: Boolean) {
         themePreferences.setAmoledTheme(enabled)
+    }
+
+    fun setColorPalette(paletteId: String) {
+        themePreferences.setColorPalette(paletteId)
     }
 
     fun setLoadLocalSongs(load: Boolean) {

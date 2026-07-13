@@ -69,19 +69,29 @@ private val ExpressiveShapes = Shapes(
 @Composable
 fun IvorMusicTheme(
     darkTheme: Boolean = true, // Default to dark theme for this music app
-    dynamicColor: Boolean = true, // Enable dynamic color by default for expressive Material 3
+    colorPalette: String = DYNAMIC_PALETTE_ID, // "dynamic" = wallpaper color, else a fixed AppPalette id
     amoledDark: Boolean = false, // Pure black backgrounds when dark theme is active
     content: @Composable () -> Unit
 ) {
+    val useDynamic = colorPalette == DYNAMIC_PALETTE_ID
+    // Neutral base scheme (surfaces, on-surface text). Dynamic pulls from the
+    // wallpaper; a fixed palette starts from the app's own neutral scheme so
+    // wallpaper color is fully ignored and only our accents apply.
     val baseColorScheme = when {
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
+        useDynamic && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
             val context = LocalContext.current
             if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         }
         darkTheme -> DarkColorScheme
         else -> expressiveLightColorScheme()
     }
-    val colorScheme = if (darkTheme && amoledDark) baseColorScheme.toAmoled() else baseColorScheme
+    val palettedScheme = if (useDynamic) {
+        baseColorScheme
+    } else {
+        findPalette(colorPalette)?.let { buildPaletteColorScheme(it, darkTheme, baseColorScheme) }
+            ?: baseColorScheme
+    }
+    val colorScheme = if (darkTheme && amoledDark) palettedScheme.toAmoled() else palettedScheme
     
     val view = LocalView.current
     if (!view.isInEditMode) {
