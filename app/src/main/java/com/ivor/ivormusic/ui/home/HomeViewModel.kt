@@ -139,6 +139,15 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val _isVideoLoading = MutableStateFlow(false)
     val isVideoLoading: StateFlow<Boolean> = _isVideoLoading.asStateFlow()
 
+    private val _isVideoLoadingMore = MutableStateFlow(false)
+    val isVideoLoadingMore: StateFlow<Boolean> = _isVideoLoadingMore.asStateFlow()
+
+    // Home feed paging: browse continuation token (logged-in personalized
+    // feed) or watch-history seed offset (logged-out taste-based feed).
+    private var videoFeedContinuation: String? = null
+    private var tasteSeedOffset = 0
+    private var videoFeedExhausted = false
+
     // Subscriptions tab state
     private val _subscribedChannels = MutableStateFlow<List<com.ivor.ivormusic.data.SubscribedChannel>>(emptyList())
     val subscribedChannels: StateFlow<List<com.ivor.ivormusic.data.SubscribedChannel>> = _subscribedChannels.asStateFlow()
@@ -556,14 +565,63 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _isVideoLoading.value = true
             try {
-                val videos = youtubeRepository.getTrendingVideos()
-                if (videos.isNotEmpty()) {
-                    _trendingVideos.value = videos
+                val page = youtubeRepository.getTrendingVideos()
+                if (page.videos.isNotEmpty()) {
+                    _trendingVideos.value = page.videos
+                    videoFeedContinuation = page.continuation
+                    // Taste-based page 1 seeds from the 6 most recent history
+                    // entries; load-more continues from the 7th.
+                    tasteSeedOffset = 6
+                    videoFeedExhausted = false
                 }
             } catch (e: Exception) {
                 // Handle error silently
             } finally {
                 _isVideoLoading.value = false
+            }
+        }
+    }
+
+    /**
+     * Load the next page of the video home feed. Called when the grid scrolls
+     * near its end (last ~5 items). Logged in this follows the InnerTube
+     * browse continuation; logged out it mines older watch-history seeds for
+     * more related videos. No-op while a load is already running or once the
+     * feed is exhausted.
+     */
+    fun loadMoreTrendingVideos() {
+        if (_isVideoLoading.value || _isVideoLoadingMore.value || videoFeedExhausted) return
+        if (_trendingVideos.value.isEmpty()) return
+
+        viewModelScope.launch {
+            _isVideoLoadingMore.value = true
+            try {
+                val token = videoFeedContinuation
+                val newVideos: List<VideoItem>
+                if (token != null) {
+                    val page = youtubeRepository.getVideoFeedContinuation(token)
+                    videoFeedContinuation = page.continuation
+                    newVideos = page.videos
+                    if (page.videos.isEmpty() && page.continuation == null) {
+                        videoFeedExhausted = true
+                    }
+                } else {
+                    newVideos = youtubeRepository.getTasteBasedVideos(tasteSeedOffset)
+                    tasteSeedOffset += 6
+                    if (newVideos.isEmpty()) {
+                        videoFeedExhausted = true
+                    }
+                }
+
+                val shownIds = _trendingVideos.value.mapTo(HashSet()) { it.videoId }
+                val fresh = newVideos.filterNot { it.videoId in shownIds }
+                if (fresh.isNotEmpty()) {
+                    _trendingVideos.value = _trendingVideos.value + fresh
+                }
+            } catch (e: Exception) {
+                // Handle error silently; the next scroll will retry
+            } finally {
+                _isVideoLoadingMore.value = false
             }
         }
     }
