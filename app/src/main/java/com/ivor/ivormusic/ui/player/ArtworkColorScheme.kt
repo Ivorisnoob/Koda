@@ -2,8 +2,6 @@ package com.ivor.ivormusic.ui.player
 
 import android.content.Context
 import android.graphics.drawable.BitmapDrawable
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.material3.ColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -29,10 +27,9 @@ private data class ArtworkSeeds(val primary: Color, val secondary: Color)
  * Derives a color scheme for the expanded player from the current album
  * cover: Palette swatches become the accent roles buttons draw from
  * (primary/secondary/tertiary families), while surfaces and background
- * stay on the app theme. Seed colors crossfade between songs so the
- * controls morph instead of snapping. Returns [base] unchanged while
- * disabled, while extraction is in flight, or when the art has no
- * usable swatches.
+ * stay on the app theme. Colors switch directly to the new song's seeds,
+ * no crossfade. Returns [base] unchanged while disabled, while extraction
+ * is in flight, or when the art has no usable swatches.
  */
 @Composable
 fun rememberArtworkColorScheme(
@@ -49,27 +46,16 @@ fun rememberArtworkColorScheme(
             return@LaunchedEffect
         }
         // Keep the previous song's seeds while the new art loads so the
-        // scheme animates seed-to-seed rather than resetting to theme.
+        // scheme doesn't flash back to the theme colors between songs.
         extractArtworkSeeds(context, albumArtUri)?.let { seeds = it }
     }
 
     val current = seeds
     if (!enabled || current == null) return base
 
-    val primarySeed by animateColorAsState(
-        targetValue = current.primary,
-        animationSpec = tween(durationMillis = 600),
-        label = "artworkPrimarySeed"
-    )
-    val secondarySeed by animateColorAsState(
-        targetValue = current.secondary,
-        animationSpec = tween(durationMillis = 600),
-        label = "artworkSecondarySeed"
-    )
-
     val isDark = base.background.luminance() < 0.5f
-    return remember(base, primarySeed, secondarySeed, isDark) {
-        base.withArtworkAccents(primarySeed, secondarySeed, isDark)
+    return remember(base, current, isDark) {
+        base.withArtworkAccents(current.primary, current.secondary, isDark)
     }
 }
 

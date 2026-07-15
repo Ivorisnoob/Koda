@@ -34,9 +34,16 @@ data class Song(
         get() = thumbnailUrl?.let { url ->
             when {
                 url.contains("googleusercontent.com") -> {
-                    // Replace size params like w120-h120 with w1080-h1080
-                    url.replace(Regex("w\\d+-h\\d+"), "w1080-h1080")
-                        .replace(Regex("s\\d+"), "s1080")
+                    // Size directives (w120-h120, s120) only live after the '='
+                    // separator; the opaque image token before it can itself
+                    // contain "s<digits>" runs, so an unanchored replace over
+                    // the whole URL corrupts it into a permanent 404.
+                    val sep = url.lastIndexOf('=')
+                    if (sep >= 0) {
+                        url.substring(0, sep) + url.substring(sep)
+                            .replace(Regex("w\\d+-h\\d+"), "w1080-h1080")
+                            .replace(Regex("s\\d+"), "s1080")
+                    } else url
                 }
                 url.contains("ytimg.com") || url.contains("youtube.com") -> {
                     // Replace low res filenames with max res

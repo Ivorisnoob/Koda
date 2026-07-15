@@ -79,9 +79,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.media3.common.Player
-import coil.compose.AsyncImage
 import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.ui.components.LikeBurstIcon
+import com.ivor.ivormusic.ui.components.SongArtwork
 import kotlin.math.abs
 import kotlinx.coroutines.launch
 
@@ -119,6 +119,7 @@ fun StickerPlayerSheetContent(
 
     val currentSong by viewModel.currentSong.collectAsState()
     val isPlaying by viewModel.isPlaying.collectAsState()
+    val playerHaptics = rememberPlayerHaptics()
     val isBuffering by viewModel.isBuffering.collectAsState()
     val playWhenReady by viewModel.playWhenReady.collectAsState()
     val progress by viewModel.progress.collectAsState()
@@ -241,7 +242,6 @@ fun StickerPlayerSheetContent(
                                         lyricsResult = lyricsResult,
                                         currentPositionMs = progress,
                                         onSeekTo = { viewModel.seekTo(it) },
-                                        ambientBackground = false,
                                         primaryColor = accent,
                                         onSurfaceColor = ink,
                                         onSurfaceVariantColor = inkVariant
@@ -252,10 +252,13 @@ fun StickerPlayerSheetContent(
                                     currentSong = currentSong,
                                     isPlaying = isPlaying,
                                     isBuffering = isBuffering && playWhenReady && !isPlaying,
-                                    onPlayPause = { viewModel.togglePlayPause() },
+                                    onPlayPause = {
+                                        playerHaptics.playPause(!viewModel.isPlaying.value)
+                                        viewModel.togglePlayPause()
+                                    },
                                     onLike = { viewModel.toggleCurrentSongLike() },
-                                    onNext = { viewModel.skipToNext() },
-                                    onPrevious = { viewModel.skipToPrevious() },
+                                    onNext = { playerHaptics.skip(); viewModel.skipToNext() },
+                                    onPrevious = { playerHaptics.skip(); viewModel.skipToPrevious() },
                                     ringColor = chipColor,
                                     placeholderColor = chipColor,
                                     placeholderIconColor = onChip
@@ -371,7 +374,7 @@ fun StickerPlayerSheetContent(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         EditorialCircleButton(
-                            onClick = { viewModel.skipToPrevious() },
+                            onClick = { playerHaptics.skip(); viewModel.skipToPrevious() },
                             accent = chipColor,
                             field = onChip,
                             size = 56.dp
@@ -382,7 +385,7 @@ fun StickerPlayerSheetContent(
                             )
                         }
                         EditorialCircleButton(
-                            onClick = { viewModel.skipToNext() },
+                            onClick = { playerHaptics.skip(); viewModel.skipToNext() },
                             accent = chipColor,
                             field = onChip,
                             size = 56.dp
@@ -658,12 +661,10 @@ private fun DraggableSticker(
                 .styleWheelHold(styleWheel),
             contentAlignment = Alignment.Center
         ) {
-            val artModel = currentSong?.highResThumbnailUrl
-                ?: currentSong?.thumbnailUrl
-                ?: currentSong?.albumArtUri
-            if (artModel != null) {
-                AsyncImage(
-                    model = artModel,
+            val artSong = currentSong?.takeIf { it.thumbnailUrl != null || it.albumArtUri != null }
+            if (artSong != null) {
+                SongArtwork(
+                    song = artSong,
                     contentDescription = "Album Art",
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop

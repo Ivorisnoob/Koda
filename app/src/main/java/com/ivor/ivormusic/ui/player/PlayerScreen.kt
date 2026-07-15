@@ -65,8 +65,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.sp
-import coil.compose.AsyncImage
 import com.ivor.ivormusic.data.Song
+import com.ivor.ivormusic.ui.components.SongArtwork
 import com.ivor.ivormusic.ui.theme.IvorMusicTheme
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
@@ -77,6 +77,7 @@ fun PlayerScreen(
 ) {
     val currentSong by viewModel.currentSong.collectAsState()
     val isPlaying by viewModel.isPlaying.collectAsState()
+    val playerHaptics = rememberPlayerHaptics()
     val isBuffering by viewModel.isBuffering.collectAsState()
     val playWhenReady by viewModel.playWhenReady.collectAsState()
     val progress by viewModel.progress.collectAsState()
@@ -147,9 +148,10 @@ fun PlayerScreen(
                 color = MaterialTheme.colorScheme.surfaceVariant
             ) {
                 Box(contentAlignment = Alignment.Center) {
-                    if (currentSong?.albumArtUri != null || currentSong?.thumbnailUrl != null) {
-                        AsyncImage(
-                            model = currentSong?.highResThumbnailUrl ?: currentSong?.albumArtUri,
+                    val artSong = currentSong?.takeIf { it.albumArtUri != null || it.thumbnailUrl != null }
+                    if (artSong != null) {
+                        SongArtwork(
+                            song = artSong,
                             contentDescription = "Album Art",
                             modifier = Modifier.fillMaxSize(),
                             contentScale = ContentScale.Crop
@@ -281,7 +283,7 @@ fun PlayerScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 FilledIconButton(
-                    onClick = { viewModel.skipToPrevious() },
+                    onClick = { playerHaptics.skip(); viewModel.skipToPrevious() },
                     modifier = Modifier.size(64.dp),
                     shapes = IconButtonDefaults.shapes(),
                     colors = IconButtonDefaults.filledIconButtonColors(
@@ -292,7 +294,10 @@ fun PlayerScreen(
                 }
 
                 FilledIconButton(
-                    onClick = { viewModel.togglePlayPause() },
+                    onClick = {
+                        playerHaptics.playPause(!viewModel.isPlaying.value)
+                        viewModel.togglePlayPause()
+                    },
                     modifier = Modifier.size(96.dp),
                     shapes = IconButtonDefaults.shapes(
                         shape = RoundedCornerShape(32.dp)
@@ -321,7 +326,7 @@ fun PlayerScreen(
                 }
 
                 FilledIconButton(
-                    onClick = { viewModel.skipToNext() },
+                    onClick = { playerHaptics.skip(); viewModel.skipToNext() },
                     modifier = Modifier.size(64.dp),
                     shapes = IconButtonDefaults.shapes(),
                     colors = IconButtonDefaults.filledIconButtonColors(

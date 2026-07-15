@@ -26,7 +26,7 @@ import androidx.compose.material.icons.rounded.Newspaper
 import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.RadioButtonChecked
 import androidx.compose.material.icons.rounded.SwipeRight
-import androidx.compose.material.icons.rounded.TextFields
+import androidx.compose.material.icons.rounded.Wallpaper
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialShapes
@@ -189,7 +189,7 @@ internal fun rememberPlayerStyleWheelEntries(): List<PlayerStyleWheelEntry> = re
         PlayerStyleWheelEntry(PlayerStyle.CLASSIC, "Classic", Icons.Rounded.PlayCircle, MaterialShapes.Circle),
         PlayerStyleWheelEntry(PlayerStyle.GESTURE, "Gesture", Icons.Rounded.SwipeRight, MaterialShapes.Pill),
         PlayerStyleWheelEntry(PlayerStyle.EDITORIAL, "Editorial", Icons.Rounded.Newspaper, MaterialShapes.Flower),
-        PlayerStyleWheelEntry(PlayerStyle.POSTER, "Poster", Icons.Rounded.TextFields, MaterialShapes.Gem),
+        PlayerStyleWheelEntry(PlayerStyle.POSTER, "Canvas", Icons.Rounded.Wallpaper, MaterialShapes.Gem),
         PlayerStyleWheelEntry(PlayerStyle.BENTO, "Bento", Icons.Rounded.GridView, MaterialShapes.Cookie4Sided),
         PlayerStyleWheelEntry(PlayerStyle.STICKER, "Sticker", Icons.Rounded.Interests, MaterialShapes.Clover4Leaf),
         PlayerStyleWheelEntry(PlayerStyle.MORPH, "Morph", Icons.Rounded.Animation, MaterialShapes.SoftBurst),
