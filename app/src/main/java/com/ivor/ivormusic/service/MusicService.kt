@@ -199,15 +199,20 @@ class MusicService : MediaLibraryService() {
     // --- Initialization ---
 
     private fun initializePlayer() {
-        // Custom LoadControl for "Robus + Fast" User Experience
-        // We use a 2s start buffer (user request) to ensure we have enough data to avoid immediate buffering
-        // but rely on pre-fetching to make it feel instant.
+        // Custom LoadControl: near-instant starts + whole-song read-ahead.
+        // Playback begins once only 0.5s is buffered, then ExoPlayer keeps
+        // loading up to 5 minutes ahead (min == max so the buffer is topped up
+        // continuously instead of sawtoothing between the two). Since streams
+        // flow through CacheDataSource, this means most songs are fully on
+        // disk shortly after they start playing. Audio bitrates keep 5 minutes
+        // of samples at a few MB of RAM, so time thresholds can safely win
+        // over size ones.
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                30_000, // Min Buffer 30s
-                60_000, // Max Buffer 60s
-                2000,   // Buffer for Playback: 2s (Robust start)
-                3000    // Buffer for Rebuffer: 3s
+                300_000, // Min buffer 5min (== max: continuous top-up)
+                300_000, // Max buffer 5min
+                500,     // Buffer for Playback: 0.5s (near-instant start)
+                3000     // Buffer for Rebuffer: 3s
             )
             .setPrioritizeTimeOverSizeThresholds(true)
             .build()

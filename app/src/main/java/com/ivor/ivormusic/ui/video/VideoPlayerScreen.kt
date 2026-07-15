@@ -105,6 +105,7 @@ import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -146,6 +147,7 @@ fun FullscreenPlayerContent(
     currentPosition: Long,
     duration: Long,
     progress: Float,
+    bufferedProgress: Float = 0f,
     videoTitle: String,
     onPlayPause: () -> Unit,
     onSeek: (Float) -> Unit,
@@ -361,6 +363,7 @@ fun FullscreenPlayerContent(
 
                         PlayerSeekBar(
                             progress = progress,
+                            bufferedProgress = bufferedProgress,
                             onSeek = onSeek,
                             modifier = Modifier.weight(1f),
                             chapters = chapters,
@@ -390,6 +393,7 @@ fun PortraitPlayerContent(
     currentPosition: Long,
     duration: Long,
     progress: Float,
+    bufferedProgress: Float = 0f,
     videoTitle: String,
     onPlayPause: () -> Unit,
     onSeek: (Float) -> Unit,
@@ -569,6 +573,7 @@ fun PortraitPlayerContent(
 
                         PlayerSeekBar(
                             progress = progress,
+                            bufferedProgress = bufferedProgress,
                             onSeek = onSeek,
                             modifier = Modifier.weight(1f),
                             chapters = chapters,
@@ -595,6 +600,7 @@ private fun PlayerSeekBar(
     progress: Float,
     onSeek: (Float) -> Unit,
     modifier: Modifier = Modifier,
+    bufferedProgress: Float = 0f,
     chapters: List<VideoChapter> = emptyList(),
     durationMs: Long = 0L
 ) {
@@ -602,6 +608,24 @@ private fun PlayerSeekBar(
     var scrubValue by remember { mutableFloatStateOf(0f) }
 
     Box(modifier = modifier) {
+        // Buffered-ahead indicator: a soft white bar from the start to the
+        // buffered position, drawn under the Slider. The inactive track is
+        // translucent, so the buffered region reads as a brighter segment
+        // ahead of the playhead (YouTube-style) while the opaque active
+        // track covers the part already played.
+        if (bufferedProgress > 0f) {
+            Canvas(modifier = Modifier.matchParentSize()) {
+                val centerY = size.height / 2f
+                drawLine(
+                    color = Color.White.copy(alpha = 0.35f),
+                    start = Offset(0f, centerY),
+                    end = Offset(bufferedProgress.coerceIn(0f, 1f) * size.width, centerY),
+                    strokeWidth = 4.dp.toPx(),
+                    cap = StrokeCap.Round
+                )
+            }
+        }
+
         Slider(
             value = if (isScrubbing) scrubValue else progress.coerceIn(0f, 1f),
             onValueChange = {

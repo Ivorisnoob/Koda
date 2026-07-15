@@ -103,6 +103,7 @@ fun VideoPlayerContent(
     var currentPosition by remember { mutableLongStateOf(0L) }
     var duration by remember { mutableLongStateOf(0L) }
     var progress by remember { mutableFloatStateOf(0f) }
+    var bufferedProgress by remember { mutableFloatStateOf(0f) }
     
     val exoPlayer = viewModel.exoPlayer
     val currentVideo = video
@@ -122,6 +123,7 @@ fun VideoPlayerContent(
                 duration = exoPlayer.duration
                 currentPosition = exoPlayer.currentPosition
                 progress = currentPosition.toFloat() / duration.toFloat()
+                bufferedProgress = exoPlayer.bufferedPosition.toFloat() / duration.toFloat()
             }
             delay(500)
         }
@@ -224,6 +226,7 @@ fun VideoPlayerContent(
                 currentPosition = currentPosition,
                 duration = duration,
                 progress = progress,
+                bufferedProgress = bufferedProgress,
                 videoTitle = currentVideo.title,
                 onPlayPause = { viewModel.togglePlayPause() },
                 onSeek = { newProgress -> exoPlayer.seekTo((newProgress * duration).toLong()) },
@@ -282,6 +285,7 @@ fun VideoPlayerContent(
                         currentPosition = currentPosition,
                         duration = duration,
                         progress = progress,
+                        bufferedProgress = bufferedProgress,
                         videoTitle = currentVideo.title,
                         onPlayPause = { viewModel.togglePlayPause() },
                         onSeek = { newProgress -> exoPlayer.seekTo((newProgress * duration).toLong()) },
