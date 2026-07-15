@@ -148,9 +148,11 @@ jobs:
               --data-urlencode "text=<b>Koda</b> | $(esc "$(basename "$apk")") is over Telegram's 50 MB bot limit — grab it from the <a href=\"${RUN_URL}\">workflow artifacts</a>."
             continue
           fi
-          curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendDocument" \
-            -F "chat_id=${{ env.TELEGRAM_APK_CHAT_ID }}" \
-            -F "parse_mode=HTML" \
-            -F "caption=${CAPTION}" \
-            -F "document=@${apk}"
+          RESPONSE=$(curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendDocument" \
+            --form-string "chat_id=${{ env.TELEGRAM_APK_CHAT_ID }}" \
+            --form-string "parse_mode=HTML" \
+            --form-string "caption=${CAPTION}" \
+            -F "document=@${apk}")
+          echo "$RESPONSE"
+          echo "$RESPONSE" | grep -q '"ok":true' || exit 1
         done
