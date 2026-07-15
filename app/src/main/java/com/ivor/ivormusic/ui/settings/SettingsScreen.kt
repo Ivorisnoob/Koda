@@ -67,6 +67,7 @@ import androidx.compose.material.icons.rounded.Newspaper
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.RadioButtonChecked
+import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.FlashOn
 import androidx.compose.material.icons.rounded.HighQuality
@@ -598,6 +599,20 @@ fun SettingsScreen(
                     textColor = secondaryTextColor
                 ) {
                     ExpressiveSettingsCard(surfaceColor = surfaceColor) {
+                        // Music Cache Toggle
+                        ExpressiveOemToggleItem(
+                            icon = Icons.Rounded.Save,
+                            title = "Cache Music",
+                            subtitle = "Store streamed songs for instant replay",
+                            enabled = cacheEnabled,
+                            onToggle = onCacheEnabledToggle,
+                            textColor = textColor,
+                            secondaryTextColor = secondaryTextColor,
+                            accentColor = accentColor
+                        )
+
+                        SettingsDivider()
+
                         // Cache Size Display (Expressive Card)
                         Box(
                             modifier = Modifier

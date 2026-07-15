@@ -79,6 +79,9 @@ class MusicService : MediaLibraryService() {
     // --- Configuration ---
     private var isCrossfadeEnabled = true
     private var crossfadeDurationMs = 3000L
+    // Read on the playback data-source hot path (every open()), so it's a
+    // volatile field fed by the preference flow instead of a prefs read.
+    @Volatile private var isCacheEnabled = true
     private var fadeVolumeJob: Job? = null
     private var progressJob: Job? = null
 
@@ -130,10 +133,13 @@ class MusicService : MediaLibraryService() {
         Log.i(TAG, "MusicService Creating...")
 
         // 1. Initialize Dependencies
-        CacheManager.initialize(this)
+        themePreferences = ThemePreferences(this)
+        isCacheEnabled = themePreferences.cacheEnabled.value
+        // Initialize the cache directly at the persisted size instead of the
+        // default; the size and toggle stay live via observePreferences().
+        CacheManager.initialize(this, themePreferences.maxCacheSizeMb.value)
         youtubeRepository = YouTubeRepository(this)
         downloadRepository = DownloadRepository(this)
-        themePreferences = ThemePreferences(this)
 
         // 2. Setup Notifications & Live Updates
         setMediaNotificationProvider(LiveUpdateMediaNotificationProvider(this))
@@ -218,14 +224,12 @@ class MusicService : MediaLibraryService() {
         // 403 if the playback UA doesn't match. CacheManager.createPerClientHttpFactory()
         // picks the UA per request.
         val defaultDataSourceFactory = DefaultDataSource.Factory(this, CacheManager.createPerClientHttpFactory())
+        // Null when cache init failed — playback then always goes direct.
         val cacheDataSourceFactory = CacheManager.createCacheDataSourceFactory(null)
-            ?: defaultDataSourceFactory
 
         val smartDataSourceFactory = DataSource.Factory {
             val defaultSource = defaultDataSourceFactory.createDataSource()
-            val cacheSource = if (cacheDataSourceFactory != defaultDataSourceFactory) {
-                cacheDataSourceFactory.createDataSource()
-            } else null
+            val cacheSource = cacheDataSourceFactory?.createDataSource()
 
             object : DataSource {
                 private var currentSource: DataSource? = null
@@ -238,9 +242,11 @@ class MusicService : MediaLibraryService() {
                 override fun open(dataSpec: DataSpec): Long {
                     val scheme = dataSpec.uri.scheme
                     val isNetwork = scheme == "http" || scheme == "https"
-                    
-                    // Route to Cache only for network requests
-                    currentSource = if (isNetwork && cacheSource != null) {
+
+                    // Route to cache only for network requests, and only while
+                    // the user's cache setting is on (checked per open() so a
+                    // toggle applies to the very next stream, no restart).
+                    currentSource = if (isNetwork && isCacheEnabled && cacheSource != null) {
                         cacheSource
                     } else {
                         defaultSource
@@ -292,8 +298,12 @@ class MusicService : MediaLibraryService() {
     }
 
     private fun observePreferences() {
+        // These flows update live across ThemePreferences instances (the
+        // settings screen writes through its own instance) thanks to the
+        // SharedPreferences change listener inside ThemePreferences.
         serviceScope.launch { themePreferences.crossfadeEnabled.collect { isCrossfadeEnabled = it } }
         serviceScope.launch { themePreferences.crossfadeDurationMs.collect { crossfadeDurationMs = it.toLong() } }
+        serviceScope.launch { themePreferences.cacheEnabled.collect { isCacheEnabled = it } }
         serviceScope.launch {
             themePreferences.maxCacheSizeMb.collect { sizeMb ->
                 CacheManager.setMaxCacheSize(this@MusicService, sizeMb)
@@ -484,8 +494,10 @@ class MusicService : MediaLibraryService() {
             uriCache.remove(videoId)
         }
 
-        // 3. Disk Cache (Fully Cached - Instant Playback)
-        if (CacheManager.isFullyCached(videoId)) {
+        // 3. Disk Cache (Fully Cached - Instant Playback). Skipped when the
+        // cache setting is off: the data source then bypasses the cache, so a
+        // CACHED_PREFIX URI would hit the network with a fake host and fail.
+        if (isCacheEnabled && CacheManager.isFullyCached(videoId)) {
             Log.d(TAG, "Resolution: Found full disk cache for $videoId. Enabling instant playback.")
             return buildMediaItemWithUri(originalItem, Uri.parse("$CACHED_PREFIX$videoId"))
         }

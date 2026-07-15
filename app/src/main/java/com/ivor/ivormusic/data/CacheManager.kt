@@ -3,19 +3,23 @@ package com.ivor.ivormusic.data
 import android.content.Context
 import android.net.Uri
 import android.util.Log
+import androidx.media3.common.C
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.database.StandaloneDatabaseProvider
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.TransferListener
+import androidx.media3.datasource.cache.Cache
 import androidx.media3.datasource.cache.CacheDataSource
-import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
+import androidx.media3.datasource.cache.CacheEvictor
+import androidx.media3.datasource.cache.CacheSpan
 import androidx.media3.datasource.cache.SimpleCache
 import androidx.media3.datasource.DefaultHttpDataSource
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.io.File
+import java.util.TreeSet
 
 /**
  * Singleton manager for ExoPlayer's SimpleCache.
@@ -23,24 +27,117 @@ import java.io.File
  */
 @UnstableApi
 object CacheManager {
-    
+
     private const val TAG = "CacheManager"
     private const val CACHE_DIR_NAME = "ivor_music_cache"
-    
+
     // Default 512MB cache
     const val DEFAULT_CACHE_SIZE_MB = 512L
     const val MIN_CACHE_SIZE_MB = 128L
     const val MAX_CACHE_SIZE_MB = 4096L // 4GB
-    
+
     private var simpleCache: SimpleCache? = null
     private var databaseProvider: StandaloneDatabaseProvider? = null
+    private var evictor: SizeAdjustableLruEvictor? = null
     private var maxCacheSizeBytes: Long = DEFAULT_CACHE_SIZE_MB * 1024 * 1024
-    
+
     private val _currentCacheSizeBytes = MutableStateFlow(0L)
     val currentCacheSizeBytes: StateFlow<Long> = _currentCacheSizeBytes.asStateFlow()
-    
+
     private var cacheDir: File? = null
-    
+
+    /**
+     * LRU evictor whose size limit can be changed while the cache is live.
+     *
+     * Media3's LeastRecentlyUsedCacheEvictor fixes its limit at construction,
+     * which forced a full SimpleCache release+recreate to apply a new size —
+     * invalidating every CacheDataSource.Factory already handed to a player.
+     * This port keeps the same LRU behavior but lets [updateMaxBytes] shrink
+     * or grow the limit in place and trim immediately.
+     *
+     * Locking: Media3 invokes the callbacks while holding the SimpleCache lock,
+     * so the ordering is always cache lock -> [lock]. [evictWhileOverLimit]
+     * never holds [lock] across a removeSpan call, so the external trim path
+     * ([updateMaxBytes]) cannot deadlock against a concurrent cache write.
+     */
+    private class SizeAdjustableLruEvictor(initialMaxBytes: Long) : CacheEvictor {
+
+        @Volatile private var maxBytes: Long = initialMaxBytes
+        private val lock = Any()
+        private val leastRecentlyUsed = TreeSet<CacheSpan>(::compareSpans)
+        private var currentSize = 0L
+
+        override fun requiresCacheSpanTouches(): Boolean = true
+
+        override fun onCacheInitialized() {
+            // Existing spans are reported through onSpanAdded during load.
+        }
+
+        override fun onStartFile(cache: Cache, key: String, position: Long, length: Long) {
+            if (length != C.LENGTH_UNSET.toLong()) {
+                evictWhileOverLimit(cache, length)
+            }
+        }
+
+        override fun onSpanAdded(cache: Cache, span: CacheSpan) {
+            synchronized(lock) {
+                leastRecentlyUsed.add(span)
+                currentSize += span.length
+                _currentCacheSizeBytes.value = currentSize
+            }
+            evictWhileOverLimit(cache, 0)
+        }
+
+        override fun onSpanRemoved(cache: Cache, span: CacheSpan) {
+            synchronized(lock) {
+                if (leastRecentlyUsed.remove(span)) {
+                    currentSize -= span.length
+                    _currentCacheSizeBytes.value = currentSize
+                }
+            }
+        }
+
+        override fun onSpanTouched(cache: Cache, oldSpan: CacheSpan, newSpan: CacheSpan) {
+            onSpanRemoved(cache, oldSpan)
+            onSpanAdded(cache, newSpan)
+        }
+
+        /** Apply a new size limit and trim down to it immediately. */
+        fun updateMaxBytes(cache: Cache, newMaxBytes: Long) {
+            maxBytes = newMaxBytes
+            evictWhileOverLimit(cache, 0)
+        }
+
+        private fun evictWhileOverLimit(cache: Cache, requiredSpace: Long) {
+            while (true) {
+                val toEvict = synchronized(lock) {
+                    if (currentSize + requiredSpace <= maxBytes) null
+                    else leastRecentlyUsed.firstOrNull()
+                } ?: return
+                cache.removeSpan(toEvict)
+                // onSpanRemoved normally drops the span from our bookkeeping;
+                // this fallback guarantees loop progress even if it didn't fire.
+                synchronized(lock) {
+                    if (leastRecentlyUsed.remove(toEvict)) {
+                        currentSize -= toEvict.length
+                        _currentCacheSizeBytes.value = currentSize
+                    }
+                }
+            }
+        }
+
+        private companion object {
+            fun compareSpans(lhs: CacheSpan, rhs: CacheSpan): Int {
+                val delta = lhs.lastTouchTimestamp - rhs.lastTouchTimestamp
+                return when {
+                    delta == 0L -> lhs.compareTo(rhs)
+                    delta < 0L -> -1
+                    else -> 1
+                }
+            }
+        }
+    }
+
     /**
      * Initialize the cache. Call this once from Application or Service.
      */
@@ -48,37 +145,20 @@ object CacheManager {
     fun initialize(context: Context, maxSizeMb: Long = DEFAULT_CACHE_SIZE_MB) {
         if (simpleCache != null) {
             Log.d(TAG, "Cache already initialized")
-            updateCacheSize()
+            setMaxCacheSize(context, maxSizeMb)
             return
         }
-        
+
         maxCacheSizeBytes = maxSizeMb * 1024 * 1024
         cacheDir = File(context.cacheDir, CACHE_DIR_NAME)
-        
+
         databaseProvider = StandaloneDatabaseProvider(context)
-        
-        val internalEvictor = LeastRecentlyUsedCacheEvictor(maxCacheSizeBytes)
-        val evictor = object : androidx.media3.datasource.cache.CacheEvictor {
-            override fun requiresCacheSpanTouches() = internalEvictor.requiresCacheSpanTouches()
-            override fun onCacheInitialized() = internalEvictor.onCacheInitialized()
-            override fun onStartFile(cache: androidx.media3.datasource.cache.Cache, key: String, position: Long, length: Long) = internalEvictor.onStartFile(cache, key, position, length)
-            override fun onSpanAdded(cache: androidx.media3.datasource.cache.Cache, span: androidx.media3.datasource.cache.CacheSpan) {
-                internalEvictor.onSpanAdded(cache, span)
-                updateCacheSize()
-            }
-            override fun onSpanRemoved(cache: androidx.media3.datasource.cache.Cache, span: androidx.media3.datasource.cache.CacheSpan) {
-                internalEvictor.onSpanRemoved(cache, span)
-                updateCacheSize()
-            }
-            override fun onSpanTouched(cache: androidx.media3.datasource.cache.Cache, oldSpan: androidx.media3.datasource.cache.CacheSpan, newSpan: androidx.media3.datasource.cache.CacheSpan) {
-                internalEvictor.onSpanTouched(cache, oldSpan, newSpan)
-            }
-        }
-        
+
         try {
+            evictor = SizeAdjustableLruEvictor(maxCacheSizeBytes)
             simpleCache = SimpleCache(
                 cacheDir!!,
-                evictor,
+                evictor!!,
                 databaseProvider!!
             )
             Log.d(TAG, "Cache initialized with max size: ${maxSizeMb}MB")
@@ -89,44 +169,46 @@ object CacheManager {
                 cacheDir?.deleteRecursively()
                 cacheDir?.mkdirs()
                 databaseProvider = StandaloneDatabaseProvider(context)
+                evictor = SizeAdjustableLruEvictor(maxCacheSizeBytes)
                 simpleCache = SimpleCache(
                     cacheDir!!,
-                    LeastRecentlyUsedCacheEvictor(maxCacheSizeBytes),
+                    evictor!!,
                     databaseProvider!!
                 )
                 Log.d(TAG, "Cache recovery successful")
             } catch (e2: Exception) {
                 Log.e(TAG, "Cache recovery failed - caching disabled", e2)
                 simpleCache = null
+                evictor = null
             }
         }
-        
+
         updateCacheSize()
     }
-    
+
     /**
      * Get the SimpleCache instance. Returns null if not initialized.
      */
     fun getCache(): SimpleCache? = simpleCache
-    
+
     /**
      * Create a CacheDataSource.Factory for use with ExoPlayer.
      * If cache is unavailable or corrupted, returns null to fallback to non-cached playback.
-     * 
+     *
      * @param upstreamFactory Optional upstream data source factory. If provided, this is used
      *   for cache misses. Use DefaultDataSource.Factory to support all URI schemes (file://,
      *   content://, http(s)://). If null, defaults to HTTP-only factory.
      */
     fun createCacheDataSourceFactory(upstreamFactory: DataSource.Factory? = null): CacheDataSource.Factory? {
         val cache = simpleCache ?: return null
-        
+
         try {
             // Per-URL UA: googlevideo URLs are tagged with their issuing client
             // (?c=IOS, ?c=TVHTML5_SIMPLY_EMBEDDED, etc.) and YouTube 403s the
             // playback if our UA doesn't match. createPerClientHttpFactory()
             // inspects each request's URI and sets the right UA dynamically.
             val upstream = upstreamFactory ?: createPerClientHttpFactory()
-            
+
             return CacheDataSource.Factory()
                 .setCache(cache)
                 .setUpstreamDataSourceFactory(upstream)
@@ -173,7 +255,7 @@ object CacheManager {
             override fun close() = delegate.close()
         }
     }
-    
+
     /**
      * Update the current cache size state.
      */
@@ -181,17 +263,16 @@ object CacheManager {
         val cache = simpleCache
         if (cache != null) {
             _currentCacheSizeBytes.value = cache.cacheSpace
-            Log.d(TAG, "Current cache size: ${formatSize(cache.cacheSpace)}")
         }
     }
-    
+
     /**
      * Get current cache size in bytes.
      */
     fun getCacheSizeBytes(): Long {
         return simpleCache?.cacheSpace ?: 0L
     }
-    
+
     /**
      * Clear all cached content.
      */
@@ -211,7 +292,7 @@ object CacheManager {
             Log.e(TAG, "Error clearing cache", e)
         }
     }
-    
+
     /**
      * Release the cache. Call when the app is being destroyed.
      */
@@ -221,29 +302,37 @@ object CacheManager {
             simpleCache?.release()
             simpleCache = null
             databaseProvider = null
+            evictor = null
             Log.d(TAG, "Cache released")
         } catch (e: Exception) {
             Log.e(TAG, "Error releasing cache", e)
         }
     }
-    
+
     /**
-     * Update the maximum cache size. Requires reinitializing the cache.
+     * Update the maximum cache size, applied live. The SimpleCache instance is
+     * kept — only the evictor's limit changes and excess spans are trimmed —
+     * so CacheDataSource factories already handed to a player stay valid and
+     * playback is never interrupted by a size change.
      */
     @Synchronized
     fun setMaxCacheSize(context: Context, maxSizeMb: Long) {
-        if (maxCacheSizeBytes == maxSizeMb * 1024 * 1024) return
-        
-        Log.d(TAG, "Updating cache size to ${maxSizeMb}MB")
-        
-        // Release existing cache
-        simpleCache?.release()
-        simpleCache = null
-        
-        // Reinitialize with new size
-        initialize(context, maxSizeMb)
+        val newSizeBytes = maxSizeMb * 1024 * 1024
+        if (maxCacheSizeBytes == newSizeBytes) return
+        maxCacheSizeBytes = newSizeBytes
+
+        val cache = simpleCache
+        val currentEvictor = evictor
+        if (cache == null || currentEvictor == null) {
+            // Not initialized yet — the size takes effect at initialize().
+            return
+        }
+
+        Log.d(TAG, "Updating cache size to ${maxSizeMb}MB (live)")
+        currentEvictor.updateMaxBytes(cache, newSizeBytes)
+        updateCacheSize()
     }
-    
+
     /**
      * Format bytes to human-readable string.
      */
@@ -255,7 +344,7 @@ object CacheManager {
             else -> String.format("%.2f GB", bytes / (1024.0 * 1024.0 * 1024.0))
         }
     }
-    
+
     /**
      * Check if a specific content key is cached (partially or fully).
      */
