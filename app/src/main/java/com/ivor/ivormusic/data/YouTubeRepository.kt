@@ -2301,22 +2301,24 @@ class YouTubeRepository(private val context: Context) {
 
     /**
      * Get recommended videos for the video mode home screen.
-     * 1. Logged in: personalized YouTube home feed.
-     * 2. Otherwise: taste-based mix built from the local watch history.
+     * 1. Logged in: personalized YouTube home feed (with a browse continuation
+     *    token for endless scrolling — see [getVideoFeedContinuation]).
+     * 2. Otherwise: taste-based mix built from the local watch history (pages
+     *    by seed offset instead of a token — see [getTasteBasedVideos]).
      * 3. Cold start: generic popular search.
      * (YouTube removed the public Trending page in mid-2025 — the InnerTube
      * FEtrending browseId now returns HTTP 400, so no trending fallback.)
      */
-    suspend fun getTrendingVideos(): List<VideoItem> = withContext(Dispatchers.IO) {
+    suspend fun getTrendingVideos(): VideoFeedPage = withContext(Dispatchers.IO) {
         val isLoggedIn = sessionManager.isLoggedIn()
         android.util.Log.d("YouTubeRepo", "getTrendingVideos - isLoggedIn: $isLoggedIn")
 
         if (isLoggedIn) {
             try {
-                val videos = getPersonalizedVideoRecommendations()
-                if (videos.isNotEmpty()) {
-                    android.util.Log.d("YouTubeRepo", "Got ${videos.size} personalized videos")
-                    return@withContext videos
+                val page = getPersonalizedVideoRecommendations()
+                if (page.videos.isNotEmpty()) {
+                    android.util.Log.d("YouTubeRepo", "Got ${page.videos.size} personalized videos (continuation=${page.continuation != null})")
+                    return@withContext page
                 }
                 android.util.Log.w("YouTubeRepo", "Personalized recommendations empty, using taste-based feed")
             } catch (e: Exception) {
@@ -2328,7 +2330,7 @@ class YouTubeRepository(private val context: Context) {
             val tasteFeed = getTasteBasedVideos()
             if (tasteFeed.isNotEmpty()) {
                 android.util.Log.d("YouTubeRepo", "Got ${tasteFeed.size} taste-based videos")
-                return@withContext tasteFeed
+                return@withContext VideoFeedPage(tasteFeed)
             }
         } catch (e: Exception) {
             android.util.Log.e("YouTubeRepo", "Error building taste-based feed", e)
@@ -2336,10 +2338,10 @@ class YouTubeRepository(private val context: Context) {
 
         // Cold start: nothing watched yet and not logged in
         try {
-            searchVideos("trending videos ${java.time.Year.now().value}")
+            VideoFeedPage(searchVideos("trending videos ${java.time.Year.now().value}"))
         } catch (e: Exception) {
             android.util.Log.e("YouTubeRepo", "Cold-start search failed", e)
-            emptyList()
+            VideoFeedPage(emptyList())
         }
     }
 
@@ -2374,12 +2376,17 @@ class YouTubeRepository(private val context: Context) {
     /**
      * Build a feed from the related videos of recently watched ones.
      * Interleaves per-seed results for variety; drops watched videos and dupes.
+     * [seedOffset] pages through the watch history 6 seeds at a time so the
+     * home feed can load more logged out: offset 0 seeds from the 6 most
+     * recent videos, offset 6 from the next 6, and so on. Returns empty once
+     * the history runs out of seeds.
      */
-    private suspend fun getTasteBasedVideos(): List<VideoItem> = kotlinx.coroutines.coroutineScope {
+    suspend fun getTasteBasedVideos(seedOffset: Int = 0): List<VideoItem> = kotlinx.coroutines.coroutineScope {
         val history = videoHistoryRepository.getHistory()
         if (history.isEmpty()) return@coroutineScope emptyList()
 
-        val seeds = history.take(6)
+        val seeds = history.drop(seedOffset).take(6)
+        if (seeds.isEmpty()) return@coroutineScope emptyList()
         val historyIds = history.mapTo(HashSet()) { it.videoId }
         val perSeed = seeds.map { seed ->
             async(Dispatchers.IO) { getRelatedVideosLight(seed.videoId) }
@@ -2400,10 +2407,13 @@ class YouTubeRepository(private val context: Context) {
 
     /**
      * Get personalized video recommendations from YouTube (requires login).
-     * Uses the YouTube homepage API to get personalized suggestions.
+     * Uses the YouTube homepage API to get personalized suggestions. The
+     * returned page carries the rich-grid continuation token so the home feed
+     * can keep loading (feed shape verified July 2026).
      */
-    private suspend fun getPersonalizedVideoRecommendations(): List<VideoItem> = withContext(Dispatchers.IO) {
-        val cookies = sessionManager.getCookies() ?: return@withContext emptyList()
+    private suspend fun getPersonalizedVideoRecommendations(): VideoFeedPage = withContext(Dispatchers.IO) {
+        val empty = VideoFeedPage(emptyList())
+        val cookies = sessionManager.getCookies() ?: return@withContext empty
         
         // Extract SAPISID for authentication hash
         val sapisid = cookies.split(";")
@@ -2463,16 +2473,96 @@ class YouTubeRepository(private val context: Context) {
         try {
             android.util.Log.d("YouTubeRepo", "Making personalized video request with auth: ${authHeader.take(30)}...")
             val response = okHttpClient.newCall(request).execute()
-            val responseBody = response.body?.string() ?: return@withContext emptyList()
+            val responseBody = response.body?.string() ?: return@withContext empty
             response.close()
-            
+
             android.util.Log.d("YouTubeRepo", "Got personalized response: ${responseBody.take(500)}...")
+            val root = org.json.JSONObject(responseBody)
             val videos = parseVideosFromYouTubeJson(responseBody)
             android.util.Log.d("YouTubeRepo", "Parsed ${videos.size} personalized videos")
-            videos
+            VideoFeedPage(videos, extractRichGridContinuation(root))
         } catch (e: Exception) {
             android.util.Log.e("YouTubeRepo", "Error in getPersonalizedVideoRecommendations", e)
-            emptyList()
+            empty
+        }
+    }
+
+    /**
+     * Continuation token of a FEwhat_to_watch rich-grid browse response:
+     * tabs[0].tabRenderer.content.richGridRenderer.contents holds a trailing
+     * continuationItemRenderer whose continuationEndpoint.continuationCommand
+     * carries the token for the next /browse page. Verified July 2026.
+     */
+    private fun extractRichGridContinuation(root: org.json.JSONObject): String? {
+        val tabs = root.optJSONObject("contents")
+            ?.optJSONObject("twoColumnBrowseResultsRenderer")
+            ?.optJSONArray("tabs")
+            ?: root.optJSONObject("contents")
+                ?.optJSONObject("singleColumnBrowseResultsRenderer")
+                ?.optJSONArray("tabs")
+        val contents = tabs?.optJSONObject(0)
+            ?.optJSONObject("tabRenderer")
+            ?.optJSONObject("content")
+            ?.optJSONObject("richGridRenderer")
+            ?.optJSONArray("contents")
+            ?: return null
+        for (i in 0 until contents.length()) {
+            val token = contents.optJSONObject(i)
+                ?.optJSONObject("continuationItemRenderer")
+                ?.optJSONObject("continuationEndpoint")
+                ?.optJSONObject("continuationCommand")
+                ?.optString("token")
+                ?.takeIf { it.isNotBlank() }
+            if (token != null) return token
+        }
+        return null
+    }
+
+    /**
+     * Next page of the personalized home feed from a browse continuation
+     * token. The response carries appendContinuationItemsAction with ~23 more
+     * richItemRenderers (lockupViewModel contents) plus the next page's
+     * continuationItemRenderer. Requires login (the token comes from a signed
+     * FEwhat_to_watch response). Shape verified July 2026.
+     */
+    suspend fun getVideoFeedContinuation(continuation: String): VideoFeedPage = withContext(Dispatchers.IO) {
+        try {
+            val body = org.json.JSONObject()
+                .put("context", webContext())
+                .put("continuation", continuation)
+            val raw = postWatchApi("browse", body) ?: return@withContext VideoFeedPage(emptyList())
+            val root = org.json.JSONObject(raw)
+
+            val videos = mutableListOf<VideoItem>()
+            var nextToken: String? = null
+            val actions = root.optJSONArray("onResponseReceivedActions") ?: org.json.JSONArray()
+            for (i in 0 until actions.length()) {
+                val items = actions.optJSONObject(i)
+                    ?.optJSONObject("appendContinuationItemsAction")
+                    ?.optJSONArray("continuationItems")
+                    ?: continue
+                for (j in 0 until items.length()) {
+                    val item = items.optJSONObject(j) ?: continue
+                    val content = item.optJSONObject("richItemRenderer")?.optJSONObject("content")
+                    content?.optJSONObject("lockupViewModel")?.let {
+                        parseLockupViewModel(it)?.let { v -> videos.add(v) }
+                    }
+                    content?.optJSONObject("videoRenderer")?.let {
+                        parseVideoRenderer(it)?.let { v -> videos.add(v) }
+                    }
+                    item.optJSONObject("continuationItemRenderer")
+                        ?.optJSONObject("continuationEndpoint")
+                        ?.optJSONObject("continuationCommand")
+                        ?.optString("token")
+                        ?.takeIf { it.isNotBlank() }
+                        ?.let { nextToken = it }
+                }
+            }
+            android.util.Log.d("YouTubeRepo", "Feed continuation: ${videos.size} videos, next=${nextToken != null}")
+            VideoFeedPage(videos.distinctBy { it.videoId }, nextToken)
+        } catch (e: Exception) {
+            android.util.Log.e("YouTubeRepo", "Feed continuation failed", e)
+            VideoFeedPage(emptyList())
         }
     }
 

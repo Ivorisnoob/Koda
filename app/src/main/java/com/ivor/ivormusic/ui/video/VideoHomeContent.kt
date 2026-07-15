@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -55,6 +56,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -185,7 +187,25 @@ fun VideoHomeContent(
                 )
             }
         } else {
+            val listState = rememberLazyListState()
+            val isLoadingMore by viewModel.isVideoLoadingMore.collectAsState()
+
+            // Endless feed: ask for the next page whenever the last visible
+            // item is within 5 of the end. The ViewModel guards against
+            // duplicate/exhausted loads, so firing on every scroll frame is fine.
+            LaunchedEffect(listState) {
+                snapshotFlow {
+                    val info = listState.layoutInfo
+                    (info.visibleItemsInfo.lastOrNull()?.index ?: -1) to info.totalItemsCount
+                }.collect { (lastVisible, totalCount) ->
+                    if (totalCount > 0 && lastVisible >= totalCount - 5) {
+                        viewModel.loadMoreTrendingVideos()
+                    }
+                }
+            }
+
             LazyColumn(
+                state = listState,
                 modifier = Modifier
                     .fillMaxSize()
                     .background(backgroundColor)
@@ -293,6 +313,23 @@ fun VideoHomeContent(
                     }
                 }
                 
+                // Load-more footer
+                if (isLoadingMore) {
+                    item {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            LoadingIndicator(
+                                modifier = Modifier.size(36.dp),
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                }
+
                 item { Spacer(modifier = Modifier.height(32.dp)) }
             }
         }

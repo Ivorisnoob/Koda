@@ -161,6 +161,16 @@ data class CaptionTrack(
 }
 
 /**
+ * One page of the video home feed. [continuation] is the InnerTube token for
+ * the next page (browse continuation), or null when the source can't page
+ * that way (taste-based and cold-start feeds page by seed offset instead).
+ */
+data class VideoFeedPage(
+    val videos: List<VideoItem>,
+    val continuation: String? = null
+)
+
+/**
  * A YouTube playlist shown in the video Library tab. Watch Later ("WL") and
  * Liked videos ("LL") are pinned entries built locally, not parsed.
  */
