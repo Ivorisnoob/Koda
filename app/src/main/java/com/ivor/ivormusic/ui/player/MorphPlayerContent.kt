@@ -90,9 +90,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.graphics.shapes.Morph
 import androidx.media3.common.Player
-import coil.compose.AsyncImage
 import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.ui.components.LikeBurstIcon
+import com.ivor.ivormusic.ui.components.SongArtwork
 import kotlin.math.abs
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -125,6 +125,7 @@ fun MorphPlayerSheetContent(
 
     val currentSong by viewModel.currentSong.collectAsState()
     val isPlaying by viewModel.isPlaying.collectAsState()
+    val playerHaptics = rememberPlayerHaptics()
     val isBuffering by viewModel.isBuffering.collectAsState()
     val playWhenReady by viewModel.playWhenReady.collectAsState()
     val progress by viewModel.progress.collectAsState()
@@ -245,7 +246,6 @@ fun MorphPlayerSheetContent(
                                         lyricsResult = lyricsResult,
                                         currentPositionMs = progress,
                                         onSeekTo = { viewModel.seekTo(it) },
-                                        ambientBackground = ambientBackground,
                                         primaryColor = primaryColor,
                                         onSurfaceColor = onSurfaceColor,
                                         onSurfaceVariantColor = onSurfaceVariantColor
@@ -259,9 +259,12 @@ fun MorphPlayerSheetContent(
                                     progressFraction = if (duration > 0) {
                                         (progress.toFloat() / duration.toFloat()).coerceIn(0f, 1f)
                                     } else 0f,
-                                    onPlayPause = { viewModel.togglePlayPause() },
-                                    onNext = { viewModel.skipToNext() },
-                                    onPrevious = { viewModel.skipToPrevious() },
+                                    onPlayPause = {
+                                        playerHaptics.playPause(!viewModel.isPlaying.value)
+                                        viewModel.togglePlayPause()
+                                    },
+                                    onNext = { playerHaptics.skip(); viewModel.skipToNext() },
+                                    onPrevious = { playerHaptics.skip(); viewModel.skipToPrevious() },
                                     ringColor = primaryColor,
                                     ringTrackColor = onSurfaceVariantColor.copy(alpha = 0.2f)
                                 )
@@ -392,12 +395,12 @@ fun MorphPlayerSheetContent(
                                         Icon(Icons.Default.Shuffle, "Shuffle")
                                     }
                                     androidx.compose.material3.IconButton(
-                                        onClick = { viewModel.skipToPrevious() }
+                                        onClick = { playerHaptics.skip(); viewModel.skipToPrevious() }
                                     ) {
                                         Icon(Icons.Default.SkipPrevious, "Previous")
                                     }
                                     androidx.compose.material3.IconButton(
-                                        onClick = { viewModel.skipToNext() }
+                                        onClick = { playerHaptics.skip(); viewModel.skipToNext() }
                                     ) {
                                         Icon(Icons.Default.SkipNext, "Next")
                                     }
@@ -629,12 +632,10 @@ private fun MorphHero(
                 .styleWheelHold(styleWheel),
             contentAlignment = Alignment.Center
         ) {
-            val artModel = currentSong?.highResThumbnailUrl
-                ?: currentSong?.thumbnailUrl
-                ?: currentSong?.albumArtUri
-            if (artModel != null) {
-                AsyncImage(
-                    model = artModel,
+            val artSong = currentSong?.takeIf { it.thumbnailUrl != null || it.albumArtUri != null }
+            if (artSong != null) {
+                SongArtwork(
+                    song = artSong,
                     contentDescription = "Album Art",
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop

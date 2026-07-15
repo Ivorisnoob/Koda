@@ -9,6 +9,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -68,6 +69,8 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -96,11 +99,12 @@ import androidx.graphics.shapes.Morph
 import androidx.graphics.shapes.RoundedPolygon
 import androidx.graphics.shapes.toPath
 import androidx.media3.common.Player
-import coil.compose.AsyncImage
 import com.ivor.ivormusic.data.LyricsResult
 import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.ui.components.LikeBurstIcon
+import com.ivor.ivormusic.ui.components.SongArtwork
 import kotlin.math.abs
+import kotlinx.coroutines.launch
 
 /**
  * Editorial Player - the two-tone magazine style.
@@ -133,6 +137,7 @@ fun EditorialPlayerSheetContent(
 
     val currentSong by viewModel.currentSong.collectAsState()
     val isPlaying by viewModel.isPlaying.collectAsState()
+    val playerHaptics = rememberPlayerHaptics()
     val isBuffering by viewModel.isBuffering.collectAsState()
     val playWhenReady by viewModel.playWhenReady.collectAsState()
     val progress by viewModel.progress.collectAsState()
@@ -186,9 +191,12 @@ fun EditorialPlayerSheetContent(
                     showLyrics = showLyrics,
                     lyricsResult = lyricsResult,
                     onToggleLyrics = { showLyrics = !showLyrics },
-                    onPlayPause = { viewModel.togglePlayPause() },
-                    onPrevious = { viewModel.skipToPrevious() },
-                    onNext = { viewModel.skipToNext() },
+                    onPlayPause = {
+                        playerHaptics.playPause(!viewModel.isPlaying.value)
+                        viewModel.togglePlayPause()
+                    },
+                    onPrevious = { playerHaptics.skip(); viewModel.skipToPrevious() },
+                    onNext = { playerHaptics.skip(); viewModel.skipToNext() },
                     onSeekTo = { viewModel.seekTo(it) },
                     onToggleShuffle = { viewModel.toggleShuffle() },
                     onToggleRepeat = { viewModel.toggleRepeat() },
@@ -297,10 +305,45 @@ private fun EditorialNowPlayingView(
         }
 
         // ========== DIE-CUT ART / LYRICS ==========
+        // Swipe-to-skip: the die-cut art follows the finger and springs
+        // back if the drag is abandoned; past the threshold it commits a
+        // previous/next skip. Inactive while lyrics are shown.
+        val scope = rememberCoroutineScope()
+        val swipeDragX = remember { Animatable(0f) }
+        val skipThresholdPx = with(LocalDensity.current) { 90.dp.toPx() }
+        val currentOnNext by rememberUpdatedState(onNext)
+        val currentOnPrevious by rememberUpdatedState(onPrevious)
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(1f),
+                .weight(1f)
+                .pointerInput(showLyrics) {
+                    if (showLyrics) return@pointerInput
+                    detectHorizontalDragGestures(
+                        onHorizontalDrag = { change, dragAmount ->
+                            change.consume()
+                            scope.launch { swipeDragX.snapTo(swipeDragX.value + dragAmount) }
+                        },
+                        onDragEnd = {
+                            val dx = swipeDragX.value
+                            scope.launch {
+                                if (abs(dx) > skipThresholdPx) {
+                                    if (dx < 0) currentOnNext() else currentOnPrevious()
+                                }
+                                swipeDragX.animateTo(
+                                    0f,
+                                    spring(
+                                        dampingRatio = Spring.DampingRatioMediumBouncy,
+                                        stiffness = Spring.StiffnessLow
+                                    )
+                                )
+                            }
+                        },
+                        onDragCancel = {
+                            scope.launch { swipeDragX.animateTo(0f, spring()) }
+                        }
+                    )
+                },
             contentAlignment = Alignment.Center
         ) {
             Crossfade(targetState = showLyrics, label = "EditorialArtLyrics") { lyricsVisible ->
@@ -310,20 +353,26 @@ private fun EditorialNowPlayingView(
                             lyricsResult = lyricsResult,
                             currentPositionMs = progress,
                             onSeekTo = onSeekTo,
-                            ambientBackground = false,
                             primaryColor = accent,
                             onSurfaceColor = accent,
                             onSurfaceVariantColor = accent.copy(alpha = 0.6f)
                         )
                     }
                 } else {
-                    EditorialDieCutArt(
-                        currentSong = currentSong,
-                        isPlaying = isPlaying,
-                        onTap = onPlayPause,
-                        accent = accent,
-                        field = field
-                    )
+                    Box(
+                        modifier = Modifier.graphicsLayer {
+                            translationX = swipeDragX.value * 0.5f
+                            rotationZ = swipeDragX.value / 80f
+                        }
+                    ) {
+                        EditorialDieCutArt(
+                            currentSong = currentSong,
+                            isPlaying = isPlaying,
+                            onTap = onPlayPause,
+                            accent = accent,
+                            field = field
+                        )
+                    }
                 }
             }
         }
@@ -674,12 +723,10 @@ private fun EditorialDieCutArt(
                 .styleWheelHold(styleWheel),
             contentAlignment = Alignment.Center
         ) {
-            val artModel = currentSong?.highResThumbnailUrl
-                ?: currentSong?.thumbnailUrl
-                ?: currentSong?.albumArtUri
-            if (artModel != null) {
-                AsyncImage(
-                    model = artModel,
+            val artSong = currentSong?.takeIf { it.thumbnailUrl != null || it.albumArtUri != null }
+            if (artSong != null) {
+                SongArtwork(
+                    song = artSong,
                     contentDescription = "Album Art",
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop

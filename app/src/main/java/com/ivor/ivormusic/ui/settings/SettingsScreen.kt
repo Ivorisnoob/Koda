@@ -71,7 +71,7 @@ import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.FlashOn
 import androidx.compose.material.icons.rounded.HighQuality
 import androidx.compose.material.icons.rounded.SwipeRight
-import androidx.compose.material.icons.rounded.TextFields
+import androidx.compose.material.icons.rounded.Wallpaper
 import androidx.compose.material.icons.rounded.ThumbDown
 import androidx.compose.material.icons.rounded.ThumbUp
 import androidx.compose.material.icons.rounded.ToggleOn
@@ -1876,7 +1876,7 @@ private val playerStyleOptions = listOf(
     PlayerStyleOption(PlayerStyle.CLASSIC, "Classic", "Button controls for playback", Icons.Rounded.PlayCircle),
     PlayerStyleOption(PlayerStyle.GESTURE, "Gesture", "Swipe album art to navigate", Icons.Rounded.SwipeRight),
     PlayerStyleOption(PlayerStyle.EDITORIAL, "Editorial", "Two-tone magazine layout", Icons.Rounded.Newspaper),
-    PlayerStyleOption(PlayerStyle.POSTER, "Poster", "Kinetic type, title as progress", Icons.Rounded.TextFields),
+    PlayerStyleOption(PlayerStyle.POSTER, "Canvas", "Full-bleed album art", Icons.Rounded.Wallpaper),
     PlayerStyleOption(PlayerStyle.BENTO, "Bento", "Squishy grid of flat tiles", Icons.Rounded.GridView),
     PlayerStyleOption(PlayerStyle.STICKER, "Sticker", "Die-cut art with toy physics", Icons.Rounded.Interests),
     PlayerStyleOption(PlayerStyle.MORPH, "Morph", "Living shape that breathes", Icons.Rounded.Animation),

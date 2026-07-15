@@ -46,6 +46,7 @@ import androidx.compose.ui.zIndex
 import androidx.media3.common.Player
 import coil.compose.AsyncImage
 import com.ivor.ivormusic.data.Song
+import com.ivor.ivormusic.ui.components.SongArtwork
 import com.ivor.ivormusic.data.LyricsResult
 
 /**
@@ -233,6 +234,7 @@ private fun ExpressiveNowPlayingView(
 ) {
     // State for toggling between album art and lyrics
     var showLyrics by remember { mutableStateOf(false) }
+    val playerHaptics = rememberPlayerHaptics()
     
     // Get album art URL for background
     val albumArtUrl = currentSong?.highResThumbnailUrl 
@@ -365,7 +367,6 @@ private fun ExpressiveNowPlayingView(
                         lyricsResult = lyricsResult,
                         currentPositionMs = progress,
                         onSeekTo = onSeekTo,
-                        ambientBackground = ambientBackground,
                         primaryColor = primaryColor,
                         onSurfaceColor = onSurfaceColor,
                         onSurfaceVariantColor = onSurfaceVariantColor
@@ -397,9 +398,10 @@ private fun ExpressiveNowPlayingView(
                             ) {
                                 Box(modifier = Modifier.fillMaxSize()) {
                                     // Album Art
-                                    if (currentSong?.albumArtUri != null || currentSong?.thumbnailUrl != null) {
-                                        AsyncImage(
-                                            model = currentSong?.highResThumbnailUrl ?: currentSong?.thumbnailUrl ?: currentSong?.albumArtUri,
+                                    val artSong = currentSong?.takeIf { it.albumArtUri != null || it.thumbnailUrl != null }
+                                    if (artSong != null) {
+                                        SongArtwork(
+                                            song = artSong,
                                             contentDescription = "Album Art",
                                             modifier = Modifier
                                                 .fillMaxSize()
@@ -577,7 +579,7 @@ private fun ExpressiveNowPlayingView(
                 // Previous Button - with animateWidth for squishy physics
                 val prevInteraction = remember { MutableInteractionSource() }
                 FilledTonalIconButton(
-                    onClick = { viewModel.skipToPrevious() },
+                    onClick = { playerHaptics.skip(); viewModel.skipToPrevious() },
                     shapes = stableShapes,
                     interactionSource = prevInteraction,
                     modifier = Modifier
@@ -595,7 +597,10 @@ private fun ExpressiveNowPlayingView(
                 // 🌟 Play/Pause Button (center, larger weight for emphasis)
                 val playInteraction = remember { MutableInteractionSource() }
                 FilledIconButton(
-                    onClick = { viewModel.togglePlayPause() },
+                    onClick = {
+                        playerHaptics.playPause(!viewModel.isPlaying.value)
+                        viewModel.togglePlayPause()
+                    },
                     shapes = stableShapes,
                     interactionSource = playInteraction,
                     colors = IconButtonDefaults.filledIconButtonColors(
@@ -632,7 +637,7 @@ private fun ExpressiveNowPlayingView(
                 // Next Button - with animateWidth for squishy physics
                 val nextInteraction = remember { MutableInteractionSource() }
                 FilledTonalIconButton(
-                    onClick = { viewModel.skipToNext() },
+                    onClick = { playerHaptics.skip(); viewModel.skipToNext() },
                     shapes = stableShapes,
                     interactionSource = nextInteraction,
                     modifier = Modifier
@@ -923,8 +928,8 @@ private fun ExpressiveQueueView(
                                     ) {
                                         Box(modifier = Modifier.fillMaxSize()) {
                                             if (song.albumArtUri != null || song.thumbnailUrl != null) {
-                                                AsyncImage(
-                                                    model = song.highResThumbnailUrl ?: song.thumbnailUrl ?: song.albumArtUri,
+                                                SongArtwork(
+                                                    song = song,
                                                     contentDescription = "Now Playing",
                                                     modifier = Modifier
                                                         .fillMaxSize()

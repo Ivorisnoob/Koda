@@ -51,6 +51,7 @@ import androidx.compose.ui.zIndex
 import androidx.media3.common.Player
 import coil.compose.AsyncImage
 import com.ivor.ivormusic.data.Song
+import com.ivor.ivormusic.ui.components.SongArtwork
 import com.ivor.ivormusic.data.LyricsResult
 import java.util.Locale
 import kotlin.math.absoluteValue
@@ -81,6 +82,7 @@ fun GesturePlayerSheetContent(
     
     val currentSong by viewModel.currentSong.collectAsState()
     val isPlaying by viewModel.isPlaying.collectAsState()
+    val playerHaptics = rememberPlayerHaptics()
     val isBuffering by viewModel.isBuffering.collectAsState()
     val progress by viewModel.progress.collectAsState()
     val duration by viewModel.duration.collectAsState()
@@ -167,8 +169,11 @@ fun GesturePlayerSheetContent(
                     onToggleDownload = { currentSong?.let { viewModel.toggleDownload(it) } },
                     sleepTimerActive = sleepTimerEndsAt != null,
                     onSleepTimerClick = { showSleepTimerDialog = true },
-                    onPlayPauseToggle = { viewModel.togglePlayPause() },
-                    onSongChange = { song -> viewModel.skipToSong(song) },
+                    onPlayPauseToggle = {
+                        playerHaptics.playPause(!viewModel.isPlaying.value)
+                        viewModel.togglePlayPause()
+                    },
+                    onSongChange = { song -> playerHaptics.skip(); viewModel.skipToSong(song) },
 
                     isDownloaded = currentSong?.let { viewModel.isDownloaded(it.id) } ?: false,
                     isDownloading = currentSong?.let { viewModel.isDownloading(it.id) } ?: false,
@@ -406,7 +411,6 @@ private fun GestureNowPlayingView(
                                         lyricsResult = lyricsResult,
                                         currentPositionMs = progress,
                                         onSeekTo = onSeekTo,
-                                        ambientBackground = ambientBackground,
                                         primaryColor = primaryColor,
                                         onSurfaceColor = onSurfaceColor,
                                         onSurfaceVariantColor = onSurfaceVariantColor
@@ -869,14 +873,16 @@ private fun SwipeableAlbumCarousel(
                     ) {
                         Box(modifier = Modifier.fillMaxSize()) {
                             // Album art with stable loading
-                            AsyncImage(
-                                model = imgUrl,
-                                contentDescription = song.title,
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .clip(RoundedCornerShape(currentCornerRadius)),
-                                contentScale = ContentScale.Crop
-                            )
+                            if (imgUrl != null) {
+                                SongArtwork(
+                                    song = song,
+                                    contentDescription = song.title,
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .clip(RoundedCornerShape(currentCornerRadius)),
+                                    contentScale = ContentScale.Crop
+                                )
+                            }
                             
                             // Fallback gradient if no image
                             if (imgUrl == null) {
@@ -980,12 +986,12 @@ private fun SingleAlbumArt(
             shadowElevation = 16.dp
         ) {
             Box(modifier = Modifier.fillMaxSize()) {
-                val imgUrl = song?.highResThumbnailUrl ?: song?.thumbnailUrl ?: song?.albumArtUri?.toString()
-                
-                if (imgUrl != null) {
-                    AsyncImage(
-                        model = imgUrl,
-                        contentDescription = song?.title ?: "Album Art",
+                val artSong = song?.takeIf { it.thumbnailUrl != null || it.albumArtUri != null }
+
+                if (artSong != null) {
+                    SongArtwork(
+                        song = artSong,
+                        contentDescription = artSong.title,
                         modifier = Modifier
                             .fillMaxSize()
                             .clip(RoundedCornerShape(cornerRadius)),
@@ -1183,8 +1189,8 @@ private fun GestureQueueView(
                                         .padding(bottom = 16.dp),
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    val imgUrl = song.highResThumbnailUrl ?: song.thumbnailUrl ?: song.albumArtUri?.toString()
-                                    
+                                    val hasArt = song.thumbnailUrl != null || song.albumArtUri != null
+
                                     Surface(
                                         modifier = Modifier
                                             .size(140.dp)
@@ -1193,9 +1199,9 @@ private fun GestureQueueView(
                                         shadowElevation = 8.dp,
                                         color = MaterialTheme.colorScheme.surfaceContainerHigh
                                     ) {
-                                        if (imgUrl != null) {
-                                            AsyncImage(
-                                                model = imgUrl,
+                                        if (hasArt) {
+                                            SongArtwork(
+                                                song = song,
                                                 contentDescription = "Now Playing",
                                                 modifier = Modifier
                                                     .fillMaxSize()

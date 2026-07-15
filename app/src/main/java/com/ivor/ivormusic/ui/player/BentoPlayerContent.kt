@@ -71,8 +71,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.media3.common.Player
-import coil.compose.AsyncImage
 import com.ivor.ivormusic.ui.components.LikeBurstIcon
+import com.ivor.ivormusic.ui.components.SongArtwork
 
 /**
  * Bento Player - the squish grid style.
@@ -107,6 +107,7 @@ fun BentoPlayerSheetContent(
 
     val currentSong by viewModel.currentSong.collectAsState()
     val isPlaying by viewModel.isPlaying.collectAsState()
+    val playerHaptics = rememberPlayerHaptics()
     val isBuffering by viewModel.isBuffering.collectAsState()
     val playWhenReady by viewModel.playWhenReady.collectAsState()
     val progress by viewModel.progress.collectAsState()
@@ -235,7 +236,10 @@ fun BentoPlayerSheetContent(
                             .clip(RoundedCornerShape(artCorner.dp))
                             .background(tileColor)
                             .pointerInput(Unit) {
-                                detectTapGestures(onTap = { viewModel.togglePlayPause() })
+                                detectTapGestures(onTap = {
+                                    playerHaptics.playPause(!viewModel.isPlaying.value)
+                                    viewModel.togglePlayPause()
+                                })
                             }
                             .styleWheelHold(styleWheel)
                     ) {
@@ -246,19 +250,16 @@ fun BentoPlayerSheetContent(
                                         lyricsResult = lyricsResult,
                                         currentPositionMs = progress,
                                         onSeekTo = { viewModel.seekTo(it) },
-                                        ambientBackground = false,
                                         primaryColor = MaterialTheme.colorScheme.primary,
                                         onSurfaceColor = onTile,
                                         onSurfaceVariantColor = onTileVariant
                                     )
                                 }
                             } else {
-                                val artModel = currentSong?.highResThumbnailUrl
-                                    ?: currentSong?.thumbnailUrl
-                                    ?: currentSong?.albumArtUri
-                                if (artModel != null) {
-                                    AsyncImage(
-                                        model = artModel,
+                                val artSong = currentSong?.takeIf { it.thumbnailUrl != null || it.albumArtUri != null }
+                                if (artSong != null) {
+                                    SongArtwork(
+                                        song = artSong,
                                         contentDescription = "Album Art",
                                         modifier = Modifier.fillMaxSize(),
                                         contentScale = ContentScale.Crop
@@ -332,7 +333,7 @@ fun BentoPlayerSheetContent(
                     ) {
                         BentoSquishTile(
                             baseWeight = 1f,
-                            onClick = { viewModel.skipToPrevious() },
+                            onClick = { playerHaptics.skip(); viewModel.skipToPrevious() },
                             color = MaterialTheme.colorScheme.secondaryContainer,
                             contentColor = MaterialTheme.colorScheme.onSecondaryContainer
                         ) {
@@ -343,7 +344,10 @@ fun BentoPlayerSheetContent(
                         }
                         BentoSquishTile(
                             baseWeight = 1.6f,
-                            onClick = { viewModel.togglePlayPause() },
+                            onClick = {
+                                playerHaptics.playPause(!viewModel.isPlaying.value)
+                                viewModel.togglePlayPause()
+                            },
                             color = MaterialTheme.colorScheme.primaryContainer,
                             contentColor = MaterialTheme.colorScheme.onPrimaryContainer
                         ) {
@@ -368,7 +372,7 @@ fun BentoPlayerSheetContent(
                         }
                         BentoSquishTile(
                             baseWeight = 1f,
-                            onClick = { viewModel.skipToNext() },
+                            onClick = { playerHaptics.skip(); viewModel.skipToNext() },
                             color = MaterialTheme.colorScheme.secondaryContainer,
                             contentColor = MaterialTheme.colorScheme.onSecondaryContainer
                         ) {
