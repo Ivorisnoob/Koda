@@ -88,6 +88,43 @@ class ThemePreferences(context: Context) {
     private val _onboardingCompleted = MutableStateFlow(getOnboardingCompletedPreference())
     val onboardingCompleted: StateFlow<Boolean> = _onboardingCompleted.asStateFlow()
 
+    // Every screen/service news up its own ThemePreferences (no DI), so a setter
+    // called on one instance must still reach the flows of every other instance.
+    // All instances share the same process-wide SharedPreferences object, so a
+    // change listener gives us that propagation. Must be a field: SharedPreferences
+    // only holds listeners weakly and would otherwise garbage-collect it.
+    private val prefChangeListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        when (key) {
+            KEY_THEME_MODE -> _themeMode.value = getThemeModePreference()
+            KEY_AMOLED_THEME -> _amoledTheme.value = getAmoledThemePreference()
+            KEY_COLOR_PALETTE -> _colorPalette.value = getColorPalettePreference()
+            KEY_LOAD_LOCAL_SONGS -> _loadLocalSongs.value = getLoadLocalSongsPreference()
+            KEY_AMBIENT_BACKGROUND -> _ambientBackground.value = getAmbientBackgroundPreference()
+            KEY_PLAYER_ARTWORK_COLORS -> _playerArtworkColors.value = getPlayerArtworkColorsPreference()
+            KEY_VIDEO_MODE -> _videoMode.value = getVideoModePreference()
+            KEY_HOME_MODE_TOGGLE_ENABLED -> _homeModeToggleEnabled.value = getHomeModeToggleEnabledPreference()
+            KEY_PLAYER_STYLE -> _playerStyle.value = getPlayerStylePreference()
+            KEY_SAVE_VIDEO_HISTORY -> _saveVideoHistory.value = getSaveVideoHistoryPreference()
+            KEY_TIMED_COMMENTS_ENABLED -> _timedCommentsEnabled.value = getTimedCommentsEnabledPreference()
+            KEY_SHORTS_ENABLED -> _shortsEnabled.value = getShortsEnabledPreference()
+            KEY_SHORTS_HIDDEN_ACTIONS -> _shortsHiddenActions.value = getShortsHiddenActionsPreference()
+            KEY_DEFAULT_VIDEO_QUALITY -> _defaultVideoQuality.value = getDefaultVideoQualityPreference()
+            KEY_EXCLUDED_FOLDERS -> _excludedFolders.value = getExcludedFoldersPreference()
+            KEY_CACHE_ENABLED -> _cacheEnabled.value = getCacheEnabledPreference()
+            KEY_MAX_CACHE_SIZE_MB -> _maxCacheSizeMb.value = getMaxCacheSizeMbPreference()
+            KEY_AUTO_LOAD_QUEUE -> _autoLoadQueue.value = getAutoLoadQueuePreference()
+            KEY_CROSSFADE_ENABLED -> _crossfadeEnabled.value = getCrossfadeEnabledPreference()
+            KEY_CROSSFADE_DURATION -> _crossfadeDurationMs.value = getCrossfadeDurationPreference()
+            KEY_OEM_FIX_ENABLED -> _oemFixEnabled.value = getOemFixEnabledPreference()
+            KEY_MANUAL_SCAN_ENABLED -> _manualScanEnabled.value = getManualScanEnabledPreference()
+            KEY_ONBOARDING_COMPLETED -> _onboardingCompleted.value = getOnboardingCompletedPreference()
+        }
+    }
+
+    init {
+        prefs.registerOnSharedPreferenceChangeListener(prefChangeListener)
+    }
+
     companion object {
         private const val PREFS_NAME = "ivor_music_theme_prefs"
         private const val KEY_THEME_MODE = "theme_mode_enum"

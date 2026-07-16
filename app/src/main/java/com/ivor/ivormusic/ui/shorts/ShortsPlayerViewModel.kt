@@ -211,11 +211,13 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
     val isPostingComment: StateFlow<Boolean> = _isPostingComment.asStateFlow()
 
     init {
-        // Same tuned LoadControl as the video player: first frame after ~1.5s
-        // buffered. Audio focus + becoming-noisy pause music/video playback
-        // instead of playing over them (and vice versa).
+        // First frame after ~1s buffered, like the video player. Shorts are
+        // under a minute, so the 60s max buffer already covers the whole clip
+        // — no need for the long-form 5-minute read-ahead. Audio focus +
+        // becoming-noisy pause music/video playback instead of playing over
+        // them (and vice versa).
         val loadControl = DefaultLoadControl.Builder()
-            .setBufferDurationsMs(30_000, 60_000, 1_500, 3_000)
+            .setBufferDurationsMs(30_000, 60_000, 1_000, 2_500)
             .setPrioritizeTimeOverSizeThresholds(true)
             .build()
 

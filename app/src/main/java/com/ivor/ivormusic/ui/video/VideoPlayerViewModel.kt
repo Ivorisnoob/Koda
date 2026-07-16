@@ -155,17 +155,22 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     val isPostingComment: StateFlow<Boolean> = _isPostingComment.asStateFlow()
 
     init {
-        // Faster first frame than the stock 2.5s start buffer: begin playback
-        // after ~1.5s buffered and keep a large max buffer for stability.
-        // Mirrors the tuned LoadControl the music service already uses.
+        // Near-instant first frame (~1s buffered) plus an aggressive
+        // read-ahead: up to 5 minutes (min == max: continuous top-up),
+        // hard-capped at 200MB of sample RAM so high-bitrate 4K streams
+        // can't exhaust memory — loading stops at whichever limit is hit
+        // first. Video has no disk cache, so a 30s keyframe-aligned back
+        // buffer keeps short rewinds instant too.
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                30_000, // min buffer
-                60_000, // max buffer
-                1_500,  // buffer before first frame
-                3_000   // buffer after a rebuffer
+                300_000, // min buffer (== max: continuous top-up)
+                300_000, // max buffer: up to 5 minutes ahead
+                1_000,   // buffer before first frame
+                2_500    // buffer after a rebuffer
             )
-            .setPrioritizeTimeOverSizeThresholds(true)
+            .setTargetBufferBytes(200 * 1024 * 1024)
+            .setBackBuffer(30_000, true)
+            .setPrioritizeTimeOverSizeThresholds(false)
             .build()
 
         // Initialize ExoPlayer.
