@@ -88,6 +88,10 @@ fun VideoPlayerContent(
     val timedComments by viewModel.timedComments.collectAsState()
     val canComment by viewModel.canComment.collectAsState()
     val isPostingComment by viewModel.isPostingComment.collectAsState()
+    val videoPlaylists by viewModel.videoPlaylists.collectAsState()
+    val isVideoPlaylistsLoading by viewModel.isVideoPlaylistsLoading.collectAsState()
+    val channelVideos by viewModel.channelVideos.collectAsState()
+    val isChannelVideosLoading by viewModel.isChannelVideosLoading.collectAsState()
 
     // Local UI State
     var showControls by remember { mutableStateOf(false) }
@@ -233,6 +237,11 @@ fun VideoPlayerContent(
     // Comments Sheet + Sign-in Dialog State
     var showCommentsSheet by remember { mutableStateOf(false) }
     var showSignInDialog by remember { mutableStateOf(false) }
+
+    // Save-to-playlist sheet (Save button or long-press on an Up Next video)
+    // and the channel page sheet (tap on the channel row)
+    var saveTargetVideo by remember { mutableStateOf<VideoItem?>(null) }
+    var showChannelSheet by remember { mutableStateOf(false) }
 
     // Gate authenticated actions behind login
     fun requireLogin(action: () -> Unit) {
@@ -382,6 +391,22 @@ fun VideoPlayerContent(
                     onCommentsClick = {
                         viewModel.ensureCommentsLoaded()
                         showCommentsSheet = true
+                    },
+                    onSaveClick = {
+                        requireLogin {
+                            viewModel.loadVideoPlaylists()
+                            saveTargetVideo = currentVideo
+                        }
+                    },
+                    onChannelClick = {
+                        viewModel.loadChannelVideos()
+                        showChannelSheet = true
+                    },
+                    onRelatedLongPress = { related ->
+                        requireLogin {
+                            viewModel.loadVideoPlaylists()
+                            saveTargetVideo = related
+                        }
                     }
                 )
             }
@@ -408,6 +433,38 @@ fun VideoPlayerContent(
             onLikeComment = { comment -> requireLogin { viewModel.toggleCommentLike(comment) } },
             onDeleteComment = { comment -> viewModel.deleteComment(comment) },
             onDismiss = { showCommentsSheet = false }
+        )
+    }
+
+    // Save to Watch Later / playlist sheet
+    saveTargetVideo?.let { target ->
+        SaveToPlaylistSheet(
+            video = target,
+            playlists = videoPlaylists,
+            isLoading = isVideoPlaylistsLoading,
+            onSave = { playlistId, onResult ->
+                viewModel.addVideoToPlaylist(playlistId, target, onResult)
+            },
+            onDismiss = { saveTargetVideo = null }
+        )
+    }
+
+    // Channel page sheet (latest uploads + subscribe)
+    if (showChannelSheet) {
+        ChannelSheet(
+            channelName = currentVideo.channelName,
+            channelIconUrl = currentVideo.channelIconUrl,
+            subscriberCountText = engagement?.subscriberCountText ?: currentVideo.subscriberCount,
+            isSubscribed = engagement?.isSubscribed == true,
+            canSubscribe = engagement?.channelId != null,
+            videos = channelVideos,
+            isLoading = isChannelVideosLoading,
+            onSubscribeClick = { requireLogin { viewModel.toggleSubscribe() } },
+            onVideoClick = { video ->
+                showChannelSheet = false
+                viewModel.playVideo(video)
+            },
+            onDismiss = { showChannelSheet = false }
         )
     }
 

@@ -16,6 +16,8 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculateZoom
@@ -67,6 +69,7 @@ import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.ThumbDown
 import androidx.compose.material.icons.rounded.ThumbUp
+import androidx.compose.material.icons.rounded.WatchLater
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -1072,6 +1075,7 @@ private fun SeekFeedbackBadge(
     }
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun VideoInfoSection(
     video: VideoItem,
@@ -1082,7 +1086,10 @@ fun VideoInfoSection(
     onLikeClick: () -> Unit = {},
     onDislikeClick: () -> Unit = {},
     onSubscribeClick: () -> Unit = {},
-    onCommentsClick: () -> Unit = {}
+    onCommentsClick: () -> Unit = {},
+    onSaveClick: () -> Unit = {},
+    onChannelClick: () -> Unit = {},
+    onRelatedLongPress: ((VideoItem) -> Unit)? = null
 ) {
     Column(
         modifier = modifier
@@ -1111,24 +1118,28 @@ fun VideoInfoSection(
             )
         }
 
-        // Like / Dislike + Share Actions
+        // Like / Dislike + Save + Share Actions (scrolls like YouTube's chip
+        // row so the pills never squash on narrow screens)
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.horizontalScroll(rememberScrollState())
         ) {
             LikeDislikeBar(
                 engagement = engagement,
                 onLikeClick = onLikeClick,
                 onDislikeClick = onDislikeClick
             )
+            SaveVideoButton(onClick = onSaveClick)
             ShareVideoButton(video = video)
         }
 
-        // Channel Info Surface
+        // Channel Info Surface (tap navigates to the channel)
         Surface(
             shape = RoundedCornerShape(16.dp),
             color = MaterialTheme.colorScheme.surfaceContainer,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            onClick = onChannelClick
         ) {
             ListItem(
                 headlineContent = {
@@ -1297,7 +1308,14 @@ fun VideoInfoSection(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(12.dp))
-                            .clickable { onVideoSelect(relatedVideo) }
+                            // Long-press saves to Watch Later / a playlist,
+                            // same gesture as the home feed cards
+                            .combinedClickable(
+                                onClick = { onVideoSelect(relatedVideo) },
+                                onLongClick = onRelatedLongPress?.let { longPress ->
+                                    { longPress(relatedVideo) }
+                                }
+                            )
                             .padding(vertical = 8.dp),
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
@@ -1366,6 +1384,38 @@ fun VideoInfoSection(
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * Save pill beside Share: opens the save-to-playlist sheet with Watch Later
+ * pinned on top. Matches the pill shape of the like/dislike bar.
+ */
+@Composable
+private fun SaveVideoButton(onClick: () -> Unit) {
+    Surface(
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        onClick = onClick
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 12.dp)
+        ) {
+            Icon(
+                Icons.Rounded.WatchLater,
+                contentDescription = "Save to Watch Later",
+                modifier = Modifier.size(20.dp),
+                tint = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = "Save",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
         }
     }
 }

@@ -154,6 +154,24 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     private val _isPostingComment = MutableStateFlow(false)
     val isPostingComment: StateFlow<Boolean> = _isPostingComment.asStateFlow()
 
+    // ---------------- Save to playlist (Watch Later) ----------------
+
+    private val _videoPlaylists = MutableStateFlow<List<com.ivor.ivormusic.data.VideoPlaylist>>(emptyList())
+    val videoPlaylists: StateFlow<List<com.ivor.ivormusic.data.VideoPlaylist>> = _videoPlaylists.asStateFlow()
+
+    private val _isVideoPlaylistsLoading = MutableStateFlow(false)
+    val isVideoPlaylistsLoading: StateFlow<Boolean> = _isVideoPlaylistsLoading.asStateFlow()
+
+    // ---------------- Channel page (latest uploads) ----------------
+
+    private val _channelVideos = MutableStateFlow<List<VideoItem>>(emptyList())
+    val channelVideos: StateFlow<List<VideoItem>> = _channelVideos.asStateFlow()
+
+    private val _isChannelVideosLoading = MutableStateFlow(false)
+    val isChannelVideosLoading: StateFlow<Boolean> = _isChannelVideosLoading.asStateFlow()
+
+    private var channelVideosLoadedForChannelId: String? = null
+
     init {
         // Near-instant first frame (~1s buffered) plus an aggressive
         // read-ahead: up to 5 minutes (min == max: continuous top-up),
@@ -304,6 +322,12 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         commentsLoadedForVideoId = null
         _createCommentParams.value = null
         _isLoggedIn.value = youtubeRepository.isLoggedIn()
+
+        // Channel sheet content is per-channel; the next video may belong to
+        // a different one, so force a re-fetch on the next open
+        _channelVideos.value = emptyList()
+        _isChannelVideosLoading.value = false
+        channelVideosLoadedForChannelId = null
 
         // Speed is per-video, like YouTube
         _playbackSpeed.value = 1f
@@ -607,6 +631,64 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     /** Pause without closing the player (music or Shorts playback started). */
     fun pause() {
         _exoPlayer?.pause()
+    }
+
+    // ---------------- Save to playlist / Watch Later ----------------
+
+    /** Load the user's YouTube playlists for the save sheet. Requires login. */
+    fun loadVideoPlaylists(force: Boolean = false) {
+        if (_isVideoPlaylistsLoading.value) return
+        if (_videoPlaylists.value.isNotEmpty() && !force) return
+        viewModelScope.launch {
+            _isVideoPlaylistsLoading.value = true
+            try {
+                _videoPlaylists.value = youtubeRepository.getVideoPlaylists()
+            } finally {
+                _isVideoPlaylistsLoading.value = false
+            }
+        }
+    }
+
+    /**
+     * Add a video to a YouTube playlist ("WL" = Watch Later). Reports the
+     * outcome on the main thread so the save sheet can show inline feedback.
+     * Requires login.
+     */
+    fun addVideoToPlaylist(playlistId: String, video: VideoItem, onResult: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            onResult(youtubeRepository.addToYouTubePlaylist(playlistId, video.videoId, music = false))
+        }
+    }
+
+    // ---------------- Channel page ----------------
+
+    /**
+     * Load the current video's channel uploads for the channel sheet, once
+     * per channel. Uses the canonical UC... id from engagement (falls back to
+     * the id parsed with the video item).
+     */
+    fun loadChannelVideos() {
+        val video = _currentVideo.value ?: return
+        val channelId = _engagement.value?.channelId ?: video.channelId ?: return
+        if (channelVideosLoadedForChannelId == channelId) return
+        channelVideosLoadedForChannelId = channelId
+        _channelVideos.value = emptyList()
+        _isChannelVideosLoading.value = true
+        viewModelScope.launch {
+            try {
+                val channel = com.ivor.ivormusic.data.SubscribedChannel(
+                    channelId = channelId,
+                    name = video.channelName,
+                    avatarUrl = video.channelIconUrl,
+                    subscriberCountText = _engagement.value?.subscriberCountText
+                )
+                _channelVideos.value = youtubeRepository.getChannelVideos(channel)
+            } catch (e: Exception) {
+                android.util.Log.w("VideoPlayerVM", "Failed to load channel videos", e)
+            } finally {
+                _isChannelVideosLoading.value = false
+            }
+        }
     }
 
     // ---------------- Engagement actions ----------------
