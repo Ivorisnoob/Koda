@@ -1,10 +1,28 @@
 package com.ivor.ivormusic.ui.search
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.StartOffset
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -76,6 +94,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
@@ -89,6 +109,7 @@ import androidx.compose.material3.TextButton
 import coil.compose.AsyncImage
 import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.data.VideoItem
+import com.ivor.ivormusic.data.YouTubeLinkParser
 import com.ivor.ivormusic.data.ArtistItem
 import com.ivor.ivormusic.data.PlaylistDisplayItem
 import com.ivor.ivormusic.ui.home.HomeViewModel
@@ -105,6 +126,10 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Link
+import androidx.compose.material.icons.rounded.LinkOff
+import androidx.compose.material.icons.rounded.PlaylistPlay
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
 import com.ivor.ivormusic.ui.video.VideoCard
 import kotlinx.coroutines.delay
@@ -179,6 +204,12 @@ fun SearchScreen(
     val searchHistory by viewModel.searchHistory.collectAsState()
     var isSearchFocused by remember { mutableStateOf(false) }
 
+    // Pasted YouTube link handling: when the query is a URL, resolve it into
+    // a directly playable result instead of running a text search.
+    val parsedLink = remember(query) { YouTubeLinkParser.parse(query) }
+    var linkState by remember { mutableStateOf<LinkLookupState>(LinkLookupState.Idle) }
+    var linkRetryToken by remember { mutableIntStateOf(0) }
+
     // Video mode browse state: trending feed doubles as the explore list
     val trendingVideos by viewModel.trendingVideos.collectAsState()
     LaunchedEffect(videoMode) {
@@ -208,6 +239,17 @@ fun SearchScreen(
     
     // Search YouTube/Videos/Artists/Albums/Playlists when query changes
     LaunchedEffect(query, videoMode, selectedCategory) {
+        if (parsedLink != null) {
+            // A pasted link is resolved by its own effect below; make sure no
+            // stale text-search results linger behind the link result card.
+            isLoading = false
+            youtubeResults = emptyList()
+            videoResults = emptyList()
+            artistResults = emptyList()
+            albumResults = emptyList()
+            playlistResults = emptyList()
+            return@LaunchedEffect
+        }
         if (query.length >= 2) {
             delay(500) // Debounce
             isLoading = true
@@ -244,6 +286,35 @@ fun SearchScreen(
         visibleLocalCount = 20
     }
 
+    // Resolve a pasted YouTube link (video or playlist) off the normal search
+    // path. A watch link resolves through one watch-next call; a playlist
+    // link loads its items. Retriggered by the retry button via linkRetryToken.
+    LaunchedEffect(parsedLink, videoMode, linkRetryToken) {
+        if (parsedLink == null) {
+            linkState = LinkLookupState.Idle
+            return@LaunchedEffect
+        }
+        linkState = LinkLookupState.Resolving
+        linkState = when {
+            parsedLink.videoId != null -> {
+                val video = viewModel.resolveVideoFromLink(parsedLink.videoId)
+                if (video == null) LinkLookupState.Error
+                else LinkLookupState.MediaResult(video)
+            }
+            parsedLink.playlistId != null && videoMode -> {
+                val videos = viewModel.resolvePlaylistVideosFromLink(parsedLink.playlistId)
+                if (videos.isEmpty()) LinkLookupState.Error
+                else LinkLookupState.PlaylistVideosResult(videos)
+            }
+            parsedLink.playlistId != null -> {
+                val playlistSongs = viewModel.resolvePlaylistSongsFromLink(parsedLink.playlistId)
+                if (playlistSongs.isEmpty()) LinkLookupState.Error
+                else LinkLookupState.PlaylistSongsResult(playlistSongs)
+            }
+            else -> LinkLookupState.Idle
+        }
+    }
+
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -267,6 +338,7 @@ fun SearchScreen(
                     },
                     placeholderText = if (videoMode) "Search videos, channels..."
                     else "Search songs, artists, albums...",
+                    isLinkDetected = parsedLink != null,
                     primaryColor = primaryColor,
                     primaryContainerColor = primaryContainerColor,
                     tertiaryContainerColor = tertiaryContainerColor,
@@ -276,8 +348,8 @@ fun SearchScreen(
                 )
             }
             
-            // Category Chips (only in Music Mode)
-            if (!videoMode && query.isNotEmpty()) {
+            // Category Chips (only in Music Mode, hidden while a pasted link resolves)
+            if (!videoMode && query.isNotEmpty() && parsedLink == null) {
                 item {
                     SearchFilterChips(
                         selectedCategory = selectedCategory,
@@ -290,6 +362,130 @@ fun SearchScreen(
             
             // ========== CONTENT ==========
             when {
+                // Pasted YouTube link: resolve it into a playable hero result
+                // instead of running a text search.
+                parsedLink != null -> {
+                    item {
+                        LinkDetectedBanner(
+                            state = linkState,
+                            primaryColor = primaryColor,
+                            textColor = textColor
+                        )
+                    }
+                    when (val state = linkState) {
+                        is LinkLookupState.MediaResult -> {
+                            item {
+                                val video = state.video
+                                val subtitle = listOfNotNull(
+                                    video.channelName.takeIf { it.isNotBlank() && it != "Unknown" },
+                                    video.viewCount.takeIf { it.isNotBlank() },
+                                    video.uploadedDate
+                                ).joinToString(" • ")
+                                LinkHeroCard(
+                                    title = video.title,
+                                    subtitle = subtitle,
+                                    thumbnailUrl = video.highResThumbnailUrl ?: video.thumbnailUrl,
+                                    durationText = video.formattedDuration.takeIf { it.isNotBlank() },
+                                    badgeText = if (videoMode) "Video" else "Song",
+                                    accentColor = primaryColor,
+                                    cardColor = cardColor,
+                                    textColor = textColor,
+                                    secondaryTextColor = secondaryTextColor,
+                                    onPlay = {
+                                        if (videoMode) {
+                                            onVideoClick(video)
+                                        } else {
+                                            val song = video.toSong()
+                                            onPlayQueue(listOf(song), song)
+                                        }
+                                    }
+                                )
+                            }
+                        }
+
+                        is LinkLookupState.PlaylistSongsResult -> {
+                            item {
+                                LinkPlaylistHeader(
+                                    count = state.songs.size,
+                                    itemLabel = "songs",
+                                    thumbnailUrl = state.songs.firstOrNull()?.highResThumbnailUrl
+                                        ?: state.songs.firstOrNull()?.thumbnailUrl,
+                                    accentColor = primaryColor,
+                                    cardColor = cardColor,
+                                    textColor = textColor,
+                                    secondaryTextColor = secondaryTextColor,
+                                    onPlayAll = { onPlayQueue(state.songs, state.songs.first()) }
+                                )
+                            }
+                            itemsIndexed(state.songs) { index, song ->
+                                SearchSongCard(
+                                    song = song,
+                                    onClick = { onPlayQueue(state.songs, song) },
+                                    cardColor = cardColor,
+                                    textColor = textColor,
+                                    secondaryTextColor = secondaryTextColor,
+                                    accentColor = primaryColor,
+                                    isYouTube = true,
+                                    shape = getSegmentedShape(index, state.songs.size),
+                                    modifier = Modifier.padding(horizontal = 20.dp)
+                                )
+                                if (index < state.songs.size - 1) {
+                                    HorizontalDivider(
+                                        modifier = Modifier.padding(horizontal = 44.dp),
+                                        color = textColor.copy(alpha = 0.06f)
+                                    )
+                                }
+                            }
+                        }
+
+                        is LinkLookupState.PlaylistVideosResult -> {
+                            item {
+                                LinkPlaylistHeader(
+                                    count = state.videos.size,
+                                    itemLabel = "videos",
+                                    thumbnailUrl = state.videos.firstOrNull()?.thumbnailUrl,
+                                    accentColor = primaryColor,
+                                    cardColor = cardColor,
+                                    textColor = textColor,
+                                    secondaryTextColor = secondaryTextColor,
+                                    onPlayAll = { onVideoClick(state.videos.first()) }
+                                )
+                            }
+                            items(state.videos) { video ->
+                                CompactVideoRow(
+                                    video = video,
+                                    onClick = { onVideoClick(video) },
+                                    cardColor = cardColor,
+                                    textColor = textColor,
+                                    secondaryTextColor = secondaryTextColor
+                                )
+                            }
+                        }
+
+                        LinkLookupState.Error -> {
+                            item {
+                                LinkErrorCard(
+                                    cardColor = cardColor,
+                                    textColor = textColor,
+                                    secondaryTextColor = secondaryTextColor,
+                                    onRetry = { linkRetryToken++ }
+                                )
+                            }
+                        }
+
+                        else -> {
+                            item {
+                                LinkResolvingCard(
+                                    videoMode = videoMode,
+                                    primaryColor = primaryColor,
+                                    textColor = textColor,
+                                    secondaryTextColor = secondaryTextColor
+                                )
+                            }
+                        }
+                    }
+                }
+
                 // Show search history if focused and query is empty. Skipped in
                 // video mode so the field auto-focusing on entry doesn't hide the
                 // video Explore browse behind the recent-searches list.
@@ -930,6 +1126,7 @@ private fun SearchHeroHeader(
     onFocusChanged: (Boolean) -> Unit,
     onSearch: (String) -> Unit,
     placeholderText: String,
+    isLinkDetected: Boolean,
     primaryColor: Color,
     primaryContainerColor: Color,
     tertiaryContainerColor: Color,
@@ -989,11 +1186,28 @@ private fun SearchHeroHeader(
                         Text(placeholderText, color = secondaryTextColor)
                     },
                     leadingIcon = {
-                        Icon(
-                            Icons.Default.Search,
-                            contentDescription = null,
-                            tint = primaryColor
-                        )
+                        // Morph the magnifier into a link icon (with a springy
+                        // pop) the moment a YouTube URL is detected.
+                        AnimatedContent(
+                            targetState = isLinkDetected,
+                            transitionSpec = {
+                                (scaleIn(
+                                    initialScale = 0.4f,
+                                    animationSpec = spring(
+                                        dampingRatio = Spring.DampingRatioMediumBouncy,
+                                        stiffness = Spring.StiffnessMediumLow
+                                    )
+                                ) + fadeIn(tween(120))) togetherWith
+                                    (scaleOut(targetScale = 0.4f, animationSpec = tween(120)) + fadeOut(tween(120)))
+                            },
+                            label = "searchLeadingIcon"
+                        ) { linkDetected ->
+                            Icon(
+                                if (linkDetected) Icons.Rounded.Link else Icons.Default.Search,
+                                contentDescription = null,
+                                tint = primaryColor
+                            )
+                        }
                     },
                     trailingIcon = {
                         AnimatedVisibility(
@@ -1511,6 +1725,531 @@ fun SearchHistoryList(
                             modifier = Modifier.size(18.dp)
                         )
                     }
+                }
+            }
+        }
+    }
+}
+
+// ============================================================
+// Pasted YouTube link UI
+// ============================================================
+
+/** UI state for a pasted YouTube link being resolved into playable content. */
+private sealed interface LinkLookupState {
+    data object Idle : LinkLookupState
+    data object Resolving : LinkLookupState
+
+    /** A watch/shorts/youtu.be link resolved to one video (or song in music mode). */
+    data class MediaResult(val video: VideoItem) : LinkLookupState
+
+    /** A playlist link resolved in music mode. */
+    data class PlaylistSongsResult(val songs: List<Song>) : LinkLookupState
+
+    /** A playlist link resolved in video mode. */
+    data class PlaylistVideosResult(val videos: List<VideoItem>) : LinkLookupState
+
+    data object Error : LinkLookupState
+}
+
+/** Music-mode representation of a video resolved from a pasted link. */
+private fun VideoItem.toSong(): Song = Song.fromYouTube(
+    videoId = videoId,
+    title = title,
+    artist = channelName,
+    album = "",
+    duration = duration * 1000,
+    thumbnailUrl = thumbnailUrl
+)
+
+/** Shared springy entrance for the link result cards. */
+private fun linkCardEnter() = fadeIn(tween(220)) +
+    scaleIn(
+        initialScale = 0.92f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMediumLow
+        )
+    ) +
+    slideInVertically(
+        initialOffsetY = { it / 6 },
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMediumLow
+        )
+    )
+
+/**
+ * Pill banner that springs in under the search bar as soon as a YouTube URL
+ * is detected, live-updating its label as the link resolves.
+ */
+@Composable
+private fun LinkDetectedBanner(
+    state: LinkLookupState,
+    primaryColor: Color,
+    textColor: Color
+) {
+    val entrance = remember { MutableTransitionState(false).apply { targetState = true } }
+    val isResolving = state is LinkLookupState.Resolving || state is LinkLookupState.Idle
+
+    // Gentle heartbeat on the link icon while the lookup is in flight
+    val pulse = rememberInfiniteTransition(label = "linkBannerPulse")
+    val iconScale by pulse.animateFloat(
+        initialValue = 1f,
+        targetValue = 1.2f,
+        animationSpec = infiniteRepeatable(tween(550, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "linkBannerIconScale"
+    )
+
+    AnimatedVisibility(
+        visibleState = entrance,
+        enter = fadeIn(tween(180)) + slideInVertically(
+            initialOffsetY = { -it / 2 },
+            animationSpec = spring(
+                dampingRatio = Spring.DampingRatioMediumBouncy,
+                stiffness = Spring.StiffnessMediumLow
+            )
+        ) + scaleIn(
+            initialScale = 0.85f,
+            animationSpec = spring(
+                dampingRatio = Spring.DampingRatioMediumBouncy,
+                stiffness = Spring.StiffnessMediumLow
+            )
+        )
+    ) {
+        Row(modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)) {
+            Surface(
+                shape = CircleShape,
+                color = primaryColor.copy(alpha = 0.12f)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
+                ) {
+                    Icon(
+                        Icons.Rounded.Link,
+                        contentDescription = null,
+                        tint = primaryColor,
+                        modifier = Modifier
+                            .size(16.dp)
+                            .scale(if (isResolving) iconScale else 1f)
+                    )
+                    AnimatedContent(
+                        targetState = when (state) {
+                            is LinkLookupState.MediaResult -> "Ready to play"
+                            is LinkLookupState.PlaylistSongsResult,
+                            is LinkLookupState.PlaylistVideosResult -> "Playlist loaded"
+                            LinkLookupState.Error -> "Couldn't load link"
+                            else -> "YouTube link detected"
+                        },
+                        transitionSpec = {
+                            (fadeIn(tween(200)) + slideInVertically { it / 2 }) togetherWith
+                                (fadeOut(tween(150)))
+                        },
+                        label = "linkBannerLabel"
+                    ) { label ->
+                        Text(
+                            label,
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold,
+                            color = textColor
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Loading state for a pasted link: the link icon with two expanding sonar
+ * rings while the metadata is fetched.
+ */
+@Composable
+private fun LinkResolvingCard(
+    videoMode: Boolean,
+    primaryColor: Color,
+    textColor: Color,
+    secondaryTextColor: Color
+) {
+    val sonar = rememberInfiniteTransition(label = "linkSonar")
+    val ring1Progress by sonar.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(1400, easing = FastOutSlowInEasing)),
+        label = "linkSonarRing1"
+    )
+    val ring2Progress by sonar.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            tween(1400, easing = FastOutSlowInEasing),
+            initialStartOffset = StartOffset(700)
+        ),
+        label = "linkSonarRing2"
+    )
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(280.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Box(modifier = Modifier.size(80.dp), contentAlignment = Alignment.Center) {
+                listOf(ring1Progress, ring2Progress).forEach { progress ->
+                    Box(
+                        modifier = Modifier
+                            .size(64.dp)
+                            .scale(1f + progress)
+                            .background(
+                                primaryColor.copy(alpha = 0.25f * (1f - progress)),
+                                CircleShape
+                            )
+                    )
+                }
+                Surface(
+                    shape = CircleShape,
+                    color = primaryColor.copy(alpha = 0.15f),
+                    modifier = Modifier.size(64.dp)
+                ) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Icon(
+                            Icons.Rounded.Link,
+                            contentDescription = null,
+                            tint = primaryColor,
+                            modifier = Modifier.size(28.dp)
+                        )
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(24.dp))
+            Text(
+                "Fetching from YouTube",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = textColor
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                if (videoMode) "Getting the video ready" else "Getting the song ready",
+                style = MaterialTheme.typography.bodyMedium,
+                color = secondaryTextColor
+            )
+        }
+    }
+}
+
+/**
+ * Hero result for a resolved video/song link: full-width thumbnail with a
+ * pulsing play button, springing in with a scale + slide entrance. The whole
+ * card is tappable and squishes slightly while pressed.
+ */
+@Composable
+private fun LinkHeroCard(
+    title: String,
+    subtitle: String,
+    thumbnailUrl: String?,
+    durationText: String?,
+    badgeText: String,
+    accentColor: Color,
+    cardColor: Color,
+    textColor: Color,
+    secondaryTextColor: Color,
+    onPlay: () -> Unit
+) {
+    val entrance = remember { MutableTransitionState(false).apply { targetState = true } }
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val pressScale by animateFloatAsState(
+        targetValue = if (pressed) 0.97f else 1f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
+        label = "linkHeroPressScale"
+    )
+    val playPulse = rememberInfiniteTransition(label = "linkHeroPlayPulse")
+    val playScale by playPulse.animateFloat(
+        initialValue = 1f,
+        targetValue = 1.08f,
+        animationSpec = infiniteRepeatable(tween(900, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "linkHeroPlayScale"
+    )
+
+    AnimatedVisibility(visibleState = entrance, enter = linkCardEnter()) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 8.dp)
+                .scale(pressScale)
+                .clip(RoundedCornerShape(24.dp))
+                .clickable(
+                    interactionSource = interactionSource,
+                    indication = null,
+                    onClick = onPlay
+                ),
+            shape = RoundedCornerShape(24.dp),
+            color = cardColor,
+            tonalElevation = 2.dp
+        ) {
+            Column {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(16f / 9f)
+                ) {
+                    AsyncImage(
+                        model = thumbnailUrl,
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(
+                                Brush.verticalGradient(
+                                    0f to Color.Transparent,
+                                    1f to Color.Black.copy(alpha = 0.45f)
+                                )
+                            )
+                    )
+                    Surface(
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(10.dp),
+                        shape = CircleShape,
+                        color = Color.Black.copy(alpha = 0.55f)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                        ) {
+                            Icon(
+                                Icons.Rounded.Link,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(12.dp)
+                            )
+                            Text(
+                                badgeText,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color.White
+                            )
+                        }
+                    }
+                    if (durationText != null) {
+                        Surface(
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(10.dp),
+                            shape = RoundedCornerShape(6.dp),
+                            color = Color.Black.copy(alpha = 0.8f)
+                        ) {
+                            Text(
+                                durationText,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.White,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                    Surface(
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .size(64.dp)
+                            .scale(playScale),
+                        shape = CircleShape,
+                        color = accentColor,
+                        shadowElevation = 6.dp
+                    ) {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Icon(
+                                Icons.Rounded.PlayArrow,
+                                contentDescription = "Play",
+                                tint = MaterialTheme.colorScheme.onPrimary,
+                                modifier = Modifier.size(34.dp)
+                            )
+                        }
+                    }
+                }
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        title,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = textColor,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    if (subtitle.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            subtitle,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = secondaryTextColor,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Header card for a resolved playlist link: cover, item count and a play-all
+ * affordance, with the same springy entrance as the hero card.
+ */
+@Composable
+private fun LinkPlaylistHeader(
+    count: Int,
+    itemLabel: String,
+    thumbnailUrl: String?,
+    accentColor: Color,
+    cardColor: Color,
+    textColor: Color,
+    secondaryTextColor: Color,
+    onPlayAll: () -> Unit
+) {
+    val entrance = remember { MutableTransitionState(false).apply { targetState = true } }
+    AnimatedVisibility(visibleState = entrance, enter = linkCardEnter()) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 8.dp)
+                .clip(RoundedCornerShape(24.dp))
+                .clickable(onClick = onPlayAll),
+            shape = RoundedCornerShape(24.dp),
+            color = cardColor,
+            tonalElevation = 2.dp
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(14.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(64.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                ) {
+                    AsyncImage(
+                        model = thumbnailUrl,
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.35f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Rounded.PlaylistPlay,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(28.dp)
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.width(14.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "YouTube Playlist",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = textColor
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        "$count $itemLabel • Tap to play",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = secondaryTextColor
+                    )
+                }
+                Surface(
+                    shape = CircleShape,
+                    color = accentColor,
+                    modifier = Modifier.size(44.dp)
+                ) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Icon(
+                            Icons.Rounded.PlayArrow,
+                            contentDescription = "Play all",
+                            tint = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Error state for a pasted link, with a retry action. */
+@Composable
+private fun LinkErrorCard(
+    cardColor: Color,
+    textColor: Color,
+    secondaryTextColor: Color,
+    onRetry: () -> Unit
+) {
+    val entrance = remember { MutableTransitionState(false).apply { targetState = true } }
+    AnimatedVisibility(visibleState = entrance, enter = linkCardEnter()) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 8.dp),
+            shape = RoundedCornerShape(24.dp),
+            color = cardColor,
+            tonalElevation = 2.dp
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 28.dp)
+            ) {
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.errorContainer,
+                    modifier = Modifier.size(64.dp)
+                ) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Icon(
+                            Icons.Rounded.LinkOff,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onErrorContainer,
+                            modifier = Modifier.size(28.dp)
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    "Couldn't load this link",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = textColor
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    "The content may be private, or you're offline",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = secondaryTextColor,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                androidx.compose.material3.FilledTonalButton(onClick = onRetry) {
+                    Icon(
+                        Icons.Rounded.Refresh,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Try again")
                 }
             }
         }
