@@ -3,18 +3,22 @@ package com.ivor.ivormusic.ui.library
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
@@ -432,12 +436,17 @@ fun LibraryMainScreen(
     }
 
     // --- M3E FAB menu: quick library actions ---
+    // Lifted above the floating nav pill and the mini player(s) via the
+    // overlay inset HomeScreen provides, so the button is never covered.
     FloatingActionButtonMenu(
         expanded = fabMenuExpanded,
         modifier = Modifier
             .align(Alignment.BottomEnd)
             .navigationBarsPadding()
-            .padding(end = 4.dp, bottom = 8.dp),
+            .padding(
+                end = 4.dp,
+                bottom = com.ivor.ivormusic.ui.components.LocalBottomOverlayInset.current + 8.dp
+            ),
         button = {
             ToggleFloatingActionButton(
                 checked = fabMenuExpanded,
@@ -754,27 +763,46 @@ fun PlaylistsGrid(
     contentPadding: PaddingValues
 ) {
     LazyVerticalGrid(
-        columns = GridCells.Adaptive(minSize = 160.dp),
+        columns = GridCells.Fixed(2),
         contentPadding = PaddingValues(
             top = 8.dp,
             bottom = contentPadding.calculateBottomPadding() + 80.dp,
             start = 16.dp,
             end = 16.dp
         ),
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(20.dp),
         modifier = Modifier.fillMaxSize()
     ) {
-        item {
-            // Liked songs as a square card in grid
-            ExpressivePlaylistCard(
-                name = "Liked Songs",
+        // Liked songs as a full-width hero banner, same card the Songs tab
+        // uses, instead of an odd square tile among the playlists
+        item(key = "liked_hero", span = { GridItemSpan(maxLineSpan) }) {
+            ExpressiveLikedSongsCard(
                 count = likedSongs.size,
-                thumbnailUrl = null,
-                isLiked = true,
                 onClick = onLikedSongsClick
             )
         }
+
+        if (playlists.isNotEmpty()) {
+            item(key = "playlists_header", span = { GridItemSpan(maxLineSpan) }) {
+                Text(
+                    text = "Your playlists • ${playlists.size}",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+            }
+        } else {
+            item(key = "playlists_empty", span = { GridItemSpan(maxLineSpan) }) {
+                EmptyLibraryState(
+                    icon = Icons.AutoMirrored.Rounded.PlaylistAdd,
+                    title = "No playlists yet",
+                    subtitle = "Create one with the + button below"
+                )
+            }
+        }
+
         items(playlists) { playlist ->
             val isLocalPlaylist = localPlaylistIds.contains(playlist.id)
             // YouTube playlists are editable through InnerTube; the synthesized
@@ -917,25 +945,47 @@ fun AlbumsGrid(
 
 // ============ UI COMPONENTS ============
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun ExpressiveLikedSongsCard(count: Int, onClick: () -> Unit) {
+    // Flat expressive hero: gradient wash, heart seated in a SoftBurst
+    // material shape, press-scale spring instead of a shadow
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val pressScale by animateFloatAsState(
+        targetValue = if (isPressed) 0.97f else 1f,
+        animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
+        label = "likedCardScale"
+    )
     Surface(
         onClick = onClick,
+        interactionSource = interactionSource,
         shape = RoundedCornerShape(28.dp),
         modifier = Modifier
             .fillMaxWidth()
-            .height(120.dp),
-        color = MaterialTheme.colorScheme.primaryContainer,
-        shadowElevation = 8.dp
+            .height(120.dp)
+            .graphicsLayer {
+                scaleX = pressScale
+                scaleY = pressScale
+            },
+        color = Color.Transparent
     ) {
         Row(
             modifier = Modifier
                 .fillMaxSize()
+                .background(
+                    Brush.horizontalGradient(
+                        colors = listOf(
+                            MaterialTheme.colorScheme.primaryContainer,
+                            MaterialTheme.colorScheme.tertiaryContainer
+                        )
+                    )
+                )
                 .padding(24.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Surface(
-                shape = CircleShape,
+                shape = MaterialShapes.SoftBurst.toShape(),
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(56.dp)
             ) {
@@ -944,14 +994,24 @@ fun ExpressiveLikedSongsCard(count: Int, onClick: () -> Unit) {
                 }
             }
             Spacer(Modifier.width(24.dp))
-            Column {
+            Column(modifier = Modifier.weight(1f)) {
                 Text("Liked Songs", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
-                Text("$count tracks • Auto-playlist", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f))
+                Text(
+                    if (count == 1) "1 track • Auto-playlist" else "$count tracks • Auto-playlist",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                )
             }
+            Icon(
+                Icons.Rounded.ChevronRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onPrimaryContainer
+            )
         }
     }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun ExpressivePlaylistCard(
     name: String,
@@ -969,36 +1029,104 @@ fun ExpressivePlaylistCard(
     var showEditDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
 
-    Column(modifier = Modifier.clickable { onClick() }) {
-        Surface(
-            shape = RoundedCornerShape(20.dp),
+    // Flat expressive tile: no shadow — depth comes from tonal layering and
+    // a press-scale spring, matching the settings rows and the liked hero
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val pressScale by animateFloatAsState(
+        targetValue = if (isPressed) 0.95f else 1f,
+        animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
+        label = "playlistCardScale"
+    )
+
+    // No clip on the column: the artwork Surface rounds itself, and clipping
+    // here used to shave the corners off the title/subtitle text below it
+    Column(
+        modifier = Modifier
+            .graphicsLayer {
+                scaleX = pressScale
+                scaleY = pressScale
+            }
+            .clickable(interactionSource = interactionSource, indication = null) { onClick() }
+    ) {
+        Box(
             modifier = Modifier
                 .aspectRatio(1f)
-                .fillMaxWidth(),
-            color = if (isLiked) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
-            shadowElevation = 4.dp
+                .fillMaxWidth()
         ) {
-            if (thumbnailUrl != null && thumbnailUrl != "null") {
-                AsyncImage(model = thumbnailUrl, contentDescription = null, contentScale = ContentScale.Crop)
-            } else {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        if (isLiked) Icons.Rounded.Favorite else Icons.AutoMirrored.Rounded.PlaylistPlay,
-                        null,
-                        modifier = Modifier.size(48.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+            Surface(
+                shape = RoundedCornerShape(24.dp),
+                modifier = Modifier.fillMaxSize(),
+                color = if (isLiked) MaterialTheme.colorScheme.secondaryContainer
+                    else MaterialTheme.colorScheme.surfaceContainerHigh
+            ) {
+                if (thumbnailUrl != null && thumbnailUrl != "null") {
+                    AsyncImage(model = thumbnailUrl, contentDescription = null, contentScale = ContentScale.Crop)
+                } else {
+                    // Placeholder art: icon seated in a morphing material shape
+                    Box(contentAlignment = Alignment.Center) {
+                        Surface(
+                            shape = MaterialShapes.Cookie9Sided.toShape(),
+                            color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                            modifier = Modifier.size(72.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    if (isLiked) Icons.Rounded.Favorite else Icons.AutoMirrored.Rounded.PlaylistPlay,
+                                    null,
+                                    modifier = Modifier.size(32.dp),
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            // Track-count chip floating on the artwork
+            if (count > 0) {
+                Surface(
+                    color = Color.Black.copy(alpha = 0.65f),
+                    shape = RoundedCornerShape(50),
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(10.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Rounded.PlaylistPlay,
+                            contentDescription = null,
+                            modifier = Modifier.size(14.dp),
+                            tint = Color.White
+                        )
+                        Text(
+                            text = "$count",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                    }
                 }
             }
         }
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(10.dp))
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onBackground, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(subtitle ?: "$count songs", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                Text(
+                    subtitle ?: if (count == 1) "1 song" else "$count songs",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1
+                )
             }
             if (isEditable) {
                 Box {
@@ -1470,14 +1598,22 @@ fun PlaylistDetailScreen(
                                 }
                             }
                         }
-                    } else null
+                    } else null,
+                    // Clear the floating nav pill and mini player(s)
+                    modifier = Modifier.padding(
+                        bottom = com.ivor.ivormusic.ui.components.LocalBottomOverlayInset.current
+                    )
                 )
             }
         }
     ) { padding ->
         LazyColumn(
             state = listState,
-            contentPadding = PaddingValues(bottom = 100.dp),
+            // Enough scroll clearance for the floating overlays plus the FAB
+            contentPadding = PaddingValues(
+                bottom = com.ivor.ivormusic.ui.components.LocalBottomOverlayInset.current +
+                    WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 88.dp
+            ),
             modifier = Modifier
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)

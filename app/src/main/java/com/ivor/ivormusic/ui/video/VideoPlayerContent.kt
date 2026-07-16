@@ -88,6 +88,10 @@ fun VideoPlayerContent(
     val timedComments by viewModel.timedComments.collectAsState()
     val canComment by viewModel.canComment.collectAsState()
     val isPostingComment by viewModel.isPostingComment.collectAsState()
+    val videoPlaylists by viewModel.videoPlaylists.collectAsState()
+    val isVideoPlaylistsLoading by viewModel.isVideoPlaylistsLoading.collectAsState()
+    val channelVideos by viewModel.channelVideos.collectAsState()
+    val isChannelVideosLoading by viewModel.isChannelVideosLoading.collectAsState()
 
     // Local UI State
     var showControls by remember { mutableStateOf(false) }
@@ -146,7 +150,10 @@ fun VideoPlayerContent(
         }
     }
     
-    // Fullscreen / Immersive
+    // Fullscreen / Immersive. The app is portrait-locked (MainActivity), so
+    // fullscreen temporarily requests sensor landscape and every exit path
+    // restores PORTRAIT — never UNSPECIFIED, which used to leave the whole
+    // app free-rotating in broken half-landscape states.
     DisposableEffect(isFullscreen) {
         val window = activity?.window
         val insetsController = window?.let { WindowCompat.getInsetsController(it, it.decorView) }
@@ -163,24 +170,64 @@ fun VideoPlayerContent(
             // Draw into the camera cutout area too, otherwise the system
             // letterboxes the window and background shows around the notch
             setCutoutMode(WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES)
-            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+            // Sensor landscape: both landscape directions work, like YouTube
+            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
             insetsController?.apply {
                 hide(WindowInsetsCompat.Type.systemBars())
                 systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             }
         } else {
-            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
             insetsController?.show(WindowInsetsCompat.Type.systemBars())
             setCutoutMode(WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT)
         }
 
         onDispose {
-            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
             insetsController?.show(WindowInsetsCompat.Type.systemBars())
             setCutoutMode(WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT)
-            // Restore normal window behavior
-            window?.let { WindowCompat.setDecorFitsSystemWindows(it, true) }
+            // The app is edge-to-edge (enableEdgeToEdge in MainActivity), so
+            // keep decorFits false — restoring true here used to break the
+            // edge-to-edge layout for the rest of the session
+            window?.let { WindowCompat.setDecorFitsSystemWindows(it, false) }
         }
+    }
+
+    // YouTube-style rotation while the player is open: physically turning the
+    // device to landscape enters fullscreen, turning it upright again exits.
+    // Only orientation *transitions* act — so fullscreen entered with the
+    // button while holding the phone upright is not immediately exited — and
+    // the system auto-rotate lock is respected.
+    DisposableEffect(activity) {
+        var lastDeviceOrientation = -1 // 0 = portrait, 1 = landscape
+        val listener = object : android.view.OrientationEventListener(context) {
+            override fun onOrientationChanged(degrees: Int) {
+                if (degrees == android.view.OrientationEventListener.ORIENTATION_UNKNOWN) return
+                val autoRotateOn = android.provider.Settings.System.getInt(
+                    context.contentResolver,
+                    android.provider.Settings.System.ACCELEROMETER_ROTATION, 0
+                ) == 1
+                if (!autoRotateOn) return
+                // Only classify when clearly near an axis (30-degree window)
+                // so jitter around the diagonals cannot flip the state
+                val orientation = when {
+                    degrees <= 30 || degrees >= 330 || degrees in 150..210 -> 0
+                    degrees in 60..120 || degrees in 240..300 -> 1
+                    else -> return
+                }
+                if (orientation == lastDeviceOrientation) return
+                val isFirstReading = lastDeviceOrientation == -1
+                lastDeviceOrientation = orientation
+                if (isFirstReading) return
+                if (orientation == 1 && !isFullscreen) {
+                    isFullscreen = true
+                } else if (orientation == 0 && isFullscreen) {
+                    isFullscreen = false
+                }
+            }
+        }
+        if (listener.canDetectOrientation()) listener.enable()
+        onDispose { listener.disable() }
     }
     
     // Quality Sheet State
@@ -190,6 +237,11 @@ fun VideoPlayerContent(
     // Comments Sheet + Sign-in Dialog State
     var showCommentsSheet by remember { mutableStateOf(false) }
     var showSignInDialog by remember { mutableStateOf(false) }
+
+    // Save-to-playlist sheet (Save button or long-press on an Up Next video)
+    // and the channel page sheet (tap on the channel row)
+    var saveTargetVideo by remember { mutableStateOf<VideoItem?>(null) }
+    var showChannelSheet by remember { mutableStateOf(false) }
 
     // Gate authenticated actions behind login
     fun requireLogin(action: () -> Unit) {
@@ -339,6 +391,22 @@ fun VideoPlayerContent(
                     onCommentsClick = {
                         viewModel.ensureCommentsLoaded()
                         showCommentsSheet = true
+                    },
+                    onSaveClick = {
+                        requireLogin {
+                            viewModel.loadVideoPlaylists()
+                            saveTargetVideo = currentVideo
+                        }
+                    },
+                    onChannelClick = {
+                        viewModel.loadChannelVideos()
+                        showChannelSheet = true
+                    },
+                    onRelatedLongPress = { related ->
+                        requireLogin {
+                            viewModel.loadVideoPlaylists()
+                            saveTargetVideo = related
+                        }
                     }
                 )
             }
@@ -365,6 +433,38 @@ fun VideoPlayerContent(
             onLikeComment = { comment -> requireLogin { viewModel.toggleCommentLike(comment) } },
             onDeleteComment = { comment -> viewModel.deleteComment(comment) },
             onDismiss = { showCommentsSheet = false }
+        )
+    }
+
+    // Save to Watch Later / playlist sheet
+    saveTargetVideo?.let { target ->
+        SaveToPlaylistSheet(
+            video = target,
+            playlists = videoPlaylists,
+            isLoading = isVideoPlaylistsLoading,
+            onSave = { playlistId, onResult ->
+                viewModel.addVideoToPlaylist(playlistId, target, onResult)
+            },
+            onDismiss = { saveTargetVideo = null }
+        )
+    }
+
+    // Channel page sheet (latest uploads + subscribe)
+    if (showChannelSheet) {
+        ChannelSheet(
+            channelName = currentVideo.channelName,
+            channelIconUrl = currentVideo.channelIconUrl,
+            subscriberCountText = engagement?.subscriberCountText ?: currentVideo.subscriberCount,
+            isSubscribed = engagement?.isSubscribed == true,
+            canSubscribe = engagement?.channelId != null,
+            videos = channelVideos,
+            isLoading = isChannelVideosLoading,
+            onSubscribeClick = { requireLogin { viewModel.toggleSubscribe() } },
+            onVideoClick = { video ->
+                showChannelSheet = false
+                viewModel.playVideo(video)
+            },
+            onDismiss = { showChannelSheet = false }
         )
     }
 

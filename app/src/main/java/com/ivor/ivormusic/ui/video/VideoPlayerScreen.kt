@@ -16,6 +16,8 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculateZoom
@@ -67,6 +69,7 @@ import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.ThumbDown
 import androidx.compose.material.icons.rounded.ThumbUp
+import androidx.compose.material.icons.rounded.WatchLater
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -727,6 +730,8 @@ private const val PINCH_ZOOM_OUT_THRESHOLD = 0.87f
  * - vertical drag on the left half = screen brightness (window-level override,
  *   restored when the surface leaves composition);
  * - vertical drag on the right half = media volume;
+ * - both only arm when the drag STARTS below the top 30% of the surface, so
+ *   pulling down the notification shade never yanks brightness or volume;
  * - pinch open/closed = zoom the video to fill the screen / fit inside it,
  *   reported through [onZoomedToFillChange].
  */
@@ -824,6 +829,13 @@ private fun PlayerGestureSurface(
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false)
                         val leftSide = down.position.x < size.width / 2f
+                        // Level drags only arm in the bottom 70% of the
+                        // surface: a swipe from the top area is almost always
+                        // the user reaching for the notification shade, and
+                        // grabbing it as a brightness/volume drag was a
+                        // constant misfire. Pinch-to-zoom stays available
+                        // everywhere.
+                        val inLevelDragZone = down.position.y >= size.height * 0.3f
                         // 0 = undecided, 1 = vertical level drag, 2 = pinch
                         var mode = 0
                         var accumulatedZoom = 1f
@@ -849,7 +861,8 @@ private fun PlayerGestureSurface(
                                 if (mode == 0) {
                                     val totalDx = change.position.x - down.position.x
                                     val totalDy = change.position.y - down.position.y
-                                    if (abs(totalDy) > viewConfiguration.touchSlop &&
+                                    if (inLevelDragZone &&
+                                        abs(totalDy) > viewConfiguration.touchSlop &&
                                         abs(totalDy) > abs(totalDx)
                                     ) {
                                         mode = 1
@@ -1072,6 +1085,7 @@ private fun SeekFeedbackBadge(
     }
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun VideoInfoSection(
     video: VideoItem,
@@ -1082,7 +1096,10 @@ fun VideoInfoSection(
     onLikeClick: () -> Unit = {},
     onDislikeClick: () -> Unit = {},
     onSubscribeClick: () -> Unit = {},
-    onCommentsClick: () -> Unit = {}
+    onCommentsClick: () -> Unit = {},
+    onSaveClick: () -> Unit = {},
+    onChannelClick: () -> Unit = {},
+    onRelatedLongPress: ((VideoItem) -> Unit)? = null
 ) {
     Column(
         modifier = modifier
@@ -1111,24 +1128,28 @@ fun VideoInfoSection(
             )
         }
 
-        // Like / Dislike + Share Actions
+        // Like / Dislike + Save + Share Actions (scrolls like YouTube's chip
+        // row so the pills never squash on narrow screens)
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.horizontalScroll(rememberScrollState())
         ) {
             LikeDislikeBar(
                 engagement = engagement,
                 onLikeClick = onLikeClick,
                 onDislikeClick = onDislikeClick
             )
+            SaveVideoButton(onClick = onSaveClick)
             ShareVideoButton(video = video)
         }
 
-        // Channel Info Surface
+        // Channel Info Surface (tap navigates to the channel)
         Surface(
             shape = RoundedCornerShape(16.dp),
             color = MaterialTheme.colorScheme.surfaceContainer,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            onClick = onChannelClick
         ) {
             ListItem(
                 headlineContent = {
@@ -1297,7 +1318,14 @@ fun VideoInfoSection(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(12.dp))
-                            .clickable { onVideoSelect(relatedVideo) }
+                            // Long-press saves to Watch Later / a playlist,
+                            // same gesture as the home feed cards
+                            .combinedClickable(
+                                onClick = { onVideoSelect(relatedVideo) },
+                                onLongClick = onRelatedLongPress?.let { longPress ->
+                                    { longPress(relatedVideo) }
+                                }
+                            )
                             .padding(vertical = 8.dp),
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
@@ -1366,6 +1394,38 @@ fun VideoInfoSection(
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * Save pill beside Share: opens the save-to-playlist sheet with Watch Later
+ * pinned on top. Matches the pill shape of the like/dislike bar.
+ */
+@Composable
+private fun SaveVideoButton(onClick: () -> Unit) {
+    Surface(
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        onClick = onClick
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 12.dp)
+        ) {
+            Icon(
+                Icons.Rounded.WatchLater,
+                contentDescription = "Save to Watch Later",
+                modifier = Modifier.size(20.dp),
+                tint = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = "Save",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
         }
     }
 }
