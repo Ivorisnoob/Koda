@@ -1039,13 +1039,14 @@ fun ExpressivePlaylistCard(
         label = "playlistCardScale"
     )
 
+    // No clip on the column: the artwork Surface rounds itself, and clipping
+    // here used to shave the corners off the title/subtitle text below it
     Column(
         modifier = Modifier
             .graphicsLayer {
                 scaleX = pressScale
                 scaleY = pressScale
             }
-            .clip(RoundedCornerShape(24.dp))
             .clickable(interactionSource = interactionSource, indication = null) { onClick() }
     ) {
         Box(

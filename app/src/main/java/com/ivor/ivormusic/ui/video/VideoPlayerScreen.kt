@@ -730,6 +730,8 @@ private const val PINCH_ZOOM_OUT_THRESHOLD = 0.87f
  * - vertical drag on the left half = screen brightness (window-level override,
  *   restored when the surface leaves composition);
  * - vertical drag on the right half = media volume;
+ * - both only arm when the drag STARTS below the top 30% of the surface, so
+ *   pulling down the notification shade never yanks brightness or volume;
  * - pinch open/closed = zoom the video to fill the screen / fit inside it,
  *   reported through [onZoomedToFillChange].
  */
@@ -827,6 +829,13 @@ private fun PlayerGestureSurface(
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false)
                         val leftSide = down.position.x < size.width / 2f
+                        // Level drags only arm in the bottom 70% of the
+                        // surface: a swipe from the top area is almost always
+                        // the user reaching for the notification shade, and
+                        // grabbing it as a brightness/volume drag was a
+                        // constant misfire. Pinch-to-zoom stays available
+                        // everywhere.
+                        val inLevelDragZone = down.position.y >= size.height * 0.3f
                         // 0 = undecided, 1 = vertical level drag, 2 = pinch
                         var mode = 0
                         var accumulatedZoom = 1f
@@ -852,7 +861,8 @@ private fun PlayerGestureSurface(
                                 if (mode == 0) {
                                     val totalDx = change.position.x - down.position.x
                                     val totalDy = change.position.y - down.position.y
-                                    if (abs(totalDy) > viewConfiguration.touchSlop &&
+                                    if (inLevelDragZone &&
+                                        abs(totalDy) > viewConfiguration.touchSlop &&
                                         abs(totalDy) > abs(totalDx)
                                     ) {
                                         mode = 1

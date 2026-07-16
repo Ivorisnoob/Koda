@@ -83,8 +83,9 @@ fun CommentsSheet(
     onDeleteComment: (CommentItem) -> Unit,
     onDismiss: () -> Unit
 ) {
-    // Opens fully expanded
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    // Opens half-expanded like a standard sheet; drag up for the full list
+    // and the comment box
+    val sheetState = rememberModalBottomSheetState()
     val listState = rememberLazyListState()
 
     // Trigger pagination when the user nears the end of the list
