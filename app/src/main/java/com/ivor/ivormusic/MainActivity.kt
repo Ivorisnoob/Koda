@@ -41,9 +41,15 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         val splashScreen = installSplashScreen()
         super.onCreate(savedInstanceState)
-        
+
         // Remove splash instantly when ready — the AVD entrance animation is the show
         splashScreen.setOnExitAnimationListener { it.remove() }
+
+        // The app is portrait-only, like YouTube: rotating the device must not
+        // rotate the app UI. The only exception is fullscreen video playback,
+        // which temporarily requests landscape from VideoPlayerContent and
+        // restores portrait when it exits.
+        requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
 
         enableEdgeToEdge()
 
@@ -224,6 +230,40 @@ fun MusicApp(
         }
     }
 
+    // Music, video and Shorts are mutually exclusive: whichever pipeline
+    // starts playing pauses the other two. System audio focus alone is not
+    // reliable between players inside the same app, so this is enforced
+    // explicitly. Each effect only fires on a transition to playing, so
+    // pausing one player never re-triggers the others.
+    val isMusicPlaying by playerViewModel.isPlaying.collectAsState()
+    val isVideoPlaying by videoPlayerViewModel.isPlaying.collectAsState()
+    val isShortsPlaying by shortsPlayerViewModel.isPlaying.collectAsState()
+    androidx.compose.runtime.LaunchedEffect(isMusicPlaying) {
+        if (isMusicPlaying) {
+            videoPlayerViewModel.pause()
+            shortsPlayerViewModel.pause()
+        }
+    }
+    androidx.compose.runtime.LaunchedEffect(isVideoPlaying) {
+        if (isVideoPlaying) {
+            playerViewModel.pause()
+            shortsPlayerViewModel.pause()
+        }
+    }
+    androidx.compose.runtime.LaunchedEffect(isShortsPlaying) {
+        if (isShortsPlaying) {
+            playerViewModel.pause()
+            videoPlayerViewModel.pause()
+        }
+    }
+
+    // Video overlay state, needed by HomeScreen so bottom-anchored UI (FABs)
+    // and the music mini player can stay clear of the video mini player.
+    val overlayVideo by videoPlayerViewModel.currentVideo.collectAsState()
+    val isVideoOverlayExpanded by videoPlayerViewModel.isExpanded.collectAsState()
+    val hasVideoMiniPlayer = overlayVideo != null && !isVideoOverlayExpanded
+    val musicPillVisible = playerViewModel.currentSong.collectAsState().value != null
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -295,7 +335,8 @@ fun MusicApp(
                     showModeToggle = homeModeToggleEnabled,
                     playerStyle = playerStyle,
                     onPlayerStyleChange = onPlayerStyleChange,
-                    manualScan = manualScanEnabled
+                    manualScan = manualScanEnabled,
+                    hasVideoMiniPlayer = hasVideoMiniPlayer
                 )
             }
             composable(
@@ -454,7 +495,10 @@ fun MusicApp(
         
         com.ivor.ivormusic.ui.video.VideoPlayerOverlay(
             viewModel = videoPlayerViewModel,
-            timedCommentsEnabled = timedCommentsEnabled
+            timedCommentsEnabled = timedCommentsEnabled,
+            // Stack the minimized video player above the music pill instead of
+            // on top of it when both are alive at once
+            miniPlayerExtraBottomPadding = if (musicPillVisible) 88.dp else 0.dp
         )
 
         // Shorts sit above everything, including the video player overlay

@@ -432,12 +432,17 @@ fun LibraryMainScreen(
     }
 
     // --- M3E FAB menu: quick library actions ---
+    // Lifted above the floating nav pill and the mini player(s) via the
+    // overlay inset HomeScreen provides, so the button is never covered.
     FloatingActionButtonMenu(
         expanded = fabMenuExpanded,
         modifier = Modifier
             .align(Alignment.BottomEnd)
             .navigationBarsPadding()
-            .padding(end = 4.dp, bottom = 8.dp),
+            .padding(
+                end = 4.dp,
+                bottom = com.ivor.ivormusic.ui.components.LocalBottomOverlayInset.current + 8.dp
+            ),
         button = {
             ToggleFloatingActionButton(
                 checked = fabMenuExpanded,
@@ -1470,14 +1475,22 @@ fun PlaylistDetailScreen(
                                 }
                             }
                         }
-                    } else null
+                    } else null,
+                    // Clear the floating nav pill and mini player(s)
+                    modifier = Modifier.padding(
+                        bottom = com.ivor.ivormusic.ui.components.LocalBottomOverlayInset.current
+                    )
                 )
             }
         }
     ) { padding ->
         LazyColumn(
             state = listState,
-            contentPadding = PaddingValues(bottom = 100.dp),
+            // Enough scroll clearance for the floating overlays plus the FAB
+            contentPadding = PaddingValues(
+                bottom = com.ivor.ivormusic.ui.components.LocalBottomOverlayInset.current +
+                    WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 88.dp
+            ),
             modifier = Modifier
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)

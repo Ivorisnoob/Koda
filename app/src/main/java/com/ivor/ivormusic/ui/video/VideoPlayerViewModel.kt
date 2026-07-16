@@ -604,6 +604,11 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         }
     }
 
+    /** Pause without closing the player (music or Shorts playback started). */
+    fun pause() {
+        _exoPlayer?.pause()
+    }
+
     // ---------------- Engagement actions ----------------
 
     /** Re-check login state and refresh engagement (call after a successful sign-in). */

@@ -35,7 +35,8 @@ import com.ivor.ivormusic.R
 @Composable
 fun VideoPlayerOverlay(
     viewModel: VideoPlayerViewModel,
-    timedCommentsEnabled: Boolean = false
+    timedCommentsEnabled: Boolean = false,
+    miniPlayerExtraBottomPadding: androidx.compose.ui.unit.Dp = 0.dp
 ) {
     val isExpanded by viewModel.isExpanded.collectAsState()
     val currentVideo by viewModel.currentVideo.collectAsState()
@@ -210,12 +211,22 @@ fun VideoPlayerOverlay(
             if (expanded) 0.dp else 16.dp
         }
 
-        // Position above nav bar when minimized
+        // Position above nav bar when minimized, and above the music mini
+        // player too when both players are alive at the same time
         val bottomPadding by transition.animateDp(
             transitionSpec = { spring(stiffness = 300f, dampingRatio = 0.8f) },
             label = "bottomPadding"
         ) { expanded ->
-            if (expanded) 0.dp else (100.dp + bottomInset)
+            if (expanded) 0.dp else (100.dp + bottomInset + miniPlayerExtraBottomPadding)
+        }
+
+        // Animated so the pill corners melt away as the player grows to
+        // fullscreen instead of popping square on the first frame
+        val cornerRadius by transition.animateDp(
+            transitionSpec = { spring(stiffness = 300f, dampingRatio = 0.8f) },
+            label = "cornerRadius"
+        ) { expanded ->
+            if (expanded) 0.dp else 28.dp
         }
 
         Surface(
@@ -225,7 +236,7 @@ fun VideoPlayerOverlay(
                 .fillMaxWidth()
                 .height(height.coerceAtLeast(0.dp))
                 .clickable(enabled = !isExpanded) { viewModel.setExpanded(true) },
-            shape = RoundedCornerShape(if (isExpanded) 0.dp else 28.dp), // Expressive Large Shape
+            shape = RoundedCornerShape(cornerRadius.coerceAtLeast(0.dp)), // Expressive Large Shape
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
             tonalElevation = if (isExpanded) 0.dp else 4.dp,
             shadowElevation = if (isExpanded) 0.dp else 12.dp

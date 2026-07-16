@@ -93,19 +93,26 @@ fun ExpandablePlayer(
     val collapsedHeight = 80.dp
     val collapsedWidthPadding = 16.dp
     val collapsedBottomPadding = 100.dp + bottomInset
-    val collapsedCornerRadius = 50.dp
-    
+    // Exactly half the collapsed height: a radius larger than that (the old
+    // 50.dp) is illegal for the shape and rendered visibly distorted corners.
+    // It also now matches MiniPlayerContent's inner 50% pill, so the ripple
+    // and the container clip along the same outline.
+    val collapsedCornerRadius = collapsedHeight / 2
+
     val expandedHeight = screenHeight
     val expandedWidthPadding = 0.dp
     val expandedBottomPadding = 0.dp
     val expandedCornerRadius = 0.dp
-    
+
     // Interpolated values based on progress
     val height = lerp(collapsedHeight, expandedHeight, expandProgress)
     val widthPadding = lerp(collapsedWidthPadding, expandedWidthPadding, expandProgress)
     val bottomPadding = lerp(collapsedBottomPadding, expandedBottomPadding, expandProgress)
     val cornerRadius = lerp(collapsedCornerRadius, expandedCornerRadius, expandProgress)
-    
+        .coerceAtMost(height / 2)
+    // Soft floating-pill depth while collapsed, gone once fullscreen
+    val pillShadowElevation = lerp(8.dp, 0.dp, expandProgress)
+
     // Color interpolation - collapsed shows surface, expanded shows transparent
     val containerColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(
         alpha = 1f - expandProgress
@@ -213,8 +220,8 @@ fun ExpandablePlayer(
                 }
                 .clickable(enabled = !isExpanded) { onExpandChange(true) },
             shape = RoundedCornerShape(cornerRadius.coerceAtLeast(0.dp)),
-            color = containerColor
-            // No shadow/elevation for cleaner look
+            color = containerColor,
+            shadowElevation = pillShadowElevation.coerceAtLeast(0.dp)
         ) {
             // Both layers are positioned in a Box sized to the current (animating)
             // Surface height, which the Surface shape clips. The expanded content
