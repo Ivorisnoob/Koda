@@ -418,7 +418,10 @@ fun VideoPlayerContent(
                         }
                     )
 
-                    AnimatedVisibility(
+                    // Qualified: inside this Box the outer Column's scoped
+                    // AnimatedVisibility extension would otherwise win overload
+                    // resolution and fail to compile
+                    androidx.compose.animation.AnimatedVisibility(
                         visible = showCommentsSheet,
                         enter = slideInVertically(
                             animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
