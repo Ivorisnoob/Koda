@@ -10,7 +10,10 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -375,65 +378,84 @@ fun VideoPlayerContent(
                     }
                 }
                 
-                // Info Area
-                VideoInfoSection(
-                    video = currentVideo,
-                    relatedVideos = relatedVideos,
-                    onVideoSelect = { viewModel.playVideo(it) },
+                // Info Area. The comments panel slides up over it, keeping the
+                // video playing and interactive above while the list scrolls.
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f)
-                        .background(MaterialTheme.colorScheme.surface),
-                    engagement = engagement,
-                    onLikeClick = { requireLogin { viewModel.toggleLike() } },
-                    onDislikeClick = { requireLogin { viewModel.toggleDislike() } },
-                    onSubscribeClick = { requireLogin { viewModel.toggleSubscribe() } },
-                    onCommentsClick = {
-                        viewModel.ensureCommentsLoaded()
-                        showCommentsSheet = true
-                    },
-                    onSaveClick = {
-                        requireLogin {
-                            viewModel.loadVideoPlaylists()
-                            saveTargetVideo = currentVideo
+                ) {
+                    VideoInfoSection(
+                        video = currentVideo,
+                        relatedVideos = relatedVideos,
+                        onVideoSelect = { viewModel.playVideo(it) },
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(MaterialTheme.colorScheme.surface),
+                        engagement = engagement,
+                        onLikeClick = { requireLogin { viewModel.toggleLike() } },
+                        onDislikeClick = { requireLogin { viewModel.toggleDislike() } },
+                        onSubscribeClick = { requireLogin { viewModel.toggleSubscribe() } },
+                        onCommentsClick = {
+                            viewModel.ensureCommentsLoaded()
+                            showCommentsSheet = true
+                        },
+                        onSaveClick = {
+                            requireLogin {
+                                viewModel.loadVideoPlaylists()
+                                saveTargetVideo = currentVideo
+                            }
+                        },
+                        onChannelClick = {
+                            viewModel.loadChannelVideos()
+                            showChannelSheet = true
+                        },
+                        onRelatedLongPress = { related ->
+                            requireLogin {
+                                viewModel.loadVideoPlaylists()
+                                saveTargetVideo = related
+                            }
                         }
-                    },
-                    onChannelClick = {
-                        viewModel.loadChannelVideos()
-                        showChannelSheet = true
-                    },
-                    onRelatedLongPress = { related ->
-                        requireLogin {
-                            viewModel.loadVideoPlaylists()
-                            saveTargetVideo = related
-                        }
+                    )
+
+                    AnimatedVisibility(
+                        visible = showCommentsSheet,
+                        enter = slideInVertically(
+                            animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+                            initialOffsetY = { it }
+                        ) + fadeIn(),
+                        exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        CommentsPanel(
+                            comments = comments,
+                            replies = commentReplies,
+                            loadingReplyIds = loadingReplyIds,
+                            isLoading = isCommentsLoading,
+                            isLoadingMore = isLoadingMoreComments,
+                            commentsAvailable = engagement?.commentsToken != null,
+                            canComment = canComment,
+                            isPosting = isPostingComment,
+                            onLoadMore = { viewModel.loadMoreComments() },
+                            onLoadReplies = { viewModel.loadReplies(it) },
+                            onPostComment = { viewModel.postComment(it) },
+                            onPostReply = { target, threadParent, text ->
+                                viewModel.postReply(target, threadParent, text)
+                            },
+                            onLikeComment = { comment -> requireLogin { viewModel.toggleCommentLike(comment) } },
+                            onDeleteComment = { comment -> viewModel.deleteComment(comment) },
+                            onDismiss = { showCommentsSheet = false },
+                            modifier = Modifier.fillMaxSize()
+                        )
                     }
-                )
+                }
             }
         }
     }
-    
-    // Comments Sheet
-    if (showCommentsSheet) {
-        CommentsSheet(
-            comments = comments,
-            replies = commentReplies,
-            loadingReplyIds = loadingReplyIds,
-            isLoading = isCommentsLoading,
-            isLoadingMore = isLoadingMoreComments,
-            commentsAvailable = engagement?.commentsToken != null,
-            canComment = canComment,
-            isPosting = isPostingComment,
-            onLoadMore = { viewModel.loadMoreComments() },
-            onLoadReplies = { viewModel.loadReplies(it) },
-            onPostComment = { viewModel.postComment(it) },
-            onPostReply = { target, threadParent, text ->
-                viewModel.postReply(target, threadParent, text)
-            },
-            onLikeComment = { comment -> requireLogin { viewModel.toggleCommentLike(comment) } },
-            onDeleteComment = { comment -> viewModel.deleteComment(comment) },
-            onDismiss = { showCommentsSheet = false }
-        )
+
+    // Back closes the comments panel before collapsing the player
+    androidx.activity.compose.BackHandler(enabled = showCommentsSheet && !isFullscreen) {
+        showCommentsSheet = false
     }
 
     // Save to Watch Later / playlist sheet
