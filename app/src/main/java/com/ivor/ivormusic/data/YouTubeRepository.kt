@@ -2256,14 +2256,18 @@ class YouTubeRepository(private val context: Context) {
     /**
      * Search for videos on YouTube (not YouTube Music).
      * Returns VideoItem objects with view counts, channel info, etc.
+     * [dateFilter] restricts results by upload date via the `after:` search operator.
      */
-    suspend fun searchVideos(query: String): List<VideoItem> = withContext(Dispatchers.IO) {
+    suspend fun searchVideos(
+        query: String,
+        dateFilter: VideoSearchDateFilter = VideoSearchDateFilter.ANY
+    ): List<VideoItem> = withContext(Dispatchers.IO) {
         try {
-            val ytService = ServiceList.all().find { it.serviceInfo.name == "YouTube" } 
+            val ytService = ServiceList.all().find { it.serviceInfo.name == "YouTube" }
                 ?: return@withContext emptyList()
-            
+
             // Use YouTube videos filter (not music_videos)
-            val searchExtractor = ytService.getSearchExtractor(query, listOf(FILTER_YOUTUBE_VIDEOS), "")
+            val searchExtractor = ytService.getSearchExtractor(dateFilter.applyTo(query), listOf(FILTER_YOUTUBE_VIDEOS), "")
             searchExtractor.fetchPage()
             
             searchExtractor.initialPage.items.filterIsInstance<StreamInfoItem>().mapNotNull { item ->

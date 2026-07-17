@@ -107,8 +107,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.material3.TextButton
 import coil.compose.AsyncImage
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.data.VideoItem
+import com.ivor.ivormusic.data.VideoSearchDateFilter
 import com.ivor.ivormusic.data.YouTubeLinkParser
 import com.ivor.ivormusic.data.ArtistItem
 import com.ivor.ivormusic.data.PlaylistDisplayItem
@@ -195,6 +198,7 @@ fun SearchScreen(
     var albumResults by remember { mutableStateOf<List<PlaylistDisplayItem>>(emptyList()) }
     var playlistResults by remember { mutableStateOf<List<PlaylistDisplayItem>>(emptyList()) }
     var selectedCategory by remember { mutableStateOf(SearchCategory.SONGS) }
+    var selectedDateFilter by remember { mutableStateOf(VideoSearchDateFilter.ANY) }
     
     var visibleLocalCount by remember { mutableIntStateOf(20) }
     val scope = rememberCoroutineScope()
@@ -238,7 +242,7 @@ fun SearchScreen(
     }
     
     // Search YouTube/Videos/Artists/Albums/Playlists when query changes
-    LaunchedEffect(query, videoMode, selectedCategory) {
+    LaunchedEffect(query, videoMode, selectedCategory, selectedDateFilter) {
         if (parsedLink != null) {
             // A pasted link is resolved by its own effect below; make sure no
             // stale text-search results linger behind the link result card.
@@ -262,7 +266,7 @@ fun SearchScreen(
             playlistResults = emptyList()
 
             if (videoMode) {
-                 videoResults = viewModel.searchVideos(query)
+                 videoResults = viewModel.searchVideos(query, selectedDateFilter)
             } else {
                 when (selectedCategory) {
                     SearchCategory.SONGS -> youtubeResults = viewModel.searchYouTube(query)
@@ -356,6 +360,17 @@ fun SearchScreen(
                         onCategorySelected = { selectedCategory = it },
                         primaryColor = primaryColor,
                         modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
+                    )
+                }
+            }
+
+            // Upload-date filter chips (only in Video Mode, hidden while a pasted link resolves)
+            if (videoMode && query.isNotEmpty() && parsedLink == null) {
+                item {
+                    VideoDateFilterChips(
+                        selectedFilter = selectedDateFilter,
+                        onFilterSelected = { selectedDateFilter = it },
+                        modifier = Modifier.padding(vertical = 8.dp)
                     )
                 }
             }
@@ -1484,6 +1499,47 @@ fun SearchFilterChips(
 }
 
 private fun String.capitalize() = replaceFirstChar { if (it.isLowerCase()) it.titlecase(java.util.Locale.getDefault()) else it.toString() }
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+fun VideoDateFilterChips(
+    selectedFilter: VideoSearchDateFilter,
+    onFilterSelected: (VideoSearchDateFilter) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    // Same connected button group pattern as SearchFilterChips, but with
+    // natural-width buttons in a horizontal scroller since five labels
+    // don't fit evenly across the screen.
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp),
+        horizontalArrangement = Arrangement.spacedBy(androidx.compose.material3.ButtonGroupDefaults.ConnectedSpaceBetween)
+    ) {
+        VideoSearchDateFilter.entries.forEachIndexed { index, filter ->
+            val selected = filter == selectedFilter
+            androidx.compose.material3.ToggleButton(
+                checked = selected,
+                onCheckedChange = { onFilterSelected(filter) },
+                modifier = Modifier.height(44.dp),
+                shapes = when (index) {
+                    0 -> androidx.compose.material3.ButtonGroupDefaults.connectedLeadingButtonShapes()
+                    VideoSearchDateFilter.entries.lastIndex -> androidx.compose.material3.ButtonGroupDefaults.connectedTrailingButtonShapes()
+                    else -> androidx.compose.material3.ButtonGroupDefaults.connectedMiddleButtonShapes()
+                },
+                contentPadding = PaddingValues(horizontal = 16.dp)
+            ) {
+                Text(
+                    filter.label,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                    maxLines = 1
+                )
+            }
+        }
+    }
+}
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable

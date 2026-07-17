@@ -671,11 +671,15 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     
     /**
      * Search for videos (for video mode search).
+     * [dateFilter] restricts results to the chosen upload-date window.
      */
-    suspend fun searchVideos(query: String): List<VideoItem> {
+    suspend fun searchVideos(
+        query: String,
+        dateFilter: com.ivor.ivormusic.data.VideoSearchDateFilter = com.ivor.ivormusic.data.VideoSearchDateFilter.ANY
+    ): List<VideoItem> {
         if (query.isBlank()) return emptyList()
         return try {
-            youtubeRepository.searchVideos(query)
+            youtubeRepository.searchVideos(query, dateFilter)
         } catch (e: Exception) {
             emptyList()
         }
