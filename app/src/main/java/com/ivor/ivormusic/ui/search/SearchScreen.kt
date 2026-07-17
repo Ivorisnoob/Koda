@@ -107,8 +107,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.material3.TextButton
 import coil.compose.AsyncImage
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
 import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.data.VideoSearchDateFilter
@@ -1500,43 +1498,45 @@ fun SearchFilterChips(
 
 private fun String.capitalize() = replaceFirstChar { if (it.isLowerCase()) it.titlecase(java.util.Locale.getDefault()) else it.toString() }
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun VideoDateFilterChips(
     selectedFilter: VideoSearchDateFilter,
     onFilterSelected: (VideoSearchDateFilter) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    // Same connected button group pattern as SearchFilterChips, but with
-    // natural-width buttons in a horizontal scroller since five labels
-    // don't fit evenly across the screen.
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp),
-        horizontalArrangement = Arrangement.spacedBy(androidx.compose.material3.ButtonGroupDefaults.ConnectedSpaceBetween)
+    // Upload-date filter for video mode. Five options are too wide for a
+    // connected button group (the segmented row is only used where the whole
+    // set fits, like the music categories), so this is a scrollable row of
+    // pill FilterChips matching the explore topic chips above.
+    LazyRow(
+        modifier = modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(horizontal = 20.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        VideoSearchDateFilter.entries.forEachIndexed { index, filter ->
+        items(VideoSearchDateFilter.entries) { filter ->
             val selected = filter == selectedFilter
-            androidx.compose.material3.ToggleButton(
-                checked = selected,
-                onCheckedChange = { onFilterSelected(filter) },
-                modifier = Modifier.height(44.dp),
-                shapes = when (index) {
-                    0 -> androidx.compose.material3.ButtonGroupDefaults.connectedLeadingButtonShapes()
-                    VideoSearchDateFilter.entries.lastIndex -> androidx.compose.material3.ButtonGroupDefaults.connectedTrailingButtonShapes()
-                    else -> androidx.compose.material3.ButtonGroupDefaults.connectedMiddleButtonShapes()
+            FilterChip(
+                selected = selected,
+                onClick = { onFilterSelected(filter) },
+                shape = CircleShape,
+                label = {
+                    Text(
+                        filter.label,
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                        maxLines = 1
+                    )
                 },
-                contentPadding = PaddingValues(horizontal = 16.dp)
-            ) {
-                Text(
-                    filter.label,
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                    maxLines = 1
-                )
-            }
+                leadingIcon = if (selected) {
+                    {
+                        Icon(
+                            Icons.Filled.Check,
+                            contentDescription = null,
+                            modifier = Modifier.size(FilterChipDefaults.IconSize)
+                        )
+                    }
+                } else null
+            )
         }
     }
 }
