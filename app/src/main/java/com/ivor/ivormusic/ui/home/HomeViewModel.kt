@@ -671,15 +671,17 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     
     /**
      * Search for videos (for video mode search).
-     * [dateFilter] restricts results to the chosen upload-date window.
+     * [dateFilter] restricts results to the chosen upload-date window,
+     * [sort] picks the result order.
      */
     suspend fun searchVideos(
         query: String,
-        dateFilter: com.ivor.ivormusic.data.VideoSearchDateFilter = com.ivor.ivormusic.data.VideoSearchDateFilter.ANY
+        dateFilter: com.ivor.ivormusic.data.VideoSearchDateFilter = com.ivor.ivormusic.data.VideoSearchDateFilter.ANY,
+        sort: com.ivor.ivormusic.data.VideoSearchSort = com.ivor.ivormusic.data.VideoSearchSort.RELEVANCE
     ): List<VideoItem> {
         if (query.isBlank()) return emptyList()
         return try {
-            youtubeRepository.searchVideos(query, dateFilter)
+            youtubeRepository.searchVideos(query, dateFilter, sort)
         } catch (e: Exception) {
             emptyList()
         }
