@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -332,9 +333,10 @@ fun CommentsPanel(
 
 /**
  * Modal bottom sheet wrapper around [CommentsPanel], used by the Shorts
- * player where the comments cover the vertical video like on YouTube.
- * The regular video player hosts [CommentsPanel] inline below the video
- * instead.
+ * player. Capped below full height so the short stays visible and playing
+ * above the sheet, YouTube Shorts-style — swiping up cannot expand it to
+ * cover the whole screen. The regular video player hosts [CommentsPanel]
+ * inline below the video instead.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -378,7 +380,7 @@ fun CommentsSheet(
             onDeleteComment = onDeleteComment,
             onDismiss = onDismiss,
             modifier = Modifier
-                .fillMaxSize()
+                .fillMaxHeight(0.65f)
                 .navigationBarsPadding()
         )
     }
