@@ -109,6 +109,8 @@ import androidx.compose.material3.TextButton
 import coil.compose.AsyncImage
 import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.data.VideoItem
+import com.ivor.ivormusic.data.VideoSearchDateFilter
+import com.ivor.ivormusic.data.VideoSearchSort
 import com.ivor.ivormusic.data.YouTubeLinkParser
 import com.ivor.ivormusic.data.ArtistItem
 import com.ivor.ivormusic.data.PlaylistDisplayItem
@@ -195,6 +197,8 @@ fun SearchScreen(
     var albumResults by remember { mutableStateOf<List<PlaylistDisplayItem>>(emptyList()) }
     var playlistResults by remember { mutableStateOf<List<PlaylistDisplayItem>>(emptyList()) }
     var selectedCategory by remember { mutableStateOf(SearchCategory.SONGS) }
+    var selectedDateFilter by remember { mutableStateOf(VideoSearchDateFilter.ANY) }
+    var selectedSort by remember { mutableStateOf(VideoSearchSort.RELEVANCE) }
     
     var visibleLocalCount by remember { mutableIntStateOf(20) }
     val scope = rememberCoroutineScope()
@@ -238,7 +242,7 @@ fun SearchScreen(
     }
     
     // Search YouTube/Videos/Artists/Albums/Playlists when query changes
-    LaunchedEffect(query, videoMode, selectedCategory) {
+    LaunchedEffect(query, videoMode, selectedCategory, selectedDateFilter, selectedSort) {
         if (parsedLink != null) {
             // A pasted link is resolved by its own effect below; make sure no
             // stale text-search results linger behind the link result card.
@@ -262,7 +266,7 @@ fun SearchScreen(
             playlistResults = emptyList()
 
             if (videoMode) {
-                 videoResults = viewModel.searchVideos(query)
+                 videoResults = viewModel.searchVideos(query, selectedDateFilter, selectedSort)
             } else {
                 when (selectedCategory) {
                     SearchCategory.SONGS -> youtubeResults = viewModel.searchYouTube(query)
@@ -356,6 +360,27 @@ fun SearchScreen(
                         onCategorySelected = { selectedCategory = it },
                         primaryColor = primaryColor,
                         modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
+                    )
+                }
+            }
+
+            // Upload-date + sort filter chips (only in Video Mode, hidden while
+            // a pasted link resolves)
+            if (videoMode && query.isNotEmpty() && parsedLink == null) {
+                item {
+                    VideoFilterChipRow(
+                        labels = VideoSearchDateFilter.entries.map { it.label },
+                        selectedIndex = selectedDateFilter.ordinal,
+                        onSelected = { selectedDateFilter = VideoSearchDateFilter.entries[it] },
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
+                item {
+                    VideoFilterChipRow(
+                        labels = VideoSearchSort.entries.map { it.label },
+                        selectedIndex = selectedSort.ordinal,
+                        onSelected = { selectedSort = VideoSearchSort.entries[it] },
+                        modifier = Modifier.padding(top = 4.dp, bottom = 8.dp)
                     )
                 }
             }
@@ -1484,6 +1509,51 @@ fun SearchFilterChips(
 }
 
 private fun String.capitalize() = replaceFirstChar { if (it.isLowerCase()) it.titlecase(java.util.Locale.getDefault()) else it.toString() }
+
+@Composable
+fun VideoFilterChipRow(
+    labels: List<String>,
+    selectedIndex: Int,
+    onSelected: (Int) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    // Single-select filter row for video mode search (upload date, sort
+    // order). The option sets are too wide for a connected button group (the
+    // segmented row is only used where the whole set fits, like the music
+    // categories), so this is a scrollable row of pill FilterChips matching
+    // the explore topic chips above.
+    LazyRow(
+        modifier = modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(horizontal = 20.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        itemsIndexed(labels) { index, label ->
+            val selected = index == selectedIndex
+            FilterChip(
+                selected = selected,
+                onClick = { onSelected(index) },
+                shape = CircleShape,
+                label = {
+                    Text(
+                        label,
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                        maxLines = 1
+                    )
+                },
+                leadingIcon = if (selected) {
+                    {
+                        Icon(
+                            Icons.Filled.Check,
+                            contentDescription = null,
+                            modifier = Modifier.size(FilterChipDefaults.IconSize)
+                        )
+                    }
+                } else null
+            )
+        }
+    }
+}
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable

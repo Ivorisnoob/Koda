@@ -2256,14 +2256,30 @@ class YouTubeRepository(private val context: Context) {
     /**
      * Search for videos on YouTube (not YouTube Music).
      * Returns VideoItem objects with view counts, channel info, etc.
+     * [dateFilter] restricts results by upload date via the `after:` search operator.
+     * [sort] picks the result order; anything but relevance goes through a direct
+     * InnerTube /search call (NewPipe's YouTube search cannot sort), falling back
+     * to the relevance-ordered NewPipe path if that call fails.
      */
-    suspend fun searchVideos(query: String): List<VideoItem> = withContext(Dispatchers.IO) {
+    suspend fun searchVideos(
+        query: String,
+        dateFilter: VideoSearchDateFilter = VideoSearchDateFilter.ANY,
+        sort: VideoSearchSort = VideoSearchSort.RELEVANCE
+    ): List<VideoItem> = withContext(Dispatchers.IO) {
+        val effectiveQuery = dateFilter.applyTo(query)
+
+        if (sort != VideoSearchSort.RELEVANCE) {
+            val sorted = searchVideosInnerTube(effectiveQuery, sort)
+            if (sorted.isNotEmpty()) return@withContext sorted
+            android.util.Log.w("YouTubeRepo", "Sorted video search empty, falling back to relevance order")
+        }
+
         try {
-            val ytService = ServiceList.all().find { it.serviceInfo.name == "YouTube" } 
+            val ytService = ServiceList.all().find { it.serviceInfo.name == "YouTube" }
                 ?: return@withContext emptyList()
-            
+
             // Use YouTube videos filter (not music_videos)
-            val searchExtractor = ytService.getSearchExtractor(query, listOf(FILTER_YOUTUBE_VIDEOS), "")
+            val searchExtractor = ytService.getSearchExtractor(effectiveQuery, listOf(FILTER_YOUTUBE_VIDEOS), "")
             searchExtractor.fetchPage()
             
             searchExtractor.initialPage.items.filterIsInstance<StreamInfoItem>().mapNotNull { item ->
@@ -2295,6 +2311,45 @@ class YouTubeRepository(private val context: Context) {
             }
         } catch (e: Exception) {
             android.util.Log.e("YouTubeRepo", "Error searching videos", e)
+            emptyList()
+        }
+    }
+
+    /**
+     * Base64url protobuf for the /search `params` field: sort order (field 1)
+     * plus a filter block (field 2) pinning the result type to videos, the same
+     * values the youtube.com filter sheet puts in the `sp` URL param.
+     * Verified July 2026.
+     */
+    private fun buildVideoSearchParams(sort: VideoSearchSort): String {
+        val bytes = byteArrayOf(0x08, sort.code.toByte(), 0x12, 0x02, 0x10, 0x01)
+        return java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
+    }
+
+    /**
+     * Video search through a direct InnerTube /search call, used when a
+     * non-default sort order is picked. Results arrive as videoRenderers
+     * (legacy shape, still what /search returns signed out) or lockupViewModels;
+     * both parsers already exist for the feed. Verified July 2026.
+     */
+    private fun searchVideosInnerTube(query: String, sort: VideoSearchSort): List<VideoItem> {
+        return try {
+            val body = org.json.JSONObject()
+                .put("context", webContext())
+                .put("query", query)
+                .put("params", buildVideoSearchParams(sort))
+            val response = postWatchApi("search", body) ?: return emptyList()
+
+            val renderers = mutableListOf<org.json.JSONObject>()
+            val root = org.json.JSONObject(response)
+            findObjectsByKey(root, "videoRenderer", renderers)
+            findObjectsByKey(root, "lockupViewModel", renderers)
+            renderers.mapNotNull { renderer ->
+                if (renderer.has("videoId")) parseVideoRenderer(renderer)
+                else parseLockupViewModel(renderer)
+            }.distinctBy { it.videoId }
+        } catch (e: Exception) {
+            android.util.Log.e("YouTubeRepo", "InnerTube video search failed", e)
             emptyList()
         }
     }

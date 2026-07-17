@@ -36,6 +36,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -75,6 +77,8 @@ fun FloatingPillNavBar(
         )
     )
 
+    val haptics = LocalHapticFeedback.current
+
     // Colors based on theme - more transparent for floating effect
     val containerColor = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.9f)
     val selectedBgColor = MaterialTheme.colorScheme.secondaryContainer
@@ -104,7 +108,14 @@ fun FloatingPillNavBar(
                 NavBarItem(
                     item = item,
                     isSelected = selectedTab == index,
-                    onClick = { onTabSelected(index) },
+                    onClick = {
+                        // Tick only on an actual switch, not on re-tapping
+                        // the current tab
+                        if (selectedTab != index) {
+                            haptics.performHapticFeedback(HapticFeedbackType.ContextClick)
+                        }
+                        onTabSelected(index)
+                    },
                     selectedBgColor = selectedBgColor,
                     selectedContentColor = selectedContentColor,
                     unselectedContentColor = unselectedContentColor
