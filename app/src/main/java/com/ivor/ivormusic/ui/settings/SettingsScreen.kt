@@ -77,6 +77,7 @@ import androidx.compose.material.icons.rounded.ThumbDown
 import androidx.compose.material.icons.rounded.ThumbUp
 import androidx.compose.material.icons.rounded.ToggleOn
 import androidx.compose.material.icons.rounded.ChatBubble
+import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material3.AlertDialog
@@ -240,6 +241,8 @@ fun SettingsScreen(
     manualScanEnabled: Boolean,
     onManualScanEnabledToggle: (Boolean) -> Unit,
     onNavigateToUpdate: () -> Unit = {},
+    localOnlyMode: Boolean = false,
+    onLocalOnlyModeToggle: (Boolean) -> Unit = {},
     contentPadding: PaddingValues = PaddingValues()
 ) {
     val context = LocalContext.current
@@ -751,6 +754,16 @@ fun SettingsScreen(
                     textColor = secondaryTextColor
                 ) {
                     ExpressiveSettingsCard(surfaceColor = surfaceColor) {
+                        ExpressiveLocalOnlyToggleItem(
+                            enabled = localOnlyMode,
+                            onToggle = onLocalOnlyModeToggle,
+                            textColor = textColor,
+                            secondaryTextColor = secondaryTextColor,
+                            accentColor = accentColor
+                        )
+
+                        SettingsDivider()
+
                         ExpressiveVideoModeToggleItem(
                             enabled = videoMode,
                             onToggle = onVideoModeToggle,
@@ -1291,6 +1304,87 @@ private fun ExpressiveLocalSongsToggleItem(
         // Switch
         Switch(
             checked = loadLocalSongs,
+            onCheckedChange = onToggle,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Color.White,
+                checkedTrackColor = accentColor,
+                uncheckedThumbColor = Color.White,
+                uncheckedTrackColor = secondaryTextColor.copy(alpha = 0.3f),
+                uncheckedBorderColor = Color.Transparent,
+                checkedBorderColor = Color.Transparent
+            )
+        )
+    }
+}
+
+/**
+ * Local only mode: the app stays fully offline — device library only, all
+ * YouTube features and network calls disabled.
+ */
+@Composable
+private fun ExpressiveLocalOnlyToggleItem(
+    enabled: Boolean,
+    onToggle: (Boolean) -> Unit,
+    textColor: Color,
+    secondaryTextColor: Color,
+    accentColor: Color
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.97f else 1f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
+        label = "scale"
+    )
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .scale(scale)
+            .clip(RoundedCornerShape(18.dp))
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null
+            ) { onToggle(!enabled) }
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(48.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(accentColor.copy(alpha = 0.12f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.CloudOff,
+                contentDescription = null,
+                tint = accentColor,
+                modifier = Modifier.size(26.dp)
+            )
+        }
+
+        Spacer(modifier = Modifier.width(16.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "Local Only",
+                color = textColor,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = if (enabled) "Offline: device library only, no internet"
+                else "YouTube features enabled",
+                color = secondaryTextColor,
+                fontSize = 13.sp
+            )
+        }
+
+        Switch(
+            checked = enabled,
             onCheckedChange = onToggle,
             colors = SwitchDefaults.colors(
                 checkedThumbColor = Color.White,

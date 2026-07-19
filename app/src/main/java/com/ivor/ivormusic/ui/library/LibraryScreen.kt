@@ -593,33 +593,51 @@ fun AllSongsList(
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onBackground
                 )
-                Box {
-                    var showSortMenu by remember { mutableStateOf(false) }
-                    FilledTonalIconButton(
-                        onClick = { showSortMenu = true },
-                        modifier = Modifier.size(40.dp),
-                        shapes = IconButtonDefaults.shapes()
-                    ) {
-                        Icon(
-                            Icons.Rounded.SwapVert,
-                            contentDescription = "Sort by ${sortOption.label}",
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                    DropdownMenu(expanded = showSortMenu, onDismissRequest = { showSortMenu = false }) {
-                        LibrarySortOption.entries.forEach { option ->
-                            DropdownMenuItem(
-                                text = { Text(option.label) },
-                                onClick = {
-                                    onSortOptionChange(option)
-                                    showSortMenu = false
-                                },
-                                leadingIcon = {
-                                    if (option == sortOption) {
-                                        Icon(Icons.Rounded.Check, contentDescription = null)
-                                    }
-                                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (songs.isNotEmpty()) {
+                        FilledIconButton(
+                            onClick = {
+                                val shuffled = songs.shuffled()
+                                onPlayQueue(shuffled, shuffled.first())
+                            },
+                            modifier = Modifier.size(40.dp),
+                            shapes = IconButtonDefaults.shapes()
+                        ) {
+                            Icon(
+                                Icons.Rounded.Shuffle,
+                                contentDescription = "Shuffle all tracks",
+                                modifier = Modifier.size(20.dp)
                             )
+                        }
+                    }
+                    Box {
+                        var showSortMenu by remember { mutableStateOf(false) }
+                        FilledTonalIconButton(
+                            onClick = { showSortMenu = true },
+                            modifier = Modifier.size(40.dp),
+                            shapes = IconButtonDefaults.shapes()
+                        ) {
+                            Icon(
+                                Icons.Rounded.SwapVert,
+                                contentDescription = "Sort by ${sortOption.label}",
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                        DropdownMenu(expanded = showSortMenu, onDismissRequest = { showSortMenu = false }) {
+                            LibrarySortOption.entries.forEach { option ->
+                                DropdownMenuItem(
+                                    text = { Text(option.label) },
+                                    onClick = {
+                                        onSortOptionChange(option)
+                                        showSortMenu = false
+                                    },
+                                    leadingIcon = {
+                                        if (option == sortOption) {
+                                            Icon(Icons.Rounded.Check, contentDescription = null)
+                                        }
+                                    }
+                                )
+                            }
                         }
                     }
                 }

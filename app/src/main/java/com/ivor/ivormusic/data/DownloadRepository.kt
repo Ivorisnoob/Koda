@@ -39,6 +39,12 @@ class DownloadRepository(private val context: Context) {
     }
 
     private val client = OkHttpClient.Builder()
+        .addInterceptor { chain ->
+            if (ThemePreferences.isLocalOnly(context)) {
+                throw java.io.IOException("Local only mode is on: network disabled")
+            }
+            chain.proceed(chain.request())
+        }
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
         .writeTimeout(60, TimeUnit.SECONDS)

@@ -22,6 +22,7 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -105,6 +106,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
+import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -412,7 +414,10 @@ fun PortraitPlayerContent(
     chapters: List<VideoChapter> = emptyList(),
     onOpenChapters: () -> Unit = {},
     captionsActive: Boolean = false,
-    onCaptionsClick: () -> Unit = {}
+    onCaptionsClick: () -> Unit = {},
+    minimizeDragEnabled: Boolean = false,
+    onMinimizeDragDelta: (Float) -> Unit = {},
+    onMinimizeDragRelease: (Float) -> Unit = {}
 ) {
     // Stable shapes
     val stableShapes = IconButtonDefaults.shapes()
@@ -428,7 +433,10 @@ fun PortraitPlayerContent(
             speedBeforeBoost = exoPlayer.playbackParameters.speed
             exoPlayer.setPlaybackSpeed(2f)
         },
-        onSpeedBoostEnd = { exoPlayer.setPlaybackSpeed(speedBeforeBoost) }
+        onSpeedBoostEnd = { exoPlayer.setPlaybackSpeed(speedBeforeBoost) },
+        minimizeDragEnabled = minimizeDragEnabled,
+        onMinimizeDragDelta = onMinimizeDragDelta,
+        onMinimizeDragRelease = onMinimizeDragRelease
     ) {
         AndroidView(
             factory = { ctx ->
@@ -734,6 +742,11 @@ private const val PINCH_ZOOM_OUT_THRESHOLD = 0.87f
  *   pulling down the notification shade never yanks brightness or volume;
  * - pinch open/closed = zoom the video to fill the screen / fit inside it,
  *   reported through [onZoomedToFillChange].
+ *
+ * With [minimizeDragEnabled] (portrait, non-fullscreen only) a vertical drag
+ * on the surface is reported through [onMinimizeDragDelta] /
+ * [onMinimizeDragRelease] so the overlay can drag the player down into the
+ * mini player. Mutually exclusive with the fullscreen level drags.
  */
 @Composable
 private fun PlayerGestureSurface(
@@ -745,6 +758,9 @@ private fun PlayerGestureSurface(
     onZoomedToFillChange: (Boolean) -> Unit = {},
     onSpeedBoostStart: () -> Unit = {},
     onSpeedBoostEnd: () -> Unit = {},
+    minimizeDragEnabled: Boolean = false,
+    onMinimizeDragDelta: (Float) -> Unit = {},
+    onMinimizeDragRelease: (Float) -> Unit = {},
     content: @Composable BoxScope.() -> Unit
 ) {
     // side: -1 rewind, +1 forward, 0 hidden. seconds accumulates on rapid taps.
@@ -823,6 +839,24 @@ private fun PlayerGestureSurface(
                     }
                 )
             }
+            .then(
+                if (!minimizeDragEnabled || fullscreenGesturesEnabled) Modifier
+                else Modifier.pointerInput(Unit) {
+                    val velocityTracker = VelocityTracker()
+                    detectVerticalDragGestures(
+                        onDragStart = { velocityTracker.resetTracking() },
+                        onVerticalDrag = { change, dragAmount ->
+                            velocityTracker.addPosition(change.uptimeMillis, change.position)
+                            onMinimizeDragDelta(dragAmount)
+                            change.consume()
+                        },
+                        onDragEnd = {
+                            onMinimizeDragRelease(velocityTracker.calculateVelocity().y)
+                        },
+                        onDragCancel = { onMinimizeDragRelease(0f) }
+                    )
+                }
+            )
             .then(
                 if (!fullscreenGesturesEnabled) Modifier
                 else Modifier.pointerInput(activity) {

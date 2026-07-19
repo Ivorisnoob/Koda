@@ -47,8 +47,9 @@ class YouTubeRepository(private val context: Context) {
         const val FILTER_PLAYLISTS = "music_playlists"
         const val FILTER_ARTISTS = "music_artists"
         
-        // Regular YouTube video filter
+        // Regular YouTube filters
         const val FILTER_YOUTUBE_VIDEOS = "videos"
+        const val FILTER_YOUTUBE_PLAYLISTS = "playlists"
         
         /**
          * Public InnerTube API Key for WEB client.
@@ -140,7 +141,16 @@ class YouTubeRepository(private val context: Context) {
         private const val VISITOR_DATA_TTL_MS = 6 * 60 * 60 * 1000L // 6 hours
     }
 
+    // Local-only kill-switch: checked per request so flipping the setting
+    // needs no restart. newBuilder() copies interceptors, so this also guards
+    // streamResolveClient and the NewPipe downloader (same client instance).
     private val okHttpClient = OkHttpClient.Builder()
+        .addInterceptor { chain ->
+            if (ThemePreferences.isLocalOnly(context)) {
+                throw java.io.IOException("Local only mode is on: network disabled")
+            }
+            chain.proceed(chain.request())
+        }
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .build()
@@ -2311,6 +2321,39 @@ class YouTubeRepository(private val context: Context) {
             }
         } catch (e: Exception) {
             android.util.Log.e("YouTubeRepo", "Error searching videos", e)
+            emptyList()
+        }
+    }
+
+    /**
+     * Search for playlists on regular YouTube (video mode search). Mapped to
+     * [VideoPlaylist] so results plug straight into the same playlist detail
+     * page and models the video Library tab uses.
+     */
+    suspend fun searchVideoPlaylists(query: String): List<VideoPlaylist> = withContext(Dispatchers.IO) {
+        try {
+            val ytService = ServiceList.all().find { it.serviceInfo.name == "YouTube" }
+                ?: return@withContext emptyList()
+
+            val searchExtractor = ytService.getSearchExtractor(query, listOf(FILTER_YOUTUBE_PLAYLISTS), "")
+            searchExtractor.fetchPage()
+
+            searchExtractor.initialPage.items.filterIsInstance<PlaylistInfoItem>().mapNotNull { item ->
+                val playlistId = item.url?.substringAfter("list=", "")
+                    ?.substringBefore("&")
+                    ?.takeIf { it.isNotBlank() }
+                    ?: return@mapNotNull null
+                VideoPlaylist(
+                    playlistId = playlistId,
+                    title = item.name?.takeIf { it.isNotBlank() } ?: "Unknown Playlist",
+                    thumbnailUrl = item.thumbnails?.maxByOrNull { it.width }?.url
+                        ?: item.thumbnails?.firstOrNull()?.url,
+                    videoCountText = item.streamCount.takeIf { it > 0 }?.let { "$it videos" },
+                    subtitle = item.uploaderName?.takeIf { it.isNotBlank() }
+                )
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("YouTubeRepo", "Error searching video playlists", e)
             emptyList()
         }
     }

@@ -158,6 +158,7 @@ fun HomeScreen(
     playerStyle: PlayerStyle = PlayerStyle.CLASSIC,
     onPlayerStyleChange: (PlayerStyle) -> Unit = {},
     manualScan: Boolean = false,
+    localOnly: Boolean = false,
     hasVideoMiniPlayer: Boolean = false
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -354,7 +355,12 @@ fun HomeScreen(
                             }
                         ) { videoModeContent ->
                             // Video Mode: Show video content
-                            if (videoModeContent) {
+                            if (videoModeContent && localOnly) {
+                                com.ivor.ivormusic.ui.components.LocalOnlyNotice(
+                                    subtitle = "Video mode needs the internet. Turn off Local only in Settings to watch videos.",
+                                    onOpenSettings = onNavigateToSettings
+                                )
+                            } else if (videoModeContent) {
                                 VideoHomeContent(
                                     videos = trendingVideos,
                                     isLoading = isVideoLoading,
@@ -414,7 +420,12 @@ fun HomeScreen(
                             }
                         }
                     }
-                    1 -> SearchContent(
+                    1 -> if (videoMode && localOnly) {
+                        com.ivor.ivormusic.ui.components.LocalOnlyNotice(
+                            subtitle = "Video search needs the internet. Turn off Local only in Settings to search videos.",
+                            onOpenSettings = onNavigateToSettings
+                        )
+                    } else SearchContent(
                         songs = songs,
                         onSongClick = { song ->
                             // Fallback: Pass all songs to enable Next/Previous navigation
@@ -430,13 +441,20 @@ fun HomeScreen(
                             // Navigate to video player screen
                             onNavigateToVideoPlayer(video)
                         },
+                        onProfileClick = onProfileClick,
                         contentPadding = listBottomPadding,
                         viewModel = viewModel,
                         isDarkMode = isDarkMode,
-                        videoMode = videoMode
+                        videoMode = videoMode,
+                        localOnly = localOnly
                     )
                     2 -> {
-                        if (videoMode) {
+                        if (videoMode && localOnly) {
+                            com.ivor.ivormusic.ui.components.LocalOnlyNotice(
+                                subtitle = "Subscriptions need the internet. Turn off Local only in Settings to see them.",
+                                onOpenSettings = onNavigateToSettings
+                            )
+                        } else if (videoMode) {
                             com.ivor.ivormusic.ui.video.SubscriptionsContent(
                                 viewModel = viewModel,
                                 onVideoClick = { video ->
@@ -474,7 +492,12 @@ fun HomeScreen(
                     3 -> {
                         // Video mode only: Library (playlists, Watch Later,
                         // liked videos, watch history)
-                        if (videoMode) {
+                        if (videoMode && localOnly) {
+                            com.ivor.ivormusic.ui.components.LocalOnlyNotice(
+                                subtitle = "The video library needs the internet. Turn off Local only in Settings to see it.",
+                                onOpenSettings = onNavigateToSettings
+                            )
+                        } else if (videoMode) {
                             com.ivor.ivormusic.ui.video.VideoLibraryContent(
                                 viewModel = viewModel,
                                 onVideoClick = { video ->
@@ -1336,25 +1359,30 @@ fun SearchContent(
     onSongClick: (Song) -> Unit,
     onPlayQueue: (List<Song>, Song?) -> Unit = { _, song -> song?.let { onSongClick(it) } },
     onVideoClick: (VideoItem) -> Unit = {},
+    onProfileClick: () -> Unit = {},
     contentPadding: PaddingValues,
     viewModel: HomeViewModel,
     isDarkMode: Boolean,
-    videoMode: Boolean = false
+    videoMode: Boolean = false,
+    localOnly: Boolean = false
 ) {
     var viewedPlaylist by remember { mutableStateOf<com.ivor.ivormusic.data.PlaylistDisplayItem?>(null) }
     var viewedArtist by remember { mutableStateOf<com.ivor.ivormusic.data.ArtistItem?>(null) }
+    var viewedVideoPlaylist by remember { mutableStateOf<com.ivor.ivormusic.data.VideoPlaylist?>(null) }
 
     // Handle system back button for nested screens.
     // Playlist/album is the deepest layer (search → artist → album), so it
     // pops first; backing out of an album returns to the artist page.
-    BackHandler(enabled = viewedPlaylist != null || viewedArtist != null) {
+    BackHandler(enabled = viewedPlaylist != null || viewedArtist != null || viewedVideoPlaylist != null) {
         when {
+            viewedVideoPlaylist != null -> viewedVideoPlaylist = null
             viewedPlaylist != null -> viewedPlaylist = null
             viewedArtist != null -> viewedArtist = null
         }
     }
 
     val currentScreen = when {
+        viewedVideoPlaylist != null -> "videoPlaylist"
         viewedPlaylist != null -> "playlist"
         viewedArtist != null -> "artist"
         else -> "search"
@@ -1412,6 +1440,20 @@ fun SearchContent(
                     )
                 }
             }
+
+            "videoPlaylist" -> {
+                viewedVideoPlaylist?.let { playlist ->
+                    com.ivor.ivormusic.ui.video.VideoPlaylistDetail(
+                        playlist = playlist,
+                        viewModel = viewModel,
+                        onVideoClick = onVideoClick,
+                        onBack = { viewedVideoPlaylist = null },
+                        contentPadding = contentPadding,
+                        // Search results aren't the user's own playlists
+                        allowRemove = false
+                    )
+                }
+            }
             else -> {
                 com.ivor.ivormusic.ui.search.SearchScreen(
                     songs = songs,
@@ -1421,10 +1463,16 @@ fun SearchContent(
                     onArtistClick = { artistItem -> viewedArtist = artistItem },
                     onAlbumClick = { albumItem -> viewedPlaylist = albumItem },
                     onPlaylistClick = { playlistItem -> viewedPlaylist = playlistItem },
+                    onVideoPlaylistClick = { videoPlaylist ->
+                        viewModel.loadPlaylistVideos(videoPlaylist.playlistId)
+                        viewedVideoPlaylist = videoPlaylist
+                    },
+                    onProfileClick = onProfileClick,
                     contentPadding = contentPadding,
                     viewModel = viewModel,
                     isDarkMode = isDarkMode,
-                    videoMode = videoMode
+                    videoMode = videoMode,
+                    localOnly = localOnly
                 )
             }
         }
