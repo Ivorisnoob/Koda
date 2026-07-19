@@ -97,21 +97,22 @@ private fun LyricsContent(
 ) {
     val listState = rememberLazyListState()
     
-    // Calculate current line index based on playback position
+    // Calculate current line index based on playback position. -1 while the
+    // intro plays, so the first line isn't falsely highlighted before its
+    // timestamp is reached.
     val currentLineIndex by remember(currentPositionMs, lines) {
         derivedStateOf {
-            val index = lines.indexOfLast { it.timeMs <= currentPositionMs }
-            index.coerceAtLeast(0)
+            lines.indexOfLast { it.timeMs <= currentPositionMs }
         }
     }
-    
+
     // Auto-scroll to current line
     LaunchedEffect(currentLineIndex, lines) {
         if (lines.isNotEmpty()) {
             // Animate scroll to the current line to keep it centered
             try {
                 listState.animateScrollToItem(
-                    index = currentLineIndex,
+                    index = currentLineIndex.coerceAtLeast(0),
                     scrollOffset = 0
                 )
             } catch (e: Exception) {

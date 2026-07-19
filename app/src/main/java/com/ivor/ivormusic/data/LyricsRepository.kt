@@ -31,7 +31,9 @@ class LyricsRepository {
         .readTimeout(15, TimeUnit.SECONDS)
         .build()
     
-    private val cache = mutableMapOf<String, List<LrcLine>>()
+    // Fetches run on Dispatchers.IO; concurrent skips can hit this map from
+    // multiple threads at once.
+    private val cache = java.util.Collections.synchronizedMap(mutableMapOf<String, List<LrcLine>>())
     
     suspend fun fetchLyrics(
         songId: String,
@@ -90,14 +92,24 @@ class LyricsRepository {
         }
             
         val url = urlBuilder.build().toString()
-        val json = fetchJson(url)
-        
+        val json = fetchJson(url) ?: return null
+
         // Check if instrumental
-        if (json?.optBoolean("instrumental", false) == true) {
+        if (json.optBoolean("instrumental", false)) {
              return null // Or handle instrumental differently
         }
-        
-        return json?.optString("syncedLyrics")?.takeIf { it.isNotBlank() }
+
+        return syncedLyricsOf(json)
+    }
+
+    /**
+     * Read the syncedLyrics field defensively: lrclib sends an explicit JSON
+     * null for plain-text-only entries, and org.json's optString turns that
+     * into the literal string "null" instead of an empty string.
+     */
+    private fun syncedLyricsOf(json: JSONObject): String? {
+        if (json.isNull("syncedLyrics")) return null
+        return json.optString("syncedLyrics").takeIf { it.isNotBlank() && it != "null" }
     }
 
     private fun searchLyrics(title: String, artist: String, album: String, duration: Int): String? {
@@ -114,30 +126,28 @@ class LyricsRepository {
         for (i in 0 until jsonArray.length()) {
             val item = jsonArray.optJSONObject(i) ?: continue
             val itemDuration = item.optInt("duration", 0)
-            val synced = item.optString("syncedLyrics")
-            
-            if (synced.isBlank()) continue
-            
+            val synced = syncedLyricsOf(item) ?: continue
+
             // Check duration validity (allow 0 if no better option, but prefer close match)
             val diff = abs(itemDuration - duration)
-            
+
             if (diff <= DURATION_TOLERANCE_SEC) {
-                // If we find a very close match, take it immediately? 
+                // If we find a very close match, take it immediately?
                 // Let's verify album if possible, but duration is strongest signal for synced lyrics.
                 return synced
             }
-            
+
             if (diff < bestDiff) {
                 bestDiff = diff
                 bestMatch = item
             }
         }
-        
+
         // Fallback: if we have a match within reasonable range (e.g. 10s)
         if (bestMatch != null && bestDiff <= 10) {
-            return bestMatch.optString("syncedLyrics")
+            return syncedLyricsOf(bestMatch)
         }
-        
+
         return null
     }
     
@@ -189,27 +199,39 @@ class LyricsRepository {
         val timeTagPattern = Regex("""\[(\d{1,2}):(\d{2})\.(\d{2,3})\]""")
         val wordTagPattern = Regex("""<(\d{1,2}):(\d{2})\.(\d{2,3})>""")
         
-        for (line in lrcContent.lines()) {
+        for (line in normalizeLyrics(lrcContent).lines()) {
             val trimLine = line.trim()
             if (trimLine.isEmpty()) continue
-            
-            // Find line timestamp
-            val match = timeTagPattern.find(trimLine) ?: continue
-            val (minutes, seconds, centis) = match.destructured
-            
-            val timeMs = parseTime(minutes, seconds, centis)
-            val contentStartIndex = match.range.last + 1
+
+            // Collect every leading time tag: repeated lines (choruses) are
+            // compressed as [00:12.00][01:15.30]text with one tag per
+            // occurrence, and all of them must produce a line — parsing only
+            // the first leaks the remaining tags into the displayed text.
+            val occurrenceTimes = mutableListOf<Long>()
+            var contentStartIndex = 0
+            while (true) {
+                val tag = timeTagPattern.matchAt(trimLine, contentStartIndex) ?: break
+                val (minutes, seconds, centis) = tag.destructured
+                occurrenceTimes.add(parseTime(minutes, seconds, centis))
+                contentStartIndex = tag.range.last + 1
+                // Tolerate whitespace between stacked tags; the content is
+                // trimmed below so this never eats meaningful text.
+                while (contentStartIndex < trimLine.length && trimLine[contentStartIndex] == ' ') {
+                    contentStartIndex++
+                }
+            }
+            if (occurrenceTimes.isEmpty()) continue
             if (contentStartIndex >= trimLine.length) continue
-            
+
+            val timeMs = occurrenceTimes.first()
+            val repeatTimes = occurrenceTimes.drop(1)
             val content = trimLine.substring(contentStartIndex).trim()
             
             // Check for word tags
             if (wordTagPattern.containsMatchIn(content)) {
                 // Enhanced LRC parsing
                 val spans = mutableListOf<LrcContentSpan>()
-                var lastIndex = 0
-                var lastTime = timeMs
-                
+
                 // We split by tags but keep the text
                 // Example: "Word1 <00:01.50> Word2"
                 // Initial time is line timeMs.
@@ -258,51 +280,21 @@ class LyricsRepository {
                 // Clean text for display (remove tags)
                 val cleanText = content.replace(wordTagPattern, "").replace(Regex("\\s+"), " ").trim()
                 lines.add(LrcLine(timeMs, cleanText, spans))
-                
+                // Word tags carry absolute times, so they only fit the first
+                // occurrence; repeats fall back to line-level sync.
+                repeatTimes.forEach { lines.add(LrcLine(it, cleanText)) }
+
             } else {
                 // Standard LRC
                 if (content.isNotEmpty()) {
                     lines.add(LrcLine(timeMs, content))
+                    repeatTimes.forEach { lines.add(LrcLine(it, content)) }
                 }
             }
         }
         
         val sortedLines = lines.sortedBy { it.timeMs }
-        
-        // Post-processing: Fill missing durations using next line time
-        for (i in sortedLines.indices) {
-            val currentLine = sortedLines[i]
-            val nextTimeMs = if (i + 1 < sortedLines.size) sortedLines[i+1].timeMs else currentLine.timeMs + 5000
-            
-            // If spans exist but last one has 0 duration
-            if (currentLine.contentSpans.isNotEmpty()) {
-                 val lastSpan = currentLine.contentSpans.last()
-                 if (lastSpan.durationMs == 0L) {
-                     val newLastSpan = lastSpan.copy(durationMs = nextTimeMs - lastSpan.timeMs)
-                     // Rebuild list
-                     val newSpans = currentLine.contentSpans.toMutableList()
-                     newSpans[newSpans.lastIndex] = newLastSpan
-                     
-                     // Also, if any intermediate spans had 0 duration (fallback), distribute?
-                     // For now, assume enhancement tags provide good flow.
-                     
-                     // IMPORTANT: The 'text' field might need spaces between spans if not present
-                     // But we already cleaned 'text' above.
-                     
-                     // We need to return a modified LrcLine (data class copy)
-                     // But we are in a loop iterating a list. 
-                     // Let's create a new list.
-                 }
-            } else {
-                // Standard line: create a single span for the whole line
-                // "Karaoke" interpolation for standard lines
-                val duration = nextTimeMs - currentLine.timeMs
-                val singleSpan = LrcContentSpan(currentLine.timeMs, currentLine.text, duration)
-                // Mutating the list indirectly... wait, lines is mutable list of LrcLine? Yes.
-                // But sortedLines is a new list.
-            }
-        }
-        
+
         // Post-processing: Fill missing durations ONLY for explicit spans
         return sortedLines.mapIndexed { index, line ->
             val nextLineTime = if (index + 1 < sortedLines.size) sortedLines[index+1].timeMs else line.timeMs + 5000

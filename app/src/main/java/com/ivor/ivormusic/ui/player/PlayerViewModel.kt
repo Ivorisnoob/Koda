@@ -923,10 +923,16 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     
     // --- Lyrics Actions ---
     
+    private var lyricsFetchJob: Job? = null
+
     /**
      * Fetch synced lyrics for the given song.
      */
     private fun fetchLyrics(song: Song) {
+        // Cancel the in-flight fetch: on a quick skip A -> B, A's slower
+        // response would otherwise land last and show A's lyrics over B.
+        lyricsFetchJob?.cancel()
+
         // Lyrics come from an online API; skip entirely in local-only mode
         if (themePreferences.isLocalOnlyModeEnabled()) {
             _lyricsResult.value = LyricsResult.NotFound
@@ -934,7 +940,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         }
         _lyricsResult.value = LyricsResult.Loading
 
-        viewModelScope.launch {
+        lyricsFetchJob = viewModelScope.launch {
             val result = lyricsRepository.fetchLyrics(
                 songId = song.id,
                 title = song.title,
@@ -942,7 +948,11 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                 album = song.album ?: "",
                 durationMs = song.duration
             )
-            _lyricsResult.value = result
+            // Belt and braces for the same race: only apply the result if
+            // this is still the song on screen.
+            if (_currentSong.value?.id == song.id) {
+                _lyricsResult.value = result
+            }
         }
     }
     
