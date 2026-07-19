@@ -407,7 +407,19 @@ fun MusicApp(
                     onManualScanEnabledToggle = onManualScanEnabledToggle,
                     onNavigateToUpdate = { navController.navigate("update") },
                     localOnlyMode = localOnlyMode,
-                    onLocalOnlyModeToggle = onLocalOnlyModeToggle
+                    onLocalOnlyModeToggle = onLocalOnlyModeToggle,
+                    onNavigateToEqualizer = { navController.navigate("equalizer") }
+                )
+            }
+            composable(
+                route = "equalizer",
+                enterTransition = { slideInHorizontally(initialOffsetX = { it }) + fadeIn() },
+                exitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut() },
+                popEnterTransition = { slideInHorizontally(initialOffsetX = { -it / 3 }) + fadeIn() },
+                popExitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut() }
+            ) {
+                com.ivor.ivormusic.ui.settings.EqualizerScreen(
+                    onBack = { navController.popBackStack() }
                 )
             }
             composable(

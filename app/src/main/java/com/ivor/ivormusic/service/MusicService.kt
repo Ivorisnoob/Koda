@@ -26,6 +26,7 @@ import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.ivor.ivormusic.MainActivity
+import com.ivor.ivormusic.data.AudioEffects
 import com.ivor.ivormusic.data.CacheManager
 import com.ivor.ivormusic.data.DownloadRepository
 import com.ivor.ivormusic.data.PlaylistDisplayItem
@@ -177,6 +178,7 @@ class MusicService : MediaLibraryService() {
         serviceScope.cancel()
         resolveScope.cancel()
         musicProgressLiveUpdate?.hide()
+        AudioEffects.release()
         mediaLibrarySession?.run {
             player.release()
             release()
@@ -287,8 +289,18 @@ class MusicService : MediaLibraryService() {
             .setAudioAttributes(AudioAttributes.DEFAULT, true)
             .setHandleAudioBecomingNoisy(true)
             .build()
-        
+
         player.addListener(PlayerEventListener())
+
+        // Pin a known audio session id so the equalizer/bass boost can attach
+        // right now, before the audio sink initializes on first playback
+        // (ExoPlayer's own id stays UNSET until then).
+        val audioManager = getSystemService(AUDIO_SERVICE) as android.media.AudioManager
+        val audioSessionId = audioManager.generateAudioSessionId()
+        if (audioSessionId != android.media.AudioManager.ERROR) {
+            player.audioSessionId = audioSessionId
+            AudioEffects.attach(this, audioSessionId)
+        }
     }
 
     private fun initializeSession() {
