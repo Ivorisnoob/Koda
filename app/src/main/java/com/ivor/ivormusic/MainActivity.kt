@@ -67,6 +67,7 @@ class MainActivity : ComponentActivity() {
             val oemFixEnabled by themeViewModel.oemFixEnabled.collectAsState()
             val manualScanEnabled by themeViewModel.manualScanEnabled.collectAsState()
             val onboardingCompleted by themeViewModel.onboardingCompleted.collectAsState()
+            val localOnlyMode by themeViewModel.localOnlyMode.collectAsState()
             
             val cacheEnabled by themeViewModel.cacheEnabled.collectAsState()
             val maxCacheSizeMb by themeViewModel.maxCacheSizeMb.collectAsState()
@@ -139,7 +140,9 @@ class MainActivity : ComponentActivity() {
                         crossfadeDurationMs = crossfadeDurationMs,
                         onCrossfadeDurationChange = { themeViewModel.setCrossfadeDuration(it) },
                         onboardingCompleted = onboardingCompleted,
-                        onOnboardingCompleted = { themeViewModel.setOnboardingCompleted(it) }
+                        onOnboardingCompleted = { themeViewModel.setOnboardingCompleted(it) },
+                        localOnlyMode = localOnlyMode,
+                        onLocalOnlyModeToggle = { themeViewModel.setLocalOnlyMode(it) }
                     )
                 }
             }
@@ -199,7 +202,9 @@ fun MusicApp(
     manualScanEnabled: Boolean,
     onManualScanEnabledToggle: (Boolean) -> Unit,
     onboardingCompleted: Boolean,
-    onOnboardingCompleted: (Boolean) -> Unit
+    onOnboardingCompleted: (Boolean) -> Unit,
+    localOnlyMode: Boolean,
+    onLocalOnlyModeToggle: (Boolean) -> Unit
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val navController = rememberNavController()
@@ -295,7 +300,8 @@ fun MusicApp(
                     showModeToggle = homeModeToggleEnabled,
                     playerStyle = playerStyle,
                     onPlayerStyleChange = onPlayerStyleChange,
-                    manualScan = manualScanEnabled
+                    manualScan = manualScanEnabled,
+                    localOnly = localOnlyMode
                 )
             }
             composable(
@@ -358,7 +364,9 @@ fun MusicApp(
                     onOemFixEnabledToggle = onOemFixEnabledToggle,
                     manualScanEnabled = manualScanEnabled,
                     onManualScanEnabledToggle = onManualScanEnabledToggle,
-                    onNavigateToUpdate = { navController.navigate("update") }
+                    onNavigateToUpdate = { navController.navigate("update") },
+                    localOnlyMode = localOnlyMode,
+                    onLocalOnlyModeToggle = onLocalOnlyModeToggle
                 )
             }
             composable(
@@ -446,9 +454,15 @@ fun MusicApp(
                 popEnterTransition = { slideInHorizontally(initialOffsetX = { -it / 3 }) + fadeIn() },
                 popExitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut() }
             ) {
-                com.ivor.ivormusic.ui.settings.UpdateScreen(
-                    onBack = { navController.popBackStack() }
-                )
+                if (localOnlyMode) {
+                    com.ivor.ivormusic.ui.components.LocalOnlyNotice(
+                        subtitle = "Update checks need the internet. Turn off Local only in Settings to check for updates."
+                    )
+                } else {
+                    com.ivor.ivormusic.ui.settings.UpdateScreen(
+                        onBack = { navController.popBackStack() }
+                    )
+                }
             }
         }
         

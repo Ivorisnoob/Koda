@@ -88,6 +88,9 @@ class ThemePreferences(context: Context) {
     private val _onboardingCompleted = MutableStateFlow(getOnboardingCompletedPreference())
     val onboardingCompleted: StateFlow<Boolean> = _onboardingCompleted.asStateFlow()
 
+    private val _localOnlyMode = MutableStateFlow(getLocalOnlyModePreference())
+    val localOnlyMode: StateFlow<Boolean> = _localOnlyMode.asStateFlow()
+
     // Every screen/service news up its own ThemePreferences (no DI), so a setter
     // called on one instance must still reach the flows of every other instance.
     // All instances share the same process-wide SharedPreferences object, so a
@@ -118,6 +121,7 @@ class ThemePreferences(context: Context) {
             KEY_OEM_FIX_ENABLED -> _oemFixEnabled.value = getOemFixEnabledPreference()
             KEY_MANUAL_SCAN_ENABLED -> _manualScanEnabled.value = getManualScanEnabledPreference()
             KEY_ONBOARDING_COMPLETED -> _onboardingCompleted.value = getOnboardingCompletedPreference()
+            KEY_LOCAL_ONLY_MODE -> _localOnlyMode.value = getLocalOnlyModePreference()
         }
     }
 
@@ -169,6 +173,17 @@ class ThemePreferences(context: Context) {
         private const val KEY_OEM_FIX_ENABLED = "oem_fix_enabled"
         private const val KEY_MANUAL_SCAN_ENABLED = "manual_scan_enabled"
         private const val KEY_ONBOARDING_COMPLETED = "onboarding_completed"
+        private const val KEY_LOCAL_ONLY_MODE = "local_only_mode"
+
+        /**
+         * Static fresh read of the local-only preference for network layers
+         * that only hold a Context (OkHttp interceptors, repositories) — no
+         * ThemePreferences instance or flow subscription needed.
+         */
+        fun isLocalOnly(context: Context): Boolean =
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getBoolean(KEY_LOCAL_ONLY_MODE, false)
+
         private const val KEY_LAST_SONG_ID = "last_song_id"
         private const val KEY_LAST_SONG_TITLE = "last_song_title"
         private const val KEY_LAST_SONG_ARTIST = "last_song_artist"
@@ -617,6 +632,29 @@ class ThemePreferences(context: Context) {
     fun setManualScanEnabled(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_MANUAL_SCAN_ENABLED, enabled).apply()
         _manualScanEnabled.value = enabled
+    }
+
+    /**
+     * Get the stored local-only preference. Defaults to false: YouTube
+     * features work normally until the user opts into offline-only use.
+     */
+    private fun getLocalOnlyModePreference(): Boolean {
+        return prefs.getBoolean(KEY_LOCAL_ONLY_MODE, false)
+    }
+
+    /**
+     * Fresh read of the local-only preference straight from SharedPreferences —
+     * ViewModels hold their own ThemePreferences instances, so their StateFlow
+     * copy goes stale when the toggle flips through the settings screen.
+     */
+    fun isLocalOnlyModeEnabled(): Boolean = getLocalOnlyModePreference()
+
+    /**
+     * Save local-only preference and update the flow.
+     */
+    fun setLocalOnlyMode(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_LOCAL_ONLY_MODE, enabled).apply()
+        _localOnlyMode.value = enabled
     }
 
     private fun getOnboardingCompletedPreference(): Boolean {

@@ -918,8 +918,13 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
      * Fetch synced lyrics for the given song.
      */
     private fun fetchLyrics(song: Song) {
+        // Lyrics come from an online API; skip entirely in local-only mode
+        if (themePreferences.isLocalOnlyModeEnabled()) {
+            _lyricsResult.value = LyricsResult.NotFound
+            return
+        }
         _lyricsResult.value = LyricsResult.Loading
-        
+
         viewModelScope.launch {
             val result = lyricsRepository.fetchLyrics(
                 songId = song.id,

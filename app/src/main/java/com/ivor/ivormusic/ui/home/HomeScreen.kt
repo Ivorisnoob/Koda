@@ -155,7 +155,8 @@ fun HomeScreen(
     showModeToggle: Boolean = true,
     playerStyle: PlayerStyle = PlayerStyle.CLASSIC,
     onPlayerStyleChange: (PlayerStyle) -> Unit = {},
-    manualScan: Boolean = false
+    manualScan: Boolean = false,
+    localOnly: Boolean = false
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val localSongs by viewModel.songs.collectAsState()
@@ -328,7 +329,12 @@ fun HomeScreen(
                             }
                         ) { videoModeContent ->
                             // Video Mode: Show video content
-                            if (videoModeContent) {
+                            if (videoModeContent && localOnly) {
+                                com.ivor.ivormusic.ui.components.LocalOnlyNotice(
+                                    subtitle = "Video mode needs the internet. Turn off Local only in Settings to watch videos.",
+                                    onOpenSettings = onNavigateToSettings
+                                )
+                            } else if (videoModeContent) {
                                 VideoHomeContent(
                                     videos = trendingVideos,
                                     isLoading = isVideoLoading,
@@ -388,7 +394,12 @@ fun HomeScreen(
                             }
                         }
                     }
-                    1 -> SearchContent(
+                    1 -> if (videoMode && localOnly) {
+                        com.ivor.ivormusic.ui.components.LocalOnlyNotice(
+                            subtitle = "Video search needs the internet. Turn off Local only in Settings to search videos.",
+                            onOpenSettings = onNavigateToSettings
+                        )
+                    } else SearchContent(
                         songs = songs,
                         onSongClick = { song ->
                             // Fallback: Pass all songs to enable Next/Previous navigation
@@ -408,10 +419,16 @@ fun HomeScreen(
                         contentPadding = PaddingValues(bottom = 160.dp),
                         viewModel = viewModel,
                         isDarkMode = isDarkMode,
-                        videoMode = videoMode
+                        videoMode = videoMode,
+                        localOnly = localOnly
                     )
                     2 -> {
-                        if (videoMode) {
+                        if (videoMode && localOnly) {
+                            com.ivor.ivormusic.ui.components.LocalOnlyNotice(
+                                subtitle = "Subscriptions need the internet. Turn off Local only in Settings to see them.",
+                                onOpenSettings = onNavigateToSettings
+                            )
+                        } else if (videoMode) {
                             com.ivor.ivormusic.ui.video.SubscriptionsContent(
                                 viewModel = viewModel,
                                 onVideoClick = { video ->
@@ -449,7 +466,12 @@ fun HomeScreen(
                     3 -> {
                         // Video mode only: Library (playlists, Watch Later,
                         // liked videos, watch history)
-                        if (videoMode) {
+                        if (videoMode && localOnly) {
+                            com.ivor.ivormusic.ui.components.LocalOnlyNotice(
+                                subtitle = "The video library needs the internet. Turn off Local only in Settings to see it.",
+                                onOpenSettings = onNavigateToSettings
+                            )
+                        } else if (videoMode) {
                             com.ivor.ivormusic.ui.video.VideoLibraryContent(
                                 viewModel = viewModel,
                                 onVideoClick = { video ->
@@ -1314,7 +1336,8 @@ fun SearchContent(
     contentPadding: PaddingValues,
     viewModel: HomeViewModel,
     isDarkMode: Boolean,
-    videoMode: Boolean = false
+    videoMode: Boolean = false,
+    localOnly: Boolean = false
 ) {
     var viewedPlaylist by remember { mutableStateOf<com.ivor.ivormusic.data.PlaylistDisplayItem?>(null) }
     var viewedArtist by remember { mutableStateOf<com.ivor.ivormusic.data.ArtistItem?>(null) }
@@ -1421,7 +1444,8 @@ fun SearchContent(
                     contentPadding = contentPadding,
                     viewModel = viewModel,
                     isDarkMode = isDarkMode,
-                    videoMode = videoMode
+                    videoMode = videoMode,
+                    localOnly = localOnly
                 )
             }
         }

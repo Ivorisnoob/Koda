@@ -164,6 +164,7 @@ fun SearchScreen(
     viewModel: HomeViewModel,
     isDarkMode: Boolean,
     videoMode: Boolean = false,
+    localOnly: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     var query by remember { mutableStateOf("") }
@@ -230,9 +231,11 @@ fun SearchScreen(
         }
     }
     
-    // Search YouTube/Videos/Artists/Albums/Playlists when query changes
+    // Search YouTube/Videos/Artists/Albums/Playlists when query changes.
+    // Local-only mode never fetches: the local library filter below is
+    // the entire search experience.
     LaunchedEffect(query, videoMode, selectedCategory, selectedVideoCategory) {
-        if (query.length >= 2) {
+        if (query.length >= 2 && !localOnly) {
             delay(500) // Debounce
             isLoading = true
 
@@ -317,8 +320,8 @@ fun SearchScreen(
                 )
             }
             
-            // Category Chips
-            if (!videoMode && query.isNotEmpty()) {
+            // Category Chips (YouTube categories, pointless in local-only)
+            if (!videoMode && !localOnly && query.isNotEmpty()) {
                 item {
                     SearchFilterChips(
                         selectedCategory = selectedCategory,

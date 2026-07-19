@@ -141,7 +141,16 @@ class YouTubeRepository(private val context: Context) {
         private const val VISITOR_DATA_TTL_MS = 6 * 60 * 60 * 1000L // 6 hours
     }
 
+    // Local-only kill-switch: checked per request so flipping the setting
+    // needs no restart. newBuilder() copies interceptors, so this also guards
+    // streamResolveClient and the NewPipe downloader (same client instance).
     private val okHttpClient = OkHttpClient.Builder()
+        .addInterceptor { chain ->
+            if (ThemePreferences.isLocalOnly(context)) {
+                throw java.io.IOException("Local only mode is on: network disabled")
+            }
+            chain.proceed(chain.request())
+        }
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .build()

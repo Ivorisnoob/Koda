@@ -75,7 +75,10 @@ fun SaveToPlaylistSheet(
     onSave: (playlistId: String, onResult: (Boolean) -> Unit) -> Unit,
     onDismiss: () -> Unit
 ) {
-    val sheetState = rememberModalBottomSheetState()
+    // Open fully expanded: in the half-expanded state the inner playlist
+    // list and the sheet's drag-to-expand fight over scroll gestures,
+    // which reads as janky/stuttering scrolling.
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     var savingId by remember { mutableStateOf<String?>(null) }
     var savedId by remember { mutableStateOf<String?>(null) }

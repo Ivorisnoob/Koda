@@ -42,6 +42,7 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
     val oemFixEnabled: StateFlow<Boolean> = themePreferences.oemFixEnabled
     val manualScanEnabled: StateFlow<Boolean> = themePreferences.manualScanEnabled
     val onboardingCompleted: StateFlow<Boolean> = themePreferences.onboardingCompleted
+    val localOnlyMode: StateFlow<Boolean> = themePreferences.localOnlyMode
     
     val currentCacheSizeBytes: StateFlow<Long> = com.ivor.ivormusic.data.CacheManager.currentCacheSizeBytes
 
@@ -171,5 +172,9 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setOnboardingCompleted(completed: Boolean) {
         themePreferences.setOnboardingCompleted(completed)
+    }
+
+    fun setLocalOnlyMode(enabled: Boolean) {
+        themePreferences.setLocalOnlyMode(enabled)
     }
 }
