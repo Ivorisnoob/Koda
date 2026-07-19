@@ -671,11 +671,17 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     
     /**
      * Search for videos (for video mode search).
+     * [dateFilter] restricts results to the chosen upload-date window,
+     * [sort] picks the result order.
      */
-    suspend fun searchVideos(query: String): List<VideoItem> {
+    suspend fun searchVideos(
+        query: String,
+        dateFilter: com.ivor.ivormusic.data.VideoSearchDateFilter = com.ivor.ivormusic.data.VideoSearchDateFilter.ANY,
+        sort: com.ivor.ivormusic.data.VideoSearchSort = com.ivor.ivormusic.data.VideoSearchSort.RELEVANCE
+    ): List<VideoItem> {
         if (query.isBlank()) return emptyList()
         return try {
-            youtubeRepository.searchVideos(query)
+            youtubeRepository.searchVideos(query, dateFilter, sort)
         } catch (e: Exception) {
             emptyList()
         }
@@ -698,6 +704,40 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
      */
     fun refreshVideos() {
         loadTrendingVideos()
+    }
+
+    // ============= PASTED YOUTUBE LINK RESOLUTION =============
+
+    /**
+     * Resolve a pasted YouTube video link into displayable metadata via a
+     * single watch-next call (title, channel, view count — the same data the
+     * video player enriches from). Returns null when the video can't be
+     * loaded (bad id, private video, offline).
+     */
+    suspend fun resolveVideoFromLink(videoId: String): VideoItem? {
+        return try {
+            youtubeRepository.getWatchNextData(videoId).updatedVideoItem
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /** Resolve a pasted playlist link into songs (music mode). */
+    suspend fun resolvePlaylistSongsFromLink(playlistId: String): List<Song> {
+        return try {
+            youtubeRepository.getPlaylist(playlistId)
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    /** Resolve a pasted playlist link into videos (video mode). */
+    suspend fun resolvePlaylistVideosFromLink(playlistId: String): List<VideoItem> {
+        return try {
+            youtubeRepository.getPlaylistVideos(playlistId)
+        } catch (e: Exception) {
+            emptyList()
+        }
     }
 
     // ============= PLAYLIST MANAGEMENT =============

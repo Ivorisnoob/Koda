@@ -47,6 +47,8 @@ import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.BottomSheetDefaults
@@ -156,7 +158,8 @@ fun HomeScreen(
     playerStyle: PlayerStyle = PlayerStyle.CLASSIC,
     onPlayerStyleChange: (PlayerStyle) -> Unit = {},
     manualScan: Boolean = false,
-    localOnly: Boolean = false
+    localOnly: Boolean = false,
+    hasVideoMiniPlayer: Boolean = false
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val localSongs by viewModel.songs.collectAsState()
@@ -277,7 +280,30 @@ fun HomeScreen(
         }
     }
 
+    // How much clearance bottom-anchored UI needs above the nav bar inset to
+    // stay clear of the floating overlays: the nav pill always, the music
+    // pill (top edge at 180dp) and/or the video mini player (top edge at
+    // 188dp, stacked to 284dp when the music pill is also alive). Animated so
+    // FABs glide instead of jumping when a mini player appears.
+    val musicPillVisible = currentSong != null
+    val bottomOverlayInset by androidx.compose.animation.core.animateDpAsState(
+        targetValue = when {
+            musicPillVisible && hasVideoMiniPlayer -> 284.dp
+            hasVideoMiniPlayer -> 196.dp
+            musicPillVisible -> 188.dp
+            else -> 88.dp
+        },
+        animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec(),
+        label = "bottomOverlayInset"
+    )
+    val navBarInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    // Scroll clearance for the tab lists (they don't apply insets themselves)
+    val listBottomPadding = PaddingValues(bottom = bottomOverlayInset + navBarInset + 16.dp)
+
     // Use Box overlay instead of Scaffold for truly floating navbar
+    androidx.compose.runtime.CompositionLocalProvider(
+        com.ivor.ivormusic.ui.components.LocalBottomOverlayInset provides bottomOverlayInset
+    ) {
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -349,7 +375,7 @@ fun HomeScreen(
                                     onDownloadsClick = onNavigateToDownloads,
                                     onRefresh = { viewModel.refreshVideos() },
                                     isDarkMode = isDarkMode,
-                                    contentPadding = PaddingValues(bottom = 160.dp),
+                                    contentPadding = listBottomPadding,
                                     viewModel = viewModel,
                                     videoMode = videoMode,
                                     onVideoModeToggle = onVideoModeToggle,
@@ -382,7 +408,7 @@ fun HomeScreen(
                                     onSettingsClick = onNavigateToSettings,
                                     onDownloadsClick = onNavigateToDownloads,
                                     isDarkMode = isDarkMode,
-                                    contentPadding = PaddingValues(bottom = 160.dp), // Space for navbar + miniplayer
+                                    contentPadding = listBottomPadding,
                                     viewModel = viewModel,
                                     excludedFolders = excludedFolders,
                                     manualScan = manualScan,
@@ -416,7 +442,7 @@ fun HomeScreen(
                             onNavigateToVideoPlayer(video)
                         },
                         onProfileClick = onProfileClick,
-                        contentPadding = PaddingValues(bottom = 160.dp),
+                        contentPadding = listBottomPadding,
                         viewModel = viewModel,
                         isDarkMode = isDarkMode,
                         videoMode = videoMode,
@@ -435,7 +461,7 @@ fun HomeScreen(
                                     onNavigateToVideoPlayer(video)
                                 },
                                 onLoginClick = { showAuthDialog = true },
-                                contentPadding = PaddingValues(bottom = 160.dp)
+                                contentPadding = listBottomPadding
                             )
                         } else {
                             LibraryContent(
@@ -454,7 +480,7 @@ fun HomeScreen(
                                     playerViewModel.playQueue(songs, selectedSong)
                                     showPlayerSheet = true
                                 },
-                                contentPadding = PaddingValues(bottom = 160.dp),
+                                contentPadding = listBottomPadding,
                                 viewModel = viewModel,
                                 isDarkMode = isDarkMode,
                                 initialArtist = viewedArtistFromPlayer,
@@ -478,7 +504,7 @@ fun HomeScreen(
                                     onNavigateToVideoPlayer(video)
                                 },
                                 onLoginClick = { showAuthDialog = true },
-                                contentPadding = PaddingValues(bottom = 160.dp)
+                                contentPadding = listBottomPadding
                             )
                         }
                     }
@@ -667,7 +693,8 @@ fun HomeScreen(
             }
         }
     }
-    
+    }
+
     // Auth Dialog
     if (showAuthDialog) {
         com.ivor.ivormusic.ui.auth.YouTubeAuthDialog(

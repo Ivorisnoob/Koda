@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.Close
@@ -60,13 +62,14 @@ import coil.compose.AsyncImage
 import com.ivor.ivormusic.data.CommentItem
 
 /**
- * Bottom sheet showing the comments of the current video, with infinite
- * scroll pagination, expandable replies and a composer for writing
- * comments and replies (login required).
+ * Inline comments panel shown over the info area below the video,
+ * YouTube-style: the video keeps playing on top while the list scrolls,
+ * with infinite scroll pagination, expandable replies and a composer
+ * pinned at the bottom for writing comments and replies (login required).
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-fun CommentsSheet(
+fun CommentsPanel(
     comments: List<CommentItem>,
     replies: Map<String, List<CommentItem>>,
     loadingReplyIds: Set<String>,
@@ -81,10 +84,9 @@ fun CommentsSheet(
     onPostReply: (CommentItem, CommentItem, String) -> Unit,
     onLikeComment: (CommentItem) -> Unit,
     onDeleteComment: (CommentItem) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    // Opens fully expanded
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val listState = rememberLazyListState()
 
     // Trigger pagination when the user nears the end of the list
@@ -108,23 +110,37 @@ fun CommentsSheet(
     // Own comment awaiting delete confirmation
     var commentPendingDelete by remember { mutableStateOf<CommentItem?>(null) }
 
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = MaterialTheme.colorScheme.surfaceContainer,
-        contentColor = MaterialTheme.colorScheme.onSurface
+    Surface(
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        modifier = modifier
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .imePadding()
         ) {
-            Text(
-                text = "Comments",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 24.dp, end = 12.dp, top = 12.dp, bottom = 8.dp)
+            ) {
+                Text(
+                    text = "Comments",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f)
+                )
+                IconButton(onClick = onDismiss) {
+                    Icon(
+                        Icons.Rounded.Close,
+                        contentDescription = "Close comments",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
 
             Box(modifier = Modifier.weight(1f)) {
                 when {
@@ -316,6 +332,61 @@ fun CommentsSheet(
 }
 
 /**
+ * Modal bottom sheet wrapper around [CommentsPanel], used by the Shorts
+ * player. Capped below full height so the short stays visible and playing
+ * above the sheet, YouTube Shorts-style — swiping up cannot expand it to
+ * cover the whole screen. The regular video player hosts [CommentsPanel]
+ * inline below the video instead.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CommentsSheet(
+    comments: List<CommentItem>,
+    replies: Map<String, List<CommentItem>>,
+    loadingReplyIds: Set<String>,
+    isLoading: Boolean,
+    isLoadingMore: Boolean,
+    commentsAvailable: Boolean,
+    canComment: Boolean,
+    isPosting: Boolean,
+    onLoadMore: () -> Unit,
+    onLoadReplies: (CommentItem) -> Unit,
+    onPostComment: (String) -> Unit,
+    onPostReply: (CommentItem, CommentItem, String) -> Unit,
+    onLikeComment: (CommentItem) -> Unit,
+    onDeleteComment: (CommentItem) -> Unit,
+    onDismiss: () -> Unit
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(),
+        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+        contentColor = MaterialTheme.colorScheme.onSurface
+    ) {
+        CommentsPanel(
+            comments = comments,
+            replies = replies,
+            loadingReplyIds = loadingReplyIds,
+            isLoading = isLoading,
+            isLoadingMore = isLoadingMore,
+            commentsAvailable = commentsAvailable,
+            canComment = canComment,
+            isPosting = isPosting,
+            onLoadMore = onLoadMore,
+            onLoadReplies = onLoadReplies,
+            onPostComment = onPostComment,
+            onPostReply = onPostReply,
+            onLikeComment = onLikeComment,
+            onDeleteComment = onDeleteComment,
+            onDismiss = onDismiss,
+            modifier = Modifier
+                .fillMaxHeight(0.65f)
+                .navigationBarsPadding()
+        )
+    }
+}
+
+/**
  * Input row pinned under the comments list. Shows a "Replying to" banner
  * when a reply target is active.
  */
@@ -344,9 +415,7 @@ private fun CommentComposer(
 
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        modifier = Modifier
-            .fillMaxWidth()
-            .navigationBarsPadding()
+        modifier = Modifier.fillMaxWidth()
     ) {
         Column {
             if (replyTarget != null) {

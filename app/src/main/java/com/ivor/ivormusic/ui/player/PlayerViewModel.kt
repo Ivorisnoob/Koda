@@ -715,6 +715,15 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         }
     }
 
+    /**
+     * Pause music playback without touching the queue. Also cancels a pending
+     * playWhenReady while a track is still buffering, so a song that finishes
+     * resolving after a video started does not begin playing over it.
+     */
+    fun pause() {
+        controller?.pause()
+    }
+
     fun toggleShuffle() {
         controller?.let {
             it.shuffleModeEnabled = !it.shuffleModeEnabled

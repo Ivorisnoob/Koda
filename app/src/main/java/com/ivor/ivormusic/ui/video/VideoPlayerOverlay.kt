@@ -36,7 +36,8 @@ import com.ivor.ivormusic.R
 @Composable
 fun VideoPlayerOverlay(
     viewModel: VideoPlayerViewModel,
-    timedCommentsEnabled: Boolean = false
+    timedCommentsEnabled: Boolean = false,
+    miniPlayerExtraBottomPadding: androidx.compose.ui.unit.Dp = 0.dp
 ) {
     val isExpanded by viewModel.isExpanded.collectAsState()
     val currentVideo by viewModel.currentVideo.collectAsState()
@@ -212,10 +213,12 @@ fun VideoPlayerOverlay(
         // player layout never squashes into an unreadable sliver mid-drag.
         val dragRangePx = fullHeightPx * 0.8f
 
+        // Minimized resting position sits above the nav bar, and above the
+        // music mini player too when both players are alive at the same time
         val p = expandProgress.value
         val height = lerp(88.dp, fullHeight, p)
         val widthPadding = lerp(16.dp, 0.dp, p)
-        val bottomPadding = lerp(100.dp + bottomInset, 0.dp, p)
+        val bottomPadding = lerp(100.dp + bottomInset + miniPlayerExtraBottomPadding, 0.dp, p)
         val cornerRadius = lerp(28.dp, 0.dp, p)
 
         Surface(
