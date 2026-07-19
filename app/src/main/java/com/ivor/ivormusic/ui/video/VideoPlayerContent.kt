@@ -58,7 +58,11 @@ fun VideoPlayerContent(
     viewModel: VideoPlayerViewModel,
     onBackClick: () -> Unit,
     modifier: Modifier = Modifier,
-    timedCommentsFeatureEnabled: Boolean = false
+    timedCommentsFeatureEnabled: Boolean = false,
+    // Swipe-down-to-minimize: raw drag deltas / release velocity from the
+    // portrait video surface, driving the overlay's expand progress
+    onMinimizeDragDelta: (Float) -> Unit = {},
+    onMinimizeDragRelease: (Float) -> Unit = {}
 ) {
     val context = LocalContext.current
     val activity = context as? Activity
@@ -304,7 +308,10 @@ fun VideoPlayerContent(
                         onCaptionsClick = {
                             viewModel.ensureCaptionsLoaded()
                             showCaptionsSheet = true
-                        }
+                        },
+                        minimizeDragEnabled = true,
+                        onMinimizeDragDelta = onMinimizeDragDelta,
+                        onMinimizeDragRelease = onMinimizeDragRelease
                     )
 
                     if (timedCommentsFeatureEnabled && timedCommentsActive) {

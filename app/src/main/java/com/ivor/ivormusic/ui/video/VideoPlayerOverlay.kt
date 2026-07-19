@@ -7,9 +7,8 @@ import android.content.Intent
 import android.graphics.drawable.Icon
 import android.os.Build
 import android.util.Rational
-import androidx.compose.animation.core.animateDp
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -21,7 +20,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.viewinterop.AndroidView
+import kotlinx.coroutines.launch
 import androidx.core.util.Consumer
 import androidx.media3.ui.PlayerView
 import androidx.media3.common.util.UnstableApi
@@ -179,8 +180,6 @@ fun VideoPlayerOverlay(
         viewModel.setExpanded(false)
     }
 
-    val transition = updateTransition(isExpanded, label = "VideoExpand")
-
     val density = LocalDensity.current
     val bottomWindowInsets = WindowInsets.navigationBars
     val bottomInset = with(density) { bottomWindowInsets.getBottom(this).toDp() }
@@ -194,29 +193,30 @@ fun VideoPlayerOverlay(
         contentAlignment = Alignment.BottomCenter
     ) {
         val fullHeight = this.maxHeight
+        val fullHeightPx = with(density) { fullHeight.toPx() }
+        val scope = rememberCoroutineScope()
 
-        // Animate dimensions
-        val height by transition.animateDp(
-            transitionSpec = { spring(stiffness = 300f, dampingRatio = 0.8f) },
-            label = "height"
-        ) { expanded ->
-            if (expanded) fullHeight else 88.dp
+        // 0 = mini player, 1 = expanded. One progress drives every dimension,
+        // so the swipe-down gesture on the video surface can drag the whole
+        // player and the settle animation continues from wherever the finger
+        // let go instead of jumping.
+        val expandProgress = remember { Animatable(if (isExpanded) 1f else 0f) }
+        LaunchedEffect(isExpanded) {
+            expandProgress.animateTo(
+                if (isExpanded) 1f else 0f,
+                spring(stiffness = 300f, dampingRatio = 0.8f)
+            )
         }
 
-        val widthPadding by transition.animateDp(
-            transitionSpec = { spring(stiffness = 300f, dampingRatio = 0.8f) },
-            label = "widthPadding"
-        ) { expanded ->
-            if (expanded) 0.dp else 16.dp
-        }
+        // Dragging ~80% of the screen collapses fully; clamped so the full
+        // player layout never squashes into an unreadable sliver mid-drag.
+        val dragRangePx = fullHeightPx * 0.8f
 
-        // Position above nav bar when minimized
-        val bottomPadding by transition.animateDp(
-            transitionSpec = { spring(stiffness = 300f, dampingRatio = 0.8f) },
-            label = "bottomPadding"
-        ) { expanded ->
-            if (expanded) 0.dp else (100.dp + bottomInset)
-        }
+        val p = expandProgress.value
+        val height = lerp(88.dp, fullHeight, p)
+        val widthPadding = lerp(16.dp, 0.dp, p)
+        val bottomPadding = lerp(100.dp + bottomInset, 0.dp, p)
+        val cornerRadius = lerp(28.dp, 0.dp, p)
 
         Surface(
             modifier = Modifier
@@ -225,10 +225,10 @@ fun VideoPlayerOverlay(
                 .fillMaxWidth()
                 .height(height.coerceAtLeast(0.dp))
                 .clickable(enabled = !isExpanded) { viewModel.setExpanded(true) },
-            shape = RoundedCornerShape(if (isExpanded) 0.dp else 28.dp), // Expressive Large Shape
+            shape = RoundedCornerShape(cornerRadius.coerceAtLeast(0.dp)),
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            tonalElevation = if (isExpanded) 0.dp else 4.dp,
-            shadowElevation = if (isExpanded) 0.dp else 12.dp
+            tonalElevation = lerp(4.dp, 0.dp, p),
+            shadowElevation = lerp(12.dp, 0.dp, p)
         ) {
              if (isExpanded) {
                  // Full Screen Content
@@ -237,7 +237,34 @@ fun VideoPlayerOverlay(
                      onBackClick = {
                          viewModel.setExpanded(false)
                      },
-                     timedCommentsFeatureEnabled = timedCommentsEnabled
+                     timedCommentsFeatureEnabled = timedCommentsEnabled,
+                     onMinimizeDragDelta = { dy ->
+                         scope.launch {
+                             expandProgress.snapTo(
+                                 (expandProgress.value - dy / dragRangePx).coerceIn(0.25f, 1f)
+                             )
+                         }
+                     },
+                     onMinimizeDragRelease = { velocityY ->
+                         // Momentum first: any real downward flick commits, an
+                         // upward flick always restores; position only decides
+                         // for slow, deliberate drags.
+                         val minimize = when {
+                             velocityY > 600f -> true
+                             velocityY < -600f -> false
+                             else -> expandProgress.value < 0.85f
+                         }
+                         if (minimize) {
+                             viewModel.setExpanded(false)
+                         } else {
+                             scope.launch {
+                                 expandProgress.animateTo(
+                                     1f,
+                                     spring(stiffness = 300f, dampingRatio = 0.8f)
+                                 )
+                             }
+                         }
+                     }
                  )
              } else {
                  // Mini Player Content
