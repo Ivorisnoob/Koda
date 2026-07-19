@@ -167,7 +167,7 @@ fun VideoLibraryContent(
                 )
             }
 
-            is LibraryPage.Playlist -> PlaylistDetail(
+            is LibraryPage.Playlist -> VideoPlaylistDetail(
                 playlist = target.playlist,
                 viewModel = viewModel,
                 onVideoClick = onVideoClick,
@@ -744,14 +744,20 @@ private fun SubPageTopBar(
     }
 }
 
+/**
+ * Playlist contents page: used by the Library tab drill-in and by video-mode
+ * search results. [allowRemove] hides the remove action for playlists the
+ * user doesn't own (e.g. ones found through search).
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun PlaylistDetail(
+fun VideoPlaylistDetail(
     playlist: VideoPlaylist,
     viewModel: HomeViewModel,
     onVideoClick: (VideoItem) -> Unit,
     onBack: () -> Unit,
-    contentPadding: PaddingValues
+    contentPadding: PaddingValues,
+    allowRemove: Boolean = true
 ) {
     val videos by viewModel.playlistVideos.collectAsState()
     val isLoading by viewModel.isPlaylistVideosLoading.collectAsState()
@@ -815,7 +821,9 @@ private fun PlaylistDetail(
                     PlaylistVideoRow(
                         video = video,
                         onClick = { onVideoClick(video) },
-                        onRemove = { viewModel.removePlaylistVideo(playlist.playlistId, video) },
+                        onRemove = if (allowRemove) {
+                            { viewModel.removePlaylistVideo(playlist.playlistId, video) }
+                        } else null,
                         removeLabel = when (playlist.playlistId) {
                             "WL" -> "Remove from Watch Later"
                             "LL" -> "Remove from Liked videos"

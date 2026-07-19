@@ -682,6 +682,18 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
+     * Search for YouTube playlists (for video mode search).
+     */
+    suspend fun searchVideoPlaylists(query: String): List<com.ivor.ivormusic.data.VideoPlaylist> {
+        if (query.isBlank()) return emptyList()
+        return try {
+            youtubeRepository.searchVideoPlaylists(query)
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    /**
      * Refresh video mode content.
      */
     fun refreshVideos() {

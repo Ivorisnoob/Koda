@@ -91,6 +91,7 @@ import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.data.ArtistItem
 import com.ivor.ivormusic.data.PlaylistDisplayItem
+import com.ivor.ivormusic.data.VideoPlaylist
 import com.ivor.ivormusic.ui.home.HomeViewModel
 import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.toShape
@@ -106,6 +107,8 @@ import androidx.compose.ui.graphics.Outline
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
+import com.ivor.ivormusic.ui.video.SaveToPlaylistSheet
 import com.ivor.ivormusic.ui.video.VideoCard
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -155,6 +158,8 @@ fun SearchScreen(
     onArtistClick: (ArtistItem) -> Unit = {},
     onAlbumClick: (PlaylistDisplayItem) -> Unit = {},
     onPlaylistClick: (PlaylistDisplayItem) -> Unit = {},
+    onVideoPlaylistClick: (VideoPlaylist) -> Unit = {},
+    onProfileClick: () -> Unit = {},
     contentPadding: PaddingValues,
     viewModel: HomeViewModel,
     isDarkMode: Boolean,
@@ -166,10 +171,12 @@ fun SearchScreen(
     var isLoadingMore by remember { mutableStateOf(false) }
     var youtubeResults by remember { mutableStateOf<List<Song>>(emptyList()) }
     var videoResults by remember { mutableStateOf<List<VideoItem>>(emptyList()) }
+    var videoPlaylistResults by remember { mutableStateOf<List<VideoPlaylist>>(emptyList()) }
     var artistResults by remember { mutableStateOf<List<ArtistItem>>(emptyList()) }
     var albumResults by remember { mutableStateOf<List<PlaylistDisplayItem>>(emptyList()) }
     var playlistResults by remember { mutableStateOf<List<PlaylistDisplayItem>>(emptyList()) }
     var selectedCategory by remember { mutableStateOf(SearchCategory.SONGS) }
+    var selectedVideoCategory by remember { mutableStateOf(VideoSearchCategory.VIDEOS) }
     
     var visibleLocalCount by remember { mutableIntStateOf(20) }
     val scope = rememberCoroutineScope()
@@ -178,6 +185,23 @@ fun SearchScreen(
     // Search history and focus state
     val searchHistory by viewModel.searchHistory.collectAsState()
     var isSearchFocused by remember { mutableStateOf(false) }
+
+    // Save-to-playlist sheet (long-press on a video search result), same
+    // wiring as the video home feed
+    var saveTargetVideo by remember { mutableStateOf<VideoItem?>(null) }
+    val isYouTubeConnected by viewModel.isYouTubeConnected.collectAsState()
+    val videoPlaylists by viewModel.videoPlaylists.collectAsState()
+    val isVideoPlaylistsLoading by viewModel.isVideoPlaylistsLoading.collectAsState()
+
+    fun onVideoLongPress(video: VideoItem) {
+        if (isYouTubeConnected) {
+            viewModel.loadVideoPlaylists()
+            saveTargetVideo = video
+        } else {
+            // Saving needs a YouTube session; route to the sign-in flow
+            onProfileClick()
+        }
+    }
 
     // Video mode browse state: trending feed doubles as the explore list
     val trendingVideos by viewModel.trendingVideos.collectAsState()
@@ -207,20 +231,24 @@ fun SearchScreen(
     }
     
     // Search YouTube/Videos/Artists/Albums/Playlists when query changes
-    LaunchedEffect(query, videoMode, selectedCategory) {
+    LaunchedEffect(query, videoMode, selectedCategory, selectedVideoCategory) {
         if (query.length >= 2) {
             delay(500) // Debounce
             isLoading = true
-            
+
             // Clear previous results of other types
             youtubeResults = emptyList()
             videoResults = emptyList()
+            videoPlaylistResults = emptyList()
             artistResults = emptyList()
             albumResults = emptyList()
             playlistResults = emptyList()
 
             if (videoMode) {
-                 videoResults = viewModel.searchVideos(query)
+                when (selectedVideoCategory) {
+                    VideoSearchCategory.VIDEOS -> videoResults = viewModel.searchVideos(query)
+                    VideoSearchCategory.PLAYLISTS -> videoPlaylistResults = viewModel.searchVideoPlaylists(query)
+                }
             } else {
                 when (selectedCategory) {
                     SearchCategory.SONGS -> youtubeResults = viewModel.searchYouTube(query)
@@ -233,10 +261,23 @@ fun SearchScreen(
         } else {
             youtubeResults = emptyList()
             videoResults = emptyList()
+            videoPlaylistResults = emptyList()
             artistResults = emptyList()
             albumResults = emptyList()
             playlistResults = emptyList()
         }
+    }
+
+    saveTargetVideo?.let { video ->
+        SaveToPlaylistSheet(
+            video = video,
+            playlists = videoPlaylists,
+            isLoading = isVideoPlaylistsLoading,
+            onSave = { playlistId, onResult ->
+                viewModel.addVideoToPlaylist(playlistId, video, onResult)
+            },
+            onDismiss = { saveTargetVideo = null }
+        )
     }
     
     // Reset visible count when query changes
@@ -276,13 +317,24 @@ fun SearchScreen(
                 )
             }
             
-            // Category Chips (only in Music Mode)
+            // Category Chips
             if (!videoMode && query.isNotEmpty()) {
                 item {
                     SearchFilterChips(
                         selectedCategory = selectedCategory,
                         onCategorySelected = { selectedCategory = it },
                         primaryColor = primaryColor,
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
+                    )
+                }
+            }
+
+            // Videos / Playlists toggle (Video Mode)
+            if (videoMode && query.isNotEmpty()) {
+                item {
+                    VideoSearchFilterChips(
+                        selectedCategory = selectedVideoCategory,
+                        onCategorySelected = { selectedVideoCategory = it },
                         modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
                     )
                 }
@@ -326,6 +378,7 @@ fun SearchScreen(
                                 Spacer(modifier = Modifier.height(16.dp))
                                 Text(
                                     when {
+                                        videoMode && selectedVideoCategory == VideoSearchCategory.PLAYLISTS -> "Searching Playlists..."
                                         videoMode -> "Searching Videos..."
                                         selectedCategory == SearchCategory.ARTISTS -> "Searching Artists..."
                                         selectedCategory == SearchCategory.ALBUMS -> "Searching Albums..."
@@ -476,54 +529,83 @@ fun SearchScreen(
                     }
                 }
                 
-                // Video Mode Results
-                videoMode && videoResults.isNotEmpty() -> {
-                    // Video Search Results Section
-                    item {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)
-                        ) {
-                            Surface(
-                                shape = CircleShape,
-                                color = Color(0xFFFF0000).copy(alpha = 0.15f),
-                                modifier = Modifier.size(32.dp)
-                            ) {
-                                Box(
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        Icons.Rounded.TravelExplore,
-                                        contentDescription = null,
-                                        tint = Color(0xFFFF0000),
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                }
-                            }
-                            Spacer(modifier = Modifier.size(12.dp))
-                            Text(
-                                "YouTube Videos",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = textColor
+                // Video Mode Results: the Videos/Playlists toggle above decides
+                // which search ran, so only one of these lists is ever populated
+                videoMode && (videoResults.isNotEmpty() || videoPlaylistResults.isNotEmpty()) -> {
+                    if (videoPlaylistResults.isNotEmpty()) {
+                        item {
+                            ResultHeader(
+                                title = "Playlists",
+                                count = videoPlaylistResults.size,
+                                icon = Icons.Rounded.QueueMusic,
+                                color = Color(0xFF_FF9800), // Orange
+                                textColor = textColor,
+                                secondaryTextColor = secondaryTextColor
                             )
-                            Spacer(modifier = Modifier.weight(1f))
-                            Text(
-                                "${videoResults.size} results",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = secondaryTextColor
+                        }
+                        items(videoPlaylistResults, key = { it.playlistId }) { playlist ->
+                            VideoPlaylistRow(
+                                playlist = playlist,
+                                onClick = {
+                                    viewModel.addToSearchHistory(query)
+                                    onVideoPlaylistClick(playlist)
+                                },
+                                cardColor = cardColor,
+                                textColor = textColor,
+                                secondaryTextColor = secondaryTextColor
                             )
                         }
                     }
-                    
-                    // Display video results
-                    itemsIndexed(videoResults) { index, video ->
-                        VideoCard(
-                            video = video,
-                            onClick = { onVideoClick(video) },
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                        )
+
+                    // Video Search Results Section
+                    if (videoResults.isNotEmpty()) {
+                        item {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)
+                            ) {
+                                Surface(
+                                    shape = CircleShape,
+                                    color = Color(0xFFFF0000).copy(alpha = 0.15f),
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            Icons.Rounded.TravelExplore,
+                                            contentDescription = null,
+                                            tint = Color(0xFFFF0000),
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.size(12.dp))
+                                Text(
+                                    "YouTube Videos",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = textColor
+                                )
+                                Spacer(modifier = Modifier.weight(1f))
+                                Text(
+                                    "${videoResults.size} results",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = secondaryTextColor
+                                )
+                            }
+                        }
+
+                        // Display video results; long-press opens the save sheet
+                        itemsIndexed(videoResults) { index, video ->
+                            VideoCard(
+                                video = video,
+                                onClick = { onVideoClick(video) },
+                                onLongClick = { onVideoLongPress(video) },
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                            )
+                        }
                     }
                 }
                 
@@ -1183,6 +1265,48 @@ enum class SearchCategory {
     SONGS, ARTISTS, ALBUMS, PLAYLISTS
 }
 
+enum class VideoSearchCategory {
+    VIDEOS, PLAYLISTS
+}
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+fun VideoSearchFilterChips(
+    selectedCategory: VideoSearchCategory,
+    onCategorySelected: (VideoSearchCategory) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    // Same M3 Expressive connected button group as the music-mode chips
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(androidx.compose.material3.ButtonGroupDefaults.ConnectedSpaceBetween)
+    ) {
+        VideoSearchCategory.entries.forEachIndexed { index, category ->
+            val selected = category == selectedCategory
+            androidx.compose.material3.ToggleButton(
+                checked = selected,
+                onCheckedChange = { onCategorySelected(category) },
+                modifier = Modifier
+                    .weight(1f)
+                    .height(44.dp),
+                shapes = when (index) {
+                    0 -> androidx.compose.material3.ButtonGroupDefaults.connectedLeadingButtonShapes()
+                    VideoSearchCategory.entries.lastIndex -> androidx.compose.material3.ButtonGroupDefaults.connectedTrailingButtonShapes()
+                    else -> androidx.compose.material3.ButtonGroupDefaults.connectedMiddleButtonShapes()
+                },
+                contentPadding = PaddingValues(horizontal = 8.dp)
+            ) {
+                Text(
+                    category.name.lowercase().capitalize(),
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                    maxLines = 1
+                )
+            }
+        }
+    }
+}
+
 @Composable
 fun ResultHeader(
     title: String,
@@ -1512,6 +1636,103 @@ fun SearchHistoryList(
                         )
                     }
                 }
+            }
+        }
+    }
+}
+
+/**
+ * Playlist row for video mode search results: thumbnail with a stacked
+ * playlist badge on the left, title/uploader/count on the right. Same
+ * density as [CompactVideoRow] so mixed results read as one list.
+ */
+@Composable
+private fun VideoPlaylistRow(
+    playlist: VideoPlaylist,
+    onClick: () -> Unit,
+    cardColor: Color,
+    textColor: Color,
+    secondaryTextColor: Color
+) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(16.dp),
+        color = cardColor,
+        tonalElevation = 1.dp,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .width(140.dp)
+                    .aspectRatio(16f / 9f)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+            ) {
+                AsyncImage(
+                    model = playlist.thumbnailUrl,
+                    contentDescription = playlist.title,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
+                // Playlist badge, like YouTube's stacked-videos corner chip
+                Surface(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(4.dp),
+                    shape = RoundedCornerShape(4.dp),
+                    color = Color.Black.copy(alpha = 0.8f)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(3.dp),
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Rounded.PlaylistPlay,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Text(
+                            text = playlist.videoCountText?.substringBefore(" ") ?: "",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White
+                        )
+                    }
+                }
+            }
+
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(top = 2.dp, end = 4.dp)
+            ) {
+                Text(
+                    text = playlist.title,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = textColor,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = buildString {
+                        append("Playlist")
+                        playlist.subtitle?.let { append(" • ").append(it) }
+                        playlist.videoCountText?.let { append(" • ").append(it) }
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = secondaryTextColor,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
         }
     }

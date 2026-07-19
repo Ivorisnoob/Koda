@@ -404,6 +404,7 @@ fun HomeScreen(
                             // Navigate to video player screen
                             onNavigateToVideoPlayer(video)
                         },
+                        onProfileClick = onProfileClick,
                         contentPadding = PaddingValues(bottom = 160.dp),
                         viewModel = viewModel,
                         isDarkMode = isDarkMode,
@@ -1309,6 +1310,7 @@ fun SearchContent(
     onSongClick: (Song) -> Unit,
     onPlayQueue: (List<Song>, Song?) -> Unit = { _, song -> song?.let { onSongClick(it) } },
     onVideoClick: (VideoItem) -> Unit = {},
+    onProfileClick: () -> Unit = {},
     contentPadding: PaddingValues,
     viewModel: HomeViewModel,
     isDarkMode: Boolean,
@@ -1316,18 +1318,21 @@ fun SearchContent(
 ) {
     var viewedPlaylist by remember { mutableStateOf<com.ivor.ivormusic.data.PlaylistDisplayItem?>(null) }
     var viewedArtist by remember { mutableStateOf<com.ivor.ivormusic.data.ArtistItem?>(null) }
+    var viewedVideoPlaylist by remember { mutableStateOf<com.ivor.ivormusic.data.VideoPlaylist?>(null) }
 
     // Handle system back button for nested screens.
     // Playlist/album is the deepest layer (search → artist → album), so it
     // pops first; backing out of an album returns to the artist page.
-    BackHandler(enabled = viewedPlaylist != null || viewedArtist != null) {
+    BackHandler(enabled = viewedPlaylist != null || viewedArtist != null || viewedVideoPlaylist != null) {
         when {
+            viewedVideoPlaylist != null -> viewedVideoPlaylist = null
             viewedPlaylist != null -> viewedPlaylist = null
             viewedArtist != null -> viewedArtist = null
         }
     }
 
     val currentScreen = when {
+        viewedVideoPlaylist != null -> "videoPlaylist"
         viewedPlaylist != null -> "playlist"
         viewedArtist != null -> "artist"
         else -> "search"
@@ -1385,6 +1390,20 @@ fun SearchContent(
                     )
                 }
             }
+
+            "videoPlaylist" -> {
+                viewedVideoPlaylist?.let { playlist ->
+                    com.ivor.ivormusic.ui.video.VideoPlaylistDetail(
+                        playlist = playlist,
+                        viewModel = viewModel,
+                        onVideoClick = onVideoClick,
+                        onBack = { viewedVideoPlaylist = null },
+                        contentPadding = contentPadding,
+                        // Search results aren't the user's own playlists
+                        allowRemove = false
+                    )
+                }
+            }
             else -> {
                 com.ivor.ivormusic.ui.search.SearchScreen(
                     songs = songs,
@@ -1394,6 +1413,11 @@ fun SearchContent(
                     onArtistClick = { artistItem -> viewedArtist = artistItem },
                     onAlbumClick = { albumItem -> viewedPlaylist = albumItem },
                     onPlaylistClick = { playlistItem -> viewedPlaylist = playlistItem },
+                    onVideoPlaylistClick = { videoPlaylist ->
+                        viewModel.loadPlaylistVideos(videoPlaylist.playlistId)
+                        viewedVideoPlaylist = videoPlaylist
+                    },
+                    onProfileClick = onProfileClick,
                     contentPadding = contentPadding,
                     viewModel = viewModel,
                     isDarkMode = isDarkMode,
