@@ -65,6 +65,21 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         _playbackError.value = null
     }
 
+    /**
+     * Snapshot the current queue, index, and position for resume-on-reopen.
+     * Controller state is read on the caller (main) thread; the file write
+     * goes to IO.
+     */
+    private fun savePlaybackSession() {
+        val queue = _currentQueue.value
+        if (queue.isEmpty()) return
+        val index = controller?.currentMediaItemIndex ?: 0
+        val position = controller?.currentPosition?.coerceAtLeast(0L) ?: 0L
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            playbackSessionRepository.save(queue, index, position)
+        }
+    }
+
     private val _shuffleModeEnabled = MutableStateFlow(false)
     val shuffleModeEnabled: StateFlow<Boolean> = _shuffleModeEnabled.asStateFlow()
 
@@ -113,6 +128,9 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     
     // Stats Repository
     private val statsRepository = com.ivor.ivormusic.data.StatsRepository(context)
+
+    // Playback session snapshots for resume-on-reopen
+    private val playbackSessionRepository = com.ivor.ivormusic.data.PlaybackSessionRepository(context)
 
     private val _lyricsResult = MutableStateFlow<LyricsResult>(LyricsResult.Loading)
     val lyricsResult: StateFlow<LyricsResult> = _lyricsResult.asStateFlow()
@@ -183,27 +201,69 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     }
     
     /**
-     * Restore the last played song from preferences (for cold start).
-     * Called after controller connects to prepare the song for resumption.
+     * Restore the previous playback session on cold start: the full queue,
+     * the song that was playing, and the position inside it — paused, so the
+     * user decides when to jump back in. Falls back to the legacy single-song
+     * restore when no session snapshot exists.
+     */
+    private fun restoreLastSession() {
+        // Only restore if there's no current song and no items in the controller
+        if (_currentSong.value != null) return
+        if ((controller?.mediaItemCount ?: 0) > 0) return
+
+        viewModelScope.launch {
+            val session = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                playbackSessionRepository.load()
+            }
+            // Re-check: playback may have started while the file was read
+            if (_currentSong.value != null) return@launch
+            if ((controller?.mediaItemCount ?: 0) > 0) return@launch
+
+            if (session == null) {
+                restoreLastPlayedSong()
+                return@launch
+            }
+
+            val song = session.songs[session.currentIndex]
+            android.util.Log.d(
+                "PlayerViewModel",
+                "Restoring session: ${session.songs.size} songs, index=${session.currentIndex}, pos=${session.positionMs}"
+            )
+
+            _currentQueue.value = session.songs
+            _currentSong.value = song
+            _progress.value = session.positionMs
+            if (song.duration > 0) _duration.value = song.duration
+            updateCurrentSongLikedStatus()
+
+            controller?.let { player ->
+                val items = session.songs.map { createMediaItem(it) }
+                player.setMediaItems(items, session.currentIndex, session.positionMs)
+                player.prepare()
+            }
+
+            fetchLyrics(song)
+        }
+    }
+
+    /**
+     * Legacy fallback restore (pre-session snapshots): last played song only,
+     * from preferences.
      */
     private fun restoreLastPlayedSong() {
         val song = themePreferences.getLastPlayedSong() ?: return
-        
-        // Only restore if there's no current song and no items in the controller
-        if (_currentSong.value != null) return
-        if (controller?.mediaItemCount ?: 0 > 0) return
-        
+
         android.util.Log.d("PlayerViewModel", "Restoring last played song: ${song.title}")
-        
+
         // Set the current song for UI display
         _currentSong.value = song
         _currentQueue.value = listOf(song)
-        
+
         // Prepare the song in the player (but don't auto-play)
         val mediaItem = createMediaItem(song)
         controller?.setMediaItem(mediaItem)
         controller?.prepare()
-        
+
         // Fetch lyrics for this song
         fetchLyrics(song)
     }
@@ -242,8 +302,8 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
             // This runs when we reconnect to an already-playing session
             syncStateFromController(ctrl)
 
-            // Restore last played song if there's nothing currently playing
-            restoreLastPlayedSong()
+            // Restore the previous session if there's nothing currently playing
+            restoreLastSession()
             
             ctrl.addListener(object : Player.Listener {
                 override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -353,7 +413,8 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                         
                         // Save as last played song for restoration
                         themePreferences.saveLastPlayedSong(it)
-                        
+                        savePlaybackSession()
+
                         // STATS RECORDING WITH THRESHOLD
                         // Cancel previous job if any
                         playRecordingJob?.cancel()
@@ -370,7 +431,9 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                                 // Wait for 15 seconds of playback before counting as a 'play'
                                 // This prevents skips and resolution changes from inflating stats.
                                 delay(15_000)
-                                if (isActive) {
+                                // A cold-start session restore fires this transition too but
+                                // never plays; only count it once playback actually ran.
+                                if (isActive && (_isPlaying.value || controller?.playWhenReady == true)) {
                                     lastRecordedSongId = currentSongId
                                     youTubeRepository.reportPlayback(currentSongId)
                                     statsRepository.addPlayEvent(it)
@@ -482,9 +545,20 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     private fun startProgressUpdates() {
         viewModelScope.launch {
             var lastPosition = 0L
+            var ticksSinceSave = 0
             while (isActive) {
                 controller?.let {
                     val currentPos = it.currentPosition
+
+                    // Periodic session snapshot so a swipe-away or process
+                    // death loses at most a few seconds of position
+                    if (it.isPlaying) {
+                        ticksSinceSave++
+                        if (ticksSinceSave >= 5) {
+                            ticksSinceSave = 0
+                            savePlaybackSession()
+                        }
+                    }
                     
                     // Only update progress if it's a valid non-negative value
                     if (currentPos >= 0) {
@@ -647,6 +721,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
             val newItems = songs.map { createMediaItem(it) }
             player.addMediaItems(newItems)
         }
+        savePlaybackSession()
     }
 
     fun moveQueueItem(fromIndex: Int, toIndex: Int) {
@@ -659,6 +734,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         _currentQueue.value = mutable
 
         controller?.moveMediaItem(fromIndex, toIndex)
+        savePlaybackSession()
     }
 
     fun removeQueueItem(index: Int) {
@@ -671,6 +747,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         _currentQueue.value = mutable
 
         controller?.removeMediaItem(index)
+        savePlaybackSession()
     }
 
     private fun createMediaItem(song: Song): MediaItem {
@@ -709,6 +786,8 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         controller?.let {
             if (it.isPlaying) {
                 it.pause()
+                // Pausing is a natural leave point; pin the exact position
+                savePlaybackSession()
             } else {
                 it.play()
             }
@@ -722,6 +801,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
      */
     fun pause() {
         controller?.pause()
+        savePlaybackSession()
     }
 
     fun toggleShuffle() {
@@ -923,10 +1003,16 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     
     // --- Lyrics Actions ---
     
+    private var lyricsFetchJob: Job? = null
+
     /**
      * Fetch synced lyrics for the given song.
      */
     private fun fetchLyrics(song: Song) {
+        // Cancel the in-flight fetch: on a quick skip A -> B, A's slower
+        // response would otherwise land last and show A's lyrics over B.
+        lyricsFetchJob?.cancel()
+
         // Lyrics come from an online API; skip entirely in local-only mode
         if (themePreferences.isLocalOnlyModeEnabled()) {
             _lyricsResult.value = LyricsResult.NotFound
@@ -934,7 +1020,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         }
         _lyricsResult.value = LyricsResult.Loading
 
-        viewModelScope.launch {
+        lyricsFetchJob = viewModelScope.launch {
             val result = lyricsRepository.fetchLyrics(
                 songId = song.id,
                 title = song.title,
@@ -942,7 +1028,11 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                 album = song.album ?: "",
                 durationMs = song.duration
             )
-            _lyricsResult.value = result
+            // Belt and braces for the same race: only apply the result if
+            // this is still the song on screen.
+            if (_currentSong.value?.id == song.id) {
+                _lyricsResult.value = result
+            }
         }
     }
     
@@ -990,8 +1080,11 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         _duration.value = 0L
         _lyricsResult.value = LyricsResult.Loading
         
-        // Clear stored last played song so it doesn't restore
+        // Clear stored last played song and session so neither restores
         themePreferences.clearLastPlayedSong()
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            playbackSessionRepository.clear()
+        }
         
         android.util.Log.d("PlayerViewModel", "Player cleared and mini player dismissed")
     }
