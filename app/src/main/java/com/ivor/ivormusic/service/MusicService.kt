@@ -26,7 +26,7 @@ import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.ivor.ivormusic.MainActivity
-import com.ivor.ivormusic.data.AudioEffects
+import android.media.audiofx.AudioEffect
 import com.ivor.ivormusic.data.CacheManager
 import com.ivor.ivormusic.data.DownloadRepository
 import com.ivor.ivormusic.data.PlaylistDisplayItem
@@ -54,6 +54,9 @@ class MusicService : MediaLibraryService() {
     // --- Components ---
     private var mediaLibrarySession: MediaLibrarySession? = null
     private lateinit var player: ExoPlayer
+    // Pinned at player creation and broadcast so external equalizer apps can
+    // attach to Koda's playback
+    private var audioSessionId: Int = C.AUDIO_SESSION_ID_UNSET
     private lateinit var youtubeRepository: YouTubeRepository
     private lateinit var downloadRepository: DownloadRepository
     private lateinit var themePreferences: ThemePreferences
@@ -178,7 +181,13 @@ class MusicService : MediaLibraryService() {
         serviceScope.cancel()
         resolveScope.cancel()
         musicProgressLiveUpdate?.hide()
-        AudioEffects.release()
+        // Tell external equalizers our audio session is going away
+        if (audioSessionId != C.AUDIO_SESSION_ID_UNSET) {
+            sendBroadcast(Intent(AudioEffect.ACTION_CLOSE_AUDIO_EFFECT_CONTROL_SESSION).apply {
+                putExtra(AudioEffect.EXTRA_AUDIO_SESSION, audioSessionId)
+                putExtra(AudioEffect.EXTRA_PACKAGE_NAME, packageName)
+            })
+        }
         mediaLibrarySession?.run {
             player.release()
             release()
@@ -292,14 +301,23 @@ class MusicService : MediaLibraryService() {
 
         player.addListener(PlayerEventListener())
 
-        // Pin a known audio session id so the equalizer/bass boost can attach
-        // right now, before the audio sink initializes on first playback
-        // (ExoPlayer's own id stays UNSET until then).
+        // Pin a known audio session id and announce it to the system, so
+        // external equalizer apps (Poweramp Equalizer, Wavelet, the OEM EQ)
+        // can attach their effects to Koda's music playback. Generating the
+        // id ourselves means it exists before the audio sink initializes on
+        // first playback (ExoPlayer's own id stays UNSET until then).
         val audioManager = getSystemService(AUDIO_SERVICE) as android.media.AudioManager
-        val audioSessionId = audioManager.generateAudioSessionId()
-        if (audioSessionId != android.media.AudioManager.ERROR) {
-            player.audioSessionId = audioSessionId
-            AudioEffects.attach(this, audioSessionId)
+        val generatedSessionId = audioManager.generateAudioSessionId()
+        if (generatedSessionId != android.media.AudioManager.ERROR) {
+            audioSessionId = generatedSessionId
+            player.audioSessionId = generatedSessionId
+            val intent = Intent(AudioEffect.ACTION_OPEN_AUDIO_EFFECT_CONTROL_SESSION).apply {
+                putExtra(AudioEffect.EXTRA_AUDIO_SESSION, generatedSessionId)
+                putExtra(AudioEffect.EXTRA_PACKAGE_NAME, packageName)
+                putExtra(AudioEffect.EXTRA_CONTENT_TYPE, AudioEffect.CONTENT_TYPE_MUSIC)
+            }
+            sendBroadcast(intent)
+            Log.i(TAG, "Announced audio session $generatedSessionId for external equalizers")
         }
     }
 

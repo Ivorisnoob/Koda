@@ -50,7 +50,6 @@ import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Animation
 import androidx.compose.material.icons.rounded.CheckCircle
-import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Contrast
@@ -237,7 +236,6 @@ fun SettingsScreen(
     onCrossfadeEnabledToggle: (Boolean) -> Unit,
     crossfadeDurationMs: Int,
     onCrossfadeDurationChange: (Int) -> Unit,
-    onNavigateToEqualizer: () -> Unit = {},
     oemFixEnabled: Boolean,
     onOemFixEnabledToggle: (Boolean) -> Unit,
     manualScanEnabled: Boolean,
@@ -485,20 +483,6 @@ fun SettingsScreen(
                                 )
                             }
                         }
-
-                        SettingsDivider()
-
-                        // Equalizer subscreen link
-                        ExpressiveSettingsItem(
-                            icon = Icons.Rounded.GraphicEq,
-                            title = "Equalizer",
-                            subtitle = "Presets, band levels and bass boost",
-                            onClick = onNavigateToEqualizer,
-                            textColor = textColor,
-                            secondaryTextColor = secondaryTextColor,
-                            iconTint = accentColor,
-                            showChevron = true
-                        )
 
                         SettingsDivider()
 
