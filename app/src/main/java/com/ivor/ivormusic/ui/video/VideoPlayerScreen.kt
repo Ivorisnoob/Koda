@@ -39,6 +39,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.displayCutoutPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -240,7 +241,11 @@ fun FullscreenPlayerContent(
                         .align(Alignment.TopCenter)
                         .fillMaxWidth()
                         .background(Brush.verticalGradient(colors = listOf(Color.Black.copy(0.7f), Color.Transparent)))
-                        .statusBarsPadding()
+                        // Cutout insets are stable, unlike status-bar insets which go
+                        // 0 -> bar-height whenever another window (a bottom sheet)
+                        // makes the hidden system bars reappear — statusBarsPadding
+                        // here made the whole top bar jump down when a sheet opened
+                        .displayCutoutPadding()
                         .padding(horizontal = 24.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(16.dp)

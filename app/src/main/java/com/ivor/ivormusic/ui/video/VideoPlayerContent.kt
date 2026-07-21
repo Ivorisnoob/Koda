@@ -37,8 +37,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogWindowProvider
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -509,7 +511,8 @@ fun VideoPlayerContent(
                 viewModel.seekToChapter(it)
                 showChaptersSheet = false
             },
-            onDismiss = { showChaptersSheet = false }
+            onDismiss = { showChaptersSheet = false },
+            keepSystemBarsHidden = isFullscreen
         )
     }
 
@@ -523,7 +526,8 @@ fun VideoPlayerContent(
                 viewModel.setCaptionTrack(it)
                 showCaptionsSheet = false
             },
-            onDismiss = { showCaptionsSheet = false }
+            onDismiss = { showCaptionsSheet = false },
+            keepSystemBarsHidden = isFullscreen
         )
     }
 
@@ -730,6 +734,31 @@ private fun PlayerSettingsSections(
 }
 
 /**
+ * Keeps immersive fullscreen intact while a ModalBottomSheet is open. The
+ * sheet lives in its own window, which does not inherit the activity's
+ * hidden-system-bars state — so the moment it opens, Android re-shows the
+ * status/navigation bars over the video. Hiding them on the sheet's own
+ * window prevents that. Best-effort: if the sheet implementation is not
+ * dialog-backed this quietly does nothing.
+ */
+@Composable
+private fun KeepSystemBarsHidden(enabled: Boolean) {
+    if (!enabled) return
+    val view = LocalView.current
+    DisposableEffect(view) {
+        var parent: android.view.ViewParent? = view.parent
+        while (parent != null && parent !is DialogWindowProvider) parent = parent.parent
+        (parent as? DialogWindowProvider)?.window?.let { window ->
+            WindowCompat.getInsetsController(window, window.decorView).apply {
+                systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                hide(WindowInsetsCompat.Type.systemBars())
+            }
+        }
+        onDispose { }
+    }
+}
+
+/**
  * Bottom sheet listing the video's chapters. The chapter containing the
  * current playback position is highlighted; tapping a row seeks to it.
  */
@@ -739,7 +768,8 @@ private fun ChaptersSheet(
     chapters: List<VideoChapter>,
     currentPositionMs: Long,
     onChapterClick: (VideoChapter) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    keepSystemBarsHidden: Boolean = false
 ) {
     val activeIndex = currentChapterIndex(chapters, currentPositionMs)
     ModalBottomSheet(
@@ -747,6 +777,7 @@ private fun ChaptersSheet(
         containerColor = MaterialTheme.colorScheme.surfaceContainer,
         contentColor = MaterialTheme.colorScheme.onSurface
     ) {
+        KeepSystemBarsHidden(keepSystemBarsHidden)
         Text(
             text = "Chapters",
             style = MaterialTheme.typography.headlineSmall,
@@ -822,13 +853,15 @@ private fun CaptionsSheet(
     selected: CaptionTrack?,
     isLoading: Boolean,
     onSelect: (CaptionTrack?) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    keepSystemBarsHidden: Boolean = false
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         containerColor = MaterialTheme.colorScheme.surfaceContainer,
         contentColor = MaterialTheme.colorScheme.onSurface
     ) {
+        KeepSystemBarsHidden(keepSystemBarsHidden)
         Text(
             text = "Captions",
             style = MaterialTheme.typography.headlineSmall,
