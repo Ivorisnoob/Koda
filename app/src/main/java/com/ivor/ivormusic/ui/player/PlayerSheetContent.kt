@@ -1023,7 +1023,9 @@ private fun ExpressiveQueueView(
                     }
                     
                     // ========== QUEUE ITEMS ==========
-                    itemsIndexed(queue, key = { _, song -> "queue_${song.id}" }) { index, song ->
+                    // Index-qualified: the same song can appear in the queue twice
+                    // (e.g. duplicated in a playlist) and duplicate keys crash
+                    itemsIndexed(queue, key = { index, song -> "queue_${song.id}_$index" }) { index, song ->
                         val isCurrent = song.id == currentSong?.id
                         val isDragging = draggingIndex == index
                         
