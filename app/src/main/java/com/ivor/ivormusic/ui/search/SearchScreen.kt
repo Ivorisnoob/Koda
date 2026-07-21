@@ -1009,7 +1009,8 @@ fun SearchScreen(
                                         isLoadingMore = true
                                         val newResults = viewModel.loadMoreResults(query)
                                         if (newResults.isNotEmpty()) {
-                                            youtubeResults = youtubeResults + newResults
+                                            // Adjacent pages can overlap slightly; never show a song twice
+                                            youtubeResults = (youtubeResults + newResults).distinctBy { it.id }
                                         }
                                         isLoadingMore = false
                                     }
