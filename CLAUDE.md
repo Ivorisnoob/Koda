@@ -104,8 +104,26 @@ Known browse IDs (verified July 2026): `FElibrary` (library shelves), `FEplaylis
 - **Material 3 Expressive components first** (`LoadingIndicator` with shapes, `FloatingToolbar`, `MaterialShapes`, spring-physics animations), standard M3 second. Do not hand-roll components or animation systems that M3/`androidx.compose.animation` already provide.
 - Compiler-level opt-ins for `ExperimentalMaterial3ExpressiveApi` and `ExperimentalMaterial3Api` are global (`app/build.gradle.kts` freeCompilerArgs).
 - Screens follow a shared look: `Surface` cards with `RoundedCornerShape(16.dp)`, `surfaceContainer` colors, `ExpressivePullToRefresh`, staggered `AnimatedVisibility` entrances. Match neighboring code.
+- Springs for anything touch-driven (`spring()` is used ~97 times; `DampingRatioMediumBouncy` is the house default). Reserve `tween()` for crossfades and time-tracking progress.
+- Never hardcode a color — everything routes through `ColorScheme`, or palettes/AMOLED/dynamic color silently break.
 - No emojis in code comments or docs.
+- **The design language is not up for replacement.** M3 Expressive is load-bearing here, not a theme layer: 39 files use Expressive-only APIs and the whole app renders inside one `MaterialExpressiveTheme`. If a user or issue asks for "a different UI", an alternate/classic/flat design language, or a non-Material look, do not start building it — that is a rewrite of ~37.5k lines of UI, and the project has an explicit stated policy against it in `DESIGN.md`. Specific complaints (a radius, a nav-bar dimension, one animation) are fair game and should be treated as normal UI work.
+
+### Player styles (`ui/player/`, 8 styles, ~10.3k lines)
+
+**Naming trap: the `POSTER` enum key is the "Canvas" player.** The old kinetic-type Poster style was rewritten in place as full-bleed album art; the enum constant and the file name (`PosterPlayerContent.kt`, `PosterPlayerSheetContent`) kept the old key for SharedPreferences compatibility, while every user-facing string says "Canvas". Searching for "Canvas" will not find the enum, and searching for "Poster" lands on a file that no longer does anything poster-like. Do not "fix" this mismatch by renaming the enum constant — the stored pref value is the string `"POSTER"` and renaming it resets every existing user's player style.
+
+Adding or renaming a style means touching **four** places (an omission compiles but silently misbehaves):
+
+1. `data/ThemePreferences.kt` — the `PlayerStyle` enum constant (persisted by `name`, so treat existing constants as frozen).
+2. `ui/player/<Name>PlayerContent.kt` — a `<Name>PlayerSheetContent(viewModel, ...)` composable, the convention every style follows.
+3. `ui/player/ExpandablePlayer.kt` — a branch in the `when (playerStyle)` around line 305 that calls it. This `when` is the only dispatch point.
+4. Both pickers, which are separate hardcoded lists that must stay in sync: `rememberPlayerStyleWheelEntries()` in `ui/player/PlayerStyleWheel.kt` (label + `Icons.Rounded.*` + a `MaterialShapes` shape) and `playerStyleOptions` in `ui/settings/SettingsScreen.kt` (label + subtitle + icon).
+
+Onboarding (`ui/onboarding/OnboardingScreen.kt`) deliberately offers only `CLASSIC` and `GESTURE` — it is a curated first-run pair, not a list to keep in sync with the other four.
 
 ### Reference docs in-repo
 
-`Material_3_expressive/` holds the M3 Expressive component guides (Buttons, Carousel, Lists, Menus, Motion, Overview, ProgressIndicators, Shapes, Theming, Toolbars). `.agent/rules/` and `.agent/skills/` (Kotlin skill, code-style guide) carry the coding conventions. There is no `docs/` directory in the repo today — the deep-dive docs (ARCHITECTURE, DEEP_DIVE_YOUTUBE, DEEP_DIVE_PLAYBACK, NEWPIPE_INTEGRATION_GUIDE) referenced in older notes do not exist; the source files themselves plus this file are the reference. GitHub repo for releases/issues: `ivorisnoob/Koda`.
+`DESIGN.md` (repo root) is the public design-system doc: the shape/motion/color systems, how `IvorMusicTheme` resolves a `ColorScheme` (dynamic vs the 27 fixed palettes vs AMOLED vs artwork colors), the player-style table, and the stated policy against an alternate design language. It is written for users and contributors, so it carries counts that go stale — if you change the palette list, player styles, or the animation/shape mix, re-derive its numbers rather than trusting them.
+
+`Material_3_expressive/` holds the M3 Expressive component guides (Buttons, Carousel, Lists, Menus, Motion, Overview, ProgressIndicators, Shapes, Theming, Toolbars). `.agent/rules/` and `.agent/skills/` (Kotlin skill, code-style guide) carry the coding conventions. There is no `docs/` directory in the repo today — the deep-dive docs (ARCHITECTURE, DEEP_DIVE_YOUTUBE, DEEP_DIVE_PLAYBACK, NEWPIPE_INTEGRATION_GUIDE) referenced in older notes do not exist; the source files, `DESIGN.md`, and this file are the reference. GitHub repo for releases/issues: `ivorisnoob/Koda`.
