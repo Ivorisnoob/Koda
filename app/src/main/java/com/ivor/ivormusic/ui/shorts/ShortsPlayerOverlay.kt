@@ -151,6 +151,18 @@ fun ShortsPlayerOverlay(
 
     BackHandler { viewModel.close() }
 
+    // Pause when the app stops being visible. Shorts are short-form video with
+    // no audio-only expectation, and decoding on into a Surface the system is
+    // about to destroy is what throws inside MediaCodecVideoRenderer.
+    DisposableEffect(activity, viewModel) {
+        val lifecycle = activity?.lifecycle
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP) viewModel.pause()
+        }
+        lifecycle?.addObserver(observer)
+        onDispose { lifecycle?.removeObserver(observer) }
+    }
+
     // Keep the screen awake while a Short is playing
     DisposableEffect(isPlaying) {
         val window = activity?.window

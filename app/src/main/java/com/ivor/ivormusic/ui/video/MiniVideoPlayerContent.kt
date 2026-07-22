@@ -80,6 +80,10 @@ fun MiniVideoPlayerContent(
                             resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM // Fill the small area
                         }
                     },
+                    // Release the shared player before this view's Surface is
+                    // destroyed, so expanding/collapsing hands the surface over
+                    // cleanly instead of racing the full player's PlayerView.
+                    onRelease = { pv -> pv.player = null },
                     modifier = Modifier.fillMaxSize()
                 )
                 

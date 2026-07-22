@@ -7,12 +7,14 @@ import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
+import androidx.media3.exoplayer.ExoPlaybackException
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.MergingMediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
@@ -104,6 +106,14 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     // Error state
     private val _playbackError = MutableStateFlow<Throwable?>(null)
     val playbackError: StateFlow<Throwable?> = _playbackError.asStateFlow()
+
+    // Video rendering is suspended while the app is not visible - see onEnterBackground()
+    private var isVideoSuspended = false
+
+    // Renderer/decoder failures are usually transient (surface torn down, codec
+    // reclaimed by another app). Retry in place a couple of times before the
+    // error reaches the UI; reset on every successful playback start.
+    private var rendererRetryCount = 0
 
     // ---------------- Engagement (likes / subscribe / comments) ----------------
 
@@ -231,6 +241,11 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
                 override fun onPlaybackStateChanged(playbackState: Int) {
                     _isBuffering.value = playbackState == Player.STATE_BUFFERING
+                    if (playbackState == Player.STATE_READY) {
+                        // Playback recovered (or started cleanly): allow the
+                        // retry budget to be spent again on a later failure.
+                        rendererRetryCount = 0
+                    }
                     if (playbackState == Player.STATE_ENDED) {
                         // Repeat and auto-play are mutually exclusive: looping
                         // repeats the current video, otherwise auto-play moves
@@ -245,7 +260,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                     }
                 }
 
-                override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                override fun onPlayerError(error: PlaybackException) {
                     // Captions are best-effort: a failing sideloaded subtitle
                     // source fails the whole MergingMediaSource, which would
                     // otherwise leave the player stuck buffering. If a caption is
@@ -266,10 +281,26 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                                 .build()
                         }
                         reloadPreservingPosition(quality, null)
-                    } else {
-                        _playbackError.value = error
-                        _isBuffering.value = false
+                        return
                     }
+
+                    // A renderer/decoder failure is not a broken stream: the
+                    // codec lost its surface or was reclaimed. Re-prepare in
+                    // place (position is kept) instead of dead-ending the
+                    // player on an error overlay the user cannot dismiss.
+                    if (isTransientRendererError(error) && rendererRetryCount < MAX_RENDERER_RETRIES) {
+                        rendererRetryCount++
+                        android.util.Log.w(
+                            "VideoPlayerVM",
+                            "Transient renderer error (attempt $rendererRetryCount/$MAX_RENDERER_RETRIES); re-preparing",
+                            error
+                        )
+                        _exoPlayer?.prepare()
+                        return
+                    }
+
+                    _playbackError.value = error
+                    _isBuffering.value = false
                 }
             })
         }
@@ -277,6 +308,75 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         // Warm the visitorData cache so the first playback doesn't pay for
         // the youtube.com bootstrap download on its critical path.
         viewModelScope.launch { youtubeRepository.prefetchVisitorData() }
+    }
+
+    /**
+     * The app is no longer visible (home, recents, screen off, another app on
+     * top) and is not in Picture-in-Picture.
+     *
+     * The window - and with it the PlayerView's Surface - is destroyed shortly
+     * after this point, while the player keeps decoding: WAKE_MODE_NETWORK
+     * deliberately keeps playback alive so screen-off listening works. A video
+     * decoder writing into a surface that is being torn down throws inside
+     * MediaCodecVideoRenderer, which used to surface as a permanent error
+     * overlay on return even though the format was fully supported.
+     *
+     * Disabling the video track releases the codec cleanly and leaves audio
+     * playing. [onEnterForeground] re-enables it and rendering resumes at the
+     * live position once the new surface is attached.
+     */
+    fun onEnterBackground() {
+        val player = _exoPlayer ?: return
+        if (isVideoSuspended || _currentVideo.value == null) return
+        isVideoSuspended = true
+        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+            .setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, true)
+            .build()
+    }
+
+    /** The app is visible again: restore the video track suspended above. */
+    fun onEnterForeground() {
+        val player = _exoPlayer ?: return
+        if (!isVideoSuspended) return
+        isVideoSuspended = false
+        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+            .setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, false)
+            .build()
+    }
+
+    /**
+     * Retry after playback failed, from the error overlay. Rebuilds the media
+     * source for the current quality when there is one (keeping the position),
+     * otherwise re-runs the whole load for the current video - a failure before
+     * any quality resolved means there is nothing to preserve.
+     */
+    fun retryPlayback() {
+        rendererRetryCount = 0
+        _playbackError.value = null
+        val quality = _currentQuality.value
+        if (quality != null && _exoPlayer != null) {
+            reloadPreservingPosition(quality, _selectedCaption.value)
+            _exoPlayer?.play()
+        } else {
+            _currentVideo.value?.let { playVideo(it, forceRestart = true) }
+        }
+    }
+
+    /**
+     * Renderer-level failures (surface torn down, codec reclaimed by another
+     * app, transient decode error) are worth re-preparing for. Source-level
+     * failures - dead URL, unsupported format - are not, and must reach the UI.
+     */
+    private fun isTransientRendererError(error: PlaybackException): Boolean {
+        if (error is ExoPlaybackException && error.type == ExoPlaybackException.TYPE_RENDERER) {
+            return true
+        }
+        return when (error.errorCode) {
+            PlaybackException.ERROR_CODE_DECODER_INIT_FAILED,
+            PlaybackException.ERROR_CODE_DECODER_QUERY_FAILED,
+            PlaybackException.ERROR_CODE_DECODING_FAILED -> true
+            else -> false
+        }
     }
 
     fun toggleLooping() {
@@ -295,13 +395,17 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         _exoPlayer?.seekTo(chapter.startMs)
     }
 
-    fun playVideo(video: VideoItem) {
-        if (_currentVideo.value?.videoId == video.videoId) {
+    /**
+     * @param forceRestart reload even when this video is already current, for
+     * the retry path - tapping the same video otherwise only re-expands.
+     */
+    fun playVideo(video: VideoItem, forceRestart: Boolean = false) {
+        if (!forceRestart && _currentVideo.value?.videoId == video.videoId) {
             // Already playing this video, just expand
             _isExpanded.value = true
             return
         }
-        
+
         _currentVideo.value = video
         _isExpanded.value = true
         _isLoading.value = true
@@ -312,6 +416,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         _isCaptionsLoading.value = false
         captionsLoadedForVideoId = null
         _playbackError.value = null // Clear previous error
+        rendererRetryCount = 0
 
         // Reset engagement + comments state for the new video
         _engagement.value = null
@@ -616,6 +721,9 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         qualityChangeListener?.let { _exoPlayer?.removeListener(it) }
         qualityChangeListener = null
         _exoPlayer?.stop()
+        // Track selection outlives media items: a player closed while the video
+        // track is suspended would come back audio-only on the next video.
+        onEnterForeground()
         _currentVideo.value = null
         _isExpanded.value = false
     }
@@ -927,6 +1035,9 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
         /** Speeds offered in the player's speed menu. */
         val PLAYBACK_SPEED_OPTIONS = listOf(0.25f, 0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f)
+
+        /** Silent re-prepare attempts before a renderer error reaches the UI. */
+        private const val MAX_RENDERER_RETRIES = 2
     }
 
     override fun onCleared() {

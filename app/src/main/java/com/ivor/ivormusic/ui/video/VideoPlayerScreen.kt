@@ -65,6 +65,7 @@ import androidx.compose.material.icons.rounded.Fullscreen
 import androidx.compose.material.icons.rounded.FullscreenExit
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.RepeatOne
 import androidx.compose.material.icons.rounded.Replay10
 import androidx.compose.material.icons.rounded.Settings
@@ -115,6 +116,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -169,7 +171,8 @@ fun FullscreenPlayerContent(
     chapters: List<VideoChapter> = emptyList(),
     onOpenChapters: () -> Unit = {},
     captionsActive: Boolean = false,
-    onCaptionsClick: () -> Unit = {}
+    onCaptionsClick: () -> Unit = {},
+    onRetry: (() -> Unit)? = null
 ) {
     // Stable shapes to prevent "square flash"
     val stableShapes = IconButtonDefaults.shapes()
@@ -205,18 +208,22 @@ fun FullscreenPlayerContent(
                 }
             },
             update = { playerView ->
+                playerView.player = exoPlayer
                 playerView.resizeMode = if (isZoomedToFill) {
                     AspectRatioFrameLayout.RESIZE_MODE_ZOOM
                 } else {
                     AspectRatioFrameLayout.RESIZE_MODE_FIT
                 }
             },
+            // Hand the surface back before this view is destroyed - the same
+            // ExoPlayer is also rendered by the mini and PiP PlayerViews.
+            onRelease = { playerView -> playerView.player = null },
             modifier = Modifier.fillMaxSize()
         )
         
         // Overlays
         if (hasError) {
-            ErrorOverlay(errorMessage)
+            ErrorOverlay(errorMessage, onRetry)
         } else if (isLoading || (isBuffering && !showControls)) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 ContainedLoadingIndicator()
@@ -422,7 +429,8 @@ fun PortraitPlayerContent(
     onCaptionsClick: () -> Unit = {},
     minimizeDragEnabled: Boolean = false,
     onMinimizeDragDelta: (Float) -> Unit = {},
-    onMinimizeDragRelease: (Float) -> Unit = {}
+    onMinimizeDragRelease: (Float) -> Unit = {},
+    onRetry: (() -> Unit)? = null
 ) {
     // Stable shapes
     val stableShapes = IconButtonDefaults.shapes()
@@ -454,10 +462,14 @@ fun PortraitPlayerContent(
                     )
                 }
             },
+            update = { playerView -> playerView.player = exoPlayer },
+            // Hand the surface back before this view is destroyed - the same
+            // ExoPlayer is also rendered by the mini and PiP PlayerViews.
+            onRelease = { playerView -> playerView.player = null },
             modifier = Modifier.fillMaxSize()
         )
-        
-        if (hasError) ErrorOverlay(errorMessage)
+
+        if (hasError) ErrorOverlay(errorMessage, onRetry)
         if (isLoading || (isBuffering && !showControls)) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             ContainedLoadingIndicator()
         }
@@ -1669,17 +1681,28 @@ fun ExpressivePlayPauseButton(
 }
 
 @Composable
-fun ErrorOverlay(message: String) {
+fun ErrorOverlay(message: String, onRetry: (() -> Unit)? = null) {
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black),
         contentAlignment = Alignment.Center
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.padding(horizontal = 32.dp)
+        ) {
             Icon(Icons.Rounded.Error, contentDescription = "Error", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(64.dp))
             Spacer(Modifier.height(16.dp))
-            Text(message, color = Color.White)
+            Text(message, color = Color.White, textAlign = TextAlign.Center)
+            if (onRetry != null) {
+                Spacer(Modifier.height(20.dp))
+                Button(onClick = onRetry) {
+                    Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Retry")
+                }
+            }
         }
     }
 }

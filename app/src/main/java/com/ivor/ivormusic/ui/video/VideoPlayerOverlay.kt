@@ -24,6 +24,8 @@ import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.viewinterop.AndroidView
 import kotlinx.coroutines.launch
 import androidx.core.util.Consumer
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.media3.ui.PlayerView
 import androidx.media3.common.util.UnstableApi
 import com.ivor.ivormusic.R
@@ -62,6 +64,24 @@ fun VideoPlayerOverlay(
     }
 
     if (currentVideo == null) return
+
+    // Suspend video decoding whenever the app stops being visible. ON_STOP is
+    // the right signal: entering PiP only pauses the activity (the PiP window
+    // is still visible), so PiP playback is untouched, while home / recents /
+    // screen off / another app all stop it - exactly the cases where the
+    // player's Surface is destroyed underneath a decoding MediaCodec.
+    DisposableEffect(activity, viewModel) {
+        val lifecycle = activity?.lifecycle
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_STOP -> viewModel.onEnterBackground()
+                Lifecycle.Event.ON_START -> viewModel.onEnterForeground()
+                else -> Unit
+            }
+        }
+        lifecycle?.addObserver(observer)
+        onDispose { lifecycle?.removeObserver(observer) }
+    }
 
     // Keep the screen awake while a video is actually playing (mini, full or
     // fullscreen). Cleared when paused, when the player closes, or in system
@@ -167,6 +187,12 @@ fun VideoPlayerOverlay(
                 pv.player = viewModel.exoPlayer
                 pv.useController = false
             },
+            // One ExoPlayer is shared by the PiP, full and mini PlayerViews.
+            // Detaching the player before the view (and its Surface) is
+            // destroyed hands the surface over cleanly on every swap; without
+            // it the outgoing view's surfaceDestroyed can pull the surface out
+            // from under the view that just took ownership.
+            onRelease = { pv -> pv.player = null },
             modifier = Modifier.fillMaxSize()
         )
         return // Return early, don't show overlay UI

@@ -306,7 +306,8 @@ fun VideoPlayerContent(
                 onCaptionsClick = {
                     viewModel.ensureCaptionsLoaded()
                     showCaptionsSheet = true
-                }
+                },
+                onRetry = { viewModel.retryPlayback() }
             )
 
                 if (timedCommentsFeatureEnabled && timedCommentsActive) {
@@ -368,7 +369,8 @@ fun VideoPlayerContent(
                         },
                         minimizeDragEnabled = true,
                         onMinimizeDragDelta = onMinimizeDragDelta,
-                        onMinimizeDragRelease = onMinimizeDragRelease
+                        onMinimizeDragRelease = onMinimizeDragRelease,
+                        onRetry = { viewModel.retryPlayback() }
                     )
 
                     if (timedCommentsFeatureEnabled && timedCommentsActive) {

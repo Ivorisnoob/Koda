@@ -1,9 +1,22 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
 }
+
+// Release signing credentials: CI supplies them as env vars, local builds read
+// them from local.properties (gitignored). Env wins so CI never picks up a
+// stray local file.
+val localProps = Properties().apply {
+    val f = rootProject.file("local.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
+}
+
+fun signingCredential(envName: String, propName: String): String? =
+    System.getenv(envName) ?: localProps.getProperty(propName)
 
 android {
     namespace = "com.ivor.ivormusic"
@@ -13,8 +26,8 @@ android {
         applicationId = "com.ivor.ivormusic"
         minSdk = 31
         targetSdk = 36
-        versionCode = 20
-        versionName = "4.2"
+        versionCode = 21
+        versionName = "4.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -30,9 +43,9 @@ android {
     signingConfigs {
         create("release") {
             storeFile = file("${project.rootDir}/keystore/ivormusic.jks")
-            storePassword = System.getenv("KEYSTORE_PASSWORD")
-            keyAlias = System.getenv("KEY_ALIAS")
-            keyPassword = System.getenv("KEY_PASSWORD")
+            storePassword = signingCredential("KEYSTORE_PASSWORD", "keystore.storePassword")
+            keyAlias = signingCredential("KEY_ALIAS", "keystore.keyAlias")
+            keyPassword = signingCredential("KEY_PASSWORD", "keystore.keyPassword")
         }
     }
 
