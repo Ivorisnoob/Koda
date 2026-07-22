@@ -46,6 +46,9 @@ class ThemePreferences(context: Context) {
     private val _saveVideoHistory = MutableStateFlow(getSaveVideoHistoryPreference())
     val saveVideoHistory: StateFlow<Boolean> = _saveVideoHistory.asStateFlow()
 
+    private val _liveDownloadUpdates = MutableStateFlow(getLiveDownloadUpdatesPreference())
+    val liveDownloadUpdates: StateFlow<Boolean> = _liveDownloadUpdates.asStateFlow()
+
     private val _timedCommentsEnabled = MutableStateFlow(getTimedCommentsEnabledPreference())
     val timedCommentsEnabled: StateFlow<Boolean> = _timedCommentsEnabled.asStateFlow()
 
@@ -108,6 +111,7 @@ class ThemePreferences(context: Context) {
             KEY_HOME_MODE_TOGGLE_ENABLED -> _homeModeToggleEnabled.value = getHomeModeToggleEnabledPreference()
             KEY_PLAYER_STYLE -> _playerStyle.value = getPlayerStylePreference()
             KEY_SAVE_VIDEO_HISTORY -> _saveVideoHistory.value = getSaveVideoHistoryPreference()
+            KEY_LIVE_DOWNLOAD_UPDATES -> _liveDownloadUpdates.value = getLiveDownloadUpdatesPreference()
             KEY_TIMED_COMMENTS_ENABLED -> _timedCommentsEnabled.value = getTimedCommentsEnabledPreference()
             KEY_SHORTS_ENABLED -> _shortsEnabled.value = getShortsEnabledPreference()
             KEY_SHORTS_HIDDEN_ACTIONS -> _shortsHiddenActions.value = getShortsHiddenActionsPreference()
@@ -144,6 +148,24 @@ class ThemePreferences(context: Context) {
         private const val KEY_HOME_MODE_TOGGLE_ENABLED = "home_mode_toggle_enabled"
         private const val KEY_PLAYER_STYLE = "player_style"
         private const val KEY_SAVE_VIDEO_HISTORY = "save_video_history"
+        private const val KEY_LIVE_DOWNLOAD_UPDATES = "live_download_updates"
+
+        /**
+         * Live Updates (promoted ongoing notifications) are an Android 16 / API 36
+         * feature. Below that the setting is meaningless and should not be shown.
+         */
+        val SUPPORTS_LIVE_UPDATES: Boolean =
+            android.os.Build.VERSION.SDK_INT >= 36
+
+        /**
+         * Fresh read for the notification helper, which runs off a plain Context
+         * rather than holding a ThemePreferences instance. Always false where the
+         * platform cannot promote, so callers need only check this one thing.
+         */
+        fun isLiveDownloadUpdatesEnabled(context: Context): Boolean =
+            SUPPORTS_LIVE_UPDATES &&
+                context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                    .getBoolean(KEY_LIVE_DOWNLOAD_UPDATES, true)
         private const val KEY_TIMED_COMMENTS_ENABLED = "timed_comments_enabled"
         private const val KEY_SHORTS_ENABLED = "shorts_enabled"
         private const val KEY_SHORTS_HIDDEN_ACTIONS = "shorts_hidden_actions"
@@ -442,6 +464,19 @@ class ThemePreferences(context: Context) {
      */
     fun toggleSaveVideoHistory() {
         setSaveVideoHistory(!_saveVideoHistory.value)
+    }
+
+    /**
+     * Whether download progress may ask to be promoted to a Live Update.
+     * Defaults on, but is inert below API 36 (see [SUPPORTS_LIVE_UPDATES]).
+     */
+    private fun getLiveDownloadUpdatesPreference(): Boolean {
+        return SUPPORTS_LIVE_UPDATES && prefs.getBoolean(KEY_LIVE_DOWNLOAD_UPDATES, true)
+    }
+
+    fun setLiveDownloadUpdates(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_LIVE_DOWNLOAD_UPDATES, enabled).apply()
+        _liveDownloadUpdates.value = enabled && SUPPORTS_LIVE_UPDATES
     }
 
     /**

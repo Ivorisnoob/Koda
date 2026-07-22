@@ -112,6 +112,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -144,6 +145,9 @@ import androidx.graphics.shapes.RoundedPolygon
 import androidx.graphics.shapes.toPath
 import coil.compose.AsyncImage
 import com.ivor.ivormusic.BuildConfig
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import com.ivor.ivormusic.data.DownloadNotificationHelper
 import com.ivor.ivormusic.data.FolderInfo
 import com.ivor.ivormusic.data.SessionManager
 import com.ivor.ivormusic.data.ThemePreferences
@@ -213,6 +217,8 @@ fun SettingsScreen(
     onPlayerStyleChange: (PlayerStyle) -> Unit,
     saveVideoHistory: Boolean,
     onSaveVideoHistoryToggle: (Boolean) -> Unit,
+    liveDownloadUpdates: Boolean,
+    onLiveDownloadUpdatesToggle: (Boolean) -> Unit,
     timedCommentsEnabled: Boolean,
     onTimedCommentsToggle: (Boolean) -> Unit,
     shortsEnabled: Boolean,
@@ -254,6 +260,23 @@ fun SettingsScreen(
     
     // Check actual login status
     var isLoggedIn by remember { mutableStateOf(sessionManager.isLoggedIn()) }
+
+    // Whether the OS currently lets Koda post promoted (Live Update)
+    // notifications. Re-read on resume, because the only way to change it is to
+    // leave for system settings and come back.
+    val notificationHelper = remember { DownloadNotificationHelper(context) }
+    var canPostPromoted by remember { mutableStateOf(notificationHelper.canPostLiveUpdates()) }
+    val settingsActivity = context as? androidx.activity.ComponentActivity
+    DisposableEffect(settingsActivity) {
+        val lifecycle = settingsActivity?.lifecycle
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                canPostPromoted = notificationHelper.canPostLiveUpdates()
+            }
+        }
+        lifecycle?.addObserver(observer)
+        onDispose { lifecycle?.removeObserver(observer) }
+    }
     
     val backgroundColor = MaterialTheme.colorScheme.background
     val surfaceColor = MaterialTheme.colorScheme.surfaceContainer
@@ -775,6 +798,51 @@ fun SettingsScreen(
                                 iconTint = accentColor,
                                 showChevron = true
                             )
+                        }
+                    }
+                }
+            }
+
+            // Notifications Section - only meaningful where the platform can
+            // actually promote an ongoing notification (Android 16+)
+            if (ThemePreferences.SUPPORTS_LIVE_UPDATES) {
+                item {
+                    SettingsSection(
+                        title = "Notifications",
+                        textColor = secondaryTextColor
+                    ) {
+                        ExpressiveSettingsCard(surfaceColor = surfaceColor) {
+                            ExpressiveOemToggleItem(
+                                icon = Icons.Rounded.Bolt,
+                                title = "Live download updates",
+                                subtitle = "Show download progress as a live status bar chip",
+                                enabled = liveDownloadUpdates,
+                                onToggle = onLiveDownloadUpdatesToggle,
+                                textColor = textColor,
+                                secondaryTextColor = secondaryTextColor,
+                                accentColor = accentColor
+                            )
+
+                            // Promotion is a request the system can refuse. When
+                            // the user has revoked it at the OS level the toggle
+                            // above is a lie, so surface the way to fix it.
+                            if (liveDownloadUpdates && !canPostPromoted) {
+                                SettingsDivider()
+                                ExpressiveSettingsItem(
+                                    icon = Icons.Rounded.Security,
+                                    title = "Blocked by system settings",
+                                    subtitle = "Allow live updates for Koda in Android settings",
+                                    onClick = {
+                                        notificationHelper
+                                            .promotedNotificationSettingsIntent()
+                                            ?.let { runCatching { context.startActivity(it) } }
+                                    },
+                                    textColor = Color(0xFFE53935),
+                                    secondaryTextColor = secondaryTextColor,
+                                    iconTint = Color(0xFFE53935),
+                                    showChevron = true
+                                )
+                            }
                         }
                     }
                 }

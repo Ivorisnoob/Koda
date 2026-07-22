@@ -7,4 +7,16 @@
     <color name="teal_700">#FF018786</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+
+    <!--
+        Notification colours.
+
+        The app rule is that colour always comes from the Compose ColorScheme,
+        but notifications are drawn by SystemUI outside our theme and the
+        ProgressStyle segment APIs take a plain @ColorInt. These are the only
+        place static colour values are legitimate; they are picked to read on
+        both light and dark system notification backgrounds.
+    -->
+    <color name="notification_progress_preparing">#FF7E57C2</color>
+    <color name="notification_progress_transfer">#FF00C853</color>
 </resources>

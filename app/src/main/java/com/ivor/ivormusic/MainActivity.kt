@@ -65,6 +65,7 @@ class MainActivity : ComponentActivity() {
             val homeModeToggleEnabled by themeViewModel.homeModeToggleEnabled.collectAsState()
             val playerStyle by themeViewModel.playerStyle.collectAsState()
             val saveVideoHistory by themeViewModel.saveVideoHistory.collectAsState()
+            val liveDownloadUpdates by themeViewModel.liveDownloadUpdates.collectAsState()
             val timedCommentsEnabled by themeViewModel.timedCommentsEnabled.collectAsState()
             val shortsEnabled by themeViewModel.shortsEnabled.collectAsState()
             val shortsHiddenActions by themeViewModel.shortsHiddenActions.collectAsState()
@@ -118,6 +119,8 @@ class MainActivity : ComponentActivity() {
                         onPlayerStyleChange = { themeViewModel.setPlayerStyle(it) },
                         saveVideoHistory = saveVideoHistory,
                         onSaveVideoHistoryToggle = { themeViewModel.setSaveVideoHistory(it) },
+                        liveDownloadUpdates = liveDownloadUpdates,
+                        onLiveDownloadUpdatesToggle = { themeViewModel.setLiveDownloadUpdates(it) },
                         timedCommentsEnabled = timedCommentsEnabled,
                         onTimedCommentsToggle = { themeViewModel.setTimedCommentsEnabled(it) },
                         shortsEnabled = shortsEnabled,
@@ -180,6 +183,8 @@ fun MusicApp(
     onPlayerStyleChange: (PlayerStyle) -> Unit,
     saveVideoHistory: Boolean,
     onSaveVideoHistoryToggle: (Boolean) -> Unit,
+    liveDownloadUpdates: Boolean,
+    onLiveDownloadUpdatesToggle: (Boolean) -> Unit,
     timedCommentsEnabled: Boolean,
     onTimedCommentsToggle: (Boolean) -> Unit,
     shortsEnabled: Boolean,
@@ -373,6 +378,8 @@ fun MusicApp(
                     onPlayerStyleChange = onPlayerStyleChange,
                     saveVideoHistory = saveVideoHistory,
                     onSaveVideoHistoryToggle = onSaveVideoHistoryToggle,
+                    liveDownloadUpdates = liveDownloadUpdates,
+                    onLiveDownloadUpdatesToggle = onLiveDownloadUpdatesToggle,
                     timedCommentsEnabled = timedCommentsEnabled,
                     onTimedCommentsToggle = onTimedCommentsToggle,
                     shortsEnabled = shortsEnabled,
