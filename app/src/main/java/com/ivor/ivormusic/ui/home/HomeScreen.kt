@@ -151,7 +151,7 @@ fun HomeScreen(
     loadLocalSongs: Boolean = true,
     excludedFolders: Set<String> = emptySet(),
     ambientBackground: Boolean = true,
-    playerArtworkColors: Boolean = false,
+    playerArtworkColors: Boolean = true,
     videoMode: Boolean = false,
     onVideoModeToggle: (Boolean) -> Unit = {},
     showModeToggle: Boolean = true,

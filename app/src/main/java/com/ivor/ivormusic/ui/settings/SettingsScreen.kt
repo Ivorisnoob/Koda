@@ -200,7 +200,7 @@ fun SettingsScreen(
     onLoadLocalSongsToggle: (Boolean) -> Unit,
     ambientBackground: Boolean,
     onAmbientBackgroundToggle: (Boolean) -> Unit,
-    playerArtworkColors: Boolean = false,
+    playerArtworkColors: Boolean = true,
     onPlayerArtworkColorsToggle: (Boolean) -> Unit = {},
     videoMode: Boolean,
     onVideoModeToggle: (Boolean) -> Unit,

@@ -334,11 +334,11 @@ class ThemePreferences(context: Context) {
     }
 
     /**
-     * Get the stored album-art player colors preference. Defaults to false:
-     * expanded player buttons stay on the app theme.
+     * Get the stored album-art player colors preference. Defaults to true:
+     * expanded player buttons take their colors from the current cover.
      */
     private fun getPlayerArtworkColorsPreference(): Boolean {
-        return prefs.getBoolean(KEY_PLAYER_ARTWORK_COLORS, false)
+        return prefs.getBoolean(KEY_PLAYER_ARTWORK_COLORS, true)
     }
 
     /**
