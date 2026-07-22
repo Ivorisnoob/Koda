@@ -192,8 +192,8 @@ AMOLED mode does not simply set the background to black — it compresses the wh
 
 Two families, each doing a specific job:
 
-- **Roboto Flex** — the variable-axis workhorse, including a medium-width variant used where labels need to hold a tighter column.
-- **Montserrat** — loaded via the Google Fonts provider for display and editorial contexts, notably the Editorial and Poster player styles where type *is* the interface.
+- **Roboto Flex** — the variable-axis workhorse. Body and label styles run at width 100, while `headlineSmall` uses a width-110 / weight-600 variant so section headers hold a tighter column without switching family.
+- **Montserrat** — loaded through the Google Fonts provider across seven weights, and applied to `displayLarge`: 68sp SemiBold, stretched to `scaleX = 1.5f` with `-0.05em` tracking and an `0.8em` line height. That single style is what gives the app's big headers their poster-like presence.
 
 ---
 
@@ -206,7 +206,7 @@ The player styles are the clearest demonstration that Expressive is a constructi
 | Classic | Familiar transport, play / pause / next / previous |
 | Gesture | Swipeable carousel flicked between tracks |
 | Editorial | Two-tone magazine layout, die-cut art, word-pill transport |
-| Poster | Kinetic type where the title itself is the progress display |
+| Canvas | Full-bleed album art as the entire screen, chrome fading out as it plays |
 | Bento | Squish grid of flat tonal tiles with press physics |
 | Sticker | Die-cut sticker with drag, peel, squash-and-stretch |
 | Morph | Living hero shape cycling organic cuts while playing |

@@ -54,7 +54,7 @@ Eight distinct, fully animated player UIs, switchable from a spinnable style whe
 - **Classic** — familiar transport with play / pause / next / previous.
 - **Gesture** — swipeable carousel you flick between tracks.
 - **Editorial** — two-tone magazine layout with die-cut art and a word-pill transport.
-- **Poster** — kinetic type where the title itself is the progress display.
+- **Canvas** — full-bleed album art as the whole screen, with chrome that fades away while playing and swipe-to-skip that follows your finger.
 - **Bento** — a squish grid of flat tonal tiles with press physics.
 - **Sticker** — a die-cut sticker with drag, peel, and squash-and-stretch physics.
 - **Morph** — a living hero shape that cycles organic cuts while playing.
