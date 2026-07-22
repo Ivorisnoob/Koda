@@ -15,7 +15,6 @@ import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.IconCompat
 import com.ivor.ivormusic.MainActivity
 import com.ivor.ivormusic.R
-import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Download notifications, including Android 16 Live Updates.
@@ -45,12 +44,11 @@ class DownloadNotificationHelper(private val context: Context) {
         private const val CHANNEL_DESCRIPTION = "Song and video download progress"
 
         /**
-         * Floor on how often a single download may repost. The transfer loop
-         * reports every 8KB buffer, which for a normal track is hundreds of
-         * updates per second - posting them all is what made these
-         * notifications flicker and hammer SystemUI.
+         * Fixed id for the foreground service notification. Downloads run one
+         * at a time behind a single service, so progress is one notification
+         * that retitles itself rather than one per song.
          */
-        private const val MIN_UPDATE_INTERVAL_MS = 500L
+        const val FOREGROUND_NOTIFICATION_ID = 0xD0AD
 
         /**
          * Share of the bar given to stream resolution, matching the 0.1f the
@@ -67,10 +65,6 @@ class DownloadNotificationHelper(private val context: Context) {
     }
 
     private val notificationManager = NotificationManagerCompat.from(context)
-
-    /** Last posted percent + timestamp per download, for throttling. */
-    private data class PostState(val atMs: Long, val percent: Int)
-    private val lastPost = ConcurrentHashMap<String, PostState>()
 
     init {
         createNotificationChannel()
@@ -119,27 +113,28 @@ class DownloadNotificationHelper(private val context: Context) {
     }
 
     /**
-     * Show or update download progress.
+     * Build the download progress notification.
      *
-     * Reposts are throttled: an update is skipped unless the whole-percent value
-     * changed and [MIN_UPDATE_INTERVAL_MS] has elapsed. The 0% and 100% edges
-     * always post so the notification appears and completes promptly.
+     * This returns rather than posts, because the notification belongs to the
+     * foreground service: the same object has to be handed to startForeground
+     * on the first call and to notify() on every update, and a service that
+     * cannot produce its notification synchronously cannot start.
+     *
+     * Update rate is governed upstream - the repository only emits on
+     * whole-percent changes - so there is no throttle here.
      */
-    fun showDownloadProgress(
-        songId: String,
+    fun buildProgressNotification(
         songTitle: String,
         artistName: String,
         progress: Float, // 0.0 to 1.0
         bytesDownloaded: Long,
         totalBytes: Long,
+        queuedCount: Int = 0,
         // Picks the tracker icon. A plain flag for now; this becomes part of the
         // download model proper once video downloads land.
         isVideo: Boolean = false
-    ) {
-        if (!hasNotificationPermission()) return
-
+    ): android.app.Notification {
         val percent = (progress * 100).toInt().coerceIn(0, 100)
-        if (!shouldPost(songId, percent)) return
 
         val contentIntent = PendingIntent.getActivity(
             context,
@@ -198,16 +193,20 @@ class DownloadNotificationHelper(private val context: Context) {
             .setShortCriticalText("$percent%")
 
         // Byte counts only once the transfer is actually underway, otherwise
-        // the subtext reads "0.0 / 0.0 MB" during URL resolution.
-        if (totalBytes > 0) {
-            val downloadedMb = bytesDownloaded / (1024 * 1024f)
-            val totalMb = totalBytes / (1024 * 1024f)
-            builder.setSubText("%.1f / %.1f MB".format(downloadedMb, totalMb))
-        } else {
-            builder.setSubText("Preparing")
-        }
+        // the subtext reads "0.0 / 0.0 MB" during URL resolution. The queue
+        // depth matters more than bytes when there is one, so it wins.
+        builder.setSubText(
+            when {
+                queuedCount > 0 -> "$queuedCount more in queue"
+                totalBytes > 0 -> "%.1f / %.1f MB".format(
+                    bytesDownloaded / (1024 * 1024f),
+                    totalBytes / (1024 * 1024f)
+                )
+                else -> "Preparing"
+            }
+        )
 
-        notificationManager.notify(getNotificationId(songId), builder.build())
+        return builder.build()
     }
 
     /**
@@ -218,7 +217,6 @@ class DownloadNotificationHelper(private val context: Context) {
         songTitle: String,
         artistName: String
     ) {
-        lastPost.remove(songId)
         if (!hasNotificationPermission()) return
 
         val contentIntent = PendingIntent.getActivity(
@@ -247,7 +245,6 @@ class DownloadNotificationHelper(private val context: Context) {
         songId: String,
         songTitle: String
     ) {
-        lastPost.remove(songId)
         if (!hasNotificationPermission()) return
 
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
@@ -264,28 +261,7 @@ class DownloadNotificationHelper(private val context: Context) {
      * Dismiss a download notification.
      */
     fun dismissNotification(songId: String) {
-        lastPost.remove(songId)
         notificationManager.cancel(getNotificationId(songId))
-    }
-
-    /**
-     * Throttle gate. Posts on the first update, on every whole-percent change
-     * that is at least [MIN_UPDATE_INTERVAL_MS] after the last one, and always
-     * on the 0/100 edges.
-     */
-    private fun shouldPost(songId: String, percent: Int): Boolean {
-        val now = System.currentTimeMillis()
-        val previous = lastPost[songId]
-
-        val allow = when {
-            previous == null -> true
-            percent >= 100 || percent == 0 -> true
-            percent == previous.percent -> false
-            else -> now - previous.atMs >= MIN_UPDATE_INTERVAL_MS
-        }
-
-        if (allow) lastPost[songId] = PostState(now, percent)
-        return allow
     }
 
     /**

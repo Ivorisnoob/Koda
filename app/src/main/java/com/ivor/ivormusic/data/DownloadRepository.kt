@@ -7,35 +7,109 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import com.ivor.ivormusic.service.DownloadService
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
-import java.io.FileOutputStream
 import java.util.concurrent.TimeUnit
 
 enum class DownloadStatus {
     NOT_DOWNLOADED,
+
+    /** Accepted and waiting for the worker; downloads run one at a time. */
+    QUEUED,
     DOWNLOADING,
     DOWNLOADED,
     FAILED,
     LOCAL_ORIGINAL
 }
 
+/**
+ * One queued or in-flight download, of either media type.
+ *
+ * Music carries its originating [Song] so completion can reuse it verbatim;
+ * video has no equivalent domain object to preserve, so the display fields on
+ * the request itself are the whole story.
+ */
+data class DownloadRequest(
+    val id: String,
+    val title: String,
+    val subtitle: String,
+    val type: DownloadMediaType,
+    val thumbnailUrl: String? = null,
+    val durationMs: Long = 0,
+    val song: Song? = null
+) {
+    val isVideo: Boolean get() = type == DownloadMediaType.VIDEO
+}
+
 data class DownloadProgress(
     val songId: String,
-    val song: Song,
+    val request: DownloadRequest,
     val progress: Float, // 0.0 to 1.0
     val status: DownloadStatus,
     val bytesDownloaded: Long = 0,
     val totalBytes: Long = 0
 )
 
-class DownloadRepository(private val context: Context) {
+/** A completed video download. */
+data class DownloadedVideo(
+    val id: String,
+    val title: String,
+    val channelName: String,
+    val uri: Uri,
+    val thumbnailUrl: String? = null,
+    val durationMs: Long = 0,
+    val quality: String? = null
+)
+
+/**
+ * Owns download state for the whole process.
+ *
+ * This is a singleton on purpose. Every consumer used to construct its own
+ * instance, and since all download state lives in per-instance StateFlows, the
+ * instances never agreed: starting a download from the home screen updated the
+ * home ViewModel's copy while the Downloads screen watched the player
+ * ViewModel's, so the transfer was invisible there and the finished song only
+ * turned up after an app restart. One instance means one set of flows and one
+ * source of truth.
+ *
+ * The constructor is private so that failure mode cannot be reintroduced by
+ * calling `DownloadRepository(context)` again.
+ */
+class DownloadRepository private constructor(private val context: Context) {
     companion object {
         private const val TAG = "DownloadRepository"
+
+        /**
+         * Attempts per download. Each one re-resolves the stream URL, which is
+         * what actually rescues an expired googlevideo link.
+         */
+        private const val MAX_ATTEMPTS = 3
+        private const val RETRY_BACKOFF_MS = 2_000L
+        private const val BUFFER_SIZE = 8192
+
+        /** How long a finished download stays visible in the progress list. */
+        private const val COMPLETION_LINGER_MS = 1_500L
+
+        @Volatile
+        private var INSTANCE: DownloadRepository? = null
+
+        /**
+         * The process-wide instance. Always built against the application
+         * context so holding it from a Service or ViewModel cannot leak an
+         * Activity.
+         */
+        fun getInstance(context: Context): DownloadRepository =
+            INSTANCE ?: synchronized(this) {
+                INSTANCE ?: DownloadRepository(context.applicationContext).also { INSTANCE = it }
+            }
     }
 
     private val client = OkHttpClient.Builder()
@@ -52,9 +126,18 @@ class DownloadRepository(private val context: Context) {
 
     private val youtubeRepository = YouTubeRepository(context)
     private val notificationHelper = DownloadNotificationHelper(context)
+    private val storage = DownloadStorage(context)
 
     private val downloadsFile = File(context.filesDir, "downloaded_songs_metadata.json")
-    private val musicDir = File(context.filesDir, "music")
+    private val videosFile = File(context.filesDir, "downloaded_videos_metadata.json")
+
+    /**
+     * Scope for work that outlives a single call, currently only the one-time
+     * storage migration. Repository instances are never explicitly disposed, so
+     * this deliberately has no cancellation hook.
+     */
+    private val repositoryScope =
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.IO)
 
     private val _downloadedSongs = MutableStateFlow<List<Song>>(emptyList())
     val downloadedSongs: StateFlow<List<Song>> = _downloadedSongs.asStateFlow()
@@ -66,19 +149,73 @@ class DownloadRepository(private val context: Context) {
     private val _downloadProgress = MutableStateFlow<Map<String, DownloadProgress>>(emptyMap())
     val downloadProgress: StateFlow<Map<String, DownloadProgress>> = _downloadProgress.asStateFlow()
 
-    // Download queue for batch downloads
-    private val _downloadQueue = MutableStateFlow<List<Song>>(emptyList())
-    val downloadQueue: StateFlow<List<Song>> = _downloadQueue.asStateFlow()
+    private val _downloadedVideos = MutableStateFlow<List<DownloadedVideo>>(emptyList())
+    val downloadedVideos: StateFlow<List<DownloadedVideo>> = _downloadedVideos.asStateFlow()
 
-    // Track active download calls for cancellation
-    private val activeDownloadCalls = mutableMapOf<String, okhttp3.Call>()
-    private val downloadJobs = mutableMapOf<String, kotlinx.coroutines.Job>()
+    // Requests accepted but not yet started. Downloads run serially, so this is
+    // the real backlog rather than a snapshot of a batch.
+    private val _downloadQueue = MutableStateFlow<List<DownloadRequest>>(emptyList())
+    val downloadQueue: StateFlow<List<DownloadRequest>> = _downloadQueue.asStateFlow()
+
+    /** Guards queue mutations and [activeId] so enqueue and drain agree. */
+    private val queueMutex = kotlinx.coroutines.sync.Mutex()
+
+    private val workerLock = Any()
+
+    @Volatile
+    private var workerRunning = false
+
+    /** The job running the current transfer, cancelled per-download. */
+    @Volatile
+    private var activeJob: kotlinx.coroutines.Job? = null
+
+    @Volatile
+    private var activeId: String? = null
+
+    // Track active download calls for cancellation. Concurrent because
+    // downloads run on Dispatchers.IO while cancellation arrives from the main
+    // thread; a plain LinkedHashMap here was a data race.
+    private val activeDownloadCalls = java.util.concurrent.ConcurrentHashMap<String, okhttp3.Call>()
 
     init {
-        if (!musicDir.exists()) musicDir.mkdirs()
+        // Read whatever is on disk right away so consumers that touch
+        // downloadedSongs.value immediately (MusicService does) are not racing
+        // an empty list, then migrate in the background and reload.
         loadDownloadedSongs()
+        loadDownloadedVideos()
+        repositoryScope.launch {
+            if (DownloadMigration.migrateIfNeeded(context)) {
+                loadDownloadedSongs()
+            }
+        }
     }
 
+    /**
+     * Whether this exact media type is already downloaded.
+     *
+     * Music and video share an id namespace (both are YouTube video ids), so
+     * the check has to be per-type: having the audio does not mean the user
+     * already has the video. The queue's own id check still prevents the two
+     * running at once, so they simply happen in sequence.
+     */
+    private fun isDownloadedOfType(id: String, type: DownloadMediaType): Boolean =
+        when (type) {
+            DownloadMediaType.MUSIC -> _downloadedSongs.value.any { it.id == id }
+            DownloadMediaType.VIDEO -> _downloadedVideos.value.any { it.id == id }
+        }
+
+    /**
+     * Hydrate from the metadata sidecar, dropping anything whose file is gone.
+     *
+     * Two entry shapes are accepted on purpose: `mediaUri` for downloads in
+     * shared storage, and the legacy `localPath` for entries that have not been
+     * migrated yet. Keeping both readable means the list works before, during
+     * and after [DownloadMigration] runs.
+     *
+     * Existence is reconciled against MediaStore in a single query rather than
+     * trusted, because these files are now user-visible and can be deleted from
+     * the Files app behind our back.
+     */
     private fun loadDownloadedSongs() {
         if (!downloadsFile.exists()) {
             _downloadedSongs.value = emptyList()
@@ -86,29 +223,50 @@ class DownloadRepository(private val context: Context) {
         }
 
         try {
-            val jsonStr = downloadsFile.readText()
-            val jsonArray = JSONArray(jsonStr)
+            val jsonArray = JSONArray(downloadsFile.readText())
+            val liveUris = storage.listExisting(DownloadMediaType.MUSIC).keys
             val songs = mutableListOf<Song>()
+            var prunedAny = false
 
             for (i in 0 until jsonArray.length()) {
-                val obj = jsonArray.getJSONObject(i)
-                val filePath = obj.getString("localPath")
-                val file = File(filePath)
-                if (file.exists()) {
-                    songs.add(Song(
-                        id = obj.getString("id"),
-                        title = obj.getString("title"),
-                        artist = obj.getString("artist"),
-                        album = obj.optString("album", ""),
-                        duration = obj.getLong("duration"),
-                        uri = Uri.fromFile(file),
-                        albumArtUri = if (obj.has("albumArtUrl")) Uri.parse(obj.getString("albumArtUrl")) else null,
-                        thumbnailUrl = if (obj.has("albumArtUrl") && !obj.isNull("albumArtUrl")) obj.getString("albumArtUrl") else null,
-                        source = SongSource.LOCAL
-                    ))
+                val obj = jsonArray.optJSONObject(i) ?: continue
+
+                val mediaUri = obj.optString("mediaUri").takeIf { it.isNotBlank() }
+                val legacyPath = obj.optString("localPath").takeIf { it.isNotBlank() }
+
+                val uri: Uri? = when {
+                    mediaUri != null -> Uri.parse(mediaUri).takeIf { it in liveUris }
+                    legacyPath != null -> File(legacyPath).takeIf { it.exists() }?.let(Uri::fromFile)
+                    else -> null
                 }
+
+                if (uri == null) {
+                    prunedAny = true
+                    continue
+                }
+
+                val artUrl = obj.optString("albumArtUrl").takeIf {
+                    it.isNotBlank() && !obj.isNull("albumArtUrl")
+                }
+                songs.add(
+                    Song(
+                        id = obj.optString("id"),
+                        title = obj.optString("title"),
+                        artist = obj.optString("artist"),
+                        album = obj.optString("album", ""),
+                        duration = obj.optLong("duration"),
+                        uri = uri,
+                        albumArtUri = artUrl?.let(Uri::parse),
+                        thumbnailUrl = artUrl,
+                        source = SongSource.LOCAL
+                    )
+                )
             }
+
             _downloadedSongs.value = songs
+            // Persist the pruned list so externally deleted files do not get
+            // re-checked on every launch.
+            if (prunedAny) saveMetadata()
         } catch (e: Exception) {
             Log.e(TAG, "Error loading downloads", e)
             _downloadedSongs.value = emptyList()
@@ -119,18 +277,23 @@ class DownloadRepository(private val context: Context) {
         try {
             val jsonArray = JSONArray()
             _downloadedSongs.value.forEach { song ->
-                if (song.source == SongSource.LOCAL && song.uri?.path?.startsWith(context.filesDir.path) == true) {
-                    val obj = JSONObject().apply {
-                        put("id", song.id)
-                        put("title", song.title)
-                        put("artist", song.artist)
-                        put("album", song.album)
-                        put("duration", song.duration)
-                        put("localPath", song.uri.path)
-                        put("albumArtUrl", song.thumbnailUrl ?: song.albumArtUri?.toString())
+                val uri = song.uri ?: return@forEach
+                val obj = JSONObject().apply {
+                    put("id", song.id)
+                    put("title", song.title)
+                    put("artist", song.artist)
+                    put("album", song.album)
+                    put("duration", song.duration)
+                    // Downloads live in MediaStore now; a file:// uri here only
+                    // happens for entries awaiting migration.
+                    if (uri.scheme == "file") {
+                        put("localPath", uri.path)
+                    } else {
+                        put("mediaUri", uri.toString())
                     }
-                    jsonArray.put(obj)
+                    put("albumArtUrl", song.thumbnailUrl ?: song.albumArtUri?.toString())
                 }
+                jsonArray.put(obj)
             }
             downloadsFile.writeText(jsonArray.toString())
         } catch (e: Exception) {
@@ -138,36 +301,116 @@ class DownloadRepository(private val context: Context) {
         }
     }
 
-    private fun updateProgress(songId: String, song: Song, progress: Float, status: DownloadStatus, bytesDownloaded: Long = 0, totalBytes: Long = 0) {
+    /** Load completed video downloads, reconciled against MediaStore. */
+    private fun loadDownloadedVideos() {
+        if (!videosFile.exists()) {
+            _downloadedVideos.value = emptyList()
+            return
+        }
+
+        try {
+            val jsonArray = JSONArray(videosFile.readText())
+            val liveUris = storage.listExisting(DownloadMediaType.VIDEO).keys
+            val videos = mutableListOf<DownloadedVideo>()
+            var prunedAny = false
+
+            for (i in 0 until jsonArray.length()) {
+                val obj = jsonArray.optJSONObject(i) ?: continue
+                val uri = obj.optString("mediaUri").takeIf { it.isNotBlank() }
+                    ?.let(Uri::parse)
+                    ?.takeIf { it in liveUris }
+
+                if (uri == null) {
+                    prunedAny = true
+                    continue
+                }
+
+                videos.add(
+                    DownloadedVideo(
+                        id = obj.optString("id"),
+                        title = obj.optString("title"),
+                        channelName = obj.optString("channelName"),
+                        uri = uri,
+                        thumbnailUrl = obj.optString("thumbnailUrl").takeIf { it.isNotBlank() },
+                        durationMs = obj.optLong("durationMs"),
+                        quality = obj.optString("quality").takeIf { it.isNotBlank() }
+                    )
+                )
+            }
+
+            _downloadedVideos.value = videos
+            if (prunedAny) saveVideoMetadata()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error loading video downloads", e)
+            _downloadedVideos.value = emptyList()
+        }
+    }
+
+    private fun saveVideoMetadata() {
+        try {
+            val jsonArray = JSONArray()
+            _downloadedVideos.value.forEach { video ->
+                jsonArray.put(
+                    JSONObject().apply {
+                        put("id", video.id)
+                        put("title", video.title)
+                        put("channelName", video.channelName)
+                        put("mediaUri", video.uri.toString())
+                        put("thumbnailUrl", video.thumbnailUrl)
+                        put("durationMs", video.durationMs)
+                        put("quality", video.quality)
+                    }
+                )
+            }
+            videosFile.writeText(jsonArray.toString())
+        } catch (e: Exception) {
+            Log.e(TAG, "Error saving video metadata", e)
+        }
+    }
+
+    /**
+     * Publish progress for one download.
+     *
+     * The transfer loop calls this on every 8KB buffer, which is hundreds of
+     * times a second. Emitting all of them would recompose the Downloads screen
+     * just as often for changes too small to see, so an update is dropped
+     * unless the whole-percent value or the status actually changed. That takes
+     * a download from thousands of emissions to about a hundred, and the
+     * terminal states always get through because their status differs.
+     */
+    private fun updateProgress(
+        request: DownloadRequest,
+        progress: Float,
+        status: DownloadStatus,
+        bytesDownloaded: Long = 0,
+        totalBytes: Long = 0
+    ) {
+        val previous = _downloadProgress.value[request.id]
+        if (previous != null &&
+            previous.status == status &&
+            (previous.progress * 100).toInt() == (progress * 100).toInt()
+        ) {
+            return
+        }
+
         val current = _downloadProgress.value.toMutableMap()
-        current[songId] = DownloadProgress(songId, song, progress, status, bytesDownloaded, totalBytes)
+        current[request.id] =
+            DownloadProgress(request.id, request, progress, status, bytesDownloaded, totalBytes)
         _downloadProgress.value = current
-        
-        // Update notification
+
+        // Terminal states get their own one-shot notification. Progress itself
+        // is not posted here: it belongs to DownloadService, which owns the
+        // foreground notification and observes these flows.
         when (status) {
-            DownloadStatus.DOWNLOADING -> {
-                notificationHelper.showDownloadProgress(
-                    songId = songId,
-                    songTitle = song.title,
-                    artistName = song.artist,
-                    progress = progress,
-                    bytesDownloaded = bytesDownloaded,
-                    totalBytes = totalBytes
-                )
-            }
-            DownloadStatus.DOWNLOADED -> {
-                notificationHelper.showDownloadComplete(
-                    songId = songId,
-                    songTitle = song.title,
-                    artistName = song.artist
-                )
-            }
-            DownloadStatus.FAILED -> {
-                notificationHelper.showDownloadFailed(
-                    songId = songId,
-                    songTitle = song.title
-                )
-            }
+            DownloadStatus.DOWNLOADED -> notificationHelper.showDownloadComplete(
+                songId = request.id,
+                songTitle = request.title,
+                artistName = request.subtitle
+            )
+            DownloadStatus.FAILED -> notificationHelper.showDownloadFailed(
+                songId = request.id,
+                songTitle = request.title
+            )
             else -> { /* No notification for other statuses */ }
         }
     }
@@ -176,167 +419,505 @@ class DownloadRepository(private val context: Context) {
         val current = _downloadProgress.value.toMutableMap()
         current.remove(songId)
         _downloadProgress.value = current
-        
+
         // Dismiss notification when progress is removed
         notificationHelper.dismissNotification(songId)
     }
 
-    suspend fun downloadSong(song: Song) = withContext(Dispatchers.IO) {
-        if (isDownloaded(song.id) || _downloadingIds.value.contains(song.id)) return@withContext
+    // --- Queue and worker ---------------------------------------------------
 
-        _downloadingIds.value = _downloadingIds.value + song.id
-        updateProgress(song.id, song, 0f, DownloadStatus.DOWNLOADING)
+    /**
+     * Queue a song. Kept `suspend` so existing call sites are unchanged, but it
+     * no longer performs the transfer: it enqueues and returns. Previously the
+     * transfer ran in the caller's scope, so a download started from a screen
+     * died when that screen's ViewModel was cleared, leaving a half-written
+     * file behind.
+     */
+    suspend fun downloadSong(song: Song) {
+        enqueue(listOf(song.toRequest()))
+    }
 
+    /**
+     * Queue a whole playlist. Songs already downloaded or already queued are
+     * skipped, so re-running this over a partially downloaded playlist only
+     * fetches what is missing.
+     */
+    suspend fun downloadPlaylist(songs: List<Song>) {
+        enqueue(songs.map { it.toRequest() })
+    }
+
+    /** Queue a video download. */
+    suspend fun downloadVideo(video: VideoItem) {
+        enqueue(listOf(video.toRequest()))
+    }
+
+    /** Queue several videos at once. */
+    suspend fun downloadVideos(videos: List<VideoItem>) {
+        enqueue(videos.map { it.toRequest() })
+    }
+
+    private fun Song.toRequest() = DownloadRequest(
+        id = id,
+        title = title,
+        subtitle = artist,
+        type = DownloadMediaType.MUSIC,
+        thumbnailUrl = thumbnailUrl ?: albumArtUri?.toString(),
+        durationMs = duration,
+        song = this
+    )
+
+    private fun VideoItem.toRequest() = DownloadRequest(
+        id = videoId,
+        title = title,
+        subtitle = channelName,
+        type = DownloadMediaType.VIDEO,
+        thumbnailUrl = thumbnailUrl,
+        // VideoItem.duration is seconds; everything downstream works in millis.
+        durationMs = duration * 1000
+    )
+
+    private suspend fun enqueue(requests: List<DownloadRequest>) {
+        val accepted = queueMutex.withLock {
+            val existing = _downloadQueue.value.map { it.id }.toSet()
+            val additions = requests.filter { request ->
+                request.id.isNotBlank() &&
+                    !isDownloadedOfType(request.id, request.type) &&
+                    request.id !in existing &&
+                    request.id != activeId
+            }.distinctBy { it.id }
+
+            if (additions.isNotEmpty()) {
+                _downloadQueue.value = _downloadQueue.value + additions
+                _downloadingIds.value = _downloadingIds.value + additions.map { it.id }
+                additions.forEach { updateProgress(it, 0f, DownloadStatus.QUEUED) }
+            }
+            additions
+        }
+
+        if (accepted.isNotEmpty()) ensureWorker()
+    }
+
+    /**
+     * Start the drain loop if it is not already running.
+     *
+     * The re-check in the `finally` closes the race where a request is enqueued
+     * just as the loop decides the queue is empty: rather than locking around
+     * the whole drain, the loop re-arms itself if anything arrived on the way
+     * out.
+     */
+    private fun ensureWorker() {
+        synchronized(workerLock) {
+            if (workerRunning) return
+            workerRunning = true
+        }
+
+        repositoryScope.launch {
+            try {
+                drainQueue()
+            } finally {
+                synchronized(workerLock) { workerRunning = false }
+                if (_downloadQueue.value.isNotEmpty()) ensureWorker()
+            }
+        }
+    }
+
+    private suspend fun drainQueue() {
+        DownloadService.start(context)
         try {
-            Log.d(TAG, "Starting download for: ${song.title}")
-            
-            // Get stream URL
-            updateProgress(song.id, song, 0.05f, DownloadStatus.DOWNLOADING)
-            val result = youtubeRepository.getStreamUrl(song.id)
-            val streamUrl = result.getOrNull()
-            
-            if (streamUrl == null) {
-                val error = result.exceptionOrNull()
-                Log.e(TAG, "Could not get stream URL for ${song.title}", error)
-                updateProgress(song.id, song, 0f, DownloadStatus.FAILED)
-                return@withContext
+            while (true) {
+                val next = queueMutex.withLock {
+                    _downloadQueue.value.firstOrNull()?.also {
+                        _downloadQueue.value = _downloadQueue.value.drop(1)
+                        activeId = it.id
+                    }
+                } ?: break
+
+                // Each task is its own child job so cancelling one download
+                // does not tear down the queue. join() returns normally when
+                // the child is cancelled, so the loop simply moves on.
+                val job = repositoryScope.launch { runTask(next) }
+                activeJob = job
+                job.join()
+
+                activeJob = null
+                queueMutex.withLock { activeId = null }
+            }
+        } finally {
+            DownloadService.stop(context)
+        }
+    }
+
+    /**
+     * Run one download, retrying transient failures.
+     *
+     * Each attempt re-resolves the stream URL rather than reusing the previous
+     * one. googlevideo URLs expire, so a retry against a stale URL would fail
+     * exactly like the attempt before it.
+     */
+    private suspend fun runTask(request: DownloadRequest) {
+        var lastError: Throwable? = null
+
+        for (attempt in 1..MAX_ATTEMPTS) {
+            try {
+                val ok = if (request.isVideo) {
+                    attemptVideoDownload(request)
+                } else {
+                    attemptMusicDownload(request)
+                }
+                if (ok) return
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                lastError = e
+                Log.w(TAG, "Attempt $attempt/$MAX_ATTEMPTS failed for ${request.title}: ${e.message}")
             }
 
-            // Check if cancelled during URL fetch
-            if (!_downloadingIds.value.contains(song.id)) {
-                Log.d(TAG, "Download cancelled for ${song.title}")
-                removeProgress(song.id)
-                return@withContext
+            if (attempt < MAX_ATTEMPTS) {
+                kotlinx.coroutines.delay(RETRY_BACKOFF_MS * attempt)
             }
+        }
 
-            updateProgress(song.id, song, 0.1f, DownloadStatus.DOWNLOADING)
-            Log.d(TAG, "Got stream URL, starting download...")
+        Log.e(TAG, "Giving up on ${request.title}", lastError)
+        updateProgress(request, 0f, DownloadStatus.FAILED)
+        _downloadingIds.value = _downloadingIds.value - request.id
+    }
 
-            val request = Request.Builder().url(streamUrl).build()
-            val call = client.newCall(request)
-            activeDownloadCalls[song.id] = call
-            
-            val response = call.execute()
-            
-            if (!response.isSuccessful) {
-                Log.e(TAG, "Download failed with code: ${response.code}")
-                updateProgress(song.id, song, 0f, DownloadStatus.FAILED)
-                return@withContext
+    /**
+     * One music download attempt. Returns true on success.
+     *
+     * Cancellation is cooperative through the coroutine's own job rather than
+     * through membership of a state set: the previous design used
+     * `_downloadingIds` as both the "is downloading" state and the stop signal,
+     * which meant any code touching that set could halt a transfer.
+     */
+    private suspend fun attemptMusicDownload(request: DownloadRequest): Boolean =
+        withContext(Dispatchers.IO) {
+            val song = request.song ?: return@withContext false
+            var pendingTarget: Uri? = null
+            updateProgress(request, 0.02f, DownloadStatus.DOWNLOADING)
+
+            try {
+                val streamUrl = youtubeRepository.getStreamUrl(request.id).getOrNull()
+                    ?: throw java.io.IOException("No stream URL for ${request.id}")
+
+                ensureActive()
+                updateProgress(request, 0.1f, DownloadStatus.DOWNLOADING)
+
+                val fileName =
+                    storage.buildFileName(request.title, request.subtitle, DownloadMediaType.MUSIC)
+                val target = storage.createPending(fileName, DownloadMediaType.MUSIC)
+                    ?: throw java.io.IOException("Could not create storage entry")
+                pendingTarget = target
+
+                val output = storage.openOutput(target)
+                    ?: throw java.io.IOException("Could not open output")
+
+                output.use { out ->
+                    downloadStream(request, streamUrl, out, 0.1f, 1f)
+                }
+
+                storage.publish(target)
+                pendingTarget = null
+
+                val downloaded = song.copy(uri = target, source = SongSource.LOCAL)
+                _downloadedSongs.value = _downloadedSongs.value + downloaded
+                saveMetadata()
+
+                finishSuccess(request)
+                true
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                cleanUpCancelled(request, pendingTarget)
+                throw e
+            } catch (e: Exception) {
+                pendingTarget?.let { storage.delete(it) }
+                throw e
+            } finally {
+                activeDownloadCalls.remove(request.id)
             }
+        }
 
-            val body = response.body
-            if (body == null) {
-                Log.e(TAG, "Response body is null")
-                updateProgress(song.id, song, 0f, DownloadStatus.FAILED)
-                return@withContext
-            }
+    /**
+     * One video download attempt.
+     *
+     * YouTube serves a single ready-made file only at 360p; everything better
+     * is video-only plus a separate audio stream, so the good path downloads
+     * both to the cache and remuxes them into the final MP4 (see
+     * [DownloadMuxer]). If no adaptive pair is usable - or the MP4 muxer
+     * rejects the codec - it falls back to whatever progressive stream exists
+     * so the user gets a file rather than an error.
+     */
+    private suspend fun attemptVideoDownload(request: DownloadRequest): Boolean =
+        withContext(Dispatchers.IO) {
+            var pendingTarget: Uri? = null
+            var videoTemp: File? = null
+            var audioTemp: File? = null
+            updateProgress(request, 0.02f, DownloadStatus.DOWNLOADING)
 
-            val totalBytes = body.contentLength()
-            val file = File(musicDir, "${song.id}.m4a")
-            
-            Log.d(TAG, "Downloading ${totalBytes} bytes to ${file.absolutePath}")
+            try {
+                val qualities = youtubeRepository.getVideoStreamQualities(request.id)
+                if (qualities.isEmpty()) throw java.io.IOException("No streams for ${request.id}")
 
-            var bytesDownloaded = 0L
-            val buffer = ByteArray(8192)
+                ensureActive()
 
-            body.byteStream().use { input ->
-                FileOutputStream(file).use { output ->
-                    var bytesRead: Int
-                    while (input.read(buffer).also { bytesRead = it } != -1) {
-                        // Check for cancellation
-                        if (!_downloadingIds.value.contains(song.id)) {
-                            Log.d(TAG, "Download cancelled during transfer for ${song.title}")
-                            file.delete()
-                            removeProgress(song.id)
-                            return@withContext
-                        }
-                        
-                        output.write(buffer, 0, bytesRead)
-                        bytesDownloaded += bytesRead
-                        
-                        // Update progress (10% is fetching URL, 90% is actual download)
-                        val downloadProgress = if (totalBytes > 0) {
-                            0.1f + (bytesDownloaded.toFloat() / totalBytes.toFloat() * 0.9f)
-                        } else {
-                            0.5f // Indeterminate
-                        }
-                        updateProgress(song.id, song, downloadProgress, DownloadStatus.DOWNLOADING, bytesDownloaded, totalBytes)
+                // MP4-container entries only: the muxer will not accept VP9 or
+                // Opus, which is what the webm ladder carries.
+                val adaptive = qualities.firstOrNull {
+                    !it.isDASH && it.audioUrl != null && it.format?.contains("mp4") == true
+                }
+                val progressive = qualities.firstOrNull { !it.isDASH && it.audioUrl == null }
+
+                val chosen = adaptive ?: progressive
+                    ?: throw java.io.IOException("No downloadable stream for ${request.id}")
+
+                val fileName =
+                    storage.buildFileName(request.title, request.subtitle, DownloadMediaType.VIDEO)
+                val target = storage.createPending(fileName, DownloadMediaType.VIDEO)
+                    ?: throw java.io.IOException("Could not create storage entry")
+                pendingTarget = target
+
+                var muxed = false
+
+                if (chosen.audioUrl != null) {
+                    // Two transfers, then a remux. Progress is split so the bar
+                    // reflects real work: video is the bulk, audio a slice, and
+                    // the tail is the mux.
+                    videoTemp = File.createTempFile("koda_v_", ".mp4", context.cacheDir)
+                    audioTemp = File.createTempFile("koda_a_", ".m4a", context.cacheDir)
+
+                    videoTemp.outputStream().use { out ->
+                        downloadStream(request, chosen.url, out, 0.05f, 0.70f)
+                    }
+                    ensureActive()
+                    audioTemp.outputStream().use { out ->
+                        downloadStream(request, chosen.audioUrl, out, 0.70f, 0.88f)
+                    }
+                    ensureActive()
+
+                    updateProgress(request, 0.9f, DownloadStatus.DOWNLOADING)
+
+                    muxed = context.contentResolver.openFileDescriptor(target, "rw")?.use { pfd ->
+                        DownloadMuxer.mux(videoTemp, audioTemp, pfd.fileDescriptor)
+                    } ?: false
+
+                    if (!muxed) {
+                        Log.w(TAG, "Mux failed for ${request.title}, falling back to progressive")
                     }
                 }
+
+                if (!muxed) {
+                    val fallback = progressive
+                        ?: throw java.io.IOException("Mux failed and no progressive stream")
+                    // Re-create the row: a failed mux may have written a partial
+                    // container into the existing one.
+                    storage.delete(target)
+                    val retryTarget = storage.createPending(fileName, DownloadMediaType.VIDEO)
+                        ?: throw java.io.IOException("Could not recreate storage entry")
+                    pendingTarget = retryTarget
+
+                    storage.openOutput(retryTarget)?.use { out ->
+                        downloadStream(request, fallback.url, out, 0.1f, 1f)
+                    } ?: throw java.io.IOException("Could not open output")
+
+                    storage.publish(retryTarget)
+                    recordVideo(request, retryTarget, fallback.resolution)
+                    pendingTarget = null
+                } else {
+                    storage.publish(target)
+                    recordVideo(request, target, chosen.resolution)
+                    pendingTarget = null
+                }
+
+                finishSuccess(request)
+                true
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                cleanUpCancelled(request, pendingTarget)
+                throw e
+            } catch (e: Exception) {
+                pendingTarget?.let { storage.delete(it) }
+                throw e
+            } finally {
+                videoTemp?.delete()
+                audioTemp?.delete()
+                activeDownloadCalls.remove(request.id)
             }
+        }
 
-            Log.d(TAG, "Download complete for: ${song.title}")
+    /**
+     * Stream [url] into [out], reporting progress scaled into
+     * [fromFraction]..[toFraction] of the overall download. Throws on a
+     * truncated transfer so a short read is never published as a complete file.
+     */
+    private suspend fun downloadStream(
+        request: DownloadRequest,
+        url: String,
+        out: java.io.OutputStream,
+        fromFraction: Float,
+        toFraction: Float
+    ) {
+        val call = client.newCall(Request.Builder().url(url).build())
+        activeDownloadCalls[request.id] = call
 
-            // Create new song object pointing to local file
-            val downloadedSong = song.copy(
-                uri = Uri.fromFile(file),
-                source = SongSource.LOCAL
-            )
+        val response = call.execute()
+        if (!response.isSuccessful) {
+            response.close()
+            throw java.io.IOException("HTTP ${response.code}")
+        }
+        val body = response.body ?: throw java.io.IOException("Empty body")
 
-            // Update list
-            val currentList = _downloadedSongs.value.toMutableList()
-            currentList.add(downloadedSong)
-            _downloadedSongs.value = currentList
-            saveMetadata()
+        val totalBytes = body.contentLength()
+        var bytesDownloaded = 0L
+        val buffer = ByteArray(BUFFER_SIZE)
+        val span = toFraction - fromFraction
 
-            updateProgress(song.id, song, 1f, DownloadStatus.DOWNLOADED)
-            
-            // Remove from progress after a short delay
-            kotlinx.coroutines.delay(1000)
-            removeProgress(song.id)
+        body.byteStream().use { input ->
+            var read: Int
+            while (input.read(buffer).also { read = it } != -1) {
+                // Throws CancellationException if this task was cancelled,
+                // unwinding into the caller's handler.
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
 
-        } catch (e: java.io.IOException) {
-            // Check if this was a cancellation
-            if (!_downloadingIds.value.contains(song.id)) {
-                Log.d(TAG, "Download was cancelled for ${song.title}")
-                removeProgress(song.id)
-            } else {
-                Log.e(TAG, "Failed to download song ${song.title}", e)
-                updateProgress(song.id, song, 0f, DownloadStatus.FAILED)
+                out.write(buffer, 0, read)
+                bytesDownloaded += read
+
+                val fraction = if (totalBytes > 0) {
+                    fromFraction + (bytesDownloaded.toFloat() / totalBytes * span)
+                } else {
+                    fromFraction + span / 2f // Indeterminate
+                }
+                updateProgress(
+                    request, fraction, DownloadStatus.DOWNLOADING,
+                    bytesDownloaded, totalBytes
+                )
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to download song ${song.title}", e)
-            updateProgress(song.id, song, 0f, DownloadStatus.FAILED)
-        } finally {
-            _downloadingIds.value = _downloadingIds.value - song.id
-            activeDownloadCalls.remove(song.id)
+        }
+
+        if (totalBytes > 0 && bytesDownloaded < totalBytes) {
+            throw java.io.IOException("Truncated: $bytesDownloaded/$totalBytes")
         }
     }
 
-    suspend fun downloadPlaylist(songs: List<Song>) {
-        _downloadQueue.value = songs.filter { !isDownloaded(it.id) }
-        
-        for (song in _downloadQueue.value) {
-            downloadSong(song)
-        }
-        
-        _downloadQueue.value = emptyList()
+    private fun recordVideo(request: DownloadRequest, uri: Uri, quality: String?) {
+        _downloadedVideos.value = _downloadedVideos.value + DownloadedVideo(
+            id = request.id,
+            title = request.title,
+            channelName = request.subtitle,
+            uri = uri,
+            thumbnailUrl = request.thumbnailUrl,
+            durationMs = request.durationMs,
+            quality = quality
+        )
+        saveVideoMetadata()
     }
 
+    private fun finishSuccess(request: DownloadRequest) {
+        updateProgress(request, 1f, DownloadStatus.DOWNLOADED)
+        _downloadingIds.value = _downloadingIds.value - request.id
+        removeProgressAfterCompletion(request.id)
+        Log.d(TAG, "Downloaded ${request.title}")
+    }
+
+    /**
+     * NonCancellable: the job is already cancelled, so a plain suspend cleanup
+     * here would itself be cancelled and leak the pending row.
+     */
+    private suspend fun cleanUpCancelled(request: DownloadRequest, pendingTarget: Uri?) {
+        withContext(kotlinx.coroutines.NonCancellable) {
+            pendingTarget?.let { storage.delete(it) }
+            _downloadingIds.value = _downloadingIds.value - request.id
+            removeProgress(request.id)
+        }
+    }
+
+    /**
+     * Clear a finished download from the progress map after a beat, so the UI
+     * shows the completed state briefly instead of the row vanishing.
+     * Deliberately not tied to the task's job, which is about to end.
+     */
+    private fun removeProgressAfterCompletion(songId: String) {
+        repositoryScope.launch {
+            kotlinx.coroutines.delay(COMPLETION_LINGER_MS)
+            val entry = _downloadProgress.value[songId]
+            if (entry?.status == DownloadStatus.DOWNLOADED) {
+                val current = _downloadProgress.value.toMutableMap()
+                current.remove(songId)
+                _downloadProgress.value = current
+            }
+        }
+    }
+
+    /**
+     * Cancel a queued or in-flight download. Safe to call for an id that is
+     * neither.
+     */
     fun cancelDownload(songId: String) {
         Log.d(TAG, "Cancelling download for $songId")
-        
-        // Cancel the OkHttp call if active
-        activeDownloadCalls[songId]?.cancel()
-        activeDownloadCalls.remove(songId)
-        
-        // Remove from downloading set (this triggers the checks in downloadSong)
-        _downloadingIds.value = _downloadingIds.value - songId
-        removeProgress(songId)
-        
-        // Delete partial file if exists
-        val partialFile = File(musicDir, "${songId}.m4a")
-        if (partialFile.exists()) {
-            partialFile.delete()
+
+        repositoryScope.launch {
+            val wasQueued = queueMutex.withLock {
+                val before = _downloadQueue.value
+                val after = before.filterNot { it.id == songId }
+                _downloadQueue.value = after
+                before.size != after.size
+            }
+
+            if (!wasQueued && songId == activeId) {
+                // Cancel the HTTP call as well as the job: a blocking read on
+                // the socket will not notice job cancellation on its own.
+                activeDownloadCalls[songId]?.cancel()
+                activeJob?.cancel()
+            }
+
+            _downloadingIds.value = _downloadingIds.value - songId
+            removeProgress(songId)
         }
+    }
+
+    /** Cancel everything, queued and active. */
+    fun cancelAll() {
+        repositoryScope.launch {
+            val cleared = queueMutex.withLock {
+                val queued = _downloadQueue.value
+                _downloadQueue.value = emptyList()
+                queued
+            }
+            cleared.forEach { removeProgress(it.id) }
+            activeId?.let { id ->
+                activeDownloadCalls[id]?.cancel()
+                activeJob?.cancel()
+                removeProgress(id)
+            }
+            _downloadingIds.value = emptySet()
+        }
+    }
+
+    /** Re-queue a download that previously failed. */
+    fun retryDownload(request: DownloadRequest) {
+        repositoryScope.launch {
+            removeProgress(request.id)
+            enqueue(listOf(request))
+        }
+    }
+
+    /** Delete a completed video download. */
+    fun deleteVideoDownload(videoId: String) {
+        val current = _downloadedVideos.value
+        val video = current.find { it.id == videoId } ?: return
+        storage.delete(video.uri)
+        _downloadedVideos.value = current - video
+        saveVideoMetadata()
     }
 
     fun deleteDownload(songId: String) {
         val currentList = _downloadedSongs.value.toMutableList()
         val songToDelete = currentList.find { it.id == songId } ?: return
 
-        songToDelete.uri?.path?.let { path ->
-            File(path).delete()
+        songToDelete.uri?.let { uri ->
+            if (uri.scheme == "file") {
+                // Legacy entry that never made it through migration.
+                uri.path?.let { File(it).delete() }
+            } else {
+                storage.delete(uri)
+            }
         }
 
         currentList.remove(songToDelete)
@@ -349,14 +930,23 @@ class DownloadRepository(private val context: Context) {
     }
     
     fun getDownloadStatus(songId: String): DownloadStatus {
-        if (_downloadingIds.value.contains(songId)) return DownloadStatus.DOWNLOADING
         if (isDownloaded(songId)) return DownloadStatus.DOWNLOADED
+        // The progress map distinguishes queued from in-flight from failed;
+        // downloadingIds only says "somewhere in the pipeline".
+        _downloadProgress.value[songId]?.let { return it.status }
+        if (_downloadingIds.value.contains(songId)) return DownloadStatus.QUEUED
         return DownloadStatus.NOT_DOWNLOADED
     }
     
+    /**
+     * A song the user already had on the device, as opposed to one Koda
+     * downloaded. Previously inferred from the file living outside filesDir,
+     * which stopped working once downloads moved to shared storage - our own
+     * downloads are outside filesDir now too. Membership in the downloaded set
+     * is the direct question.
+     */
     fun isLocalOriginal(song: Song): Boolean {
-        return song.source == SongSource.LOCAL && 
-               (song.uri?.path?.startsWith(context.filesDir.path) == false)
+        return song.source == SongSource.LOCAL && !isDownloaded(song.id)
     }
 
     fun clearFailedDownloads() {

@@ -1,374 +1,520 @@
 package com.ivor.ivormusic.ui.downloads
 
-import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.rounded.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.ErrorOutline
+import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Schedule
+import androidx.compose.material.icons.rounded.Videocam
+import androidx.compose.material3.ButtonGroupDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.ToggleButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.ivor.ivormusic.data.DownloadMediaType
 import com.ivor.ivormusic.data.DownloadProgress
+import com.ivor.ivormusic.data.DownloadRequest
 import com.ivor.ivormusic.data.DownloadStatus
+import com.ivor.ivormusic.data.DownloadedVideo
 import com.ivor.ivormusic.data.Song
 
+private enum class DownloadsTab(val label: String) {
+    MUSIC("Music"),
+    VIDEO("Video")
+}
+
+/**
+ * Downloads library, split by media type.
+ *
+ * Music and video are genuinely different things - one feeds the queue, the
+ * other opens the video player - so they get separate tabs rather than one
+ * mixed list. In-flight transfers appear under the tab they belong to, so a
+ * video downloading while the Music tab is open is not silently invisible.
+ */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun DownloadsScreen(
     downloadedSongs: List<Song>,
+    downloadedVideos: List<DownloadedVideo>,
     activeDownloads: Map<String, DownloadProgress>,
     onBack: () -> Unit,
     onPlaySong: (Song) -> Unit,
     onPlayQueue: (List<Song>, Song) -> Unit = { _, song -> onPlaySong(song) },
+    onPlayVideo: (DownloadedVideo) -> Unit,
     onDeleteDownload: (String) -> Unit,
+    onDeleteVideo: (String) -> Unit,
     onCancelDownload: (String) -> Unit,
-    onRetryDownload: (Song) -> Unit,
+    onRetryDownload: (DownloadRequest) -> Unit,
+    onCancelAll: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val primaryColor = MaterialTheme.colorScheme.primary
-    val surfaceColor = MaterialTheme.colorScheme.surface
-    val onSurfaceColor = MaterialTheme.colorScheme.onSurface
-    val onSurfaceVariantColor = MaterialTheme.colorScheme.onSurfaceVariant
+    var selectedTab by remember { mutableStateOf(DownloadsTab.MUSIC) }
+
+    // Split by the media type of the request itself rather than by which list
+    // the finished item lands in, so queued and failed entries route correctly
+    // before anything has completed.
+    val musicProgress = activeDownloads.values
+        .filter { it.request.type == DownloadMediaType.MUSIC }
+        .sortedBy { it.status.ordinal }
+    val videoProgress = activeDownloads.values
+        .filter { it.request.type == DownloadMediaType.VIDEO }
+        .sortedBy { it.status.ordinal }
+
+    val activeCount = activeDownloads.values.count {
+        it.status == DownloadStatus.DOWNLOADING || it.status == DownloadStatus.QUEUED
+    }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { 
+                title = {
                     Column {
                         Text("Downloads")
                         Text(
-                            "${downloadedSongs.size} songs • ${activeDownloads.size} active",
+                            text = buildString {
+                                append("${downloadedSongs.size} songs")
+                                append(" • ${downloadedVideos.size} videos")
+                                if (activeCount > 0) append(" • $activeCount active")
+                            },
                             style = MaterialTheme.typography.bodySmall,
-                            color = onSurfaceVariantColor
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    if (activeCount > 0) {
+                        TextButton(onClick = onCancelAll) { Text("Stop all") }
                     }
                 }
             )
         }
     ) { paddingValues ->
-        LazyColumn(
+        Column(
             modifier = modifier
                 .fillMaxSize()
-                .padding(paddingValues),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+                .padding(paddingValues)
         ) {
-            // Active Downloads Section
-            if (activeDownloads.isNotEmpty()) {
-                item {
-                    Text(
-                        "Downloading",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = onSurfaceColor
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                }
-
-                items(activeDownloads.values.toList(), key = { "active_${it.songId}" }) { progress ->
-                    ActiveDownloadCard(
-                        progress = progress,
-                        onCancel = { onCancelDownload(progress.songId) },
-                        onRetry = { onRetryDownload(progress.song) },
-                        primaryColor = primaryColor,
-                        onSurfaceColor = onSurfaceColor,
-                        onSurfaceVariantColor = onSurfaceVariantColor
-                    )
-                }
-
-                item {
-                    Spacer(modifier = Modifier.height(16.dp))
-                }
-            }
-
-            // Downloaded Songs Section
-            if (downloadedSongs.isNotEmpty()) {
-                item {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            "Downloaded",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = onSurfaceColor
-                        )
-                        Text(
-                            "${downloadedSongs.sumOf { it.duration / 1000 / 60 }} min",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = onSurfaceVariantColor
-                        )
+            // M3 Expressive connected button group, matching LibraryScreen's
+            // view switcher.
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)
+            ) {
+                DownloadsTab.entries.forEachIndexed { index, tab ->
+                    val selected = selectedTab == tab
+                    val pending = if (tab == DownloadsTab.MUSIC) {
+                        musicProgress.size
+                    } else {
+                        videoProgress.size
                     }
-                    Spacer(modifier = Modifier.height(8.dp))
-                }
-
-                items(downloadedSongs, key = { "downloaded_${it.id}" }) { song ->
-                    DownloadedSongCard(
-                        song = song,
-                        onPlay = { onPlayQueue(downloadedSongs, song) },
-                        onDelete = { onDeleteDownload(song.id) },
-                        primaryColor = primaryColor,
-                        onSurfaceColor = onSurfaceColor,
-                        onSurfaceVariantColor = onSurfaceVariantColor
-                    )
-                }
-            }
-
-            // Empty State
-            if (downloadedSongs.isEmpty() && activeDownloads.isEmpty()) {
-                item {
-                    Box(
+                    ToggleButton(
+                        checked = selected,
+                        onCheckedChange = { selectedTab = tab },
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .height(300.dp),
-                        contentAlignment = Alignment.Center
+                            .weight(1f)
+                            .height(48.dp),
+                        shapes = when (index) {
+                            0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                            DownloadsTab.entries.lastIndex ->
+                                ButtonGroupDefaults.connectedTrailingButtonShapes()
+                            else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+                        },
+                        contentPadding = PaddingValues(horizontal = 8.dp)
                     ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center
-                        ) {
-                            Icon(
-                                Icons.Rounded.CloudDownload,
-                                contentDescription = null,
-                                modifier = Modifier.size(64.dp),
-                                tint = onSurfaceVariantColor.copy(alpha = 0.5f)
-                            )
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Text(
-                                "No Downloads",
-                                style = MaterialTheme.typography.titleLarge,
-                                color = onSurfaceVariantColor
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                "Downloaded songs will appear here",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = onSurfaceVariantColor.copy(alpha = 0.7f)
-                            )
-                        }
+                        Icon(
+                            imageVector = if (tab == DownloadsTab.MUSIC) {
+                                Icons.Rounded.MusicNote
+                            } else {
+                                Icons.Rounded.Videocam
+                            },
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = if (pending > 0) "${tab.label} ($pending)" else tab.label,
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                            maxLines = 1
+                        )
                     }
+                }
+            }
+
+            AnimatedContent(
+                targetState = selectedTab,
+                transitionSpec = {
+                    fadeIn(spring(stiffness = Spring.StiffnessMediumLow)) togetherWith
+                        fadeOut(spring(stiffness = Spring.StiffnessMediumLow))
+                },
+                label = "downloads_tab"
+            ) { tab ->
+                when (tab) {
+                    DownloadsTab.MUSIC -> MusicTab(
+                        songs = downloadedSongs,
+                        progress = musicProgress,
+                        onPlayQueue = onPlayQueue,
+                        onDelete = onDeleteDownload,
+                        onCancel = onCancelDownload,
+                        onRetry = onRetryDownload
+                    )
+
+                    DownloadsTab.VIDEO -> VideoTab(
+                        videos = downloadedVideos,
+                        progress = videoProgress,
+                        onPlay = onPlayVideo,
+                        onDelete = onDeleteVideo,
+                        onCancel = onCancelDownload,
+                        onRetry = onRetryDownload
+                    )
                 }
             }
         }
     }
 }
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun ActiveDownloadCard(
-    progress: DownloadProgress,
-    onCancel: () -> Unit,
-    onRetry: () -> Unit,
-    primaryColor: Color,
-    onSurfaceColor: Color,
-    onSurfaceVariantColor: Color
+private fun MusicTab(
+    songs: List<Song>,
+    progress: List<DownloadProgress>,
+    onPlayQueue: (List<Song>, Song) -> Unit,
+    onDelete: (String) -> Unit,
+    onCancel: (String) -> Unit,
+    onRetry: (DownloadRequest) -> Unit
+) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        if (progress.isNotEmpty()) {
+            item { SectionHeader("In progress") }
+            items(progress, key = { "p_${it.songId}" }) {
+                ProgressCard(it, onCancel = onCancel, onRetry = onRetry)
+            }
+        }
+
+        if (songs.isNotEmpty()) {
+            item { SectionHeader("Downloaded") }
+            items(songs, key = { "s_${it.id}" }) { song ->
+                DownloadedRow(
+                    title = song.title,
+                    subtitle = song.artist,
+                    artworkUrl = song.thumbnailUrl ?: song.albumArtUri?.toString(),
+                    fallbackIcon = Icons.Rounded.MusicNote,
+                    onPlay = { onPlayQueue(songs, song) },
+                    onDelete = { onDelete(song.id) }
+                )
+            }
+        }
+
+        if (songs.isEmpty() && progress.isEmpty()) {
+            item { EmptyState("No downloaded music", Icons.Rounded.MusicNote) }
+        }
+    }
+}
+
+@Composable
+private fun VideoTab(
+    videos: List<DownloadedVideo>,
+    progress: List<DownloadProgress>,
+    onPlay: (DownloadedVideo) -> Unit,
+    onDelete: (String) -> Unit,
+    onCancel: (String) -> Unit,
+    onRetry: (DownloadRequest) -> Unit
+) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        if (progress.isNotEmpty()) {
+            item { SectionHeader("In progress") }
+            items(progress, key = { "p_${it.songId}" }) {
+                ProgressCard(it, onCancel = onCancel, onRetry = onRetry)
+            }
+        }
+
+        if (videos.isNotEmpty()) {
+            item { SectionHeader("Downloaded") }
+            items(videos, key = { "v_${it.id}" }) { video ->
+                DownloadedRow(
+                    title = video.title,
+                    subtitle = listOfNotNull(video.channelName, video.quality)
+                        .filter { it.isNotBlank() }
+                        .joinToString(" • "),
+                    artworkUrl = video.thumbnailUrl,
+                    fallbackIcon = Icons.Rounded.Videocam,
+                    wideArtwork = true,
+                    onPlay = { onPlay(video) },
+                    onDelete = { onDelete(video.id) }
+                )
+            }
+        }
+
+        if (videos.isEmpty() && progress.isEmpty()) {
+            item { EmptyState("No downloaded videos", Icons.Rounded.Videocam) }
+        }
+    }
+}
+
+@Composable
+private fun SectionHeader(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.titleSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(bottom = 2.dp)
+    )
+}
+
+@Composable
+private fun ProgressCard(
+    item: DownloadProgress,
+    onCancel: (String) -> Unit,
+    onRetry: (DownloadRequest) -> Unit
+) {
+    val failed = item.status == DownloadStatus.FAILED
+    val queued = item.status == DownloadStatus.QUEUED
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceContainer
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = when {
+                        failed -> Icons.Rounded.ErrorOutline
+                        queued -> Icons.Rounded.Schedule
+                        else -> Icons.Rounded.Download
+                    },
+                    contentDescription = null,
+                    tint = if (failed) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.primary
+                    },
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = item.request.title,
+                        style = MaterialTheme.typography.bodyLarge,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = when {
+                            failed -> "Failed"
+                            queued -> "Waiting"
+                            item.totalBytes > 0 -> "%.1f / %.1f MB".format(
+                                item.bytesDownloaded / (1024 * 1024f),
+                                item.totalBytes / (1024 * 1024f)
+                            )
+                            else -> "Preparing"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (failed) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                    )
+                }
+
+                if (failed) {
+                    IconButton(onClick = { onRetry(item.request) }) {
+                        Icon(Icons.Rounded.Refresh, contentDescription = "Retry")
+                    }
+                }
+                IconButton(onClick = { onCancel(item.songId) }) {
+                    Icon(Icons.Rounded.Close, contentDescription = "Cancel")
+                }
+            }
+
+            if (!failed) {
+                Spacer(modifier = Modifier.height(10.dp))
+                if (queued) {
+                    LinearProgressIndicator(
+                        modifier = Modifier.fillMaxWidth(),
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                } else {
+                    LinearProgressIndicator(
+                        progress = { item.progress.coerceIn(0f, 1f) },
+                        modifier = Modifier.fillMaxWidth(),
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DownloadedRow(
+    title: String,
+    subtitle: String,
+    artworkUrl: String?,
+    fallbackIcon: androidx.compose.ui.graphics.vector.ImageVector,
+    onPlay: () -> Unit,
+    onDelete: () -> Unit,
+    wideArtwork: Boolean = false
 ) {
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .animateContentSize(),
-        shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        tonalElevation = 2.dp
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Thumbnail
-                Surface(
-                    modifier = Modifier.size(56.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant
-                ) {
-                    AsyncImage(
-                        model = progress.song.thumbnailUrl ?: progress.song.albumArtUri,
-                        contentDescription = null,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .clip(RoundedCornerShape(12.dp)),
-                        contentScale = ContentScale.Crop
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(12.dp))
-
-                // Song Info
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = progress.song.title,
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.Medium,
-                        color = onSurfaceColor,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = progress.song.artist,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = onSurfaceVariantColor,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    
-                    Spacer(modifier = Modifier.height(4.dp))
-                    
-                    // Status text
-                    Text(
-                        text = when (progress.status) {
-                            DownloadStatus.DOWNLOADING -> {
-                                if (progress.totalBytes > 0) {
-                                    "${(progress.bytesDownloaded / 1024 / 1024)}MB / ${(progress.totalBytes / 1024 / 1024)}MB"
-                                } else {
-                                    "Downloading..."
-                                }
-                            }
-                            DownloadStatus.FAILED -> "Failed - Tap to retry"
-                            else -> ""
-                        },
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (progress.status == DownloadStatus.FAILED) 
-                            MaterialTheme.colorScheme.error 
-                        else 
-                            primaryColor
-                    )
-                }
-
-                // Action Button
-                if (progress.status == DownloadStatus.FAILED) {
-                    IconButton(onClick = onRetry) {
-                        Icon(
-                            Icons.Rounded.Refresh,
-                            contentDescription = "Retry",
-                            tint = primaryColor
-                        )
-                    }
-                } else {
-                    IconButton(onClick = onCancel) {
-                        Icon(
-                            Icons.Rounded.Close,
-                            contentDescription = "Cancel",
-                            tint = onSurfaceVariantColor
-                        )
-                    }
-                }
-            }
-
-            // Progress Bar
-            if (progress.status == DownloadStatus.DOWNLOADING) {
-                Spacer(modifier = Modifier.height(12.dp))
-                LinearProgressIndicator(
-                    progress = { progress.progress },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(4.dp)
-                        .clip(RoundedCornerShape(2.dp)),
-                    color = primaryColor,
-                    trackColor = primaryColor.copy(alpha = 0.2f)
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun DownloadedSongCard(
-    song: Song,
-    onPlay: () -> Unit,
-    onDelete: () -> Unit,
-    primaryColor: Color,
-    onSurfaceColor: Color,
-    onSurfaceVariantColor: Color
-) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
+            .clip(RoundedCornerShape(16.dp))
+            .clickable(onClick = onPlay),
         shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        onClick = onPlay
+        color = MaterialTheme.colorScheme.surfaceContainer
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
+            modifier = Modifier.padding(10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Thumbnail
-            Surface(
-                modifier = Modifier.size(48.dp),
-                shape = RoundedCornerShape(10.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant
+            Box(
+                modifier = Modifier
+                    .size(width = if (wideArtwork) 88.dp else 52.dp, height = 52.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+                contentAlignment = Alignment.Center
             ) {
-                AsyncImage(
-                    model = song.thumbnailUrl ?: song.albumArtUri,
+                if (!artworkUrl.isNullOrBlank()) {
+                    AsyncImage(
+                        model = artworkUrl,
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    Icon(
+                        imageVector = fallbackIcon,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+                Icon(
+                    imageVector = Icons.Rounded.PlayArrow,
                     contentDescription = null,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .clip(RoundedCornerShape(10.dp)),
-                    contentScale = ContentScale.Crop
+                    tint = MaterialTheme.colorScheme.surface,
+                    modifier = Modifier.size(24.dp)
                 )
             }
 
             Spacer(modifier = Modifier.width(12.dp))
 
-            // Song Info
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = song.title,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium,
-                    color = onSurfaceColor,
+                    text = title,
+                    style = MaterialTheme.typography.bodyLarge,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                Text(
-                    text = song.artist,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = onSurfaceVariantColor,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                if (subtitle.isNotBlank()) {
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
 
-            // Downloaded icon
-            Icon(
-                Icons.Rounded.CheckCircle,
-                contentDescription = "Downloaded",
-                tint = primaryColor.copy(alpha = 0.7f),
-                modifier = Modifier.size(20.dp)
-            )
-
-            Spacer(modifier = Modifier.width(8.dp))
-
-            // Delete button
             IconButton(onClick = onDelete) {
                 Icon(
-                    Icons.Rounded.Delete,
+                    imageVector = Icons.Rounded.Delete,
                     contentDescription = "Delete",
-                    tint = onSurfaceVariantColor
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun EmptyState(
+    message: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 96.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+            modifier = Modifier.size(56.dp)
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+        Text(
+            text = message,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }

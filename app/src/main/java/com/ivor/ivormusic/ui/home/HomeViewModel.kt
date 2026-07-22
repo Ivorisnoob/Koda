@@ -86,7 +86,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     val userName: StateFlow<String?> = _userName.asStateFlow()
 
     // Downloads
-    private val downloadRepository = com.ivor.ivormusic.data.DownloadRepository(application)
+    private val downloadRepository = com.ivor.ivormusic.data.DownloadRepository.getInstance(application)
     val downloadedSongs = downloadRepository.downloadedSongs
     val downloadingIds = downloadRepository.downloadingIds
     val downloadProgress = downloadRepository.downloadProgress

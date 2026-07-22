@@ -31,6 +31,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.rounded.Album
+import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -44,10 +46,13 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -65,7 +70,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
 import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.toShape
 import coil.compose.AsyncImage
@@ -167,10 +172,9 @@ fun AlbumScreen(
                         fontWeight = FontWeight.Bold,
                         color = textColor
                     )
-                    Text(
-                        "${songs.size} songs",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = secondaryTextColor
+                    DownloadAllButton(
+                        songs = songs,
+                        primaryColor = primaryColor
                     )
                 }
                 Spacer(modifier = Modifier.height(12.dp))
@@ -374,6 +378,68 @@ private fun AlbumHeroHeader(
                     )
                 }
             }
+        }
+    }
+}
+
+/**
+ * Queues every track that is not already downloaded.
+ *
+ * Reports how many are still outstanding rather than just firing and going
+ * quiet, since a playlist download is a long serial job and the count is the
+ * only feedback available from this screen.
+ */
+@Composable
+private fun DownloadAllButton(
+    songs: List<Song>,
+    primaryColor: Color
+) {
+    val context = LocalContext.current
+    val repository = remember(context) {
+        com.ivor.ivormusic.data.DownloadRepository.getInstance(context)
+    }
+    val scope = rememberCoroutineScope()
+
+    val downloadedSongs by repository.downloadedSongs.collectAsState()
+    val progressMap by repository.downloadProgress.collectAsState()
+
+    val downloadedIds = downloadedSongs.map { it.id }.toSet()
+    val pending = songs.count { it.id !in downloadedIds }
+    val activeHere = songs.count { progressMap.containsKey(it.id) }
+    val allDone = pending == 0 && songs.isNotEmpty()
+
+    Surface(
+        onClick = {
+            if (!allDone) scope.launch { repository.downloadPlaylist(songs) }
+        },
+        shape = RoundedCornerShape(20.dp),
+        color = if (allDone) Color.Transparent else primaryColor.copy(alpha = 0.12f)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = if (allDone) {
+                    Icons.Rounded.CheckCircle
+                } else {
+                    Icons.Rounded.Download
+                },
+                contentDescription = "Download all",
+                modifier = Modifier.size(18.dp),
+                tint = if (allDone) primaryColor else primaryColor
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                text = when {
+                    allDone -> "Downloaded"
+                    activeHere > 0 -> "Downloading $activeHere"
+                    else -> "Download all"
+                },
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = if (allDone) primaryColor else primaryColor
+            )
         }
     }
 }

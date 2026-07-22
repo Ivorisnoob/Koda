@@ -10,6 +10,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -439,27 +440,45 @@ fun MusicApp(
                 popExitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut() }
             ) {
                 val downloadedSongs by playerViewModel.downloadedSongs.collectAsState()
+                val downloadedVideos by playerViewModel.downloadedVideos.collectAsState()
                 val downloadProgress by playerViewModel.downloadProgress.collectAsState()
-                
+                val downloadsContext = LocalContext.current
+
                 com.ivor.ivormusic.ui.downloads.DownloadsScreen(
                     downloadedSongs = downloadedSongs,
+                    downloadedVideos = downloadedVideos,
                     activeDownloads = downloadProgress,
                     onBack = { navController.popBackStack() },
-                    onPlaySong = { song -> 
+                    onPlaySong = { song ->
                         playerViewModel.playSong(song)
                     },
                     onPlayQueue = { songs, song ->
                         playerViewModel.playQueue(songs, song)
                     },
-                    onDeleteDownload = { songId -> 
+                    onPlayVideo = { video ->
+                        // Handed to the system player rather than the in-app one:
+                        // VideoPlayerViewModel.playVideo drives the two-phase
+                        // InnerTube resolution, and a downloaded file has no
+                        // stream to resolve. Local playback in the app player is
+                        // a separate piece of work.
+                        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW)
+                            .setDataAndType(video.uri, "video/*")
+                            .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        runCatching { downloadsContext.startActivity(intent) }
+                    },
+                    onDeleteDownload = { songId ->
                         playerViewModel.deleteDownload(songId)
                     },
-                    onCancelDownload = { songId -> 
+                    onDeleteVideo = { videoId ->
+                        playerViewModel.deleteVideoDownload(videoId)
+                    },
+                    onCancelDownload = { songId ->
                         playerViewModel.cancelDownload(songId)
                     },
-                    onRetryDownload = { song -> 
-                        playerViewModel.toggleDownload(song)
-                    }
+                    onRetryDownload = { request ->
+                        playerViewModel.retryDownload(request)
+                    },
+                    onCancelAll = { playerViewModel.cancelAllDownloads() }
                 )
             }
             composable(
