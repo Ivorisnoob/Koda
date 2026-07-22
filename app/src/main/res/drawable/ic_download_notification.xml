@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Status bar icon for download notifications. Small icons are rendered as a
+    silhouette from the alpha channel, so this is a solid white shape on
+    transparent - any colour here would be discarded by the system anyway.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="#FFFFFFFF">
+
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M5,20h14v-2H5V20zM19,9h-4V3H9v6H5l7,7L19,9z" />
+</vector>
