@@ -21,7 +21,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
@@ -37,6 +37,7 @@ import androidx.compose.material.icons.rounded.Videocam
 import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -55,9 +56,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.ivor.ivormusic.data.DownloadMediaType
@@ -70,6 +74,36 @@ import com.ivor.ivormusic.data.Song
 private enum class DownloadsTab(val label: String) {
     MUSIC("Music"),
     VIDEO("Video")
+}
+
+/** Outer radius of a connected group. Matches AlbumScreen's track list. */
+private val SEGMENT_CORNER = 28.dp
+
+/**
+ * Shape for one row of a connected list: only the group's outer corners are
+ * rounded, so consecutive rows read as a single container rather than a stack
+ * of separate cards. A lone item is rounded on all four.
+ */
+private fun segmentedShape(index: Int, count: Int): Shape = when {
+    count == 1 -> RoundedCornerShape(SEGMENT_CORNER)
+    index == 0 -> RoundedCornerShape(topStart = SEGMENT_CORNER, topEnd = SEGMENT_CORNER)
+    index == count - 1 -> RoundedCornerShape(
+        bottomStart = SEGMENT_CORNER,
+        bottomEnd = SEGMENT_CORNER
+    )
+    else -> RectangleShape
+}
+
+/**
+ * Hairline between connected rows, inset past the artwork so it aligns with the
+ * text column rather than cutting the whole row in half.
+ */
+@Composable
+private fun SegmentDivider(inset: Dp) {
+    HorizontalDivider(
+        modifier = Modifier.padding(start = inset),
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f)
+    )
 }
 
 /**
@@ -238,29 +272,39 @@ private fun MusicTab(
     onCancel: (String) -> Unit,
     onRetry: (DownloadRequest) -> Unit
 ) {
+    // No spacedBy: rows in a connected group sit flush and are separated by
+    // dividers, not gaps. Section spacing is added explicitly instead.
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        contentPadding = PaddingValues(16.dp)
     ) {
         if (progress.isNotEmpty()) {
             item { SectionHeader("In progress") }
-            items(progress, key = { "p_${it.songId}" }) {
-                ProgressCard(it, onCancel = onCancel, onRetry = onRetry)
+            itemsIndexed(progress, key = { _, it -> "p_${it.songId}" }) { index, item ->
+                ProgressCard(
+                    item = item,
+                    shape = segmentedShape(index, progress.size),
+                    onCancel = onCancel,
+                    onRetry = onRetry
+                )
+                if (index < progress.lastIndex) SegmentDivider(inset = 46.dp)
             }
+            item { Spacer(modifier = Modifier.height(24.dp)) }
         }
 
         if (songs.isNotEmpty()) {
             item { SectionHeader("Downloaded") }
-            items(songs, key = { "s_${it.id}" }) { song ->
+            itemsIndexed(songs, key = { _, it -> "s_${it.id}" }) { index, song ->
                 DownloadedRow(
                     title = song.title,
                     subtitle = song.artist,
                     artworkUrl = song.thumbnailUrl ?: song.albumArtUri?.toString(),
                     fallbackIcon = Icons.Rounded.MusicNote,
+                    shape = segmentedShape(index, songs.size),
                     onPlay = { onPlayQueue(songs, song) },
                     onDelete = { onDelete(song.id) }
                 )
+                if (index < songs.lastIndex) SegmentDivider(inset = 74.dp)
             }
         }
 
@@ -281,19 +325,25 @@ private fun VideoTab(
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        contentPadding = PaddingValues(16.dp)
     ) {
         if (progress.isNotEmpty()) {
             item { SectionHeader("In progress") }
-            items(progress, key = { "p_${it.songId}" }) {
-                ProgressCard(it, onCancel = onCancel, onRetry = onRetry)
+            itemsIndexed(progress, key = { _, it -> "p_${it.songId}" }) { index, item ->
+                ProgressCard(
+                    item = item,
+                    shape = segmentedShape(index, progress.size),
+                    onCancel = onCancel,
+                    onRetry = onRetry
+                )
+                if (index < progress.lastIndex) SegmentDivider(inset = 46.dp)
             }
+            item { Spacer(modifier = Modifier.height(24.dp)) }
         }
 
         if (videos.isNotEmpty()) {
             item { SectionHeader("Downloaded") }
-            items(videos, key = { "v_${it.id}" }) { video ->
+            itemsIndexed(videos, key = { _, it -> "v_${it.id}" }) { index, video ->
                 DownloadedRow(
                     title = video.title,
                     subtitle = listOfNotNull(video.channelName, video.quality)
@@ -301,10 +351,12 @@ private fun VideoTab(
                         .joinToString(" • "),
                     artworkUrl = video.thumbnailUrl,
                     fallbackIcon = Icons.Rounded.Videocam,
+                    shape = segmentedShape(index, videos.size),
                     wideArtwork = true,
                     onPlay = { onPlay(video) },
                     onDelete = { onDelete(video.id) }
                 )
+                if (index < videos.lastIndex) SegmentDivider(inset = 110.dp)
             }
         }
 
@@ -320,13 +372,14 @@ private fun SectionHeader(text: String) {
         text = text,
         style = MaterialTheme.typography.titleSmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(bottom = 2.dp)
+        modifier = Modifier.padding(start = 4.dp, bottom = 10.dp)
     )
 }
 
 @Composable
 private fun ProgressCard(
     item: DownloadProgress,
+    shape: Shape,
     onCancel: (String) -> Unit,
     onRetry: (DownloadRequest) -> Unit
 ) {
@@ -335,7 +388,7 @@ private fun ProgressCard(
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
+        shape = shape,
         color = MaterialTheme.colorScheme.surfaceContainer
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
@@ -416,6 +469,7 @@ private fun DownloadedRow(
     subtitle: String,
     artworkUrl: String?,
     fallbackIcon: androidx.compose.ui.graphics.vector.ImageVector,
+    shape: Shape,
     onPlay: () -> Unit,
     onDelete: () -> Unit,
     wideArtwork: Boolean = false
@@ -423,9 +477,11 @@ private fun DownloadedRow(
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
+            // Clip before clickable so the ripple follows the segment shape
+            // instead of bleeding past the rounded corners.
+            .clip(shape)
             .clickable(onClick = onPlay),
-        shape = RoundedCornerShape(16.dp),
+        shape = shape,
         color = MaterialTheme.colorScheme.surfaceContainer
     ) {
         Row(

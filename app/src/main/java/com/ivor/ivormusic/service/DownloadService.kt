@@ -13,6 +13,7 @@ import androidx.core.content.ContextCompat
 import com.ivor.ivormusic.data.DownloadNotificationHelper
 import com.ivor.ivormusic.data.DownloadRepository
 import com.ivor.ivormusic.data.DownloadStatus
+import com.ivor.ivormusic.data.NotificationArtworkLoader
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -70,6 +71,10 @@ class DownloadService : Service() {
     private lateinit var notificationHelper: DownloadNotificationHelper
     private var started = false
 
+    /** Artwork URLs already being fetched, so a fast progress stream does not
+     *  kick off the same load dozens of times. */
+    private val artworkRequested = mutableSetOf<String>()
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
@@ -104,6 +109,24 @@ class DownloadService : Service() {
                 progress.values.firstOrNull { it.status == DownloadStatus.DOWNLOADING } to queue.size
             }.collect { (active, queued) ->
                 if (active == null && queued == 0) return@collect
+
+                // Fetch artwork once per item, off the notification path. The
+                // first post for a song shows no icon; the fetch completes and
+                // the next progress update carries the album art. Kicking it off
+                // here rather than awaiting it keeps the foreground start
+                // immediate.
+                val artUrl = active?.request?.thumbnailUrl
+                if (artUrl != null && NotificationArtworkLoader.cached(artUrl) == null &&
+                    artworkRequested.add(artUrl)
+                ) {
+                    serviceScope.launch {
+                        NotificationArtworkLoader.load(this@DownloadService, artUrl)
+                        // Repost so the artwork lands even if this was the final
+                        // progress emission.
+                        refreshNotification()
+                    }
+                }
+
                 val notification = if (active != null) {
                     notificationHelper.buildProgressNotification(
                         songTitle = active.request.title,
@@ -112,7 +135,8 @@ class DownloadService : Service() {
                         bytesDownloaded = active.bytesDownloaded,
                         totalBytes = active.totalBytes,
                         queuedCount = queued,
-                        isVideo = active.request.isVideo
+                        isVideo = active.request.isVideo,
+                        artwork = NotificationArtworkLoader.cached(artUrl)
                     )
                 } else {
                     notificationHelper.buildProgressNotification(
@@ -150,7 +174,25 @@ class DownloadService : Service() {
             bytesDownloaded = active?.bytesDownloaded ?: 0,
             totalBytes = active?.totalBytes ?: 0,
             queuedCount = queued,
-            isVideo = active?.request?.isVideo ?: false
+            isVideo = active?.request?.isVideo ?: false,
+            artwork = NotificationArtworkLoader.cached(active?.request?.thumbnailUrl)
+        )
+    }
+
+    /**
+     * Repost the current state. Used when artwork finishes loading, since that
+     * may happen after the last progress emission.
+     */
+    private fun refreshNotification() {
+        val manager = NotificationManagerCompat.from(this)
+        if (!manager.areNotificationsEnabled()) return
+        val stillRunning = repository.downloadProgress.value.values.any {
+            it.status == DownloadStatus.DOWNLOADING
+        }
+        if (!stillRunning) return
+        manager.notify(
+            DownloadNotificationHelper.FOREGROUND_NOTIFICATION_ID,
+            buildCurrentNotification()
         )
     }
 

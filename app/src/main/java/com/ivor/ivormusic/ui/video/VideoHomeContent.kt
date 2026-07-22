@@ -172,7 +172,10 @@ fun VideoHomeContent(
     }
 
     ExpressivePullToRefresh(
-        isRefreshing = isLoading,
+        // Only let the pull-to-refresh spinner represent a refresh over existing
+        // content. The empty-feed case shows its own centered indicator below, and
+        // driving both off the same flag renders two spinners at once.
+        isRefreshing = isLoading && videos.isNotEmpty(),
         onRefresh = onRefresh,
         modifier = Modifier.fillMaxSize()
     ) {

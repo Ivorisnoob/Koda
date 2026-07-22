@@ -405,7 +405,10 @@ class DownloadRepository private constructor(private val context: Context) {
             DownloadStatus.DOWNLOADED -> notificationHelper.showDownloadComplete(
                 songId = request.id,
                 songTitle = request.title,
-                artistName = request.subtitle
+                artistName = request.subtitle,
+                // Already in memory from the progress notification, which spent
+                // the whole download displaying it.
+                artwork = NotificationArtworkLoader.cached(request.thumbnailUrl)
             )
             DownloadStatus.FAILED -> notificationHelper.showDownloadFailed(
                 songId = request.id,

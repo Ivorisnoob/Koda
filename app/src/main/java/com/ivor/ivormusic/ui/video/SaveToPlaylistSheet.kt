@@ -4,6 +4,7 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.foundation.LocalOverscrollFactory
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -39,6 +40,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -182,36 +184,41 @@ fun SaveToPlaylistSheet(
                     )
                 }
                 else -> {
-                    LazyColumn(
-                        modifier = Modifier.heightIn(max = 340.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        items(playlists, key = { it.playlistId }) { playlist ->
-                            SaveTargetRow(
-                                title = playlist.title,
-                                subtitle = playlist.videoCountText,
-                                state = rowState(playlist.playlistId),
-                                onClick = { save(playlist.playlistId) },
-                                leading = {
-                                    if (!playlist.thumbnailUrl.isNullOrBlank()) {
-                                        AsyncImage(
-                                            model = playlist.thumbnailUrl,
-                                            contentDescription = null,
-                                            modifier = Modifier
-                                                .size(44.dp)
-                                                .clip(RoundedCornerShape(12.dp)),
-                                            contentScale = ContentScale.Crop
-                                        )
-                                    } else {
-                                        Icon(
-                                            imageVector = Icons.AutoMirrored.Rounded.PlaylistPlay,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.size(24.dp)
-                                        )
+                    // No overscroll: the list is capped at 340dp inside the sheet,
+                    // so the default stretch deforms the rows in place (while the
+                    // sheet itself stays put) instead of reading as an edge effect.
+                    CompositionLocalProvider(LocalOverscrollFactory provides null) {
+                        LazyColumn(
+                            modifier = Modifier.heightIn(max = 340.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            items(playlists, key = { it.playlistId }) { playlist ->
+                                SaveTargetRow(
+                                    title = playlist.title,
+                                    subtitle = playlist.videoCountText,
+                                    state = rowState(playlist.playlistId),
+                                    onClick = { save(playlist.playlistId) },
+                                    leading = {
+                                        if (!playlist.thumbnailUrl.isNullOrBlank()) {
+                                            AsyncImage(
+                                                model = playlist.thumbnailUrl,
+                                                contentDescription = null,
+                                                modifier = Modifier
+                                                    .size(44.dp)
+                                                    .clip(RoundedCornerShape(12.dp)),
+                                                contentScale = ContentScale.Crop
+                                            )
+                                        } else {
+                                            Icon(
+                                                imageVector = Icons.AutoMirrored.Rounded.PlaylistPlay,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(24.dp)
+                                            )
+                                        }
                                     }
-                                }
-                            )
+                                )
+                            }
                         }
                     }
                 }

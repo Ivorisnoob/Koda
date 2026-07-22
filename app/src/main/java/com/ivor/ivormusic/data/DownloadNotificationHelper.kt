@@ -132,7 +132,11 @@ class DownloadNotificationHelper(private val context: Context) {
         queuedCount: Int = 0,
         // Picks the tracker icon. A plain flag for now; this becomes part of the
         // download model proper once video downloads land.
-        isVideo: Boolean = false
+        isVideo: Boolean = false,
+        // Album art / video thumbnail. Null until it has been fetched, so the
+        // notification shows immediately and gains the artwork on the next
+        // update rather than waiting on the network.
+        artwork: android.graphics.Bitmap? = null
     ): android.app.Notification {
         val percent = (progress * 100).toInt().coerceIn(0, 100)
 
@@ -191,6 +195,9 @@ class DownloadNotificationHelper(private val context: Context) {
             // has it switched off; the compat layer drops it.
             .setRequestPromotedOngoing(canPostLiveUpdates())
             .setShortCriticalText("$percent%")
+            // Album art in place of the app icon. Null is fine - the system
+            // simply falls back to the small icon.
+            .setLargeIcon(artwork)
 
         // Byte counts only once the transfer is actually underway, otherwise
         // the subtext reads "0.0 / 0.0 MB" during URL resolution. The queue
@@ -215,7 +222,8 @@ class DownloadNotificationHelper(private val context: Context) {
     fun showDownloadComplete(
         songId: String,
         songTitle: String,
-        artistName: String
+        artistName: String,
+        artwork: android.graphics.Bitmap? = null
     ) {
         if (!hasNotificationPermission()) return
 
@@ -228,8 +236,10 @@ class DownloadNotificationHelper(private val context: Context) {
 
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_download_notification)
-            .setContentTitle("Downloaded")
-            .setContentText("$songTitle - $artistName")
+            .setContentTitle(songTitle)
+            .setContentText(artistName)
+            .setSubText("Downloaded")
+            .setLargeIcon(artwork)
             .setAutoCancel(true)
             .setContentIntent(contentIntent)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
