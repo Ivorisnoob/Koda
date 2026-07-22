@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -817,7 +818,9 @@ fun VideoPlaylistDetail(
                 ),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                items(videos, key = { it.videoId }) { video ->
+                // Index-qualified: YouTube playlists can contain the same video
+                // twice, and duplicate LazyColumn keys crash
+                itemsIndexed(videos, key = { index, video -> "${video.videoId}_$index" }) { _, video ->
                     PlaylistVideoRow(
                         video = video,
                         onClick = { onVideoClick(video) },

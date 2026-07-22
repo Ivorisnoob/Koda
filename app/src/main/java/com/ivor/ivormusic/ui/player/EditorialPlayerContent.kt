@@ -863,7 +863,9 @@ internal fun EditorialQueueView(
                 contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                itemsIndexed(queue, key = { _, song -> "editorial_queue_${song.id}" }) { index, song ->
+                // Index-qualified: the same song can appear in the queue twice
+                // (e.g. duplicated in a playlist) and duplicate keys crash
+                itemsIndexed(queue, key = { index, song -> "editorial_queue_${song.id}_$index" }) { index, song ->
                     val isCurrent = song.id == currentSong?.id
                     Surface(
                         onClick = { onSongClick(song) },
