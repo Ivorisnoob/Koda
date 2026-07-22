@@ -186,6 +186,19 @@ class ThemePreferences(context: Context) {
             VIDEO_QUALITY_AUTO, "2160p", "1440p", "1080p", "720p", "480p", "360p", "144p"
         )
         private const val DEFAULT_VIDEO_QUALITY = "1080p"
+
+        /**
+         * Video player session state that outlives a single video. Unlike the
+         * settings above these have no Settings UI and no StateFlow: nothing
+         * observes them reactively, they are read once when the player starts
+         * and written when the user changes them in the player itself.
+         */
+        private const val KEY_VIDEO_REPEAT = "video_repeat"
+        private const val KEY_VIDEO_BRIGHTNESS = "video_brightness"
+
+        /** Stored brightness sentinel meaning "never set, follow the system". */
+        const val VIDEO_BRIGHTNESS_UNSET = -1f
+
         private const val KEY_EXCLUDED_FOLDERS = "excluded_folders"
         private const val KEY_CACHE_ENABLED = "cache_enabled"
         private const val KEY_MAX_CACHE_SIZE_MB = "max_cache_size_mb"
@@ -557,6 +570,30 @@ class ThemePreferences(context: Context) {
     fun setDefaultVideoQuality(quality: String) {
         prefs.edit().putString(KEY_DEFAULT_VIDEO_QUALITY, quality).apply()
         _defaultVideoQuality.value = quality
+    }
+
+    /**
+     * Whether the video player loops the current video (repeat) instead of
+     * auto-playing the next related one. Sticks across videos and app
+     * restarts. Defaults to off, i.e. auto-play.
+     */
+    fun isVideoRepeatEnabled(): Boolean = prefs.getBoolean(KEY_VIDEO_REPEAT, false)
+
+    fun setVideoRepeatEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_VIDEO_REPEAT, enabled).apply()
+    }
+
+    /**
+     * Screen brightness (0..1) the user last dialed in with the fullscreen
+     * brightness drag, re-applied the next time a video goes fullscreen.
+     * [VIDEO_BRIGHTNESS_UNSET] means it was never set, so the window should
+     * keep following the system brightness.
+     */
+    fun getVideoBrightness(): Float =
+        prefs.getFloat(KEY_VIDEO_BRIGHTNESS, VIDEO_BRIGHTNESS_UNSET)
+
+    fun setVideoBrightness(value: Float) {
+        prefs.edit().putFloat(KEY_VIDEO_BRIGHTNESS, value.coerceIn(0f, 1f)).apply()
     }
 
     /**

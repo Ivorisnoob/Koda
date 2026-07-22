@@ -133,6 +133,7 @@ import coil.compose.AsyncImage
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import com.ivor.ivormusic.data.LikeStatus
+import com.ivor.ivormusic.data.ThemePreferences
 import com.ivor.ivormusic.data.VideoChapter
 import com.ivor.ivormusic.data.VideoEngagement
 import com.ivor.ivormusic.data.VideoItem
@@ -823,10 +824,20 @@ private fun PlayerGestureSurface(
         }
     }
 
-    // The brightness gesture overrides the window brightness; hand control
-    // back to the system when the fullscreen surface goes away.
+    val themePreferences = remember(context) { ThemePreferences(context) }
+
+    // The brightness gesture overrides the window brightness: re-apply the
+    // level the user last dialed in so every fullscreen video looks the same,
+    // and hand control back to the system when the surface goes away (the rest
+    // of the app must not stay stuck at the video's brightness).
     if (fullscreenGesturesEnabled) {
         DisposableEffect(activity) {
+            activity?.let { act ->
+                val saved = themePreferences.getVideoBrightness()
+                if (saved != ThemePreferences.VIDEO_BRIGHTNESS_UNSET) {
+                    setWindowBrightness(act, saved.coerceAtLeast(0.01f))
+                }
+            }
             onDispose {
                 activity?.let { setWindowBrightness(it, WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE) }
             }
@@ -946,6 +957,13 @@ private fun PlayerGestureSurface(
                                     change.consume()
                                 }
                             }
+                        }
+                        // Persist once the finger lifts, not on every frame of
+                        // the drag. Volume is deliberately not stored: it is
+                        // the system STREAM_MUSIC level, which already carries
+                        // over on its own.
+                        if (mode == 1 && leftSide) {
+                            themePreferences.setVideoBrightness(level)
                         }
                     }
                 }
