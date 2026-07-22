@@ -21,6 +21,7 @@ First off, thank you for considering contributing to **Koda**! It's people like 
 - If you've added code that should be tested, add tests.
 - Ensure the project builds successfully with `./gradlew assembleDebug`.
 - Follow the existing code style (Kotlin coding conventions).
+- For UI changes, read [DESIGN.md](DESIGN.md) first. Koda is built ground-up on Material 3 Expressive: use Expressive components before standard Material 3, springs for touch-driven motion, and never hardcode a color.
 - Open a PR with a clear title and description.
 
 ## Development Setup

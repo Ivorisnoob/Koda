@@ -22,7 +22,9 @@
 
 ---
 
-Koda is built entirely with Kotlin and Jetpack Compose, with a Material 3 Expressive design throughout. It streams music and video from YouTube, learns what you like, and does it without any official API keys. Everything runs through NewPipe Extractor and direct InnerTube calls.
+Koda is built entirely with Kotlin and Jetpack Compose, and it is built **ground-up on Material 3 Expressive** — not themed with it, constructed from it. Shapes, motion, color, and typography all resolve through a single `MaterialExpressiveTheme` at the root of the app, and every screen is composed from Expressive primitives. See [DESIGN.md](DESIGN.md) for how that works and why the design is not a swappable layer.
+
+It streams music and video from YouTube, learns what you like, and does it without any official API keys. Everything runs through NewPipe Extractor and direct InnerTube calls.
 
 There is one app with two modes. Leave the video toggle off and Koda is a full music player with a queue, downloads, playlists, statistics, and a library. Turn it on and the Home, Search, and Library tabs reshape into a proper video experience with a personalized feed, a real player, chapters, captions, comments, subscriptions, and notifications. No Google API key is ever required, and the whole app works — search, streaming, downloads, a local taste profile — even without signing in.
 
@@ -105,7 +107,9 @@ Plus an **ambient artwork background**, an optional **chromatic-mist** effect, a
 
 ### Interface and theming
 
-- Material 3 Expressive design with shape morphing, spring physics, and dynamic color.
+Koda's interface is the product, not a wrapper around one. The whole app is constructed from Material 3 Expressive: 39 source files use Expressive-only APIs directly, `MaterialShapes` is referenced 131 times across 14 shapes, and spring physics drives 97 animation specs. There is no alternate design language and no fallback path — details and rationale in [DESIGN.md](DESIGN.md).
+
+- Material 3 Expressive design with shape morphing, spring physics, and dynamic color, applied through one root `MaterialExpressiveTheme`.
 - Dynamic theming that pulls its palette from your wallpaper (Android 12+) or from album artwork.
 - Over two dozen curated color palettes across six families — Vibrant, Pastel, Aesthetic, Earthy, Moody, and Jewel & Mono.
 - Light, dark, and system themes, plus an AMOLED true-black mode.
@@ -222,7 +226,7 @@ APKs are split by ABI for smaller downloads:
 - `arm64-v8a` for 64-bit ARM
 - a universal APK containing both
 
-For a deeper dive into the architecture, data flows, and the InnerTube layer, see [`CLAUDE.md`](CLAUDE.md).
+For a deeper dive into the architecture, data flows, and the InnerTube layer, see [`CLAUDE.md`](CLAUDE.md). For the design system — shape, motion, color, and the rules for contributing UI code — see [`DESIGN.md`](DESIGN.md).
 
 ---
 
