@@ -269,7 +269,9 @@ fun HomeScreen(
     // Update check state
     val updateRepository = remember { UpdateRepository() }
     var updateResult by remember { mutableStateOf<UpdateResult?>(null) }
-    
+    // Held separately so the pill's label survives its exit animation
+    var latestVersion by remember { mutableStateOf("") }
+
     // Check for updates on app launch (only for release builds)
     LaunchedEffect(Unit) {
         if (!BuildConfig.DEBUG) {
@@ -277,6 +279,9 @@ fun HomeScreen(
                 repoPath = BuildConfig.GITHUB_REPO,
                 currentVersion = BuildConfig.VERSION_NAME
             )
+            (updateResult as? UpdateResult.UpdateAvailable)?.let {
+                latestVersion = it.latestVersion
+            }
         }
     }
 
@@ -657,14 +662,25 @@ fun HomeScreen(
             modifier = Modifier.align(Alignment.BottomCenter)
         )
         
-        // Update available indicator
-        if (updateResult is UpdateResult.UpdateAvailable) {
-            val update = updateResult as UpdateResult.UpdateAvailable
+        // Update available indicator. Anchored bottom-start above the floating
+        // overlays (shared bottomOverlayInset) rather than the top bar, where it
+        // used to sit on top of the settings/profile icons.
+        androidx.compose.animation.AnimatedVisibility(
+            visible = updateResult is UpdateResult.UpdateAvailable,
+            enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.scaleIn(
+                initialScale = 0.8f,
+                animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec()
+            ),
+            exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.scaleOut(
+                targetScale = 0.8f
+            ),
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .navigationBarsPadding()
+                .padding(start = 20.dp, bottom = bottomOverlayInset + 8.dp)
+        ) {
             Surface(
                 modifier = Modifier
-                    .padding(top = 16.dp, end = 20.dp)
-                    .align(Alignment.TopEnd)
-                    .padding(top = 44.dp) // Below profile icon
                     .clip(RoundedCornerShape(50))
                     .clickable { onNavigateToUpdate() },
                 color = MaterialTheme.colorScheme.primaryContainer,
@@ -684,7 +700,7 @@ fun HomeScreen(
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "v${update.latestVersion}",
+                        text = "v$latestVersion",
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onPrimaryContainer
