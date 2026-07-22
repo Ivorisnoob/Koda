@@ -53,6 +53,7 @@ import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Contrast
+import androidx.compose.material.icons.rounded.Cookie
 import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.SystemUpdate
@@ -113,6 +114,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -145,6 +147,7 @@ import com.ivor.ivormusic.BuildConfig
 import com.ivor.ivormusic.data.FolderInfo
 import com.ivor.ivormusic.data.SessionManager
 import com.ivor.ivormusic.data.ThemePreferences
+import com.ivor.ivormusic.data.YouTubeAuthUtils
 
 import com.ivor.ivormusic.ui.auth.YouTubeAuthDialog
 import com.ivor.ivormusic.data.PlayerStyle
@@ -260,7 +263,13 @@ fun SettingsScreen(
 
     // Dialog state for YouTube auth
     var showAuthDialog by remember { mutableStateOf(false) }
-    
+
+    // Dialog state for pasting a session cookie header by hand
+    var showCookiePasteSheet by remember { mutableStateOf(false) }
+    // Bumped after a session change so the account row re-reads name/avatar,
+    // which SessionManager exposes as plain getters rather than a flow.
+    var accountRefreshKey by remember { mutableStateOf(0) }
+
     // Dialog state for About
     var showAboutDialog by remember { mutableStateOf(false) }
     
@@ -702,11 +711,13 @@ fun SettingsScreen(
                     ExpressiveSettingsCard(surfaceColor = surfaceColor) {
                     if (isLoggedIn) {
                             // Logged in state with user avatar
-                            ExpressiveAccountItem(
-                                sessionManager = sessionManager,
-                                textColor = textColor,
-                                secondaryTextColor = secondaryTextColor
-                            )
+                            key(accountRefreshKey) {
+                                ExpressiveAccountItem(
+                                    sessionManager = sessionManager,
+                                    textColor = textColor,
+                                    secondaryTextColor = secondaryTextColor
+                                )
+                            }
                             SettingsDivider()
                             // Save Video History Toggle
                             ExpressiveSaveHistoryToggleItem(
@@ -715,6 +726,17 @@ fun SettingsScreen(
                                 textColor = textColor,
                                 secondaryTextColor = secondaryTextColor,
                                 accentColor = Color(0xFFFF0000) // YouTube red
+                            )
+                            SettingsDivider()
+                            ExpressiveSettingsItem(
+                                icon = Icons.Rounded.Cookie,
+                                title = "Replace Session Cookies",
+                                subtitle = "Paste a fresh cookie header if your session goes stale",
+                                onClick = { showCookiePasteSheet = true },
+                                textColor = textColor,
+                                secondaryTextColor = secondaryTextColor,
+                                iconTint = accentColor,
+                                showChevron = true
                             )
                             SettingsDivider()
                             ExpressiveSettingsItem(
@@ -740,6 +762,17 @@ fun SettingsScreen(
                                 textColor = textColor,
                                 secondaryTextColor = secondaryTextColor,
                                 iconTint = Color(0xFFFF0000),
+                                showChevron = true
+                            )
+                            SettingsDivider()
+                            ExpressiveSettingsItem(
+                                icon = Icons.Rounded.Cookie,
+                                title = "Sign In With Cookies",
+                                subtitle = "Paste a cookie header instead of using the web sign-in",
+                                onClick = { showCookiePasteSheet = true },
+                                textColor = textColor,
+                                secondaryTextColor = secondaryTextColor,
+                                iconTint = accentColor,
                                 showChevron = true
                             )
                         }
@@ -921,13 +954,32 @@ fun SettingsScreen(
     if (showAuthDialog) {
         YouTubeAuthDialog(
             onDismiss = { showAuthDialog = false },
-            onAuthSuccess = { 
+            onAuthSuccess = {
                 showAuthDialog = false
                 isLoggedIn = true
             }
         )
     }
-    
+
+    // Manual cookie paste (escape hatch when the WebView login fails, or to
+    // refresh a session that has gone stale without signing in again)
+    if (showCookiePasteSheet) {
+        CookiePasteSheet(
+            onDismiss = { showCookiePasteSheet = false },
+            onSave = { cookies ->
+                sessionManager.saveCookies(cookies)
+                isLoggedIn = true
+                showCookiePasteSheet = false
+                coroutineScope.launch {
+                    // Populates name/avatar for the account row, and doubles as
+                    // a live check that the pasted session is actually accepted.
+                    com.ivor.ivormusic.data.YouTubeRepository(context).fetchAccountInfo()
+                    accountRefreshKey++
+                }
+            }
+        )
+    }
+
     // About Dialog with expressive styling
     if (showAboutDialog) {
         ExpressiveAboutDialog(
