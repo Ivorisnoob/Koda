@@ -143,7 +143,7 @@ class MusicService : MediaLibraryService() {
         // default; the size and toggle stay live via observePreferences().
         CacheManager.initialize(this, themePreferences.maxCacheSizeMb.value)
         youtubeRepository = YouTubeRepository(this)
-        downloadRepository = DownloadRepository(this)
+        downloadRepository = DownloadRepository.getInstance(this)
 
         // 2. Setup Notifications & Live Updates
         setMediaNotificationProvider(LiveUpdateMediaNotificationProvider(this))

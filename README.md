@@ -102,8 +102,13 @@ Plus an **ambient artwork background**, an optional **chromatic-mist** effect, a
 
 ### Downloads
 
-- Download individual songs for offline listening.
-- A download manager to track progress, cancel, delete, and clear failed downloads, with progress notifications.
+- **Download songs and videos** for offline playback. Video is stitched back together from YouTube's separate high-quality video and audio streams into a single MP4, so downloads are not stuck at the 360p that comes as a ready-made file.
+- **Download a whole album or playlist** in one tap. Anything you already have is skipped, so re-running it only fetches what is missing.
+- **Files go where you can find them** — `Downloads/Koda/Music` and `Downloads/Koda/Video` — named after the track, not the video id. They show up in the Files app and play in anything else on your device.
+- **Downloads survive leaving the screen.** They run in the background through a foreground service instead of dying when you navigate away.
+- **A download manager** with separate Music and Video tabs, a live queue, progress, cancel, delete, and one-tap retry on anything that failed.
+- **Progress notifications with album art**, and on Android 16 an optional **Live Update** that puts download progress in the status bar as a chip with a progress bar. On by default there, switchable off in Settings.
+- Failures retry automatically with a freshly resolved stream URL, and a partial download is never left behind as a broken file.
 
 ### Interface and theming
 
@@ -121,6 +126,7 @@ Koda's interface is the product, not a wrapper around one. The whole app is cons
 ### Authentication
 
 - Sign in through an embedded WebView. No password ever leaves the browser.
+- **Or paste a session cookie** from a desktop browser, for when the in-app sign-in fails or a session has gone stale. The sheet walks through getting it and checks what you paste before saving.
 - Cookies are stored with EncryptedSharedPreferences and signed per-origin (SAPISIDHASH).
 - Everything except personalized feeds, watch history, comments, and engagement works fully signed out.
 
@@ -151,7 +157,10 @@ Koda's interface is the product, not a wrapper around one. The whole app is cons
 app/src/main/java/com/ivor/ivormusic/
 ├── data/                    # Data layer
 │   ├── YouTubeRepository    # YouTube Music and video via NewPipe and InnerTube
-│   ├── DownloadRepository   # Download management
+│   ├── DownloadRepository   # Download queue, state, and progress
+│   ├── DownloadStorage      # Writes downloads into Downloads/Koda via MediaStore
+│   ├── DownloadMuxer        # Joins separate video and audio tracks into one MP4
+│   ├── DownloadMigration    # One-time move of older downloads to shared storage
 │   ├── PlaylistRepository   # Local user playlists
 │   ├── LikedSongsRepository # Local liked songs
 │   ├── RecommendationEngine # Local taste profile and queue continuation
@@ -162,7 +171,8 @@ app/src/main/java/com/ivor/ivormusic/
 │   ├── ThemePreferences     # All app settings
 │   └── Models               # Song, Playlist, VideoItem, SubscriptionItem, ...
 ├── service/                 # Background services
-│   └── MusicService         # MediaLibraryService with live-progress notification
+│   ├── MusicService         # MediaLibraryService with live-progress notification
+│   └── DownloadService      # Keeps downloads running in the background
 └── ui/                      # Presentation layer
     ├── home/                # Home with recommendations and video feed
     ├── library/             # Playlists, liked songs, statistics
@@ -237,6 +247,7 @@ For a deeper dive into the architecture, data flows, and the InnerTube layer, se
 - [x] In-app video with a personalized feed, chapters, and captions
 - [x] Multiple player styles and a full color-palette system
 - [x] Listening statistics
+- [x] Offline downloads for music and video, saved to your Downloads folder
 - [ ] Advanced audio: equalizer and gapless playback
 - [ ] Home screen widget for playback controls
 - [ ] Kotlin Multiplatform for desktop and iOS

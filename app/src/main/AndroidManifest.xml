@@ -55,6 +55,16 @@
                 <action android:name="android.media.browse.MediaBrowserService"/>
             </intent-filter>
         </service>
+
+        <!--
+            Keeps the process alive while downloads run. dataSync is the correct
+            type for user-initiated file transfers; the matching
+            FOREGROUND_SERVICE_DATA_SYNC permission is declared above.
+        -->
+        <service
+            android:name=".service.DownloadService"
+            android:foregroundServiceType="dataSync"
+            android:exported="false" />
     </application>
 
 </manifest>

@@ -56,8 +56,11 @@ import androidx.compose.material.icons.outlined.ThumbUp
 import androidx.compose.material.icons.rounded.Autorenew
 import androidx.compose.material.icons.rounded.BrightnessHigh
 import androidx.compose.material.icons.rounded.BrightnessLow
+import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ClosedCaption
 import androidx.compose.material.icons.rounded.ClosedCaptionOff
+import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Error
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Forward10
@@ -94,6 +97,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -128,10 +133,12 @@ import coil.compose.AsyncImage
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import com.ivor.ivormusic.data.LikeStatus
+import com.ivor.ivormusic.data.ThemePreferences
 import com.ivor.ivormusic.data.VideoChapter
 import com.ivor.ivormusic.data.VideoEngagement
 import com.ivor.ivormusic.data.VideoItem
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.util.Locale
 
 // VideoPlayerScreen function removed.
@@ -817,10 +824,20 @@ private fun PlayerGestureSurface(
         }
     }
 
-    // The brightness gesture overrides the window brightness; hand control
-    // back to the system when the fullscreen surface goes away.
+    val themePreferences = remember(context) { ThemePreferences(context) }
+
+    // The brightness gesture overrides the window brightness: re-apply the
+    // level the user last dialed in so every fullscreen video looks the same,
+    // and hand control back to the system when the surface goes away (the rest
+    // of the app must not stay stuck at the video's brightness).
     if (fullscreenGesturesEnabled) {
         DisposableEffect(activity) {
+            activity?.let { act ->
+                val saved = themePreferences.getVideoBrightness()
+                if (saved != ThemePreferences.VIDEO_BRIGHTNESS_UNSET) {
+                    setWindowBrightness(act, saved.coerceAtLeast(0.01f))
+                }
+            }
             onDispose {
                 activity?.let { setWindowBrightness(it, WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE) }
             }
@@ -940,6 +957,13 @@ private fun PlayerGestureSurface(
                                     change.consume()
                                 }
                             }
+                        }
+                        // Persist once the finger lifts, not on every frame of
+                        // the drag. Volume is deliberately not stored: it is
+                        // the system STREAM_MUSIC level, which already carries
+                        // over on its own.
+                        if (mode == 1 && leftSide) {
+                            themePreferences.setVideoBrightness(level)
                         }
                     }
                 }
@@ -1193,6 +1217,7 @@ fun VideoInfoSection(
             )
             SaveVideoButton(onClick = onSaveClick)
             ShareVideoButton(video = video)
+            DownloadVideoButton(video = video)
         }
 
         // Channel Info Surface (tap navigates to the channel)
@@ -1473,6 +1498,73 @@ private fun SaveVideoButton(onClick: () -> Unit) {
             )
             Text(
                 text = "Save",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        }
+    }
+}
+
+/**
+ * Download pill. Queues the video into the shared download repository, which
+ * fetches the best MP4 video and audio streams and remuxes them into
+ * Downloads/Koda/Video. Reflects queued/downloading/downloaded state so the
+ * pill is not a fire-and-forget button.
+ */
+@Composable
+private fun DownloadVideoButton(video: VideoItem) {
+    val context = LocalContext.current
+    val repository = remember(context) {
+        com.ivor.ivormusic.data.DownloadRepository.getInstance(context)
+    }
+    val scope = rememberCoroutineScope()
+
+    val downloadedVideos by repository.downloadedVideos.collectAsState()
+    val progressMap by repository.downloadProgress.collectAsState()
+
+    val downloaded = downloadedVideos.any { it.id == video.videoId }
+    val progress = progressMap[video.videoId]
+    val inFlight = progress != null &&
+        (progress.status == com.ivor.ivormusic.data.DownloadStatus.DOWNLOADING ||
+            progress.status == com.ivor.ivormusic.data.DownloadStatus.QUEUED)
+
+    Surface(
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        onClick = {
+            when {
+                downloaded -> repository.deleteVideoDownload(video.videoId)
+                inFlight -> repository.cancelDownload(video.videoId)
+                else -> scope.launch { repository.downloadVideo(video) }
+            }
+        }
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 12.dp)
+        ) {
+            Icon(
+                imageVector = when {
+                    downloaded -> Icons.Rounded.CheckCircle
+                    inFlight -> Icons.Rounded.Close
+                    else -> Icons.Rounded.Download
+                },
+                contentDescription = "Download",
+                modifier = Modifier.size(20.dp),
+                tint = if (downloaded) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurface
+                }
+            )
+            Text(
+                text = when {
+                    downloaded -> "Downloaded"
+                    inFlight -> "${((progress?.progress ?: 0f) * 100).toInt()}%"
+                    else -> "Download"
+                },
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurface

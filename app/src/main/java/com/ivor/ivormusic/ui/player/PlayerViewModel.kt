@@ -108,7 +108,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     val likedSongIds: StateFlow<Set<String>> = likedSongsRepository.likedSongIds
     
     // Downloads
-    private val downloadRepository = com.ivor.ivormusic.data.DownloadRepository(context)
+    private val downloadRepository = com.ivor.ivormusic.data.DownloadRepository.getInstance(context)
     val downloadedSongs = downloadRepository.downloadedSongs
     val downloadingIds = downloadRepository.downloadingIds
     val downloadProgress = downloadRepository.downloadProgress
@@ -995,6 +995,31 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     
     fun cancelDownload(songId: String) {
         downloadRepository.cancelDownload(songId)
+    }
+
+    /**
+     * Re-queue a failed download. Distinct from toggleDownload, which would
+     * treat the leftover failed entry as a fresh request and leave it in the
+     * progress list.
+     */
+    fun retryDownload(request: com.ivor.ivormusic.data.DownloadRequest) {
+        downloadRepository.retryDownload(request)
+    }
+
+    val downloadedVideos = downloadRepository.downloadedVideos
+    val downloadQueue = downloadRepository.downloadQueue
+
+    fun downloadVideo(video: com.ivor.ivormusic.data.VideoItem) {
+        viewModelScope.launch { downloadRepository.downloadVideo(video) }
+    }
+
+    fun deleteVideoDownload(videoId: String) {
+        downloadRepository.deleteVideoDownload(videoId)
+    }
+
+    /** Cancel every queued and in-flight download. */
+    fun cancelAllDownloads() {
+        downloadRepository.cancelAll()
     }
     
     fun deleteDownload(songId: String) {

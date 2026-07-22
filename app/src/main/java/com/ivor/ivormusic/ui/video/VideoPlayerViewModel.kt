@@ -92,7 +92,9 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
     private var captionsLoadedForVideoId: String? = null
 
-    private val _isLooping = MutableStateFlow(false)
+    // Repeat sticks across videos and app restarts, so seed it from prefs
+    // rather than defaulting to off on every player creation.
+    private val _isLooping = MutableStateFlow(themePreferences.isVideoRepeatEnabled())
     val isLooping: StateFlow<Boolean> = _isLooping.asStateFlow()
 
     private val _playbackSpeed = MutableStateFlow(1f)
@@ -234,6 +236,10 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             .setHandleAudioBecomingNoisy(true)
             .build().apply {
             playWhenReady = true
+            // Repeat is persisted, so a fresh player must adopt the stored
+            // mode: otherwise the toolbar shows the repeat icon while the
+            // player silently auto-plays the next video instead of looping.
+            repeatMode = if (_isLooping.value) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
             addListener(object : Player.Listener {
                 override fun onIsPlayingChanged(isPlaying: Boolean) {
                     _isPlaying.value = isPlaying
@@ -382,6 +388,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     fun toggleLooping() {
         _isLooping.value = !_isLooping.value
         _exoPlayer?.repeatMode = if (_isLooping.value) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
+        themePreferences.setVideoRepeatEnabled(_isLooping.value)
     }
 
     /** Set the playback speed for the current video. Resets to 1x on video change. */
