@@ -28,7 +28,12 @@ data class Song(
     val albumArtUri: Uri? = null, // Album art URI
     val thumbnailUrl: String? = null, // YouTube thumbnail URL
     val source: SongSource = SongSource.LOCAL,
-    val filePath: String? = null // Local file path for folder filtering and embedded lyrics
+    val filePath: String? = null, // Local file path for folder filtering and embedded lyrics
+    // When this song entered the user's library, epoch millis. Each source
+    // stamps its own notion of "added": MediaStore DATE_ADDED for device
+    // files, download completion time for downloads, like time for likes.
+    // Null means unknown (sorts last), never zero.
+    val dateAdded: Long? = null
 ) {
     val highResThumbnailUrl: String?
         get() = thumbnailUrl?.let { url ->
@@ -67,7 +72,8 @@ data class Song(
             duration: Long,
             uri: Uri,
             albumArtUri: Uri?,
-            filePath: String? = null
+            filePath: String? = null,
+            dateAdded: Long? = null
         ): Song = Song(
             id = id.toString(),
             title = title,
@@ -77,7 +83,8 @@ data class Song(
             uri = uri,
             albumArtUri = albumArtUri,
             source = SongSource.LOCAL,
-            filePath = filePath
+            filePath = filePath,
+            dateAdded = dateAdded
         )
 
         /**

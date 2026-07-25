@@ -36,7 +36,8 @@ class SongRepository(private val context: Context) {
             MediaStore.Audio.Media.ALBUM,
             MediaStore.Audio.Media.DURATION,
             MediaStore.Audio.Media.ALBUM_ID,
-            MediaStore.Audio.Media.DATA // File path for folder filtering
+            MediaStore.Audio.Media.DATA, // File path for folder filtering
+            MediaStore.Audio.Media.DATE_ADDED // Seconds since epoch, for "Recently added"
         )
 
         val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0"
@@ -56,6 +57,7 @@ class SongRepository(private val context: Context) {
             val durationColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
             val albumIdColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM_ID)
             val dataColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA)
+            val dateAddedColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_ADDED)
 
             while (cursor.moveToNext()) {
                 val id = cursor.getLong(idColumn)
@@ -65,6 +67,9 @@ class SongRepository(private val context: Context) {
                 val duration = cursor.getLong(durationColumn)
                 val albumId = cursor.getLong(albumIdColumn)
                 val filePath = cursor.getString(dataColumn) ?: ""
+                // DATE_ADDED is seconds, not millis. 0 means the provider had
+                // nothing, which is "unknown" rather than 1970.
+                val dateAdded = cursor.getLong(dateAddedColumn).takeIf { it > 0 }?.times(1000L)
 
                 // Check if this song's folder is excluded
                 val parentFolder = File(filePath).parent ?: ""
@@ -84,7 +89,7 @@ class SongRepository(private val context: Context) {
                     albumId
                 )
 
-                songs.add(Song.fromLocal(id, title, artist, album, duration, contentUri, albumArtUri, filePath))
+                songs.add(Song.fromLocal(id, title, artist, album, duration, contentUri, albumArtUri, filePath, dateAdded))
             }
         }
         songs
@@ -183,7 +188,9 @@ class SongRepository(private val context: Context) {
                         duration = 0L, // Hard to get without MediaStore or extra parsing
                         uri = Uri.fromFile(file),
                         source = SongSource.LOCAL,
-                        filePath = file.absolutePath
+                        filePath = file.absolutePath,
+                        // No MediaStore here, so mtime is the best proxy available
+                        dateAdded = file.lastModified().takeIf { it > 0 }
                     )
                     results.add(song)
                 }

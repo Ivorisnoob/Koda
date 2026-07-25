@@ -95,9 +95,15 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val _recentlyPlayed = MutableStateFlow<List<Song>>(emptyList())
     val recentlyPlayed: StateFlow<List<Song>> = _recentlyPlayed.asStateFlow()
 
+    // Plays per song id, for the Library's "Most played" sort. Derived from the
+    // same history read as the recents rail rather than a second file load.
+    private val _playCounts = MutableStateFlow<Map<String, Int>>(emptyMap())
+    val playCounts: StateFlow<Map<String, Int>> = _playCounts.asStateFlow()
+
     fun refreshRecentlyPlayed(limit: Int = 15) {
         viewModelScope.launch {
             val history = statsRepository.loadHistory() // newest first
+            _playCounts.value = history.groupingBy { it.songId }.eachCount()
             val localSongs = _songs.value
             val seen = mutableSetOf<String>()
             val recents = mutableListOf<Song>()

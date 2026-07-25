@@ -226,10 +226,16 @@ enum class LibraryTab(val label: String) {
     Albums("Albums")
 }
 
-enum class LibrarySortOption(val label: String) {
-    Title("Title"),
-    Artist("Artist"),
-    Album("Album")
+/**
+ * Sort orders for the All tab's track list. Labels state their own direction
+ * ("Most played", not "Play count") so the list needs no asc/desc toggle.
+ */
+enum class LibrarySortOption(val label: String, val icon: ImageVector) {
+    Title("Title", Icons.Rounded.SortByAlpha),
+    Artist("Artist", Icons.Rounded.Person),
+    Album("Album", Icons.Rounded.Album),
+    MostPlayed("Most played", Icons.Rounded.TrendingUp),
+    RecentlyAdded("Recently added", Icons.Rounded.NewReleases)
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
@@ -252,6 +258,7 @@ fun LibraryMainScreen(
     val likedSongs by viewModel.likedSongs.collectAsState()
     val downloadedSongs by viewModel.downloadedSongs.collectAsState()
     val recentlyPlayed by viewModel.recentlyPlayed.collectAsState()
+    val playCounts by viewModel.playCounts.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
 
     var selectedTab by rememberSaveable { mutableStateOf(LibraryTab.All) }
@@ -272,11 +279,22 @@ fun LibraryMainScreen(
         }
     }
 
-    val sortedSongs = remember(librarySongs, sortOption) {
+    val sortedSongs = remember(librarySongs, sortOption, playCounts) {
         when (sortOption) {
             LibrarySortOption.Title -> librarySongs.sortedBy { it.title.lowercase() }
             LibrarySortOption.Artist -> librarySongs.sortedBy { it.artist.lowercase() }
             LibrarySortOption.Album -> librarySongs.sortedBy { it.album.lowercase() }
+            // Never-played songs land at the bottom in a stable alphabetical
+            // order rather than whatever order the library happened to build in
+            LibrarySortOption.MostPlayed -> librarySongs.sortedWith(
+                compareByDescending<Song> { playCounts[it.id] ?: 0 }
+                    .thenBy { it.title.lowercase() }
+            )
+            // Songs with no known add date (see Song.dateAdded) sort last
+            LibrarySortOption.RecentlyAdded -> librarySongs.sortedWith(
+                compareByDescending<Song> { it.dateAdded ?: Long.MIN_VALUE }
+                    .thenBy { it.title.lowercase() }
+            )
         }
     }
 
@@ -379,6 +397,7 @@ fun LibraryMainScreen(
                             likedSongs = likedSongs,
                             downloadedSongs = downloadedSongs,
                             recentlyPlayed = recentlyPlayed,
+                            playCounts = playCounts,
                             sortOption = sortOption,
                             onSortOptionChange = { sortOption = it },
                             onSongClick = onSongClick,
@@ -511,6 +530,7 @@ fun AllSongsList(
     likedSongs: List<Song>,
     downloadedSongs: List<Song>,
     recentlyPlayed: List<Song>,
+    playCounts: Map<String, Int>,
     sortOption: LibrarySortOption,
     onSortOptionChange: (LibrarySortOption) -> Unit,
     onSongClick: (Song) -> Unit,
@@ -625,15 +645,33 @@ fun AllSongsList(
                         }
                         DropdownMenu(expanded = showSortMenu, onDismissRequest = { showSortMenu = false }) {
                             LibrarySortOption.entries.forEach { option ->
+                                val selected = option == sortOption
                                 DropdownMenuItem(
-                                    text = { Text(option.label) },
+                                    text = {
+                                        Text(
+                                            option.label,
+                                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
+                                        )
+                                    },
                                     onClick = {
                                         onSortOptionChange(option)
                                         showSortMenu = false
                                     },
                                     leadingIcon = {
-                                        if (option == sortOption) {
-                                            Icon(Icons.Rounded.Check, contentDescription = null)
+                                        Icon(
+                                            option.icon,
+                                            contentDescription = null,
+                                            tint = if (selected) MaterialTheme.colorScheme.primary
+                                                else MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    },
+                                    trailingIcon = {
+                                        if (selected) {
+                                            Icon(
+                                                Icons.Rounded.Check,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.primary
+                                            )
                                         }
                                     }
                                 )
@@ -654,6 +692,16 @@ fun AllSongsList(
             }
         } else {
             items(songs, key = { it.id }) { song ->
+                // Under a non-alphabetical sort the order looks arbitrary
+                // unless the value it sorted on is visible, so surface it in
+                // place of the duration.
+                val sortLabel = when (sortOption) {
+                    LibrarySortOption.MostPlayed -> playCounts[song.id]
+                        ?.takeIf { it > 0 }
+                        ?.let { if (it == 1) "1 play" else "$it plays" }
+                    LibrarySortOption.RecentlyAdded -> song.dateAdded?.let(::formatRelativeDate)
+                    else -> null
+                }
                 SongListItem(
                     song = song,
                     containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -661,7 +709,8 @@ fun AllSongsList(
                     tonalElevation = 2.dp,
                     isLiked = song.id in likedIds,
                     isDownloaded = song.id in downloadedIds,
-                    showDuration = true,
+                    showDuration = sortLabel == null,
+                    trailingLabel = sortLabel,
                     onClick = { onPlayQueue(songs, song) }
                 )
             }
@@ -966,7 +1015,7 @@ fun AlbumsGrid(
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun ExpressiveLikedSongsCard(count: Int, onClick: () -> Unit) {
-    // Flat expressive hero: gradient wash, heart seated in a SoftBurst
+    // Flat expressive hero: solid container, heart seated in a SoftBurst
     // material shape, press-scale spring instead of a shadow
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
@@ -986,19 +1035,11 @@ fun ExpressiveLikedSongsCard(count: Int, onClick: () -> Unit) {
                 scaleX = pressScale
                 scaleY = pressScale
             },
-        color = Color.Transparent
+        color = MaterialTheme.colorScheme.primaryContainer
     ) {
         Row(
             modifier = Modifier
                 .fillMaxSize()
-                .background(
-                    Brush.horizontalGradient(
-                        colors = listOf(
-                            MaterialTheme.colorScheme.primaryContainer,
-                            MaterialTheme.colorScheme.tertiaryContainer
-                        )
-                    )
-                )
                 .padding(24.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -1258,6 +1299,8 @@ fun SongListItem(
     isLiked: Boolean = false,
     isDownloaded: Boolean = false,
     showDuration: Boolean = false,
+    /** Short metric shown where the duration normally sits (e.g. "12 plays"). */
+    trailingLabel: String? = null,
     trailingContent: (@Composable () -> Unit)? = null,
     onClick: () -> Unit
 ) {
@@ -1283,7 +1326,7 @@ fun SongListItem(
                         Box(contentAlignment = Alignment.Center) { Icon(Icons.Rounded.MusicNote, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
                 }
             },
-            trailingContent = trailingContent ?: if (isLiked || isDownloaded || showDuration) {
+            trailingContent = trailingContent ?: if (isLiked || isDownloaded || showDuration || trailingLabel != null) {
                 {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -1305,7 +1348,14 @@ fun SongListItem(
                                 tint = MaterialTheme.colorScheme.primary
                             )
                         }
-                        if (showDuration && song.duration > 0) {
+                        if (trailingLabel != null) {
+                            Text(
+                                trailingLabel,
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        } else if (showDuration && song.duration > 0) {
                             Text(
                                 formatSongDuration(song.duration),
                                 style = MaterialTheme.typography.labelMedium,
@@ -1318,6 +1368,20 @@ fun SongListItem(
             modifier = Modifier.clickable(onClick = onClick),
             colors = ListItemDefaults.colors(containerColor = Color.Transparent)
         )
+    }
+}
+
+/** Compact "when was this added" label for the Recently added sort. */
+private fun formatRelativeDate(timestamp: Long): String {
+    val days = (System.currentTimeMillis() - timestamp) / 86_400_000L
+    return when {
+        days < 0L -> "Today" // Clock skew or a file dated in the future
+        days == 0L -> "Today"
+        days == 1L -> "Yesterday"
+        days < 7L -> "${days}d ago"
+        days < 30L -> "${days / 7}w ago"
+        days < 365L -> "${days / 30}mo ago"
+        else -> "${days / 365}y ago"
     }
 }
 

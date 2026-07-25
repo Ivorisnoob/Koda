@@ -68,7 +68,24 @@ class LikedSongsRepository(context: Context) {
     private fun loadSongMetadata(): List<Song> {
         if (!songsFile.exists()) return emptyList()
         return try {
-            json.decodeFromString<List<Song>>(songsFile.readText())
+            val stored = json.decodeFromString<List<Song>>(songsFile.readText())
+            // Likes saved before songs carried a timestamp have none. The list
+            // is newest-first, so counting backwards from the file's mtime
+            // preserves the order the user actually liked them in. Written back
+            // immediately so this only ever runs once.
+            if (stored.any { it.dateAdded == null }) {
+                val anchor = songsFile.lastModified().takeIf { it > 0 }
+                    ?: System.currentTimeMillis()
+                val backfilled = stored.mapIndexed { index, song ->
+                    song.dateAdded?.let { song } ?: song.copy(dateAdded = anchor - index * 1000L)
+                }
+                try {
+                    songsFile.writeText(json.encodeToString(backfilled))
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error persisting backfilled like timestamps", e)
+                }
+                backfilled
+            } else stored
         } catch (e: Exception) {
             Log.e(TAG, "Error loading liked song metadata", e)
             emptyList()
@@ -99,10 +116,16 @@ class LikedSongsRepository(context: Context) {
     fun toggleLike(song: Song): Boolean {
         val isNowLiked = toggleLike(song.id)
         if (isNowLiked) {
-            saveSongMetadata(listOf(song) + _likedSongs.value.filter { it.id != song.id })
+            saveSongMetadata(listOf(song.likedNow()) + _likedSongs.value.filter { it.id != song.id })
         }
         return isNowLiked
     }
+
+    /**
+     * In the library, a liked song's "date added" is when it was liked — not
+     * when its file landed on the device, which is what a local [Song] carries.
+     */
+    private fun Song.likedNow(): Song = copy(dateAdded = System.currentTimeMillis())
 
     /**
      * Toggle the liked status of a song by ID only (no metadata stored).
@@ -129,7 +152,7 @@ class LikedSongsRepository(context: Context) {
      */
     fun likeSong(song: Song) {
         saveLikedIds(_likedSongIds.value + song.id)
-        saveSongMetadata(listOf(song) + _likedSongs.value.filter { it.id != song.id })
+        saveSongMetadata(listOf(song.likedNow()) + _likedSongs.value.filter { it.id != song.id })
     }
 
     /**

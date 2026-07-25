@@ -227,6 +227,15 @@ class DownloadRepository private constructor(private val context: Context) {
             val liveUris = storage.listExisting(DownloadMediaType.MUSIC).keys
             val songs = mutableListOf<Song>()
             var prunedAny = false
+            var backfilledAny = false
+            // Entries written before downloads carried a timestamp get one
+            // synthesized from their position: the array is in completion
+            // order, so walking backwards from the metadata file's mtime keeps
+            // their relative order while placing them all before any new
+            // download. saveMetadata() below persists it, so this runs once.
+            val backfillAnchor = downloadsFile.lastModified().takeIf { it > 0 }
+                ?: System.currentTimeMillis()
+            val entryCount = jsonArray.length()
 
             for (i in 0 until jsonArray.length()) {
                 val obj = jsonArray.optJSONObject(i) ?: continue
@@ -248,6 +257,10 @@ class DownloadRepository private constructor(private val context: Context) {
                 val artUrl = obj.optString("albumArtUrl").takeIf {
                     it.isNotBlank() && !obj.isNull("albumArtUrl")
                 }
+                val addedAt = obj.optLong("addedAt").takeIf { it > 0 } ?: run {
+                    backfilledAny = true
+                    backfillAnchor - (entryCount - i) * 1000L
+                }
                 songs.add(
                     Song(
                         id = obj.optString("id"),
@@ -258,15 +271,16 @@ class DownloadRepository private constructor(private val context: Context) {
                         uri = uri,
                         albumArtUri = artUrl?.let(Uri::parse),
                         thumbnailUrl = artUrl,
-                        source = SongSource.LOCAL
+                        source = SongSource.LOCAL,
+                        dateAdded = addedAt
                     )
                 )
             }
 
             _downloadedSongs.value = songs
             // Persist the pruned list so externally deleted files do not get
-            // re-checked on every launch.
-            if (prunedAny) saveMetadata()
+            // re-checked on every launch, and so backfilled timestamps stick.
+            if (prunedAny || backfilledAny) saveMetadata()
         } catch (e: Exception) {
             Log.e(TAG, "Error loading downloads", e)
             _downloadedSongs.value = emptyList()
@@ -292,6 +306,7 @@ class DownloadRepository private constructor(private val context: Context) {
                         put("mediaUri", uri.toString())
                     }
                     put("albumArtUrl", song.thumbnailUrl ?: song.albumArtUri?.toString())
+                    song.dateAdded?.let { put("addedAt", it) }
                 }
                 jsonArray.put(obj)
             }
@@ -622,7 +637,11 @@ class DownloadRepository private constructor(private val context: Context) {
                 storage.publish(target)
                 pendingTarget = null
 
-                val downloaded = song.copy(uri = target, source = SongSource.LOCAL)
+                val downloaded = song.copy(
+                    uri = target,
+                    source = SongSource.LOCAL,
+                    dateAdded = System.currentTimeMillis()
+                )
                 _downloadedSongs.value = _downloadedSongs.value + downloaded
                 saveMetadata()
 
