@@ -29,6 +29,7 @@ import com.ivor.ivormusic.MainActivity
 import android.media.audiofx.AudioEffect
 import com.ivor.ivormusic.data.CacheManager
 import com.ivor.ivormusic.data.DownloadRepository
+import com.ivor.ivormusic.data.NotificationArtworkLoader
 import com.ivor.ivormusic.data.PlaylistDisplayItem
 import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.data.ThemePreferences
@@ -91,6 +92,10 @@ class MusicService : MediaLibraryService() {
 
     // Live Update (Android 16+)
     private var musicProgressLiveUpdate: MusicProgressLiveUpdate? = null
+
+    /** Artwork URLs already being fetched for the Live Update, so a per-second
+     *  progress loop does not kick off the same load repeatedly. */
+    private val liveUpdateArtworkRequested = mutableSetOf<String>()
 
     // Android Auto Cache
     @Volatile private var cachedRecommendations: List<Song>? = null
@@ -928,12 +933,25 @@ class MusicService : MediaLibraryService() {
                     // Android 16 Live Update
                     if (duration > 0) {
                          val mediaItem = player.currentMediaItem
+                         // Fetch the cover once per URL, off the notification
+                         // path: this tick posts without it and the next one
+                         // picks it up from the cache. Same approach as
+                         // DownloadService.
+                         val artUrl = mediaItem?.mediaMetadata?.artworkUri?.toString()
+                         if (artUrl != null && NotificationArtworkLoader.cached(artUrl) == null &&
+                             liveUpdateArtworkRequested.add(artUrl)
+                         ) {
+                             serviceScope.launch {
+                                 NotificationArtworkLoader.load(this@MusicService, artUrl)
+                             }
+                         }
                          musicProgressLiveUpdate?.updateProgress(
                              songTitle = mediaItem?.mediaMetadata?.title?.toString() ?: "Unknown",
                              artistName = mediaItem?.mediaMetadata?.artist?.toString() ?: "Unknown",
                              currentPositionMs = position,
                              durationMs = duration,
-                             isPlaying = true
+                             isPlaying = true,
+                             artwork = NotificationArtworkLoader.cached(artUrl)
                          )
                     }
 

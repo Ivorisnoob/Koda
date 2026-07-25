@@ -55,6 +55,7 @@ class MusicProgressLiveUpdate(private val context: Context) {
     private var lastProgress = -1
     private var lastChipText = ""
     private var lastTitle = ""
+    private var lastArtwork: android.graphics.Bitmap? = null
 
     init {
         createNotificationChannel()
@@ -98,7 +99,13 @@ class MusicProgressLiveUpdate(private val context: Context) {
         artistName: String,
         currentPositionMs: Long,
         durationMs: Long,
-        isPlaying: Boolean
+        isPlaying: Boolean,
+        // Album art for the shade entry. Null until it has been decoded, so
+        // the notification shows immediately and gains the cover on a later
+        // tick rather than waiting on the network. It cannot reach the status
+        // bar chip - that slot is the small icon, drawn as a tinted
+        // silhouette - so this is the only place the cover can appear.
+        artwork: android.graphics.Bitmap? = null
     ) {
         if (!canPostLiveUpdates()) {
             hide()
@@ -118,7 +125,8 @@ class MusicProgressLiveUpdate(private val context: Context) {
         if (isShowing &&
             progress == lastProgress &&
             chipText == lastChipText &&
-            songTitle == lastTitle
+            songTitle == lastTitle &&
+            artwork === lastArtwork
         ) {
             return
         }
@@ -126,6 +134,7 @@ class MusicProgressLiveUpdate(private val context: Context) {
         lastProgress = progress
         lastChipText = chipText
         lastTitle = songTitle
+        lastArtwork = artwork
 
         val contentIntent = PendingIntent.getActivity(
             context,
@@ -152,10 +161,13 @@ class MusicProgressLiveUpdate(private val context: Context) {
             )
 
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_download_notification)
+            .setSmallIcon(R.drawable.ic_playback_notification)
             .setContentTitle(songTitle)
             .setContentText(artistName)
             .setStyle(style)
+            // Album art in place of the app icon in the shade. Null is fine -
+            // the system falls back to the small icon.
+            .setLargeIcon(artwork)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setContentIntent(contentIntent)
@@ -183,6 +195,7 @@ class MusicProgressLiveUpdate(private val context: Context) {
             lastProgress = -1
             lastChipText = ""
             lastTitle = ""
+            lastArtwork = null
         }
     }
 
