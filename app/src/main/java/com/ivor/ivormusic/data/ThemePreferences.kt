@@ -94,6 +94,9 @@ class ThemePreferences(context: Context) {
     private val _localOnlyMode = MutableStateFlow(getLocalOnlyModePreference())
     val localOnlyMode: StateFlow<Boolean> = _localOnlyMode.asStateFlow()
 
+    private val _librarySortOption = MutableStateFlow(getLibrarySortOptionPreference())
+    val librarySortOption: StateFlow<String> = _librarySortOption.asStateFlow()
+
     // Every screen/service news up its own ThemePreferences (no DI), so a setter
     // called on one instance must still reach the flows of every other instance.
     // All instances share the same process-wide SharedPreferences object, so a
@@ -126,6 +129,7 @@ class ThemePreferences(context: Context) {
             KEY_MANUAL_SCAN_ENABLED -> _manualScanEnabled.value = getManualScanEnabledPreference()
             KEY_ONBOARDING_COMPLETED -> _onboardingCompleted.value = getOnboardingCompletedPreference()
             KEY_LOCAL_ONLY_MODE -> _localOnlyMode.value = getLocalOnlyModePreference()
+            KEY_LIBRARY_SORT_OPTION -> _librarySortOption.value = getLibrarySortOptionPreference()
         }
     }
 
@@ -209,6 +213,15 @@ class ThemePreferences(context: Context) {
         private const val KEY_MANUAL_SCAN_ENABLED = "manual_scan_enabled"
         private const val KEY_ONBOARDING_COMPLETED = "onboarding_completed"
         private const val KEY_LOCAL_ONLY_MODE = "local_only_mode"
+
+        private const val KEY_LIBRARY_SORT_OPTION = "library_sort_option"
+
+        /**
+         * Fallback sort order for the Library's All tab. Mirrors the name of
+         * LibrarySortOption.Title, which lives in the UI layer because it
+         * carries an icon.
+         */
+        private const val LIBRARY_SORT_DEFAULT = "Title"
 
         /**
          * Static fresh read of the local-only preference for network layers
@@ -727,6 +740,27 @@ class ThemePreferences(context: Context) {
     fun setLocalOnlyMode(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_LOCAL_ONLY_MODE, enabled).apply()
         _localOnlyMode.value = enabled
+    }
+
+    /**
+     * Get the stored Library sort order, held as a LibrarySortOption name.
+     * The caller maps it back to the enum and is responsible for the unknown
+     * case, so a sort option dropped in a later version degrades to the
+     * default instead of throwing on launch.
+     */
+    private fun getLibrarySortOptionPreference(): String {
+        return prefs.getString(KEY_LIBRARY_SORT_OPTION, LIBRARY_SORT_DEFAULT)
+            ?: LIBRARY_SORT_DEFAULT
+    }
+
+    /**
+     * Save the Library sort order and update the flow. Pass a
+     * LibrarySortOption name; existing constants are frozen, since renaming
+     * one would silently reset every user's stored choice.
+     */
+    fun setLibrarySortOption(optionName: String) {
+        prefs.edit().putString(KEY_LIBRARY_SORT_OPTION, optionName).apply()
+        _librarySortOption.value = optionName
     }
 
     private fun getOnboardingCompletedPreference(): Boolean {

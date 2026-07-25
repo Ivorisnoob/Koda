@@ -51,8 +51,10 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import coil.compose.AsyncImage
+import androidx.compose.ui.platform.LocalContext
 import com.ivor.ivormusic.data.PlaylistDisplayItem
 import com.ivor.ivormusic.data.Song
+import com.ivor.ivormusic.data.ThemePreferences
 import com.ivor.ivormusic.ui.artist.ArtistScreen
 import com.ivor.ivormusic.ui.components.ExpressivePullToRefresh
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -262,7 +264,17 @@ fun LibraryMainScreen(
     val isLoading by viewModel.isLoading.collectAsState()
 
     var selectedTab by rememberSaveable { mutableStateOf(LibraryTab.All) }
-    var sortOption by rememberSaveable { mutableStateOf(LibrarySortOption.Title) }
+
+    // Sort order sticks across launches, so it lives in prefs rather than in
+    // rememberSaveable. Matched by name instead of valueOf so an option
+    // removed in a later version falls back to Title instead of throwing.
+    val context = LocalContext.current
+    val themePreferences = remember(context) { ThemePreferences(context) }
+    val storedSortName by themePreferences.librarySortOption.collectAsState()
+    val sortOption = remember(storedSortName) {
+        LibrarySortOption.entries.firstOrNull { it.name == storedSortName }
+            ?: LibrarySortOption.Title
+    }
 
     LaunchedEffect(Unit) {
         viewModel.refreshRecentlyPlayed()
@@ -399,7 +411,7 @@ fun LibraryMainScreen(
                             recentlyPlayed = recentlyPlayed,
                             playCounts = playCounts,
                             sortOption = sortOption,
-                            onSortOptionChange = { sortOption = it },
+                            onSortOptionChange = { themePreferences.setLibrarySortOption(it.name) },
                             onSongClick = onSongClick,
                             onPlayQueue = onPlayQueue,
                             onDownloadsClick = onDownloadsClick,
