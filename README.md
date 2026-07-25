@@ -16,6 +16,10 @@
 </p>
 
 <p align="center">
+  <a href="https://t.me/ivorisnoob_chat"><img src="https://img.shields.io/badge/Telegram-Join%20the%20chat-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white" alt="Telegram"/></a>
+</p>
+
+<p align="center">
   <img src="https://img.shields.io/github/stars/Ivorisnoob/Koda?style=social" alt="Stars"/>
   <img src="https://img.shields.io/github/forks/Ivorisnoob/Koda?style=social" alt="Forks"/>
 </p>
@@ -251,6 +255,12 @@ For a deeper dive into the architecture, data flows, and the InnerTube layer, se
 - [ ] Advanced audio: equalizer and gapless playback
 - [ ] Home screen widget for playback controls
 - [ ] Kotlin Multiplatform for desktop and iOS
+
+---
+
+## Community
+
+Join the Telegram chat at **[t.me/ivorisnoob_chat](https://t.me/ivorisnoob_chat)** for beta builds, help with a problem, and feature discussion. Bug reports and feature requests are still best filed as [GitHub issues](https://github.com/Ivorisnoob/Koda/issues) so they do not get lost.
 
 ---
 
