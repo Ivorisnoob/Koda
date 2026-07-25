@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    Tracker icon for audio downloads - the mark that rides the progress bar
-    (ProgressStyle.setProgressTrackerIcon).
+    Tracker icon for audio downloads and for playback progress - the mark that
+    rides the progress bar (ProgressStyle.setProgressTrackerIcon). Kept under
+    the download name because renaming a drawable churns every reference for no
+    behaviour change.
 
     Deliberately a single solid silhouette with no cutouts or interior detail:
     the tracker renders at roughly 16dp inside the bar, where the launcher mark

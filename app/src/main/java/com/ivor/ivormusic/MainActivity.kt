@@ -67,6 +67,7 @@ class MainActivity : ComponentActivity() {
             val playerStyle by themeViewModel.playerStyle.collectAsState()
             val saveVideoHistory by themeViewModel.saveVideoHistory.collectAsState()
             val liveDownloadUpdates by themeViewModel.liveDownloadUpdates.collectAsState()
+            val livePlaybackUpdates by themeViewModel.livePlaybackUpdates.collectAsState()
             val timedCommentsEnabled by themeViewModel.timedCommentsEnabled.collectAsState()
             val shortsEnabled by themeViewModel.shortsEnabled.collectAsState()
             val shortsHiddenActions by themeViewModel.shortsHiddenActions.collectAsState()
@@ -122,6 +123,8 @@ class MainActivity : ComponentActivity() {
                         onSaveVideoHistoryToggle = { themeViewModel.setSaveVideoHistory(it) },
                         liveDownloadUpdates = liveDownloadUpdates,
                         onLiveDownloadUpdatesToggle = { themeViewModel.setLiveDownloadUpdates(it) },
+                        livePlaybackUpdates = livePlaybackUpdates,
+                        onLivePlaybackUpdatesToggle = { themeViewModel.setLivePlaybackUpdates(it) },
                         timedCommentsEnabled = timedCommentsEnabled,
                         onTimedCommentsToggle = { themeViewModel.setTimedCommentsEnabled(it) },
                         shortsEnabled = shortsEnabled,
@@ -186,6 +189,8 @@ fun MusicApp(
     onSaveVideoHistoryToggle: (Boolean) -> Unit,
     liveDownloadUpdates: Boolean,
     onLiveDownloadUpdatesToggle: (Boolean) -> Unit,
+    livePlaybackUpdates: Boolean,
+    onLivePlaybackUpdatesToggle: (Boolean) -> Unit,
     timedCommentsEnabled: Boolean,
     onTimedCommentsToggle: (Boolean) -> Unit,
     shortsEnabled: Boolean,
@@ -381,6 +386,8 @@ fun MusicApp(
                     onSaveVideoHistoryToggle = onSaveVideoHistoryToggle,
                     liveDownloadUpdates = liveDownloadUpdates,
                     onLiveDownloadUpdatesToggle = onLiveDownloadUpdatesToggle,
+                    livePlaybackUpdates = livePlaybackUpdates,
+                    onLivePlaybackUpdatesToggle = onLivePlaybackUpdatesToggle,
                     timedCommentsEnabled = timedCommentsEnabled,
                     onTimedCommentsToggle = onTimedCommentsToggle,
                     shortsEnabled = shortsEnabled,

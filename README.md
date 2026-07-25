@@ -98,6 +98,7 @@ Plus an **ambient artwork background**, an optional **chromatic-mist** effect, a
 
 - High-quality audio streaming via NewPipe Extractor and direct InnerTube resolution (ANDROID_VR / IOS clients for unciphered stream URLs).
 - Background playback with system controls on the notification and lock screen through a Media3 media session, including a live progress bar in the notification.
+- On Android 16, an optional **Live Update** that puts the current song in the status bar as a chip with a progress bar and the time remaining. Off by default, switchable on in Settings.
 - Full queue control with drag to reorder, shuffle, and repeat modes.
 - Auto-load queue that appends recommended songs when the queue runs low.
 - Crossfade between songs with an adjustable duration.

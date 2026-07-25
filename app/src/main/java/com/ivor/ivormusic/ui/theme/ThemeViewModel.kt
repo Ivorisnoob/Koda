@@ -27,6 +27,7 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
     val saveVideoHistory: StateFlow<Boolean> = themePreferences.saveVideoHistory
 
     val liveDownloadUpdates: StateFlow<Boolean> = themePreferences.liveDownloadUpdates
+    val livePlaybackUpdates: StateFlow<Boolean> = themePreferences.livePlaybackUpdates
     val timedCommentsEnabled: StateFlow<Boolean> = themePreferences.timedCommentsEnabled
     val shortsEnabled: StateFlow<Boolean> = themePreferences.shortsEnabled
     val shortsHiddenActions: StateFlow<Set<String>> = themePreferences.shortsHiddenActions
@@ -106,6 +107,10 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setLiveDownloadUpdates(enabled: Boolean) {
         themePreferences.setLiveDownloadUpdates(enabled)
+    }
+
+    fun setLivePlaybackUpdates(enabled: Boolean) {
+        themePreferences.setLivePlaybackUpdates(enabled)
     }
 
     fun setTimedCommentsEnabled(enabled: Boolean) {

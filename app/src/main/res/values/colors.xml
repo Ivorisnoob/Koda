@@ -19,4 +19,8 @@
     -->
     <color name="notification_progress_preparing">#FF7E57C2</color>
     <color name="notification_progress_transfer">#FF00C853</color>
+
+    <!-- Playback progress. Distinct from the download colours so a glance at
+         the chip says which of the two it is. -->
+    <color name="notification_progress_playback">#FF2196F3</color>
 </resources>

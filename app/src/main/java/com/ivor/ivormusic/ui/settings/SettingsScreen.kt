@@ -59,6 +59,7 @@ import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.FolderOff
+import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Interests
@@ -219,6 +220,8 @@ fun SettingsScreen(
     onSaveVideoHistoryToggle: (Boolean) -> Unit,
     liveDownloadUpdates: Boolean,
     onLiveDownloadUpdatesToggle: (Boolean) -> Unit,
+    livePlaybackUpdates: Boolean,
+    onLivePlaybackUpdatesToggle: (Boolean) -> Unit,
     timedCommentsEnabled: Boolean,
     onTimedCommentsToggle: (Boolean) -> Unit,
     shortsEnabled: Boolean,
@@ -823,10 +826,22 @@ fun SettingsScreen(
                                 accentColor = accentColor
                             )
 
+                            SettingsDivider()
+                            ExpressiveOemToggleItem(
+                                icon = Icons.Rounded.GraphicEq,
+                                title = "Live playback updates",
+                                subtitle = "Show what's playing as a live status bar chip",
+                                enabled = livePlaybackUpdates,
+                                onToggle = onLivePlaybackUpdatesToggle,
+                                textColor = textColor,
+                                secondaryTextColor = secondaryTextColor,
+                                accentColor = accentColor
+                            )
+
                             // Promotion is a request the system can refuse. When
-                            // the user has revoked it at the OS level the toggle
-                            // above is a lie, so surface the way to fix it.
-                            if (liveDownloadUpdates && !canPostPromoted) {
+                            // the user has revoked it at the OS level the toggles
+                            // above are a lie, so surface the way to fix it.
+                            if ((liveDownloadUpdates || livePlaybackUpdates) && !canPostPromoted) {
                                 SettingsDivider()
                                 ExpressiveSettingsItem(
                                     icon = Icons.Rounded.Security,

@@ -49,6 +49,9 @@ class ThemePreferences(context: Context) {
     private val _liveDownloadUpdates = MutableStateFlow(getLiveDownloadUpdatesPreference())
     val liveDownloadUpdates: StateFlow<Boolean> = _liveDownloadUpdates.asStateFlow()
 
+    private val _livePlaybackUpdates = MutableStateFlow(getLivePlaybackUpdatesPreference())
+    val livePlaybackUpdates: StateFlow<Boolean> = _livePlaybackUpdates.asStateFlow()
+
     private val _timedCommentsEnabled = MutableStateFlow(getTimedCommentsEnabledPreference())
     val timedCommentsEnabled: StateFlow<Boolean> = _timedCommentsEnabled.asStateFlow()
 
@@ -115,6 +118,7 @@ class ThemePreferences(context: Context) {
             KEY_PLAYER_STYLE -> _playerStyle.value = getPlayerStylePreference()
             KEY_SAVE_VIDEO_HISTORY -> _saveVideoHistory.value = getSaveVideoHistoryPreference()
             KEY_LIVE_DOWNLOAD_UPDATES -> _liveDownloadUpdates.value = getLiveDownloadUpdatesPreference()
+            KEY_LIVE_PLAYBACK_UPDATES -> _livePlaybackUpdates.value = getLivePlaybackUpdatesPreference()
             KEY_TIMED_COMMENTS_ENABLED -> _timedCommentsEnabled.value = getTimedCommentsEnabledPreference()
             KEY_SHORTS_ENABLED -> _shortsEnabled.value = getShortsEnabledPreference()
             KEY_SHORTS_HIDDEN_ACTIONS -> _shortsHiddenActions.value = getShortsHiddenActionsPreference()
@@ -170,6 +174,20 @@ class ThemePreferences(context: Context) {
             SUPPORTS_LIVE_UPDATES &&
                 context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                     .getBoolean(KEY_LIVE_DOWNLOAD_UPDATES, true)
+
+        private const val KEY_LIVE_PLAYBACK_UPDATES = "live_playback_updates"
+
+        /**
+         * Fresh read for the playback service and its notification provider,
+         * which run off a plain Context. Unlike downloads this defaults to
+         * OFF: a Live Update for playback is a persistent status bar chip for
+         * the whole song, which is a lot of chrome to hand someone who did not
+         * ask for it.
+         */
+        fun isLivePlaybackUpdatesEnabled(context: Context): Boolean =
+            SUPPORTS_LIVE_UPDATES &&
+                context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                    .getBoolean(KEY_LIVE_PLAYBACK_UPDATES, false)
         private const val KEY_TIMED_COMMENTS_ENABLED = "timed_comments_enabled"
         private const val KEY_SHORTS_ENABLED = "shorts_enabled"
         private const val KEY_SHORTS_HIDDEN_ACTIONS = "shorts_hidden_actions"
@@ -503,6 +521,19 @@ class ThemePreferences(context: Context) {
     fun setLiveDownloadUpdates(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_LIVE_DOWNLOAD_UPDATES, enabled).apply()
         _liveDownloadUpdates.value = enabled && SUPPORTS_LIVE_UPDATES
+    }
+
+    /**
+     * Whether music playback may ask to be promoted to a Live Update. Off by
+     * default - see [isLivePlaybackUpdatesEnabled] - and inert below API 36.
+     */
+    private fun getLivePlaybackUpdatesPreference(): Boolean {
+        return SUPPORTS_LIVE_UPDATES && prefs.getBoolean(KEY_LIVE_PLAYBACK_UPDATES, false)
+    }
+
+    fun setLivePlaybackUpdates(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_LIVE_PLAYBACK_UPDATES, enabled).apply()
+        _livePlaybackUpdates.value = enabled && SUPPORTS_LIVE_UPDATES
     }
 
     /**

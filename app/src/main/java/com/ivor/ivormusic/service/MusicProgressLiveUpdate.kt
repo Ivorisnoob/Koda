@@ -7,45 +7,67 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.os.Build
-import android.os.Bundle
-import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
+import androidx.core.graphics.drawable.IconCompat
 import com.ivor.ivormusic.MainActivity
 import com.ivor.ivormusic.R
+import com.ivor.ivormusic.data.ThemePreferences
 
 /**
- * Manages a secondary ProgressStyle notification that shows music playback progress
- * as an Android 16 Live Update (status bar chip, prominent placement).
- * 
- * This is separate from the MediaStyle notification which provides playback controls.
- * The Live Update shows:
- * - Song title in the chip
- * - Playback progress bar
- * - Time remaining
+ * Playback progress as an Android 16 Live Update: a status bar chip with the
+ * time remaining, plus a prominent entry in the shade.
+ *
+ * Built the same way as the download notification (see
+ * [com.ivor.ivormusic.data.DownloadNotificationHelper]) so the two read as one
+ * feature: a [NotificationCompat.ProgressStyle] bar with the Koda note riding
+ * it as the tracker icon, and promotion requested through the compat API
+ * rather than reflection.
+ *
+ * Separate from the MediaStyle notification, which carries the transport
+ * controls. Both are gated by the same preference, which is OFF by default -
+ * a chip that sits in the status bar for the length of every song is a lot of
+ * chrome to hand someone who did not ask for it.
+ *
+ * Promotion is only ever a *request*; the system decides, so nothing here may
+ * assume the chip actually appeared.
  */
 class MusicProgressLiveUpdate(private val context: Context) {
-    
+
     companion object {
-        private const val TAG = "MusicProgressLiveUpdate"
         private const val CHANNEL_ID = "music_live_update"
         private const val CHANNEL_NAME = "Now Playing"
         private const val NOTIFICATION_ID = 9999
+
+        /**
+         * Playback is a single continuous leg, unlike a download's
+         * prepare-then-transfer split, so the bar is one full-width segment.
+         */
+        private const val PLAYBACK_SEGMENT = 100
     }
-    
+
     private val notificationManager = NotificationManagerCompat.from(context)
     private var isShowing = false
-    
+
+    // Last rendered values. SystemUI redraws on every notify(), so posting an
+    // identical notification once a second visibly stutters the chip.
+    private var lastProgress = -1
+    private var lastChipText = ""
+    private var lastTitle = ""
+
     init {
         createNotificationChannel()
     }
-    
+
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
                 CHANNEL_NAME,
-                NotificationManager.IMPORTANCE_LOW // Low importance, no sound
+                // Must stay above IMPORTANCE_MIN or the notification becomes
+                // ineligible for promotion to a Live Update.
+                NotificationManager.IMPORTANCE_LOW
             ).apply {
                 description = "Shows what's currently playing"
                 setShowBadge(false)
@@ -54,14 +76,22 @@ class MusicProgressLiveUpdate(private val context: Context) {
             notificationManager.createNotificationChannel(channel)
         }
     }
-    
-    // Track last state to prevent redundant updates (stutter)
-    private var lastProgress = -1
-    private var lastChipText = ""
-    private var lastTitle = ""
-    
+
     /**
-     * Show or update the Live Update notification with current playback progress.
+     * Whether a promoted playback notification can actually be posted right
+     * now: the user's in-app setting and the system-level permission both have
+     * to agree. The platform check lives inside
+     * [ThemePreferences.isLivePlaybackUpdatesEnabled].
+     */
+    fun canPostLiveUpdates(): Boolean =
+        ThemePreferences.isLivePlaybackUpdatesEnabled(context) &&
+            notificationManager.canPostPromotedNotifications()
+
+    /**
+     * Show or update the Live Update with current playback progress. A no-op
+     * when the setting is off, which also clears an already-posted chip so
+     * switching the toggle off takes effect on the next tick rather than at
+     * the end of the song.
      */
     fun updateProgress(
         songTitle: String,
@@ -70,94 +100,92 @@ class MusicProgressLiveUpdate(private val context: Context) {
         durationMs: Long,
         isPlaying: Boolean
     ) {
-        // Only show on Android 16+ where Live Updates exist
-        if (Build.VERSION.SDK_INT < 36) return
-        
+        if (!canPostLiveUpdates()) {
+            hide()
+            return
+        }
         if (durationMs <= 0) return
-        
+
         val progress = ((currentPositionMs.toFloat() / durationMs) * 100).toInt().coerceIn(0, 100)
-        val remainingMs = durationMs - currentPositionMs
+        val remainingMs = (durationMs - currentPositionMs).coerceAtLeast(0)
         val remainingMin = (remainingMs / 60000).toInt()
         val remainingSec = ((remainingMs % 60000) / 1000).toInt()
-        
-        // Short text for chip (max ~7 chars for full display)
+
+        // The chip clips past roughly seven characters, so this is minutes
+        // until the last minute and then seconds.
         val chipText = if (remainingMin > 0) "${remainingMin}m" else "${remainingSec}s"
-        
-        // Check if anything visually changed
-        if (isShowing && 
-            progress == lastProgress && 
-            chipText == lastChipText && 
-            songTitle == lastTitle) {
-            return // No visual change, skip update to prevent stutter
+
+        if (isShowing &&
+            progress == lastProgress &&
+            chipText == lastChipText &&
+            songTitle == lastTitle
+        ) {
+            return
         }
-        
-        // Update valid state
+
         lastProgress = progress
         lastChipText = chipText
         lastTitle = songTitle
-        
+
         val contentIntent = PendingIntent.getActivity(
             context,
             0,
             Intent(context, MainActivity::class.java),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
-        
-        val builder = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_media_play)
+
+        val style = NotificationCompat.ProgressStyle()
+            .setProgress(progress)
+            .setProgressSegments(
+                listOf(
+                    NotificationCompat.ProgressStyle.Segment(PLAYBACK_SEGMENT)
+                        .setColor(
+                            ContextCompat.getColor(
+                                context,
+                                R.color.notification_progress_playback
+                            )
+                        )
+                )
+            )
+            .setProgressTrackerIcon(
+                IconCompat.createWithResource(context, R.drawable.ic_download_tracker_music)
+            )
+
+        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_download_notification)
             .setContentTitle(songTitle)
             .setContentText(artistName)
-            .setProgress(100, progress, false)
+            .setStyle(style)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setContentIntent(contentIntent)
             .setCategory(NotificationCompat.CATEGORY_PROGRESS)
             .setPriority(NotificationCompat.PRIORITY_LOW)
-            .setColorized(false) // Required for Live Updates
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-        
-        // Build the notification first
-        var notification = builder.build()
-        
-        // Apply Live Update flags via native builder
-        try {
-            val nativeBuilder = Notification.Builder.recoverBuilder(context, notification)
-            nativeBuilder.setOngoing(true)
-            nativeBuilder.setColorized(false)
-            
-            // Use reflection for Android 16 APIs
-            try {
-                nativeBuilder.javaClass.getMethod("setRequestPromotedOngoing", Boolean::class.java)
-                    .invoke(nativeBuilder, true)
-                
-                nativeBuilder.javaClass.getMethod("setShortCriticalText", CharSequence::class.java)
-                    .invoke(nativeBuilder, chipText)
-            } catch (e: Exception) {
-                Log.d(TAG, "Reflection failed, using extras fallback")
-                val extras = Bundle()
-                extras.putBoolean("android.requestPromotedOngoing", true)
-                nativeBuilder.setExtras(extras)
-            }
-            
-            notification = nativeBuilder.build()
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to apply Live Update flags", e)
-        }
-        
+            // Colorized and promoted are mutually exclusive; a colorized
+            // notification is silently refused promotion.
+            .setColorized(false)
+            .setRequestPromotedOngoing(true)
+            .setShortCriticalText(chipText)
+            .build()
+
         notificationManager.notify(NOTIFICATION_ID, notification)
         isShowing = true
     }
-    
+
     /**
-     * Hide the Live Update notification (when playback stops).
+     * Hide the Live Update (playback stopped, or the setting was switched off).
      */
     fun hide() {
         if (isShowing) {
             notificationManager.cancel(NOTIFICATION_ID)
             isShowing = false
+            lastProgress = -1
+            lastChipText = ""
+            lastTitle = ""
         }
     }
-    
+
     /**
      * Check if the notification is currently showing.
      */

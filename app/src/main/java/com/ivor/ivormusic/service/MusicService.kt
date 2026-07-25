@@ -344,6 +344,18 @@ class MusicService : MediaLibraryService() {
                 CacheManager.setMaxCacheSize(this@MusicService, sizeMb)
             }
         }
+        // Both Live Update surfaces read the preference fresh when they build,
+        // so this only has to nudge them when it flips: drop the progress chip
+        // right away, and rebuild the media notification so promotion is
+        // applied or dropped without waiting for the next player event.
+        serviceScope.launch {
+            themePreferences.livePlaybackUpdates.collect { enabled ->
+                if (!enabled) musicProgressLiveUpdate?.hide()
+                mediaLibrarySession?.let { session ->
+                    runCatching { onUpdateNotification(session, false) }
+                }
+            }
+        }
     }
 
     // --- Core Logic: The Player Event Listener ---
