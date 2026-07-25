@@ -16,7 +16,11 @@ data class VideoItem(
     val uploadedDate: String? = null, // e.g., "2 days ago"
     val isLive: Boolean = false,
     val description: String? = null,
-    val subscriberCount: String? = null
+    val subscriberCount: String? = null,
+    // Clickable spans inside [description] (links, hashtags, timestamps), as
+    // marked by YouTube. Empty when the description is plain text or when the
+    // item came from a feed rather than a watch-next response.
+    val descriptionLinks: List<RichLink> = emptyList()
 ) {
     /**
      * High-resolution thumbnail URL.

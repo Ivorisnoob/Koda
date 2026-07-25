@@ -1174,7 +1174,9 @@ fun VideoInfoSection(
     onCommentsClick: () -> Unit = {},
     onSaveClick: () -> Unit = {},
     onChannelClick: () -> Unit = {},
-    onRelatedLongPress: ((VideoItem) -> Unit)? = null
+    onRelatedLongPress: ((VideoItem) -> Unit)? = null,
+    /** Seek the player, in seconds. Enables timestamp links in the description. */
+    onSeekTo: ((seconds: Long) -> Unit)? = null
 ) {
     Column(
         modifier = modifier
@@ -1340,38 +1342,52 @@ fun VideoInfoSection(
                     Spacer(Modifier.height(8.dp))
                     
                     var isDescriptionExpanded by remember { mutableStateOf(false) }
-                    val cleanedDescription = remember(video.description) {
-                        if (video.description != null) {
-                            androidx.core.text.HtmlCompat.fromHtml(
+                    // YouTube's link offsets are measured against the raw
+                    // attributedDescription text, so it must not be rewritten
+                    // when we have them. Only the NewPipe-sourced descriptions
+                    // (which carry no links) still need HTML unescaping.
+                    val cleanedDescription = remember(video.description, video.descriptionLinks) {
+                        when {
+                            video.description == null -> ""
+                            video.descriptionLinks.isNotEmpty() -> video.description
+                            else -> androidx.core.text.HtmlCompat.fromHtml(
                                 video.description,
                                 androidx.core.text.HtmlCompat.FROM_HTML_MODE_LEGACY
                             ).toString().trim()
-                        } else ""
+                        }
                     }
-                    
+                    val describedText = com.ivor.ivormusic.ui.components.rememberLinkedText(
+                        rich = com.ivor.ivormusic.data.RichText(
+                            cleanedDescription,
+                            video.descriptionLinks
+                        ),
+                        onTimestampClick = onSeekTo
+                    )
+
                     if (cleanedDescription.isNotEmpty()) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { isDescriptionExpanded = !isDescriptionExpanded }
-                        ) {
+                        Column(modifier = Modifier.fillMaxWidth()) {
                             androidx.compose.foundation.text.selection.SelectionContainer {
                                 Text(
-                                    text = cleanedDescription,
+                                    text = describedText,
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     maxLines = if (isDescriptionExpanded) Int.MAX_VALUE else 3,
                                     overflow = TextOverflow.Ellipsis
                                 )
                             }
-                            
+
                             if (cleanedDescription.length > 100 || cleanedDescription.count { it == '\n' } > 2) {
+                                // Only this row toggles expansion. It used to be
+                                // the whole block, which would now fight the
+                                // links inside the text for the same tap.
                                 Text(
                                     text = if (isDescriptionExpanded) "Show less" else "Show more",
                                     style = MaterialTheme.typography.labelLarge,
                                     color = MaterialTheme.colorScheme.primary,
                                     fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(top = 8.dp)
+                                    modifier = Modifier
+                                        .clickable { isDescriptionExpanded = !isDescriptionExpanded }
+                                        .padding(top = 8.dp)
                                 )
                             }
                         }

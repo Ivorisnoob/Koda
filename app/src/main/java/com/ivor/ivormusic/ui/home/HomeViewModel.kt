@@ -694,6 +694,22 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
+     * Next page of video search results. [dateFilter] must match the call that
+     * produced the current results. Empty means there is nothing more to load.
+     */
+    suspend fun loadMoreVideoResults(
+        query: String,
+        dateFilter: com.ivor.ivormusic.data.VideoSearchDateFilter = com.ivor.ivormusic.data.VideoSearchDateFilter.ANY
+    ): List<VideoItem> {
+        if (query.isBlank()) return emptyList()
+        return try {
+            youtubeRepository.searchVideosNext(query, dateFilter)
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    /**
      * Search for YouTube playlists (for video mode search).
      */
     suspend fun searchVideoPlaylists(query: String): List<com.ivor.ivormusic.data.VideoPlaylist> {

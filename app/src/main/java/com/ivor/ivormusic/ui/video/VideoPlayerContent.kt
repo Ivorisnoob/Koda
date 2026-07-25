@@ -421,6 +421,7 @@ fun VideoPlayerContent(
                             viewModel.loadChannelVideos()
                             showChannelSheet = true
                         },
+                        onSeekTo = { seconds -> exoPlayer.seekTo(seconds * 1000L) },
                         onRelatedLongPress = { related ->
                             requireLogin {
                                 viewModel.loadVideoPlaylists()
@@ -459,7 +460,14 @@ fun VideoPlayerContent(
                             onLikeComment = { comment -> requireLogin { viewModel.toggleCommentLike(comment) } },
                             onDeleteComment = { comment -> viewModel.deleteComment(comment) },
                             onDismiss = { showCommentsSheet = false },
-                            modifier = Modifier.fillMaxSize()
+                            modifier = Modifier.fillMaxSize(),
+                            onSeekTo = { seconds ->
+                                exoPlayer.seekTo(seconds * 1000L)
+                                // Jumping to the moment a comment is about is
+                                // pointless if the video stays paused behind
+                                // the panel, so surface the player again.
+                                showCommentsSheet = false
+                            }
                         )
                     }
                 }

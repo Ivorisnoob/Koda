@@ -192,6 +192,14 @@ class YouTubeRepository(private val context: Context) {
     // refetching page 2 forever. A null value means the query is exhausted.
     private val searchNextPageCache = mutableMapOf<String, Page?>()
 
+    // Same pair again for video-mode search, keyed by the date-filtered query
+    // so switching filters starts its own pagination rather than continuing
+    // the previous one. Only the relevance-ordered (NewPipe) path populates
+    // these; sorted searches go through InnerTube and do not paginate.
+    private val videoSearchExtractorCache =
+        mutableMapOf<String, org.schabi.newpipe.extractor.search.SearchExtractor>()
+    private val videoSearchNextPageCache = mutableMapOf<String, Page?>()
+
     /**
      * Search for songs on YouTube Music.
      * @param query The search query
@@ -2288,39 +2296,76 @@ class YouTubeRepository(private val context: Context) {
             // Use YouTube videos filter (not music_videos)
             val searchExtractor = ytService.getSearchExtractor(effectiveQuery, listOf(FILTER_YOUTUBE_VIDEOS), "")
             searchExtractor.fetchPage()
-            
-            searchExtractor.initialPage.items.filterIsInstance<StreamInfoItem>().mapNotNull { item ->
-                try {
-                    val uploaderUrl = item.uploaderUrl ?: ""
-                    val channelId = when {
-                        uploaderUrl.contains("/channel/") -> uploaderUrl.substringAfter("/channel/")
-                        uploaderUrl.contains("/@") -> uploaderUrl.substringAfter("/@").let { "@$it" }
-                        uploaderUrl.contains("/user/") -> uploaderUrl.substringAfter("/user/")
-                        else -> null
-                    }
-                    
-                    VideoItem.fromStreamInfoItem(
-                        videoId = extractVideoId(item.url),
-                        title = item.name ?: "Unknown",
-                        channelName = item.uploaderName ?: "Unknown Channel",
-                        channelId = channelId,
-                        channelIconUrl = item.uploaderAvatars?.maxByOrNull { it.width }?.url,
-                        thumbnailUrl = item.thumbnails?.maxByOrNull { it.width }?.url ?: item.thumbnails?.firstOrNull()?.url,
-                        durationSeconds = item.duration,
-                        viewCount = item.viewCount,
-                        uploadedDate = item.textualUploadDate,
-                        isLive = item.streamType == StreamType.LIVE_STREAM || item.streamType == StreamType.AUDIO_LIVE_STREAM,
-                        subscriberCount = null
-                    )
-                } catch (e: Exception) {
-                    null
-                }
-            }
+
+            // Cache for pagination (see searchVideosNext)
+            videoSearchExtractorCache[effectiveQuery] = searchExtractor
+            videoSearchNextPageCache[effectiveQuery] =
+                if (searchExtractor.initialPage.hasNextPage()) searchExtractor.initialPage.nextPage else null
+
+            searchExtractor.initialPage.items.toVideoItems()
         } catch (e: Exception) {
             android.util.Log.e("YouTubeRepo", "Error searching videos", e)
             emptyList()
         }
     }
+
+    /**
+     * Next page of video search results for a query already fetched by
+     * [searchVideos]. Empty means exhausted, which is also what a sorted
+     * (non-relevance) search returns, since that path resolves through
+     * InnerTube and never caches an extractor.
+     *
+     * [dateFilter] must match the original call - it is part of the cache key.
+     */
+    suspend fun searchVideosNext(
+        query: String,
+        dateFilter: VideoSearchDateFilter = VideoSearchDateFilter.ANY
+    ): List<VideoItem> = withContext(Dispatchers.IO) {
+        try {
+            val effectiveQuery = dateFilter.applyTo(query)
+            val extractor = videoSearchExtractorCache[effectiveQuery] ?: return@withContext emptyList()
+            val pageInfo = videoSearchNextPageCache[effectiveQuery] ?: return@withContext emptyList()
+
+            val nextPage = extractor.getPage(pageInfo)
+            videoSearchNextPageCache[effectiveQuery] =
+                if (nextPage.hasNextPage()) nextPage.nextPage else null
+
+            nextPage.items.toVideoItems()
+        } catch (e: Exception) {
+            android.util.Log.e("YouTubeRepo", "Error loading more video results", e)
+            emptyList()
+        }
+    }
+
+    /** Map a NewPipe search page's streams to [VideoItem]s, skipping unusable rows. */
+    private fun List<org.schabi.newpipe.extractor.InfoItem>.toVideoItems(): List<VideoItem> =
+        filterIsInstance<StreamInfoItem>().mapNotNull { item ->
+            try {
+                val uploaderUrl = item.uploaderUrl ?: ""
+                val channelId = when {
+                    uploaderUrl.contains("/channel/") -> uploaderUrl.substringAfter("/channel/")
+                    uploaderUrl.contains("/@") -> uploaderUrl.substringAfter("/@").let { "@$it" }
+                    uploaderUrl.contains("/user/") -> uploaderUrl.substringAfter("/user/")
+                    else -> null
+                }
+
+                VideoItem.fromStreamInfoItem(
+                    videoId = extractVideoId(item.url),
+                    title = item.name ?: "Unknown",
+                    channelName = item.uploaderName ?: "Unknown Channel",
+                    channelId = channelId,
+                    channelIconUrl = item.uploaderAvatars?.maxByOrNull { it.width }?.url,
+                    thumbnailUrl = item.thumbnails?.maxByOrNull { it.width }?.url ?: item.thumbnails?.firstOrNull()?.url,
+                    durationSeconds = item.duration,
+                    viewCount = item.viewCount,
+                    uploadedDate = item.textualUploadDate,
+                    isLive = item.streamType == StreamType.LIVE_STREAM || item.streamType == StreamType.AUDIO_LIVE_STREAM,
+                    subscriberCount = null
+                )
+            } catch (e: Exception) {
+                null
+            }
+        }
 
     /**
      * Search for playlists on regular YouTube (video mode search). Mapped to
@@ -4084,8 +4129,13 @@ class YouTubeRepository(private val context: Context) {
                 ?.takeIf { it.isNotBlank() }
             val subscriberCount = getRunText(owner?.optJSONObject("subscriberCountText"))
                 ?.takeIf { it.isNotBlank() }
-            val description = secondaryInfo?.optJSONObject("attributedDescription")
-                ?.optString("content")?.takeIf { it.isNotBlank() }
+            // attributedDescription carries commandRuns marking every link,
+            // hashtag and timestamp with exact UTF-16 offsets, so the
+            // description arrives already linkified (see parseRichText).
+            val richDescription = parseRichText(
+                secondaryInfo?.optJSONObject("attributedDescription")
+            )
+            val description = richDescription.text.takeIf { it.isNotBlank() }
 
             VideoItem(
                 videoId = videoId,
@@ -4102,7 +4152,10 @@ class YouTubeRepository(private val context: Context) {
                 uploadedDate = uploadedDate ?: baseVideo?.uploadedDate,
                 isLive = baseVideo?.isLive ?: false,
                 description = description ?: baseVideo?.description,
-                subscriberCount = subscriberCount ?: baseVideo?.subscriberCount
+                subscriberCount = subscriberCount ?: baseVideo?.subscriberCount,
+                // Only valid alongside the description they were measured
+                // against; a fallback description has no matching offsets.
+                descriptionLinks = if (description != null) richDescription.links else emptyList()
             )
         } catch (e: Exception) {
             android.util.Log.w("YouTubeRepo", "watch-next metadata parse failed for $videoId", e)
@@ -4341,9 +4394,15 @@ class YouTubeRepository(private val context: Context) {
                 }
         }
 
+        // Comment bodies carry the same attributed-text shape as descriptions:
+        // timestamps arrive as watchEndpoint runs with startTimeSeconds, so the
+        // clickable ranges never have to be pattern-matched out of the prose.
+        val content = parseRichText(props?.optJSONObject("content"))
+
         return CommentItem(
             commentId = id,
-            text = props?.optJSONObject("content")?.optString("content").orEmpty(),
+            text = content.text,
+            links = content.links,
             author = author?.optString("displayName").orEmpty(),
             authorAvatarUrl = author?.optString("avatarThumbnailUrl")?.takeIf { it.isNotBlank() },
             publishedTime = props?.optString("publishedTime").orEmpty(),

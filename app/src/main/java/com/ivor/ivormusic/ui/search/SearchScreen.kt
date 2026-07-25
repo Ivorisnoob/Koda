@@ -197,6 +197,10 @@ fun SearchScreen(
     var query by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
     var isLoadingMore by remember { mutableStateOf(false) }
+    // Set once a "load more" comes back empty, so scrolling at the bottom of
+    // an exhausted result set stops firing requests forever.
+    var songResultsExhausted by remember { mutableStateOf(false) }
+    var videoResultsExhausted by remember { mutableStateOf(false) }
     var youtubeResults by remember { mutableStateOf<List<Song>>(emptyList()) }
     var videoResults by remember { mutableStateOf<List<VideoItem>>(emptyList()) }
     var videoPlaylistResults by remember { mutableStateOf<List<VideoPlaylist>>(emptyList()) }
@@ -238,6 +242,17 @@ fun SearchScreen(
     val parsedLink = remember(query) { YouTubeLinkParser.parse(query) }
     var linkState by remember { mutableStateOf<LinkLookupState>(LinkLookupState.Idle) }
     var linkRetryToken by remember { mutableIntStateOf(0) }
+
+    // Endless scroll: pull the next page once the bottom of the list is in
+    // sight, rather than making the user hunt for a "load more" button.
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    val isNearListEnd by remember {
+        androidx.compose.runtime.derivedStateOf {
+            val layout = listState.layoutInfo
+            val lastVisible = layout.visibleItemsInfo.lastOrNull()?.index ?: return@derivedStateOf false
+            layout.totalItemsCount > 0 && lastVisible >= layout.totalItemsCount - 3
+        }
+    }
 
     // Video mode browse state: trending feed doubles as the explore list
     val trendingVideos by viewModel.trendingVideos.collectAsState()
@@ -293,6 +308,10 @@ fun SearchScreen(
             artistResults = emptyList()
             albumResults = emptyList()
             playlistResults = emptyList()
+            // A new query gets a fresh pagination cursor in the repository,
+            // so the exhausted flags have to come off with it.
+            songResultsExhausted = false
+            videoResultsExhausted = false
 
             if (videoMode) {
                 when (selectedVideoCategory) {
@@ -315,6 +334,50 @@ fun SearchScreen(
             artistResults = emptyList()
             albumResults = emptyList()
             playlistResults = emptyList()
+        }
+    }
+
+    // Endless scroll driver. Keyed on the result sizes as well as the scroll
+    // position so that a page which lands while the bottom is still in view
+    // immediately pulls the next one, instead of stalling until the user
+    // nudges the list.
+    LaunchedEffect(
+        isNearListEnd, youtubeResults.size, videoResults.size,
+        query, videoMode, selectedCategory, selectedVideoCategory, selectedDateFilter
+    ) {
+        if (!isNearListEnd || isLoading || isLoadingMore) return@LaunchedEffect
+        if (localOnly || parsedLink != null || query.length < 2) return@LaunchedEffect
+
+        val loadingVideos = videoMode && selectedVideoCategory == VideoSearchCategory.VIDEOS
+        val loadingSongs = !videoMode && selectedCategory == SearchCategory.SONGS
+        when {
+            loadingVideos && videoResults.isNotEmpty() && !videoResultsExhausted -> {
+                isLoadingMore = true
+                val more = viewModel.loadMoreVideoResults(query, selectedDateFilter)
+                if (more.isEmpty()) {
+                    videoResultsExhausted = true
+                } else {
+                    // Adjacent pages can overlap; never show a video twice
+                    val merged = (videoResults + more).distinctBy { it.videoId }
+                    // Nothing new survived de-duplication, so the feed is
+                    // repeating itself - treat that as the end.
+                    if (merged.size == videoResults.size) videoResultsExhausted = true
+                    videoResults = merged
+                }
+                isLoadingMore = false
+            }
+            loadingSongs && youtubeResults.isNotEmpty() && !songResultsExhausted -> {
+                isLoadingMore = true
+                val more = viewModel.loadMoreResults(query)
+                if (more.isEmpty()) {
+                    songResultsExhausted = true
+                } else {
+                    val merged = (youtubeResults + more).distinctBy { it.id }
+                    if (merged.size == youtubeResults.size) songResultsExhausted = true
+                    youtubeResults = merged
+                }
+                isLoadingMore = false
+            }
         }
     }
 
@@ -370,6 +433,7 @@ fun SearchScreen(
             .background(backgroundColor)
     ) {
         LazyColumn(
+            state = listState,
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(bottom = contentPadding.calculateBottomPadding() + 140.dp)
         ) {
@@ -831,6 +895,16 @@ fun SearchScreen(
                                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                             )
                         }
+
+                        item {
+                            SearchPagingFooter(
+                                isLoadingMore = isLoadingMore,
+                                isExhausted = videoResultsExhausted,
+                                cardColor = cardColor,
+                                accentColor = primaryColor,
+                                secondaryTextColor = secondaryTextColor
+                            )
+                        }
                     }
                 }
                 
@@ -992,62 +1066,19 @@ fun SearchScreen(
                         }
                     }
                     
-                    // Load More Button for YouTube results
+                    // Pages now arrive on scroll; this footer only reports state.
                     item {
                         HorizontalDivider(
                             modifier = Modifier.padding(horizontal = 44.dp),
                             color = textColor.copy(alpha = 0.06f)
                         )
-                        
-                        Surface(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 20.dp)
-                                .clip(RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp))
-                                .clickable(enabled = !isLoadingMore) {
-                                    scope.launch {
-                                        isLoadingMore = true
-                                        val newResults = viewModel.loadMoreResults(query)
-                                        if (newResults.isNotEmpty()) {
-                                            // Adjacent pages can overlap slightly; never show a song twice
-                                            youtubeResults = (youtubeResults + newResults).distinctBy { it.id }
-                                        }
-                                        isLoadingMore = false
-                                    }
-                                },
-                            shape = RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp),
-                            color = cardColor,
-                            tonalElevation = 1.dp
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 16.dp),
-                                horizontalArrangement = Arrangement.Center,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                if (isLoadingMore) {
-                                    LoadingIndicator(
-                                        modifier = Modifier.size(24.dp),
-                                        color = primaryColor
-                                    )
-                                } else {
-                                    Icon(
-                                        Icons.Rounded.ExpandMore,
-                                        contentDescription = null,
-                                        tint = primaryColor,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                    Spacer(modifier = Modifier.size(8.dp))
-                                    Text(
-                                        "Load More",
-                                        style = MaterialTheme.typography.labelLarge,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = primaryColor
-                                    )
-                                }
-                            }
-                        }
+                        SearchPagingFooter(
+                            isLoadingMore = isLoadingMore,
+                            isExhausted = songResultsExhausted,
+                            cardColor = cardColor,
+                            accentColor = primaryColor,
+                            secondaryTextColor = secondaryTextColor
+                        )
                     }
                     
                     // Local Library matches section
@@ -2650,6 +2681,54 @@ private fun CompactVideoRow(
                     color = secondaryTextColor,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Footer under a paginated result list. Results load automatically as the list
+ * nears its end, so this never invites a tap - it only says whether more is on
+ * the way or the list has run out.
+ */
+@Composable
+private fun SearchPagingFooter(
+    isLoadingMore: Boolean,
+    isExhausted: Boolean,
+    cardColor: Color,
+    accentColor: Color,
+    secondaryTextColor: Color
+) {
+    if (!isLoadingMore && !isExhausted) return
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp)
+            .clip(RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp)),
+        shape = RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp),
+        color = cardColor,
+        tonalElevation = 1.dp
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 16.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (isLoadingMore) {
+                LoadingIndicator(
+                    modifier = Modifier.size(24.dp),
+                    color = accentColor
+                )
+            } else {
+                Text(
+                    "That's everything",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = secondaryTextColor
                 )
             }
         }

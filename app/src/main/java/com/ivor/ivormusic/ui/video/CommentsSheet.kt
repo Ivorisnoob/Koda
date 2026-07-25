@@ -85,7 +85,12 @@ fun CommentsPanel(
     onLikeComment: (CommentItem) -> Unit,
     onDeleteComment: (CommentItem) -> Unit,
     onDismiss: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /**
+     * Seek the player, in seconds, when a comment's timestamp is tapped.
+     * Null (the Shorts sheet) renders timestamps as ordinary text.
+     */
+    onSeekTo: ((seconds: Long) -> Unit)? = null
 ) {
     val listState = rememberLazyListState()
 
@@ -185,7 +190,8 @@ fun CommentsPanel(
                                         onLikeClick = { onLikeComment(comment) },
                                         onDeleteClick = if (comment.deleteParams != null) {
                                             { commentPendingDelete = comment }
-                                        } else null
+                                        } else null,
+                                        onSeekTo = onSeekTo
                                     )
 
                                     // Reply affordance (needs login + reply params)
@@ -236,7 +242,8 @@ fun CommentsPanel(
                                                         onLikeClick = { onLikeComment(reply) },
                                                         onDeleteClick = if (reply.deleteParams != null) {
                                                             { commentPendingDelete = reply }
-                                                        } else null
+                                                        } else null,
+                                                        onSeekTo = onSeekTo
                                                     )
                                                     // Replying to a reply posts into the
                                                     // same thread, addressed to its author
@@ -496,7 +503,9 @@ private fun CommentRow(
     comment: CommentItem,
     isReply: Boolean = false,
     onLikeClick: (() -> Unit)? = null,
-    onDeleteClick: (() -> Unit)? = null
+    onDeleteClick: (() -> Unit)? = null,
+    /** Seek the player, in seconds. Null leaves timestamps as plain text. */
+    onSeekTo: ((seconds: Long) -> Unit)? = null
 ) {
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         // Avatar
@@ -579,8 +588,13 @@ private fun CommentRow(
 
             Spacer(Modifier.height(4.dp))
 
+            // Timestamps and links come pre-marked by YouTube (CommentItem.links),
+            // so the tappable ranges are exact rather than pattern-matched.
             Text(
-                text = comment.text,
+                text = com.ivor.ivormusic.ui.components.rememberLinkedText(
+                    rich = com.ivor.ivormusic.data.RichText(comment.text, comment.links),
+                    onTimestampClick = onSeekTo
+                ),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface
             )

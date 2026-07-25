@@ -25,6 +25,9 @@ enum class LikeStatus { LIKE, DISLIKE, INDIFFERENT }
 data class CommentItem(
     val commentId: String,
     val text: String,
+    // Spans YouTube marked clickable in [text] - timestamps and links. Empty
+    // for the vast majority of comments, which are plain prose.
+    val links: List<RichLink> = emptyList(),
     val author: String,
     val authorAvatarUrl: String?,
     val publishedTime: String,
