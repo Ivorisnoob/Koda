@@ -32,6 +32,9 @@ class LiveUpdateMediaNotificationProvider(
     
     companion object {
         private const val TAG = "LiveUpdateMediaNotificationProvider"
+
+        /** What NotificationCompat.setRequestPromotedOngoing writes. */
+        private const val EXTRA_REQUEST_PROMOTED_ONGOING = "android.requestPromotedOngoing"
     }
     
     override fun createNotification(
@@ -62,15 +65,25 @@ class LiveUpdateMediaNotificationProvider(
 
                 // The default provider hands back a platform Notification, so
                 // this rebuilds through the platform builder rather than
-                // NotificationCompat. compileSdk is 36, so the Live Update
-                // setters are callable directly - no reflection needed.
+                // NotificationCompat - recovering a MediaStyle notification
+                // through the compat builder risks losing the media template.
+                //
+                // API 36's Notification.Builder has setShortCriticalText but no
+                // setter for promotion: only NotificationCompat has
+                // setRequestPromotedOngoing, and all it does is write this
+                // extra. So set the extra directly. setExtras replaces the
+                // bundle wholesale, hence the copy, and it runs before
+                // setShortCriticalText so it cannot clobber it.
                 val builder = Notification.Builder.recoverBuilder(context, originalNotification)
                     .setOngoing(true)
                     // Colorized and promoted are mutually exclusive; a
                     // colorized notification is silently refused promotion.
                     .setColorized(false)
-                    .setRequestPromotedOngoing(true)
-                    .setShortCriticalText(title.toString())
+
+                val extras = Bundle(originalNotification.extras ?: Bundle())
+                extras.putBoolean(EXTRA_REQUEST_PROMOTED_ONGOING, true)
+                builder.setExtras(extras)
+                builder.setShortCriticalText(title.toString())
 
                 return MediaNotification(
                     defaultNotification.notificationId,
