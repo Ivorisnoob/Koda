@@ -16,7 +16,7 @@
 </p>
 
 <p align="center">
-  <a href="https://t.me/ivorisnoob_chat"><img src="https://img.shields.io/badge/Telegram-Join%20the%20chat-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white" alt="Telegram"/></a>
+  <a href="https://telegram.me/ivorisnoob_chat"><img src="https://img.shields.io/badge/Telegram-Join%20the%20chat-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white" alt="Telegram"/></a>
 </p>
 
 <p align="center">
