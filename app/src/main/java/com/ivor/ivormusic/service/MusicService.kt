@@ -151,6 +151,12 @@ class MusicService : MediaLibraryService() {
         downloadRepository = DownloadRepository.getInstance(this)
 
         // 2. Setup Notifications & Live Updates
+        // Create the shared playback channel before the media provider is
+        // installed, so it exists with our settings (silent, no badge, public
+        // on the lock screen) rather than whatever Media3 would default to.
+        // Channel settings are immutable once created.
+        MusicProgressLiveUpdate.ensureChannel(this)
+        LiveUpdateMediaNotificationProvider.deleteLegacyMediaChannel(this)
         setMediaNotificationProvider(LiveUpdateMediaNotificationProvider(this))
         if (android.os.Build.VERSION.SDK_INT >= 36) {
             musicProgressLiveUpdate = MusicProgressLiveUpdate(this)

@@ -6,6 +6,8 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -21,9 +23,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.MoreVert
@@ -60,6 +65,7 @@ import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -67,7 +73,6 @@ import androidx.compose.material3.NavigationItemIconPosition
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.carousel.HorizontalMultiBrowseCarousel
-import androidx.compose.material3.carousel.HorizontalUncontainedCarousel
 import androidx.compose.material3.carousel.rememberCarouselState
 import androidx.compose.material3.carousel.CarouselState
 import androidx.compose.material3.HorizontalFloatingToolbar
@@ -97,6 +102,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -168,7 +174,12 @@ fun HomeScreen(
     
     // Use local songs or YouTube songs (which includes fallback search results if not logged in)
     val songs = if (loadLocalSongs) localSongs else youtubeSongs
-    
+
+    // Local play history, for the "Jump back in" rail. Free (a file read, no
+    // network), and refreshed whenever the Home tab comes back into view so a
+    // song played since the last look shows up.
+    val recentlyPlayed by viewModel.recentlyPlayed.collectAsState()
+
     val currentSong by playerViewModel.currentSong.collectAsState()
     val isPlaying by playerViewModel.isPlaying.collectAsState()
     val isBuffering by playerViewModel.isBuffering.collectAsState()
@@ -246,6 +257,13 @@ fun HomeScreen(
     // The Subscriptions/History tabs (2/3) only exist in video mode
     LaunchedEffect(videoMode) {
         if (!videoMode && selectedTab > 2) selectedTab = 0
+    }
+
+    // Re-read the history when Home becomes the active tab. Playback writes an
+    // entry only after 15s, so coming back from the player is exactly when the
+    // rail has something new to show.
+    LaunchedEffect(selectedTab, videoMode) {
+        if (selectedTab == 0 && !videoMode) viewModel.refreshRecentlyPlayed()
     }
 
     // Auth Dialog State
@@ -388,17 +406,23 @@ fun HomeScreen(
                                     modeToggleState = modeToggleState
                                 )
                             }
-                            // Music Mode: Show original content
-                            else if (isLoading && songs.isEmpty()) {
-                                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                    LoadingIndicator(
-                                        modifier = Modifier.size(48.dp),
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                }
-                            } else {
+                            // Music Mode: Show original content. The first load
+                            // renders the real screen with placeholders in the
+                            // data-backed sections rather than a full-screen
+                            // spinner - the top bar, titles and nav have
+                            // nothing to wait for.
+                            else {
                                 YourMixContent(
                                     songs = songs,
+                                    isInitialLoading = isLoading && songs.isEmpty(),
+                                    recentlyPlayed = recentlyPlayed,
+                                    onRecentClick = { song ->
+                                        // Resume from the history rail: the
+                                        // recents are the queue, not the mix.
+                                        playerViewModel.playQueue(recentlyPlayed, song)
+                                        showPlayerSheet = true
+                                    },
+                                    onShowAllInLibrary = { selectedTab = 2 },
                                     onSongClick = { song ->
                                         playerViewModel.playQueue(songs, song)
                                         showPlayerSheet = true
@@ -440,6 +464,10 @@ fun HomeScreen(
                         onPlayQueue = { songList, song ->
                             // Use the visible song list (YouTube results or filtered local songs)
                             playerViewModel.playQueue(songList, song)
+                            showPlayerSheet = true
+                        },
+                        onPlayRadio = { song ->
+                            playerViewModel.playSongRadio(song)
                             showPlayerSheet = true
                         },
                         onVideoClick = { video ->
@@ -814,6 +842,22 @@ fun HomeScreen(
 @Composable
 fun YourMixContent(
     songs: List<Song>,
+    /**
+     * First load with nothing to show yet. The screen still renders in full;
+     * only the sections that are actually waiting on data are replaced by
+     * placeholders of the same size.
+     */
+    isInitialLoading: Boolean = false,
+    /** Local play history for the "Jump back in" rail. Empty for a new user. */
+    recentlyPlayed: List<Song> = emptyList(),
+    onRecentClick: (Song) -> Unit = {},
+    /**
+     * Carousels on a vertically-scrolling page need a way to reach every item
+     * without scrolling sideways; this backs the arrow button in each header.
+     * The Library tab is that page - it renders the same [songs] list
+     * vertically, plus its own recently-played rail.
+     */
+    onShowAllInLibrary: () -> Unit = {},
     onSongClick: (Song) -> Unit,
     onPlayClick: () -> Unit,
     onProfileClick: () -> Unit,
@@ -833,9 +877,16 @@ fun YourMixContent(
     val textColor = MaterialTheme.colorScheme.onBackground
     
     val isRefreshing by viewModel.isLoading.collectAsState()
-    
+
+    // One pulse shared by every placeholder on the screen, so they breathe in
+    // step instead of twinkling independently.
+    val skeletonAlpha = com.ivor.ivormusic.ui.components.rememberSkeletonAlpha()
+
     ExpressivePullToRefresh(
-        isRefreshing = isRefreshing,
+        // The refresh spinner is for a refresh the user asked for. On first
+        // load the placeholders already say "loading", and showing both reads
+        // as two competing indicators.
+        isRefreshing = isRefreshing && !isInitialLoading,
         onRefresh = { viewModel.refresh(excludedFolders, manualScan) },
         modifier = Modifier.fillMaxSize()
     ) {
@@ -864,12 +915,20 @@ fun YourMixContent(
                     alpha = if (visible) 1f else 0f
                     translationY = if (visible) 0f else 40f
                 }) {
-                    HeroSection(songs = songs, onPlayClick = onPlayClick, isDarkMode = isDarkMode)
+                    HeroSection(
+                        songs = songs,
+                        onPlayClick = onPlayClick,
+                        isDarkMode = isDarkMode,
+                        isLoading = isInitialLoading,
+                        skeletonAlpha = skeletonAlpha
+                    )
                 }
             }
-            
+
             item {
-                if (songs.isNotEmpty()) {
+                if (isInitialLoading) {
+                    OrganicSongLayoutSkeleton(skeletonAlpha = skeletonAlpha)
+                } else if (songs.isNotEmpty()) {
                     var visible by remember { mutableStateOf(false) }
                     LaunchedEffect(Unit) { kotlinx.coroutines.delay(200); visible = true }
                     Box(Modifier.graphicsLayer {
@@ -890,7 +949,21 @@ fun YourMixContent(
                     translationY = if (visible) 0f else 30f
                 }) {
                     Spacer(modifier = Modifier.height(32.dp))
-                    RecentAlbumsSection(songs = songs, onSongClick = onSongClick, isDarkMode = isDarkMode)
+                    if (isInitialLoading) {
+                        HomeCarouselSkeleton(
+                            title = "Recent Albums",
+                            itemWidth = 200.dp,
+                            itemHeight = 240.dp,
+                            skeletonAlpha = skeletonAlpha
+                        )
+                    } else {
+                        RecentAlbumsSection(
+                            songs = songs,
+                            onSongClick = onSongClick,
+                            isDarkMode = isDarkMode,
+                            onShowAll = onShowAllInLibrary
+                        )
+                    }
                 }
             }
             
@@ -901,8 +974,25 @@ fun YourMixContent(
                     alpha = if (visible) 1f else 0f
                     translationY = if (visible) 0f else 30f
                 }) {
-                    Spacer(modifier = Modifier.height(24.dp))
-                    QuickPicksSection(songs = songs, onSongClick = onSongClick, isDarkMode = isDarkMode)
+                    if (isInitialLoading) {
+                        Spacer(modifier = Modifier.height(24.dp))
+                        HomeCarouselSkeleton(
+                            title = "Jump back in",
+                            itemWidth = 140.dp,
+                            itemHeight = 140.dp,
+                            captionLines = true,
+                            skeletonAlpha = skeletonAlpha
+                        )
+                    } else if (recentlyPlayed.isNotEmpty()) {
+                        // Nothing to resume for a brand new user, and an empty
+                        // "Jump back in" is worse than no section at all.
+                        Spacer(modifier = Modifier.height(24.dp))
+                        JumpBackInSection(
+                            songs = recentlyPlayed,
+                            onSongClick = onRecentClick,
+                            onShowAll = onShowAllInLibrary
+                        )
+                    }
                 }
             }
             item { Spacer(modifier = Modifier.height(32.dp)) }
@@ -1034,13 +1124,16 @@ fun TopBarSection(
 fun HeroSection(
     songs: List<Song>,
     onPlayClick: () -> Unit,
-    isDarkMode: Boolean = true
+    isDarkMode: Boolean = true,
+    /** First load: the artist line has no data yet, the rest of this is static. */
+    isLoading: Boolean = false,
+    skeletonAlpha: Float = com.ivor.ivormusic.ui.components.rememberSkeletonAlpha()
 ) {
     val firstSong = songs.firstOrNull()
     val secondSong = songs.getOrNull(1)
     val textColor = MaterialTheme.colorScheme.onBackground
     val secondaryTextColor = MaterialTheme.colorScheme.onSurfaceVariant
-    
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1063,16 +1156,27 @@ fun HeroSection(
             )
             
             Spacer(modifier = Modifier.height(8.dp))
-            
-            Text(
-                text = (firstSong?.artist.takeIf { !it.isNullOrBlank() && !it.startsWith("Unknown", ignoreCase = true) } ?: "Unknown Artist").let { artist ->
-                    (secondSong?.artist.takeIf { !it.isNullOrBlank() && !it.startsWith("Unknown", ignoreCase = true) })?.let { second -> "$artist, $second" } ?: artist
-                },
-                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
-                color = secondaryTextColor,
-                maxLines = 1,
-                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-            )
+
+            if (isLoading) {
+                // Same 20dp band the artist line occupies, so the title above
+                // and the layout below do not shift when the names arrive.
+                com.ivor.ivormusic.ui.components.SkeletonTextLine(
+                    width = 168.dp,
+                    height = 14.dp,
+                    modifier = Modifier.padding(vertical = 3.dp),
+                    alpha = skeletonAlpha
+                )
+            } else {
+                Text(
+                    text = (firstSong?.artist.takeIf { !it.isNullOrBlank() && !it.startsWith("Unknown", ignoreCase = true) } ?: "Unknown Artist").let { artist ->
+                        (secondSong?.artist.takeIf { !it.isNullOrBlank() && !it.startsWith("Unknown", ignoreCase = true) })?.let { second -> "$artist, $second" } ?: artist
+                    },
+                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
+                    color = secondaryTextColor,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                )
+            }
         }
         
         // Right side - Large Play button with shape morphing
@@ -1091,6 +1195,120 @@ fun HeroSection(
                     contentDescription = "Play",
                     modifier = Modifier.size(IconButtonDefaults.largeIconSize)
                 )
+            }
+        }
+    }
+}
+
+/**
+ * [OrganicSongLayout] with the artwork not yet loaded: the same rotated pill
+ * and two circles, at the same sizes and offsets, so the collage does not
+ * rearrange itself when the songs arrive.
+ */
+@Composable
+private fun OrganicSongLayoutSkeleton(
+    skeletonAlpha: Float
+) {
+    BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(480.dp)
+    ) {
+        if (maxWidth <= 0.dp || maxHeight <= 0.dp) return@BoxWithConstraints
+
+        val boxWidth = maxWidth
+        val boxHeight = maxHeight
+
+        com.ivor.ivormusic.ui.components.SkeletonBox(
+            modifier = Modifier
+                .width(260.dp)
+                .height(500.dp)
+                .align(Alignment.Center)
+                .offset(x = 0.dp, y = 30.dp)
+                .graphicsLayer { rotationZ = 30f },
+            shape = RoundedCornerShape(50),
+            alpha = skeletonAlpha
+        )
+
+        com.ivor.ivormusic.ui.components.SkeletonBox(
+            modifier = Modifier
+                .size(boxWidth * 0.29f)
+                .align(Alignment.TopStart)
+                .offset(x = boxWidth * 0.04f, y = boxHeight * 0.05f)
+                .graphicsLayer { rotationZ = -10f },
+            shape = CircleShape,
+            alpha = skeletonAlpha
+        )
+
+        com.ivor.ivormusic.ui.components.SkeletonBox(
+            modifier = Modifier
+                .size(boxWidth * 0.26f)
+                .align(Alignment.BottomEnd)
+                .offset(x = boxWidth * (-0.05f), y = 0.dp)
+                .graphicsLayer { rotationZ = 5f },
+            shape = CircleShape,
+            alpha = skeletonAlpha
+        )
+    }
+}
+
+/**
+ * Stand-in for one of the home carousels. The section title is real - it never
+ * depended on the data - and only the cards are placeholders.
+ *
+ * A plain Row rather than a carousel: the M3 carousels are driven by an item
+ * count and a scroll state that would be thrown away a moment later, and the
+ * user cannot meaningfully scroll placeholders anyway.
+ */
+@Composable
+private fun HomeCarouselSkeleton(
+    title: String,
+    itemWidth: Dp,
+    itemHeight: Dp,
+    skeletonAlpha: Float,
+    /** Quick Picks puts a title/artist under each card; Recent Albums does not. */
+    captionLines: Boolean = false
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.headlineSmall,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
+        )
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState(), enabled = false)
+                .padding(horizontal = 20.dp),
+            horizontalArrangement = Arrangement.spacedBy(if (captionLines) 12.dp else 8.dp)
+        ) {
+            repeat(4) {
+                Column(modifier = Modifier.width(itemWidth)) {
+                    com.ivor.ivormusic.ui.components.SkeletonBox(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(itemHeight),
+                        // Matches the M3 carousel item radius the real cards use
+                        shape = RoundedCornerShape(28.dp),
+                        alpha = skeletonAlpha
+                    )
+                    if (captionLines) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        com.ivor.ivormusic.ui.components.SkeletonTextLine(
+                            width = itemWidth * 0.85f,
+                            height = 12.dp,
+                            alpha = skeletonAlpha
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        com.ivor.ivormusic.ui.components.SkeletonTextLine(
+                            width = itemWidth * 0.55f,
+                            height = 10.dp,
+                            alpha = skeletonAlpha
+                        )
+                    }
+                }
             }
         }
     }
@@ -1374,6 +1592,7 @@ fun SearchContent(
     songs: List<Song>,
     onSongClick: (Song) -> Unit,
     onPlayQueue: (List<Song>, Song?) -> Unit = { _, song -> song?.let { onSongClick(it) } },
+    onPlayRadio: (Song) -> Unit = { song -> onPlayQueue(listOf(song), song) },
     onVideoClick: (VideoItem) -> Unit = {},
     onProfileClick: () -> Unit = {},
     contentPadding: PaddingValues,
@@ -1475,6 +1694,7 @@ fun SearchContent(
                     songs = songs,
                     onSongClick = onSongClick,
                     onPlayQueue = onPlayQueue,
+                    onPlayRadio = onPlayRadio,
                     onVideoClick = onVideoClick,
                     onArtistClick = { artistItem -> viewedArtist = artistItem },
                     onAlbumClick = { albumItem -> viewedPlaylist = albumItem },
@@ -1500,25 +1720,20 @@ fun SearchContent(
 fun RecentAlbumsSection(
     songs: List<Song>,
     onSongClick: (Song) -> Unit,
-    isDarkMode: Boolean = true
+    isDarkMode: Boolean = true,
+    onShowAll: (() -> Unit)? = null
 ) {
     if (songs.isEmpty()) return
-    
-    val textColor = MaterialTheme.colorScheme.onSurface
+
     val cardBgColor = MaterialTheme.colorScheme.surfaceContainerHigh
-    
+
     // We need at least one large, one medium, one small for full effect,
     // but the component handles fewer items gracefully.
     val state = rememberCarouselState { songs.size }
-    
+
     Column(modifier = Modifier.fillMaxWidth()) {
-        Text(
-            text = "Recent Albums",
-            style = MaterialTheme.typography.headlineSmall,
-            color = textColor,
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
-        )
-        
+        HomeSectionHeader(title = "Recent Albums", onShowAll = onShowAll)
+
         HorizontalMultiBrowseCarousel(
             state = state,
             preferredItemWidth = 200.dp,
@@ -1531,7 +1746,9 @@ fun RecentAlbumsSection(
             val song = songs[index]
             Box(
                 modifier = Modifier
-                    .maskClip(MaterialTheme.shapes.medium)
+                    // 28dp is the M3 carousel item radius; shapes.medium (12dp)
+                    // made these read as generic cards.
+                    .maskClip(RoundedCornerShape(28.dp))
                     .background(cardBgColor)
                     .clickable { onSongClick(song) }
             ) {
@@ -1557,86 +1774,140 @@ fun RecentAlbumsSection(
     }
 }
 
+/**
+ * Section header for a horizontal shelf: the title, plus the arrow button
+ * Material requires so every item is reachable without scrolling sideways.
+ *
+ * [onShowAll] is nullable because the arrow is only honest when there is
+ * somewhere fuller to go.
+ */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-fun QuickPicksSection(
+private fun HomeSectionHeader(
+    title: String,
+    onShowAll: (() -> Unit)? = null
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 20.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.headlineSmall,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(1f)
+        )
+        if (onShowAll != null) {
+            // Default size on purpose: M3's own 40dp container carries a 48dp
+            // touch target, and pinning it smaller would break that.
+            FilledTonalIconButton(
+                onClick = onShowAll,
+                shapes = IconButtonDefaults.shapes()
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Rounded.ArrowForward,
+                    contentDescription = "Show all $title",
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
+    }
+}
+
+/** Square artwork edge, and the rail's item width. */
+private val ARTWORK_SIZE = 140.dp
+
+/** Space between artwork and the first caption line. */
+private val CAPTION_GAP = 8.dp
+
+/**
+ * The user's own play history, newest first - the "resume what you were doing"
+ * rail. Distinct from the mix above it on purpose: this is the one section on
+ * the screen that is not a recommendation.
+ *
+ * A LazyRow of cards, not a carousel. Both M3 carousel layouts mask their items
+ * to a shrinking rect at the container edges, and that mask covers the whole
+ * item - so captions under the artwork get sliced mid-word ("Let Down" renders
+ * as "et Down"). Material's own guidance points here: if carousel items need
+ * real text, use a series of cards instead. Recent Albums above keeps the
+ * carousel because its items are pure artwork with nothing to clip.
+ */
+@Composable
+fun JumpBackInSection(
     songs: List<Song>,
     onSongClick: (Song) -> Unit,
-    isDarkMode: Boolean = true
+    onShowAll: (() -> Unit)? = null
 ) {
     if (songs.isEmpty()) return
-    
+
     val textColor = MaterialTheme.colorScheme.onSurface
     val secondaryTextColor = MaterialTheme.colorScheme.onSurfaceVariant
     val cardBgColor = MaterialTheme.colorScheme.surfaceContainerHigh
-    
-    val state = rememberCarouselState { songs.size }
-    
+
     Column(modifier = Modifier.fillMaxWidth()) {
-        Text(
-            text = "Quick Picks",
-            style = MaterialTheme.typography.headlineSmall,
-            color = textColor,
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
-        )
-        
-        HorizontalUncontainedCarousel(
-            state = state,
-            itemWidth = 140.dp,
-            itemSpacing = 12.dp,
+        HomeSectionHeader(title = "Jump back in", onShowAll = onShowAll)
+
+        LazyRow(
+            modifier = Modifier.fillMaxWidth(),
             contentPadding = PaddingValues(horizontal = 20.dp),
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(210.dp)
-        ) { index ->
-            val song = songs[index]
-            Column(
-                 modifier = Modifier
-                    .width(140.dp)
-                    .clickable { onSongClick(song) }
-            ) {
-                // Song Image
-                Box(
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            items(songs, key = { "recent_${it.id}" }) { song ->
+                // No clip on this column: a rounded clip here is what rounds
+                // the corners off the caption text underneath the artwork.
+                // Only the artwork itself gets a shape.
+                Column(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .height(140.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(cardBgColor)
+                        .width(ARTWORK_SIZE)
+                        .clickable { onSongClick(song) }
                 ) {
-                      if (song.albumArtUri != null || song.thumbnailUrl != null) {
-                        AsyncImage(
-                            model = song.highResThumbnailUrl ?: song.albumArtUri ?: song.thumbnailUrl,
-                            contentDescription = song.title,
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop
-                        )
-                    } else {
-                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                             Icon(
-                                imageVector = Icons.Rounded.MusicNote,
-                                contentDescription = null,
-                                tint = Color.Gray,
-                                modifier = Modifier.size(24.dp)
+                    Box(
+                        modifier = Modifier
+                            .size(ARTWORK_SIZE)
+                            .clip(RoundedCornerShape(28.dp))
+                            .background(cardBgColor)
+                    ) {
+                        if (song.albumArtUri != null || song.thumbnailUrl != null) {
+                            AsyncImage(
+                                model = song.highResThumbnailUrl ?: song.albumArtUri ?: song.thumbnailUrl,
+                                contentDescription = song.title,
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop
                             )
+                        } else {
+                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Rounded.MusicNote,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
                         }
                     }
+
+                    Spacer(modifier = Modifier.height(CAPTION_GAP))
+
+                    // No fixed row height: the column wraps its content, so the
+                    // captions grow with the user's font scale instead of being
+                    // cut off by a hardcoded carousel height.
+                    Text(
+                        text = song.title.takeIf { it.isNotBlank() && !it.startsWith("Unknown", ignoreCase = true) } ?: "Untitled Song",
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = textColor
+                    )
+                    Text(
+                        text = song.artist.takeIf { it.isNotBlank() && !it.startsWith("Unknown", ignoreCase = true) } ?: "Unknown Artist",
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = secondaryTextColor
+                    )
                 }
-                
-                Spacer(modifier = Modifier.height(8.dp))
-                
-                // Song Title
-                Text(
-                    text = song.title.takeIf { !it.isNullOrBlank() && !it.startsWith("Unknown", ignoreCase = true) } ?: "Untitled Song",
-                    maxLines = 1,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = textColor
-                )
-                  Text(
-                    text = song.artist.takeIf { !it.isNullOrBlank() && !it.startsWith("Unknown", ignoreCase = true) } ?: "Unknown Artist",
-                    maxLines = 1,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = secondaryTextColor
-                )
             }
         }
     }

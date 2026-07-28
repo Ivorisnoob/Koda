@@ -31,13 +31,23 @@ import com.ivor.ivormusic.data.ThemePreferences
  * chrome to hand someone who did not ask for it.
  *
  * Promotion is only ever a *request*; the system decides, so nothing here may
- * assume the chip actually appeared.
+ * assume the chip actually appeared. When it is refused this degrades to an
+ * ordinary progress notification in the shade rather than vanishing - the same
+ * fallback the download notification has always had. Gating the post on
+ * promotion instead is what made this feature look broken everywhere except a
+ * Pixel emulator: plenty of Android 16 builds answer false from
+ * [NotificationManagerCompat.canPostPromotedNotifications].
  */
 class MusicProgressLiveUpdate(private val context: Context) {
 
     companion object {
-        private const val CHANNEL_ID = "music_live_update"
-        private const val CHANNEL_NAME = "Now Playing"
+        /**
+         * Shared with the MediaStyle notification: [LiveUpdateMediaNotificationProvider]
+         * points Media3's DefaultMediaNotificationProvider at this id so the two
+         * playback notifications sit on one channel. Media3 otherwise creates
+         * its own, and system settings lists "Now playing" twice.
+         */
+        const val CHANNEL_ID = "music_live_update"
         private const val NOTIFICATION_ID = 9999
 
         /**
@@ -45,6 +55,37 @@ class MusicProgressLiveUpdate(private val context: Context) {
          * prepare-then-transfer split, so the bar is one full-width segment.
          */
         private const val PLAYBACK_SEGMENT = 100
+
+        /**
+         * Create the shared playback channel. Called unconditionally from
+         * MusicService.onCreate - not from this class's init - because the
+         * media notification needs the channel on every API level, while this
+         * class only exists on API 36+.
+         *
+         * Channel settings are frozen at creation, so getting silence right
+         * here is the only chance: a channel that ships with sound cannot be
+         * quietened by a later app update.
+         */
+        fun ensureChannel(context: Context) {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+            val channel = NotificationChannel(
+                CHANNEL_ID,
+                context.getString(R.string.now_playing_channel_name),
+                // Must stay above IMPORTANCE_MIN or the notification becomes
+                // ineligible for promotion to a Live Update. LOW is already
+                // silent; the explicit nulls below make that non-negotiable
+                // rather than a property of the importance constant.
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "Shows what's currently playing"
+                setShowBadge(false)
+                setSound(null, null)
+                enableVibration(false)
+                enableLights(false)
+                lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+            }
+            NotificationManagerCompat.from(context).createNotificationChannel(channel)
+        }
     }
 
     private val notificationManager = NotificationManagerCompat.from(context)
@@ -58,35 +99,34 @@ class MusicProgressLiveUpdate(private val context: Context) {
     private var lastArtwork: android.graphics.Bitmap? = null
 
     init {
-        createNotificationChannel()
-    }
-
-    private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                CHANNEL_NAME,
-                // Must stay above IMPORTANCE_MIN or the notification becomes
-                // ineligible for promotion to a Live Update.
-                NotificationManager.IMPORTANCE_LOW
-            ).apply {
-                description = "Shows what's currently playing"
-                setShowBadge(false)
-                lockscreenVisibility = Notification.VISIBILITY_PUBLIC
-            }
-            notificationManager.createNotificationChannel(channel)
-        }
+        // Idempotent: the service creates this too, before the media provider
+        // is installed. Harmless to repeat, and keeps this class usable alone.
+        ensureChannel(context)
     }
 
     /**
-     * Whether a promoted playback notification can actually be posted right
+     * Whether the user has asked for the playback notification at all. The
+     * platform check lives inside [ThemePreferences.isLivePlaybackUpdatesEnabled].
+     *
+     * Deliberately separate from [canPostLiveUpdates]: this decides whether to
+     * *post*, that one only decides whether to ask for promotion.
+     */
+    private fun isEnabled(): Boolean = ThemePreferences.isLivePlaybackUpdatesEnabled(context)
+
+    /**
+     * Whether promotion to a status bar chip can actually be requested right
      * now: the user's in-app setting and the system-level permission both have
-     * to agree. The platform check lives inside
-     * [ThemePreferences.isLivePlaybackUpdatesEnabled].
+     * to agree.
+     *
+     * A false here must never suppress the notification itself - see
+     * [updateProgress]. Many Android 16 builds (OEM skins especially) report
+     * false from [NotificationManagerCompat.canPostPromotedNotifications], and
+     * gating the post on it meant playback showed nothing at all on those
+     * devices while downloads degraded gracefully to an ordinary progress
+     * notification.
      */
     fun canPostLiveUpdates(): Boolean =
-        ThemePreferences.isLivePlaybackUpdatesEnabled(context) &&
-            notificationManager.canPostPromotedNotifications()
+        isEnabled() && notificationManager.canPostPromotedNotifications()
 
     /**
      * Show or update the Live Update with current playback progress. A no-op
@@ -107,11 +147,14 @@ class MusicProgressLiveUpdate(private val context: Context) {
         // silhouette - so this is the only place the cover can appear.
         artwork: android.graphics.Bitmap? = null
     ) {
-        if (!canPostLiveUpdates()) {
+        if (!isEnabled()) {
             hide()
             return
         }
         if (durationMs <= 0) return
+        // Same guard DownloadService uses before its notify(): notifications
+        // switched off app-wide makes the post a silent no-op anyway.
+        if (!notificationManager.areNotificationsEnabled()) return
 
         val progress = ((currentPositionMs.toFloat() / durationMs) * 100).toInt().coerceIn(0, 100)
         val remainingMs = (durationMs - currentPositionMs).coerceAtLeast(0)
@@ -170,6 +213,9 @@ class MusicProgressLiveUpdate(private val context: Context) {
             .setLargeIcon(artwork)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
+            // Belt and braces with the channel: a progress readout that ticks
+            // ~150 times a song must never make a sound.
+            .setSilent(true)
             .setContentIntent(contentIntent)
             .setCategory(NotificationCompat.CATEGORY_PROGRESS)
             .setPriority(NotificationCompat.PRIORITY_LOW)
@@ -177,7 +223,10 @@ class MusicProgressLiveUpdate(private val context: Context) {
             // Colorized and promoted are mutually exclusive; a colorized
             // notification is silently refused promotion.
             .setColorized(false)
-            .setRequestPromotedOngoing(true)
+            // Requesting promotion is harmless when the system has it switched
+            // off; the compat layer drops it and this stays an ordinary
+            // progress notification in the shade. Matches the download path.
+            .setRequestPromotedOngoing(canPostLiveUpdates())
             .setShortCriticalText(chipText)
             .build()
 
