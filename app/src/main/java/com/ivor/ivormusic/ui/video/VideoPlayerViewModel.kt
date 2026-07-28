@@ -555,8 +555,9 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     }
 
     /**
-     * Pick the starting quality based on the Settings preference. Fresh pref
-     * read because Settings toggles through its own ThemePreferences instance.
+     * Pick the starting quality based on the Settings preference for the
+     * current network (Wi-Fi vs mobile data). Fresh pref read because Settings
+     * toggles through its own ThemePreferences instance.
      * The list from getVideoStreamQualities() is sorted highest-first with
      * 60fps variants before 30fps, so the first label at or below the target
      * height is the best match; if the video has nothing at or below it, take

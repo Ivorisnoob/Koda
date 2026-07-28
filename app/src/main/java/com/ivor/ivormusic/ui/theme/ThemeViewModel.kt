@@ -31,7 +31,10 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
     val timedCommentsEnabled: StateFlow<Boolean> = themePreferences.timedCommentsEnabled
     val shortsEnabled: StateFlow<Boolean> = themePreferences.shortsEnabled
     val shortsHiddenActions: StateFlow<Set<String>> = themePreferences.shortsHiddenActions
-    val defaultVideoQuality: StateFlow<String> = themePreferences.defaultVideoQuality
+    val videoQualityWifi: StateFlow<String> = themePreferences.videoQualityWifi
+    val videoQualityMobile: StateFlow<String> = themePreferences.videoQualityMobile
+    val musicQualityWifi: StateFlow<String> = themePreferences.musicQualityWifi
+    val musicQualityMobile: StateFlow<String> = themePreferences.musicQualityMobile
     val excludedFolders: StateFlow<Set<String>> = themePreferences.excludedFolders
     
     val autoLoadQueue: StateFlow<Boolean> = themePreferences.autoLoadQueue
@@ -125,8 +128,20 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
         themePreferences.setShortsHiddenActions(hidden)
     }
 
-    fun setDefaultVideoQuality(quality: String) {
-        themePreferences.setDefaultVideoQuality(quality)
+    fun setVideoQualityWifi(quality: String) {
+        themePreferences.setVideoQualityWifi(quality)
+    }
+
+    fun setVideoQualityMobile(quality: String) {
+        themePreferences.setVideoQualityMobile(quality)
+    }
+
+    fun setMusicQualityWifi(quality: String) {
+        themePreferences.setMusicQualityWifi(quality)
+    }
+
+    fun setMusicQualityMobile(quality: String) {
+        themePreferences.setMusicQualityMobile(quality)
     }
     
     fun addExcludedFolder(folderPath: String) {

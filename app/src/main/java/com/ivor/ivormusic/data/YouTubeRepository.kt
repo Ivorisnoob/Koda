@@ -605,9 +605,10 @@ class YouTubeRepository(private val context: Context) {
     /**
      * Resolve an audio stream URL through the NewPipe extractor. Used as the
      * fallback for [getStreamUrl] when the InnerTube /player chain yields no
-     * usable stream (bot-check-flagged visitorData, etc.). Prefers the highest
-     * average bitrate audio-only stream; falls back to a muxed video+audio
-     * stream (ExoPlayer plays just the audio track) when no audio-only stream is
+     * usable stream (bot-check-flagged visitorData, etc.). Applies the same
+     * per-network music quality policy as [pickAudioStreamUrl] (NewPipe's
+     * averageBitrate is in kbps); falls back to a muxed video+audio stream
+     * (ExoPlayer plays just the audio track) when no audio-only stream is
      * available. The resulting googlevideo URL is tagged with NewPipe's issuing
      * client, so playback picks the matching UA via uaForPlaybackUri().
      */
@@ -619,8 +620,14 @@ class YouTubeRepository(private val context: Context) {
             val streamExtractor = ytService.getStreamExtractor(streamUrl)
             streamExtractor.fetchPage()
 
-            streamExtractor.audioStreams
-                .maxByOrNull { it.averageBitrate }
+            val audioStreams = streamExtractor.audioStreams
+            when (ThemePreferences.currentMusicQuality(context)) {
+                ThemePreferences.MUSIC_QUALITY_LOW ->
+                    audioStreams.minByOrNull { it.averageBitrate }
+                ThemePreferences.MUSIC_QUALITY_NORMAL ->
+                    audioStreams.minByOrNull { kotlin.math.abs(it.averageBitrate - 128) }
+                else -> audioStreams.maxByOrNull { it.averageBitrate }
+            }
                 ?.content
                 ?.takeIf { it.isNotBlank() }
                 ?.let { return@withContext it }
@@ -1481,8 +1488,9 @@ class YouTubeRepository(private val context: Context) {
     }
 
     /**
-     * Select the best audio URL from a /player streamingData object. Falls back
-     * to muxed video formats (e.g. itag 18) when no audio-only format is
+     * Select the audio URL from a /player streamingData object, honoring the
+     * per-network music quality setting (fresh read at resolution time). Falls
+     * back to muxed video formats (e.g. itag 18) when no audio-only format is
      * available — ExoPlayer extracts the audio track from the MP4 container,
      * which is critical because ANDROID_VR can return only format 18 since
      * March 2026 (see yt-dlp issue #16150).
@@ -1509,7 +1517,18 @@ class YouTubeRepository(private val context: Context) {
             "Resolve[InnerTube] formats=${formats.size} audioOnly=${audioFormats.size} videoId=$videoId",
         )
 
-        audioFormats.maxByOrNull { it.optInt("bitrate") }?.optString("url")
+        // Per-network music quality (fresh static read — see ThemePreferences):
+        // high takes the best bitrate, normal the track closest to ~128 kbps,
+        // low the smallest stream.
+        val musicQuality = ThemePreferences.currentMusicQuality(context)
+        val pickedAudio = when (musicQuality) {
+            ThemePreferences.MUSIC_QUALITY_LOW ->
+                audioFormats.minByOrNull { it.optInt("bitrate") }
+            ThemePreferences.MUSIC_QUALITY_NORMAL ->
+                audioFormats.minByOrNull { kotlin.math.abs(it.optInt("bitrate") - 128_000) }
+            else -> audioFormats.maxByOrNull { it.optInt("bitrate") }
+        }
+        pickedAudio?.optString("url")
             ?.takeIf { it.isNotEmpty() }?.let { return it }
 
         // No audio-only stream available — fall back to a muxed MP4 (itag 18 etc.).

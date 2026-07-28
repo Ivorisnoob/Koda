@@ -414,7 +414,7 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
     }
 
     /**
-     * Starting quality from the Default Video Quality setting (fresh pref
+     * Starting quality from the per-network video quality setting (fresh pref
      * read), like VideoPlayerViewModel.pickDefaultQuality. The list is sorted
      * highest-first, so the first label at or below the target height wins.
      */
