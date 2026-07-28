@@ -551,7 +551,20 @@ private fun ExpressiveNowPlayingView(
             // ========== EXPRESSIVE STANDARD BUTTON GROUP ==========
             // Using Standard ButtonGroup for squishy physics - buttons expand on press
             // and neighbors compress to accommodate
+            // material3 alpha24 turned ButtonGroup's content into a non-composable builder
+            // (customItem/clickableItem/toggleableItem), so the interaction sources have to be
+            // remembered out here rather than inline per button.
+            val shuffleInteraction = remember { MutableInteractionSource() }
+            val prevInteraction = remember { MutableInteractionSource() }
+            val playInteraction = remember { MutableInteractionSource() }
+            val nextInteraction = remember { MutableInteractionSource() }
+            val repeatInteraction = remember { MutableInteractionSource() }
+
             ButtonGroup(
+                // The five transport buttons are weighted to fill the row exactly, so the
+                // group can never overflow. alpha24 dropped the overload without this
+                // parameter, so it is supplied empty rather than rendering a menu.
+                overflowIndicator = {},
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(80.dp)
@@ -559,119 +572,139 @@ private fun ExpressiveNowPlayingView(
                 horizontalArrangement = Arrangement.spacedBy(4.dp) // Minor spacing between buttons
             ) {
                 // Shuffle Toggle - with animateWidth for squishy physics
-                val shuffleInteraction = remember { MutableInteractionSource() }
-                FilledTonalIconToggleButton(
-                    checked = shuffleModeEnabled,
-                    onCheckedChange = { viewModel.toggleShuffle() },
-                    interactionSource = shuffleInteraction,
-                    modifier = Modifier
-                        .weight(0.8f)
-                        .fillMaxHeight()
-                        .animateWidth(shuffleInteraction)
-                ) {
-                    Icon(
-                        Icons.Default.Shuffle,
-                        contentDescription = "Shuffle",
-                        modifier = Modifier.size(28.dp)
-                    )
-                }
-                
-                // Previous Button - with animateWidth for squishy physics
-                val prevInteraction = remember { MutableInteractionSource() }
-                FilledTonalIconButton(
-                    onClick = { playerHaptics.skip(); viewModel.skipToPrevious() },
-                    shapes = stableShapes,
-                    interactionSource = prevInteraction,
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                        .animateWidth(prevInteraction)
-                ) {
-                    Icon(
-                        Icons.Default.SkipPrevious,
-                        contentDescription = "Previous",
-                        modifier = Modifier.size(36.dp)
-                    )
-                }
-                
-                // 🌟 Play/Pause Button (center, larger weight for emphasis)
-                val playInteraction = remember { MutableInteractionSource() }
-                FilledIconButton(
-                    onClick = {
-                        playerHaptics.playPause(!viewModel.isPlaying.value)
-                        viewModel.togglePlayPause()
-                    },
-                    shapes = stableShapes,
-                    interactionSource = playInteraction,
-                    colors = IconButtonDefaults.filledIconButtonColors(
-                        containerColor = primaryContainerColor,
-                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                    ),
-                    modifier = Modifier
-                        .weight(1.5f)
-                        .fillMaxHeight()
-                        .animateWidth(playInteraction)
-                ) {
-                    // FIX: Only show loading if we are NOT playing. If audio is playing, always show Pause.
-                    if (isBuffering && playWhenReady && !isPlaying) {
-                        // 🌟 Organic morphing loading with MaterialShapes
-                        LoadingIndicator(
-                            modifier = Modifier.size(40.dp),
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                            polygons = listOf(
-                                MaterialShapes.SoftBurst,
-                                MaterialShapes.Cookie9Sided,
-                                MaterialShapes.Pill,
-                                MaterialShapes.Sunny
+                customItem(
+                    buttonGroupContent = {
+                        FilledTonalIconToggleButton(
+                            checked = shuffleModeEnabled,
+                            onCheckedChange = { viewModel.toggleShuffle() },
+                            interactionSource = shuffleInteraction,
+                            modifier = Modifier
+                                .weight(0.8f)
+                                .fillMaxHeight()
+                                .animateWidth(shuffleInteraction)
+                        ) {
+                            Icon(
+                                Icons.Default.Shuffle,
+                                contentDescription = "Shuffle",
+                                modifier = Modifier.size(28.dp)
                             )
-                        )
-                    } else {
-                        Icon(
-                            imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                            contentDescription = if (isPlaying) "Pause" else "Play",
-                            modifier = Modifier.size(48.dp)
-                        )
-                    }
-                }
-                
+                        }
+                    },
+                    menuContent = {}
+                )
+
+                // Previous Button - with animateWidth for squishy physics
+                customItem(
+                    buttonGroupContent = {
+                        FilledTonalIconButton(
+                            onClick = { playerHaptics.skip(); viewModel.skipToPrevious() },
+                            shapes = stableShapes,
+                            interactionSource = prevInteraction,
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                                .animateWidth(prevInteraction)
+                        ) {
+                            Icon(
+                                Icons.Default.SkipPrevious,
+                                contentDescription = "Previous",
+                                modifier = Modifier.size(36.dp)
+                            )
+                        }
+                    },
+                    menuContent = {}
+                )
+
+                // 🌟 Play/Pause Button (center, larger weight for emphasis)
+                customItem(
+                    buttonGroupContent = {
+                        FilledIconButton(
+                            onClick = {
+                                playerHaptics.playPause(!viewModel.isPlaying.value)
+                                viewModel.togglePlayPause()
+                            },
+                            shapes = stableShapes,
+                            interactionSource = playInteraction,
+                            colors = IconButtonDefaults.filledIconButtonColors(
+                                containerColor = primaryContainerColor,
+                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                            ),
+                            modifier = Modifier
+                                .weight(1.5f)
+                                .fillMaxHeight()
+                                .animateWidth(playInteraction)
+                        ) {
+                            // FIX: Only show loading if we are NOT playing. If audio is playing, always show Pause.
+                            if (isBuffering && playWhenReady && !isPlaying) {
+                                // 🌟 Organic morphing loading with MaterialShapes
+                                LoadingIndicator(
+                                    modifier = Modifier.size(40.dp),
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    polygons = listOf(
+                                        MaterialShapes.SoftBurst,
+                                        MaterialShapes.Cookie9Sided,
+                                        MaterialShapes.Pill,
+                                        MaterialShapes.Sunny
+                                    )
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                    contentDescription = if (isPlaying) "Pause" else "Play",
+                                    modifier = Modifier.size(48.dp)
+                                )
+                            }
+                        }
+                    },
+                    menuContent = {}
+                )
+
                 // Next Button - with animateWidth for squishy physics
-                val nextInteraction = remember { MutableInteractionSource() }
-                FilledTonalIconButton(
-                    onClick = { playerHaptics.skip(); viewModel.skipToNext() },
-                    shapes = stableShapes,
-                    interactionSource = nextInteraction,
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                        .animateWidth(nextInteraction)
-                ) {
-                    Icon(
-                        Icons.Default.SkipNext,
-                        contentDescription = "Next",
-                        modifier = Modifier.size(36.dp)
-                    )
-                }
-                
+                customItem(
+                    buttonGroupContent = {
+                        FilledTonalIconButton(
+                            onClick = { playerHaptics.skip(); viewModel.skipToNext() },
+                            shapes = stableShapes,
+                            interactionSource = nextInteraction,
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                                .animateWidth(nextInteraction)
+                        ) {
+                            Icon(
+                                Icons.Default.SkipNext,
+                                contentDescription = "Next",
+                                modifier = Modifier.size(36.dp)
+                            )
+                        }
+                    },
+                    menuContent = {}
+                )
+
                 // Repeat Toggle - with animateWidth for squishy physics
-                val repeatInteraction = remember { MutableInteractionSource() }
-                FilledTonalIconToggleButton(
-                    checked = repeatMode != Player.REPEAT_MODE_OFF,
-                    onCheckedChange = { viewModel.toggleRepeat() },
-                    interactionSource = repeatInteraction,
-                    modifier = Modifier
-                        .weight(0.8f)
-                        .fillMaxHeight()
-                        .animateWidth(repeatInteraction)
-                ) {
-                    Icon(
-                        when (repeatMode) {
-                            Player.REPEAT_MODE_ONE -> Icons.Default.RepeatOne
-                            else -> Icons.Default.Repeat
-                        },
-                        contentDescription = "Repeat",
-                        modifier = Modifier.size(28.dp)
-                    )
-                }
+                customItem(
+                    buttonGroupContent = {
+                        FilledTonalIconToggleButton(
+                            checked = repeatMode != Player.REPEAT_MODE_OFF,
+                            onCheckedChange = { viewModel.toggleRepeat() },
+                            interactionSource = repeatInteraction,
+                            modifier = Modifier
+                                .weight(0.8f)
+                                .fillMaxHeight()
+                                .animateWidth(repeatInteraction)
+                        ) {
+                            Icon(
+                                when (repeatMode) {
+                                    Player.REPEAT_MODE_ONE -> Icons.Default.RepeatOne
+                                    else -> Icons.Default.Repeat
+                                },
+                                contentDescription = "Repeat",
+                                modifier = Modifier.size(28.dp)
+                            )
+                        }
+                    },
+                    menuContent = {}
+                )
             }
             
             Spacer(modifier = Modifier.height(24.dp))

@@ -1,8 +1,8 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import java.util.Properties
 
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
 }
@@ -20,7 +20,7 @@ fun signingCredential(envName: String, propName: String): String? =
 
 android {
     namespace = "com.ivor.ivormusic"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.ivor.ivormusic"
@@ -64,18 +64,24 @@ android {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
-    kotlinOptions {
-        jvmTarget = "11"
-        freeCompilerArgs += listOf(
-            "-opt-in=androidx.compose.material3.ExperimentalMaterial3ExpressiveApi",
-            "-opt-in=androidx.compose.material3.ExperimentalMaterial3Api"
-        )
-    }
     buildFeatures {
         compose = true
         buildConfig = true
     }
 
+}
+
+// AGP 9 removed the android.kotlinOptions {} block; Kotlin compiler settings live here now.
+// The two opt-ins are load-bearing: the M3 Expressive APIs used across the UI layer
+// (MaterialShapes, LoadingIndicator) are still experimental and will not compile without them.
+kotlin {
+    compilerOptions {
+        jvmTarget = JvmTarget.JVM_11
+        freeCompilerArgs.addAll(
+            "-opt-in=androidx.compose.material3.ExperimentalMaterial3ExpressiveApi",
+            "-opt-in=androidx.compose.material3.ExperimentalMaterial3Api"
+        )
+    }
 }
 
 // Build info available via BuildConfig
