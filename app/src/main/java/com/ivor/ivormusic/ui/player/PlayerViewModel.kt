@@ -95,6 +95,10 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     // Stats tracking
     private var lastRecordedSongId: String? = null
     private var playRecordingJob: Job? = null
+
+    // In-flight radio fill for the last playSongRadio() seed
+    private var radioJob: Job? = null
+    private var radioSeedId: String? = null
     
     // Flag to prevent listener from restoring song after clear
     private var isPlayerCleared = false
@@ -631,6 +635,67 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         }
     }
     
+    /**
+     * Start a radio from [song]: play it right away, then fill the queue with
+     * YouTube's related-songs mix for that track (the same RDAMVM radio
+     * YouTube Music autoplays into).
+     *
+     * This is the right behaviour for a one-off tap — a search result or a
+     * pasted link — where the surrounding list is a set of same-titled matches
+     * rather than a real playlist, so queueing it means hearing the same song
+     * six times from six uploaders.
+     *
+     * Local songs have no radio to fetch, so they just play on their own; list
+     * playback for those still goes through [playQueue].
+     */
+    fun playSongRadio(song: Song) {
+        if (song.source != com.ivor.ivormusic.data.SongSource.YOUTUBE) {
+            playSong(song)
+            return
+        }
+
+        playQueue(listOf(song))
+
+        radioJob?.cancel()
+        // Claim the auto-queue slot synchronously: the media-item transition
+        // that playQueue() just triggered lands on the main thread after this
+        // returns and would otherwise fire its own continuation fetch for the
+        // same seed.
+        _isLoadingMore.value = true
+        radioSeedId = song.id
+        radioJob = viewModelScope.launch {
+            try {
+                var radio = youTubeRepository.getRelatedSongs(song.id)
+                    .filter { it.id != song.id }
+
+                // Radio came back empty (no /next mix, or the call failed):
+                // fall back to the taste-profile continuation so the user
+                // isn't left with a one-song queue.
+                if (radio.isEmpty()) {
+                    radio = recommendationEngine.getQueueContinuation(
+                        currentSong = song,
+                        excludeIds = setOf(song.id),
+                        limit = 20
+                    )
+                }
+
+                // Only extend if the user is still on this radio — a tap on
+                // something else while /next was in flight must not graft the
+                // old mix onto the new queue.
+                val queue = _currentQueue.value
+                if (radio.isNotEmpty() && queue.size == 1 && queue[0].id == song.id) {
+                    addToQueue(radio)
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("PlayerViewModel", "Radio fetch failed for ${song.id}", e)
+            } finally {
+                // A cancelled predecessor must not release the flag it no
+                // longer owns — only the current seed clears it.
+                if (radioSeedId == song.id) _isLoadingMore.value = false
+            }
+        }
+    }
+
     /**
      * Jump to a song that is already in the queue without rebuilding the
      * player's timeline, so buffered and prefetched data is kept.

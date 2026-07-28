@@ -181,6 +181,12 @@ fun SearchScreen(
     songs: List<Song>,
     onSongClick: (Song) -> Unit,
     onPlayQueue: (List<Song>, Song) -> Unit = { _, song -> onSongClick(song) },
+    /**
+     * Play a single YouTube result and continue into its radio. Used instead of
+     * [onPlayQueue] for loose result lists, where the neighbouring entries are
+     * other uploads of the same title rather than a playlist worth queueing.
+     */
+    onPlayRadio: (Song) -> Unit = { song -> onPlayQueue(listOf(song), song) },
     onVideoClick: (VideoItem) -> Unit = {},
     onArtistClick: (ArtistItem) -> Unit = {},
     onAlbumClick: (PlaylistDisplayItem) -> Unit = {},
@@ -540,8 +546,7 @@ fun SearchScreen(
                                         if (videoMode) {
                                             onVideoClick(video)
                                         } else {
-                                            val song = video.toSong()
-                                            onPlayQueue(listOf(song), song)
+                                            onPlayRadio(video.toSong())
                                         }
                                     }
                                 )
@@ -1049,7 +1054,9 @@ fun SearchScreen(
                     itemsIndexed(youtubeResults) { index, song ->
                         SearchSongCard(
                             song = song,
-                            onClick = { onPlayQueue(youtubeResults, song) },
+                            // Radio, not the result list: the other hits are
+                            // usually the same track from other uploaders.
+                            onClick = { onPlayRadio(song) },
                             cardColor = cardColor,
                             textColor = textColor,
                             secondaryTextColor = secondaryTextColor,
