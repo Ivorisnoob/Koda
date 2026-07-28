@@ -31,7 +31,12 @@ import com.ivor.ivormusic.data.ThemePreferences
  * chrome to hand someone who did not ask for it.
  *
  * Promotion is only ever a *request*; the system decides, so nothing here may
- * assume the chip actually appeared.
+ * assume the chip actually appeared. When it is refused this degrades to an
+ * ordinary progress notification in the shade rather than vanishing - the same
+ * fallback the download notification has always had. Gating the post on
+ * promotion instead is what made this feature look broken everywhere except a
+ * Pixel emulator: plenty of Android 16 builds answer false from
+ * [NotificationManagerCompat.canPostPromotedNotifications].
  */
 class MusicProgressLiveUpdate(private val context: Context) {
 
@@ -79,14 +84,28 @@ class MusicProgressLiveUpdate(private val context: Context) {
     }
 
     /**
-     * Whether a promoted playback notification can actually be posted right
+     * Whether the user has asked for the playback notification at all. The
+     * platform check lives inside [ThemePreferences.isLivePlaybackUpdatesEnabled].
+     *
+     * Deliberately separate from [canPostLiveUpdates]: this decides whether to
+     * *post*, that one only decides whether to ask for promotion.
+     */
+    private fun isEnabled(): Boolean = ThemePreferences.isLivePlaybackUpdatesEnabled(context)
+
+    /**
+     * Whether promotion to a status bar chip can actually be requested right
      * now: the user's in-app setting and the system-level permission both have
-     * to agree. The platform check lives inside
-     * [ThemePreferences.isLivePlaybackUpdatesEnabled].
+     * to agree.
+     *
+     * A false here must never suppress the notification itself - see
+     * [updateProgress]. Many Android 16 builds (OEM skins especially) report
+     * false from [NotificationManagerCompat.canPostPromotedNotifications], and
+     * gating the post on it meant playback showed nothing at all on those
+     * devices while downloads degraded gracefully to an ordinary progress
+     * notification.
      */
     fun canPostLiveUpdates(): Boolean =
-        ThemePreferences.isLivePlaybackUpdatesEnabled(context) &&
-            notificationManager.canPostPromotedNotifications()
+        isEnabled() && notificationManager.canPostPromotedNotifications()
 
     /**
      * Show or update the Live Update with current playback progress. A no-op
@@ -107,11 +126,14 @@ class MusicProgressLiveUpdate(private val context: Context) {
         // silhouette - so this is the only place the cover can appear.
         artwork: android.graphics.Bitmap? = null
     ) {
-        if (!canPostLiveUpdates()) {
+        if (!isEnabled()) {
             hide()
             return
         }
         if (durationMs <= 0) return
+        // Same guard DownloadService uses before its notify(): notifications
+        // switched off app-wide makes the post a silent no-op anyway.
+        if (!notificationManager.areNotificationsEnabled()) return
 
         val progress = ((currentPositionMs.toFloat() / durationMs) * 100).toInt().coerceIn(0, 100)
         val remainingMs = (durationMs - currentPositionMs).coerceAtLeast(0)
@@ -177,7 +199,10 @@ class MusicProgressLiveUpdate(private val context: Context) {
             // Colorized and promoted are mutually exclusive; a colorized
             // notification is silently refused promotion.
             .setColorized(false)
-            .setRequestPromotedOngoing(true)
+            // Requesting promotion is harmless when the system has it switched
+            // off; the compat layer drops it and this stays an ordinary
+            // progress notification in the shade. Matches the download path.
+            .setRequestPromotedOngoing(canPostLiveUpdates())
             .setShortCriticalText(chipText)
             .build()
 
