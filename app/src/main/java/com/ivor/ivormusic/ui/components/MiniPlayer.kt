@@ -1,6 +1,7 @@
 package com.ivor.ivormusic.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
@@ -9,7 +10,10 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -43,15 +47,18 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.ivor.ivormusic.data.Song
+import com.ivor.ivormusic.ui.player.rememberPlayerHaptics
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -65,6 +72,15 @@ fun MiniPlayerContent(
     onNextClick: () -> Unit,
     onClick: () -> Unit
 ) {
+    val playerHaptics = rememberPlayerHaptics()
+
+    // Toggling while a track is still resolving would call play() again rather
+    // than cancelling the pending start (togglePlayPause keys off isPlaying),
+    // so the artwork goes inert for exactly the window the play/pause button
+    // is replaced by the loading indicator. A tap then falls through to the
+    // pill's own onClick and expands, as it always did.
+    val artworkTogglesPlayback = !(isBuffering && playWhenReady)
+
     // Transparent: the ExpandablePlayer container draws the pill background.
     // A second opaque surface here created a visible "pill behind a pill"
     // (its own shadow + tonal tint), and its drag handler swallowed the
@@ -81,9 +97,35 @@ fun MiniPlayerContent(
                 .padding(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Album Art with Circular Progress Ring
+            // Album Art with Circular Progress Ring — doubles as the
+            // play/pause target, so the most-hit part of the pill toggles
+            // playback instead of only expanding the player.
+            val artworkInteraction = remember { MutableInteractionSource() }
+            val artworkPressed by artworkInteraction.collectIsPressedAsState()
+            val artworkScale by animateFloatAsState(
+                targetValue = if (artworkPressed) 0.92f else 1f,
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                    stiffness = Spring.StiffnessMediumLow
+                ),
+                label = "miniArtworkScale"
+            )
+
             Box(
-                modifier = Modifier.size(52.dp),
+                modifier = Modifier
+                    .size(52.dp)
+                    .clip(CircleShape)
+                    .clickable(
+                        interactionSource = artworkInteraction,
+                        indication = null,
+                        enabled = artworkTogglesPlayback,
+                        onClickLabel = if (isPlaying) "Pause" else "Play",
+                        role = Role.Button,
+                        onClick = {
+                            playerHaptics.playPause(!isPlaying)
+                            onPlayPauseClick()
+                        }
+                    ),
                 contentAlignment = Alignment.Center
             ) {
                 val trackColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f)
@@ -114,10 +156,13 @@ fun MiniPlayerContent(
                     )
                 }
                 
-                // Album art thumbnail (slightly smaller to fit inside ring)
+                // Album art thumbnail (slightly smaller to fit inside ring).
+                // Only the cover springs on press — the ring is a progress
+                // readout and would read as a glitch if it scaled with it.
                 Box(
                     modifier = Modifier
                         .size(44.dp)
+                        .scale(artworkScale)
                         .clip(CircleShape)
                         .background(MaterialTheme.colorScheme.surfaceVariant),
                     contentAlignment = Alignment.Center
@@ -202,7 +247,11 @@ fun MiniPlayerContent(
                 }
             } else {
                 FilledIconButton(
-                    onClick = onPlayPauseClick,
+                    onClick = {
+                        // Same action as the artwork tap, so same feedback.
+                        playerHaptics.playPause(!isPlaying)
+                        onPlayPauseClick()
+                    },
                     modifier = Modifier.size(44.dp),
                     shapes = IconButtonDefaults.shapes(), // Bouncy shape morphing
                     colors = IconButtonDefaults.filledIconButtonColors(
