@@ -286,6 +286,25 @@ class ThemePreferences(context: Context) {
         private const val KEY_PREFER_HDR = "prefer_hdr_video"
 
         /**
+         * Default quality for video downloads, one of [VIDEO_QUALITY_OPTIONS].
+         * Set from the download sheet's "remember" toggle rather than the
+         * Settings screen, so like the video session state below it has no
+         * StateFlow — the sheet and the download worker both read it fresh.
+         */
+        private const val KEY_DOWNLOAD_VIDEO_QUALITY = "download_video_quality"
+
+        /**
+         * Static fresh read of the download quality for DownloadRepository,
+         * which runs off a plain Context (same pattern as [isLocalOnly]).
+         * Defaults to [VIDEO_QUALITY_AUTO]: best available, the historical
+         * download behavior.
+         */
+        fun currentDownloadVideoQuality(context: Context): String =
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getString(KEY_DOWNLOAD_VIDEO_QUALITY, VIDEO_QUALITY_AUTO)
+                ?: VIDEO_QUALITY_AUTO
+
+        /**
          * Static fresh read of the HDR opt-in for the quality parser, which
          * runs inside YouTubeRepository off a plain Context. Off by default:
          * HDR streams are only surfaced when the user asked for them.
@@ -761,6 +780,18 @@ class ThemePreferences(context: Context) {
     fun setPreferHdr(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_PREFER_HDR, enabled).apply()
         _preferHdr.value = enabled
+    }
+
+    /**
+     * Default quality for video downloads. See [currentDownloadVideoQuality]
+     * for the semantics; this instance pair serves the download sheet, which
+     * preselects from it and writes it back through its "remember" toggle.
+     */
+    fun getDownloadVideoQuality(): String =
+        prefs.getString(KEY_DOWNLOAD_VIDEO_QUALITY, VIDEO_QUALITY_AUTO) ?: VIDEO_QUALITY_AUTO
+
+    fun setDownloadVideoQuality(quality: String) {
+        prefs.edit().putString(KEY_DOWNLOAD_VIDEO_QUALITY, quality).apply()
     }
 
     /**
