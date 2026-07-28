@@ -95,6 +95,10 @@ class DownloadRepository private constructor(private val context: Context) {
         private const val RETRY_BACKOFF_MS = 2_000L
         private const val BUFFER_SIZE = 8192
 
+        // Ranged-request chunk size. Bounded ranges are served at full CDN
+        // speed where an open-ended request is paced to the media bitrate.
+        private const val DOWNLOAD_CHUNK_BYTES = 10L * 1024 * 1024
+
         /** How long a finished download stays visible in the progress list. */
         private const val COMPLETION_LINGER_MS = 1_500L
 
@@ -766,8 +770,13 @@ class DownloadRepository private constructor(private val context: Context) {
 
     /**
      * Stream [url] into [out], reporting progress scaled into
-     * [fromFraction]..[toFraction] of the overall download. Throws on a
-     * truncated transfer so a short read is never published as a complete file.
+     * [fromFraction]..[toFraction] of the overall download. Fetches in
+     * bounded ranged chunks: googlevideo paces open-ended requests to
+     * roughly the media bitrate, which made downloads crawl at playback
+     * speed (same server behavior ChunkedStreamDataSource works around for
+     * playback). The User-Agent must match the URL's issuing client
+     * (`?c=` param) or googlevideo answers 403. Throws on a truncated
+     * transfer so a short read is never published as a complete file.
      */
     private suspend fun downloadStream(
         request: DownloadRequest,
@@ -776,47 +785,78 @@ class DownloadRepository private constructor(private val context: Context) {
         fromFraction: Float,
         toFraction: Float
     ) {
-        val call = client.newCall(Request.Builder().url(url).build())
-        activeDownloadCalls[request.id] = call
-
-        val response = call.execute()
-        if (!response.isSuccessful) {
-            response.close()
-            throw java.io.IOException("HTTP ${response.code}")
-        }
-        val body = response.body ?: throw java.io.IOException("Empty body")
-
-        val totalBytes = body.contentLength()
-        var bytesDownloaded = 0L
+        val userAgent = YouTubeRepository.uaForPlaybackUri(Uri.parse(url))
         val buffer = ByteArray(BUFFER_SIZE)
         val span = toFraction - fromFraction
+        var position = 0L
+        var totalBytes = -1L
 
-        body.byteStream().use { input ->
-            var read: Int
-            while (input.read(buffer).also { read = it } != -1) {
-                // Throws CancellationException if this task was cancelled,
-                // unwinding into the caller's handler.
-                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+        while (totalBytes < 0 || position < totalBytes) {
+            val call = client.newCall(
+                Request.Builder()
+                    .url(url)
+                    .header("User-Agent", userAgent)
+                    .header("Range", "bytes=$position-${position + DOWNLOAD_CHUNK_BYTES - 1}")
+                    .build()
+            )
+            activeDownloadCalls[request.id] = call
 
-                out.write(buffer, 0, read)
-                bytesDownloaded += read
-
-                val fraction = if (totalBytes > 0) {
-                    fromFraction + (bytesDownloaded.toFloat() / totalBytes * span)
-                } else {
-                    fromFraction + span / 2f // Indeterminate
-                }
-                updateProgress(
-                    request, fraction, DownloadStatus.DOWNLOADING,
-                    bytesDownloaded, totalBytes
-                )
+            val response = call.execute()
+            if (!response.isSuccessful) {
+                response.close()
+                throw java.io.IOException("HTTP ${response.code}")
             }
+            val body = response.body ?: throw java.io.IOException("Empty body")
+
+            // A 206 carries the served extent and the file size in
+            // Content-Range; a 200 means the server ignored the range and is
+            // sending the whole file in this response.
+            val ranged = response.code == 206
+            if (totalBytes < 0) {
+                totalBytes = if (ranged) {
+                    parseContentRangeTotal(response.header("Content-Range")) ?: -1L
+                } else {
+                    body.contentLength()
+                }
+            }
+
+            var chunkBytes = 0L
+            body.byteStream().use { input ->
+                var read: Int
+                while (input.read(buffer).also { read = it } != -1) {
+                    // Throws CancellationException if this task was cancelled,
+                    // unwinding into the caller's handler.
+                    kotlinx.coroutines.currentCoroutineContext().ensureActive()
+
+                    out.write(buffer, 0, read)
+                    position += read
+                    chunkBytes += read
+
+                    val fraction = if (totalBytes > 0) {
+                        fromFraction + (position.toFloat() / totalBytes * span)
+                    } else {
+                        fromFraction + span / 2f // Indeterminate
+                    }
+                    updateProgress(
+                        request, fraction, DownloadStatus.DOWNLOADING,
+                        position, totalBytes
+                    )
+                }
+            }
+
+            // An unranged response was the whole file. Without a known total,
+            // an empty chunk means the server has nothing more to serve.
+            if (!ranged || totalBytes < 0 || chunkBytes == 0L) break
         }
 
-        if (totalBytes > 0 && bytesDownloaded < totalBytes) {
-            throw java.io.IOException("Truncated: $bytesDownloaded/$totalBytes")
+        if (totalBytes > 0 && position < totalBytes) {
+            throw java.io.IOException("Truncated: $position/$totalBytes")
         }
     }
+
+    /** Total size out of a "bytes 0-1023/4096" Content-Range; null when absent. */
+    private fun parseContentRangeTotal(contentRange: String?): Long? =
+        contentRange?.substringAfterLast('/')?.toLongOrNull()?.takeIf { it > 0 }
 
     private fun recordVideo(request: DownloadRequest, uri: Uri, quality: String?) {
         _downloadedVideos.value = _downloadedVideos.value + DownloadedVideo(
