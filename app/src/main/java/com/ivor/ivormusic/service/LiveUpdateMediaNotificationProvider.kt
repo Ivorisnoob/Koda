@@ -34,7 +34,7 @@ class LiveUpdateMediaNotificationProvider(
     // entries for one feature.
     private val defaultProvider = DefaultMediaNotificationProvider.Builder(context)
         .setChannelId(MusicProgressLiveUpdate.CHANNEL_ID)
-        .setChannelNameResourceId(com.ivor.ivormusic.R.string.now_playing_channel_name)
+        .setChannelName(com.ivor.ivormusic.R.string.now_playing_channel_name)
         .build()
     
     companion object {
