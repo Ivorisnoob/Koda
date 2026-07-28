@@ -173,6 +173,12 @@ class MusicService : MediaLibraryService() {
 
         // 6. Pre-warm caches
         preWarmAutoCache()
+
+        // 7. Warm the visitorData token so the first stream resolution of a
+        // session doesn't pay for the mint on its critical path. Music-first
+        // sessions (and Android Auto) never construct VideoPlayerViewModel,
+        // which was the only other place that prefetched it.
+        resolveScope.launch { youtubeRepository.prefetchVisitorData() }
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
