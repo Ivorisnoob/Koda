@@ -74,6 +74,9 @@ class ThemePreferences(context: Context) {
 
     private val _musicQualityMobile = MutableStateFlow(getMusicQualityMobilePreference())
     val musicQualityMobile: StateFlow<String> = _musicQualityMobile.asStateFlow()
+
+    private val _preferHdr = MutableStateFlow(getPreferHdrPreference())
+    val preferHdr: StateFlow<Boolean> = _preferHdr.asStateFlow()
     
     private val _excludedFolders = MutableStateFlow(getExcludedFoldersPreference())
     val excludedFolders: StateFlow<Set<String>> = _excludedFolders.asStateFlow()
@@ -137,6 +140,7 @@ class ThemePreferences(context: Context) {
             KEY_VIDEO_QUALITY_MOBILE -> _videoQualityMobile.value = getVideoQualityMobilePreference()
             KEY_MUSIC_QUALITY_WIFI -> _musicQualityWifi.value = getMusicQualityWifiPreference()
             KEY_MUSIC_QUALITY_MOBILE -> _musicQualityMobile.value = getMusicQualityMobilePreference()
+            KEY_PREFER_HDR -> _preferHdr.value = getPreferHdrPreference()
             KEY_EXCLUDED_FOLDERS -> _excludedFolders.value = getExcludedFoldersPreference()
             KEY_CACHE_ENABLED -> _cacheEnabled.value = getCacheEnabledPreference()
             KEY_MAX_CACHE_SIZE_MB -> _maxCacheSizeMb.value = getMaxCacheSizeMbPreference()
@@ -278,6 +282,17 @@ class ThemePreferences(context: Context) {
             val key = if (isNetworkMetered(context)) KEY_MUSIC_QUALITY_MOBILE else KEY_MUSIC_QUALITY_WIFI
             return prefs.getString(key, DEFAULT_MUSIC_QUALITY) ?: DEFAULT_MUSIC_QUALITY
         }
+
+        private const val KEY_PREFER_HDR = "prefer_hdr_video"
+
+        /**
+         * Static fresh read of the HDR opt-in for the quality parser, which
+         * runs inside YouTubeRepository off a plain Context. Off by default:
+         * HDR streams are only surfaced when the user asked for them.
+         */
+        fun isPreferHdrEnabled(context: Context): Boolean =
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getBoolean(KEY_PREFER_HDR, false)
 
         /**
          * Video player session state that outlives a single video. Unlike the
@@ -734,6 +749,18 @@ class ThemePreferences(context: Context) {
     fun setMusicQualityMobile(quality: String) {
         prefs.edit().putString(KEY_MUSIC_QUALITY_MOBILE, quality).apply()
         _musicQualityMobile.value = quality
+    }
+
+    private fun getPreferHdrPreference(): Boolean {
+        return prefs.getBoolean(KEY_PREFER_HDR, false)
+    }
+
+    /**
+     * Save the HDR opt-in and update the flow.
+     */
+    fun setPreferHdr(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_PREFER_HDR, enabled).apply()
+        _preferHdr.value = enabled
     }
 
     /**

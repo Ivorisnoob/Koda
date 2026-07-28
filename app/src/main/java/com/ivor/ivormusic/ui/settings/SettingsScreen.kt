@@ -61,6 +61,7 @@ import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.FolderOff
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.GridView
+import androidx.compose.material.icons.rounded.HdrOn
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Interests
 import androidx.compose.material.icons.rounded.LightMode
@@ -238,6 +239,8 @@ fun SettingsScreen(
     onMusicQualityWifiChange: (String) -> Unit,
     musicQualityMobile: String,
     onMusicQualityMobileChange: (String) -> Unit,
+    preferHdr: Boolean,
+    onPreferHdrToggle: (Boolean) -> Unit,
     excludedFolders: Set<String>,
     onAddExcludedFolder: (String) -> Unit,
     onRemoveExcludedFolder: (String) -> Unit,
@@ -1001,6 +1004,19 @@ fun SettingsScreen(
                             secondaryTextColor = secondaryTextColor,
                             iconTint = accentColor,
                             showChevron = true
+                        )
+
+                        SettingsDivider()
+
+                        ExpressiveOemToggleItem(
+                            icon = Icons.Rounded.HdrOn,
+                            title = "Prefer HDR Videos",
+                            subtitle = "Fetch HDR streams when a video has them",
+                            enabled = preferHdr,
+                            onToggle = onPreferHdrToggle,
+                            textColor = textColor,
+                            secondaryTextColor = secondaryTextColor,
+                            accentColor = accentColor
                         )
                     }
                 }

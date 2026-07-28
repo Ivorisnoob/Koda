@@ -75,6 +75,7 @@ class MainActivity : ComponentActivity() {
             val videoQualityMobile by themeViewModel.videoQualityMobile.collectAsState()
             val musicQualityWifi by themeViewModel.musicQualityWifi.collectAsState()
             val musicQualityMobile by themeViewModel.musicQualityMobile.collectAsState()
+            val preferHdr by themeViewModel.preferHdr.collectAsState()
             val excludedFolders by themeViewModel.excludedFolders.collectAsState()
             val oemFixEnabled by themeViewModel.oemFixEnabled.collectAsState()
             val manualScanEnabled by themeViewModel.manualScanEnabled.collectAsState()
@@ -142,6 +143,8 @@ class MainActivity : ComponentActivity() {
                         onMusicQualityWifiChange = { themeViewModel.setMusicQualityWifi(it) },
                         musicQualityMobile = musicQualityMobile,
                         onMusicQualityMobileChange = { themeViewModel.setMusicQualityMobile(it) },
+                        preferHdr = preferHdr,
+                        onPreferHdrToggle = { themeViewModel.setPreferHdr(it) },
                         excludedFolders = excludedFolders,
                         onAddExcludedFolder = { themeViewModel.addExcludedFolder(it) },
                         onRemoveExcludedFolder = { themeViewModel.removeExcludedFolder(it) },
@@ -214,6 +217,8 @@ fun MusicApp(
     onMusicQualityWifiChange: (String) -> Unit,
     musicQualityMobile: String,
     onMusicQualityMobileChange: (String) -> Unit,
+    preferHdr: Boolean,
+    onPreferHdrToggle: (Boolean) -> Unit,
     excludedFolders: Set<String>,
     onAddExcludedFolder: (String) -> Unit,
     onRemoveExcludedFolder: (String) -> Unit,
@@ -417,6 +422,8 @@ fun MusicApp(
                     onMusicQualityWifiChange = onMusicQualityWifiChange,
                     musicQualityMobile = musicQualityMobile,
                     onMusicQualityMobileChange = onMusicQualityMobileChange,
+                    preferHdr = preferHdr,
+                    onPreferHdrToggle = onPreferHdrToggle,
                     excludedFolders = excludedFolders,
                     onAddExcludedFolder = onAddExcludedFolder,
                     onRemoveExcludedFolder = onRemoveExcludedFolder,

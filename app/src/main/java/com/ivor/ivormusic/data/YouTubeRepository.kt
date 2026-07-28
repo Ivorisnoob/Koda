@@ -3802,6 +3802,21 @@ class YouTubeRepository(private val context: Context) {
         val adaptive = streamingData.optJSONArray("adaptiveFormats")?.objects() ?: emptyList()
         val muxed = streamingData.optJSONArray("formats")?.objects() ?: emptyList()
 
+        // HDR variants ride separate adaptiveFormats entries whose qualityLabel
+        // carries " HDR" and whose colorInfo declares a PQ or HLG transfer
+        // (shape per yt-dlp/NewPipe; a live re-probe was bot-checked July 2026,
+        // so re-verify on device if this stops matching). Behind the
+        // "Prefer HDR" opt-in: off drops HDR entries entirely, on lists them
+        // alongside SDR and prefers them at equal height via the sort below.
+        fun isHdrFormat(f: org.json.JSONObject): Boolean {
+            if (f.optString("qualityLabel").contains("HDR", ignoreCase = true)) return true
+            val transfer = f.optJSONObject("colorInfo")
+                ?.optString("transferCharacteristics").orEmpty()
+            return transfer == "COLOR_TRANSFER_CHARACTERISTICS_SMPTE2084" ||
+                transfer == "COLOR_TRANSFER_CHARACTERISTICS_ARIB_STD_B67"
+        }
+        val preferHdr = ThemePreferences.isPreferHdrEnabled(context)
+
         // Best separate audio track; prefer AAC (mp4a) for broad hardware support,
         // then highest bitrate.
         val bestAudioUrl = adaptive
@@ -3834,7 +3849,8 @@ class YouTubeRepository(private val context: Context) {
                 .filter {
                     it.optString("mimeType").startsWith("video/") &&
                         it.optString("url").isNotEmpty() &&
-                        it.optString("qualityLabel").isNotEmpty()
+                        it.optString("qualityLabel").isNotEmpty() &&
+                        (preferHdr || !isHdrFormat(it))
                 }
                 .groupBy { it.optString("qualityLabel") }
                 .forEach { (label, formats) ->
@@ -3863,11 +3879,16 @@ class YouTubeRepository(private val context: Context) {
             }
         }
 
-        // Highest resolution first, 60fps variants before 30fps at equal height.
+        // Highest resolution first; at equal height an HDR variant (only
+        // present when opted in) outranks SDR so the default pick lands on
+        // it, then 60fps variants before 30fps.
         fun height(label: String): Int = label.takeWhile { it.isDigit() }.toIntOrNull() ?: 0
+        fun hdr(label: String): Int = if (label.contains("HDR", ignoreCase = true)) 1 else 0
         fun fps(label: String): Int = label.substringAfter("p", "").takeWhile { it.isDigit() }.toIntOrNull() ?: 30
         return qualities.sortedWith(
-            compareByDescending<VideoQuality> { height(it.resolution) }.thenByDescending { fps(it.resolution) }
+            compareByDescending<VideoQuality> { height(it.resolution) }
+                .thenByDescending { hdr(it.resolution) }
+                .thenByDescending { fps(it.resolution) }
         )
     }
 

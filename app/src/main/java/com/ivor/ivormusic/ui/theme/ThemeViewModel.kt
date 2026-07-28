@@ -35,6 +35,7 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
     val videoQualityMobile: StateFlow<String> = themePreferences.videoQualityMobile
     val musicQualityWifi: StateFlow<String> = themePreferences.musicQualityWifi
     val musicQualityMobile: StateFlow<String> = themePreferences.musicQualityMobile
+    val preferHdr: StateFlow<Boolean> = themePreferences.preferHdr
     val excludedFolders: StateFlow<Set<String>> = themePreferences.excludedFolders
     
     val autoLoadQueue: StateFlow<Boolean> = themePreferences.autoLoadQueue
@@ -142,6 +143,10 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setMusicQualityMobile(quality: String) {
         themePreferences.setMusicQualityMobile(quality)
+    }
+
+    fun setPreferHdr(enabled: Boolean) {
+        themePreferences.setPreferHdr(enabled)
     }
     
     fun addExcludedFolder(folderPath: String) {
