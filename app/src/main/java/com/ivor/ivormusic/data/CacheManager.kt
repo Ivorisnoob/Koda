@@ -1,20 +1,16 @@
 package com.ivor.ivormusic.data
 
 import android.content.Context
-import android.net.Uri
 import android.util.Log
 import androidx.media3.common.C
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.database.StandaloneDatabaseProvider
 import androidx.media3.datasource.DataSource
-import androidx.media3.datasource.DataSpec
-import androidx.media3.datasource.TransferListener
 import androidx.media3.datasource.cache.Cache
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.CacheEvictor
 import androidx.media3.datasource.cache.CacheSpan
 import androidx.media3.datasource.cache.SimpleCache
-import androidx.media3.datasource.DefaultHttpDataSource
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -222,39 +218,16 @@ object CacheManager {
     }
 
     /**
-     * A DataSource.Factory whose User-Agent is chosen per-request based on the
-     * URI's `?c=` query param. This matches each googlevideo URL with the UA
-     * its issuing InnerTube client expects, preventing the cross-client 403s
-     * that a single fixed UA produces.
+     * The HTTP factory for all stream fetches: ChunkedStreamDataSource picks
+     * the per-request User-Agent from the URI's `?c=` client tag (a UA
+     * mismatch means a googlevideo 403) and downloads googlevideo media in
+     * bounded ranged chunks, sidestepping the server-side pacing that
+     * throttles open-ended progressive requests to roughly the media bitrate.
      *
      * Used as the upstream for the playback cache, and from MusicService for
      * non-cache HTTP fallback.
      */
-    fun createPerClientHttpFactory(): DataSource.Factory = DataSource.Factory {
-        // Build the delegate with NO setUserAgent — DefaultHttpDataSource
-        // applies the userAgent field last and would otherwise overwrite the
-        // per-request User-Agent we set via setRequestProperty below.
-        val delegate = DefaultHttpDataSource.Factory()
-            .setConnectTimeoutMs(15000)
-            .setReadTimeoutMs(15000)
-            .setAllowCrossProtocolRedirects(true)
-            .createDataSource()
-
-        object : DataSource {
-            override fun open(dataSpec: DataSpec): Long {
-                delegate.setRequestProperty("User-Agent", YouTubeRepository.uaForPlaybackUri(dataSpec.uri))
-                return delegate.open(dataSpec)
-            }
-            override fun read(buffer: ByteArray, offset: Int, length: Int): Int =
-                delegate.read(buffer, offset, length)
-            override fun addTransferListener(transferListener: TransferListener) {
-                delegate.addTransferListener(transferListener)
-            }
-            override fun getUri(): Uri? = delegate.uri
-            override fun getResponseHeaders(): Map<String, List<String>> = delegate.responseHeaders
-            override fun close() = delegate.close()
-        }
-    }
+    fun createPerClientHttpFactory(): DataSource.Factory = ChunkedStreamDataSource.Factory()
 
     /**
      * Update the current cache size state.
