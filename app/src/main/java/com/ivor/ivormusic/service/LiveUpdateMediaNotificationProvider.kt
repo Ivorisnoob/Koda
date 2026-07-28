@@ -28,13 +28,41 @@ class LiveUpdateMediaNotificationProvider(
     private val context: Context
 ) : MediaNotification.Provider {
     
-    private val defaultProvider = DefaultMediaNotificationProvider.Builder(context).build()
+    // Pointed at the same channel as MusicProgressLiveUpdate. Left to itself,
+    // DefaultMediaNotificationProvider creates its own "Now playing" channel,
+    // and the system notification settings screen lists two identical-looking
+    // entries for one feature.
+    private val defaultProvider = DefaultMediaNotificationProvider.Builder(context)
+        .setChannelId(MusicProgressLiveUpdate.CHANNEL_ID)
+        .setChannelNameResourceId(com.ivor.ivormusic.R.string.now_playing_channel_name)
+        .build()
     
     companion object {
         private const val TAG = "LiveUpdateMediaNotificationProvider"
 
         /** What NotificationCompat.setRequestPromotedOngoing writes. */
         private const val EXTRA_REQUEST_PROMOTED_ONGOING = "android.requestPromotedOngoing"
+
+        /**
+         * Remove the channel Media3 created for itself before we started
+         * sharing one. Without this an upgrading user still sees two "Now
+         * playing" entries in system settings - the shared one, plus the old
+         * one sitting there empty forever.
+         *
+         * Safe to call every start: deleting an absent channel is a no-op.
+         */
+        fun deleteLegacyMediaChannel(context: Context) {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+            if (DefaultMediaNotificationProvider.DEFAULT_CHANNEL_ID ==
+                MusicProgressLiveUpdate.CHANNEL_ID
+            ) return
+            runCatching {
+                androidx.core.app.NotificationManagerCompat.from(context)
+                    .deleteNotificationChannel(
+                        DefaultMediaNotificationProvider.DEFAULT_CHANNEL_ID
+                    )
+            }
+        }
     }
     
     override fun createNotification(

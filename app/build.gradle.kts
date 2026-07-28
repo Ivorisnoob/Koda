@@ -24,7 +24,7 @@ android {
 
     defaultConfig {
         applicationId = "com.ivor.ivormusic"
-        minSdk = 31
+        minSdk = 30
         targetSdk = 36
         versionCode = 21
         versionName = "4.3"

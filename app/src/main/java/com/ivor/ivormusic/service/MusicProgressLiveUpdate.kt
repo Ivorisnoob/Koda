@@ -41,8 +41,13 @@ import com.ivor.ivormusic.data.ThemePreferences
 class MusicProgressLiveUpdate(private val context: Context) {
 
     companion object {
-        private const val CHANNEL_ID = "music_live_update"
-        private const val CHANNEL_NAME = "Now Playing"
+        /**
+         * Shared with the MediaStyle notification: [LiveUpdateMediaNotificationProvider]
+         * points Media3's DefaultMediaNotificationProvider at this id so the two
+         * playback notifications sit on one channel. Media3 otherwise creates
+         * its own, and system settings lists "Now playing" twice.
+         */
+        const val CHANNEL_ID = "music_live_update"
         private const val NOTIFICATION_ID = 9999
 
         /**
@@ -50,6 +55,37 @@ class MusicProgressLiveUpdate(private val context: Context) {
          * prepare-then-transfer split, so the bar is one full-width segment.
          */
         private const val PLAYBACK_SEGMENT = 100
+
+        /**
+         * Create the shared playback channel. Called unconditionally from
+         * MusicService.onCreate - not from this class's init - because the
+         * media notification needs the channel on every API level, while this
+         * class only exists on API 36+.
+         *
+         * Channel settings are frozen at creation, so getting silence right
+         * here is the only chance: a channel that ships with sound cannot be
+         * quietened by a later app update.
+         */
+        fun ensureChannel(context: Context) {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+            val channel = NotificationChannel(
+                CHANNEL_ID,
+                context.getString(R.string.now_playing_channel_name),
+                // Must stay above IMPORTANCE_MIN or the notification becomes
+                // ineligible for promotion to a Live Update. LOW is already
+                // silent; the explicit nulls below make that non-negotiable
+                // rather than a property of the importance constant.
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "Shows what's currently playing"
+                setShowBadge(false)
+                setSound(null, null)
+                enableVibration(false)
+                enableLights(false)
+                lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+            }
+            NotificationManagerCompat.from(context).createNotificationChannel(channel)
+        }
     }
 
     private val notificationManager = NotificationManagerCompat.from(context)
@@ -63,24 +99,9 @@ class MusicProgressLiveUpdate(private val context: Context) {
     private var lastArtwork: android.graphics.Bitmap? = null
 
     init {
-        createNotificationChannel()
-    }
-
-    private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                CHANNEL_NAME,
-                // Must stay above IMPORTANCE_MIN or the notification becomes
-                // ineligible for promotion to a Live Update.
-                NotificationManager.IMPORTANCE_LOW
-            ).apply {
-                description = "Shows what's currently playing"
-                setShowBadge(false)
-                lockscreenVisibility = Notification.VISIBILITY_PUBLIC
-            }
-            notificationManager.createNotificationChannel(channel)
-        }
+        // Idempotent: the service creates this too, before the media provider
+        // is installed. Harmless to repeat, and keeps this class usable alone.
+        ensureChannel(context)
     }
 
     /**
@@ -192,6 +213,9 @@ class MusicProgressLiveUpdate(private val context: Context) {
             .setLargeIcon(artwork)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
+            // Belt and braces with the channel: a progress readout that ticks
+            // ~150 times a song must never make a sound.
+            .setSilent(true)
             .setContentIntent(contentIntent)
             .setCategory(NotificationCompat.CATEGORY_PROGRESS)
             .setPriority(NotificationCompat.PRIORITY_LOW)

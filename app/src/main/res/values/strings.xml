@@ -1,3 +1,11 @@
 <resources>
     <string name="app_name">Koda</string>
+
+    <!--
+      Shared by the MediaStyle notification and the playback progress Live
+      Update. Media3's DefaultMediaNotificationProvider creates its own channel
+      unless pointed at this one, which is how the system settings screen ended
+      up listing "Now playing" twice.
+    -->
+    <string name="now_playing_channel_name">Now playing</string>
 </resources>
