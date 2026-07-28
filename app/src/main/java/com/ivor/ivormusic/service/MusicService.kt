@@ -80,6 +80,19 @@ class MusicService : MediaLibraryService() {
     // on successful playback so a song can't permanently exhaust its budget
     // over the lifetime of the service.
     private val retryCounts = ConcurrentHashMap<String, Int>()
+
+    // Kept for warmStreamCache; playback wires the factory into the player
+    // separately in initializePlayer.
+    private var cacheDataSourceFactory: androidx.media3.datasource.cache.CacheDataSource.Factory? = null
+
+    // Songs whose stream head has been (or is being) written into the disk
+    // cache this session, so each prefetch round doesn't re-warm them.
+    private val warmedIds =
+        java.util.Collections.newSetFromMap(ConcurrentHashMap<String, Boolean>())
+
+    // One warm at a time: warming must never contend with the current song's
+    // own buffering for the whole prefetch window.
+    private val warmSemaphore = kotlinx.coroutines.sync.Semaphore(1)
     
     // --- Configuration ---
     private var isCrossfadeEnabled = true
@@ -117,6 +130,9 @@ class MusicService : MediaLibraryService() {
         // fallback lifetime when the URL carries no readable expire param.
         private const val URI_EXPIRY_SAFETY_MS = 5 * 60 * 1000L
         private const val URI_DEFAULT_TTL_MS = 4 * 60 * 60 * 1000L
+        // Stream head pre-cached for upcoming songs: ~30s of opus audio, enough
+        // to cover the 0.5s start buffer plus the first ranged chunk's RTT.
+        private const val WARM_CACHE_BYTES = 512L * 1024
     }
 
     /**
@@ -214,6 +230,7 @@ class MusicService : MediaLibraryService() {
         activeResolutions.clear()
         uriCache.clear()
         retryCounts.clear()
+        warmedIds.clear()
         super.onDestroy()
     }
 
@@ -259,6 +276,7 @@ class MusicService : MediaLibraryService() {
         val defaultDataSourceFactory = DefaultDataSource.Factory(this, CacheManager.createPerClientHttpFactory())
         // Null when cache init failed — playback then always goes direct.
         val cacheDataSourceFactory = CacheManager.createCacheDataSourceFactory(null)
+        this.cacheDataSourceFactory = cacheDataSourceFactory
 
         val smartDataSourceFactory = DataSource.Factory {
             val defaultSource = defaultDataSourceFactory.createDataSource()
@@ -507,15 +525,59 @@ class MusicService : MediaLibraryService() {
                         val resolvedItem = deferred.await()
                         
                         // Update player if item is still there
-                        if (targetIndex < player.mediaItemCount && 
+                        if (targetIndex < player.mediaItemCount &&
                             player.getMediaItemAt(targetIndex).mediaId == item.mediaId) {
                             Log.d(TAG, "Prefetch: Updated item +$i (${item.mediaId})")
                             player.replaceMediaItem(targetIndex, resolvedItem)
+                            warmStreamCache(item.mediaId, resolvedItem.localConfiguration?.uri)
                         }
                     } catch (e: Exception) {
                         Log.w(TAG, "Prefetch: Failed to resolve upcoming ${item.mediaId}")
                     }
                 }
+            }
+        }
+    }
+
+    /**
+     * Write the first [WARM_CACHE_BYTES] of an upcoming song's stream into
+     * the disk cache, so the eventual transition or skip starts playing from
+     * disk instead of waiting on the network. Only warms real network
+     * streams: local files, already-cached songs, and the resolver's
+     * sentinel URIs (placeholder / cached / error) are skipped.
+     */
+    private fun warmStreamCache(videoId: String, uri: Uri?) {
+        val factory = cacheDataSourceFactory ?: return
+        if (!isCacheEnabled || uri == null) return
+        if (uri.scheme != "http" && uri.scheme != "https") return
+        val url = uri.toString()
+        if (url.startsWith(PLACEHOLDER_PREFIX) || url.startsWith(CACHED_PREFIX)) return
+        if (!warmedIds.add(videoId)) return
+        if (CacheManager.isFullyCached(videoId)) return
+
+        resolveScope.launch {
+            warmSemaphore.acquire()
+            try {
+                val dataSpec = DataSpec.Builder()
+                    .setUri(uri)
+                    .setPosition(0)
+                    .setLength(WARM_CACHE_BYTES)
+                    // Playback reads the cache under the song id (see
+                    // buildMediaItemWithUri's setCustomCacheKey), so the warm
+                    // must write under the same key.
+                    .setKey(videoId)
+                    .build()
+                androidx.media3.datasource.cache.CacheWriter(
+                    factory.createDataSource(), dataSpec, null, null
+                ).cache()
+                Log.d(TAG, "Warm: cached stream head for $videoId")
+            } catch (e: Exception) {
+                // Retryable on the next prefetch round (e.g. an expired URL
+                // that resolution will refresh).
+                warmedIds.remove(videoId)
+                Log.w(TAG, "Warm: failed for $videoId: ${e.message}")
+            } finally {
+                warmSemaphore.release()
             }
         }
     }
