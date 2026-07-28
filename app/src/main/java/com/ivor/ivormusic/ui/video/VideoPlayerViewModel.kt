@@ -473,7 +473,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                                 isDASH = false,
                                 audioUrl = null
                             )
-                            val source = ProgressiveMediaSource.Factory(dataSourceFactoryFor(streamUrl))
+                            val source = ProgressiveMediaSource.Factory(streamDataSourceFactory)
                                 .createMediaSource(MediaItem.fromUri(streamUrl))
                             _exoPlayer?.setMediaSource(source)
                             _exoPlayer?.prepare()
@@ -545,16 +545,13 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     }
 
     /**
-     * Data source factory whose User-Agent matches the client that issued the
-     * stream URL. YouTube binds googlevideo URLs to the issuing client via the
-     * `?c=` param and answers 403 when the playback UA does not match.
+     * Stream data source factory: ChunkedStreamDataSource fetches googlevideo
+     * media in bounded ranged chunks (open-ended requests are server-paced to
+     * the media bitrate) and picks the per-request User-Agent matching the
+     * URL's issuing client (`?c=` param; a UA mismatch means a 403).
      */
-    private fun dataSourceFactoryFor(url: String): DefaultDataSource.Factory {
-        val userAgent = YouTubeRepository.uaForPlaybackUri(android.net.Uri.parse(url))
-        val httpFactory = DefaultHttpDataSource.Factory()
-            .setUserAgent(userAgent)
-            .setAllowCrossProtocolRedirects(true)
-        return DefaultDataSource.Factory(context, httpFactory)
+    private val streamDataSourceFactory by lazy {
+        DefaultDataSource.Factory(context, com.ivor.ivormusic.data.ChunkedStreamDataSource.Factory())
     }
 
     /**
@@ -606,7 +603,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             }
             _exoPlayer?.setMediaItem(builder.build())
         } else {
-            val dataSourceFactory = dataSourceFactoryFor(quality.url)
+            val dataSourceFactory = streamDataSourceFactory
             val audioUrl = quality.audioUrl
             val primarySource = if (audioUrl != null) {
                 // Non-DASH with separate audio - use MergingMediaSource.

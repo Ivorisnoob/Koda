@@ -9,7 +9,6 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
-import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.MergingMediaSource
@@ -322,7 +321,7 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
                     } else {
                         val streamUrl = youtubeRepository.getVideoStreamUrl(item.videoId)
                         if (streamUrl != null) {
-                            val source = ProgressiveMediaSource.Factory(dataSourceFactoryFor(streamUrl))
+                            val source = ProgressiveMediaSource.Factory(streamDataSourceFactory)
                                 .createMediaSource(MediaItem.fromUri(streamUrl))
                             _exoPlayer?.setMediaSource(source)
                             _exoPlayer?.prepare()
@@ -405,15 +404,13 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
     // ---------------- Playback helpers (same conventions as the video player) ----------------
 
     /**
-     * Data source factory whose User-Agent matches the client that issued the
-     * stream URL — googlevideo answers 403 on a UA mismatch.
+     * Stream data source factory: ChunkedStreamDataSource fetches googlevideo
+     * media in bounded ranged chunks (open-ended requests are server-paced to
+     * the media bitrate) and picks the per-request User-Agent matching the
+     * URL's issuing client — googlevideo answers 403 on a UA mismatch.
      */
-    private fun dataSourceFactoryFor(url: String): DefaultDataSource.Factory {
-        val userAgent = YouTubeRepository.uaForPlaybackUri(android.net.Uri.parse(url))
-        val httpFactory = DefaultHttpDataSource.Factory()
-            .setUserAgent(userAgent)
-            .setAllowCrossProtocolRedirects(true)
-        return DefaultDataSource.Factory(context, httpFactory)
+    private val streamDataSourceFactory by lazy {
+        DefaultDataSource.Factory(context, com.ivor.ivormusic.data.ChunkedStreamDataSource.Factory())
     }
 
     /**
@@ -434,7 +431,7 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
     }
 
     private fun loadQuality(quality: VideoQuality) {
-        val dataSourceFactory = dataSourceFactoryFor(quality.url)
+        val dataSourceFactory = streamDataSourceFactory
         val audioUrl = quality.audioUrl
         if (audioUrl != null) {
             val videoSource = ProgressiveMediaSource.Factory(dataSourceFactory)

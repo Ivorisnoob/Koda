@@ -648,10 +648,9 @@ class YouTubeRepository(private val context: Context) {
     // for hours, which users experience as "music suddenly stops playing".
 
     /**
-     * Warm the visitorData cache off the critical path. The cold fetch
-     * downloads the whole youtube.com bootstrap HTML, so paying for it at
-     * app start instead of on the first playback shaves seconds off the
-     * first video load of a session.
+     * Warm the visitorData cache off the critical path, so the first
+     * playback of a session doesn't pay for the mint (or the bootstrap
+     * fallback download) before its /player call can go out.
      */
     suspend fun prefetchVisitorData() {
         try {
@@ -667,6 +666,18 @@ class YouTubeRepository(private val context: Context) {
         return visitorDataMutex.withLock {
             val nowInner = System.currentTimeMillis()
             cachedVisitorData?.let { if (nowInner - visitorDataFetchedAt < VISITOR_DATA_TTL_MS) return it }
+            // A token persisted by an earlier process start stays valid for
+            // the full TTL: adopt it instead of re-minting on every app
+            // start, which put a network fetch on the first resolution of
+            // each session.
+            val persistedAt = visitorDataPrefs.getLong("visitor_data_at", 0L)
+            if (nowInner - persistedAt < VISITOR_DATA_TTL_MS) {
+                loadPersistedVisitorData()?.let {
+                    cachedVisitorData = it
+                    visitorDataFetchedAt = persistedAt
+                    return it
+                }
+            }
             val fresh = fetchVisitorData()
             if (!fresh.isNullOrEmpty()) {
                 cachedVisitorData = fresh
@@ -722,22 +733,78 @@ class YouTubeRepository(private val context: Context) {
         visitorDataPrefs.getString("visitor_data", null)?.takeIf { it.isNotBlank() }
 
     private fun persistVisitorData(value: String) {
-        visitorDataPrefs.edit().putString("visitor_data", value).apply()
+        visitorDataPrefs.edit()
+            .putString("visitor_data", value)
+            .putLong("visitor_data_at", System.currentTimeMillis())
+            .apply()
     }
 
     private fun clearPersistedVisitorData(flagged: String) {
         if (visitorDataPrefs.getString("visitor_data", null) == flagged) {
-            visitorDataPrefs.edit().remove("visitor_data").apply()
+            visitorDataPrefs.edit()
+                .remove("visitor_data")
+                .remove("visitor_data_at")
+                .apply()
         }
     }
 
     /**
-     * Scrape a fresh visitorData token from the youtube.com bootstrap HTML.
-     * The token is JSON-escaped in the page (e.g. `=` for `=`), so unescape
-     * the two characters that actually appear in base64url visitorData.
+     * Mint a fresh visitorData token. Primary: the dedicated
+     * `youtubei/v1/visitor_id` endpoint — a few hundred bytes and one round
+     * trip. Fallback: scraping the youtube.com bootstrap HTML (~1.5 MB),
+     * which is what this used to do on every mint. Verified July 2026.
      */
     private suspend fun fetchVisitorData(): String? = withContext(Dispatchers.IO) {
-        try {
+        fetchVisitorDataFromApi() ?: fetchVisitorDataFromBootstrap()
+    }
+
+    /**
+     * `visitor_id` responses URL-encode the token's base64 padding (`%3D`);
+     * unescape it since the /player payload wants the raw token.
+     */
+    private fun fetchVisitorDataFromApi(): String? {
+        return try {
+            val body = org.json.JSONObject().put(
+                "context",
+                org.json.JSONObject().put(
+                    "client",
+                    org.json.JSONObject().apply {
+                        put("clientName", "WEB")
+                        put("clientVersion", WEB_VERSION)
+                        put("hl", "en")
+                        put("gl", "US")
+                    }
+                )
+            ).toString()
+            val request = okhttp3.Request.Builder()
+                .url("https://www.youtube.com/youtubei/v1/visitor_id?prettyPrint=false")
+                .post(body.toRequestBody("application/json".toMediaType()))
+                .addHeader("User-Agent", BROWSER_USER_AGENT)
+                .build()
+            // Tiny response — the hard-capped stream client keeps a dead
+            // network from stalling the mint for 30s.
+            val response = streamResolveClient.newCall(request).execute()
+            val json = response.body?.string().orEmpty()
+            response.close()
+            org.json.JSONObject(json)
+                .optJSONObject("responseContext")
+                ?.optString("visitorData")
+                ?.replace("%3D", "=")
+                ?.replace("%3d", "=")
+                ?.takeIf { it.isNotEmpty() }
+        } catch (e: Exception) {
+            android.util.Log.w("YouTubeRepository", "visitor_id mint failed: ${e.message}")
+            null
+        }
+    }
+
+    /**
+     * Scrape a visitorData token from the youtube.com bootstrap HTML. The
+     * token is JSON-escaped in the page (e.g. `=` for `=`), so unescape
+     * the two characters that actually appear in base64url visitorData.
+     */
+    private fun fetchVisitorDataFromBootstrap(): String? {
+        return try {
             val request = okhttp3.Request.Builder()
                 .url("https://www.youtube.com/")
                 .addHeader("User-Agent", BROWSER_USER_AGENT)
@@ -755,7 +822,7 @@ class YouTubeRepository(private val context: Context) {
                 ?.replace("\\u0026", "&")
                 ?.takeIf { it.isNotEmpty() }
         } catch (e: Exception) {
-            android.util.Log.w("YouTubeRepository", "fetchVisitorData failed: ${e.message}")
+            android.util.Log.w("YouTubeRepository", "bootstrap visitorData scrape failed: ${e.message}")
             null
         }
     }
