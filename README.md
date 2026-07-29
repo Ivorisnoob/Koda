@@ -10,7 +10,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Platform-Android-green?style=for-the-badge&logo=android" alt="Platform"/>
-  <img src="https://img.shields.io/badge/Min%20SDK-31-blue?style=for-the-badge" alt="Min SDK"/>
+  <img src="https://img.shields.io/badge/Min%20SDK-30-blue?style=for-the-badge" alt="Min SDK"/>
   <img src="https://img.shields.io/badge/Kotlin-100%25-purple?style=for-the-badge&logo=kotlin" alt="Kotlin"/>
   <img src="https://img.shields.io/badge/Jetpack%20Compose-UI-blue?style=for-the-badge&logo=jetpackcompose" alt="Compose"/>
 </p>
@@ -150,9 +150,9 @@ Koda's interface is the product, not a wrapper around one. The whole app is cons
 | Data Extraction | NewPipe Extractor and direct InnerTube |
 | Image Loading | Coil |
 | Concurrency | Kotlin Coroutines and Flow |
-| Min SDK | 31 (Android 12) |
+| Min SDK | 30 (Android 11) |
 | Target SDK | 36 |
-| Version | 4.2 |
+| Version | 4.3 |
 
 ---
 
@@ -201,7 +201,9 @@ app/src/main/java/com/ivor/ivormusic/
 ### Prerequisites
 
 - Android Studio Ladybug or newer
-- An Android device or emulator running API 31 (Android 12) or higher
+- An Android device or emulator running API 30 (Android 11) or higher
+
+On Android 11, wallpaper-based dynamic color is unavailable — that is an Android 12 platform feature — so Koda falls back to its bundled palettes. Everything else (playback, downloads, video, sign-in) works the same.
 
 ### Installation
 

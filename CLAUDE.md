@@ -19,6 +19,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - There is no meaningful test suite (only the template instrumented test). Verification = compile + run on emulator.
 - Emulator: `emulator -avd Pixel_8_API36` (tools are on PATH), then `adb wait-for-device`. `Agents.md` documents an older `E:\sdk` setup — the current SDK lives at `E:\Android\Sdk`.
 - Version bumps happen in `app/build.gradle.kts` (`versionCode` / `versionName`). Dependency versions live only in `gradle/libs.versions.toml`.
+- **minSdk is 30 (Android 11), and `isCoreLibraryDesugaringEnabled` + `coreLibraryDesugaring(libs.desugar.jdk.libs.nio)` are load-bearing for it, not a nice-to-have.** NewPipe Extractor calls Java 10/11 library APIs the platform only shipped in API 33 — `URLEncoder.encode(String, Charset)`, `URLDecoder.decode(String, Charset)`, `Collectors.toUnmodifiableList()` — and D8's built-in backports do not cover those three, so removing desugaring makes every search throw `NoSuchMethodError` on API 30-32 while compiling fine. It must be the `_nio` flavour of the artifact. Anything gated above 30 (dynamic color at API 31, Live Updates at 36) needs a `Build.VERSION.SDK_INT` guard plus a working fallback.
 
 ## Architecture
 

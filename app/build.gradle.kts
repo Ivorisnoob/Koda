@@ -24,7 +24,11 @@ android {
 
     defaultConfig {
         applicationId = "com.ivor.ivormusic"
-        minSdk = 31
+        // Android 11. Anything below 33 only works because core library
+        // desugaring is enabled below - NewPipe Extractor calls Java 10/11
+        // methods (URLEncoder.encode(String, Charset) and friends) that the
+        // platform did not gain until API 33.
+        minSdk = 30
         targetSdk = 36
         versionCode = 21
         versionName = "4.3"
@@ -63,6 +67,13 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
+        // Load-bearing below API 33, not a nice-to-have. NewPipe Extractor
+        // compiles against Java 10/11 library APIs that Android only shipped in
+        // API 33 - java.net.URLEncoder.encode(String, Charset),
+        // URLDecoder.decode(String, Charset) and
+        // Collectors.toUnmodifiableList(). D8's built-in backports do not cover
+        // those three, so without this every search throws NoSuchMethodError.
+        isCoreLibraryDesugaringEnabled = true
     }
     buildFeatures {
         compose = true
@@ -91,6 +102,8 @@ android.defaultConfig.apply {
 }
 
 dependencies {
+    coreLibraryDesugaring(libs.desugar.jdk.libs.nio)
+
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.core.splashscreen)

@@ -21,6 +21,7 @@ okhttp = "4.12.0"
 ktorClient = "2.3.7"
 securityCrypto = "1.1.0-alpha06"
 coroutinesGuava = "1.10.1"
+desugarJdkLibs = "2.1.5"
 
 
 [libraries]
@@ -56,6 +57,8 @@ ktor-client-content-negotiation = { group = "io.ktor", name = "ktor-client-conte
 ktor-serialization-kotlinx-json = { group = "io.ktor", name = "ktor-serialization-kotlinx-json", version.ref = "ktorClient" }
 androidx-security-crypto = { group = "androidx.security", name = "security-crypto", version.ref = "securityCrypto" }
 kotlinx-coroutines-guava = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-guava", version.ref = "coroutinesGuava" }
+# The _nio flavour specifically: NewPipe Extractor requires it for any minSdk below 33.
+desugar-jdk-libs-nio = { group = "com.android.tools", name = "desugar_jdk_libs_nio", version.ref = "desugarJdkLibs" }
 
 
 [plugins]
