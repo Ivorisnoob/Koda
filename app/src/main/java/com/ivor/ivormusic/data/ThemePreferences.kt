@@ -12,6 +12,8 @@ import kotlinx.coroutines.flow.asStateFlow
  */
 class ThemePreferences(context: Context) {
 
+    private val appContext: Context = context.applicationContext
+
     private val prefs: SharedPreferences = context.getSharedPreferences(
         PREFS_NAME, Context.MODE_PRIVATE
     )
@@ -61,8 +63,20 @@ class ThemePreferences(context: Context) {
     private val _shortsHiddenActions = MutableStateFlow(getShortsHiddenActionsPreference())
     val shortsHiddenActions: StateFlow<Set<String>> = _shortsHiddenActions.asStateFlow()
 
-    private val _defaultVideoQuality = MutableStateFlow(getDefaultVideoQualityPreference())
-    val defaultVideoQuality: StateFlow<String> = _defaultVideoQuality.asStateFlow()
+    private val _videoQualityWifi = MutableStateFlow(getVideoQualityWifiPreference())
+    val videoQualityWifi: StateFlow<String> = _videoQualityWifi.asStateFlow()
+
+    private val _videoQualityMobile = MutableStateFlow(getVideoQualityMobilePreference())
+    val videoQualityMobile: StateFlow<String> = _videoQualityMobile.asStateFlow()
+
+    private val _musicQualityWifi = MutableStateFlow(getMusicQualityWifiPreference())
+    val musicQualityWifi: StateFlow<String> = _musicQualityWifi.asStateFlow()
+
+    private val _musicQualityMobile = MutableStateFlow(getMusicQualityMobilePreference())
+    val musicQualityMobile: StateFlow<String> = _musicQualityMobile.asStateFlow()
+
+    private val _preferHdr = MutableStateFlow(getPreferHdrPreference())
+    val preferHdr: StateFlow<Boolean> = _preferHdr.asStateFlow()
     
     private val _excludedFolders = MutableStateFlow(getExcludedFoldersPreference())
     val excludedFolders: StateFlow<Set<String>> = _excludedFolders.asStateFlow()
@@ -122,7 +136,11 @@ class ThemePreferences(context: Context) {
             KEY_TIMED_COMMENTS_ENABLED -> _timedCommentsEnabled.value = getTimedCommentsEnabledPreference()
             KEY_SHORTS_ENABLED -> _shortsEnabled.value = getShortsEnabledPreference()
             KEY_SHORTS_HIDDEN_ACTIONS -> _shortsHiddenActions.value = getShortsHiddenActionsPreference()
-            KEY_DEFAULT_VIDEO_QUALITY -> _defaultVideoQuality.value = getDefaultVideoQualityPreference()
+            KEY_VIDEO_QUALITY_WIFI -> _videoQualityWifi.value = getVideoQualityWifiPreference()
+            KEY_VIDEO_QUALITY_MOBILE -> _videoQualityMobile.value = getVideoQualityMobilePreference()
+            KEY_MUSIC_QUALITY_WIFI -> _musicQualityWifi.value = getMusicQualityWifiPreference()
+            KEY_MUSIC_QUALITY_MOBILE -> _musicQualityMobile.value = getMusicQualityMobilePreference()
+            KEY_PREFER_HDR -> _preferHdr.value = getPreferHdrPreference()
             KEY_EXCLUDED_FOLDERS -> _excludedFolders.value = getExcludedFoldersPreference()
             KEY_CACHE_ENABLED -> _cacheEnabled.value = getCacheEnabledPreference()
             KEY_MAX_CACHE_SIZE_MB -> _maxCacheSizeMb.value = getMaxCacheSizeMbPreference()
@@ -198,7 +216,15 @@ class ThemePreferences(context: Context) {
         const val SHORTS_ACTION_COMMENTS = "comments"
         const val SHORTS_ACTION_SHARE = "share"
 
+        /**
+         * Legacy single video-quality key, superseded by the per-network pair
+         * below. Kept only as a migration source: a value stored here by an
+         * older version seeds both network variants on first read.
+         */
         private const val KEY_DEFAULT_VIDEO_QUALITY = "default_video_quality"
+
+        private const val KEY_VIDEO_QUALITY_WIFI = "video_quality_wifi"
+        private const val KEY_VIDEO_QUALITY_MOBILE = "video_quality_mobile"
 
         /** Sentinel meaning "highest available quality". */
         const val VIDEO_QUALITY_AUTO = "auto"
@@ -207,7 +233,85 @@ class ThemePreferences(context: Context) {
         val VIDEO_QUALITY_OPTIONS = listOf(
             VIDEO_QUALITY_AUTO, "2160p", "1440p", "1080p", "720p", "480p", "360p", "144p"
         )
-        private const val DEFAULT_VIDEO_QUALITY = "1080p"
+        private const val DEFAULT_VIDEO_QUALITY_WIFI = "1080p"
+        private const val DEFAULT_VIDEO_QUALITY_MOBILE = "720p"
+
+        private const val KEY_MUSIC_QUALITY_WIFI = "music_quality_wifi"
+        private const val KEY_MUSIC_QUALITY_MOBILE = "music_quality_mobile"
+
+        /** Music stream quality values: best available bitrate. */
+        const val MUSIC_QUALITY_HIGH = "high"
+
+        /** Music stream quality values: balanced, around 128 kbps. */
+        const val MUSIC_QUALITY_NORMAL = "normal"
+
+        /** Music stream quality values: smallest available stream. */
+        const val MUSIC_QUALITY_LOW = "low"
+
+        /** Music quality values offered in Settings, best first. */
+        val MUSIC_QUALITY_OPTIONS = listOf(
+            MUSIC_QUALITY_HIGH, MUSIC_QUALITY_NORMAL, MUSIC_QUALITY_LOW
+        )
+
+        /**
+         * Highest bitrate matches the app's historical pick, so both network
+         * defaults preserve existing behavior until the user chooses otherwise.
+         */
+        private const val DEFAULT_MUSIC_QUALITY = MUSIC_QUALITY_HIGH
+
+        /**
+         * Whether the active network is metered (mobile data, metered
+         * hotspots). Drives which half of every per-network quality pair
+         * applies. Unknown network state reads as unmetered so quality
+         * degrades gracefully to the Wi-Fi choice rather than silently
+         * capping streams.
+         */
+        fun isNetworkMetered(context: Context): Boolean {
+            val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE)
+                as? android.net.ConnectivityManager ?: return false
+            return cm.isActiveNetworkMetered
+        }
+
+        /**
+         * Static fresh read of the music quality for the current network, for
+         * the stream-resolution layer which only holds a Context (same
+         * pattern as [isLocalOnly]).
+         */
+        fun currentMusicQuality(context: Context): String {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val key = if (isNetworkMetered(context)) KEY_MUSIC_QUALITY_MOBILE else KEY_MUSIC_QUALITY_WIFI
+            return prefs.getString(key, DEFAULT_MUSIC_QUALITY) ?: DEFAULT_MUSIC_QUALITY
+        }
+
+        private const val KEY_PREFER_HDR = "prefer_hdr_video"
+
+        /**
+         * Default quality for video downloads, one of [VIDEO_QUALITY_OPTIONS].
+         * Set from the download sheet's "remember" toggle rather than the
+         * Settings screen, so like the video session state below it has no
+         * StateFlow — the sheet and the download worker both read it fresh.
+         */
+        private const val KEY_DOWNLOAD_VIDEO_QUALITY = "download_video_quality"
+
+        /**
+         * Static fresh read of the download quality for DownloadRepository,
+         * which runs off a plain Context (same pattern as [isLocalOnly]).
+         * Defaults to [VIDEO_QUALITY_AUTO]: best available, the historical
+         * download behavior.
+         */
+        fun currentDownloadVideoQuality(context: Context): String =
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getString(KEY_DOWNLOAD_VIDEO_QUALITY, VIDEO_QUALITY_AUTO)
+                ?: VIDEO_QUALITY_AUTO
+
+        /**
+         * Static fresh read of the HDR opt-in for the quality parser, which
+         * runs inside YouTubeRepository off a plain Context. Off by default:
+         * HDR streams are only surfaced when the user asked for them.
+         */
+        fun isPreferHdrEnabled(context: Context): Boolean =
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getBoolean(KEY_PREFER_HDR, false)
 
         /**
          * Video player session state that outlives a single video. Unlike the
@@ -592,28 +696,102 @@ class ThemePreferences(context: Context) {
     }
     
     /**
-     * Get the stored default video quality preference. Defaults to 1080p,
-     * matching the player's historical hardcoded pick.
+     * Get the stored Wi-Fi (unmetered) video quality. Falls back to the
+     * legacy single-quality key so an upgrade keeps the user's old choice,
+     * then to 1080p, matching the player's historical hardcoded pick.
      */
-    private fun getDefaultVideoQualityPreference(): String {
-        return prefs.getString(KEY_DEFAULT_VIDEO_QUALITY, DEFAULT_VIDEO_QUALITY)
-            ?: DEFAULT_VIDEO_QUALITY
+    private fun getVideoQualityWifiPreference(): String {
+        return prefs.getString(KEY_VIDEO_QUALITY_WIFI, null)
+            ?: prefs.getString(KEY_DEFAULT_VIDEO_QUALITY, null)
+            ?: DEFAULT_VIDEO_QUALITY_WIFI
     }
 
     /**
-     * Fresh read of the default video quality straight from SharedPreferences.
-     * The video player VM holds its own ThemePreferences instance, so its
-     * StateFlow copy goes stale when Settings changes the value — use this at
-     * playback time instead.
+     * Get the stored mobile-data (metered) video quality. A legacy
+     * single-quality choice seeds this too — the split must not silently
+     * change what an existing user sees — and only fresh installs get the
+     * data-friendlier 720p default.
      */
-    fun getDefaultVideoQuality(): String = getDefaultVideoQualityPreference()
+    private fun getVideoQualityMobilePreference(): String {
+        return prefs.getString(KEY_VIDEO_QUALITY_MOBILE, null)
+            ?: prefs.getString(KEY_DEFAULT_VIDEO_QUALITY, null)
+            ?: DEFAULT_VIDEO_QUALITY_MOBILE
+    }
 
     /**
-     * Save default video quality preference and update the flow.
+     * Fresh read of the default video quality for the current network,
+     * straight from SharedPreferences. The video player VMs hold their own
+     * ThemePreferences instances, so their StateFlow copies go stale when
+     * Settings changes a value — use this at playback time instead.
      */
-    fun setDefaultVideoQuality(quality: String) {
-        prefs.edit().putString(KEY_DEFAULT_VIDEO_QUALITY, quality).apply()
-        _defaultVideoQuality.value = quality
+    fun getDefaultVideoQuality(): String =
+        if (isNetworkMetered(appContext)) getVideoQualityMobilePreference()
+        else getVideoQualityWifiPreference()
+
+    /**
+     * Save the Wi-Fi video quality preference and update the flow.
+     */
+    fun setVideoQualityWifi(quality: String) {
+        prefs.edit().putString(KEY_VIDEO_QUALITY_WIFI, quality).apply()
+        _videoQualityWifi.value = quality
+    }
+
+    /**
+     * Save the mobile-data video quality preference and update the flow.
+     */
+    fun setVideoQualityMobile(quality: String) {
+        prefs.edit().putString(KEY_VIDEO_QUALITY_MOBILE, quality).apply()
+        _videoQualityMobile.value = quality
+    }
+
+    private fun getMusicQualityWifiPreference(): String {
+        return prefs.getString(KEY_MUSIC_QUALITY_WIFI, DEFAULT_MUSIC_QUALITY)
+            ?: DEFAULT_MUSIC_QUALITY
+    }
+
+    private fun getMusicQualityMobilePreference(): String {
+        return prefs.getString(KEY_MUSIC_QUALITY_MOBILE, DEFAULT_MUSIC_QUALITY)
+            ?: DEFAULT_MUSIC_QUALITY
+    }
+
+    /**
+     * Save the Wi-Fi music quality preference and update the flow.
+     */
+    fun setMusicQualityWifi(quality: String) {
+        prefs.edit().putString(KEY_MUSIC_QUALITY_WIFI, quality).apply()
+        _musicQualityWifi.value = quality
+    }
+
+    /**
+     * Save the mobile-data music quality preference and update the flow.
+     */
+    fun setMusicQualityMobile(quality: String) {
+        prefs.edit().putString(KEY_MUSIC_QUALITY_MOBILE, quality).apply()
+        _musicQualityMobile.value = quality
+    }
+
+    private fun getPreferHdrPreference(): Boolean {
+        return prefs.getBoolean(KEY_PREFER_HDR, false)
+    }
+
+    /**
+     * Save the HDR opt-in and update the flow.
+     */
+    fun setPreferHdr(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_PREFER_HDR, enabled).apply()
+        _preferHdr.value = enabled
+    }
+
+    /**
+     * Default quality for video downloads. See [currentDownloadVideoQuality]
+     * for the semantics; this instance pair serves the download sheet, which
+     * preselects from it and writes it back through its "remember" toggle.
+     */
+    fun getDownloadVideoQuality(): String =
+        prefs.getString(KEY_DOWNLOAD_VIDEO_QUALITY, VIDEO_QUALITY_AUTO) ?: VIDEO_QUALITY_AUTO
+
+    fun setDownloadVideoQuality(quality: String) {
+        prefs.edit().putString(KEY_DOWNLOAD_VIDEO_QUALITY, quality).apply()
     }
 
     /**

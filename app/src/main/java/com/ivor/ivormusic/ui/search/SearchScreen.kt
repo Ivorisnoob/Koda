@@ -137,6 +137,7 @@ import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import com.ivor.ivormusic.ui.video.SaveToPlaylistSheet
 import com.ivor.ivormusic.ui.video.VideoCard
+import com.ivor.ivormusic.ui.video.VideoDownloadSheet
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -226,9 +227,10 @@ fun SearchScreen(
     val searchHistory by viewModel.searchHistory.collectAsState()
     var isSearchFocused by remember { mutableStateOf(false) }
 
-    // Save-to-playlist sheet (long-press on a video search result), same
-    // wiring as the video home feed
+    // Save-to-playlist sheet (long-press on a video search result) and the
+    // download sheet it hands off to, same wiring as the video home feed
     var saveTargetVideo by remember { mutableStateOf<VideoItem?>(null) }
+    var downloadTargetVideo by remember { mutableStateOf<VideoItem?>(null) }
     val isYouTubeConnected by viewModel.isYouTubeConnected.collectAsState()
     val videoPlaylists by viewModel.videoPlaylists.collectAsState()
     val isVideoPlaylistsLoading by viewModel.isVideoPlaylistsLoading.collectAsState()
@@ -395,7 +397,18 @@ fun SearchScreen(
             onSave = { playlistId, onResult ->
                 viewModel.addVideoToPlaylist(playlistId, video, onResult)
             },
+            onDownload = {
+                saveTargetVideo = null
+                downloadTargetVideo = video
+            },
             onDismiss = { saveTargetVideo = null }
+        )
+    }
+
+    downloadTargetVideo?.let { video ->
+        VideoDownloadSheet(
+            video = video,
+            onDismiss = { downloadTargetVideo = null }
         )
     }
     

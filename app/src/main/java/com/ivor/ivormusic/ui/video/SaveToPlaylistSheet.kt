@@ -27,6 +27,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.WatchLater
 import androidx.compose.material3.ContainedLoadingIndicator
@@ -64,9 +66,11 @@ private enum class SaveRowState { IDLE, SAVING, SAVED, FAILED }
 
 /**
  * Bottom sheet shown when long-pressing a video card: save the video to
- * Watch Later (pinned hero row) or to any of the user's playlists.
- * Feedback is inline — the tapped row shows a spinner, then a check, and
- * the sheet dismisses itself; on failure the row flags an error instead.
+ * Watch Later (pinned hero row), download it to the device, or save it to
+ * any of the user's playlists. Feedback is inline — the tapped row shows a
+ * spinner, then a check, and the sheet dismisses itself; on failure the row
+ * flags an error instead. [onDownload] hands off to the download sheet
+ * (the caller dismisses this one and opens that one).
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -75,6 +79,7 @@ fun SaveToPlaylistSheet(
     playlists: List<VideoPlaylist>,
     isLoading: Boolean,
     onSave: (playlistId: String, onResult: (Boolean) -> Unit) -> Unit,
+    onDownload: () -> Unit,
     onDismiss: () -> Unit
 ) {
     // Open fully expanded: in the half-expanded state the inner playlist
@@ -154,6 +159,10 @@ fun SaveToPlaylistSheet(
                     )
                 }
             )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            DownloadRow(onClick = onDownload)
 
             Spacer(modifier = Modifier.height(20.dp))
 
@@ -344,6 +353,87 @@ private fun SaveTargetRow(
                     modifier = Modifier.size(22.dp)
                 )
             }
+        }
+    }
+}
+
+/**
+ * Hand-off row to the download sheet, styled like a SaveTargetRow but with
+ * a chevron: tapping it navigates to the quality picker rather than acting
+ * in place, so the add/spinner/check state walk does not apply.
+ */
+@Composable
+private fun DownloadRow(onClick: () -> Unit) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.97f else 1f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
+        label = "downloadRowScale"
+    )
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .scale(scale)
+            .clip(RoundedCornerShape(20.dp))
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick
+            ),
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.secondaryContainer
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.15f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Download,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(14.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Download",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = "Pick a quality and save to this device",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Icon(
+                imageVector = Icons.Rounded.ChevronRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(24.dp)
+            )
         }
     }
 }

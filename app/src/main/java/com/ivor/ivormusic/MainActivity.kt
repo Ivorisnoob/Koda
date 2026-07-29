@@ -71,7 +71,11 @@ class MainActivity : ComponentActivity() {
             val timedCommentsEnabled by themeViewModel.timedCommentsEnabled.collectAsState()
             val shortsEnabled by themeViewModel.shortsEnabled.collectAsState()
             val shortsHiddenActions by themeViewModel.shortsHiddenActions.collectAsState()
-            val defaultVideoQuality by themeViewModel.defaultVideoQuality.collectAsState()
+            val videoQualityWifi by themeViewModel.videoQualityWifi.collectAsState()
+            val videoQualityMobile by themeViewModel.videoQualityMobile.collectAsState()
+            val musicQualityWifi by themeViewModel.musicQualityWifi.collectAsState()
+            val musicQualityMobile by themeViewModel.musicQualityMobile.collectAsState()
+            val preferHdr by themeViewModel.preferHdr.collectAsState()
             val excludedFolders by themeViewModel.excludedFolders.collectAsState()
             val oemFixEnabled by themeViewModel.oemFixEnabled.collectAsState()
             val manualScanEnabled by themeViewModel.manualScanEnabled.collectAsState()
@@ -131,8 +135,16 @@ class MainActivity : ComponentActivity() {
                         onShortsEnabledToggle = { themeViewModel.setShortsEnabled(it) },
                         shortsHiddenActions = shortsHiddenActions,
                         onShortsHiddenActionsChange = { themeViewModel.setShortsHiddenActions(it) },
-                        defaultVideoQuality = defaultVideoQuality,
-                        onDefaultVideoQualityChange = { themeViewModel.setDefaultVideoQuality(it) },
+                        videoQualityWifi = videoQualityWifi,
+                        onVideoQualityWifiChange = { themeViewModel.setVideoQualityWifi(it) },
+                        videoQualityMobile = videoQualityMobile,
+                        onVideoQualityMobileChange = { themeViewModel.setVideoQualityMobile(it) },
+                        musicQualityWifi = musicQualityWifi,
+                        onMusicQualityWifiChange = { themeViewModel.setMusicQualityWifi(it) },
+                        musicQualityMobile = musicQualityMobile,
+                        onMusicQualityMobileChange = { themeViewModel.setMusicQualityMobile(it) },
+                        preferHdr = preferHdr,
+                        onPreferHdrToggle = { themeViewModel.setPreferHdr(it) },
                         excludedFolders = excludedFolders,
                         onAddExcludedFolder = { themeViewModel.addExcludedFolder(it) },
                         onRemoveExcludedFolder = { themeViewModel.removeExcludedFolder(it) },
@@ -197,8 +209,16 @@ fun MusicApp(
     onShortsEnabledToggle: (Boolean) -> Unit,
     shortsHiddenActions: Set<String>,
     onShortsHiddenActionsChange: (Set<String>) -> Unit,
-    defaultVideoQuality: String,
-    onDefaultVideoQualityChange: (String) -> Unit,
+    videoQualityWifi: String,
+    onVideoQualityWifiChange: (String) -> Unit,
+    videoQualityMobile: String,
+    onVideoQualityMobileChange: (String) -> Unit,
+    musicQualityWifi: String,
+    onMusicQualityWifiChange: (String) -> Unit,
+    musicQualityMobile: String,
+    onMusicQualityMobileChange: (String) -> Unit,
+    preferHdr: Boolean,
+    onPreferHdrToggle: (Boolean) -> Unit,
     excludedFolders: Set<String>,
     onAddExcludedFolder: (String) -> Unit,
     onRemoveExcludedFolder: (String) -> Unit,
@@ -394,8 +414,16 @@ fun MusicApp(
                     onShortsEnabledToggle = onShortsEnabledToggle,
                     shortsHiddenActions = shortsHiddenActions,
                     onShortsHiddenActionsChange = onShortsHiddenActionsChange,
-                    defaultVideoQuality = defaultVideoQuality,
-                    onDefaultVideoQualityChange = onDefaultVideoQualityChange,
+                    videoQualityWifi = videoQualityWifi,
+                    onVideoQualityWifiChange = onVideoQualityWifiChange,
+                    videoQualityMobile = videoQualityMobile,
+                    onVideoQualityMobileChange = onVideoQualityMobileChange,
+                    musicQualityWifi = musicQualityWifi,
+                    onMusicQualityWifiChange = onMusicQualityWifiChange,
+                    musicQualityMobile = musicQualityMobile,
+                    onMusicQualityMobileChange = onMusicQualityMobileChange,
+                    preferHdr = preferHdr,
+                    onPreferHdrToggle = onPreferHdrToggle,
                     excludedFolders = excludedFolders,
                     onAddExcludedFolder = onAddExcludedFolder,
                     onRemoveExcludedFolder = onRemoveExcludedFolder,

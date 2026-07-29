@@ -61,6 +61,7 @@ import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.FolderOff
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.GridView
+import androidx.compose.material.icons.rounded.HdrOn
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Interests
 import androidx.compose.material.icons.rounded.LightMode
@@ -73,8 +74,10 @@ import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.FlashOn
 import androidx.compose.material.icons.rounded.HighQuality
+import androidx.compose.material.icons.rounded.SignalCellularAlt
 import androidx.compose.material.icons.rounded.SwipeRight
 import androidx.compose.material.icons.rounded.Wallpaper
+import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material.icons.rounded.ThumbDown
 import androidx.compose.material.icons.rounded.ThumbUp
 import androidx.compose.material.icons.rounded.ToggleOn
@@ -228,8 +231,16 @@ fun SettingsScreen(
     onShortsEnabledToggle: (Boolean) -> Unit,
     shortsHiddenActions: Set<String> = emptySet(),
     onShortsHiddenActionsChange: (Set<String>) -> Unit = {},
-    defaultVideoQuality: String,
-    onDefaultVideoQualityChange: (String) -> Unit,
+    videoQualityWifi: String,
+    onVideoQualityWifiChange: (String) -> Unit,
+    videoQualityMobile: String,
+    onVideoQualityMobileChange: (String) -> Unit,
+    musicQualityWifi: String,
+    onMusicQualityWifiChange: (String) -> Unit,
+    musicQualityMobile: String,
+    onMusicQualityMobileChange: (String) -> Unit,
+    preferHdr: Boolean,
+    onPreferHdrToggle: (Boolean) -> Unit,
     excludedFolders: Set<String>,
     onAddExcludedFolder: (String) -> Unit,
     onRemoveExcludedFolder: (String) -> Unit,
@@ -299,8 +310,8 @@ fun SettingsScreen(
     // Dialog state for About
     var showAboutDialog by remember { mutableStateOf(false) }
     
-    // Dialog state for Default Video Quality
-    var showVideoQualityDialog by remember { mutableStateOf(false) }
+    // Which per-network quality picker is open, if any
+    var qualityDialogTarget by remember { mutableStateOf<QualityDialogTarget?>(null) }
 
     // Dialog state for Folder Exclusion
     var showFolderExclusionDialog by remember { mutableStateOf(false) }
@@ -531,6 +542,32 @@ fun SettingsScreen(
                             textColor = textColor,
                             secondaryTextColor = secondaryTextColor,
                             accentColor = accentColor
+                        )
+
+                        SettingsDivider()
+
+                        ExpressiveSettingsItem(
+                            icon = Icons.Rounded.Wifi,
+                            title = "Music Quality on Wi-Fi",
+                            subtitle = musicQualityLabel(musicQualityWifi),
+                            onClick = { qualityDialogTarget = QualityDialogTarget.MUSIC_WIFI },
+                            textColor = textColor,
+                            secondaryTextColor = secondaryTextColor,
+                            iconTint = accentColor,
+                            showChevron = true
+                        )
+
+                        SettingsDivider()
+
+                        ExpressiveSettingsItem(
+                            icon = Icons.Rounded.SignalCellularAlt,
+                            title = "Music Quality on Mobile Data",
+                            subtitle = musicQualityLabel(musicQualityMobile),
+                            onClick = { qualityDialogTarget = QualityDialogTarget.MUSIC_MOBILE },
+                            textColor = textColor,
+                            secondaryTextColor = secondaryTextColor,
+                            iconTint = accentColor,
+                            showChevron = true
                         )
                     }
                 }
@@ -946,14 +983,40 @@ fun SettingsScreen(
                         SettingsDivider()
 
                         ExpressiveSettingsItem(
-                            icon = Icons.Rounded.HighQuality,
-                            title = "Default Video Quality",
-                            subtitle = videoQualityLabel(defaultVideoQuality),
-                            onClick = { showVideoQualityDialog = true },
+                            icon = Icons.Rounded.Wifi,
+                            title = "Video Quality on Wi-Fi",
+                            subtitle = videoQualityLabel(videoQualityWifi),
+                            onClick = { qualityDialogTarget = QualityDialogTarget.VIDEO_WIFI },
                             textColor = textColor,
                             secondaryTextColor = secondaryTextColor,
                             iconTint = accentColor,
                             showChevron = true
+                        )
+
+                        SettingsDivider()
+
+                        ExpressiveSettingsItem(
+                            icon = Icons.Rounded.SignalCellularAlt,
+                            title = "Video Quality on Mobile Data",
+                            subtitle = videoQualityLabel(videoQualityMobile),
+                            onClick = { qualityDialogTarget = QualityDialogTarget.VIDEO_MOBILE },
+                            textColor = textColor,
+                            secondaryTextColor = secondaryTextColor,
+                            iconTint = accentColor,
+                            showChevron = true
+                        )
+
+                        SettingsDivider()
+
+                        ExpressiveOemToggleItem(
+                            icon = Icons.Rounded.HdrOn,
+                            title = "Prefer HDR Videos",
+                            subtitle = "Fetch HDR streams when a video has them",
+                            enabled = preferHdr,
+                            onToggle = onPreferHdrToggle,
+                            textColor = textColor,
+                            secondaryTextColor = secondaryTextColor,
+                            accentColor = accentColor
                         )
                     }
                 }
@@ -1071,15 +1134,28 @@ fun SettingsScreen(
         )
     }
     
-    // Default Video Quality Dialog
-    if (showVideoQualityDialog) {
-        VideoQualityDialog(
-            currentQuality = defaultVideoQuality,
+    // Per-network stream quality pickers (video + music, Wi-Fi + mobile data)
+    qualityDialogTarget?.let { target ->
+        val currentQuality = when (target) {
+            QualityDialogTarget.VIDEO_WIFI -> videoQualityWifi
+            QualityDialogTarget.VIDEO_MOBILE -> videoQualityMobile
+            QualityDialogTarget.MUSIC_WIFI -> musicQualityWifi
+            QualityDialogTarget.MUSIC_MOBILE -> musicQualityMobile
+        }
+        val onQualitySelected: (String) -> Unit = when (target) {
+            QualityDialogTarget.VIDEO_WIFI -> onVideoQualityWifiChange
+            QualityDialogTarget.VIDEO_MOBILE -> onVideoQualityMobileChange
+            QualityDialogTarget.MUSIC_WIFI -> onMusicQualityWifiChange
+            QualityDialogTarget.MUSIC_MOBILE -> onMusicQualityMobileChange
+        }
+        StreamQualityDialog(
+            target = target,
+            currentQuality = currentQuality,
             onQualitySelected = {
-                onDefaultVideoQualityChange(it)
-                showVideoQualityDialog = false
+                onQualitySelected(it)
+                qualityDialogTarget = null
             },
-            onDismiss = { showVideoQualityDialog = false }
+            onDismiss = { qualityDialogTarget = null }
         )
     }
 
@@ -2214,9 +2290,52 @@ private fun ExpressivePlayerStyleSelectItem(
 private fun videoQualityLabel(value: String): String =
     if (value == ThemePreferences.VIDEO_QUALITY_AUTO) "Auto (Highest)" else value
 
+/** Human-readable label for a stored music quality value. */
+private fun musicQualityLabel(value: String): String = when (value) {
+    ThemePreferences.MUSIC_QUALITY_LOW -> "Data Saver"
+    ThemePreferences.MUSIC_QUALITY_NORMAL -> "Normal"
+    else -> "High"
+}
+
+/** Longer picker-row label carrying the approximate bitrate. */
+private fun musicQualityOptionLabel(value: String): String = when (value) {
+    ThemePreferences.MUSIC_QUALITY_LOW -> "Data Saver (~48 kbps)"
+    ThemePreferences.MUSIC_QUALITY_NORMAL -> "Normal (~128 kbps)"
+    else -> "High (best available)"
+}
+
+/** One per-network quality picker the Settings screen can open. */
+private enum class QualityDialogTarget(
+    val title: String,
+    val description: String,
+    val isMusic: Boolean
+) {
+    VIDEO_WIFI(
+        title = "Video Quality on Wi-Fi",
+        description = "Videos start at this quality on Wi-Fi when available, falling back to the closest lower one.",
+        isMusic = false
+    ),
+    VIDEO_MOBILE(
+        title = "Video Quality on Mobile Data",
+        description = "Videos start at this quality on mobile data when available, falling back to the closest lower one.",
+        isMusic = false
+    ),
+    MUSIC_WIFI(
+        title = "Music Quality on Wi-Fi",
+        description = "Songs stream at this quality on Wi-Fi.",
+        isMusic = true
+    ),
+    MUSIC_MOBILE(
+        title = "Music Quality on Mobile Data",
+        description = "Songs stream at this quality on mobile data.",
+        isMusic = true
+    )
+}
+
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun VideoQualityDialog(
+private fun StreamQualityDialog(
+    target: QualityDialogTarget,
     currentQuality: String,
     onQualitySelected: (String) -> Unit,
     onDismiss: () -> Unit
@@ -2253,7 +2372,7 @@ private fun VideoQualityDialog(
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = Icons.Rounded.HighQuality,
+                        imageVector = if (target.isMusic) Icons.Rounded.MusicNote else Icons.Rounded.HighQuality,
                         contentDescription = null,
                         tint = primaryColor,
                         modifier = Modifier.size(32.dp)
@@ -2262,7 +2381,7 @@ private fun VideoQualityDialog(
             },
             title = {
                 Text(
-                    text = "Default Video Quality",
+                    text = target.title,
                     color = textColor,
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Bold,
@@ -2277,13 +2396,15 @@ private fun VideoQualityDialog(
                         .verticalScroll(rememberScrollState())
                 ) {
                     Text(
-                        text = "Videos start at this quality when available, falling back to the closest lower one.",
+                        text = target.description,
                         color = secondaryTextColor,
                         fontSize = 13.sp,
                         lineHeight = 18.sp,
                         modifier = Modifier.padding(bottom = 12.dp)
                     )
-                    ThemePreferences.VIDEO_QUALITY_OPTIONS.forEach { option ->
+                    val options = if (target.isMusic) ThemePreferences.MUSIC_QUALITY_OPTIONS
+                        else ThemePreferences.VIDEO_QUALITY_OPTIONS
+                    options.forEach { option ->
                         val selected = option == currentQuality
                         Row(
                             modifier = Modifier
@@ -2302,7 +2423,8 @@ private fun VideoQualityDialog(
                                 onClick = { onQualitySelected(option) }
                             )
                             Text(
-                                text = videoQualityLabel(option),
+                                text = if (target.isMusic) musicQualityOptionLabel(option)
+                                    else videoQualityLabel(option),
                                 color = if (selected) primaryColor else textColor,
                                 fontSize = 15.sp,
                                 fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium

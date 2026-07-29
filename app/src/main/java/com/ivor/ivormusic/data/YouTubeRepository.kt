@@ -605,9 +605,10 @@ class YouTubeRepository(private val context: Context) {
     /**
      * Resolve an audio stream URL through the NewPipe extractor. Used as the
      * fallback for [getStreamUrl] when the InnerTube /player chain yields no
-     * usable stream (bot-check-flagged visitorData, etc.). Prefers the highest
-     * average bitrate audio-only stream; falls back to a muxed video+audio
-     * stream (ExoPlayer plays just the audio track) when no audio-only stream is
+     * usable stream (bot-check-flagged visitorData, etc.). Applies the same
+     * per-network music quality policy as [pickAudioStreamUrl] (NewPipe's
+     * averageBitrate is in kbps); falls back to a muxed video+audio stream
+     * (ExoPlayer plays just the audio track) when no audio-only stream is
      * available. The resulting googlevideo URL is tagged with NewPipe's issuing
      * client, so playback picks the matching UA via uaForPlaybackUri().
      */
@@ -619,8 +620,14 @@ class YouTubeRepository(private val context: Context) {
             val streamExtractor = ytService.getStreamExtractor(streamUrl)
             streamExtractor.fetchPage()
 
-            streamExtractor.audioStreams
-                .maxByOrNull { it.averageBitrate }
+            val audioStreams = streamExtractor.audioStreams
+            when (ThemePreferences.currentMusicQuality(context)) {
+                ThemePreferences.MUSIC_QUALITY_LOW ->
+                    audioStreams.minByOrNull { it.averageBitrate }
+                ThemePreferences.MUSIC_QUALITY_NORMAL ->
+                    audioStreams.minByOrNull { kotlin.math.abs(it.averageBitrate - 128) }
+                else -> audioStreams.maxByOrNull { it.averageBitrate }
+            }
                 ?.content
                 ?.takeIf { it.isNotBlank() }
                 ?.let { return@withContext it }
@@ -1481,8 +1488,9 @@ class YouTubeRepository(private val context: Context) {
     }
 
     /**
-     * Select the best audio URL from a /player streamingData object. Falls back
-     * to muxed video formats (e.g. itag 18) when no audio-only format is
+     * Select the audio URL from a /player streamingData object, honoring the
+     * per-network music quality setting (fresh read at resolution time). Falls
+     * back to muxed video formats (e.g. itag 18) when no audio-only format is
      * available — ExoPlayer extracts the audio track from the MP4 container,
      * which is critical because ANDROID_VR can return only format 18 since
      * March 2026 (see yt-dlp issue #16150).
@@ -1509,7 +1517,18 @@ class YouTubeRepository(private val context: Context) {
             "Resolve[InnerTube] formats=${formats.size} audioOnly=${audioFormats.size} videoId=$videoId",
         )
 
-        audioFormats.maxByOrNull { it.optInt("bitrate") }?.optString("url")
+        // Per-network music quality (fresh static read — see ThemePreferences):
+        // high takes the best bitrate, normal the track closest to ~128 kbps,
+        // low the smallest stream.
+        val musicQuality = ThemePreferences.currentMusicQuality(context)
+        val pickedAudio = when (musicQuality) {
+            ThemePreferences.MUSIC_QUALITY_LOW ->
+                audioFormats.minByOrNull { it.optInt("bitrate") }
+            ThemePreferences.MUSIC_QUALITY_NORMAL ->
+                audioFormats.minByOrNull { kotlin.math.abs(it.optInt("bitrate") - 128_000) }
+            else -> audioFormats.maxByOrNull { it.optInt("bitrate") }
+        }
+        pickedAudio?.optString("url")
             ?.takeIf { it.isNotEmpty() }?.let { return it }
 
         // No audio-only stream available — fall back to a muxed MP4 (itag 18 etc.).
@@ -3783,6 +3802,21 @@ class YouTubeRepository(private val context: Context) {
         val adaptive = streamingData.optJSONArray("adaptiveFormats")?.objects() ?: emptyList()
         val muxed = streamingData.optJSONArray("formats")?.objects() ?: emptyList()
 
+        // HDR variants ride separate adaptiveFormats entries whose qualityLabel
+        // carries " HDR" and whose colorInfo declares a PQ or HLG transfer
+        // (shape per yt-dlp/NewPipe; a live re-probe was bot-checked July 2026,
+        // so re-verify on device if this stops matching). Behind the
+        // "Prefer HDR" opt-in: off drops HDR entries entirely, on lists them
+        // alongside SDR and prefers them at equal height via the sort below.
+        fun isHdrFormat(f: org.json.JSONObject): Boolean {
+            if (f.optString("qualityLabel").contains("HDR", ignoreCase = true)) return true
+            val transfer = f.optJSONObject("colorInfo")
+                ?.optString("transferCharacteristics").orEmpty()
+            return transfer == "COLOR_TRANSFER_CHARACTERISTICS_SMPTE2084" ||
+                transfer == "COLOR_TRANSFER_CHARACTERISTICS_ARIB_STD_B67"
+        }
+        val preferHdr = ThemePreferences.isPreferHdrEnabled(context)
+
         // Best separate audio track; prefer AAC (mp4a) for broad hardware support,
         // then highest bitrate.
         val bestAudioUrl = adaptive
@@ -3815,7 +3849,8 @@ class YouTubeRepository(private val context: Context) {
                 .filter {
                     it.optString("mimeType").startsWith("video/") &&
                         it.optString("url").isNotEmpty() &&
-                        it.optString("qualityLabel").isNotEmpty()
+                        it.optString("qualityLabel").isNotEmpty() &&
+                        (preferHdr || !isHdrFormat(it))
                 }
                 .groupBy { it.optString("qualityLabel") }
                 .forEach { (label, formats) ->
@@ -3844,11 +3879,16 @@ class YouTubeRepository(private val context: Context) {
             }
         }
 
-        // Highest resolution first, 60fps variants before 30fps at equal height.
+        // Highest resolution first; at equal height an HDR variant (only
+        // present when opted in) outranks SDR so the default pick lands on
+        // it, then 60fps variants before 30fps.
         fun height(label: String): Int = label.takeWhile { it.isDigit() }.toIntOrNull() ?: 0
+        fun hdr(label: String): Int = if (label.contains("HDR", ignoreCase = true)) 1 else 0
         fun fps(label: String): Int = label.substringAfter("p", "").takeWhile { it.isDigit() }.toIntOrNull() ?: 30
         return qualities.sortedWith(
-            compareByDescending<VideoQuality> { height(it.resolution) }.thenByDescending { fps(it.resolution) }
+            compareByDescending<VideoQuality> { height(it.resolution) }
+                .thenByDescending { hdr(it.resolution) }
+                .thenByDescending { fps(it.resolution) }
         )
     }
 

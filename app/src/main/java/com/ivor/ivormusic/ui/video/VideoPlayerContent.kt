@@ -247,9 +247,11 @@ fun VideoPlayerContent(
     var showCommentsSheet by remember { mutableStateOf(false) }
     var showSignInDialog by remember { mutableStateOf(false) }
 
-    // Save-to-playlist sheet (Save button or long-press on an Up Next video)
-    // and the channel page sheet (tap on the channel row)
+    // Save-to-playlist sheet (Save button or long-press on an Up Next video),
+    // the download sheet it hands off to, and the channel page sheet (tap on
+    // the channel row)
     var saveTargetVideo by remember { mutableStateOf<VideoItem?>(null) }
+    var downloadTargetVideo by remember { mutableStateOf<VideoItem?>(null) }
     var showChannelSheet by remember { mutableStateOf(false) }
 
     // Gate authenticated actions behind login
@@ -489,7 +491,18 @@ fun VideoPlayerContent(
             onSave = { playlistId, onResult ->
                 viewModel.addVideoToPlaylist(playlistId, target, onResult)
             },
+            onDownload = {
+                saveTargetVideo = null
+                downloadTargetVideo = target
+            },
             onDismiss = { saveTargetVideo = null }
+        )
+    }
+
+    downloadTargetVideo?.let { target ->
+        VideoDownloadSheet(
+            video = target,
+            onDismiss = { downloadTargetVideo = null }
         )
     }
 

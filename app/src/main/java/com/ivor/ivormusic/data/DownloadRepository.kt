@@ -36,6 +36,10 @@ enum class DownloadStatus {
  * Music carries its originating [Song] so completion can reuse it verbatim;
  * video has no equivalent domain object to preserve, so the display fields on
  * the request itself are the whole story.
+ *
+ * [qualityLabel] is the video quality the user picked in the download sheet
+ * (null = the stored default). It lives on the request so retries — which
+ * re-resolve stream URLs from scratch — keep honoring the original choice.
  */
 data class DownloadRequest(
     val id: String,
@@ -44,7 +48,8 @@ data class DownloadRequest(
     val type: DownloadMediaType,
     val thumbnailUrl: String? = null,
     val durationMs: Long = 0,
-    val song: Song? = null
+    val song: Song? = null,
+    val qualityLabel: String? = null
 ) {
     val isVideo: Boolean get() = type == DownloadMediaType.VIDEO
 }
@@ -468,9 +473,12 @@ class DownloadRepository private constructor(private val context: Context) {
         enqueue(songs.map { it.toRequest() })
     }
 
-    /** Queue a video download. */
-    suspend fun downloadVideo(video: VideoItem) {
-        enqueue(listOf(video.toRequest()))
+    /**
+     * Queue a video download. [qualityLabel] pins the quality picked in the
+     * download sheet; null defers to the stored default at transfer time.
+     */
+    suspend fun downloadVideo(video: VideoItem, qualityLabel: String? = null) {
+        enqueue(listOf(video.toRequest(qualityLabel)))
     }
 
     /** Queue several videos at once. */
@@ -488,14 +496,15 @@ class DownloadRepository private constructor(private val context: Context) {
         song = this
     )
 
-    private fun VideoItem.toRequest() = DownloadRequest(
+    private fun VideoItem.toRequest(qualityLabel: String? = null) = DownloadRequest(
         id = videoId,
         title = title,
         subtitle = channelName,
         type = DownloadMediaType.VIDEO,
         thumbnailUrl = thumbnailUrl,
         // VideoItem.duration is seconds; everything downstream works in millis.
-        durationMs = duration * 1000
+        durationMs = duration * 1000,
+        qualityLabel = qualityLabel
     )
 
     private suspend fun enqueue(requests: List<DownloadRequest>) {
@@ -687,8 +696,23 @@ class DownloadRepository private constructor(private val context: Context) {
 
                 // MP4-container entries only: the muxer will not accept VP9 or
                 // Opus, which is what the webm ladder carries.
-                val adaptive = qualities.firstOrNull {
+                val mp4Candidates = qualities.filter {
                     !it.isDASH && it.audioUrl != null && it.format?.contains("mp4") == true
+                }
+                // The list is sorted highest-first, so "auto" is the head and a
+                // requested label resolves to the best entry at or below its
+                // height (a picked quality can vanish between the sheet's fetch
+                // and this re-resolution), else the lowest available.
+                val targetLabel = request.qualityLabel
+                    ?: ThemePreferences.currentDownloadVideoQuality(context)
+                fun height(label: String): Int =
+                    label.takeWhile { it.isDigit() }.toIntOrNull() ?: 0
+                val adaptive = if (targetLabel == ThemePreferences.VIDEO_QUALITY_AUTO) {
+                    mp4Candidates.firstOrNull()
+                } else {
+                    mp4Candidates.firstOrNull { height(it.resolution) in 1..height(targetLabel) }
+                        ?: mp4Candidates.lastOrNull { height(it.resolution) > 0 }
+                        ?: mp4Candidates.firstOrNull()
                 }
                 val progressive = qualities.firstOrNull { !it.isDASH && it.audioUrl == null }
 
