@@ -31,6 +31,9 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -115,6 +118,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
@@ -146,6 +150,44 @@ import java.util.Locale
 // Keeping helper composables for reuse.
 
 // ---------------- Sub-Composables ----------------
+
+/**
+ * Reparents the SubtitleView from exo_content_frame to the PlayerView root.
+ *
+ * Media3 nests captions inside the content frame, and RESIZE_MODE_ZOOM (our
+ * pinch-to-fill) works by over-measuring that frame so the video overflows the
+ * PlayerView and gets clipped. The SubtitleView rides along: cues slide off the
+ * bottom edge and their text - sized as a fraction of the view height - blows up
+ * with the frame. Hoisted to the root, captions keep screen size and screen
+ * position no matter what the video surface does.
+ */
+@UnstableApi
+private fun PlayerView.hoistSubtitleViewAboveVideo() {
+    val subtitles = subtitleView ?: return
+    if (subtitles.parent === this) return
+    (subtitles.parent as? ViewGroup)?.removeView(subtitles)
+    addView(
+        subtitles,
+        FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT
+        )
+    )
+}
+
+/**
+ * Pads the bottom of the PlayerView's SubtitleView so captions never sit on the
+ * screen edge. Media3 lays every cue out inside the SubtitleView's padding box -
+ * cues carrying their own line/position included - so padding is the one knob that
+ * moves all of them (setBottomPaddingFraction only affects unpositioned cues, and
+ * YouTube's timedtext VTT is mostly positioned).
+ */
+@UnstableApi
+private fun PlayerView.setCaptionBottomInset(paddingPx: Int) {
+    subtitleView?.let { view ->
+        if (view.paddingBottom != paddingPx) view.setPadding(0, 0, 0, paddingPx)
+    }
+}
 
 @kotlin.OptIn(UnstableApi::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -190,6 +232,17 @@ fun FullscreenPlayerContent(
     // Speed captured when a hold-to-2x begins, restored when the finger lifts
     var speedBeforeBoost by remember { mutableFloatStateOf(1f) }
 
+    // Captions sit flush with the bottom of the PlayerView by default, which in
+    // fullscreen means the gesture bar / bottom bezel. Hold them off the edge, and
+    // lift them over the bottom bar while the controls are up.
+    val density = LocalDensity.current
+    val navBarInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val captionLift = animateDpAsState(
+        targetValue = if (showControls) maxOf(112.dp, navBarInset + 24.dp) else navBarInset + 24.dp,
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        label = "captionLift"
+    )
+
     PlayerGestureSurface(
         onToggleControls = onToggleControls,
         onSeekBackward = onSeekBackward,
@@ -212,6 +265,7 @@ fun FullscreenPlayerContent(
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.MATCH_PARENT
                     )
+                    hoistSubtitleViewAboveVideo()
                 }
             },
             update = { playerView ->
@@ -221,6 +275,8 @@ fun FullscreenPlayerContent(
                 } else {
                     AspectRatioFrameLayout.RESIZE_MODE_FIT
                 }
+                // Read the animated value here so only this node recomposes while it runs
+                playerView.setCaptionBottomInset(with(density) { captionLift.value.roundToPx() })
             },
             // Hand the surface back before this view is destroyed - the same
             // ExoPlayer is also rendered by the mini and PiP PlayerViews.
@@ -445,6 +501,14 @@ fun PortraitPlayerContent(
     // Speed captured when a hold-to-2x begins, restored when the finger lifts
     var speedBeforeBoost by remember { mutableFloatStateOf(1f) }
 
+    // Same caption lift as fullscreen, scaled to the smaller inline video box
+    val density = LocalDensity.current
+    val captionLift = animateDpAsState(
+        targetValue = if (showControls) 64.dp else 12.dp,
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        label = "captionLift"
+    )
+
     PlayerGestureSurface(
         onToggleControls = onToggleControls,
         onSeekBackward = onSeekBackward,
@@ -467,9 +531,13 @@ fun PortraitPlayerContent(
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.MATCH_PARENT
                     )
+                    hoistSubtitleViewAboveVideo()
                 }
             },
-            update = { playerView -> playerView.player = exoPlayer },
+            update = { playerView ->
+                playerView.player = exoPlayer
+                playerView.setCaptionBottomInset(with(density) { captionLift.value.roundToPx() })
+            },
             // Hand the surface back before this view is destroyed - the same
             // ExoPlayer is also rendered by the mini and PiP PlayerViews.
             onRelease = { playerView -> playerView.player = null },

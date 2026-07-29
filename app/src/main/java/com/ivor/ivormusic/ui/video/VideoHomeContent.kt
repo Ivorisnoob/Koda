@@ -609,12 +609,17 @@ fun VideoCard(
 ) {
     val textColor = MaterialTheme.colorScheme.onBackground
     val secondaryTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val cardShape = RoundedCornerShape(16.dp)
 
     Surface(
+        // Clip before the click handler - Surface applies its own clip downstream of
+        // the caller's modifier, so a ripple registered above it spills into square
+        // corners on tap and long-press
         modifier = modifier
             .fillMaxWidth()
+            .clip(cardShape)
             .combinedClickable(onClick = onClick, onLongClick = onLongClick),
-        shape = RoundedCornerShape(16.dp),
+        shape = cardShape,
         color = MaterialTheme.colorScheme.surfaceContainer,
         tonalElevation = 1.dp
     ) {

@@ -4846,6 +4846,64 @@ class YouTubeRepository(private val context: Context) {
     }
 
     /**
+     * Fetch the per-row playlist item ids ("setVideoId") for a playlist the
+     * user can edit. Reordering via edit_playlist identifies rows by these,
+     * not by videoId. Browses VL<id> on music.youtube.com and reads
+     * musicResponsiveListItemRenderer.playlistItemData. First page only
+     * (~100 rows); rows past that simply stay un-movable. Verified July 2026.
+     */
+    suspend fun getPlaylistSetVideoIds(playlistId: String): Map<String, String> =
+        withContext(Dispatchers.IO) {
+            if (!sessionManager.isLoggedIn()) return@withContext emptyMap()
+            val browseId = if (playlistId.startsWith("VL")) playlistId else "VL$playlistId"
+            val raw = browseMusic(browseId) ?: return@withContext emptyMap()
+            try {
+                val rows = mutableListOf<org.json.JSONObject>()
+                findObjectsByKey(org.json.JSONObject(raw), "musicResponsiveListItemRenderer", rows)
+                buildMap {
+                    for (row in rows) {
+                        val itemData = row.optJSONObject("playlistItemData") ?: continue
+                        val videoId = itemData.optString("videoId").takeIf { it.isNotBlank() } ?: continue
+                        val setVideoId = itemData.optString("playlistSetVideoId")
+                            .takeIf { it.isNotBlank() } ?: continue
+                        put(videoId, setVideoId)
+                    }
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("YouTubeRepo", "getPlaylistSetVideoIds failed", e)
+                emptyMap()
+            }
+        }
+
+    /**
+     * Move a playlist row before another row (or to the end when
+     * successorSetVideoId is null). Rows are addressed by their setVideoId
+     * from getPlaylistSetVideoIds. The anchor field is
+     * "movedSetVideoIdSuccessor" — the "movedSetVideoId" name some client
+     * libraries document is silently ignored and drops the row to the end
+     * with STATUS_SUCCEEDED. Requires login. Verified July 2026.
+     */
+    suspend fun moveInYouTubePlaylist(
+        playlistId: String,
+        setVideoId: String,
+        successorSetVideoId: String?,
+        music: Boolean
+    ): Boolean = withContext(Dispatchers.IO) {
+        if (!sessionManager.isLoggedIn()) return@withContext false
+        val action = org.json.JSONObject()
+            .put("action", "ACTION_MOVE_VIDEO_BEFORE")
+            .put("setVideoId", setVideoId)
+        if (successorSetVideoId != null) {
+            action.put("movedSetVideoIdSuccessor", successorSetVideoId)
+        }
+        val body = org.json.JSONObject()
+            .put("context", playlistContext(music))
+            .put("playlistId", normalizePlaylistId(playlistId))
+            .put("actions", org.json.JSONArray().put(action))
+        editStatusOk(postPlaylistApi(music, "browse/edit_playlist", body))
+    }
+
+    /**
      * Post a new top-level comment. createCommentParams comes from the first
      * comments page (CommentsPage.createCommentParams). Returns the created
      * comment parsed from the response, or null on failure. Requires login.

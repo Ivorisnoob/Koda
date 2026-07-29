@@ -3,12 +3,19 @@ package com.ivor.ivormusic.ui.library
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -37,17 +44,24 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import coil.compose.AsyncImage
@@ -60,7 +74,9 @@ import com.ivor.ivormusic.ui.components.ExpressivePullToRefresh
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.runtime.mutableFloatStateOf
 import com.ivor.ivormusic.ui.home.HomeViewModel
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 /**
  * The Main Library Navigation Hub.
@@ -1271,6 +1287,23 @@ private fun EditPlaylistDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(32.dp),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        icon = {
+            Surface(
+                shape = RoundedCornerShape(20.dp),
+                color = MaterialTheme.colorScheme.primaryContainer,
+                modifier = Modifier.size(64.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        Icons.Rounded.Edit,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                }
+            }
+        },
         title = { Text(title) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -1409,72 +1442,48 @@ private fun formatSongDuration(durationMs: Long): String {
     }
 }
 
-@Composable
-private fun ReorderModeCard(
-    trackCount: Int,
-    onDone: () -> Unit
-) {
-    ElevatedCard(
-        shape = RoundedCornerShape(28.dp),
-        colors = CardDefaults.elevatedCardColors(
-            containerColor = MaterialTheme.colorScheme.secondaryContainer
-        ),
-        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 8.dp),
-        modifier = Modifier
-            .padding(horizontal = 24.dp)
-            .padding(top = 16.dp)
-            .fillMaxWidth()
-    ) {
-        Column(
-            modifier = Modifier.padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Surface(
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.secondary,
-                    modifier = Modifier.size(44.dp)
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = Icons.Rounded.DragHandle,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSecondary
-                        )
-                    }
-                }
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Reorder Playlist",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer
-                    )
-                    Text(
-                        text = "Long-press any track and drag it anywhere. $trackCount tracks will keep this new order.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.82f)
-                    )
-                }
-            }
+/** Formats a summed track duration as "1 hr 32 min" / "45 min"; null when unknown. */
+private fun formatTotalDuration(totalMs: Long): String? {
+    val totalMinutes = totalMs / 60_000
+    if (totalMinutes <= 0) return null
+    val hours = totalMinutes / 60
+    val minutes = totalMinutes % 60
+    return if (hours > 0) "$hours hr $minutes min" else "$minutes min"
+}
 
-            FilledTonalButton(
-                onClick = onDone,
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(20.dp),
-                colors = ButtonDefaults.filledTonalButtonColors(
-                    containerColor = MaterialTheme.colorScheme.secondary,
-                    contentColor = MaterialTheme.colorScheme.onSecondary
-                )
-            ) {
-                Icon(Icons.Rounded.Done, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text("Done Reordering", style = MaterialTheme.typography.titleMedium)
+/**
+ * Vibrant floating toolbar shown instead of the play split button while the
+ * playlist is in edit mode. Vibrant color is the M3 Expressive cue for a
+ * temporary change in page behavior, and it keeps Done reachable mid-list.
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun ManageModeToolbar(
+    hint: String,
+    icon: ImageVector,
+    onDone: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    HorizontalFloatingToolbar(
+        expanded = true,
+        modifier = modifier,
+        colors = FloatingToolbarDefaults.vibrantFloatingToolbarColors(),
+        floatingActionButton = {
+            FloatingToolbarDefaults.VibrantFloatingActionButton(onClick = onDone) {
+                Icon(Icons.Rounded.Done, contentDescription = "Finish editing")
             }
         }
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            modifier = Modifier.padding(start = 8.dp)
+        )
+        Text(
+            text = hint,
+            style = MaterialTheme.typography.labelLarge,
+            modifier = Modifier.padding(horizontal = 12.dp)
+        )
     }
 }
 
@@ -1482,7 +1491,9 @@ private fun ReorderModeCard(
 fun EmptyLibraryState(
     title: String,
     subtitle: String,
-    icon: ImageVector = Icons.AutoMirrored.Rounded.List
+    icon: ImageVector = Icons.AutoMirrored.Rounded.List,
+    /** Optional recovery action, e.g. a Retry button on a failed fetch. */
+    action: (@Composable () -> Unit)? = null
 ) {
     Column(
         modifier = Modifier
@@ -1501,12 +1512,292 @@ fun EmptyLibraryState(
         Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground, textAlign = TextAlign.Center)
         Spacer(Modifier.height(4.dp))
         Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
+        if (action != null) {
+            Spacer(Modifier.height(20.dp))
+            action()
+        }
     }
 }
 
 // ============ PLAYLIST DETAIL SCREEN ============
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+/** Row height used only to size the loading skeleton; real rows measure themselves. */
+private val TrackRowHeight = 68.dp
+
+/**
+ * Section header above the track list. Carries the count and, for editable
+ * playlists, the Edit/Done toggle - the mode switch sits with the content it
+ * changes rather than in the app bar.
+ */
+@Composable
+private fun TrackSectionHeader(
+    countLabel: String,
+    manageEnabled: Boolean,
+    canEdit: Boolean,
+    onToggleEdit: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 24.dp, end = 12.dp, top = 8.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "Tracks",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = countLabel,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        if (canEdit) {
+            TextButton(
+                onClick = onToggleEdit,
+                modifier = Modifier.heightIn(min = 48.dp)
+            ) {
+                Icon(
+                    imageVector = if (manageEnabled) Icons.Rounded.Done else Icons.Rounded.EditNote,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(if (manageEnabled) "Done" else "Edit")
+            }
+        }
+    }
+}
+
+/**
+ * Placeholder rows shown while the track list is being fetched. Skeletons are
+ * the house pattern for content whose shape is known in advance - they say how
+ * much is coming, which a bare spinner cannot.
+ */
+@Composable
+private fun TrackSkeletonList(rows: Int = 6) {
+    val transition = rememberInfiniteTransition(label = "trackSkeleton")
+    val alpha by transition.animateFloat(
+        initialValue = 0.30f,
+        targetValue = 0.70f,
+        // A pulse is a timed effect, not spatial motion, so a tween is correct here.
+        animationSpec = infiniteRepeatable(tween(900), RepeatMode.Reverse),
+        label = "trackSkeletonAlpha"
+    )
+    val placeholder = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = alpha)
+    Column {
+        repeat(rows) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(TrackRowHeight)
+                    .padding(horizontal = 24.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(placeholder)
+                )
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(0.62f)
+                            .height(14.dp)
+                            .clip(RoundedCornerShape(7.dp))
+                            .background(placeholder)
+                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(0.36f)
+                            .height(11.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(placeholder)
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * One track row on the playlist page.
+ *
+ * Entering edit mode only swaps the trailing controls - rows keep their place
+ * and their geometry. Only the row actually being dragged lifts into a card
+ * (tonal fill, rounded corners, shadow, slight scale). That is the standard
+ * reorder grammar, and it keeps mode entry to a content swap on the handful of
+ * visible rows instead of a list-wide layout animation.
+ *
+ * The drag handle is a real handle: dragging it starts a reorder immediately.
+ * A long press anywhere on the row is the accelerator for the same gesture.
+ * Because the handle works on touch, no row needs a "hold" caption explaining
+ * itself, and the destructive Remove stays a calm outlined glyph instead of a
+ * filled block competing with the track for attention.
+ *
+ * Note on specs: the Dp animations below deliberately use a non-bouncy spring.
+ * Corner radius and shadow elevation are clamped non-negative by the framework,
+ * and an Expressive *spatial* spec is bouncy - it undershoots past zero on the
+ * way back down and throws. Bouncy specs belong on scale, which can overshoot
+ * safely.
+ */
+@Composable
+private fun PlaylistTrackRow(
+    song: Song,
+    manageEnabled: Boolean,
+    reorderEnabled: Boolean,
+    isDragging: Boolean,
+    dragHandleModifier: Modifier,
+    onClick: () -> Unit,
+    onRemove: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val liftSpec = spring<Dp>(
+        dampingRatio = Spring.DampingRatioNoBouncy,
+        stiffness = Spring.StiffnessMediumLow
+    )
+    val containerColor by animateColorAsState(
+        targetValue = if (isDragging) {
+            MaterialTheme.colorScheme.secondaryContainer
+        } else {
+            Color.Transparent
+        },
+        animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
+        label = "trackContainer"
+    )
+    val cornerRadius by animateDpAsState(
+        targetValue = if (isDragging) 20.dp else 0.dp,
+        animationSpec = liftSpec,
+        label = "trackCorner"
+    )
+    val shadowElevation by animateDpAsState(
+        targetValue = if (isDragging) 12.dp else 0.dp,
+        animationSpec = liftSpec,
+        label = "trackShadow"
+    )
+    val liftScale by animateFloatAsState(
+        targetValue = if (isDragging) 1.03f else 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessLow
+        ),
+        label = "trackLift"
+    )
+
+    Surface(
+        modifier = modifier.graphicsLayer {
+            scaleX = liftScale
+            scaleY = liftScale
+        },
+        color = containerColor,
+        shape = RoundedCornerShape(cornerRadius.coerceAtLeast(0.dp)),
+        shadowElevation = shadowElevation.coerceAtLeast(0.dp)
+    ) {
+        ListItem(
+            headlineContent = {
+                Text(
+                    song.title,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    fontWeight = FontWeight.SemiBold
+                )
+            },
+            supportingContent = {
+                Text(song.artist, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            },
+            leadingContent = {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    modifier = Modifier.size(48.dp)
+                ) {
+                    if (song.albumArtUri != null || song.thumbnailUrl != null) {
+                        AsyncImage(
+                            model = song.highResThumbnailUrl ?: song.albumArtUri ?: song.thumbnailUrl,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                Icons.Rounded.MusicNote,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            },
+            // A plain swap, not an AnimatedContent: one transition object per
+            // row is what made entering edit mode stutter, and the controls
+            // appearing is a content change rather than a moving surface.
+            trailingContent = {
+                if (manageEnabled) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = onRemove, enabled = !isDragging) {
+                            Icon(
+                                imageVector = Icons.Rounded.RemoveCircleOutline,
+                                contentDescription = "Remove ${song.title}",
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                        }
+                        if (reorderEnabled) {
+                            Box(
+                                modifier = dragHandleModifier.size(48.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.DragIndicator,
+                                    contentDescription = "Reorder ${song.title}",
+                                    tint = if (isDragging) {
+                                        MaterialTheme.colorScheme.onSecondaryContainer
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    }
+                                )
+                            }
+                        }
+                    }
+                } else if (song.duration > 0) {
+                    Text(
+                        formatSongDuration(song.duration),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            },
+            modifier = Modifier.clickable(enabled = !manageEnabled, onClick = onClick),
+            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+        )
+    }
+}
+
+/**
+ * Playlist / album detail page.
+ *
+ * Layout follows the house grammar: one hero (the artwork), one primary action
+ * (the play split button), page actions in the app bar overflow, and the edit
+ * mode toggle in the track section header next to what it changes. Destructive
+ * actions (delete playlist, remove track) run calm - no bounce, plain glyphs,
+ * and an undo where the change is locally reversible.
+ *
+ * Reordering measures the real laid-out row geometry from the lazy list rather
+ * than assuming a fixed row height, swaps at most once per frame from the
+ * frame loop (so a burst of pointer events cannot double-swap against stale
+ * layout), and auto-scrolls when the dragged row nears a viewport edge.
+ */
+@OptIn(
+    ExperimentalMaterial3Api::class,
+    ExperimentalMaterial3ExpressiveApi::class,
+    ExperimentalFoundationApi::class
+)
 @Composable
 fun PlaylistDetailScreen(
     playlist: PlaylistDisplayItem,
@@ -1531,32 +1822,73 @@ fun PlaylistDetailScreen(
     val canEditYouTubeSongs = isYouTubePlaylist &&
         (playlist.id.startsWith("PL") || playlist.id == "LM")
     val canRenameDeleteYouTube = isYouTubePlaylist && playlist.id.startsWith("PL")
+    // Real "PL" playlists can be reordered remotely via edit_playlist moves;
+    // "LM" (Your Likes) only supports removal.
+    val canReorderRemote = isYouTubePlaylist && playlist.id.startsWith("PL")
+    val canEditSongs = isLocalPlaylist || canEditYouTubeSongs
+
     var songs by remember { mutableStateOf(preloadedSongs ?: emptyList()) }
-    val isLoading by viewModel.isLoading.collectAsState()
     val isFetching = remember { mutableStateOf(songs.isEmpty()) }
+    var loadAttempted by remember { mutableStateOf(preloadedSongs != null) }
     var showEditDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
+    var showOverflow by remember { mutableStateOf(false) }
     var isReorderMode by remember { mutableStateOf(false) }
-    var draggingSongId by remember { mutableStateOf<String?>(null) }
-    var dragOffsetY by remember { mutableFloatStateOf(0f) }
+    var descriptionExpanded by remember { mutableStateOf(false) }
     var reorderDirty by remember { mutableStateOf(false) }
-    val density = androidx.compose.ui.platform.LocalDensity.current
-    val itemHeightPx = with(density) { 72.dp.toPx() }
+    // videoId -> setVideoId (the per-row playlist item id InnerTube moves
+    // address rows by), fetched lazily the first time edit mode opens
+    var setVideoIds by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
 
-    // Search State
+    val scope = rememberCoroutineScope()
+    val density = LocalDensity.current
+    val haptics = LocalHapticFeedback.current
+    val focusManager = LocalFocusManager.current
+    val snackbarHostState = remember { SnackbarHostState() }
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    val shareContext = LocalContext.current
+
+    // Search state
     var searchQuery by remember { mutableStateOf("") }
     var isSearchActive by remember { mutableStateOf(false) }
+    val searchFocus = remember { FocusRequester() }
 
-    // Scroll State for FAB and App Bar
-    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
-    val isCollapsed by remember { derivedStateOf { listState.firstVisibleItemIndex > 0 } }
-    
-    // Filtered Songs
+    // Drag state. The dragged row is addressed by its lazy list key so the
+    // reorder maths can read real offsets and sizes out of the layout.
+    val trackKeyPrefix = "playlist_${resolvedPlaylist.id}_"
+    var draggingKey by remember { mutableStateOf<String?>(null) }
+    var dragOffsetY by remember { mutableFloatStateOf(0f) }
+    var dragStartIndex by remember { mutableIntStateOf(-1) }
+
     val filteredSongs = remember(songs, searchQuery) {
-        if (searchQuery.isBlank()) songs 
-        else songs.filter { 
-            it.title.contains(searchQuery, ignoreCase = true) || 
-            it.artist.contains(searchQuery, ignoreCase = true) 
+        if (searchQuery.isBlank()) songs
+        else songs.filter {
+            it.title.contains(searchQuery, ignoreCase = true) ||
+                it.artist.contains(searchQuery, ignoreCase = true)
+        }
+    }
+
+    // How far the hero header has scrolled away, 0..1. Drives the app bar fade
+    // and the artwork parallax continuously - a boolean threshold makes the bar
+    // pop, which is exactly the snap the motion rules forbid.
+    //
+    // These stay as State objects and are only ever read inside graphicsLayer /
+    // drawBehind lambdas. Reading them in the composable body would recompose
+    // the whole page (LazyColumn content included) on every scroll frame; read
+    // from a deferred lambda, a scroll only re-runs the layer or the draw.
+    val headerCollapse = remember {
+        derivedStateOf {
+            val header = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == 0 }
+            when {
+                header == null -> 1f
+                header.size <= 0 -> 0f
+                else -> (-header.offset.toFloat() / header.size).coerceIn(0f, 1f)
+            }
+        }
+    }
+    val barAlpha = remember {
+        derivedStateOf {
+            if (isSearchActive) 1f else (headerCollapse.value / 0.55f).coerceIn(0f, 1f)
         }
     }
 
@@ -1565,118 +1897,357 @@ fun PlaylistDetailScreen(
             isFetching.value = true
             songs = viewModel.fetchPlaylistSongs(resolvedPlaylist.id)
             isFetching.value = false
+            loadAttempted = true
+        }
+    }
+
+    LaunchedEffect(isReorderMode) {
+        if (isReorderMode && canReorderRemote && setVideoIds.isEmpty()) {
+            setVideoIds = viewModel.fetchYouTubePlaylistSetVideoIds(resolvedPlaylist.id)
+        }
+    }
+
+    LaunchedEffect(isSearchActive) {
+        if (isSearchActive) {
+            withFrameNanos { }
+            runCatching { searchFocus.requestFocus() }
+        } else {
+            focusManager.clearFocus()
+        }
+    }
+
+    val commitLocalOrder: () -> Unit = {
+        if (reorderDirty) {
+            viewModel.replaceLocalPlaylistSongs(resolvedPlaylist.id, songs)
+            reorderDirty = false
+        }
+    }
+
+    val exitReorderMode: () -> Unit = {
+        isReorderMode = false
+        draggingKey = null
+        dragOffsetY = 0f
+        commitLocalOrder()
+    }
+
+    // Back leaves the transient modes before it leaves the page.
+    BackHandler(enabled = isSearchActive || isReorderMode) {
+        if (isSearchActive) {
+            isSearchActive = false
+            searchQuery = ""
+        } else {
+            exitReorderMode()
+        }
+    }
+
+    // Shared end-of-drag handler: local playlists persist the whole new order,
+    // YouTube playlists send one edit_playlist move for the dragged row (and
+    // resync from the server if the row is not addressable or the move fails).
+    val finishReorderDrag: () -> Unit = finish@{
+        val movedKey = draggingKey
+        val startIndex = dragStartIndex
+        draggingKey = null
+        dragOffsetY = 0f
+        dragStartIndex = -1
+        if (movedKey != null) haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+        if (isLocalPlaylist) {
+            commitLocalOrder()
+            return@finish
+        }
+        if (movedKey == null || startIndex < 0) return@finish
+        val movedId = movedKey.removePrefix(trackKeyPrefix)
+        val newIndex = songs.indexOfFirst { it.id == movedId }
+        if (newIndex < 0 || newIndex == startIndex) return@finish
+        val movedSetId = setVideoIds[movedId]
+        val successor = songs.getOrNull(newIndex + 1)
+        val successorSetId = successor?.id?.let { setVideoIds[it] }
+        if (movedSetId == null || (successor != null && successorSetId == null)) {
+            // Row beyond the first browse page - no setVideoId to move it by,
+            // so restore the server's order instead of guessing.
+            scope.launch { songs = viewModel.fetchPlaylistSongs(resolvedPlaylist.id) }
+        } else {
+            scope.launch {
+                val ok = viewModel.moveSongInYouTubePlaylist(
+                    resolvedPlaylist.id, movedSetId, successorSetId
+                )
+                if (!ok) songs = viewModel.fetchPlaylistSongs(resolvedPlaylist.id)
+            }
+        }
+    }
+
+    val beginDrag: (Song) -> Unit = { song ->
+        draggingKey = trackKeyPrefix + song.id
+        dragOffsetY = 0f
+        dragStartIndex = songs.indexOfFirst { it.id == song.id }
+        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+    }
+
+    // Swaps the dragged row with whichever row its centre currently covers.
+    // Offsets come from the live layout, so rows of any height (edit mode adds
+    // padding) stay glued to the finger. Called once per frame from the drag
+    // loop below, never straight from a pointer event, because layoutInfo only
+    // refreshes after relayout and two swaps against one snapshot would jump.
+    val settleSwap: () -> Unit = settle@{
+        val key = draggingKey ?: return@settle
+        val info = listState.layoutInfo
+        val current = info.visibleItemsInfo.firstOrNull { it.key == key } ?: return@settle
+        val centre = current.offset + current.size / 2f + dragOffsetY
+        val target = info.visibleItemsInfo.firstOrNull { candidate ->
+            val candidateKey = candidate.key
+            candidateKey is String &&
+                candidateKey != key &&
+                candidateKey.startsWith(trackKeyPrefix) &&
+                centre >= candidate.offset &&
+                centre <= candidate.offset + candidate.size
+        } ?: return@settle
+        val from = songs.indexOfFirst { trackKeyPrefix + it.id == key }
+        val to = songs.indexOfFirst { trackKeyPrefix + it.id == target.key }
+        if (from < 0 || to < 0 || from == to) return@settle
+        songs = songs.toMutableList().apply { add(to, removeAt(from)) }
+        // The row's settled slot just moved to the target's; cancel that out of
+        // the drag offset so the row does not visibly jump under the finger.
+        dragOffsetY -= (target.offset - current.offset).toFloat()
+        if (isLocalPlaylist) reorderDirty = true
+        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+    }
+
+    // Per-frame drag loop: auto-scroll near the viewport edges, then resolve a
+    // swap. Running the swap here (not in onDrag) also means a finger parked at
+    // the edge keeps reordering while the list scrolls under it.
+    LaunchedEffect(draggingKey) {
+        val key = draggingKey ?: return@LaunchedEffect
+        val edge = with(density) { 96.dp.toPx() }
+        val maxStep = with(density) { 14.dp.toPx() }
+        while (isActive) {
+            withFrameNanos { }
+            val info = listState.layoutInfo
+            val current = info.visibleItemsInfo.firstOrNull { it.key == key }
+            if (current != null) {
+                val top = current.offset + dragOffsetY
+                val bottom = top + current.size
+                val delta = when {
+                    bottom > info.viewportEndOffset - edge ->
+                        (bottom - (info.viewportEndOffset - edge)).coerceAtMost(maxStep)
+                    top < info.viewportStartOffset + edge ->
+                        (top - (info.viewportStartOffset + edge)).coerceAtLeast(-maxStep)
+                    else -> 0f
+                }
+                if (delta != 0f) listState.scrollBy(delta)
+            }
+            settleSwap()
+        }
+    }
+
+    val removeSong: (Song) -> Unit = { song ->
+        val previous = songs
+        songs = songs.filterNot { it.id == song.id }
+        if (isLocalPlaylist) {
+            viewModel.replaceLocalPlaylistSongs(resolvedPlaylist.id, songs)
+            reorderDirty = false
+            scope.launch {
+                val result = snackbarHostState.showSnackbar(
+                    message = "Removed ${song.title}",
+                    actionLabel = "Undo",
+                    duration = SnackbarDuration.Short
+                )
+                if (result == SnackbarResult.ActionPerformed) {
+                    songs = previous
+                    viewModel.replaceLocalPlaylistSongs(resolvedPlaylist.id, previous)
+                }
+            }
+        } else {
+            // Remote removal is not locally reversible (a re-add would land at
+            // the end of the playlist), so confirm it rather than offer undo.
+            viewModel.removeSongFromYouTubePlaylist(resolvedPlaylist.id, song)
+            scope.launch {
+                snackbarHostState.showSnackbar(
+                    message = "Removed ${song.title}",
+                    duration = SnackbarDuration.Short
+                )
+            }
         }
     }
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { 
+            val barColor = MaterialTheme.colorScheme.surface
+            Box(modifier = Modifier.drawBehind { drawRect(barColor, alpha = barAlpha.value) }) {
+                Column {
+                    TopAppBar(
+                        title = {
+                            Text(
+                                resolvedPlaylist.name,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                style = MaterialTheme.typography.titleMedium,
+                                modifier = Modifier.graphicsLayer {
+                                    alpha = barAlpha.value
+                                    translationY = (1f - barAlpha.value) * 20.dp.toPx()
+                                }
+                            )
+                        },
+                        navigationIcon = {
+                            IconButton(onClick = {
+                                commitLocalOrder()
+                                onBack()
+                            }) {
+                                Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back")
+                            }
+                        },
+                        actions = {
+                            IconButton(onClick = {
+                                if (isReorderMode) exitReorderMode()
+                                isSearchActive = !isSearchActive
+                                if (!isSearchActive) searchQuery = ""
+                            }) {
+                                Icon(
+                                    imageVector = if (isSearchActive) Icons.Rounded.Close else Icons.Rounded.Search,
+                                    contentDescription = if (isSearchActive) "Close search" else "Search in playlist"
+                                )
+                            }
+                            // Page-level actions live behind one overflow so the
+                            // bar keeps to the 1-2 visible actions M3E asks for,
+                            // and Delete is not a peer of Rename on the page.
+                            val hasRename = isLocalPlaylist || canRenameDeleteYouTube
+                            val hasShare = !isLocalPlaylist
+                            if (hasRename || hasShare) {
+                                Box {
+                                    IconButton(onClick = { showOverflow = true }) {
+                                        Icon(Icons.Rounded.MoreVert, "More options")
+                                    }
+                                    DropdownMenu(
+                                        expanded = showOverflow,
+                                        onDismissRequest = { showOverflow = false }
+                                    ) {
+                                        if (hasRename) {
+                                            DropdownMenuItem(
+                                                text = { Text("Rename") },
+                                                leadingIcon = { Icon(Icons.Rounded.Edit, null) },
+                                                onClick = {
+                                                    showOverflow = false
+                                                    showEditDialog = true
+                                                }
+                                            )
+                                        }
+                                        if (hasShare) {
+                                            DropdownMenuItem(
+                                                text = { Text("Share") },
+                                                leadingIcon = { Icon(Icons.Rounded.Share, null) },
+                                                onClick = {
+                                                    showOverflow = false
+                                                    val shareUrl = if (isAlbum) {
+                                                        "https://music.youtube.com/browse/${resolvedPlaylist.id}"
+                                                    } else {
+                                                        "https://music.youtube.com/playlist?list=${resolvedPlaylist.id}"
+                                                    }
+                                                    val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                                        type = "text/plain"
+                                                        putExtra(android.content.Intent.EXTRA_TEXT, shareUrl)
+                                                    }
+                                                    shareContext.startActivity(
+                                                        android.content.Intent.createChooser(send, "Share playlist")
+                                                    )
+                                                }
+                                            )
+                                        }
+                                        if (hasRename) {
+                                            HorizontalDivider()
+                                            DropdownMenuItem(
+                                                text = {
+                                                    Text(
+                                                        "Delete playlist",
+                                                        color = MaterialTheme.colorScheme.error
+                                                    )
+                                                },
+                                                leadingIcon = {
+                                                    Icon(
+                                                        Icons.Rounded.Delete,
+                                                        null,
+                                                        tint = MaterialTheme.colorScheme.error
+                                                    )
+                                                },
+                                                onClick = {
+                                                    showOverflow = false
+                                                    showDeleteDialog = true
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = Color.Transparent,
+                            scrolledContainerColor = Color.Transparent
+                        )
+                    )
+                    // Pinned rather than sticky in the list: the field is always
+                    // reachable while searching, and it composes immediately so
+                    // it can take focus without waiting for a scroll.
+                    // Default (non-bouncy) size springs on purpose: an
+                    // Expressive spatial spec bounces, and a bouncing height
+                    // undershoots negative. Bounce belongs on scale and
+                    // translation, not on anything that measures.
                     AnimatedVisibility(
-                        visible = isCollapsed,
-                        enter = fadeIn() + slideInVertically { it / 2 },
-                        exit = fadeOut() + slideOutVertically { it / 2 }
+                        visible = isSearchActive,
+                        enter = expandVertically() + fadeIn(),
+                        exit = shrinkVertically() + fadeOut()
                     ) {
-                        Text(
-                            resolvedPlaylist.name ?: "Unknown",
-                            maxLines = 1, 
-                            overflow = TextOverflow.Ellipsis,
-                            style = MaterialTheme.typography.titleMedium
+                        TextField(
+                            value = searchQuery,
+                            onValueChange = { searchQuery = it },
+                            placeholder = { Text("Find in ${if (isAlbum) "album" else "playlist"}") },
+                            leadingIcon = { Icon(Icons.Rounded.Search, null) },
+                            trailingIcon = if (searchQuery.isNotEmpty()) {
+                                {
+                                    IconButton(onClick = { searchQuery = "" }) {
+                                        Icon(Icons.Rounded.Close, "Clear search")
+                                    }
+                                }
+                            } else null,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp)
+                                .padding(bottom = 12.dp)
+                                .focusRequester(searchFocus),
+                            shape = RoundedCornerShape(28.dp),
+                            colors = TextFieldDefaults.colors(
+                                focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                focusedIndicatorColor = Color.Transparent,
+                                unfocusedIndicatorColor = Color.Transparent,
+                                disabledIndicatorColor = Color.Transparent
+                            ),
+                            singleLine = true
                         )
                     }
-                },
-                navigationIcon = {
-                    IconButton(onClick = {
-                        if (reorderDirty) {
-                            viewModel.replaceLocalPlaylistSongs(resolvedPlaylist.id, songs)
-                            reorderDirty = false
-                        }
-                        onBack()
-                    }) {
-                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back")
-                    }
-                },
-                actions = {
-                    if (isLocalPlaylist || canEditYouTubeSongs) {
-                        IconButton(
-                            onClick = {
-                                val enablingReorder = !isReorderMode
-                                isReorderMode = enablingReorder
-                                draggingSongId = null
-                                dragOffsetY = 0f
-                                if (!enablingReorder && reorderDirty) {
-                                    viewModel.replaceLocalPlaylistSongs(resolvedPlaylist.id, songs)
-                                    reorderDirty = false
-                                }
-                                if (enablingReorder) {
-                                    isSearchActive = false
-                                    searchQuery = ""
-                                }
-                            }
-                        ) {
-                            Icon(
-                                imageVector = if (isReorderMode) Icons.Rounded.Done else Icons.Rounded.DragHandle,
-                                contentDescription = if (isReorderMode) "Finish editing" else "Edit songs"
-                            )
-                        }
-                    }
-                    if (isLocalPlaylist || canRenameDeleteYouTube) {
-                        IconButton(onClick = { showEditDialog = true }) {
-                            Icon(Icons.Rounded.Edit, contentDescription = "Rename playlist")
-                        }
-                        IconButton(onClick = { showDeleteDialog = true }) {
-                            Icon(Icons.Rounded.Delete, contentDescription = "Delete playlist")
-                        }
-                    }
-                    // Share is only meaningful for YouTube-hosted playlists/albums;
-                    // local playlists have no public URL.
-                    if (!isLocalPlaylist) {
-                        val shareContext = androidx.compose.ui.platform.LocalContext.current
-                        IconButton(onClick = {
-                            val shareUrl = if (isAlbum) {
-                                "https://music.youtube.com/browse/${resolvedPlaylist.id}"
-                            } else {
-                                "https://music.youtube.com/playlist?list=${resolvedPlaylist.id}"
-                            }
-                            val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                                type = "text/plain"
-                                putExtra(android.content.Intent.EXTRA_TEXT, shareUrl)
-                            }
-                            shareContext.startActivity(
-                                android.content.Intent.createChooser(send, "Share playlist")
-                            )
-                        }) {
-                            Icon(Icons.Rounded.Share, contentDescription = "Share playlist")
-                        }
-                    }
-                    IconButton(onClick = {
-                        if (isReorderMode) {
-                            isReorderMode = false
-                            draggingSongId = null
-                            dragOffsetY = 0f
-                            if (reorderDirty) {
-                                viewModel.replaceLocalPlaylistSongs(resolvedPlaylist.id, songs)
-                                reorderDirty = false
-                            }
-                        }
-                        isSearchActive = !isSearchActive
-                    }) {
-                        Icon(
-                            imageVector = if (isSearchActive) Icons.Rounded.Close else Icons.Rounded.Search,
-                            contentDescription = "Search in playlist"
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = if (isCollapsed) MaterialTheme.colorScheme.surface else Color.Transparent,
-                    scrolledContainerColor = MaterialTheme.colorScheme.surface
+                }
+            }
+        },
+        snackbarHost = {
+            SnackbarHost(
+                hostState = snackbarHostState,
+                modifier = Modifier.padding(
+                    bottom = com.ivor.ivormusic.ui.components.LocalBottomOverlayInset.current
                 )
             )
         },
         floatingActionButton = {
-            if (filteredSongs.isNotEmpty() && !isReorderMode) {
-                // M3E split button: Play + menu (shuffle, radio)
-                val scope = androidx.compose.runtime.rememberCoroutineScope()
+            if (isReorderMode) {
+                // Vibrant floating toolbar = the M3 Expressive signal for a
+                // temporary edit mode; stays reachable however far the list scrolls
+                val canReorder = isLocalPlaylist || (canReorderRemote && setVideoIds.isNotEmpty())
+                ManageModeToolbar(
+                    hint = if (canReorder) "Drag a handle to reorder" else "Tap to remove tracks",
+                    icon = if (canReorder) Icons.Rounded.DragIndicator else Icons.Rounded.RemoveCircleOutline,
+                    onDone = exitReorderMode,
+                    modifier = Modifier.padding(
+                        bottom = com.ivor.ivormusic.ui.components.LocalBottomOverlayInset.current
+                    )
+                )
+            } else if (filteredSongs.isNotEmpty()) {
+                // M3E split button: Play + menu (shuffle, radio). This is the
+                // one primary action on the page.
                 val radioSeed = filteredSongs.firstOrNull {
                     it.source == com.ivor.ivormusic.data.SongSource.YOUTUBE
                 }
@@ -1712,7 +2283,7 @@ fun PlaylistDetailScreen(
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)
         ) {
-            // Header
+            // Hero header
             item {
                 Box(
                     modifier = Modifier
@@ -1729,297 +2300,244 @@ fun PlaylistDetailScreen(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(top = padding.calculateTopPadding(), bottom = 24.dp),
+                            .padding(top = padding.calculateTopPadding(), bottom = 20.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        // Album Art
                         Surface(
-                            shape = RoundedCornerShape(24.dp),
+                            shape = RoundedCornerShape(28.dp),
                             modifier = Modifier
-                                .size(240.dp) // Larger
-                                .padding(top = 16.dp),
+                                // Padding before size, so the artwork stays a
+                                // true square instead of losing 16dp of height.
+                                .padding(top = 16.dp)
+                                .size(220.dp)
+                                .graphicsLayer {
+                                    // Scroll-driven, not time-driven: the art
+                                    // trails the list instead of animating on
+                                    // its own, so there is nothing to reduce.
+                                    val collapse = headerCollapse.value
+                                    translationY = collapse * 220.dp.toPx() * 0.28f
+                                    val shrink = 1f - collapse * 0.12f
+                                    scaleX = shrink
+                                    scaleY = shrink
+                                    alpha = 1f - collapse * 0.75f
+                                },
                             shadowElevation = 12.dp,
                             color = MaterialTheme.colorScheme.surfaceContainerHighest
                         ) {
-                             if (resolvedPlaylist.thumbnailUrl != null && resolvedPlaylist.thumbnailUrl != "null") {
-                                 AsyncImage(model = resolvedPlaylist.thumbnailUrl, contentDescription = null, contentScale = ContentScale.Crop)
-                             } else {
+                            if (resolvedPlaylist.thumbnailUrl != null && resolvedPlaylist.thumbnailUrl != "null") {
+                                AsyncImage(
+                                    model = resolvedPlaylist.thumbnailUrl,
+                                    contentDescription = null,
+                                    contentScale = ContentScale.Crop
+                                )
+                            } else {
+                                // Expressive placeholder: icon seated in a material
+                                // shape, matching the liked-songs hero treatment
                                 Box(contentAlignment = Alignment.Center) {
-                                     Icon(if (isAlbum) Icons.Rounded.Album else Icons.AutoMirrored.Rounded.PlaylistPlay, null, modifier = Modifier.size(80.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                             }
-                        }
-                        
-                        Spacer(Modifier.height(24.dp))
-                        
-                        // Title & Subtitle
-                        Text(
-                            text = resolvedPlaylist.name ?: "Unknown",
-                            style = MaterialTheme.typography.displaySmall, // Expressive Typography
-                            fontWeight = FontWeight.Bold,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(horizontal = 24.dp)
-                        )
-                        
-                        Text(
-                            text = if (isAlbum) "Album • ${resolvedPlaylist.uploaderName} • ${songs.size} tracks" else "Playlist • ${songs.size} tracks",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(horizontal = 24.dp).padding(top = 8.dp),
-                            textAlign = TextAlign.Center
-                        )
-
-                        if (isLocalPlaylist && isReorderMode) {
-                            ReorderModeCard(
-                                trackCount = songs.size,
-                                onDone = {
-                                    isReorderMode = false
-                                    draggingSongId = null
-                                    dragOffsetY = 0f
-                                    if (reorderDirty) {
-                                        viewModel.replaceLocalPlaylistSongs(resolvedPlaylist.id, songs)
-                                        reorderDirty = false
+                                    Surface(
+                                        shape = MaterialShapes.Cookie9Sided.toShape(),
+                                        color = MaterialTheme.colorScheme.primaryContainer,
+                                        modifier = Modifier.size(120.dp)
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Icon(
+                                                imageVector = if (isAlbum) Icons.Rounded.Album else Icons.AutoMirrored.Rounded.PlaylistPlay,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(56.dp),
+                                                tint = MaterialTheme.colorScheme.onPrimaryContainer
+                                            )
+                                        }
                                     }
                                 }
-                            )
+                            }
                         }
+
+                        Spacer(Modifier.height(24.dp))
+
+                        Text(
+                            text = resolvedPlaylist.name,
+                            style = MaterialTheme.typography.displaySmall,
+                            fontWeight = FontWeight.Bold,
+                            textAlign = TextAlign.Center,
+                            maxLines = 3,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(horizontal = 24.dp)
+                        )
+
+                        val totalDurationLabel = remember(songs) {
+                            formatTotalDuration(songs.sumOf { it.duration })
+                        }
+                        Text(
+                            text = listOfNotNull(
+                                if (isAlbum) "Album" else "Playlist",
+                                resolvedPlaylist.uploaderName.takeIf { isAlbum && it.isNotBlank() },
+                                if (songs.size == 1) "1 track" else "${songs.size} tracks",
+                                totalDurationLabel
+                            ).joinToString("  ·  "),
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier
+                                .padding(horizontal = 24.dp)
+                                .padding(top = 10.dp),
+                            textAlign = TextAlign.Center
+                        )
 
                         if (!resolvedPlaylist.description.isNullOrBlank()) {
                             Text(
                                 text = resolvedPlaylist.description,
-                                style = MaterialTheme.typography.bodyLarge,
+                                style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 textAlign = TextAlign.Center,
+                                maxLines = if (descriptionExpanded) Int.MAX_VALUE else 2,
+                                overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier
-                                    .padding(horizontal = 24.dp)
+                                    .padding(horizontal = 32.dp)
                                     .padding(top = 12.dp)
+                                    .animateContentSize()
+                                    .clickable { descriptionExpanded = !descriptionExpanded }
                             )
                         }
                     }
                 }
             }
 
-            // Search Bar (Sticky)
-            if (isSearchActive) {
-                stickyHeader {
-                    Surface(
-                        modifier = Modifier.fillMaxWidth(),
-                        color = MaterialTheme.colorScheme.background,
-                        shadowElevation = 4.dp
-                    ) {
-                        TextField(
-                            value = searchQuery,
-                            onValueChange = { searchQuery = it },
-                            placeholder = { Text("Find in playlist...") },
-                            leadingIcon = { Icon(Icons.Rounded.Search, null) },
-                            trailingIcon = if (searchQuery.isNotEmpty()) {
-                                { IconButton(onClick = { searchQuery = "" }) { Icon(Icons.Rounded.Close, null) } }
-                            } else null,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp),
-                            shape = RoundedCornerShape(16.dp),
-                            colors = TextFieldDefaults.colors(
-                                focusedIndicatorColor = Color.Transparent,
-                                unfocusedIndicatorColor = Color.Transparent,
-                                disabledIndicatorColor = Color.Transparent
-                            ), // Single line
-                            singleLine = true
-                        )
-                    }
+            // Track section header. Hidden while searching - the search field
+            // already labels what the list below it is.
+            if (!isSearchActive && !isFetching.value && songs.isNotEmpty()) {
+                item {
+                    TrackSectionHeader(
+                        countLabel = if (songs.size == 1) "1 track" else "${songs.size} tracks",
+                        manageEnabled = isReorderMode,
+                        canEdit = canEditSongs,
+                        onToggleEdit = {
+                            if (isReorderMode) {
+                                exitReorderMode()
+                            } else {
+                                isReorderMode = true
+                                isSearchActive = false
+                                searchQuery = ""
+                            }
+                        }
+                    )
                 }
             }
 
-            // Loading / List
-            if (isFetching.value) {
+            if (isSearchActive && searchQuery.isNotBlank() && filteredSongs.isNotEmpty()) {
                 item {
-                    Box(Modifier.fillMaxWidth().padding(top = 32.dp), contentAlignment = Alignment.Center) {
-                        LoadingIndicator(
-                            modifier = Modifier.width(48.dp),
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
+                    Text(
+                        text = if (filteredSongs.size == 1) "1 result" else "${filteredSongs.size} results",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(start = 24.dp, top = 8.dp, bottom = 4.dp)
+                    )
                 }
-            } else {
-                if (filteredSongs.isEmpty() && searchQuery.isNotEmpty()) {
-                    item {
-                        Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
-                            Text("No songs found matching '$searchQuery'", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                } else {
-                    itemsIndexed(
-                        items = filteredSongs,
-                        key = { _, song -> "playlist_${resolvedPlaylist.id}_${song.id}" }
-                    ) { index, song ->
-                        // Manage mode: song removal for local and YouTube playlists;
-                        // drag reordering stays local-only (InnerTube move needs
-                        // setVideoIds the parser does not keep).
-                        val manageEnabled = isReorderMode && searchQuery.isBlank() &&
-                            (isLocalPlaylist || canEditYouTubeSongs)
-                        val reorderEnabled = manageEnabled && isLocalPlaylist
-                        val isDragging = draggingSongId == song.id
-                        val animatedContainerColor by animateColorAsState(
-                            targetValue = when {
-                                isDragging -> MaterialTheme.colorScheme.primaryContainer
-                                manageEnabled -> MaterialTheme.colorScheme.surfaceContainerLow
-                                else -> Color.Transparent
-                            },
-                            animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow),
-                            label = "playlist_row_container"
-                        )
-                        val animatedTonalElevation by animateDpAsState(
-                            targetValue = when {
-                                isDragging -> 8.dp
-                                manageEnabled -> 2.dp
-                                else -> 0.dp
-                            },
-                            animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow),
-                            label = "playlist_row_tonal"
-                        )
-                        val animatedShadowElevation by animateDpAsState(
-                            targetValue = if (isDragging) 10.dp else 0.dp,
-                            animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow),
-                            label = "playlist_row_shadow"
-                        )
+            }
 
-                        SongListItem(
-                            song = song,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 12.dp, vertical = if (manageEnabled) 4.dp else 0.dp)
-                                .then(if (isDragging) Modifier else Modifier.animateItem())
-                                .zIndex(if (isDragging) 2f else 0f)
-                                .offset(y = if (isDragging) with(density) { dragOffsetY.toDp() } else 0.dp)
-                                .then(
-                                    if (reorderEnabled) {
-                                        Modifier.pointerInput(song.id) {
-                                            detectDragGesturesAfterLongPress(
-                                                onDragStart = {
-                                                    draggingSongId = song.id
-                                                    dragOffsetY = 0f
-                                                },
-                                                onDragEnd = {
-                                                    draggingSongId = null
-                                                    dragOffsetY = 0f
-                                                    if (reorderDirty) {
-                                                        viewModel.replaceLocalPlaylistSongs(resolvedPlaylist.id, songs)
-                                                        reorderDirty = false
-                                                    }
-                                                },
-                                                onDragCancel = {
-                                                    draggingSongId = null
-                                                    dragOffsetY = 0f
-                                                    if (reorderDirty) {
-                                                        viewModel.replaceLocalPlaylistSongs(resolvedPlaylist.id, songs)
-                                                        reorderDirty = false
-                                                    }
-                                                },
-                                                onDrag = { change, dragAmount ->
-                                                    change.consume()
-                                                    if (draggingSongId == null) return@detectDragGesturesAfterLongPress
-                                                    dragOffsetY += dragAmount.y
-                                                    var activeIndex = songs.indexOfFirst { it.id == draggingSongId }
-                                                    while (dragOffsetY > itemHeightPx && activeIndex in 0 until songs.lastIndex) {
-                                                        val fromIndex = activeIndex
-                                                        val toIndex = fromIndex + 1
-                                                        songs = songs.toMutableList().apply {
-                                                            add(toIndex, removeAt(fromIndex))
-                                                        }
-                                                        reorderDirty = true
-                                                        activeIndex = toIndex
-                                                        dragOffsetY -= itemHeightPx
-                                                    }
-                                                    while (dragOffsetY < -itemHeightPx && activeIndex > 0) {
-                                                        val fromIndex = activeIndex
-                                                        val toIndex = fromIndex - 1
-                                                        songs = songs.toMutableList().apply {
-                                                            add(toIndex, removeAt(fromIndex))
-                                                        }
-                                                        reorderDirty = true
-                                                        activeIndex = toIndex
-                                                        dragOffsetY += itemHeightPx
-                                                    }
-                                                }
-                                            )
-                                        }
-                                    } else {
-                                        Modifier
-                                    }
-                                ),
-                            containerColor = animatedContainerColor,
-                            tonalElevation = animatedTonalElevation,
-                            shadowElevation = animatedShadowElevation,
-                            shape = if (manageEnabled) RoundedCornerShape(24.dp) else RoundedCornerShape(0.dp),
-                            trailingContent = if (manageEnabled) {
-                                {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                    ) {
-                                        Surface(
-                                            shape = RoundedCornerShape(14.dp),
-                                            color = MaterialTheme.colorScheme.errorContainer,
-                                            modifier = Modifier.clickable(enabled = !isDragging) {
-                                                songs = songs.toMutableList().apply {
-                                                    removeAll { it.id == song.id }
-                                                }
-                                                if (isLocalPlaylist) {
-                                                    viewModel.replaceLocalPlaylistSongs(resolvedPlaylist.id, songs)
-                                                    reorderDirty = false
-                                                } else {
-                                                    viewModel.removeSongFromYouTubePlaylist(resolvedPlaylist.id, song)
-                                                }
-                                            }
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Rounded.Delete,
-                                                contentDescription = "Remove from playlist",
-                                                tint = MaterialTheme.colorScheme.onErrorContainer,
-                                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
-                                            )
-                                        }
-                                        if (reorderEnabled) {
-                                            Column(
-                                                horizontalAlignment = Alignment.End,
-                                                verticalArrangement = Arrangement.spacedBy(6.dp)
-                                            ) {
-                                                Surface(
-                                                    shape = RoundedCornerShape(14.dp),
-                                                    color = if (isDragging) {
-                                                        MaterialTheme.colorScheme.tertiaryContainer
-                                                    } else {
-                                                        MaterialTheme.colorScheme.surfaceContainerHighest
-                                                    }
-                                                ) {
-                                                    Icon(
-                                                        imageVector = Icons.Rounded.DragHandle,
-                                                        contentDescription = "Drag to reorder",
-                                                        tint = if (isDragging) {
-                                                            MaterialTheme.colorScheme.onTertiaryContainer
-                                                        } else {
-                                                            MaterialTheme.colorScheme.onSurfaceVariant
-                                                        },
-                                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
-                                                    )
-                                                }
-                                                Text(
-                                                    text = if (isDragging) "Moving" else "Hold",
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
-                                            }
-                                        }
-                                    }
+            when {
+                isFetching.value -> item { TrackSkeletonList() }
+
+                filteredSongs.isEmpty() && searchQuery.isNotBlank() -> item {
+                    EmptyLibraryState(
+                        icon = Icons.Rounded.SearchOff,
+                        title = "No matches",
+                        subtitle = "Nothing in this ${if (isAlbum) "album" else "playlist"} matches \"$searchQuery\""
+                    )
+                }
+
+                songs.isEmpty() && loadAttempted && !isLocalPlaylist && !isAlbum -> item {
+                    // A remote playlist that came back empty is more often a
+                    // failed fetch than a genuinely empty playlist, so this
+                    // state offers the recovery instead of dead-ending.
+                    EmptyLibraryState(
+                        icon = Icons.Rounded.CloudOff,
+                        title = "Couldn't load tracks",
+                        subtitle = "This playlist came back empty. Check your connection and try again.",
+                        action = {
+                            Button(onClick = {
+                                scope.launch {
+                                    isFetching.value = true
+                                    songs = viewModel.fetchPlaylistSongs(resolvedPlaylist.id)
+                                    isFetching.value = false
                                 }
-                            } else null,
-                            onClick = {
-                                if (!manageEnabled) {
-                                    onPlayQueue(filteredSongs, song)
-                                }
+                            }) {
+                                Icon(Icons.Rounded.Refresh, null, Modifier.size(18.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text("Retry")
                             }
-                        )
-                    }
+                        }
+                    )
+                }
+
+                songs.isEmpty() -> item {
+                    EmptyLibraryState(
+                        icon = Icons.Rounded.MusicNote,
+                        title = "Nothing in here yet",
+                        subtitle = "Songs you add to this ${if (isAlbum) "album" else "playlist"} will show up here"
+                    )
+                }
+
+                else -> itemsIndexed(
+                    items = filteredSongs,
+                    key = { _, song -> trackKeyPrefix + song.id }
+                ) { _, song ->
+                    // Manage mode: song removal for local and YouTube playlists.
+                    // Drag reordering works locally and on owned "PL" playlists
+                    // (remote rows become draggable once their setVideoIds load).
+                    val manageEnabled = isReorderMode && searchQuery.isBlank() && canEditSongs
+                    val reorderEnabled = manageEnabled &&
+                        (isLocalPlaylist || (canReorderRemote && setVideoIds.isNotEmpty()))
+                    val isDragging = draggingKey == trackKeyPrefix + song.id
+
+                    // The handle drags on touch (the discoverable path); long
+                    // pressing anywhere on the row is the accelerator for the
+                    // same reorder. Both feed the one drag state.
+                    val handleDrag = if (reorderEnabled) {
+                        Modifier.pointerInput(song.id) {
+                            detectDragGestures(
+                                onDragStart = { beginDrag(song) },
+                                onDragEnd = { finishReorderDrag() },
+                                onDragCancel = { finishReorderDrag() },
+                                onDrag = { change, amount ->
+                                    change.consume()
+                                    dragOffsetY += amount.y
+                                }
+                            )
+                        }
+                    } else Modifier
+                    val rowDrag = if (reorderEnabled) {
+                        Modifier.pointerInput(song.id) {
+                            detectDragGesturesAfterLongPress(
+                                onDragStart = { beginDrag(song) },
+                                onDragEnd = { finishReorderDrag() },
+                                onDragCancel = { finishReorderDrag() },
+                                onDrag = { change, amount ->
+                                    change.consume()
+                                    dragOffsetY += amount.y
+                                }
+                            )
+                        }
+                    } else Modifier
+
+                    PlaylistTrackRow(
+                        song = song,
+                        manageEnabled = manageEnabled,
+                        reorderEnabled = reorderEnabled,
+                        isDragging = isDragging,
+                        dragHandleModifier = handleDrag,
+                        onClick = { onPlayQueue(filteredSongs, song) },
+                        onRemove = { removeSong(song) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            // Constant inset, never animated: this feeds
+                            // Modifier.padding, which throws on a negative
+                            // value, and it aligns row text to the 24dp the
+                            // header and section titles use.
+                            .padding(horizontal = 8.dp)
+                            .then(if (isDragging) Modifier else Modifier.animateItem())
+                            .zIndex(if (isDragging) 2f else 0f)
+                            .offset { IntOffset(0, if (isDragging) dragOffsetY.roundToInt() else 0) }
+                            .then(rowDrag)
+                    )
                 }
             }
         }
@@ -2042,20 +2560,49 @@ fun PlaylistDetailScreen(
     }
 
     if (showDeleteDialog && (isLocalPlaylist || canRenameDeleteYouTube)) {
+        // Destructive confirmation runs calm: no bounce, no scale-in entrance.
         AlertDialog(
             onDismissRequest = { showDeleteDialog = false },
-            title = { Text("Delete playlist?") },
-            text = { Text("This will permanently remove \"${resolvedPlaylist.name}\".") },
-            confirmButton = {
-                TextButton(onClick = {
-                    if (isLocalPlaylist) {
-                        viewModel.deleteLocalPlaylist(resolvedPlaylist.id)
-                    } else {
-                        viewModel.deleteYouTubePlaylist(resolvedPlaylist.id)
+            shape = RoundedCornerShape(32.dp),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            icon = {
+                Surface(
+                    shape = RoundedCornerShape(20.dp),
+                    color = MaterialTheme.colorScheme.errorContainer,
+                    modifier = Modifier.size(64.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            Icons.Rounded.Delete,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onErrorContainer
+                        )
                     }
-                    showDeleteDialog = false
-                    onBack()
-                }) {
+                }
+            },
+            title = { Text("Delete playlist?") },
+            text = {
+                Text(
+                    "This will permanently remove \"${resolvedPlaylist.name}\".",
+                    textAlign = TextAlign.Center
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (isLocalPlaylist) {
+                            viewModel.deleteLocalPlaylist(resolvedPlaylist.id)
+                        } else {
+                            viewModel.deleteYouTubePlaylist(resolvedPlaylist.id)
+                        }
+                        showDeleteDialog = false
+                        onBack()
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError
+                    )
+                ) {
                     Text("Delete")
                 }
             },
