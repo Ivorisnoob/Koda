@@ -433,7 +433,10 @@ private fun PinnedLibraryCard(
     modifier: Modifier = Modifier
 ) {
     Surface(
-        modifier = modifier.clickable(onClick = onClick),
+        // Clip before the click handler so the ripple follows the card's corners
+        modifier = modifier
+            .clip(RoundedCornerShape(20.dp))
+            .clickable(onClick = onClick),
         shape = RoundedCornerShape(20.dp),
         color = MaterialTheme.colorScheme.surfaceContainer,
         tonalElevation = 1.dp
@@ -555,8 +558,10 @@ private fun PlaylistRow(
     }
 
     Surface(
+        // Clip before the click handler so the ripple follows the card's corners
         modifier = modifier
             .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(16.dp),
         color = MaterialTheme.colorScheme.surfaceContainer,
@@ -852,8 +857,10 @@ private fun PlaylistVideoRow(
     var showMenu by remember { mutableStateOf(false) }
 
     Surface(
+        // Clip before the click handler so the ripple follows the card's corners
         modifier = modifier
             .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(14.dp),
         color = MaterialTheme.colorScheme.surfaceContainer,

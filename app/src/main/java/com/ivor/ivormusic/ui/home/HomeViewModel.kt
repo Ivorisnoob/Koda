@@ -836,6 +836,26 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * Per-row playlist item ids (videoId -> setVideoId) needed to reorder a
+     * YouTube Music playlist; empty when signed out or on failure.
+     */
+    suspend fun fetchYouTubePlaylistSetVideoIds(playlistId: String): Map<String, String> =
+        youtubeRepository.getPlaylistSetVideoIds(playlistId)
+
+    /**
+     * Move a row of a YouTube Music playlist before the row identified by
+     * successorSetVideoId (null appends at the end). Returns false when the
+     * server rejected the move so the caller can resync.
+     */
+    suspend fun moveSongInYouTubePlaylist(
+        playlistId: String,
+        setVideoId: String,
+        successorSetVideoId: String?
+    ): Boolean = youtubeRepository.moveInYouTubePlaylist(
+        playlistId, setVideoId, successorSetVideoId, music = true
+    )
+
     // Stats
     private val statsRepository = com.ivor.ivormusic.data.StatsRepository(application)
     private val _globalStats = MutableStateFlow(com.ivor.ivormusic.data.GlobalStats())

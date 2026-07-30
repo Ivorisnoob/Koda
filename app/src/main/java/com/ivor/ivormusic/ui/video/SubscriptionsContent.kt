@@ -85,6 +85,24 @@ fun SubscriptionsContent(
     val isYouTubeConnected by viewModel.isYouTubeConnected.collectAsState()
     val backgroundColor = MaterialTheme.colorScheme.background
 
+    // Save-to-playlist sheet (long-press on a video card) and the download
+    // sheet it hands off to, mirroring the video home feed so a long-press
+    // means the same thing wherever a video card appears.
+    var saveTargetVideo by remember { mutableStateOf<VideoItem?>(null) }
+    var downloadTargetVideo by remember { mutableStateOf<VideoItem?>(null) }
+    val videoPlaylists by viewModel.videoPlaylists.collectAsState()
+    val isVideoPlaylistsLoading by viewModel.isVideoPlaylistsLoading.collectAsState()
+
+    fun onVideoLongPress(video: VideoItem) {
+        if (isYouTubeConnected) {
+            viewModel.loadVideoPlaylists()
+            saveTargetVideo = video
+        } else {
+            // Saving needs a YouTube session; route to the sign-in flow
+            onLoginClick()
+        }
+    }
+
     // Internal navigation: feed -> (channel list) -> channel uploads
     var showChannelList by remember { mutableStateOf(false) }
     var selectedChannel by remember { mutableStateOf<SubscribedChannel?>(null) }
@@ -127,6 +145,31 @@ fun SubscriptionsContent(
                 .windowInsetsPadding(WindowInsets.statusBars)
         )
         return
+    }
+
+    // Declared outside the `when` below so the sheets survive a drill-in or
+    // back-out while one is open.
+    saveTargetVideo?.let { video ->
+        SaveToPlaylistSheet(
+            video = video,
+            playlists = videoPlaylists,
+            isLoading = isVideoPlaylistsLoading,
+            onSave = { playlistId, onResult ->
+                viewModel.addVideoToPlaylist(playlistId, video, onResult)
+            },
+            onDownload = {
+                saveTargetVideo = null
+                downloadTargetVideo = video
+            },
+            onDismiss = { saveTargetVideo = null }
+        )
+    }
+
+    downloadTargetVideo?.let { video ->
+        VideoDownloadSheet(
+            video = video,
+            onDismiss = { downloadTargetVideo = null }
+        )
     }
 
     when {
@@ -203,6 +246,7 @@ fun SubscriptionsContent(
                         VideoCard(
                             video = video,
                             onClick = { onVideoClick(video) },
+                            onLongClick = { onVideoLongPress(video) },
                             modifier = Modifier.padding(horizontal = 16.dp)
                         )
                     }
@@ -436,6 +480,7 @@ fun SubscriptionsContent(
                             VideoCard(
                                 video = video,
                                 onClick = { onVideoClick(video) },
+                                onLongClick = { onVideoLongPress(video) },
                                 modifier = Modifier.padding(horizontal = 16.dp)
                             )
                         }
@@ -507,8 +552,10 @@ private fun ChannelRow(
     modifier: Modifier = Modifier
 ) {
     Surface(
+        // Clip before the click handler so the ripple follows the card's corners
         modifier = modifier
             .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(16.dp),
         color = MaterialTheme.colorScheme.surfaceContainer,

@@ -92,6 +92,12 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
     private var captionsLoadedForVideoId: String? = null
 
+    // Guards the drop-the-caption-and-retry recovery in onPlayerError so it
+    // fires at most once per caption selection: without it, an unrelated
+    // playback failure (expired stream URL, network blip) would be blamed on
+    // the subtitle and silently switch captions off for good.
+    private var captionRecoveryUsed = false
+
     // Repeat sticks across videos and app restarts, so seed it from prefs
     // rather than defaulting to off on every player creation.
     private val _isLooping = MutableStateFlow(themePreferences.isVideoRepeatEnabled())
@@ -272,13 +278,17 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                     // otherwise leave the player stuck buffering. If a caption is
                     // active when playback errors, drop it and reload the video so
                     // it recovers instead of hanging.
-                    if (_selectedCaption.value != null && _currentQuality.value != null) {
+                    if (!captionRecoveryUsed &&
+                        _selectedCaption.value != null &&
+                        _currentQuality.value != null
+                    ) {
                         android.util.Log.w(
                             "VideoPlayerVM",
                             "Playback error with captions on; retrying without captions",
                             error
                         )
                         val quality = _currentQuality.value ?: return
+                        captionRecoveryUsed = true
                         _selectedCaption.value = null
                         _exoPlayer?.let { p ->
                             p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
@@ -422,6 +432,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         _selectedCaption.value = null // Captions default off per video
         _isCaptionsLoading.value = false
         captionsLoadedForVideoId = null
+        captionRecoveryUsed = false
         _playbackError.value = null // Clear previous error
         rendererRetryCount = 0
 
@@ -708,6 +719,8 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     fun setCaptionTrack(track: CaptionTrack?) {
         if (_selectedCaption.value == track) return
         _selectedCaption.value = track
+        // A deliberate (re)selection earns a fresh recovery attempt.
+        captionRecoveryUsed = false
         val player = _exoPlayer ?: return
         player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
             .setPreferredTextLanguage(track?.languageCode)

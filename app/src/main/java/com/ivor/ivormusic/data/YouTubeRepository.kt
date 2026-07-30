@@ -139,6 +139,23 @@ class YouTubeRepository(private val context: Context) {
         @Volatile private var visitorDataFetchedAt: Long = 0L
         private val visitorDataMutex = kotlinx.coroutines.sync.Mutex()
         private const val VISITOR_DATA_TTL_MS = 6 * 60 * 60 * 1000L // 6 hours
+
+        private class CachedCaptions(val tracks: List<CaptionTrack>, val fetchedAt: Long)
+
+        // Caption tracklists harvested from the /player response already made to
+        // start playback, so tapping CC costs no extra request. Companion-level
+        // for the same reason visitorData is: the player VM and the repository
+        // that resolved the stream can be different instances. Timedtext URLs
+        // are signed with a ~6h expiry, so entries are dropped well before that.
+        private const val CAPTION_CACHE_TTL_MS = 30 * 60 * 1000L // 30 minutes
+        private const val CAPTION_CACHE_MAX_ENTRIES = 16
+        private val captionCache = java.util.Collections.synchronizedMap(
+            object : LinkedHashMap<String, CachedCaptions>(CAPTION_CACHE_MAX_ENTRIES, 0.75f, true) {
+                override fun removeEldestEntry(
+                    eldest: MutableMap.MutableEntry<String, CachedCaptions>,
+                ): Boolean = size > CAPTION_CACHE_MAX_ENTRIES
+            }
+        )
     }
 
     // Local-only kill-switch: checked per request so flipping the setting
@@ -1407,6 +1424,7 @@ class YouTubeRepository(private val context: Context) {
     private class PlayerResponse(
         val streamingData: org.json.JSONObject?,
         val visitorDataSuspect: Boolean,
+        val captionTracks: List<CaptionTrack> = emptyList(),
     )
 
     /**
@@ -1446,21 +1464,22 @@ class YouTubeRepository(private val context: Context) {
      * Each call is hard-capped by streamResolveClient's callTimeout, so the
      * worst case is bounded regardless of coroutine cancellability.
      */
-    private suspend fun runPlayerClientChain(videoId: String, visitorData: String): PlayerResponse {
-        val androidVrExtras = org.json.JSONObject().apply {
-            put("androidSdkVersion", 32)
-            put("deviceMake", "Oculus")
-            put("deviceModel", "Quest 3")
-            put("osName", "Android")
-            put("osVersion", "12L")
-        }
-        val iosExtras = org.json.JSONObject().apply {
-            put("deviceMake", "Apple")
-            put("deviceModel", "iPhone16,2")
-            put("osName", "iPhone")
-            put("osVersion", "18.1.0.22B83")
-        }
+    private fun androidVrClientFields(): org.json.JSONObject = org.json.JSONObject().apply {
+        put("androidSdkVersion", 32)
+        put("deviceMake", "Oculus")
+        put("deviceModel", "Quest 3")
+        put("osName", "Android")
+        put("osVersion", "12L")
+    }
 
+    private fun iosClientFields(): org.json.JSONObject = org.json.JSONObject().apply {
+        put("deviceMake", "Apple")
+        put("deviceModel", "iPhone16,2")
+        put("osName", "iPhone")
+        put("osVersion", "18.1.0.22B83")
+    }
+
+    private suspend fun runPlayerClientChain(videoId: String, visitorData: String): PlayerResponse {
         val vr = fetchPlayerResponse(
             videoId = videoId,
             clientName = "ANDROID_VR",
@@ -1468,8 +1487,11 @@ class YouTubeRepository(private val context: Context) {
             clientNameId = ANDROID_VR_CLIENT_ID,
             userAgent = ANDROID_VR_USER_AGENT,
             visitorData = visitorData,
-            extraClientFields = androidVrExtras,
+            extraClientFields = androidVrClientFields(),
         )
+        // The /player response carries the caption tracklist alongside the
+        // streams, so harvesting it here makes a later CC tap free.
+        cacheCaptionTracks(videoId, vr.captionTracks)
         vr.streamingData?.let { return vr }
 
         val ios = fetchPlayerResponse(
@@ -1479,11 +1501,13 @@ class YouTubeRepository(private val context: Context) {
             clientNameId = IOS_CLIENT_ID,
             userAgent = IOS_USER_AGENT,
             visitorData = visitorData,
-            extraClientFields = iosExtras,
+            extraClientFields = iosClientFields(),
         )
+        cacheCaptionTracks(videoId, ios.captionTracks)
         return PlayerResponse(
             streamingData = ios.streamingData,
             visitorDataSuspect = vr.visitorDataSuspect || ios.visitorDataSuspect,
+            captionTracks = vr.captionTracks.ifEmpty { ios.captionTracks },
         )
     }
 
@@ -1646,6 +1670,8 @@ class YouTubeRepository(private val context: Context) {
                 return@withContext PlayerResponse(null, status == "LOGIN_REQUIRED")
             }
 
+            val captionTracks = parseCaptionTracks(root)
+
             val streamingData = root.optJSONObject("streamingData")
             if (streamingData == null) {
                 android.util.Log.w(
@@ -1654,9 +1680,9 @@ class YouTubeRepository(private val context: Context) {
                 )
                 // Status OK with no streamingData is the other known signature
                 // of a stale/missing visitorData.
-                return@withContext PlayerResponse(null, true)
+                return@withContext PlayerResponse(null, true, captionTracks)
             }
-            PlayerResponse(streamingData, false)
+            PlayerResponse(streamingData, false, captionTracks)
         } catch (e: Exception) {
             android.util.Log.e(
                 "YouTubeRepository",
@@ -4152,24 +4178,19 @@ class YouTubeRepository(private val context: Context) {
     }
 
     /**
-     * Fetch the caption/subtitle tracks for a video via a WEB /player call.
-     * Tracks live at captions.playerCaptionsTracklistRenderer.captionTracks,
-     * each with a timedtext baseUrl, languageCode, name and (for auto-captions)
-     * kind == "asr". The baseUrl serves WebVTT when "&fmt=vtt" is appended,
-     * which ExoPlayer renders natively. Verified against the live /player API
-     * July 2026. Returns an empty list when the video has no captions.
+     * Parse captions.playerCaptionsTracklistRenderer.captionTracks out of a
+     * /player response. Each entry carries a signed timedtext baseUrl, a
+     * languageCode, a display name (runs on the native clients, simpleText on
+     * WEB) and, for auto-captions, kind == "asr" / a vssId prefixed "a.".
+     * Manually authored tracks are listed before auto-generated ones.
+     * Verified against the live /player API July 2026.
      */
-    suspend fun getCaptionTracks(videoId: String): List<CaptionTrack> = withContext(Dispatchers.IO) {
-        try {
-            val body = org.json.JSONObject()
-                .put("context", webContext())
-                .put("videoId", videoId)
-            val raw = postWatchApi("player", body) ?: return@withContext emptyList()
-            val root = org.json.JSONObject(raw)
+    private fun parseCaptionTracks(root: org.json.JSONObject): List<CaptionTrack> {
+        return try {
             val tracks = root.optJSONObject("captions")
                 ?.optJSONObject("playerCaptionsTracklistRenderer")
                 ?.optJSONArray("captionTracks")
-                ?: return@withContext emptyList()
+                ?: return emptyList()
 
             (0 until tracks.length()).mapNotNull { i ->
                 val t = tracks.optJSONObject(i) ?: return@mapNotNull null
@@ -4178,19 +4199,82 @@ class YouTubeRepository(private val context: Context) {
                 val languageCode = t.optString("languageCode").takeIf { it.isNotBlank() }
                     ?: return@mapNotNull null
                 val name = getRunText(t.optJSONObject("name"))?.takeIf { it.isNotBlank() }
-                    ?: t.optJSONObject("name")?.optString("simpleText")?.takeIf { it.isNotBlank() }
                     ?: languageCode
                 CaptionTrack(
                     languageCode = languageCode,
                     name = name,
                     baseUrl = baseUrl,
-                    isAutoGenerated = t.optString("kind") == "asr"
+                    // vssId is the more reliable marker: the native clients
+                    // sometimes omit "kind" while still prefixing vssId "a.".
+                    isAutoGenerated = t.optString("kind") == "asr" ||
+                        t.optString("vssId").startsWith("a."),
                 )
             }
+                .distinctBy { it.languageCode to it.isAutoGenerated }
+                .sortedBy { it.isAutoGenerated }
+        } catch (e: Exception) {
+            android.util.Log.e("YouTubeRepo", "parseCaptionTracks failed", e)
+            emptyList()
+        }
+    }
+
+    /**
+     * Caption/subtitle tracks for a video.
+     *
+     * Resolved with the ANDROID_VR client (IOS as fallback) — the same chain
+     * used for streams, and deliberately *not* WEB: a WEB /player call without
+     * account cookies comes back UNPLAYABLE ("Video unavailable") with no
+     * captions block at all, so every signed-out user saw an empty CC menu.
+     * The native clients answer with the full tracklist either way.
+     *
+     * Normally free: [runPlayerClientChain] already caches the tracklist from
+     * the /player response fetched to start playback, so this only hits the
+     * network when that cache missed or went stale.
+     */
+    suspend fun getCaptionTracks(videoId: String): List<CaptionTrack> = withContext(Dispatchers.IO) {
+        cachedCaptionTracks(videoId)?.let { return@withContext it }
+        try {
+            val visitorData = getVisitorData()
+            val vr = fetchPlayerResponse(
+                videoId = videoId,
+                clientName = "ANDROID_VR",
+                clientVersion = ANDROID_VR_VERSION,
+                clientNameId = ANDROID_VR_CLIENT_ID,
+                userAgent = ANDROID_VR_USER_AGENT,
+                visitorData = visitorData,
+                extraClientFields = androidVrClientFields(),
+            )
+            val tracks = vr.captionTracks.ifEmpty {
+                fetchPlayerResponse(
+                    videoId = videoId,
+                    clientName = "IOS",
+                    clientVersion = IOS_VERSION,
+                    clientNameId = IOS_CLIENT_ID,
+                    userAgent = IOS_USER_AGENT,
+                    visitorData = visitorData,
+                    extraClientFields = iosClientFields(),
+                ).captionTracks
+            }
+            cacheCaptionTracks(videoId, tracks)
+            tracks
         } catch (e: Exception) {
             android.util.Log.e("YouTubeRepo", "getCaptionTracks failed for $videoId", e)
             emptyList()
         }
+    }
+
+    private fun cachedCaptionTracks(videoId: String): List<CaptionTrack>? {
+        val entry = captionCache[videoId] ?: return null
+        if (System.currentTimeMillis() - entry.fetchedAt > CAPTION_CACHE_TTL_MS) {
+            captionCache.remove(videoId)
+            return null
+        }
+        return entry.tracks
+    }
+
+    private fun cacheCaptionTracks(videoId: String, tracks: List<CaptionTrack>) {
+        if (tracks.isEmpty()) return
+        captionCache[videoId] = CachedCaptions(tracks, System.currentTimeMillis())
     }
 
     /**
@@ -4758,6 +4842,64 @@ class YouTubeRepository(private val context: Context) {
                         .put("removedVideoId", videoId)
                 )
             )
+        editStatusOk(postPlaylistApi(music, "browse/edit_playlist", body))
+    }
+
+    /**
+     * Fetch the per-row playlist item ids ("setVideoId") for a playlist the
+     * user can edit. Reordering via edit_playlist identifies rows by these,
+     * not by videoId. Browses VL<id> on music.youtube.com and reads
+     * musicResponsiveListItemRenderer.playlistItemData. First page only
+     * (~100 rows); rows past that simply stay un-movable. Verified July 2026.
+     */
+    suspend fun getPlaylistSetVideoIds(playlistId: String): Map<String, String> =
+        withContext(Dispatchers.IO) {
+            if (!sessionManager.isLoggedIn()) return@withContext emptyMap()
+            val browseId = if (playlistId.startsWith("VL")) playlistId else "VL$playlistId"
+            val raw = browseMusic(browseId) ?: return@withContext emptyMap()
+            try {
+                val rows = mutableListOf<org.json.JSONObject>()
+                findObjectsByKey(org.json.JSONObject(raw), "musicResponsiveListItemRenderer", rows)
+                buildMap {
+                    for (row in rows) {
+                        val itemData = row.optJSONObject("playlistItemData") ?: continue
+                        val videoId = itemData.optString("videoId").takeIf { it.isNotBlank() } ?: continue
+                        val setVideoId = itemData.optString("playlistSetVideoId")
+                            .takeIf { it.isNotBlank() } ?: continue
+                        put(videoId, setVideoId)
+                    }
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("YouTubeRepo", "getPlaylistSetVideoIds failed", e)
+                emptyMap()
+            }
+        }
+
+    /**
+     * Move a playlist row before another row (or to the end when
+     * successorSetVideoId is null). Rows are addressed by their setVideoId
+     * from getPlaylistSetVideoIds. The anchor field is
+     * "movedSetVideoIdSuccessor" — the "movedSetVideoId" name some client
+     * libraries document is silently ignored and drops the row to the end
+     * with STATUS_SUCCEEDED. Requires login. Verified July 2026.
+     */
+    suspend fun moveInYouTubePlaylist(
+        playlistId: String,
+        setVideoId: String,
+        successorSetVideoId: String?,
+        music: Boolean
+    ): Boolean = withContext(Dispatchers.IO) {
+        if (!sessionManager.isLoggedIn()) return@withContext false
+        val action = org.json.JSONObject()
+            .put("action", "ACTION_MOVE_VIDEO_BEFORE")
+            .put("setVideoId", setVideoId)
+        if (successorSetVideoId != null) {
+            action.put("movedSetVideoIdSuccessor", successorSetVideoId)
+        }
+        val body = org.json.JSONObject()
+            .put("context", playlistContext(music))
+            .put("playlistId", normalizePlaylistId(playlistId))
+            .put("actions", org.json.JSONArray().put(action))
         editStatusOk(postPlaylistApi(music, "browse/edit_playlist", body))
     }
 
