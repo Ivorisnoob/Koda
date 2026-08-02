@@ -28,6 +28,23 @@ object YouTubeLinkParser {
     private val VIDEO_PATH_ROOTS = setOf("shorts", "live", "embed", "v")
 
     /**
+     * Parse the first YouTube link found anywhere in [text].
+     *
+     * Unlike [parse], which expects the whole string to be the URL, this
+     * tolerates the surrounding prose that share sheets attach - YouTube's own
+     * share action sends "Video title\nhttps://youtu.be/id", and other apps add
+     * their own wrappers. Returns null when no YouTube link is present.
+     */
+    fun parseFromSharedText(text: String): ParsedYouTubeLink? =
+        text.split(' ', '\n', '\r', '\t', '<', '>', '"')
+            .asSequence()
+            .mapNotNull { token -> parse(token.trim().trimEnd(*TRAILING_PUNCTUATION)) }
+            .firstOrNull()
+
+    /** Sentence punctuation that ends up glued to a URL in shared prose. */
+    private val TRAILING_PUNCTUATION = charArrayOf('.', ',', ';', ':', '!', '?', ')', ']', '}', '\'')
+
+    /**
      * Parse [input] as a YouTube link. Returns null when the text is not a
      * YouTube URL, i.e. it should be treated as a normal search query.
      */

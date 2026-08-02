@@ -1,5 +1,6 @@
 package com.ivor.ivormusic
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -14,6 +15,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
@@ -37,11 +39,23 @@ import com.ivor.ivormusic.ui.theme.ThemeMode
 
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import com.ivor.ivormusic.ui.onboarding.OnboardingScreen
+import com.ivor.ivormusic.ui.share.PendingSharedLink
+import com.ivor.ivormusic.ui.share.SharedLinkHandler
+import com.ivor.ivormusic.ui.share.sharedLinkText
 
 class MainActivity : ComponentActivity() {
+
+    // A YouTube link shared or opened into Koda, picked up by SharedLinkHandler
+    // inside the composition. Snapshot state so a link arriving while the app is
+    // already running reaches the UI without restarting anything.
+    private var pendingSharedLink by androidx.compose.runtime.mutableStateOf<PendingSharedLink?>(null)
+    private var sharedLinkCounter = 0L
+
     override fun onCreate(savedInstanceState: Bundle?) {
         val splashScreen = installSplashScreen()
         super.onCreate(savedInstanceState)
+
+        takeSharedLink(intent)
 
         // Remove splash instantly when ready — the AVD entrance animation is the show
         splashScreen.setOnExitAnimationListener { it.remove() }
@@ -101,6 +115,7 @@ class MainActivity : ComponentActivity() {
             IvorMusicTheme(darkTheme = isDarkTheme, colorPalette = colorPalette, amoledDark = amoledTheme) {
                 Box(modifier = Modifier.fillMaxSize()) {
                     MusicApp(
+                        pendingSharedLink = pendingSharedLink,
                         currentThemeMode = themeMode,
                         onThemeModeChange = { themeViewModel.setThemeMode(it) },
                         amoledTheme = amoledTheme,
@@ -173,10 +188,34 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    /**
+     * A link shared into Koda while it was already running is delivered here
+     * rather than through a fresh onCreate, thanks to singleTop.
+     */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        takeSharedLink(intent)
+    }
+
+    /**
+     * Pick up the YouTube link an intent carries, if it has one, and neutralize
+     * the intent so it cannot fire twice - the activity is recreated on theme
+     * and locale changes, and would otherwise replay the same link each time.
+     */
+    private fun takeSharedLink(intent: Intent?) {
+        val text = intent?.sharedLinkText() ?: return
+        intent.action = Intent.ACTION_MAIN
+        intent.data = null
+        intent.removeExtra(Intent.EXTRA_TEXT)
+        pendingSharedLink = PendingSharedLink(text, ++sharedLinkCounter)
+    }
 }
 
 @Composable
 fun MusicApp(
+    pendingSharedLink: PendingSharedLink?,
     currentThemeMode: ThemeMode,
     onThemeModeChange: (ThemeMode) -> Unit,
     amoledTheme: Boolean,
@@ -580,6 +619,23 @@ fun MusicApp(
         com.ivor.ivormusic.ui.shorts.ShortsPlayerOverlay(
             viewModel = shortsPlayerViewModel,
             hiddenActions = shortsHiddenActions
+        )
+
+        // Opens YouTube links shared into the app. Held back until onboarding
+        // is done, so a share cannot jump the first-run flow.
+        SharedLinkHandler(
+            pendingLink = pendingSharedLink,
+            enabled = onboardingCompleted,
+            localOnlyMode = localOnlyMode,
+            homeViewModel = homeViewModel,
+            playerViewModel = playerViewModel,
+            videoPlayerViewModel = videoPlayerViewModel,
+            onNavigateHome = {
+                navController.navigate("home") {
+                    popUpTo("home") { inclusive = false }
+                    launchSingleTop = true
+                }
+            }
         )
     }
 }

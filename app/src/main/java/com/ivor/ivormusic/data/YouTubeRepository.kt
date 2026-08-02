@@ -694,8 +694,11 @@ class YouTubeRepository(private val context: Context) {
             // the full TTL: adopt it instead of re-minting on every app
             // start, which put a network fetch on the first resolution of
             // each session.
+            // A negative age means the clock moved backwards since the mint
+            // (timezone/NTP correction, manual change). Treat that as expired
+            // rather than "forever fresh", which would pin a token for good.
             val persistedAt = visitorDataPrefs.getLong("visitor_data_at", 0L)
-            if (nowInner - persistedAt < VISITOR_DATA_TTL_MS) {
+            if (nowInner - persistedAt in 0 until VISITOR_DATA_TTL_MS) {
                 loadPersistedVisitorData()?.let {
                     cachedVisitorData = it
                     visitorDataFetchedAt = persistedAt
@@ -746,6 +749,32 @@ class YouTubeRepository(private val context: Context) {
                 null
             }
         }
+
+    /**
+     * Drop the current visitorData and mint a new one because *playback* failed,
+     * not resolution.
+     *
+     * [resolvePlayerStreamingData] only remints when the /player call itself
+     * shows the bot check (LOGIN_REQUIRED / missing streamingData). The other
+     * signature is a /player that answers 200 OK with URLs googlevideo then
+     * refuses with HTTP 403 — the token is flagged at the media layer only. The
+     * player sees that, resolution never does, so without this entry point the
+     * flagged token sits in prefs and is replayed on every launch for the whole
+     * 6h TTL: "restarting and clearing cache don't help, clearing data does".
+     *
+     * Safe to call speculatively; a no-op when there is no token to replace.
+     */
+    suspend fun refreshVisitorDataAfterPlaybackFailure() {
+        val flagged = cachedVisitorData ?: loadPersistedVisitorData() ?: return
+        try {
+            remintVisitorData(flagged)
+        } catch (e: Exception) {
+            android.util.Log.w(
+                "YouTubeRepository",
+                "visitorData remint after playback failure failed: ${e.message}",
+            )
+        }
+    }
 
     // Last successfully minted token, persisted per install so a cold start on
     // a flaky network still has a usable, install-unique token to fall back on.
@@ -4275,6 +4304,43 @@ class YouTubeRepository(private val context: Context) {
     private fun cacheCaptionTracks(videoId: String, tracks: List<CaptionTrack>) {
         if (tracks.isEmpty()) return
         captionCache[videoId] = CachedCaptions(tracks, System.currentTimeMillis())
+    }
+
+    /**
+     * Download and parse one caption track into cues the player overlay can
+     * render itself.
+     *
+     * Captions deliberately do not travel through ExoPlayer as a sideloaded
+     * text track: that made them part of the media source, so turning captions
+     * on or off rebuilt the source and discarded the entire video buffer. The
+     * timedtext endpoint lives on www.youtube.com rather than googlevideo, so a
+     * plain browser User-Agent is enough and no ranged chunking is needed - the
+     * payload is a few tens of KB.
+     *
+     * Returns an empty list on any failure; captions are best-effort and must
+     * never take playback down with them.
+     */
+    suspend fun getCaptionCues(track: CaptionTrack): List<VttCue> = withContext(Dispatchers.IO) {
+        try {
+            val request = okhttp3.Request.Builder()
+                .url(track.vttUrl)
+                .addHeader("User-Agent", BROWSER_USER_AGENT)
+                .build()
+            okHttpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    android.util.Log.w(
+                        "YouTubeRepo",
+                        "Caption fetch failed for ${track.languageCode}: HTTP ${response.code}"
+                    )
+                    return@withContext emptyList()
+                }
+                val body = response.body?.string().orEmpty()
+                WebVttParser.parse(body)
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("YouTubeRepo", "getCaptionCues failed for ${track.languageCode}", e)
+            emptyList()
+        }
     }
 
     /**

@@ -8,9 +8,11 @@ import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.FrameLayout
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Canvas
@@ -118,7 +120,6 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
@@ -127,6 +128,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.util.UnstableApi
@@ -141,7 +143,10 @@ import com.ivor.ivormusic.data.ThemePreferences
 import com.ivor.ivormusic.data.VideoChapter
 import com.ivor.ivormusic.data.VideoEngagement
 import com.ivor.ivormusic.data.VideoItem
+import com.ivor.ivormusic.data.VttCue
+import com.ivor.ivormusic.data.WebVttParser
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.util.Locale
 
@@ -152,40 +157,75 @@ import java.util.Locale
 // ---------------- Sub-Composables ----------------
 
 /**
- * Reparents the SubtitleView from exo_content_frame to the PlayerView root.
+ * Draws the active caption cue over the video.
  *
- * Media3 nests captions inside the content frame, and RESIZE_MODE_ZOOM (our
- * pinch-to-fill) works by over-measuring that frame so the video overflows the
- * PlayerView and gets clipped. The SubtitleView rides along: cues slide off the
- * bottom edge and their text - sized as a fraction of the view height - blows up
- * with the frame. Hoisted to the root, captions keep screen size and screen
- * position no matter what the video surface does.
+ * Captions are rendered here rather than by PlayerView's built-in SubtitleView
+ * because they are no longer part of the media source - sideloading them as a
+ * text track meant every CC toggle rebuilt the source and dropped the whole
+ * video buffer. Drawing them in Compose also sidesteps two problems the
+ * SubtitleView had: cues no longer scale or slide off-screen with
+ * RESIZE_MODE_ZOOM, and their distance from the bottom edge is a plain padding
+ * value instead of a fight with per-cue positioning.
+ *
+ * Black-on-white here rather than ColorScheme: captions sit on video frames, so
+ * they have to stay legible whatever the app theme is. Same reasoning as the
+ * player controls above them.
  */
-@UnstableApi
-private fun PlayerView.hoistSubtitleViewAboveVideo() {
-    val subtitles = subtitleView ?: return
-    if (subtitles.parent === this) return
-    (subtitles.parent as? ViewGroup)?.removeView(subtitles)
-    addView(
-        subtitles,
-        FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.MATCH_PARENT
-        )
-    )
-}
+@Composable
+private fun CaptionOverlay(
+    cues: List<VttCue>,
+    player: ExoPlayer,
+    bottomPadding: Dp,
+    compact: Boolean,
+    modifier: Modifier = Modifier
+) {
+    if (cues.isEmpty()) return
 
-/**
- * Pads the bottom of the PlayerView's SubtitleView so captions never sit on the
- * screen edge. Media3 lays every cue out inside the SubtitleView's padding box -
- * cues carrying their own line/position included - so padding is the one knob that
- * moves all of them (setBottomPaddingFraction only affects unpositioned cues, and
- * YouTube's timedtext VTT is mostly positioned).
- */
-@UnstableApi
-private fun PlayerView.setCaptionBottomInset(paddingPx: Int) {
-    subtitleView?.let { view ->
-        if (view.paddingBottom != paddingPx) view.setPadding(0, 0, 0, paddingPx)
+    // Polled off the player rather than the surrounding 500ms progress ticker:
+    // at that rate a cue visibly lands after the words it belongs to.
+    var text by remember(cues) { mutableStateOf<String?>(null) }
+    LaunchedEffect(cues, player) {
+        while (isActive) {
+            text = WebVttParser.cueAt(cues, player.currentPosition)?.text
+            delay(100)
+        }
+    }
+
+    Box(
+        modifier = modifier.fillMaxSize(),
+        contentAlignment = Alignment.BottomCenter
+    ) {
+        Crossfade(
+            targetState = text,
+            animationSpec = tween(150),
+            label = "captionCue",
+            modifier = Modifier.padding(horizontal = 16.dp)
+        ) { cue ->
+            if (cue != null) {
+                Box(
+                    modifier = Modifier.padding(bottom = bottomPadding),
+                    contentAlignment = Alignment.BottomCenter
+                ) {
+                    Text(
+                        text = cue,
+                        color = Color.White,
+                        style = if (compact) {
+                            MaterialTheme.typography.bodyMedium
+                        } else {
+                            MaterialTheme.typography.titleMedium
+                        },
+                        fontWeight = FontWeight.Medium,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier
+                            .background(
+                                color = Color.Black.copy(alpha = 0.75f),
+                                shape = RoundedCornerShape(8.dp)
+                            )
+                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -221,6 +261,7 @@ fun FullscreenPlayerContent(
     onOpenChapters: () -> Unit = {},
     captionsActive: Boolean = false,
     onCaptionsClick: () -> Unit = {},
+    captionCues: List<VttCue> = emptyList(),
     onRetry: (() -> Unit)? = null
 ) {
     // Stable shapes to prevent "square flash"
@@ -232,10 +273,8 @@ fun FullscreenPlayerContent(
     // Speed captured when a hold-to-2x begins, restored when the finger lifts
     var speedBeforeBoost by remember { mutableFloatStateOf(1f) }
 
-    // Captions sit flush with the bottom of the PlayerView by default, which in
-    // fullscreen means the gesture bar / bottom bezel. Hold them off the edge, and
-    // lift them over the bottom bar while the controls are up.
-    val density = LocalDensity.current
+    // Hold captions off the gesture bar / bottom bezel, and lift them over the
+    // bottom bar while the controls are up.
     val navBarInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val captionLift = animateDpAsState(
         targetValue = if (showControls) maxOf(112.dp, navBarInset + 24.dp) else navBarInset + 24.dp,
@@ -265,7 +304,6 @@ fun FullscreenPlayerContent(
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.MATCH_PARENT
                     )
-                    hoistSubtitleViewAboveVideo()
                 }
             },
             update = { playerView ->
@@ -275,15 +313,20 @@ fun FullscreenPlayerContent(
                 } else {
                     AspectRatioFrameLayout.RESIZE_MODE_FIT
                 }
-                // Read the animated value here so only this node recomposes while it runs
-                playerView.setCaptionBottomInset(with(density) { captionLift.value.roundToPx() })
             },
             // Hand the surface back before this view is destroyed - the same
             // ExoPlayer is also rendered by the mini and PiP PlayerViews.
             onRelease = { playerView -> playerView.player = null },
             modifier = Modifier.fillMaxSize()
         )
-        
+
+        CaptionOverlay(
+            cues = captionCues,
+            player = exoPlayer,
+            bottomPadding = captionLift.value,
+            compact = false
+        )
+
         // Overlays
         if (hasError) {
             ErrorOverlay(errorMessage, onRetry)
@@ -490,6 +533,7 @@ fun PortraitPlayerContent(
     onOpenChapters: () -> Unit = {},
     captionsActive: Boolean = false,
     onCaptionsClick: () -> Unit = {},
+    captionCues: List<VttCue> = emptyList(),
     minimizeDragEnabled: Boolean = false,
     onMinimizeDragDelta: (Float) -> Unit = {},
     onMinimizeDragRelease: (Float) -> Unit = {},
@@ -502,7 +546,6 @@ fun PortraitPlayerContent(
     var speedBeforeBoost by remember { mutableFloatStateOf(1f) }
 
     // Same caption lift as fullscreen, scaled to the smaller inline video box
-    val density = LocalDensity.current
     val captionLift = animateDpAsState(
         targetValue = if (showControls) 64.dp else 12.dp,
         animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
@@ -531,17 +574,22 @@ fun PortraitPlayerContent(
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.MATCH_PARENT
                     )
-                    hoistSubtitleViewAboveVideo()
                 }
             },
             update = { playerView ->
                 playerView.player = exoPlayer
-                playerView.setCaptionBottomInset(with(density) { captionLift.value.roundToPx() })
             },
             // Hand the surface back before this view is destroyed - the same
             // ExoPlayer is also rendered by the mini and PiP PlayerViews.
             onRelease = { playerView -> playerView.player = null },
             modifier = Modifier.fillMaxSize()
+        )
+
+        CaptionOverlay(
+            cues = captionCues,
+            player = exoPlayer,
+            bottomPadding = captionLift.value,
+            compact = true
         )
 
         if (hasError) ErrorOverlay(errorMessage, onRetry)

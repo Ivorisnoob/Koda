@@ -11,14 +11,13 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
-import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.HttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
-import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlaybackException
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.MergingMediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
-import androidx.media3.exoplayer.source.SingleSampleMediaSource
 import com.ivor.ivormusic.data.CaptionTrack
 import com.ivor.ivormusic.data.CommentItem
 import com.ivor.ivormusic.data.LikeStatus
@@ -26,8 +25,10 @@ import com.ivor.ivormusic.data.TimedComment
 import com.ivor.ivormusic.data.VideoEngagement
 import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.data.VideoQuality
+import com.ivor.ivormusic.data.VttCue
 import com.ivor.ivormusic.data.YouTubeRepository
 import com.ivor.ivormusic.data.ThemePreferences
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -92,11 +93,12 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
     private var captionsLoadedForVideoId: String? = null
 
-    // Guards the drop-the-caption-and-retry recovery in onPlayerError so it
-    // fires at most once per caption selection: without it, an unrelated
-    // playback failure (expired stream URL, network blip) would be blamed on
-    // the subtitle and silently switch captions off for good.
-    private var captionRecoveryUsed = false
+    // Cues of the selected track, rendered by the player overlay. Captions are
+    // deliberately kept out of the media source - see [setCaptionTrack].
+    private val _captionCues = MutableStateFlow<List<VttCue>>(emptyList())
+    val captionCues: StateFlow<List<VttCue>> = _captionCues.asStateFlow()
+
+    private var captionCuesJob: Job? = null
 
     // Repeat sticks across videos and app restarts, so seed it from prefs
     // rather than defaulting to off on every player creation.
@@ -122,6 +124,13 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     // reclaimed by another app). Retry in place a couple of times before the
     // error reaches the UI; reset on every successful playback start.
     private var rendererRetryCount = 0
+
+    // Source failures (googlevideo 403 on a flagged token, an expired URL, a
+    // network blip) are recovered by re-resolving the stream rather than by
+    // replaying the dead URL. Bounded so a genuinely unplayable video still
+    // reaches the error overlay; reset on every successful playback start.
+    private var sourceRetryCount = 0
+    private var sourceRecoveryJob: kotlinx.coroutines.Job? = null
 
     // ---------------- Engagement (likes / subscribe / comments) ----------------
 
@@ -190,6 +199,19 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
     private var channelVideosLoadedForChannelId: String? = null
 
+    /**
+     * Stream data source factory: ChunkedStreamDataSource fetches googlevideo
+     * media in bounded ranged chunks (open-ended requests are server-paced to
+     * the media bitrate) and picks the per-request User-Agent matching the
+     * URL's issuing client (`?c=` param; a UA mismatch means a 403).
+     *
+     * Declared before [init] on purpose: the ExoPlayer built there installs it
+     * as the player-wide MediaSource factory, so a lazy declared further down
+     * the class would still be an uninitialised delegate at that point.
+     */
+    private val streamDataSourceFactory =
+        DefaultDataSource.Factory(context, com.ivor.ivormusic.data.ChunkedStreamDataSource.Factory())
+
     init {
         // Near-instant first frame (~1s buffered) plus an aggressive
         // read-ahead: up to 5 minutes (min == max: continuous top-up),
@@ -215,27 +237,15 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         // buffer drains and playback dies in a stuck-buffering state.
         // Audio focus + becoming-noisy mirror MusicService, so video playback
         // pauses the music player (and vice versa) instead of playing over it.
-        // Media3 1.4+ parses subtitles at extraction time and disables the
-        // render-time text path by default, so a sideloaded text/vtt sample
-        // throws "Legacy decoding is disabled". Our captions are sideloaded as
-        // SingleSampleMediaSource, so re-enable legacy decoding on the text
-        // renderer. DefaultRenderersFactory only exposes a toggle for this from
-        // Media3 1.6; on 1.5 we flip it on the TextRenderer directly.
-        val renderersFactory = object : DefaultRenderersFactory(context) {
-            override fun buildTextRenderers(
-                context: Context,
-                output: androidx.media3.exoplayer.text.TextOutput,
-                outputLooper: android.os.Looper,
-                extensionRendererMode: Int,
-                out: ArrayList<androidx.media3.exoplayer.Renderer>
-            ) {
-                super.buildTextRenderers(context, output, outputLooper, extensionRendererMode, out)
-                out.filterIsInstance<androidx.media3.exoplayer.text.TextRenderer>()
-                    .forEach { it.experimentalSetLegacyDecodingEnabled(true) }
-            }
-        }
-
-        _exoPlayer = ExoPlayer.Builder(context, renderersFactory)
+        // Every media source this player builds must fetch through
+        // ChunkedStreamDataSource. loadQuality() passes it explicitly for the
+        // progressive/merged paths, but the DASH branch hands the player a bare
+        // MediaItem, which would otherwise be served by Media3's stock
+        // DefaultDataSource - no per-URL User-Agent, so googlevideo answers 403
+        // and the video dead-ends on "Source error". Setting it here covers the
+        // manifest, its segments, and any future setMediaItem call.
+        _exoPlayer = ExoPlayer.Builder(context)
+            .setMediaSourceFactory(DefaultMediaSourceFactory(streamDataSourceFactory))
             .setLoadControl(loadControl)
             .setWakeMode(C.WAKE_MODE_NETWORK)
             .setAudioAttributes(AudioAttributes.DEFAULT, true)
@@ -257,6 +267,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                         // Playback recovered (or started cleanly): allow the
                         // retry budget to be spent again on a later failure.
                         rendererRetryCount = 0
+                        sourceRetryCount = 0
                     }
                     if (playbackState == Player.STATE_ENDED) {
                         // Repeat and auto-play are mutually exclusive: looping
@@ -273,33 +284,6 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                 }
 
                 override fun onPlayerError(error: PlaybackException) {
-                    // Captions are best-effort: a failing sideloaded subtitle
-                    // source fails the whole MergingMediaSource, which would
-                    // otherwise leave the player stuck buffering. If a caption is
-                    // active when playback errors, drop it and reload the video so
-                    // it recovers instead of hanging.
-                    if (!captionRecoveryUsed &&
-                        _selectedCaption.value != null &&
-                        _currentQuality.value != null
-                    ) {
-                        android.util.Log.w(
-                            "VideoPlayerVM",
-                            "Playback error with captions on; retrying without captions",
-                            error
-                        )
-                        val quality = _currentQuality.value ?: return
-                        captionRecoveryUsed = true
-                        _selectedCaption.value = null
-                        _exoPlayer?.let { p ->
-                            p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
-                                .setPreferredTextLanguage(null)
-                                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
-                                .build()
-                        }
-                        reloadPreservingPosition(quality, null)
-                        return
-                    }
-
                     // A renderer/decoder failure is not a broken stream: the
                     // codec lost its surface or was reclaimed. Re-prepare in
                     // place (position is kept) instead of dead-ending the
@@ -312,6 +296,20 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                             error
                         )
                         _exoPlayer?.prepare()
+                        return
+                    }
+
+                    // A source failure means the URL is dead, not the video:
+                    // re-resolving is the only thing that can help, and
+                    // re-preparing the same URL never will.
+                    if (isRecoverableSourceError(error) && sourceRetryCount < MAX_SOURCE_RETRIES) {
+                        sourceRetryCount++
+                        android.util.Log.w(
+                            "VideoPlayerVM",
+                            "Source error (attempt $sourceRetryCount/$MAX_SOURCE_RETRIES); re-resolving stream",
+                            error
+                        )
+                        recoverFromSourceError(error)
                         return
                     }
 
@@ -361,21 +359,130 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     }
 
     /**
-     * Retry after playback failed, from the error overlay. Rebuilds the media
-     * source for the current quality when there is one (keeping the position),
-     * otherwise re-runs the whole load for the current video - a failure before
-     * any quality resolved means there is nothing to preserve.
+     * Retry after playback failed, from the error overlay. Re-resolves the
+     * stream and rebuilds the media source at the current position; falls back
+     * to re-running the whole load when there is no player to reload into.
      */
     fun retryPlayback() {
         rendererRetryCount = 0
+        sourceRetryCount = 0
         _playbackError.value = null
-        val quality = _currentQuality.value
-        if (quality != null && _exoPlayer != null) {
-            reloadPreservingPosition(quality, _selectedCaption.value)
-            _exoPlayer?.play()
-        } else {
-            _currentVideo.value?.let { playVideo(it, forceRestart = true) }
+        val video = _currentVideo.value ?: return
+        if (_exoPlayer == null) {
+            playVideo(video, forceRestart = true)
+            return
         }
+        // Always re-resolve rather than replaying _currentQuality: its URL is
+        // what just failed, and googlevideo URLs are short-lived, so handing
+        // the same one back to the player fails identically every time.
+        _isLoading.value = true
+        sourceRecoveryJob?.cancel()
+        sourceRecoveryJob = viewModelScope.launch {
+            if (!reresolveAndReload(video)) {
+                _playbackError.value = Exception("Unable to load video stream")
+                _isLoading.value = false
+            }
+        }
+    }
+
+    /**
+     * Rescue a source failure without bothering the user: mint a fresh
+     * visitorData when googlevideo refused us outright (403 means the token or
+     * the request's client signature was rejected at the media layer - stream
+     * resolution itself answered 200 and never sees this), then re-resolve and
+     * reload. Falls back to surfacing [original] so the error overlay and its
+     * Retry button still appear when recovery cannot help.
+     */
+    private fun recoverFromSourceError(original: PlaybackException) {
+        val video = _currentVideo.value
+        if (video == null) {
+            _playbackError.value = original
+            _isBuffering.value = false
+            return
+        }
+        // _isLoading, not _isBuffering: a fatal error drives the player to
+        // STATE_IDLE, whose onPlaybackStateChanged sets _isBuffering back to
+        // false and would leave the re-resolve showing a frozen frame with no
+        // spinner. Nothing else writes _isLoading, and "resolving a stream" is
+        // exactly what it already means during the initial load.
+        _isLoading.value = true
+        sourceRecoveryJob?.cancel()
+        sourceRecoveryJob = viewModelScope.launch {
+            if (httpResponseCode(original) == 403) {
+                youtubeRepository.refreshVisitorDataAfterPlaybackFailure()
+            }
+            if (!reresolveAndReload(video)) {
+                _playbackError.value = original
+                _isLoading.value = false
+            }
+        }
+    }
+
+    /**
+     * Re-resolve [video]'s stream URLs and rebuild the media source at the
+     * current position, keeping the quality the user was watching when it is
+     * still on offer. Returns false when resolution yielded nothing usable, so
+     * the caller can surface an error; true also covers "the user moved on
+     * mid-flight", where there is nothing left to recover.
+     */
+    private suspend fun reresolveAndReload(video: VideoItem): Boolean {
+        if (_exoPlayer == null) return false
+        val qualities = try {
+            kotlinx.coroutines.withTimeout(15000L) {
+                youtubeRepository.getVideoStreamQualities(video.videoId)
+            }
+        } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+            // Caught before CancellationException below, which it subclasses:
+            // a timed-out resolution is a real failure the caller must surface,
+            // not a cancellation to propagate.
+            android.util.Log.w("VideoPlayerVM", "Re-resolve timed out for ${video.videoId}", e)
+            emptyList()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            // playVideo() cancels this job when the user moves on. Swallowing
+            // that would let a dead recovery keep writing loading/error state
+            // over the video that replaced it.
+            throw e
+        } catch (e: Exception) {
+            android.util.Log.w("VideoPlayerVM", "Re-resolve failed for ${video.videoId}", e)
+            emptyList()
+        }
+        if (_currentVideo.value?.videoId != video.videoId) {
+            _isLoading.value = false
+            return true
+        }
+        if (qualities.isEmpty()) return false
+
+        _availableQualities.value = qualities
+        val previousLabel = _currentQuality.value?.resolution
+        val quality = qualities.firstOrNull { it.resolution == previousLabel }
+            ?: pickDefaultQuality(qualities)
+        reloadPreservingPosition(quality)
+        _exoPlayer?.play()
+        _playbackError.value = null
+        _isLoading.value = false
+        return true
+    }
+
+    /**
+     * Source-level failures - dead URL, 403, malformed container - are worth
+     * re-resolving for. Renderer failures are not: [isTransientRendererError]
+     * already re-prepares those in place, and this runs after it.
+     */
+    private fun isRecoverableSourceError(error: PlaybackException): Boolean {
+        if (error is ExoPlaybackException && error.type == ExoPlaybackException.TYPE_SOURCE) {
+            return true
+        }
+        return error.errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS
+    }
+
+    /** HTTP status behind a source error, or null when it was not an HTTP failure. */
+    private fun httpResponseCode(error: PlaybackException): Int? {
+        var cause: Throwable? = error.cause
+        while (cause != null) {
+            if (cause is HttpDataSource.InvalidResponseCodeException) return cause.responseCode
+            cause = cause.cause
+        }
+        return null
     }
 
     /**
@@ -432,9 +539,14 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         _selectedCaption.value = null // Captions default off per video
         _isCaptionsLoading.value = false
         captionsLoadedForVideoId = null
-        captionRecoveryUsed = false
+        captionCuesJob?.cancel()
+        _captionCues.value = emptyList()
         _playbackError.value = null // Clear previous error
         rendererRetryCount = 0
+        sourceRetryCount = 0
+        // A recovery still in flight belongs to the previous video
+        sourceRecoveryJob?.cancel()
+        sourceRecoveryJob = null
 
         // Reset engagement + comments state for the new video
         _engagement.value = null
@@ -556,16 +668,6 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     }
 
     /**
-     * Stream data source factory: ChunkedStreamDataSource fetches googlevideo
-     * media in bounded ranged chunks (open-ended requests are server-paced to
-     * the media bitrate) and picks the per-request User-Agent matching the
-     * URL's issuing client (`?c=` param; a UA mismatch means a 403).
-     */
-    private val streamDataSourceFactory by lazy {
-        DefaultDataSource.Factory(context, com.ivor.ivormusic.data.ChunkedStreamDataSource.Factory())
-    }
-
-    /**
      * Pick the starting quality based on the Settings preference for the
      * current network (Wi-Fi vs mobile data). Fresh pref read because Settings
      * toggles through its own ThemePreferences instance.
@@ -587,33 +689,26 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     }
 
     /**
-     * Build the media source for [quality], optionally sideloading [caption] as
-     * a WebVTT subtitle track. DASH carries the subtitle via a MediaItem
-     * SubtitleConfiguration (the player's default source factory sideloads it);
-     * the progressive/merged paths wrap a SingleSampleMediaSource into the
-     * MergingMediaSource. PlayerView renders the selected text cues in its
-     * built-in SubtitleView, so no extra UI is needed.
+     * Build the media source for [quality].
+     *
+     * Captions are not part of it. They used to be sideloaded here as a text
+     * track, which made every CC toggle a media-source rebuild: the video and
+     * audio were torn down and refetched from the network just to add or drop a
+     * subtitle. Koda renders cues itself instead - see [setCaptionTrack] - so
+     * this only ever deals with video and audio.
      */
-    private fun loadQuality(quality: VideoQuality, caption: CaptionTrack? = _selectedCaption.value) {
+    private fun loadQuality(quality: VideoQuality) {
         _currentQuality.value = quality
 
-        val subtitleConfig = caption?.let {
-            MediaItem.SubtitleConfiguration.Builder(android.net.Uri.parse(it.vttUrl))
-                .setMimeType(MimeTypes.TEXT_VTT)
-                .setLanguage(it.languageCode)
-                .setSelectionFlags(C.SELECTION_FLAG_DEFAULT)
-                .build()
-        }
-
         if (quality.isDASH) {
-            // DASH streams are adaptive - use directly without merging
-            val builder = MediaItem.Builder()
-                .setUri(quality.url)
-                .setMimeType(MimeTypes.APPLICATION_MPD)
-            if (subtitleConfig != null) {
-                builder.setSubtitleConfigurations(listOf(subtitleConfig))
-            }
-            _exoPlayer?.setMediaItem(builder.build())
+            // Adaptive manifest - hand it to the player and let its MediaSource
+            // factory build the DASH/HLS source, no merging needed.
+            _exoPlayer?.setMediaItem(
+                MediaItem.Builder()
+                    .setUri(quality.url)
+                    .setMimeType(adaptiveMimeType(quality))
+                    .build()
+            )
         } else {
             val dataSourceFactory = streamDataSourceFactory
             val audioUrl = quality.audioUrl
@@ -631,50 +726,38 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                     .createMediaSource(MediaItem.fromUri(quality.url))
             }
 
-            if (subtitleConfig != null) {
-                val subtitleSource = SingleSampleMediaSource.Factory(subtitleDataSourceFactory())
-                    .createMediaSource(subtitleConfig, C.TIME_UNSET)
-                // Documented sideloading pattern: merge the subtitle as an extra
-                // source. The default MergingMediaSource ignores the subtitle's
-                // unknown (TIME_UNSET) duration when clipping, so it does not
-                // truncate the video/audio timeline.
-                _exoPlayer?.setMediaSource(MergingMediaSource(primarySource, subtitleSource))
-            } else {
-                _exoPlayer?.setMediaSource(primarySource)
-            }
+            _exoPlayer?.setMediaSource(primarySource)
         }
         _exoPlayer?.prepare()
     }
 
     /**
-     * HTTP factory for the timedtext subtitle request. The endpoint is on
-     * www.youtube.com (not googlevideo), so a plain browser User-Agent works.
+     * MIME for an adaptive quality. Both DASH and HLS entries arrive with
+     * isDASH set and are told apart only by [VideoQuality.format], so pinning
+     * MPD unconditionally would make the factory build a DashMediaSource for an
+     * m3u8 playlist and fail the load - which is what every live stream gets.
      */
-    private fun subtitleDataSourceFactory(): DefaultHttpDataSource.Factory =
-        DefaultHttpDataSource.Factory()
-            .setUserAgent(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
-                    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-            )
-            .setAllowCrossProtocolRedirects(true)
+    private fun adaptiveMimeType(quality: VideoQuality): String =
+        if (quality.format.equals("HLS", ignoreCase = true)) MimeTypes.APPLICATION_M3U8
+        else MimeTypes.APPLICATION_MPD
 
     fun setQuality(quality: VideoQuality) {
-        reloadPreservingPosition(quality, _selectedCaption.value)
+        reloadPreservingPosition(quality)
     }
 
     /**
-     * Rebuild the media source for a new quality and/or caption selection while
-     * keeping the current playback position. Used by both quality switches and
-     * caption toggles.
+     * Rebuild the media source for a new quality while keeping the current
+     * playback position. Only quality switches need this - caption changes no
+     * longer touch the media source at all.
      */
-    private fun reloadPreservingPosition(quality: VideoQuality, caption: CaptionTrack?) {
+    private fun reloadPreservingPosition(quality: VideoQuality) {
         val player = _exoPlayer ?: return
         val position = player.currentPosition
 
         // Remove any existing quality change listener to prevent leaks
         qualityChangeListener?.let { player.removeListener(it) }
 
-        loadQuality(quality, caption)
+        loadQuality(quality)
 
         // Wait for player to be ready before seeking to preserved position
         val listener = object : Player.Listener {
@@ -712,22 +795,38 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     }
 
     /**
-     * Select a caption track (or null to turn captions off). Rebuilds the media
-     * source to add/remove the sideloaded subtitle, preserving position, and
-     * updates the player's preferred text language so the track is auto-shown.
+     * Select a caption track, or null to turn captions off.
+     *
+     * The playback pipeline is deliberately untouched here. Captions used to be
+     * a text track merged into the media source, so switching them rebuilt that
+     * source: playback re-prepared, the buffer was discarded, and - because
+     * video has no disk cache - everything already downloaded was fetched
+     * again. Cues are fetched and parsed on their own instead, and the overlay
+     * draws them over the video surface, which makes the CC toggle instant and
+     * free no matter how many times it is pressed.
      */
     fun setCaptionTrack(track: CaptionTrack?) {
         if (_selectedCaption.value == track) return
         _selectedCaption.value = track
-        // A deliberate (re)selection earns a fresh recovery attempt.
-        captionRecoveryUsed = false
-        val player = _exoPlayer ?: return
-        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
-            .setPreferredTextLanguage(track?.languageCode)
-            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, track == null)
-            .build()
-        val quality = _currentQuality.value ?: return
-        reloadPreservingPosition(quality, track)
+
+        captionCuesJob?.cancel()
+        if (track == null) {
+            _captionCues.value = emptyList()
+            return
+        }
+        captionCuesJob = viewModelScope.launch {
+            val cues = youtubeRepository.getCaptionCues(track)
+            // Ignore a load the user has already switched away from
+            if (_selectedCaption.value == track) {
+                _captionCues.value = cues
+                if (cues.isEmpty()) {
+                    android.util.Log.w(
+                        "VideoPlayerVM",
+                        "Caption track ${track.languageCode} produced no cues"
+                    )
+                }
+            }
+        }
     }
 
     fun setExpanded(expanded: Boolean) {
@@ -1056,6 +1155,14 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
         /** Silent re-prepare attempts before a renderer error reaches the UI. */
         private const val MAX_RENDERER_RETRIES = 2
+
+        /**
+         * Silent re-resolve attempts before a source error reaches the UI. One
+         * is enough: the first pass already remints a rejected visitorData and
+         * fetches brand-new URLs, so a second failure means the video really is
+         * unplayable and the user should get the overlay instead of a spinner.
+         */
+        private const val MAX_SOURCE_RETRIES = 1
     }
 
     override fun onCleared() {
@@ -1063,6 +1170,8 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         // Remove quality change listener to prevent leaks
         qualityChangeListener?.let { _exoPlayer?.removeListener(it) }
         qualityChangeListener = null
+        sourceRecoveryJob?.cancel()
+        sourceRecoveryJob = null
         _exoPlayer?.release()
         _exoPlayer = null
     }

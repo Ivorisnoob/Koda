@@ -83,6 +83,7 @@ fun VideoPlayerContent(
     val chapters by viewModel.chapters.collectAsState()
     val captionTracks by viewModel.captionTracks.collectAsState()
     val selectedCaption by viewModel.selectedCaption.collectAsState()
+    val captionCues by viewModel.captionCues.collectAsState()
     val isCaptionsLoading by viewModel.isCaptionsLoading.collectAsState()
     val isLooping by viewModel.isLooping.collectAsState()
     val playbackSpeed by viewModel.playbackSpeed.collectAsState()
@@ -309,6 +310,7 @@ fun VideoPlayerContent(
                     viewModel.ensureCaptionsLoaded()
                     showCaptionsSheet = true
                 },
+                captionCues = captionCues,
                 onRetry = { viewModel.retryPlayback() }
             )
 
@@ -369,6 +371,7 @@ fun VideoPlayerContent(
                             viewModel.ensureCaptionsLoaded()
                             showCaptionsSheet = true
                         },
+                        captionCues = captionCues,
                         minimizeDragEnabled = true,
                         onMinimizeDragDelta = onMinimizeDragDelta,
                         onMinimizeDragRelease = onMinimizeDragRelease,

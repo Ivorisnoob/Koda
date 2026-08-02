@@ -154,6 +154,14 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private var tasteSeedOffset = 0
     private var videoFeedExhausted = false
 
+    // Videos already put in front of the user this session, so a refresh can
+    // skip them. FEwhat_to_watch barely moves between fetches - measured
+    // against the live feed (August 2026), re-requesting page 1 came back 22
+    // videos of which 16 had just been on screen - so a refresh that simply
+    // replaced the list looked like nothing had happened. Continuation pages,
+    // by contrast, were 100% new, which is what [refreshVideos] pulls from.
+    private val shownVideoIds = LinkedHashSet<String>()
+
     // Subscriptions tab state
     private val _subscribedChannels = MutableStateFlow<List<com.ivor.ivormusic.data.SubscribedChannel>>(emptyList())
     val subscribedChannels: StateFlow<List<com.ivor.ivormusic.data.SubscribedChannel>> = _subscribedChannels.asStateFlow()
@@ -579,12 +587,25 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     // entries; load-more continues from the 7th.
                     tasteSeedOffset = 6
                     videoFeedExhausted = false
+                    rememberShown(page.videos)
                 }
             } catch (e: Exception) {
                 // Handle error silently
             } finally {
                 _isVideoLoading.value = false
             }
+        }
+    }
+
+    /**
+     * Record videos as seen, keeping the newest [SHOWN_VIDEO_MEMORY] ids.
+     * Bounded because the set only exists to keep consecutive refreshes from
+     * repeating themselves, not to be a second watch history.
+     */
+    private fun rememberShown(videos: List<VideoItem>) {
+        videos.forEach { shownVideoIds.add(it.videoId) }
+        while (shownVideoIds.size > SHOWN_VIDEO_MEMORY) {
+            shownVideoIds.remove(shownVideoIds.first())
         }
     }
 
@@ -619,10 +640,11 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
 
-                val shownIds = _trendingVideos.value.mapTo(HashSet()) { it.videoId }
-                val fresh = newVideos.filterNot { it.videoId in shownIds }
+                val onScreen = _trendingVideos.value.mapTo(HashSet()) { it.videoId }
+                val fresh = newVideos.filterNot { it.videoId in onScreen }
                 if (fresh.isNotEmpty()) {
                     _trendingVideos.value = _trendingVideos.value + fresh
+                    rememberShown(fresh)
                 }
             } catch (e: Exception) {
                 // Handle error silently; the next scroll will retry
@@ -724,8 +746,81 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     /**
      * Refresh video mode content.
      */
+    /**
+     * Pull-to-refresh for the video home feed.
+     *
+     * Deliberately not a plain re-run of [loadTrendingVideos]. YouTube's
+     * FEwhat_to_watch page 1 is close to static between fetches, so replacing
+     * the list with it showed the user the videos they had just scrolled past
+     * and the refresh read as broken. Measured against the live feed in August
+     * 2026: a page-1 refetch returned 22 videos, 16 of them already on screen,
+     * while the continuation returned an entire page of new ones.
+     *
+     * So this takes whatever page 1 offers that is genuinely new, then walks
+     * forward through the feed until there is a screenful of unseen videos.
+     * When the feed really is exhausted it falls back to page 1 rather than
+     * emptying the screen.
+     */
     fun refreshVideos() {
-        loadTrendingVideos()
+        loadShortsFeed()
+        viewModelScope.launch {
+            _isVideoLoading.value = true
+            try {
+                val page = youtubeRepository.getTrendingVideos()
+                if (page.videos.isEmpty()) return@launch
+
+                val fresh = mutableListOf<VideoItem>()
+                val batchIds = HashSet<String>()
+                fun takeUnseen(videos: List<VideoItem>) {
+                    videos.forEach { video ->
+                        if (video.videoId !in shownVideoIds && batchIds.add(video.videoId)) {
+                            fresh += video
+                        }
+                    }
+                }
+                takeUnseen(page.videos)
+
+                var continuation = page.continuation
+                var pagesWalked = 0
+                while (fresh.size < MIN_FRESH_VIDEOS_ON_REFRESH &&
+                    pagesWalked < MAX_REFRESH_PAGES
+                ) {
+                    val token = continuation
+                    val more = if (token != null) {
+                        val next = youtubeRepository.getVideoFeedContinuation(token)
+                        continuation = next.continuation
+                        next.videos
+                    } else {
+                        // Logged out there is no token: page the taste-based
+                        // feed by seed window instead, wrapping back to the
+                        // newest history entries once the seeds run out.
+                        tasteSeedOffset += 6
+                        val seeded = youtubeRepository.getTasteBasedVideos(tasteSeedOffset)
+                        if (seeded.isEmpty()) {
+                            tasteSeedOffset = 0
+                            youtubeRepository.getTasteBasedVideos(0)
+                        } else {
+                            seeded
+                        }
+                    }
+                    pagesWalked++
+                    if (more.isEmpty()) break
+                    takeUnseen(more)
+                }
+
+                // Everything the feed has to offer is already seen. Showing
+                // page 1 again beats showing nothing.
+                val result = fresh.ifEmpty { page.videos }
+                _trendingVideos.value = result
+                videoFeedContinuation = continuation
+                videoFeedExhausted = false
+                rememberShown(result)
+            } catch (e: Exception) {
+                // Handle error silently; the list keeps its previous contents
+            } finally {
+                _isVideoLoading.value = false
+            }
+        }
     }
 
     // ============= PASTED YOUTUBE LINK RESOLUTION =============
@@ -888,5 +983,20 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     fun clearSearchHistory() {
         searchHistoryRepository.clearHistory()
         _searchHistory.value = emptyList()
+    }
+
+    private companion object {
+        /** Ids kept in [shownVideoIds] before the oldest are forgotten. */
+        const val SHOWN_VIDEO_MEMORY = 400
+
+        /** A refresh stops walking the feed once it has this many new videos. */
+        const val MIN_FRESH_VIDEOS_ON_REFRESH = 15
+
+        /**
+         * Cap on continuation fetches per refresh. The live feed ran out of
+         * continuation tokens after roughly 50 videos, so this bounds a refresh
+         * at about that depth instead of hammering the API.
+         */
+        const val MAX_REFRESH_PAGES = 3
     }
 }
