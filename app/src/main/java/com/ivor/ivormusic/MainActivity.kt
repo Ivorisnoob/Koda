@@ -1,6 +1,7 @@
 package com.ivor.ivormusic
 
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -39,6 +40,7 @@ import com.ivor.ivormusic.ui.theme.ThemeMode
 
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import com.ivor.ivormusic.ui.onboarding.OnboardingScreen
+import com.ivor.ivormusic.ui.video.enterPipMode
 import com.ivor.ivormusic.ui.share.PendingSharedLink
 import com.ivor.ivormusic.ui.share.SharedLinkHandler
 import com.ivor.ivormusic.ui.share.sharedLinkText
@@ -50,6 +52,18 @@ class MainActivity : ComponentActivity() {
     // already running reaches the UI without restarting anything.
     private var pendingSharedLink by androidx.compose.runtime.mutableStateOf<PendingSharedLink?>(null)
     private var sharedLinkCounter = 0L
+
+    // True while the app is in system Picture-in-Picture. Held here rather than
+    // inside the video overlay because the whole app has to stand down in PiP:
+    // the NavHost used to keep composing and animating behind the window, and
+    // any gap around the video showed app chrome instead of black.
+    private var isInPipMode by androidx.compose.runtime.mutableStateOf(false)
+
+    // Set by the video player so onUserLeaveHint can enter PiP with the right
+    // window shape on Android 11, where setAutoEnterEnabled does not exist.
+    private var pipVideoAspectRatio: Float? = null
+    private var pipVideoBounds: android.graphics.Rect? = null
+    private var pipEligible = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         val splashScreen = installSplashScreen()
@@ -116,6 +130,12 @@ class MainActivity : ComponentActivity() {
                 Box(modifier = Modifier.fillMaxSize()) {
                     MusicApp(
                         pendingSharedLink = pendingSharedLink,
+                        isInPipMode = isInPipMode,
+                        onPipStateChanged = { eligible, aspectRatio, bounds ->
+                            pipEligible = eligible
+                            pipVideoAspectRatio = aspectRatio
+                            pipVideoBounds = bounds
+                        },
                         currentThemeMode = themeMode,
                         onThemeModeChange = { themeViewModel.setThemeMode(it) },
                         amoledTheme = amoledTheme,
@@ -189,6 +209,29 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onPictureInPictureModeChanged(
+        isInPictureInPictureMode: Boolean,
+        newConfig: android.content.res.Configuration
+    ) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        isInPipMode = isInPictureInPictureMode
+    }
+
+    /**
+     * Entering PiP on the way out of the app.
+     *
+     * On API 31+ the system does this itself from setAutoEnterEnabled, which
+     * handles the gesture-nav swipe up as well and animates better, so this
+     * only covers Android 11 and 12 where that flag does not exist.
+     */
+    @Deprecated("Deprecated in Java")
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) return
+        if (!pipEligible || isInPipMode) return
+        enterPipMode(this, pipVideoAspectRatio, pipVideoBounds)
+    }
+
     /**
      * A link shared into Koda while it was already running is delivered here
      * rather than through a fresh onCreate, thanks to singleTop.
@@ -216,6 +259,8 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun MusicApp(
     pendingSharedLink: PendingSharedLink?,
+    isInPipMode: Boolean,
+    onPipStateChanged: (eligible: Boolean, aspectRatio: Float?, bounds: android.graphics.Rect?) -> Unit,
     currentThemeMode: ThemeMode,
     onThemeModeChange: (ThemeMode) -> Unit,
     amoledTheme: Boolean,
@@ -338,6 +383,29 @@ fun MusicApp(
     val isVideoOverlayExpanded by videoPlayerViewModel.isExpanded.collectAsState()
     val hasVideoMiniPlayer = overlayVideo != null && !isVideoOverlayExpanded
     val musicPillVisible = playerViewModel.currentSong.collectAsState().value != null
+
+    // Keep the Activity's PiP inputs current. It needs them outside the
+    // composition, in onUserLeaveHint, where there is no way to read state.
+    val pipAspectRatio by videoPlayerViewModel.videoAspectRatio.collectAsState()
+    val pipBounds by videoPlayerViewModel.videoSurfaceBounds.collectAsState()
+    androidx.compose.runtime.LaunchedEffect(
+        overlayVideo, isVideoOverlayExpanded, pipAspectRatio, pipBounds
+    ) {
+        onPipStateChanged(
+            overlayVideo != null && isVideoOverlayExpanded,
+            pipAspectRatio,
+            pipBounds
+        )
+    }
+
+    // In system PiP the app is just a video surface. Returning here keeps the
+    // NavHost, both players and every overlay out of the composition entirely,
+    // rather than letting them draw and animate behind a window nobody can see
+    // them in.
+    if (isInPipMode) {
+        com.ivor.ivormusic.ui.video.PipVideoSurface(viewModel = videoPlayerViewModel)
+        return
+    }
 
     Box(
         modifier = Modifier

@@ -36,6 +36,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
@@ -84,6 +86,17 @@ fun VideoPlayerContent(
     val captionTracks by viewModel.captionTracks.collectAsState()
     val selectedCaption by viewModel.selectedCaption.collectAsState()
     val captionCues by viewModel.captionCues.collectAsState()
+    val videoAspectRatio by viewModel.videoAspectRatio.collectAsState()
+    val videoSurfaceBounds by viewModel.videoSurfaceBounds.collectAsState()
+
+    // PiP is a device capability, not a given: Android TV and a few OEM builds
+    // ship without it, and the button must not sit there doing nothing.
+    val pipSupported = remember(context) {
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+            context.packageManager.hasSystemFeature(
+                android.content.pm.PackageManager.FEATURE_PICTURE_IN_PICTURE
+            )
+    }
     val isCaptionsLoading by viewModel.isCaptionsLoading.collectAsState()
     val isLooping by viewModel.isLooping.collectAsState()
     val playbackSpeed by viewModel.playbackSpeed.collectAsState()
@@ -276,6 +289,20 @@ fun VideoPlayerContent(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(Color.Black) // Extra black background to prevent any bleed
+                    // Fullscreen reports its own bounds: the portrait video box
+                    // is not composed here, so without this the PiP source rect
+                    // would still describe the small inline player.
+                    .onGloballyPositioned { coords ->
+                        val rect = coords.boundsInWindow()
+                        viewModel.setVideoSurfaceBounds(
+                            android.graphics.Rect(
+                                rect.left.toInt(),
+                                rect.top.toInt(),
+                                rect.right.toInt(),
+                                rect.bottom.toInt()
+                            )
+                        )
+                    }
             ) {
                 FullscreenPlayerContent(
                 exoPlayer = exoPlayer,
@@ -337,6 +364,20 @@ fun VideoPlayerContent(
                         .fillMaxWidth()
                         .aspectRatio(16f / 9f)
                         .background(Color.Black)
+                        // Reported so PictureInPictureParams can animate the
+                        // window out of the video rect instead of the whole
+                        // screen. Window coordinates are what the system wants.
+                        .onGloballyPositioned { coords ->
+                            val rect = coords.boundsInWindow()
+                            viewModel.setVideoSurfaceBounds(
+                                android.graphics.Rect(
+                                    rect.left.toInt(),
+                                    rect.top.toInt(),
+                                    rect.right.toInt(),
+                                    rect.bottom.toInt()
+                                )
+                            )
+                        }
                 ) {
                     PortraitPlayerContent(
                         exoPlayer = exoPlayer,
@@ -372,6 +413,13 @@ fun VideoPlayerContent(
                             showCaptionsSheet = true
                         },
                         captionCues = captionCues,
+                        showPipButton = pipSupported,
+                        onPipClick = {
+                            val host = activity as? androidx.activity.ComponentActivity
+                            if (host != null) {
+                                enterPipMode(host, videoAspectRatio, videoSurfaceBounds)
+                            }
+                        },
                         minimizeDragEnabled = true,
                         onMinimizeDragDelta = onMinimizeDragDelta,
                         onMinimizeDragRelease = onMinimizeDragRelease,

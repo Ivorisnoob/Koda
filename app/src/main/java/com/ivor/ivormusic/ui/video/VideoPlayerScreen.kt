@@ -65,6 +65,7 @@ import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ClosedCaption
 import androidx.compose.material.icons.rounded.ClosedCaptionOff
+import androidx.compose.material.icons.rounded.PictureInPictureAlt
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Error
 import androidx.compose.material.icons.rounded.ExpandMore
@@ -172,7 +173,7 @@ import java.util.Locale
  * player controls above them.
  */
 @Composable
-private fun CaptionOverlay(
+internal fun CaptionOverlay(
     cues: List<VttCue>,
     player: ExoPlayer,
     bottomPadding: Dp,
@@ -534,6 +535,8 @@ fun PortraitPlayerContent(
     captionsActive: Boolean = false,
     onCaptionsClick: () -> Unit = {},
     captionCues: List<VttCue> = emptyList(),
+    showPipButton: Boolean = false,
+    onPipClick: () -> Unit = {},
     minimizeDragEnabled: Boolean = false,
     onMinimizeDragDelta: (Float) -> Unit = {},
     onMinimizeDragRelease: (Float) -> Unit = {},
@@ -670,6 +673,25 @@ fun PortraitPlayerContent(
                                 if (captionsActive) Icons.Rounded.ClosedCaption else Icons.Rounded.ClosedCaptionOff,
                                 contentDescription = "Captions"
                             )
+                        }
+                        // The only discoverable way into PiP. Auto-enter covers
+                        // leaving the app on API 31+, but nothing advertised
+                        // that PiP existed, and on Android 11 there was no way
+                        // in at all.
+                        if (showPipButton) {
+                            FilledTonalIconButton(
+                                onClick = onPipClick,
+                                colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                    containerColor = Color.Black.copy(0.5f),
+                                    contentColor = Color.White
+                                ),
+                                shapes = stableShapes
+                            ) {
+                                Icon(
+                                    Icons.Rounded.PictureInPictureAlt,
+                                    contentDescription = "Picture in picture"
+                                )
+                            }
                         }
                         FilledIconButton(
                             onClick = onSettings,

@@ -100,6 +100,25 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
     private var captionCuesJob: Job? = null
 
+    // ---------------- Picture-in-Picture ----------------
+
+    // Width/height of the video being played, so the PiP window takes the
+    // shape of the video instead of a hardcoded 16:9 that letterboxes
+    // everything else. Null until the first frame is decoded.
+    private val _videoAspectRatio = MutableStateFlow<Float?>(null)
+    val videoAspectRatio: StateFlow<Float?> = _videoAspectRatio.asStateFlow()
+
+    // Where the video surface sits on screen, in window coordinates. Handed to
+    // PictureInPictureParams as the source rect hint so the system animates the
+    // PiP window out of the video itself; without it the transition scales down
+    // the entire activity window, app chrome and all.
+    private val _videoSurfaceBounds = MutableStateFlow<android.graphics.Rect?>(null)
+    val videoSurfaceBounds: StateFlow<android.graphics.Rect?> = _videoSurfaceBounds.asStateFlow()
+
+    fun setVideoSurfaceBounds(bounds: android.graphics.Rect?) {
+        _videoSurfaceBounds.value = bounds
+    }
+
     // Repeat sticks across videos and app restarts, so seed it from prefs
     // rather than defaulting to off on every player creation.
     private val _isLooping = MutableStateFlow(themePreferences.isVideoRepeatEnabled())
@@ -259,6 +278,16 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             addListener(object : Player.Listener {
                 override fun onIsPlayingChanged(isPlaying: Boolean) {
                     _isPlaying.value = isPlaying
+                }
+
+                override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
+                    // Drives the PiP window's shape. Ignore the 0x0 the player
+                    // reports between media items, which would otherwise
+                    // collapse the aspect ratio mid-switch.
+                    if (videoSize.width > 0 && videoSize.height > 0) {
+                        _videoAspectRatio.value =
+                            videoSize.width * videoSize.pixelWidthHeightRatio / videoSize.height
+                    }
                 }
 
                 override fun onPlaybackStateChanged(playbackState: Int) {
