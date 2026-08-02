@@ -398,6 +398,32 @@ fun MusicApp(
         )
     }
 
+    // Keep the ViewModel's PiP flag current so it can suppress auto-play
+    // (advancing to the next video while in PiP means the user returns to
+    // a video they did not put there).
+    androidx.compose.runtime.LaunchedEffect(isInPipMode) {
+        videoPlayerViewModel.setInPipMode(isInPipMode)
+    }
+
+    // Opens YouTube links shared into the app. Composed above the PiP
+    // early return so its remembered deduplication token survives PiP
+    // transitions; disabled while in PiP so it does not try to navigate
+    // or start a new video inside the tiny window.
+    SharedLinkHandler(
+        pendingLink = pendingSharedLink,
+        enabled = onboardingCompleted && !isInPipMode,
+        localOnlyMode = localOnlyMode,
+        homeViewModel = homeViewModel,
+        playerViewModel = playerViewModel,
+        videoPlayerViewModel = videoPlayerViewModel,
+        onNavigateHome = {
+            navController.navigate("home") {
+                popUpTo("home") { inclusive = false }
+                launchSingleTop = true
+            }
+        }
+    )
+
     // In system PiP the app is just a video surface. Returning here keeps the
     // NavHost, both players and every overlay out of the composition entirely,
     // rather than letting them draw and animate behind a window nobody can see
@@ -689,22 +715,6 @@ fun MusicApp(
             hiddenActions = shortsHiddenActions
         )
 
-        // Opens YouTube links shared into the app. Held back until onboarding
-        // is done, so a share cannot jump the first-run flow.
-        SharedLinkHandler(
-            pendingLink = pendingSharedLink,
-            enabled = onboardingCompleted,
-            localOnlyMode = localOnlyMode,
-            homeViewModel = homeViewModel,
-            playerViewModel = playerViewModel,
-            videoPlayerViewModel = videoPlayerViewModel,
-            onNavigateHome = {
-                navController.navigate("home") {
-                    popUpTo("home") { inclusive = false }
-                    launchSingleTop = true
-                }
-            }
-        )
     }
 }
 

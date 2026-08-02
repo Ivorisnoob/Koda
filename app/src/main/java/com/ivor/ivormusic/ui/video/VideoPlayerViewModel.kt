@@ -1,6 +1,7 @@
 package com.ivor.ivormusic.ui.video
 
 import android.content.Context
+import android.os.SystemClock
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.AudioAttributes
@@ -21,6 +22,9 @@ import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import com.ivor.ivormusic.data.CaptionTrack
 import com.ivor.ivormusic.data.CommentItem
 import com.ivor.ivormusic.data.LikeStatus
+import com.ivor.ivormusic.data.LiveChatBanner
+import com.ivor.ivormusic.data.LiveChatMessage
+import com.ivor.ivormusic.data.LiveChatPage
 import com.ivor.ivormusic.data.TimedComment
 import com.ivor.ivormusic.data.VideoEngagement
 import com.ivor.ivormusic.data.VideoItem
@@ -35,7 +39,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 
 @UnstableApi
@@ -119,6 +125,16 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         _videoSurfaceBounds.value = bounds
     }
 
+    // True while the app is in system Picture-in-Picture. Set by the
+    // composition so the STATE_ENDED auto-play can stand down: advancing
+    // to the next video while in PiP means the user returns to a video
+    // they did not put there.
+    private var _isInPipMode = false
+
+    fun setInPipMode(inPip: Boolean) {
+        _isInPipMode = inPip
+    }
+
     // Repeat sticks across videos and app restarts, so seed it from prefs
     // rather than defaulting to off on every player creation.
     private val _isLooping = MutableStateFlow(themePreferences.isVideoRepeatEnabled())
@@ -158,6 +174,86 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
     private val _isLoggedIn = MutableStateFlow(youtubeRepository.isLoggedIn())
     val isLoggedIn: StateFlow<Boolean> = _isLoggedIn.asStateFlow()
+
+    // ---------------- Live broadcast ----------------
+
+    /**
+     * Whether the current video is a live broadcast. Resolved in Phase 1 from
+     * the quality list: a live stream only ever produces a single adaptive HLS
+     * entry (see YouTubeRepository.parseQualitiesFromStreamingData), so the
+     * flag rides along with the streams instead of costing a separate call.
+     */
+    private val _isLive = MutableStateFlow(false)
+    val isLive: StateFlow<Boolean> = _isLive.asStateFlow()
+
+    /** Concurrent viewers, e.g. "14,618 watching now". Live videos only. */
+    private val _liveViewerCount = MutableStateFlow<String?>(null)
+    val liveViewerCount: StateFlow<String?> = _liveViewerCount.asStateFlow()
+
+    /** Null until the first chat poll answers; false when chat is unavailable. */
+    private val _isLiveChatAvailable = MutableStateFlow<Boolean?>(null)
+    val isLiveChatAvailable: StateFlow<Boolean?> = _isLiveChatAvailable.asStateFlow()
+
+    private val _liveChatMessages = MutableStateFlow<List<LiveChatMessage>>(emptyList())
+    val liveChatMessages: StateFlow<List<LiveChatMessage>> = _liveChatMessages.asStateFlow()
+
+    private val _liveChatBanner = MutableStateFlow<LiveChatBanner?>(null)
+    val liveChatBanner: StateFlow<LiveChatBanner?> = _liveChatBanner.asStateFlow()
+
+    private val _isLiveChatLoading = MutableStateFlow(false)
+    val isLiveChatLoading: StateFlow<Boolean> = _isLiveChatLoading.asStateFlow()
+
+    private val _isSendingLiveChat = MutableStateFlow(false)
+    val isSendingLiveChat: StateFlow<Boolean> = _isSendingLiveChat.asStateFlow()
+
+    private val _liveChatSendParams = MutableStateFlow<String?>(null)
+
+    /**
+     * Posting needs both an account and a chat that accepts messages. The send
+     * token is present in the poll response even when signed out, so it is not
+     * on its own permission to post.
+     */
+    val canSendLiveChat: StateFlow<Boolean> = kotlinx.coroutines.flow.combine(
+        _isLoggedIn, _liveChatSendParams
+    ) { loggedIn, params -> loggedIn && params != null }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    private val _liveChatMaxLength = MutableStateFlow(200)
+    val liveChatMaxLength: StateFlow<Int> = _liveChatMaxLength.asStateFlow()
+
+    /**
+     * Why the composer is closed - subscribers-only, members-only, slow mode, a
+     * ban. Null when the viewer may post. Distinct from [canSendLiveChat], which
+     * is about having an account at all.
+     */
+    private val _liveChatRestriction = MutableStateFlow<String?>(null)
+    val liveChatRestriction: StateFlow<String?> = _liveChatRestriction.asStateFlow()
+
+    private var liveChatJob: Job? = null
+    private var liveMetadataJob: Job? = null
+    private var liveChatStartedForVideoId: String? = null
+
+    /**
+     * Chat start token lifted from Phase 2's watch-next response, so opening the
+     * panel does not re-fetch and re-parse that multi-megabyte tree.
+     */
+    private var liveChatContinuation: String? = null
+
+    /**
+     * Messages that have arrived from the server but are not on screen yet.
+     *
+     * A poll returns ten seconds of chat in one lump; releasing it in one frame
+     * is what made the panel feel like a stuttering wall rather than a live
+     * conversation. Both the poll loop and the drain loop run on viewModelScope's
+     * main dispatcher, so this needs no synchronization.
+     */
+    private val pendingLiveChat = ArrayDeque<LiveChatMessage>()
+
+    /** Ids already queued or displayed, so a re-delivered message is dropped. */
+    private val seenLiveChatIds = LinkedHashSet<String>()
+
+    /** Elapsed-realtime mark when the next batch is expected, for pacing. */
+    private var liveChatBatchDueAt = 0L
 
     private val _comments = MutableStateFlow<List<CommentItem>>(emptyList())
     val comments: StateFlow<List<CommentItem>> = _comments.asStateFlow()
@@ -301,8 +397,9 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                     if (playbackState == Player.STATE_ENDED) {
                         // Repeat and auto-play are mutually exclusive: looping
                         // repeats the current video, otherwise auto-play moves
-                        // to the next related one.
-                        if (!_isLooping.value) {
+                        // to the next related one. Suppressed during PiP so
+                        // the user returns to the video they put there.
+                        if (!_isLooping.value && !_isInPipMode) {
                             val nextVideo = _relatedVideos.value.firstOrNull()
                             // Guard: ensure ViewModel/player is still valid before launching
                             if (nextVideo != null && _exoPlayer != null) {
@@ -593,6 +690,31 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         _isChannelVideosLoading.value = false
         channelVideosLoadedForChannelId = null
 
+        // Live state belongs to the previous video; the polls must stop before
+        // their next tick can write into the new video's chat.
+        stopLivePolling()
+        // Track selection outlives media items, so a height cap picked on a
+        // live stream would silently limit the next video too - and on a VOD,
+        // where quality is a source swap, that cap is invisible in the UI.
+        _exoPlayer?.let { player ->
+            player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+                .clearVideoSizeConstraints()
+                .setForceHighestSupportedBitrate(false)
+                .build()
+        }
+        _isLive.value = false
+        _liveViewerCount.value = null
+        _isLiveChatAvailable.value = null
+        _liveChatMessages.value = emptyList()
+        _liveChatBanner.value = null
+        _liveChatSendParams.value = null
+        _liveChatRestriction.value = null
+        _isLiveChatLoading.value = false
+        liveChatStartedForVideoId = null
+        liveChatContinuation = null
+        pendingLiveChat.clear()
+        seenLiveChatIds.clear()
+
         // Speed is per-video, like YouTube
         _playbackSpeed.value = 1f
         _exoPlayer?.setPlaybackSpeed(1f)
@@ -609,7 +731,9 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                     // FAST: Get stream URLs only (no metadata, no related, no channel avatar)
                     val qualities = youtubeRepository.getVideoStreamQualities(video.videoId)
                     _availableQualities.value = qualities
-                    
+                    _isLive.value = qualities.any { it.isLive }
+                    if (_isLive.value) startLiveMetadataPolling(video.videoId)
+
                     if (qualities.isNotEmpty()) {
                         loadQuality(pickDefaultQuality(qualities))
                         // FORCE PLAY: Ensure we override any previous paused state
@@ -664,6 +788,9 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                     _relatedVideos.value = watchNext.relatedVideos
                 }
                 _chapters.value = watchNext.chapters
+                // Opening the chat panel now costs one poll instead of a second
+                // watch-next round trip plus its parse.
+                liveChatContinuation = watchNext.liveChatContinuation
             } catch (e: Exception) {
                 // Phase 2 errors are non-critical - playback already started
                 android.util.Log.w("VideoPlayerVM", "Failed to load watch-next data", e)
@@ -708,6 +835,18 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     private fun pickDefaultQuality(qualities: List<VideoQuality>): VideoQuality {
         fun height(label: String): Int = label.takeWhile { it.isDigit() }.toIntOrNull() ?: 0
         val preferred = themePreferences.getDefaultVideoQuality()
+
+        // The live ladder leads with an "Auto" entry (height 0) that the VOD
+        // branches below would skip over, so it picks its own entry: Auto when
+        // the setting says auto, otherwise the best rendition at or below the
+        // target, falling back to Auto rather than to the lowest available.
+        if (qualities.firstOrNull()?.isLive == true) {
+            if (preferred == ThemePreferences.VIDEO_QUALITY_AUTO) return qualities.first()
+            val targetHeight = height(preferred)
+            return qualities.firstOrNull { height(it.resolution) in 1..targetHeight }
+                ?: qualities.first()
+        }
+
         if (preferred == ThemePreferences.VIDEO_QUALITY_AUTO) {
             return qualities.firstOrNull { height(it.resolution) > 0 } ?: qualities.first()
         }
@@ -728,6 +867,13 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      */
     private fun loadQuality(quality: VideoQuality) {
         _currentQuality.value = quality
+
+        if (quality.isLive) {
+            // The whole ladder is one manifest, so the cap has to be applied
+            // alongside preparing it - loadQuality is the only entry point that
+            // runs for the initial pick.
+            applyLiveQualityCap(quality)
+        }
 
         if (quality.isDASH) {
             // Adaptive manifest - hand it to the player and let its MediaSource
@@ -771,7 +917,42 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         else MimeTypes.APPLICATION_MPD
 
     fun setQuality(quality: VideoQuality) {
+        // Live renditions all live in the manifest that is already playing, so
+        // switching is a track-selector cap rather than a new media source: no
+        // re-prepare, no rebuffer, and ABR keeps adapting underneath the cap.
+        // Rebuilding the source here would also drop the viewer back to the
+        // live edge and throw away the DVR buffer.
+        if (quality.isLive) {
+            _currentQuality.value = quality
+            applyLiveQualityCap(quality)
+            return
+        }
         reloadPreservingPosition(quality)
+    }
+
+    /**
+     * Constrain the video track to [quality]'s height, or lift the constraint
+     * for the "Auto" entry.
+     *
+     * The height cap alone is only a ceiling - ABR would still be free to sit
+     * two rungs below it, so picking "1080p60" could visibly play 480p. Pairing
+     * it with forceHighestSupportedBitrate makes an explicit pick behave like a
+     * pin (always the best track that fits the cap) while Auto stays adaptive,
+     * which is the split users expect from the menu.
+     *
+     * buildUpon() so this composes with the video-track suspend/restore in
+     * [onEnterBackground] / [onEnterForeground] instead of overwriting it.
+     */
+    private fun applyLiveQualityCap(quality: VideoQuality) {
+        val player = _exoPlayer ?: return
+        val height = quality.resolution.takeWhile { it.isDigit() }.toIntOrNull() ?: 0
+        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+            .apply {
+                if (height > 0) setMaxVideoSize(Int.MAX_VALUE, height)
+                else clearVideoSizeConstraints()
+                setForceHighestSupportedBitrate(height > 0)
+            }
+            .build()
     }
 
     /**
@@ -870,6 +1051,8 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         // Track selection outlives media items: a player closed while the video
         // track is suspended would come back audio-only on the next video.
         onEnterForeground()
+        stopLivePolling()
+        liveChatStartedForVideoId = null
         _currentVideo.value = null
         _isExpanded.value = false
     }
@@ -885,6 +1068,290 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     /** Pause without closing the player (music or Shorts playback started). */
     fun pause() {
         _exoPlayer?.pause()
+    }
+
+    // ---------------- Live chat ----------------
+
+    /**
+     * Start the chat stream. Called when the chat panel opens rather than when
+     * the video loads: a live stream watched without the panel open should not
+     * pay for a poll every 10 seconds.
+     */
+    fun ensureLiveChatStarted() {
+        val videoId = _currentVideo.value?.videoId ?: return
+        if (!_isLive.value) return
+        if (liveChatStartedForVideoId == videoId && liveChatJob?.isActive == true) return
+        liveChatStartedForVideoId = videoId
+        startLiveChatPolling(videoId)
+    }
+
+    /**
+     * Stop polling when the panel closes. Messages are kept so reopening shows
+     * the conversation immediately while the fresh backlog loads behind it -
+     * the poll dedupes by id, so the overlap costs nothing.
+     */
+    fun stopLiveChat() {
+        liveChatJob?.cancel()
+        liveChatJob = null
+        liveChatStartedForVideoId = null
+        _isLiveChatLoading.value = false
+    }
+
+    /**
+     * Run the chat: one coroutine polling the server, one releasing what it
+     * fetched onto the screen.
+     *
+     * They are separate because their rhythms are: the server hands over ten
+     * seconds of chat in a single response, and rendering that in one frame is
+     * what made the panel feel broken. The drain loop spreads a batch across the
+     * interval until the next one is due, so messages arrive at roughly the rate
+     * people actually typed them.
+     */
+    private fun startLiveChatPolling(videoId: String) {
+        liveChatJob?.cancel()
+        pendingLiveChat.clear()
+        seenLiveChatIds.clear()
+        _liveChatMessages.value.forEach { seenLiveChatIds.add(it.id) }
+
+        liveChatJob = viewModelScope.launch {
+            _isLiveChatLoading.value = true
+
+            // Phase 2 usually has the token already; only a chat opened before
+            // watch-next lands pays for a fetch.
+            val start = liveChatContinuation
+                ?: youtubeRepository.getLiveChatSession(videoId)?.continuation
+            if (_currentVideo.value?.videoId != videoId) return@launch
+            if (start == null) {
+                // No conversationBar in the watch-next response: chat is
+                // disabled or unavailable for this broadcast, which is a state
+                // to render, not an error.
+                _isLiveChatAvailable.value = false
+                _isLiveChatLoading.value = false
+                return@launch
+            }
+            liveChatContinuation = start
+
+            coroutineScope {
+                val drain = launch { drainLiveChatQueue() }
+                try {
+                    pollLiveChatLoop(videoId, start)
+                } finally {
+                    drain.cancel()
+                    // Anything still queued was already fetched; drop it on
+                    // screen rather than losing it on the way out.
+                    flushPendingLiveChat()
+                    _isLiveChatLoading.value = false
+                }
+            }
+        }
+    }
+
+    /**
+     * Fetch pages on the cadence the server dictates.
+     *
+     * Every response hands back the next token and the delay before it should be
+     * used (10s on every stream sampled). The wait subtracts the time the request
+     * itself took, so the cycle stays a true 10s instead of drifting further
+     * behind live by one round trip per poll.
+     *
+     * The first response carries the visible backlog - that is history, not new
+     * chat, so it goes straight to the screen; only later pages are paced.
+     */
+    private suspend fun pollLiveChatLoop(videoId: String, firstContinuation: String) {
+        var continuation: String? = firstContinuation
+        var consecutiveFailures = 0
+        var isFirstPage = true
+
+        while (true) {
+            val token = continuation ?: break
+            val startedAt = SystemClock.elapsedRealtime()
+            val page = youtubeRepository.pollLiveChat(token)
+            if (_currentVideo.value?.videoId != videoId) return
+
+            if (page == null) {
+                // A failed poll is usually transient (the stream is still
+                // there), so back off and retry the same token a few times
+                // before declaring the chat gone.
+                consecutiveFailures++
+                if (consecutiveFailures > MAX_LIVE_CHAT_POLL_FAILURES) {
+                    if (_isLiveChatAvailable.value == null) _isLiveChatAvailable.value = false
+                    return
+                }
+                kotlinx.coroutines.delay(LIVE_CHAT_RETRY_DELAY_MS)
+                continue
+            }
+            consecutiveFailures = 0
+
+            _isLiveChatAvailable.value = true
+            _isLiveChatLoading.value = false
+            page.sendParams?.let { _liveChatSendParams.value = it }
+            _liveChatMaxLength.value = page.maxMessageLength
+            _liveChatRestriction.value = page.restrictionMessage
+            if (page.bannerCleared) _liveChatBanner.value = null
+            page.banner?.let { _liveChatBanner.value = it }
+
+            applyLiveChatModeration(page)
+
+            val fresh = page.messages.filter { seenLiveChatIds.add(it.id) }
+            if (isFirstPage) {
+                appendLiveChatMessages(fresh)
+                isFirstPage = false
+            } else {
+                pendingLiveChat.addAll(fresh)
+            }
+            trimSeenLiveChatIds()
+
+            continuation = page.nextContinuation
+            val window = page.timeoutMs.coerceIn(LIVE_CHAT_MIN_WINDOW_MS, LIVE_CHAT_MAX_WINDOW_MS)
+            val wait = (window - (SystemClock.elapsedRealtime() - startedAt))
+                .coerceAtLeast(LIVE_CHAT_MIN_WINDOW_MS)
+            liveChatBatchDueAt = SystemClock.elapsedRealtime() + wait
+            kotlinx.coroutines.delay(wait)
+        }
+    }
+
+    /**
+     * Release queued messages one at a time, spread over the time remaining
+     * until the next batch lands, so the queue empties just as it arrives.
+     *
+     * The first message of a batch shows immediately - the pacing only applies
+     * to the ones behind it - so a quiet chat has no added latency while a busy
+     * one flows instead of arriving in slabs. Falling behind (a burst larger
+     * than the window can pace) collapses the gap to the floor and catches up.
+     */
+    private suspend fun drainLiveChatQueue() {
+        while (true) {
+            val next = pendingLiveChat.removeFirstOrNull()
+            if (next == null) {
+                kotlinx.coroutines.delay(LIVE_CHAT_DRAIN_IDLE_MS)
+                continue
+            }
+            appendLiveChatMessages(listOf(next))
+
+            val remaining = pendingLiveChat.size
+            if (remaining == 0) {
+                kotlinx.coroutines.delay(LIVE_CHAT_DRAIN_IDLE_MS)
+                continue
+            }
+            val budget = liveChatBatchDueAt - SystemClock.elapsedRealtime()
+            kotlinx.coroutines.delay(
+                (budget / (remaining + 1))
+                    .coerceIn(LIVE_CHAT_MIN_GAP_MS, LIVE_CHAT_MAX_GAP_MS)
+            )
+        }
+    }
+
+    /** Put everything still queued on screen at once. */
+    private fun flushPendingLiveChat() {
+        if (pendingLiveChat.isEmpty()) return
+        val rest = pendingLiveChat.toList()
+        pendingLiveChat.clear()
+        appendLiveChatMessages(rest)
+    }
+
+    /**
+     * Append to the visible list, capped at [MAX_LIVE_CHAT_MESSAGES] - the same
+     * cap YouTube declares in the response - so a stream left open overnight
+     * cannot grow the list without bound.
+     */
+    private fun appendLiveChatMessages(new: List<LiveChatMessage>) {
+        if (new.isEmpty()) return
+        _liveChatMessages.update { current -> (current + new).takeLast(MAX_LIVE_CHAT_MESSAGES) }
+    }
+
+    /**
+     * Apply deletions and edits to both the visible list and the queue - a
+     * message deleted while still waiting to be shown must never reach the
+     * screen.
+     */
+    private fun applyLiveChatModeration(page: LiveChatPage) {
+        if (page.removedIds.isEmpty() &&
+            page.removedAuthorIds.isEmpty() &&
+            page.replacements.isEmpty()
+        ) return
+
+        fun survives(message: LiveChatMessage): Boolean =
+            message.id !in page.removedIds &&
+                message.author?.channelId?.let { it !in page.removedAuthorIds } != false
+
+        pendingLiveChat.retainAll { survives(it) }
+        _liveChatMessages.update { current ->
+            current.mapNotNull { message ->
+                if (!survives(message)) null else page.replacements[message.id] ?: message
+            }
+        }
+    }
+
+    /**
+     * Keep the dedupe set from growing for the lifetime of a long stream. Only
+     * ids that are still visible or queued can be re-delivered in a way that
+     * matters.
+     */
+    private fun trimSeenLiveChatIds() {
+        if (seenLiveChatIds.size <= MAX_LIVE_CHAT_MESSAGES * 3) return
+        val live = HashSet<String>(_liveChatMessages.value.size + pendingLiveChat.size)
+        _liveChatMessages.value.forEach { live.add(it.id) }
+        pendingLiveChat.forEach { live.add(it.id) }
+        seenLiveChatIds.retainAll(live)
+    }
+
+    /**
+     * Keep the concurrent viewer count fresh. The endpoint asks for a 5s tick,
+     * which is far more often than a phone needs, so this runs on
+     * [LIVE_METADATA_POLL_MS] instead.
+     */
+    private fun startLiveMetadataPolling(videoId: String) {
+        liveMetadataJob?.cancel()
+        liveMetadataJob = viewModelScope.launch {
+            while (true) {
+                val metadata = youtubeRepository.getLiveMetadata(videoId)
+                if (_currentVideo.value?.videoId != videoId) return@launch
+                metadata?.viewerCountText?.let { _liveViewerCount.value = it }
+                kotlinx.coroutines.delay(LIVE_METADATA_POLL_MS)
+            }
+        }
+    }
+
+    /** Stop both live polls. Safe to call when nothing is live. */
+    fun stopLivePolling() {
+        liveChatJob?.cancel()
+        liveChatJob = null
+        liveMetadataJob?.cancel()
+        liveMetadataJob = null
+    }
+
+    /**
+     * Post a message to the live chat.
+     *
+     * The response echoes the accepted message back, so it goes on screen at
+     * once instead of waiting up to a poll interval to come round - it is marked
+     * seen, so the poll that eventually redelivers it is a no-op.
+     *
+     * [onFailure] reports a rejection (slow mode, a word filter, a ban) so the
+     * composer can put the text back rather than silently swallowing it.
+     */
+    fun sendLiveChatMessage(text: String, onFailure: (String) -> Unit = {}) {
+        val body = text.trim()
+        if (body.isEmpty() || _isSendingLiveChat.value) return
+        val params = _liveChatSendParams.value ?: return
+        viewModelScope.launch {
+            _isSendingLiveChat.value = true
+            try {
+                val result = youtubeRepository.sendLiveChatMessage(params, body)
+                if (result.success) {
+                    result.echo?.let { echo ->
+                        if (seenLiveChatIds.add(echo.id)) appendLiveChatMessages(listOf(echo))
+                    }
+                } else {
+                    onFailure(result.error ?: "Message not sent")
+                }
+            } catch (e: Exception) {
+                android.util.Log.w("VideoPlayerVM", "Failed to send live chat message", e)
+                onFailure("Message not sent")
+            } finally {
+                _isSendingLiveChat.value = false
+            }
+        }
     }
 
     // ---------------- Save to playlist / Watch Later ----------------
@@ -1192,6 +1659,42 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
          * unplayable and the user should get the overlay instead of a spinner.
          */
         private const val MAX_SOURCE_RETRIES = 1
+
+        /**
+         * Chat backlog kept in memory. Matches the cap YouTube declares in the
+         * response itself (itemList.liveChatItemListRenderer.maxItemsToDisplay),
+         * so a stream left open for hours cannot grow the list without bound.
+         */
+        private const val MAX_LIVE_CHAT_MESSAGES = 250
+
+        /** Consecutive failed polls tolerated before the chat is given up on. */
+        private const val MAX_LIVE_CHAT_POLL_FAILURES = 3
+        private const val LIVE_CHAT_RETRY_DELAY_MS = 5_000L
+
+        /**
+         * Bounds on the server's requested poll interval. Live streams ask for
+         * 10s; a replay can ask for much less, and a misparse must not turn into
+         * a hot loop.
+         */
+        private const val LIVE_CHAT_MIN_WINDOW_MS = 2_000L
+        private const val LIVE_CHAT_MAX_WINDOW_MS = 30_000L
+
+        /**
+         * Pacing bounds for releasing a batch. The floor keeps a burst from
+         * animating one message per frame; the ceiling stops a sparse batch from
+         * sitting in the queue for seconds when there is nothing behind it.
+         */
+        private const val LIVE_CHAT_MIN_GAP_MS = 45L
+        private const val LIVE_CHAT_MAX_GAP_MS = 700L
+
+        /** Poll interval of the drain loop while the queue is empty. */
+        private const val LIVE_CHAT_DRAIN_IDLE_MS = 120L
+
+        /**
+         * Viewer-count refresh. The endpoint asks for 5s; a phone showing one
+         * number does not need it that often.
+         */
+        private const val LIVE_METADATA_POLL_MS = 25_000L
     }
 
     override fun onCleared() {
@@ -1201,6 +1704,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         qualityChangeListener = null
         sourceRecoveryJob?.cancel()
         sourceRecoveryJob = null
+        stopLivePolling()
         _exoPlayer?.release()
         _exoPlayer = null
     }

@@ -47,6 +47,19 @@ private const val MIN_PIP_ASPECT = 1f / 2.39f
 private const val MAX_PIP_ASPECT = 2.39f
 
 /**
+ * Settle for the expand/minimize transition, shared by the state-driven
+ * animation and the release of a drag so both come to rest the same way.
+ *
+ * Softer and closer to critically damped than the house bouncy default: this
+ * one carries the whole player across the screen, where a visible overshoot
+ * reads as a snap rather than as character.
+ */
+private val MINIMIZE_SETTLE_SPRING = spring<Float>(
+    dampingRatio = 0.9f,
+    stiffness = 260f
+)
+
+/**
  * Put the app into system Picture-in-Picture now.
  *
  * Needed as an explicit call because [PictureInPictureParams.Builder.setAutoEnterEnabled]
@@ -260,7 +273,7 @@ fun VideoPlayerOverlay(
         LaunchedEffect(isExpanded) {
             expandProgress.animateTo(
                 if (isExpanded) 1f else 0f,
-                spring(stiffness = 300f, dampingRatio = 0.8f)
+                MINIMIZE_SETTLE_SPRING
             )
         }
 
@@ -273,12 +286,22 @@ fun VideoPlayerOverlay(
         // Accumulating in plain snapshot state applies every delta.
         var isDragging by remember { mutableStateOf(false) }
         var dragProgress by remember { mutableFloatStateOf(1f) }
+        // Where the finger picked the player up, so the commit test can measure
+        // real travel instead of an absolute position on the screen.
+        var dragStartProgress by remember { mutableFloatStateOf(1f) }
 
         // 1:1 with the finger: height interpolates over the full screen and the
         // player is bottom-anchored, so a range of one screen height moves the
         // player's top edge exactly as far as the finger travels. The old 0.8
         // range made it run ahead of the touch.
         val dragRangePx = fullHeightPx
+
+        // A short, unhurried pull is all it takes: ~40dp of travel commits the
+        // minimize, which is a little more than the touch slop the gesture
+        // spends arming itself. Expressed in dp so the feel is the same on
+        // every screen density - as a fraction of screen height it silently
+        // asked for a much longer pull on tall devices.
+        val minimizeTravel = with(density) { 40.dp.toPx() } / dragRangePx
 
         // Minimized resting position sits above the nav bar, and above the
         // music mini player too when both players are alive at the same time
@@ -312,6 +335,7 @@ fun VideoPlayerOverlay(
                          if (!isDragging) {
                              isDragging = true
                              dragProgress = expandProgress.value
+                             dragStartProgress = expandProgress.value
                          }
                          // Clamped short of the mini player so the expanded
                          // layout never squashes into an unreadable sliver.
@@ -319,17 +343,16 @@ fun VideoPlayerOverlay(
                              .coerceIn(0.25f, 1f)
                      },
                      onMinimizeDragRelease = { velocityY ->
-                         // Momentum first: any real downward flick commits, an
-                         // upward flick always restores; position only decides
-                         // for slow, deliberate drags. Both thresholds are
-                         // deliberately easy to reach - a flick is how most
-                         // people dismiss a player, and the old ones asked for
-                         // a long, committed pull before anything happened.
+                         // Momentum first: any downward drift commits, an
+                         // upward one always restores; travel only decides for
+                         // drags that end almost still. Both thresholds are
+                         // intentionally gentle - the gesture should answer a
+                         // calm nudge, not ask to be pulled or flicked hard.
                          val released = dragProgress
                          val minimize = when {
-                             velocityY > 350f -> true
-                             velocityY < -350f -> false
-                             else -> released < 0.9f
+                             velocityY > 120f -> true
+                             velocityY < -120f -> false
+                             else -> dragStartProgress - released > minimizeTravel
                          }
                          scope.launch {
                              // Hand the dragged position to the Animatable
@@ -341,10 +364,7 @@ fun VideoPlayerOverlay(
                              if (minimize) {
                                  viewModel.setExpanded(false)
                              } else {
-                                 expandProgress.animateTo(
-                                     1f,
-                                     spring(stiffness = 300f, dampingRatio = 0.8f)
-                                 )
+                                 expandProgress.animateTo(1f, MINIMIZE_SETTLE_SPRING)
                              }
                          }
                      }

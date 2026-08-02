@@ -63,6 +63,49 @@ object YouTubeAuthUtils {
     }
 
     /**
+     * Cookies Google rotates during a live session, on top of whatever the jar
+     * already carries. The `*SIDTS` pair in particular is re-issued every few
+     * hours, and a session that keeps replaying the value captured at login
+     * eventually gets answered as signed out - `logged_in: 0` in the
+     * responseContext, an empty subscriptions feed, and a null account name,
+     * all while the SAPISIDHASH still computes fine because SAPISID itself
+     * lives for years. That is what made signing in wear off and need doing
+     * again. Verified against a dead emulator session, August 2026.
+     */
+    private val REFRESHABLE_COOKIE_NAMES = setOf(
+        "SID", "HSID", "SSID", "APISID", "SAPISID", "LOGIN_INFO", "SIDCC",
+        "__Secure-1PSID", "__Secure-3PSID",
+        "__Secure-1PAPISID", "__Secure-3PAPISID",
+        "__Secure-1PSIDTS", "__Secure-3PSIDTS",
+        "__Secure-1PSIDCC", "__Secure-3PSIDCC"
+    )
+
+    /**
+     * Fold freshly issued cookie values into a stored cookie string.
+     *
+     * Only names already present, or in [REFRESHABLE_COOKIE_NAMES], are taken -
+     * every response also sets throwaway cookies (YSC, VISITOR_INFO1_LIVE, ad
+     * and consent state) that would bloat the header without authenticating
+     * anything. Order is preserved and nothing is ever removed: this can only
+     * make a session fresher, never tear one down.
+     */
+    fun mergeCookies(existing: String, updates: Map<String, String>): String {
+        val merged = LinkedHashMap<String, String>()
+        existing.split(";").forEach { part ->
+            val pair = part.trim().split("=", limit = 2)
+            val name = pair.firstOrNull()?.takeIf { it.isNotBlank() } ?: return@forEach
+            merged[name] = pair.getOrNull(1).orEmpty()
+        }
+        updates.forEach { (name, value) ->
+            if (value.isBlank()) return@forEach
+            if (name in REFRESHABLE_COOKIE_NAMES || merged.containsKey(name)) {
+                merged[name] = value
+            }
+        }
+        return merged.entries.joinToString("; ") { "${it.key}=${it.value}" }
+    }
+
+    /**
      * Generates the SAPISIDHASH required for authenticated requests.
      */
     fun getAuthorizationHeader(cookieString: String, origin: String = "https://music.youtube.com"): String? {

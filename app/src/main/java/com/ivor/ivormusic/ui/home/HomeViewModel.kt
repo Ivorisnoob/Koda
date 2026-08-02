@@ -15,6 +15,7 @@ import com.ivor.ivormusic.data.LikedSongsRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -42,7 +43,16 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
 
     private val _isYouTubeConnected = MutableStateFlow(false)
-    val isYouTubeConnected: StateFlow<Boolean> = _isYouTubeConnected.asStateFlow()
+
+    /**
+     * A YouTube session that actually authenticates. A session YouTube has
+     * rejected reads as disconnected, so account-only screens offer the sign-in
+     * wall instead of sitting on an empty list with no explanation.
+     */
+    val isYouTubeConnected: StateFlow<Boolean> =
+        combine(_isYouTubeConnected, SessionManager.sessionExpired) { connected, expired ->
+            connected && !expired
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()

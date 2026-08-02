@@ -53,6 +53,7 @@ import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.Chat
 import androidx.compose.material.icons.automirrored.rounded.Comment
 import androidx.compose.material.icons.automirrored.rounded.VolumeOff
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
@@ -263,6 +264,11 @@ fun FullscreenPlayerContent(
     captionsActive: Boolean = false,
     onCaptionsClick: () -> Unit = {},
     captionCues: List<VttCue> = emptyList(),
+    isLive: Boolean = false,
+    liveChatActive: Boolean = false,
+    onLiveChatToggle: () -> Unit = {},
+    /** Jump to the live edge of the DVR window. */
+    onSeekToLive: () -> Unit = {},
     onRetry: (() -> Unit)? = null
 ) {
     // Stable shapes to prevent "square flash"
@@ -415,6 +421,24 @@ fun FullscreenPlayerContent(
                         }
                     }
 
+                    // Landscape is where a side-by-side chat actually fits, so
+                    // the toggle only exists here.
+                    if (isLive) {
+                        FilledTonalIconButton(
+                            onClick = onLiveChatToggle,
+                            colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                containerColor = if (liveChatActive) MaterialTheme.colorScheme.primary else Color.Black.copy(0.5f),
+                                contentColor = if (liveChatActive) MaterialTheme.colorScheme.onPrimary else Color.White
+                            ),
+                            shapes = stableShapes
+                        ) {
+                            Icon(
+                                Icons.AutoMirrored.Rounded.Chat,
+                                contentDescription = if (liveChatActive) "Hide live chat" else "Show live chat"
+                            )
+                        }
+                    }
+
                     FilledTonalIconButton(
                         onClick = onCaptionsClick,
                         colors = IconButtonDefaults.filledTonalIconButtonColors(
@@ -483,7 +507,12 @@ fun FullscreenPlayerContent(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        Text(formatDuration(currentPosition), color = Color.White, style = MaterialTheme.typography.labelLarge)
+                        // A live stream's position is an offset into the DVR
+                        // window, not a place in a video, so the elapsed
+                        // readout means nothing to the viewer.
+                        if (!isLive) {
+                            Text(formatDuration(currentPosition), color = Color.White, style = MaterialTheme.typography.labelLarge)
+                        }
 
                         PlayerSeekBar(
                             progress = progress,
@@ -494,7 +523,16 @@ fun FullscreenPlayerContent(
                             durationMs = duration
                         )
 
-                        Text(formatDuration(duration), color = Color.White, style = MaterialTheme.typography.labelLarge)
+                        if (isLive) {
+                            LiveEdgeChip(
+                                // A stream without a DVR window reports no
+                                // duration, so there is nowhere to be behind.
+                                atLiveEdge = duration <= 0L || progress >= LIVE_EDGE_THRESHOLD,
+                                onClick = onSeekToLive
+                            )
+                        } else {
+                            Text(formatDuration(duration), color = Color.White, style = MaterialTheme.typography.labelLarge)
+                        }
                     }
                 }
             }
@@ -535,6 +573,9 @@ fun PortraitPlayerContent(
     captionsActive: Boolean = false,
     onCaptionsClick: () -> Unit = {},
     captionCues: List<VttCue> = emptyList(),
+    isLive: Boolean = false,
+    /** Jump to the live edge of the DVR window. */
+    onSeekToLive: () -> Unit = {},
     showPipButton: Boolean = false,
     onPipClick: () -> Unit = {},
     minimizeDragEnabled: Boolean = false,
@@ -742,7 +783,9 @@ fun PortraitPlayerContent(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Text(formatDuration(currentPosition), color = Color.White, style = MaterialTheme.typography.labelMedium)
+                        if (!isLive) {
+                            Text(formatDuration(currentPosition), color = Color.White, style = MaterialTheme.typography.labelMedium)
+                        }
 
                         PlayerSeekBar(
                             progress = progress,
@@ -753,10 +796,63 @@ fun PortraitPlayerContent(
                             durationMs = duration
                         )
 
-                        Text(formatDuration(duration), color = Color.White, style = MaterialTheme.typography.labelMedium)
+                        if (isLive) {
+                            LiveEdgeChip(
+                                // A stream without a DVR window reports no
+                                // duration, so there is nowhere to be behind.
+                                atLiveEdge = duration <= 0L || progress >= LIVE_EDGE_THRESHOLD,
+                                onClick = onSeekToLive
+                            )
+                        } else {
+                            Text(formatDuration(duration), color = Color.White, style = MaterialTheme.typography.labelMedium)
+                        }
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * Fraction of the DVR window past which playback counts as "at the live edge".
+ * The window is hours long, so anything short of the last fraction of a percent
+ * is genuinely behind.
+ */
+private const val LIVE_EDGE_THRESHOLD = 0.995f
+
+/**
+ * The "LIVE" marker where a normal video shows its duration. Red and tappable
+ * while the viewer is behind, so getting back to the edge is one tap; muted
+ * once they are already there.
+ */
+@Composable
+private fun LiveEdgeChip(atLiveEdge: Boolean, onClick: () -> Unit) {
+    Surface(
+        shape = CircleShape,
+        color = Color.Transparent,
+        onClick = onClick,
+        enabled = !atLiveEdge
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(
+                        if (atLiveEdge) MaterialTheme.colorScheme.error
+                        else Color.White.copy(alpha = 0.6f)
+                    )
+            )
+            Text(
+                text = "LIVE",
+                color = if (atLiveEdge) Color.White else Color.White.copy(alpha = 0.6f),
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold
+            )
         }
     }
 }
@@ -1314,7 +1410,11 @@ fun VideoInfoSection(
     onChannelClick: () -> Unit = {},
     onRelatedLongPress: ((VideoItem) -> Unit)? = null,
     /** Seek the player, in seconds. Enables timestamp links in the description. */
-    onSeekTo: ((seconds: Long) -> Unit)? = null
+    onSeekTo: ((seconds: Long) -> Unit)? = null,
+    isLive: Boolean = false,
+    /** Concurrent viewers, refreshed while the stream is open. */
+    liveViewerCount: String? = null,
+    onLiveChatClick: () -> Unit = {}
 ) {
     Column(
         modifier = modifier
@@ -1333,14 +1433,23 @@ fun VideoInfoSection(
                 modifier = Modifier.fillMaxWidth()
             )
 
-            Text(
-                text = buildString {
-                    if (video.viewCount.isNotEmpty()) append(video.viewCount)
-                    if (!video.uploadedDate.isNullOrEmpty()) append(" • ${video.uploadedDate}")
-                },
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            // A live stream's "view count" is a concurrent-viewer number that
+            // moves, and its upload date is meaningless, so the badge replaces
+            // the static line rather than sitting next to it.
+            if (isLive) {
+                LiveBadge(
+                    viewerCount = liveViewerCount ?: video.viewCount.takeIf { it.isNotEmpty() }
+                )
+            } else {
+                Text(
+                    text = buildString {
+                        if (video.viewCount.isNotEmpty()) append(video.viewCount)
+                        if (!video.uploadedDate.isNullOrEmpty()) append(" • ${video.uploadedDate}")
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
 
         // Like / Dislike + Save + Share Actions (scrolls like YouTube's chip
@@ -1427,6 +1536,43 @@ fun VideoInfoSection(
                     containerColor = Color.Transparent
                 )
             )
+        }
+
+        // Live chat entry. Sits above comments because on a live stream it is
+        // the conversation - the comment section is usually empty or off.
+        if (isLive) {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surfaceContainer,
+                modifier = Modifier.fillMaxWidth(),
+                onClick = onLiveChatClick
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Rounded.Chat,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = "Live chat",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f)
+                    )
+                    LiveDot()
+                    Icon(
+                        Icons.Rounded.ExpandMore,
+                        contentDescription = "Open live chat",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
         }
 
         // Comments Entry
