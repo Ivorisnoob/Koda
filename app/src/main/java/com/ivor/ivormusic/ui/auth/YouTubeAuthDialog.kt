@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.DialogProperties
 import com.ivor.ivormusic.data.SessionManager
+import com.ivor.ivormusic.data.YouTubeAuthUtils
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -95,12 +96,21 @@ fun YouTubeAuthDialog(
                                         // anonymous (no feed, no avatar, login loops).
                                         val cookies = CookieManager.getInstance()
                                             .getCookie("https://music.youtube.com")
+                                        // Exact cookie names, not substrings: "SID="
+                                        // also matches SAPISID=, APISID= and
+                                        // __Secure-3PSID=, so the old check passed on
+                                        // jars that had no SID session at all and saved
+                                        // a login that could never authenticate.
                                         if (cookies != null &&
-                                            cookies.contains("SAPISID") &&
-                                            cookies.contains("SID=")
+                                            YouTubeAuthUtils.missingRequiredCookies(cookies).isEmpty()
                                         ) {
                                             completed = true
-                                            sessionManager.saveCookies(cookies)
+                                            sessionManager.startSession(cookies)
+                                            // Without this the jar only reaches disk on
+                                            // WebView's own schedule, so a process death
+                                            // right after signing in left nothing to
+                                            // refresh the session from later.
+                                            CookieManager.getInstance().flush()
                                             onAuthSuccess()
                                         }
                                     }

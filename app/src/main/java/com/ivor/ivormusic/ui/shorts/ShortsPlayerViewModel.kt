@@ -11,6 +11,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.MergingMediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import com.ivor.ivormusic.data.CommentItem
@@ -209,6 +210,19 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
     private val _isPostingComment = MutableStateFlow(false)
     val isPostingComment: StateFlow<Boolean> = _isPostingComment.asStateFlow()
 
+    /**
+     * Stream data source factory: ChunkedStreamDataSource fetches googlevideo
+     * media in bounded ranged chunks (open-ended requests are server-paced to
+     * the media bitrate) and picks the per-request User-Agent matching the
+     * URL's issuing client — googlevideo answers 403 on a UA mismatch.
+     *
+     * Declared before [init] on purpose: the ExoPlayer built there installs it
+     * as the player-wide MediaSource factory, so a lazy declared further down
+     * the class would still be an uninitialised delegate at that point.
+     */
+    private val streamDataSourceFactory =
+        DefaultDataSource.Factory(context, com.ivor.ivormusic.data.ChunkedStreamDataSource.Factory())
+
     init {
         // First frame after ~1s buffered, like the video player. Shorts are
         // under a minute, so the 60s max buffer already covers the whole clip
@@ -220,7 +234,13 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
             .setPrioritizeTimeOverSizeThresholds(true)
             .build()
 
+        // Every media source this player builds must fetch through
+        // ChunkedStreamDataSource. loadQuality() passes it explicitly for the
+        // progressive/merged paths, but the adaptive branch hands the player a
+        // bare MediaItem, which would otherwise be served by Media3's stock
+        // DefaultDataSource - no per-URL User-Agent, so googlevideo answers 403.
         _exoPlayer = ExoPlayer.Builder(context)
+            .setMediaSourceFactory(DefaultMediaSourceFactory(streamDataSourceFactory))
             .setLoadControl(loadControl)
             .setWakeMode(C.WAKE_MODE_NETWORK)
             .setAudioAttributes(AudioAttributes.DEFAULT, true)
@@ -404,16 +424,6 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
     // ---------------- Playback helpers (same conventions as the video player) ----------------
 
     /**
-     * Stream data source factory: ChunkedStreamDataSource fetches googlevideo
-     * media in bounded ranged chunks (open-ended requests are server-paced to
-     * the media bitrate) and picks the per-request User-Agent matching the
-     * URL's issuing client — googlevideo answers 403 on a UA mismatch.
-     */
-    private val streamDataSourceFactory by lazy {
-        DefaultDataSource.Factory(context, com.ivor.ivormusic.data.ChunkedStreamDataSource.Factory())
-    }
-
-    /**
      * Starting quality from the per-network video quality setting (fresh pref
      * read), like VideoPlayerViewModel.pickDefaultQuality. The list is sorted
      * highest-first, so the first label at or below the target height wins.
@@ -431,6 +441,21 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
     }
 
     private fun loadQuality(quality: VideoQuality) {
+        // Adaptive manifests carry no progressive URL to wrap: hand the
+        // MediaItem to the player and let its MediaSource factory build the
+        // DASH/HLS source. Feeding a manifest to ProgressiveMediaSource (what
+        // this used to do for every quality) fails extraction outright.
+        if (quality.isDASH) {
+            _exoPlayer?.setMediaItem(
+                MediaItem.Builder()
+                    .setUri(quality.url)
+                    .setMimeType(adaptiveMimeType(quality))
+                    .build()
+            )
+            _exoPlayer?.prepare()
+            return
+        }
+
         val dataSourceFactory = streamDataSourceFactory
         val audioUrl = quality.audioUrl
         if (audioUrl != null) {
@@ -446,6 +471,19 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
         }
         _exoPlayer?.prepare()
     }
+
+    /**
+     * MIME for an adaptive quality. Both DASH and HLS entries arrive with
+     * isDASH set and are told apart only by [VideoQuality.format], so pinning
+     * MPD unconditionally would make the factory build a DashMediaSource for an
+     * m3u8 playlist and fail the load.
+     */
+    private fun adaptiveMimeType(quality: VideoQuality): String =
+        if (quality.format.equals("HLS", ignoreCase = true)) {
+            androidx.media3.common.MimeTypes.APPLICATION_M3U8
+        } else {
+            androidx.media3.common.MimeTypes.APPLICATION_MPD
+        }
 
     // ---------------- Engagement actions (optimistic with rollback) ----------------
 

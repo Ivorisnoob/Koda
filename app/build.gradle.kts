@@ -114,6 +114,13 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.media3.exoplayer)
+    // DefaultMediaSourceFactory loads DashMediaSource / HlsMediaSource
+    // reflectively and throws "Module missing for content type" without these.
+    // Load-bearing: the NewPipe stream fallback returns a DASH manifest for
+    // some videos and an HLS URL for every live stream, so a video player
+    // without them dead-ends on "Source error" for exactly those.
+    implementation(libs.androidx.media3.exoplayer.dash)
+    implementation(libs.androidx.media3.exoplayer.hls)
     implementation(libs.androidx.media3.ui)
     implementation(libs.androidx.media3.session)
     implementation(libs.accompanist.permissions)

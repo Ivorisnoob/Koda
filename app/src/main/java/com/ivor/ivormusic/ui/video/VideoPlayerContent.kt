@@ -36,6 +36,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
@@ -83,6 +86,18 @@ fun VideoPlayerContent(
     val chapters by viewModel.chapters.collectAsState()
     val captionTracks by viewModel.captionTracks.collectAsState()
     val selectedCaption by viewModel.selectedCaption.collectAsState()
+    val captionCues by viewModel.captionCues.collectAsState()
+    val videoAspectRatio by viewModel.videoAspectRatio.collectAsState()
+    val videoSurfaceBounds by viewModel.videoSurfaceBounds.collectAsState()
+
+    // PiP is a device capability, not a given: Android TV and a few OEM builds
+    // ship without it, and the button must not sit there doing nothing.
+    val pipSupported = remember(context) {
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+            context.packageManager.hasSystemFeature(
+                android.content.pm.PackageManager.FEATURE_PICTURE_IN_PICTURE
+            )
+    }
     val isCaptionsLoading by viewModel.isCaptionsLoading.collectAsState()
     val isLooping by viewModel.isLooping.collectAsState()
     val playbackSpeed by viewModel.playbackSpeed.collectAsState()
@@ -101,12 +116,30 @@ fun VideoPlayerContent(
     val isVideoPlaylistsLoading by viewModel.isVideoPlaylistsLoading.collectAsState()
     val channelVideos by viewModel.channelVideos.collectAsState()
     val isChannelVideosLoading by viewModel.isChannelVideosLoading.collectAsState()
+    val isLive by viewModel.isLive.collectAsState()
+    val liveViewerCount by viewModel.liveViewerCount.collectAsState()
+    val liveChatMessages by viewModel.liveChatMessages.collectAsState()
+    val liveChatBanner by viewModel.liveChatBanner.collectAsState()
+    val isLiveChatAvailable by viewModel.isLiveChatAvailable.collectAsState()
+    val isLiveChatLoading by viewModel.isLiveChatLoading.collectAsState()
+    val canSendLiveChat by viewModel.canSendLiveChat.collectAsState()
+    val isSendingLiveChat by viewModel.isSendingLiveChat.collectAsState()
+    val liveChatMaxLength by viewModel.liveChatMaxLength.collectAsState()
+    val liveChatRestriction by viewModel.liveChatRestriction.collectAsState()
 
     // Local UI State
     var showControls by remember { mutableStateOf(false) }
     var isFullscreen by remember { mutableStateOf(false) }
     var showChaptersSheet by remember { mutableStateOf(false) }
     var showCaptionsSheet by remember { mutableStateOf(false) }
+    var showLiveChat by remember { mutableStateOf(false) }
+
+    // Landscape chat column: about a third of the screen, bounded so it stays
+    // readable on a small phone and does not eat a tablet.
+    val configuration = LocalConfiguration.current
+    val landscapeChatWidth = remember(configuration.screenWidthDp) {
+        (configuration.screenWidthDp * 0.34f).dp.coerceIn(260.dp, 360.dp)
+    }
     // Timed comments overlay toggle; persists across videos while the player is open
     var timedCommentsActive by remember { mutableStateOf(false) }
     
@@ -148,6 +181,13 @@ fun VideoPlayerContent(
             delay(4000)
             showControls = false
         }
+    }
+
+    // The chat stream only starts once the panel is actually opened, and a
+    // video that turns out not to be live must not leave the panel showing.
+    LaunchedEffect(showLiveChat, isLive) {
+        if (showLiveChat && isLive) viewModel.ensureLiveChatStarted() else viewModel.stopLiveChat()
+        if (!isLive) showLiveChat = false
     }
 
     // Fetch the first page of comments once the overlay is active and the
@@ -275,6 +315,20 @@ fun VideoPlayerContent(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(Color.Black) // Extra black background to prevent any bleed
+                    // Fullscreen reports its own bounds: the portrait video box
+                    // is not composed here, so without this the PiP source rect
+                    // would still describe the small inline player.
+                    .onGloballyPositioned { coords ->
+                        val rect = coords.boundsInWindow()
+                        viewModel.setVideoSurfaceBounds(
+                            android.graphics.Rect(
+                                rect.left.toInt(),
+                                rect.top.toInt(),
+                                rect.right.toInt(),
+                                rect.bottom.toInt()
+                            )
+                        )
+                    }
             ) {
                 FullscreenPlayerContent(
                 exoPlayer = exoPlayer,
@@ -309,6 +363,11 @@ fun VideoPlayerContent(
                     viewModel.ensureCaptionsLoaded()
                     showCaptionsSheet = true
                 },
+                captionCues = captionCues,
+                isLive = isLive,
+                liveChatActive = showLiveChat,
+                onLiveChatToggle = { showLiveChat = !showLiveChat },
+                onSeekToLive = { exoPlayer.seekToDefaultPosition() },
                 onRetry = { viewModel.retryPlayback() }
             )
 
@@ -319,6 +378,54 @@ fun VideoPlayerContent(
                         modifier = Modifier
                             .align(Alignment.BottomStart)
                             .padding(start = 24.dp, end = 24.dp, bottom = 104.dp)
+                    )
+                }
+
+                // Landscape chat: a column docked to the right of the video
+                // rather than a sheet over it, so the stream stays watchable
+                // while chat scrolls. Slides in from the edge it lives on.
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = showLiveChat && isLive,
+                    enter = slideInHorizontally(
+                        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+                        initialOffsetX = { it }
+                    ) + fadeIn(),
+                    exit = slideOutHorizontally(targetOffsetX = { it }) + fadeOut(),
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .fillMaxHeight()
+                ) {
+                    LiveChatPanel(
+                        messages = liveChatMessages,
+                        banner = liveChatBanner,
+                        isLoading = isLiveChatLoading,
+                        isAvailable = isLiveChatAvailable,
+                        canSend = canSendLiveChat,
+                        isSending = isSendingLiveChat,
+                        maxMessageLength = liveChatMaxLength,
+                        restriction = liveChatRestriction,
+                        onSend = { body, onFailure ->
+                            viewModel.sendLiveChatMessage(body, onFailure)
+                        },
+                        onDismiss = { showLiveChat = false },
+                        compact = true,
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .width(landscapeChatWidth)
+                            // Immersive fullscreen hides the system bars but
+                            // not the camera cutout, which is exactly where a
+                            // right-docked panel lands in landscape.
+                            .displayCutoutPadding()
+                            .padding(end = 8.dp, top = 8.dp, bottom = 8.dp)
+                            // Swallow taps: the gesture surface underneath
+                            // would otherwise toggle the player controls when
+                            // the user taps a gap between messages.
+                            .clickable(
+                                interactionSource = remember {
+                                    androidx.compose.foundation.interaction.MutableInteractionSource()
+                                },
+                                indication = null
+                            ) {}
                     )
                 }
             }
@@ -335,6 +442,20 @@ fun VideoPlayerContent(
                         .fillMaxWidth()
                         .aspectRatio(16f / 9f)
                         .background(Color.Black)
+                        // Reported so PictureInPictureParams can animate the
+                        // window out of the video rect instead of the whole
+                        // screen. Window coordinates are what the system wants.
+                        .onGloballyPositioned { coords ->
+                            val rect = coords.boundsInWindow()
+                            viewModel.setVideoSurfaceBounds(
+                                android.graphics.Rect(
+                                    rect.left.toInt(),
+                                    rect.top.toInt(),
+                                    rect.right.toInt(),
+                                    rect.bottom.toInt()
+                                )
+                            )
+                        }
                 ) {
                     PortraitPlayerContent(
                         exoPlayer = exoPlayer,
@@ -368,6 +489,16 @@ fun VideoPlayerContent(
                         onCaptionsClick = {
                             viewModel.ensureCaptionsLoaded()
                             showCaptionsSheet = true
+                        },
+                        captionCues = captionCues,
+                        isLive = isLive,
+                        onSeekToLive = { exoPlayer.seekToDefaultPosition() },
+                        showPipButton = pipSupported,
+                        onPipClick = {
+                            val host = activity as? androidx.activity.ComponentActivity
+                            if (host != null) {
+                                enterPipMode(host, videoAspectRatio, videoSurfaceBounds)
+                            }
                         },
                         minimizeDragEnabled = true,
                         onMinimizeDragDelta = onMinimizeDragDelta,
@@ -429,7 +560,10 @@ fun VideoPlayerContent(
                                 viewModel.loadVideoPlaylists()
                                 saveTargetVideo = related
                             }
-                        }
+                        },
+                        isLive = isLive,
+                        liveViewerCount = liveViewerCount,
+                        onLiveChatClick = { showLiveChat = true }
                     )
 
                     // Qualified: inside this Box the outer Column's scoped
@@ -472,14 +606,46 @@ fun VideoPlayerContent(
                             }
                         )
                     }
+
+                    // Portrait chat: same slide-up treatment as comments, so
+                    // the video keeps playing above while chat scrolls.
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = showLiveChat && isLive,
+                        enter = slideInVertically(
+                            animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+                            initialOffsetY = { it }
+                        ) + fadeIn(),
+                        exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        LiveChatPanel(
+                            messages = liveChatMessages,
+                            banner = liveChatBanner,
+                            isLoading = isLiveChatLoading,
+                            isAvailable = isLiveChatAvailable,
+                            canSend = canSendLiveChat,
+                            isSending = isSendingLiveChat,
+                            maxMessageLength = liveChatMaxLength,
+                            restriction = liveChatRestriction,
+                            onSend = { body, onFailure ->
+                                viewModel.sendLiveChatMessage(body, onFailure)
+                            },
+                            onDismiss = { showLiveChat = false },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
                 }
             }
         }
     }
 
-    // Back closes the comments panel before collapsing the player
+    // Back closes an open panel before collapsing the player
     androidx.activity.compose.BackHandler(enabled = showCommentsSheet && !isFullscreen) {
         showCommentsSheet = false
+    }
+
+    androidx.activity.compose.BackHandler(enabled = showLiveChat) {
+        showLiveChat = false
     }
 
     // Save to Watch Later / playlist sheet
@@ -628,7 +794,7 @@ fun VideoPlayerContent(
                         PlayerSettingsSections(
                             isLoading = isLoading,
                             qualities = availableQualities,
-                            currentQualityUrl = currentQuality?.url,
+                            currentQuality = currentQuality,
                             onQualitySelected = { viewModel.setQuality(it) },
                             playbackSpeed = playbackSpeed,
                             onSpeedSelected = { viewModel.setPlaybackSpeed(it) }
@@ -659,7 +825,7 @@ fun VideoPlayerContent(
                 PlayerSettingsSections(
                     isLoading = isLoading,
                     qualities = availableQualities,
-                    currentQualityUrl = currentQuality?.url,
+                    currentQuality = currentQuality,
                     onQualitySelected = { viewModel.setQuality(it) },
                     playbackSpeed = playbackSpeed,
                     onSpeedSelected = { viewModel.setPlaybackSpeed(it) }
@@ -680,7 +846,7 @@ fun VideoPlayerContent(
 private fun PlayerSettingsSections(
     isLoading: Boolean,
     qualities: List<VideoQuality>,
-    currentQualityUrl: String?,
+    currentQuality: VideoQuality?,
     onQualitySelected: (VideoQuality) -> Unit,
     playbackSpeed: Float,
     onSpeedSelected: (Float) -> Unit
@@ -714,7 +880,12 @@ private fun PlayerSettingsSections(
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             qualities.forEach { quality ->
-                val selected = quality.url == currentQualityUrl
+                // Compared by label, not URL: every rendition of a live
+                // stream points at the same HLS manifest, so a URL comparison
+                // would light up the whole ladder at once.
+                val selected = currentQuality != null &&
+                    quality.resolution == currentQuality.resolution &&
+                    quality.url == currentQuality.url
                 ToggleButton(
                     checked = selected,
                     onCheckedChange = { if (!selected) onQualitySelected(quality) },

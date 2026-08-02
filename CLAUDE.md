@@ -6,6 +6,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Koda** (repo dir `TheMusicApp`, package `com.ivor.ivormusic`) — an Android music & video player powered by YouTube Music, built entirely with Kotlin + Jetpack Compose using Material 3 Expressive. No official YouTube API keys: all data comes from NewPipe Extractor and direct InnerTube API calls.
 
+## How to work here (read before writing any code)
+
+This is a shipped consumer app with real users, not a scratch project. The bar is "would a person using this on their phone every day be happy with it", not "does it compile and satisfy the literal request". Put in the effort up front — the user should not have to come back and ask you to think about the experience.
+
+**Think the feature through before you touch a file.** For anything user-facing — a new screen, a control, a gesture, a setting, a fix that changes behaviour — work out first:
+
+- **The actual use case.** Who taps this, when, and what were they doing right before? A control that is technically correct but three taps deep, or that sits where the thumb cannot reach, has failed.
+- **The states.** Loading, empty, error, offline, signed out, single item, hundreds of items, very long titles, missing thumbnail, no artwork colors. Every one of these happens in this app constantly — YouTube fails, sessions expire, feeds come back empty. Handle them in the first pass, do not bolt them on later.
+- **What it does to what already exists.** Does it fight the mini-player, the video overlay, PiP, the nav bar, an open sheet, a landscape rotation, back-gesture handling? Does it break the signed-out path? Overlays and the tab system in this app are easy to break from a distance.
+- **Feel, not just function.** Motion, hit targets, haptics, whether state changes are legible. See the UI conventions section — springs for touch, M3 Expressive components, never a hardcoded color.
+
+**Ask before you build, not after.** If the request leaves a real design decision open — where something lives, what happens in a case the user did not mention, two reasonable behaviours with different feels — ask. A short question with two or three concrete options is always cheaper than an implementation that gets thrown away. Ask up front, in one batch, not drip-fed mid-implementation. Do not ask about things you can settle yourself by reading the code or following existing convention.
+
+**Say what you decided and what you did not do.** When you finish, briefly note the edge cases you handled, the assumptions you made, and anything you deliberately left out. If you shipped something you think is the wrong UX, say so plainly instead of quietly implementing it.
+
+**Do not do the minimum.** A "quick fix" that leaves the surrounding flow broken is not a fix. If the real problem is one layer below the reported symptom, fix it there and say why.
+
 ## Commands
 
 ```powershell

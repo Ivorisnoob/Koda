@@ -28,7 +28,8 @@ import androidx.media3.datasource.TransferListener
  * googlevideo URLs are bound to their issuing InnerTube client through the
  * `?c=` query param and answer 403 when the playback UA does not match.
  *
- * Non-googlevideo URIs pass straight through to the delegate unchunked.
+ * URIs that are not chunkable progressive googlevideo streams - see
+ * [shouldChunk] - pass straight through to the delegate unchunked.
  */
 @UnstableApi
 class ChunkedStreamDataSource private constructor(
@@ -61,8 +62,24 @@ class ChunkedStreamDataSource private constructor(
 
         private val CONTENT_RANGE_REGEX = Regex("""bytes (\d+)-(\d+)/(\d+|\*)""")
 
-        private fun isGoogleVideo(uri: android.net.Uri): Boolean =
-            uri.host?.endsWith(".googlevideo.com") == true
+        /**
+         * Whether chunking applies to [uri].
+         *
+         * Only progressive googlevideo URLs benefit, and those are exactly the
+         * ones carrying a query string (`?expire=...&itag=...`). The live
+         * pipeline's URLs are all path-style with no query at all - the HLS
+         * variant and media playlists on manifest.googlevideo.com, and the
+         * segment URLs they point at - and chunking actively hurts there: a
+         * segment answers 200 with neither Content-Length nor Content-Range
+         * even when a Range is sent, so [openChunk] assumes a full 10 MB
+         * chunk, hits EOF at ~300 KB, reopens at the new position, and the
+         * server re-serves the whole segment from the start. It terminates,
+         * but every segment gets downloaded twice. Verified August 2026.
+         */
+        private fun shouldChunk(uri: android.net.Uri): Boolean {
+            if (uri.host?.endsWith(".googlevideo.com") != true) return false
+            return !uri.query.isNullOrEmpty()
+        }
     }
 
     private var currentSpec: DataSpec? = null
@@ -94,7 +111,7 @@ class ChunkedStreamDataSource private constructor(
         )
         currentSpec = dataSpec
         position = dataSpec.position
-        chunked = isGoogleVideo(dataSpec.uri)
+        chunked = shouldChunk(dataSpec.uri)
         if (!chunked) {
             return delegate.open(dataSpec)
         }

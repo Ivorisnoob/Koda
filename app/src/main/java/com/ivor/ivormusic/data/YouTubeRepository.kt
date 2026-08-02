@@ -87,6 +87,12 @@ class YouTubeRepository(private val context: Context) {
         // browse params selecting a channel's Videos tab (protobuf: "videos")
         private const val CHANNEL_VIDEOS_TAB_PARAMS = "EgZ2aWRlb3PyBgQKAjoA"
 
+        // YouTube's own account verdict, in the responseContext tracking params
+        // of every InnerTube response: {"key":"logged_in","value":"0"|"1"}.
+        // Tolerant of the pretty-printed spacing so it matches either form.
+        private val LOGGED_IN_TRACKING_PARAM =
+            Regex("\"logged_in\"\\s*,\\s*\"value\"\\s*:\\s*\"([01])\"")
+
         // ANDROID_VR is the recommended client for audio extraction in 2026:
         //  - Does NOT require a PO Token (unlike WEB / ANDROID / IOS / MWEB).
         //  - Returns direct, unobfuscated stream URLs (no signatureCipher to decrypt).
@@ -168,6 +174,10 @@ class YouTubeRepository(private val context: Context) {
             }
             chain.proceed(chain.request())
         }
+        // Folds Google's rotated session cookies back into storage. Without it
+        // the login snapshot goes stale on its own and every authenticated
+        // endpoint quietly answers as signed out. See SessionCookieJar.
+        .cookieJar(SessionCookieJar(sessionManager))
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .build()
@@ -694,8 +704,11 @@ class YouTubeRepository(private val context: Context) {
             // the full TTL: adopt it instead of re-minting on every app
             // start, which put a network fetch on the first resolution of
             // each session.
+            // A negative age means the clock moved backwards since the mint
+            // (timezone/NTP correction, manual change). Treat that as expired
+            // rather than "forever fresh", which would pin a token for good.
             val persistedAt = visitorDataPrefs.getLong("visitor_data_at", 0L)
-            if (nowInner - persistedAt < VISITOR_DATA_TTL_MS) {
+            if (nowInner - persistedAt in 0 until VISITOR_DATA_TTL_MS) {
                 loadPersistedVisitorData()?.let {
                     cachedVisitorData = it
                     visitorDataFetchedAt = persistedAt
@@ -746,6 +759,32 @@ class YouTubeRepository(private val context: Context) {
                 null
             }
         }
+
+    /**
+     * Drop the current visitorData and mint a new one because *playback* failed,
+     * not resolution.
+     *
+     * [resolvePlayerStreamingData] only remints when the /player call itself
+     * shows the bot check (LOGIN_REQUIRED / missing streamingData). The other
+     * signature is a /player that answers 200 OK with URLs googlevideo then
+     * refuses with HTTP 403 — the token is flagged at the media layer only. The
+     * player sees that, resolution never does, so without this entry point the
+     * flagged token sits in prefs and is replayed on every launch for the whole
+     * 6h TTL: "restarting and clearing cache don't help, clearing data does".
+     *
+     * Safe to call speculatively; a no-op when there is no token to replace.
+     */
+    suspend fun refreshVisitorDataAfterPlaybackFailure() {
+        val flagged = cachedVisitorData ?: loadPersistedVisitorData() ?: return
+        try {
+            remintVisitorData(flagged)
+        } catch (e: Exception) {
+            android.util.Log.w(
+                "YouTubeRepository",
+                "visitorData remint after playback failure failed: ${e.message}",
+            )
+        }
+    }
 
     // Last successfully minted token, persisted per install so a cold start on
     // a flaky network still has a usable, install-unique token to fall back on.
@@ -1750,7 +1789,7 @@ class YouTubeRepository(private val context: Context) {
 
         return try {
             val response = okHttpClient.newCall(request).execute()
-            response.body?.string() ?: ""
+            (response.body?.string() ?: "").also { noteSessionState(it) }
         } catch (e: Exception) {
             e.printStackTrace()
             ""
@@ -3771,14 +3810,21 @@ class YouTubeRepository(private val context: Context) {
             streamExtractor.fetchPage()
             
             val qualities = mutableListOf<VideoQuality>()
-            
+            val isLiveStream = streamExtractor.streamType == StreamType.LIVE_STREAM ||
+                streamExtractor.streamType == StreamType.AUDIO_LIVE_STREAM
+
             // 1. DASH/HLS (best quality, adaptive)
             streamExtractor.dashMpdUrl?.takeIf { it.isNotBlank() }?.let { url ->
-                qualities.add(VideoQuality("Auto (Best)", url, "DASH", true))
+                qualities.add(VideoQuality("Auto (Best)", url, "DASH", true, isLive = isLiveStream))
             } ?: streamExtractor.hlsUrl?.takeIf { it.isNotBlank() }?.let { url ->
-                qualities.add(VideoQuality("Auto (HLS)", url, "HLS", true))
+                qualities.add(VideoQuality("Auto (HLS)", url, "HLS", true, isLive = isLiveStream))
             }
-            
+
+            // A live broadcast's progressive URLs are segment endpoints that
+            // stall a progressive reader, so the adaptive manifest above is the
+            // only usable entry - see parseQualitiesFromStreamingData.
+            if (isLiveStream) return@withContext qualities
+
             // 2. Adaptive Streams (video + separate audio)
             val videoOnlyStreams = streamExtractor.videoOnlyStreams
             val audioStreams = streamExtractor.audioStreams
@@ -3842,6 +3888,50 @@ class YouTubeRepository(private val context: Context) {
                 transfer == "COLOR_TRANSFER_CHARACTERISTICS_ARIB_STD_B67"
         }
         val preferHdr = ThemePreferences.isPreferHdrEnabled(context)
+
+        fun labelHeight(label: String): Int = label.takeWhile { it.isDigit() }.toIntOrNull() ?: 0
+        fun labelFps(label: String): Int =
+            label.substringAfter("p", "").takeWhile { it.isDigit() }.toIntOrNull() ?: 30
+
+        // A live broadcast is the one case where the progressive URLs in
+        // adaptiveFormats are unusable: they are segment endpoints (live=1,
+        // noclen=1, targetDurationSec=2), so an unbounded GET returns one ~2s
+        // segment and then EOF, and the bounded ranged GET ChunkedStreamDataSource
+        // issues blocks until it times out - the "live video opens but never
+        // plays" failure. The HLS variant playlist is the only sane source:
+        // media3-exoplayer-hls handles the segment protocol, the DVR window and
+        // ABR itself. hlsManifestUrl is present on live /player responses and
+        // absent on VODs (verified against ANDROID_VR, August 2026), so it is
+        // also the live signal.
+        //
+        // Every rendition lives inside that one manifest, so the ladder here is
+        // labels only: each entry carries the same URL, and picking one caps the
+        // track selector instead of swapping the media source (see
+        // VideoPlayerViewModel.setQuality). That keeps ABR working under the cap
+        // and makes a quality change free - no re-prepare, no rebuffer, which
+        // matters more on live than anywhere else. The labels come from the same
+        // /player response the manifest did, so building the ladder costs no
+        // extra network call.
+        val hlsManifestUrl = streamingData.optString("hlsManifestUrl").takeIf { it.isNotBlank() }
+        if (hlsManifestUrl != null) {
+            fun liveEntry(label: String) =
+                VideoQuality(label, hlsManifestUrl, "HLS", isDASH = true, isLive = true)
+
+            val ladder = adaptive
+                .filter {
+                    it.optString("mimeType").startsWith("video/") &&
+                        (preferHdr || !isHdrFormat(it))
+                }
+                .mapNotNull { it.optString("qualityLabel").takeIf { label -> label.isNotEmpty() } }
+                .distinct()
+                .sortedWith(
+                    compareByDescending<String> { labelHeight(it) }
+                        .thenByDescending { if (it.contains("HDR", true)) 1 else 0 }
+                        .thenByDescending { labelFps(it) }
+                )
+
+            return listOf(liveEntry("Auto")) + ladder.map(::liveEntry)
+        }
 
         // Best separate audio track; prefer AAC (mp4a) for broad hardware support,
         // then highest bitrate.
@@ -3908,13 +3998,11 @@ class YouTubeRepository(private val context: Context) {
         // Highest resolution first; at equal height an HDR variant (only
         // present when opted in) outranks SDR so the default pick lands on
         // it, then 60fps variants before 30fps.
-        fun height(label: String): Int = label.takeWhile { it.isDigit() }.toIntOrNull() ?: 0
         fun hdr(label: String): Int = if (label.contains("HDR", ignoreCase = true)) 1 else 0
-        fun fps(label: String): Int = label.substringAfter("p", "").takeWhile { it.isDigit() }.toIntOrNull() ?: 30
         return qualities.sortedWith(
-            compareByDescending<VideoQuality> { height(it.resolution) }
+            compareByDescending<VideoQuality> { labelHeight(it.resolution) }
                 .thenByDescending { hdr(it.resolution) }
-                .thenByDescending { fps(it.resolution) }
+                .thenByDescending { labelFps(it.resolution) }
         )
     }
 
@@ -4075,7 +4163,7 @@ class YouTubeRepository(private val context: Context) {
         return try {
             okHttpClient.newCall(builder.build()).execute().use { response ->
                 if (response.isSuccessful) {
-                    response.body?.string()
+                    response.body?.string()?.also { noteSessionState(it) }
                 } else {
                     android.util.Log.w("YouTubeRepo", "watch api $endpoint HTTP ${response.code}")
                     null
@@ -4085,6 +4173,23 @@ class YouTubeRepository(private val context: Context) {
             android.util.Log.e("YouTubeRepo", "watch api $endpoint failed", e)
             null
         }
+    }
+
+    /**
+     * Read YouTube's own verdict on the session out of a response.
+     *
+     * Every InnerTube response reports `logged_in` in its responseContext
+     * tracking params. When the app sent cookies and a SAPISIDHASH and still
+     * gets `0` back, the stored session is dead - which used to surface only as
+     * an empty subscriptions tab and a blank account name, with no hint that
+     * signing in again was what was needed. A `1` clears the flag, so a session
+     * revived by a cookie rotation heals itself without a round trip through
+     * the login screen.
+     */
+    private fun noteSessionState(body: String) {
+        if (!sessionManager.isLoggedIn()) return
+        val match = LOGGED_IN_TRACKING_PARAM.find(body) ?: return
+        sessionManager.setSessionExpired(match.groupValues[1] == "0")
     }
 
     /**
@@ -4129,7 +4234,8 @@ class YouTubeRepository(private val context: Context) {
                 } catch (e: Exception) {
                     android.util.Log.w("YouTubeRepo", "chapters parse failed for $videoId", e)
                     emptyList()
-                }
+                },
+                liveChatContinuation = parseLiveChatContinuation(root)
             )
         } catch (e: Exception) {
             android.util.Log.e("YouTubeRepo", "getWatchNextData failed", e)
@@ -4175,6 +4281,522 @@ class YouTubeRepository(private val context: Context) {
             .put("videoId", videoId)
         val raw = postWatchApi("next", body) ?: return null
         return org.json.JSONObject(raw)
+    }
+
+    // ============================================================
+    // Live chat (InnerTube WEB client against www.youtube.com)
+    // ============================================================
+
+    /**
+     * Open a live chat stream for [videoId], returning the first continuation
+     * token and the send token.
+     *
+     * The entry point rides the same /next response the player already parses:
+     * contents.twoColumnWatchNextResults.conversationBar.liveChatRenderer, with
+     * the start token at continuations[0].reloadContinuationData.continuation.
+     * conversationBar is absent entirely when the video is not live or the
+     * creator disabled chat, which is the "no chat" signal - not an error.
+     *
+     * Reading chat needs no account: a signed-out poll returns the full
+     * backlog. Sending does, so [LiveChatSession.sendParams] is only meaningful
+     * alongside [isLoggedIn].
+     *
+     * Verified against the live /next API August 2026.
+     */
+    suspend fun getLiveChatSession(videoId: String): LiveChatSession? = withContext(Dispatchers.IO) {
+        try {
+            val root = fetchWatchNextRoot(videoId) ?: return@withContext null
+            parseLiveChatContinuation(root)?.let { LiveChatSession(continuation = it) }
+        } catch (e: Exception) {
+            android.util.Log.e("YouTubeRepo", "getLiveChatSession failed for $videoId", e)
+            null
+        }
+    }
+
+    /**
+     * Pull the chat start token out of an already-fetched watch-next response.
+     *
+     * conversationBar is absent entirely when the video is not live or the
+     * creator disabled chat, which is the "no chat" signal - not an error.
+     *
+     * A finished broadcast that kept its chat exposes the *replay* under this
+     * same key. Nothing consumes that today - the panel is gated on isLive -
+     * but it is the hook if replay chat is ever wanted.
+     */
+    private fun parseLiveChatContinuation(root: org.json.JSONObject): String? {
+        val renderer = root.optJSONObject("contents")
+            ?.optJSONObject("twoColumnWatchNextResults")
+            ?.optJSONObject("conversationBar")
+            ?.optJSONObject("liveChatRenderer")
+            ?: return null
+
+        // Sub-menu entry 0 is "Top chat" and entry 1 "Live chat"; the top-level
+        // continuation matches whichever the creator defaulted to, and is the
+        // one the web player opens with.
+        return renderer.optJSONArray("continuations")
+            ?.optJSONObject(0)
+            ?.optJSONObject("reloadContinuationData")
+            ?.optString("continuation")
+            ?.takeIf { it.isNotBlank() }
+    }
+
+    /**
+     * Poll one page of live chat.
+     *
+     * continuationContents.liveChatContinuation carries the new actions plus
+     * the next token in continuations[0].invalidationContinuationData, whose
+     * timeoutMs (10s on every stream sampled) is the interval the server wants
+     * between polls. The first poll returns the whole visible backlog, roughly
+     * 70 messages; subsequent polls return only what arrived since.
+     *
+     * Action shapes handled, in order of how often they actually appear:
+     * addChatItemAction (text/paid/membership/gift/system items),
+     * addBannerToLiveChatCommand (pinned message or chat summary) and
+     * removeChatItemAction (a message deleted after it was already rendered).
+     * These were verified against the live live_chat/get_live_chat API
+     * August 2026.
+     *
+     * NOT yet probed against a live response, and so to be treated as
+     * best-effort until they are: markChatItemAsDeletedAction,
+     * markChatItemsByAuthorAsDeletedAction, replaceChatItemAction,
+     * removeBannerForLiveChatCommand, liveChatPaidStickerRenderer and
+     * liveChatRestrictedParticipationRenderer. Each one is an additive branch
+     * that no-ops when the key is absent, so a wrong guess costs the feature
+     * rather than the chat - but confirm the shapes before relying on them.
+     */
+    suspend fun pollLiveChat(continuation: String): LiveChatPage? = withContext(Dispatchers.IO) {
+        try {
+            val body = org.json.JSONObject()
+                .put("context", webContext())
+                .put("continuation", continuation)
+            val raw = postWatchApi("live_chat/get_live_chat", body) ?: return@withContext null
+            val chat = org.json.JSONObject(raw)
+                .optJSONObject("continuationContents")
+                ?.optJSONObject("liveChatContinuation")
+                ?: return@withContext null
+
+            // Either invalidationContinuationData (the usual live tick) or
+            // timedContinuationData / reloadContinuationData; all three hold the
+            // next token and a timeout under different keys.
+            val nextData = chat.optJSONArray("continuations")?.optJSONObject(0)?.let { c ->
+                c.optJSONObject("invalidationContinuationData")
+                    ?: c.optJSONObject("timedContinuationData")
+                    ?: c.optJSONObject("reloadContinuationData")
+            }
+
+            val actions = chat.optJSONArray("actions")
+            val messages = mutableListOf<LiveChatMessage>()
+            val removed = mutableSetOf<String>()
+            val removedAuthors = mutableSetOf<String>()
+            val replacements = mutableMapOf<String, LiveChatMessage>()
+            var banner: LiveChatBanner? = null
+            var bannerCleared = false
+
+            for (i in 0 until (actions?.length() ?: 0)) {
+                val action = actions?.optJSONObject(i) ?: continue
+                action.optJSONObject("addChatItemAction")?.optJSONObject("item")?.let { item ->
+                    parseLiveChatItem(item, fallbackOrder = i)?.let(messages::add)
+                }
+                action.optJSONObject("removeChatItemAction")
+                    ?.optString("targetItemId")
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let(removed::add)
+                // What a moderator delete actually emits. The renderer carries a
+                // "deleted by" placeholder, but YouTube's own client collapses
+                // the row away, so the message is simply dropped.
+                action.optJSONObject("markChatItemAsDeletedAction")
+                    ?.optString("targetItemId")
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let(removed::add)
+                // A ban: every message from that channel disappears at once.
+                action.optJSONObject("markChatItemsByAuthorAsDeletedAction")
+                    ?.optString("externalChannelId")
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let(removedAuthors::add)
+                action.optJSONObject("replaceChatItemAction")?.let { replace ->
+                    val target = replace.optString("targetItemId").takeIf { it.isNotBlank() }
+                    val item = replace.optJSONObject("replacementItem")
+                    if (target != null && item != null) {
+                        parseLiveChatItem(item, fallbackOrder = i)?.let { replacements[target] = it }
+                    }
+                }
+                action.optJSONObject("addBannerToLiveChatCommand")
+                    ?.optJSONObject("bannerRenderer")
+                    ?.optJSONObject("liveChatBannerRenderer")
+                    ?.let { parseLiveChatBanner(it) }
+                    ?.let { banner = it }
+                if (action.has("removeBannerForLiveChatCommand")) bannerCleared = true
+            }
+
+            val actionPanel = chat.optJSONObject("actionPanel")
+            val inputRenderer = actionPanel?.optJSONObject("liveChatMessageInputRenderer")
+            // When chat is subscribers-only, members-only, in slow mode, or the
+            // viewer is banned, the input renderer is replaced wholesale by this
+            // one carrying the reason.
+            val restriction = actionPanel
+                ?.optJSONObject("liveChatRestrictedParticipationRenderer")
+                ?.let { getRunText(it.optJSONObject("message")) }
+                ?.takeIf { it.isNotBlank() }
+
+            LiveChatPage(
+                messages = messages,
+                removedIds = removed,
+                removedAuthorIds = removedAuthors,
+                replacements = replacements,
+                banner = banner,
+                bannerCleared = bannerCleared,
+                restrictionMessage = restriction,
+                nextContinuation = nextData?.optString("continuation")?.takeIf { it.isNotBlank() },
+                timeoutMs = nextData?.optLong("timeoutMs")?.takeIf { it > 0L } ?: 10_000L,
+                sendParams = inputRenderer
+                    ?.optJSONObject("sendButton")
+                    ?.optJSONObject("buttonRenderer")
+                    ?.optJSONObject("serviceEndpoint")
+                    ?.optJSONObject("sendLiveChatMessageEndpoint")
+                    ?.optString("params")
+                    ?.takeIf { it.isNotBlank() },
+                maxMessageLength = inputRenderer
+                    ?.optJSONObject("inputField")
+                    ?.optJSONObject("liveChatTextInputFieldRenderer")
+                    ?.optInt("maxCharacterLimit")
+                    ?.takeIf { it > 0 }
+                    ?: 200,
+            )
+        } catch (e: Exception) {
+            android.util.Log.e("YouTubeRepo", "pollLiveChat failed", e)
+            null
+        }
+    }
+
+    /**
+     * Post a message to a live chat. Requires login - the input renderer is
+     * present in the response even signed out, so its presence is not an auth
+     * signal.
+     *
+     * [params] is the opaque token from the poll response's
+     * actionPanel.liveChatMessageInputRenderer.sendButton, echoed back verbatim.
+     *
+     * An accepted message comes straight back as an addChatItemAction, so the
+     * result carries the parsed item: showing it at once is what makes sending
+     * feel instant instead of costing up to a full poll interval. Its id is the
+     * one the poll will hand back later, so the normal dedupe absorbs it.
+     */
+    suspend fun sendLiveChatMessage(params: String, text: String): LiveChatSendResult =
+        withContext(Dispatchers.IO) {
+            if (!isLoggedIn()) {
+                return@withContext LiveChatSendResult(false, error = "Sign in to chat")
+            }
+            try {
+                val body = org.json.JSONObject()
+                    .put("context", webContext())
+                    .put("params", params)
+                    .put(
+                        "richMessage",
+                        org.json.JSONObject().put(
+                            "textSegments",
+                            org.json.JSONArray().put(org.json.JSONObject().put("text", text))
+                        )
+                    )
+                    .put("clientMessageId", java.util.UUID.randomUUID().toString())
+                val raw = postWatchApi("live_chat/send_message", body)
+                    ?: return@withContext LiveChatSendResult(false, error = "Message not sent")
+                val root = org.json.JSONObject(raw)
+
+                val results = mutableListOf<org.json.JSONObject>()
+                findObjectsByKey(root, "addChatItemAction", results)
+                val echo = results.firstNotNullOfOrNull { action ->
+                    action.optJSONObject("item")?.let { parseLiveChatItem(it, fallbackOrder = 0) }
+                }
+                if (results.isNotEmpty()) {
+                    return@withContext LiveChatSendResult(true, echo = echo)
+                }
+
+                // A rejected message (slow mode, a word filter, a ban) answers
+                // 200 with an error string in place of the item.
+                val errors = mutableListOf<org.json.JSONObject>()
+                findObjectsByKey(root, "errorMessage", errors)
+                val reason = errors.firstNotNullOfOrNull { getRunText(it) }
+                    ?.takeIf { it.isNotBlank() }
+                LiveChatSendResult(false, error = reason ?: "Message not sent")
+            } catch (e: Exception) {
+                android.util.Log.e("YouTubeRepo", "sendLiveChatMessage failed", e)
+                LiveChatSendResult(false, error = "Message not sent")
+            }
+        }
+
+    /**
+     * Concurrent viewers and the "Started streaming ..." line for a live video.
+     *
+     * The updated_metadata endpoint is what the web player polls to keep those
+     * counters fresh without re-running /next. It asks for a 5s tick, which is
+     * far more often than a phone needs - call it on the chat's 10s cadence or
+     * slower.
+     *
+     * Verified against the live updated_metadata API August 2026.
+     */
+    suspend fun getLiveMetadata(videoId: String): LiveMetadata? = withContext(Dispatchers.IO) {
+        try {
+            val body = org.json.JSONObject()
+                .put("context", webContext())
+                .put("videoId", videoId)
+            val raw = postWatchApi("updated_metadata", body) ?: return@withContext null
+            val root = org.json.JSONObject(raw)
+
+            val viewCounts = mutableListOf<org.json.JSONObject>()
+            findObjectsByKey(root, "videoViewCountRenderer", viewCounts)
+            val viewCount = viewCounts.firstOrNull { it.optBoolean("isLive") } ?: viewCounts.firstOrNull()
+
+            val dateTexts = mutableListOf<org.json.JSONObject>()
+            findObjectsByKey(root, "updateDateTextAction", dateTexts)
+
+            LiveMetadata(
+                viewerCountText = getRunText(viewCount?.optJSONObject("viewCount"))
+                    ?.takeIf { it.isNotBlank() },
+                shortViewerCount = getRunText(viewCount?.optJSONObject("extraShortViewCount"))
+                    ?.takeIf { it.isNotBlank() },
+                dateText = getRunText(dateTexts.firstOrNull()?.optJSONObject("dateText"))
+                    ?.takeIf { it.isNotBlank() },
+            )
+        } catch (e: Exception) {
+            android.util.Log.e("YouTubeRepo", "getLiveMetadata failed for $videoId", e)
+            null
+        }
+    }
+
+    /**
+     * Turn one addChatItemAction item into a [LiveChatMessage].
+     *
+     * Renderer frequencies measured across 59 live chats (~3.3k messages):
+     * liveChatTextMessageRenderer dominates, then the system notice, then
+     * giftMessageViewModel, placeholder, Super Chat and membership. The
+     * placeholder is a slot for a message being moderated and carries only an
+     * id - it renders as nothing, so it is dropped here.
+     *
+     * [fallbackOrder] backfills a sort key for giftMessageViewModel, the one
+     * item that arrives without a timestamp of its own.
+     */
+    private fun parseLiveChatItem(item: org.json.JSONObject, fallbackOrder: Int): LiveChatMessage? {
+        try {
+            item.optJSONObject("liveChatTextMessageRenderer")?.let { r ->
+                val id = r.optString("id").takeIf { it.isNotBlank() } ?: return null
+                return LiveChatMessage.Text(
+                    id = id,
+                    timestampUsec = r.optString("timestampUsec").toLongOrNull() ?: 0L,
+                    author = parseLiveChatAuthor(r),
+                    runs = parseLiveChatRuns(r.optJSONObject("message")),
+                )
+            }
+
+            item.optJSONObject("liveChatPaidMessageRenderer")?.let { r ->
+                val id = r.optString("id").takeIf { it.isNotBlank() } ?: return null
+                return LiveChatMessage.Paid(
+                    id = id,
+                    timestampUsec = r.optString("timestampUsec").toLongOrNull() ?: 0L,
+                    author = parseLiveChatAuthor(r),
+                    // An amount-only Super Chat carries no message at all.
+                    runs = parseLiveChatRuns(r.optJSONObject("message")),
+                    amountText = getRunText(r.optJSONObject("purchaseAmountText")).orEmpty(),
+                    // Unsigned 32-bit ARGB - optInt would overflow.
+                    headerBackgroundColor = r.optLong("headerBackgroundColor"),
+                    headerTextColor = r.optLong("headerTextColor"),
+                    bodyBackgroundColor = r.optLong("bodyBackgroundColor"),
+                    bodyTextColor = r.optLong("bodyTextColor"),
+                )
+            }
+
+            // A Super Sticker: same paid tier colors, but the payload is artwork
+            // instead of a message, under a different set of color keys.
+            item.optJSONObject("liveChatPaidStickerRenderer")?.let { r ->
+                val id = r.optString("id").takeIf { it.isNotBlank() } ?: return null
+                val background = r.optLong("backgroundColor")
+                return LiveChatMessage.Paid(
+                    id = id,
+                    timestampUsec = r.optString("timestampUsec").toLongOrNull() ?: 0L,
+                    author = parseLiveChatAuthor(r),
+                    runs = emptyList(),
+                    amountText = getRunText(r.optJSONObject("purchaseAmountText")).orEmpty(),
+                    headerBackgroundColor = background,
+                    headerTextColor = r.optLong("authorNameTextColor"),
+                    bodyBackgroundColor = background,
+                    bodyTextColor = r.optLong("moneyChipTextColor"),
+                    stickerUrl = widestThumbnailUrl(
+                        r.optJSONObject("sticker")?.optJSONArray("thumbnails"),
+                        "url"
+                    )?.let { if (it.startsWith("//")) "https:$it" else it },
+                )
+            }
+
+            item.optJSONObject("liveChatMembershipItemRenderer")?.let { r ->
+                val id = r.optString("id").takeIf { it.isNotBlank() } ?: return null
+                return LiveChatMessage.Membership(
+                    id = id,
+                    timestampUsec = r.optString("timestampUsec").toLongOrNull() ?: 0L,
+                    author = parseLiveChatAuthor(r),
+                    headline = getRunText(r.optJSONObject("headerPrimaryText"))
+                        ?.takeIf { it.isNotBlank() }
+                        ?: "New member",
+                    tierName = getRunText(r.optJSONObject("headerSubtext"))
+                        ?.takeIf { it.isNotBlank() },
+                )
+            }
+
+            // Gifts use the newer viewModel format: flat "content" strings
+            // instead of run lists, an avatarViewModel instead of a thumbnail
+            // list, and no timestamp.
+            item.optJSONObject("giftMessageViewModel")?.let { vm ->
+                val id = vm.optString("id").takeIf { it.isNotBlank() } ?: return null
+                val avatar = vm.optJSONObject("authorAvatar")
+                    ?.optJSONObject("avatarViewModel")
+                    ?.optJSONObject("image")
+                    ?.optJSONArray("sources")
+                return LiveChatMessage.Gift(
+                    id = id,
+                    timestampUsec = fallbackOrder.toLong(),
+                    author = LiveChatAuthor(
+                        name = vm.optJSONObject("authorName")?.optString("content")?.trim().orEmpty(),
+                        photoUrl = widestThumbnailUrl(avatar, "url"),
+                    ),
+                    text = vm.optJSONObject("text")?.optString("content").orEmpty(),
+                    giftImageUrl = widestThumbnailUrl(vm.optJSONObject("giftImage")?.optJSONArray("sources"), "url")
+                        ?.let { if (it.startsWith("//")) "https:$it" else it },
+                )
+            }
+
+            item.optJSONObject("liveChatViewerEngagementMessageRenderer")?.let { r ->
+                val id = r.optString("id").takeIf { it.isNotBlank() } ?: return null
+                return LiveChatMessage.System(
+                    id = id,
+                    timestampUsec = r.optString("timestampUsec").toLongOrNull() ?: 0L,
+                    runs = parseLiveChatRuns(r.optJSONObject("message")),
+                )
+            }
+
+            return null
+        } catch (e: Exception) {
+            android.util.Log.w("YouTubeRepo", "parseLiveChatItem failed", e)
+            return null
+        }
+    }
+
+    /** Author name, avatar, channel id and badges, shared by every renderer. */
+    private fun parseLiveChatAuthor(renderer: org.json.JSONObject): LiveChatAuthor =
+        LiveChatAuthor(
+            name = getRunText(renderer.optJSONObject("authorName")).orEmpty(),
+            channelId = renderer.optString("authorExternalChannelId").takeIf { it.isNotBlank() },
+            photoUrl = widestThumbnailUrl(
+                renderer.optJSONObject("authorPhoto")?.optJSONArray("thumbnails"),
+                "url"
+            ),
+            badges = parseLiveChatBadges(renderer.optJSONArray("authorBadges")),
+        )
+
+    /**
+     * Badges come in two shapes: owner/moderator/verified as an icon.iconType,
+     * and channel memberships as per-channel customThumbnail artwork whose
+     * tooltip carries the tenure ("Member (1 year)").
+     */
+    private fun parseLiveChatBadges(badges: org.json.JSONArray?): List<LiveChatBadge> {
+        if (badges == null) return emptyList()
+        return (0 until badges.length()).mapNotNull { i ->
+            val r = badges.optJSONObject(i)?.optJSONObject("liveChatAuthorBadgeRenderer")
+                ?: return@mapNotNull null
+            val tooltip = r.optString("tooltip")
+            val custom = widestThumbnailUrl(
+                r.optJSONObject("customThumbnail")?.optJSONArray("thumbnails"),
+                "url"
+            )
+            if (custom != null) {
+                return@mapNotNull LiveChatBadge(LiveChatBadgeKind.MEMBER, tooltip, custom)
+            }
+            val kind = when (r.optJSONObject("icon")?.optString("iconType")) {
+                "OWNER" -> LiveChatBadgeKind.OWNER
+                "MODERATOR" -> LiveChatBadgeKind.MODERATOR
+                "VERIFIED" -> LiveChatBadgeKind.VERIFIED
+                else -> return@mapNotNull null
+            }
+            LiveChatBadge(kind, tooltip)
+        }
+    }
+
+    /**
+     * Split a chat message into text and emoji runs.
+     *
+     * Standard unicode emoji carry the character itself in emojiId and need no
+     * image; channel-custom emoji have an opaque id and must be drawn from the
+     * thumbnail, so the two cases are distinguished rather than flattened.
+     */
+    private fun parseLiveChatRuns(message: org.json.JSONObject?): List<LiveChatRun> {
+        if (message == null) return emptyList()
+        message.optString("simpleText").takeIf { it.isNotBlank() }?.let {
+            return listOf(LiveChatRun.Text(it))
+        }
+        val runs = message.optJSONArray("runs") ?: return emptyList()
+        return (0 until runs.length()).mapNotNull { i ->
+            val run = runs.optJSONObject(i) ?: return@mapNotNull null
+            val emoji = run.optJSONObject("emoji")
+            if (emoji != null) {
+                val emojiId = emoji.optString("emojiId")
+                val label = emoji.optJSONArray("shortcuts")?.optString(0)?.takeIf { it.isNotBlank() }
+                    ?: emojiId
+                // A unicode emoji's id is the character; anything longer is an
+                // opaque channel emoji key that must render as artwork.
+                val isUnicode = emojiId.isNotEmpty() && emojiId.codePointCount(0, emojiId.length) <= 2
+                LiveChatRun.Emoji(
+                    label = if (isUnicode) emojiId else label,
+                    imageUrl = if (isUnicode) null else widestThumbnailUrl(
+                        emoji.optJSONObject("image")?.optJSONArray("thumbnails"),
+                        "url"
+                    ),
+                )
+            } else {
+                run.optString("text").takeIf { it.isNotEmpty() }?.let { LiveChatRun.Text(it) }
+            }
+        }
+    }
+
+    /**
+     * The pinned card: either a message the creator pinned
+     * (liveChatTextMessageRenderer) or the auto-generated chat summary
+     * (liveChatBannerChatSummaryRenderer).
+     */
+    private fun parseLiveChatBanner(banner: org.json.JSONObject): LiveChatBanner? {
+        val contents = banner.optJSONObject("contents") ?: return null
+        contents.optJSONObject("liveChatBannerChatSummaryRenderer")?.let { summary ->
+            return LiveChatBanner(
+                id = summary.optString("liveChatSummaryId").takeIf { it.isNotBlank() }
+                    ?: banner.optString("actionId"),
+                author = null,
+                runs = parseLiveChatRuns(summary.optJSONObject("chatSummary")),
+                isSummary = true,
+            )
+        }
+        contents.optJSONObject("liveChatTextMessageRenderer")?.let { pinned ->
+            return LiveChatBanner(
+                id = pinned.optString("id").takeIf { it.isNotBlank() }
+                    ?: banner.optString("actionId"),
+                author = parseLiveChatAuthor(pinned),
+                runs = parseLiveChatRuns(pinned.optJSONObject("message")),
+                isSummary = false,
+            )
+        }
+        return null
+    }
+
+    /** Widest entry of a thumbnail/source array, which is the highest quality. */
+    private fun widestThumbnailUrl(array: org.json.JSONArray?, urlKey: String): String? {
+        if (array == null) return null
+        var best: String? = null
+        var bestWidth = -1
+        for (i in 0 until array.length()) {
+            val entry = array.optJSONObject(i) ?: continue
+            val url = entry.optString(urlKey).takeIf { it.isNotBlank() } ?: continue
+            val width = entry.optInt("width", 0)
+            if (width >= bestWidth) {
+                bestWidth = width
+                best = url
+            }
+        }
+        return best
     }
 
     /**
@@ -4275,6 +4897,43 @@ class YouTubeRepository(private val context: Context) {
     private fun cacheCaptionTracks(videoId: String, tracks: List<CaptionTrack>) {
         if (tracks.isEmpty()) return
         captionCache[videoId] = CachedCaptions(tracks, System.currentTimeMillis())
+    }
+
+    /**
+     * Download and parse one caption track into cues the player overlay can
+     * render itself.
+     *
+     * Captions deliberately do not travel through ExoPlayer as a sideloaded
+     * text track: that made them part of the media source, so turning captions
+     * on or off rebuilt the source and discarded the entire video buffer. The
+     * timedtext endpoint lives on www.youtube.com rather than googlevideo, so a
+     * plain browser User-Agent is enough and no ranged chunking is needed - the
+     * payload is a few tens of KB.
+     *
+     * Returns an empty list on any failure; captions are best-effort and must
+     * never take playback down with them.
+     */
+    suspend fun getCaptionCues(track: CaptionTrack): List<VttCue> = withContext(Dispatchers.IO) {
+        try {
+            val request = okhttp3.Request.Builder()
+                .url(track.vttUrl)
+                .addHeader("User-Agent", BROWSER_USER_AGENT)
+                .build()
+            okHttpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    android.util.Log.w(
+                        "YouTubeRepo",
+                        "Caption fetch failed for ${track.languageCode}: HTTP ${response.code}"
+                    )
+                    return@withContext emptyList()
+                }
+                val body = response.body?.string().orEmpty()
+                WebVttParser.parse(body)
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("YouTubeRepo", "getCaptionCues failed for ${track.languageCode}", e)
+            emptyList()
+        }
     }
 
     /**

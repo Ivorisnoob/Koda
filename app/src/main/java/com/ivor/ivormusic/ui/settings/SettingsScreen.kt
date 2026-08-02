@@ -1113,7 +1113,7 @@ fun SettingsScreen(
         CookiePasteSheet(
             onDismiss = { showCookiePasteSheet = false },
             onSave = { cookies ->
-                sessionManager.saveCookies(cookies)
+                sessionManager.startSession(cookies)
                 isLoggedIn = true
                 showCookiePasteSheet = false
                 coroutineScope.launch {

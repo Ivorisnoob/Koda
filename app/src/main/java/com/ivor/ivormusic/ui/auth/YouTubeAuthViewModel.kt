@@ -3,6 +3,7 @@ package com.ivor.ivormusic.ui.auth
 import android.webkit.CookieManager
 import androidx.lifecycle.ViewModel
 import com.ivor.ivormusic.data.SessionManager
+import com.ivor.ivormusic.data.YouTubeAuthUtils
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
@@ -24,18 +25,23 @@ class YouTubeAuthViewModel(private val sessionManager: SessionManager) : ViewMod
     fun onUrlChanged(url: String) {
         val cookies = CookieManager.getInstance().getCookie(url)
         if (cookies != null && isLoginSuccessful(cookies)) {
-            sessionManager.saveCookies(cookies)
+            sessionManager.startSession(cookies)
+            CookieManager.getInstance().flush()
             _isLoggedIn.value = true
         }
     }
 
     /**
      * Helper to determine if the captured cookies indicate a successful login.
-     * Looks for key session cookies like "SID", "HSID", "SSID", or "SAPISID".
+     *
+     * Exact cookie names: `contains("SID=")` is also satisfied by SAPISID=,
+     * APISID= and __Secure-3PSID=, so a substring check accepted jars carrying
+     * no SID session and produced a login that authenticated nothing.
      */
     private fun isLoginSuccessful(cookies: String): Boolean {
-        // These cookies usually indicate an active session
-        return cookies.contains("SID=") && cookies.contains("HSID=") && cookies.contains("SSID=")
+        return YouTubeAuthUtils.missingRequiredCookies(cookies).isEmpty() &&
+            YouTubeAuthUtils.getCookieValue(cookies, "HSID") != null &&
+            YouTubeAuthUtils.getCookieValue(cookies, "SSID") != null
     }
 
     /**
@@ -51,7 +57,7 @@ class YouTubeAuthViewModel(private val sessionManager: SessionManager) : ViewMod
      * Save cookies directly and update login state.
      */
     fun saveCookies(cookies: String) {
-        sessionManager.saveCookies(cookies)
+        sessionManager.startSession(cookies)
         _isLoggedIn.value = true
     }
 }

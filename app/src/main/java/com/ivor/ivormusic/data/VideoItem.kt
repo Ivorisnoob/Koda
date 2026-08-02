@@ -115,7 +115,14 @@ data class VideoQuality(
     val url: String,
     val format: String? = null, // e.g. "mp4", "webm"
     val isDASH: Boolean = false,
-    val audioUrl: String? = null // For non-DASH adaptive streams
+    val audioUrl: String? = null, // For non-DASH adaptive streams
+    /**
+     * Set on entries resolved from a live broadcast. Live streams only ever
+     * play through the adaptive manifest - their progressive URLs are segment
+     * endpoints, not byte-addressable files - so this doubles as the player's
+     * "this video is live" signal.
+     */
+    val isLive: Boolean = false
 )
 
 /**
@@ -145,7 +152,14 @@ data class WatchNextData(
     val engagement: VideoEngagement?,
     val updatedVideoItem: VideoItem?,
     val relatedVideos: List<VideoItem>,
-    val chapters: List<VideoChapter> = emptyList()
+    val chapters: List<VideoChapter> = emptyList(),
+    /**
+     * Live chat start token, when the video is a broadcast with chat enabled.
+     * It rides this response so opening the chat panel costs no extra /next -
+     * the watch-next tree is a multi-megabyte parse and re-fetching it was the
+     * single biggest cost of opening chat.
+     */
+    val liveChatContinuation: String? = null
 )
 
 /**

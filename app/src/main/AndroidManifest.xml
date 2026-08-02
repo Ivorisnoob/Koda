@@ -29,10 +29,16 @@
         android:requestLegacyExternalStorage="true"
         android:enableOnBackInvokedCallback="true"
         android:theme="@style/Theme.App.Starting">
+        <!--
+            singleTop so a link shared while Koda is already open is delivered
+            to the running instance through onNewIntent, instead of stacking a
+            second MainActivity on top of the live players.
+        -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:label="@string/app_name"
+            android:launchMode="singleTop"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|smallestScreenSize"
             android:screenOrientation="portrait"
             android:windowSoftInputMode="adjustResize"
@@ -43,6 +49,56 @@
                 <action android:name="android.intent.action.MAIN" />
 
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!--
+                Android's share sheet. A mime type is the only filter the
+                manifest can express, so Koda is offered for any shared text and
+                sorts out whether it holds a YouTube link at handling time.
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+
+            <!--
+                "Open with" for YouTube links. Paths are constrained to what the
+                app can actually play, so Koda is not offered for channel or
+                account URLs it would only fail on. music.youtube.com links open
+                in the music player, the rest in the video player.
+            -->
+            <intent-filter android:autoVerify="false">
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <data android:scheme="https" />
+                <data android:scheme="http" />
+                <data android:host="youtu.be" />
+                <data android:pathPattern="/.*" />
+            </intent-filter>
+            <intent-filter android:autoVerify="false">
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <data android:scheme="https" />
+                <data android:scheme="http" />
+                <data android:host="youtube.com" />
+                <data android:host="www.youtube.com" />
+                <data android:host="m.youtube.com" />
+                <data android:host="music.youtube.com" />
+                <data android:pathPrefix="/watch" />
+                <data android:pathPrefix="/playlist" />
+                <data android:pathPrefix="/shorts/" />
+                <data android:pathPrefix="/live/" />
+                <data android:pathPrefix="/embed/" />
+                <data android:pathPrefix="/v/" />
             </intent-filter>
         </activity>
         
