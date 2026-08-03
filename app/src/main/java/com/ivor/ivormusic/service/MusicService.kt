@@ -3,6 +3,8 @@ package com.ivor.ivormusic.service
 import android.app.PendingIntent
 import android.content.Intent
 import android.net.Uri
+import android.os.Bundle
+import android.os.SystemClock
 import android.util.Log
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
@@ -22,6 +24,8 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.LibraryResult
 import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession
+import androidx.media3.session.SessionCommand
+import androidx.media3.session.SessionResult
 import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
@@ -133,6 +137,31 @@ class MusicService : MediaLibraryService() {
         // Stream head pre-cached for upcoming songs: ~30s of opus audio, enough
         // to cover the 0.5s start buffer plus the first ranged chunk's RTT.
         private const val WARM_CACHE_BYTES = 512L * 1024
+
+        // --- Sleep timer: the contract with PlayerViewModel ---
+
+        /** Arm the timer. Carries [ARG_SLEEP_TIMER_MINUTES]; 0 = end of track. */
+        const val CMD_SLEEP_TIMER_SET = "com.ivor.ivormusic.SLEEP_TIMER_SET"
+        const val CMD_SLEEP_TIMER_CANCEL = "com.ivor.ivormusic.SLEEP_TIMER_CANCEL"
+        const val ARG_SLEEP_TIMER_MINUTES = "sleep_timer_minutes"
+
+        /** Session-extras keys the timer state is published under. */
+        const val EXTRA_SLEEP_TIMER_ENDS_AT = "sleep_timer_ends_at"
+        const val EXTRA_SLEEP_TIMER_END_OF_TRACK = "sleep_timer_end_of_track"
+
+        /**
+         * How long the fade before the timer's pause takes. Long enough to read
+         * as drifting off rather than as a glitch, short enough that the last
+         * thing heard is not a minute of near-silence.
+         */
+        private const val SLEEP_TIMER_FADE_MS = 5_000L
+
+        /**
+         * Longest a single slice of the countdown sleeps for. Bounded so the
+         * job re-checks the real deadline regularly instead of trusting one
+         * long delay that deep sleep can stretch.
+         */
+        private const val SLEEP_TIMER_TICK_MS = 30_000L
     }
 
     /**
@@ -209,6 +238,7 @@ class MusicService : MediaLibraryService() {
         Log.i(TAG, "MusicService Destroying...")
         fadeVolumeJob?.cancel()
         progressJob?.cancel()
+        sleepTimerJob?.cancel()
         // Cancel the scopes themselves — they host the preference collectors and
         // any in-flight resolutions, which would otherwise outlive the service.
         serviceScope.cancel()
@@ -434,6 +464,22 @@ class MusicService : MediaLibraryService() {
             if (playbackState == Player.STATE_ENDED || playbackState == Player.STATE_IDLE) {
                 progressJob?.cancel()
                 musicProgressLiveUpdate?.hide()
+            }
+        }
+
+        /**
+         * The end-of-track sleep timer firing. Media3 drops playWhenReady with
+         * this exact reason when [ExoPlayer.setPauseAtEndOfMediaItems] stops the
+         * player on an item boundary, so it is the one unambiguous signal that
+         * the timer - rather than the user or audio focus - paused playback.
+         */
+        override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+            super.onPlayWhenReadyChanged(playWhenReady, reason)
+            if (!playWhenReady &&
+                reason == Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM &&
+                sleepTimerEndOfTrack
+            ) {
+                clearSleepTimer()
             }
         }
 
@@ -757,11 +803,44 @@ class MusicService : MediaLibraryService() {
                 .add(Player.COMMAND_SET_SHUFFLE_MODE)
                 .add(Player.COMMAND_SET_REPEAT_MODE)
                 .build()
-                
+
+            val availableSessionCommands =
+                MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS.buildUpon()
+                    .add(SessionCommand(CMD_SLEEP_TIMER_SET, Bundle.EMPTY))
+                    .add(SessionCommand(CMD_SLEEP_TIMER_CANCEL, Bundle.EMPTY))
+                    .build()
+
             return MediaSession.ConnectionResult.accept(
-                MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS,
+                availableSessionCommands,
                 availablePlayerCommands
             )
+        }
+
+        /**
+         * A controller that connects mid-session has no idea a timer is
+         * running - the UI is routinely destroyed and rebuilt underneath a
+         * playing service - so hand it the current state on arrival.
+         */
+        override fun onPostConnect(session: MediaSession, controller: MediaSession.ControllerInfo) {
+            super.onPostConnect(session, controller)
+            publishSleepTimerState()
+        }
+
+        override fun onCustomCommand(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            customCommand: SessionCommand,
+            args: Bundle
+        ): ListenableFuture<SessionResult> = when (customCommand.customAction) {
+            CMD_SLEEP_TIMER_SET -> {
+                startSleepTimer(args.getInt(ARG_SLEEP_TIMER_MINUTES, 0))
+                Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+            }
+            CMD_SLEEP_TIMER_CANCEL -> {
+                clearSleepTimer()
+                Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+            }
+            else -> super.onCustomCommand(session, controller, customCommand, args)
         }
 
         override fun onAddMediaItems(
@@ -979,6 +1058,117 @@ class MusicService : MediaLibraryService() {
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to pre-warm cache", e)
             }
+        }
+    }
+
+    // --- Sleep timer ---
+    //
+    // This lives in the service, not in PlayerViewModel where it used to. The
+    // ViewModel is scoped to MainActivity, so its viewModelScope - and with it
+    // the timer's delay() - was cancelled the moment the activity went away.
+    // Backing out of the app while music kept playing (the whole point of a
+    // foreground media service, and exactly what someone setting a sleep timer
+    // does next) silently killed the timer, and playback ran all night. There
+    // was no persistence either, so reopening the app showed no timer running
+    // and gave the user no way to tell it had died.
+    //
+    // The player outlives the UI, so the thing that stops the player has to as
+    // well. State is published back through the session's extras, which is how
+    // every connected controller - the UI, and anything else - learns about it.
+
+    private var sleepTimerJob: Job? = null
+
+    /** Wall-clock ms when the timer fires, or 0 when no duration timer is set. */
+    private var sleepTimerEndsAt: Long = 0L
+
+    /** True while the player is set to stop when the current track finishes. */
+    private var sleepTimerEndOfTrack: Boolean = false
+
+    /**
+     * Arm the sleep timer. [minutes] of 0 or less means "at the end of the
+     * current track" instead of a duration.
+     */
+    private fun startSleepTimer(minutes: Int) {
+        clearSleepTimer(publish = false)
+
+        if (minutes <= 0) {
+            // Media3 has exactly this behaviour built in, and it is more precise
+            // than watching for the track to end ourselves: the player stops on
+            // the item boundary rather than a callback or two later, and a
+            // later play() still moves on to the next track normally.
+            sleepTimerEndOfTrack = true
+            player.pauseAtEndOfMediaItems = true
+        } else {
+            val durationMs = minutes * 60_000L
+            sleepTimerEndsAt = System.currentTimeMillis() + durationMs
+            val deadline = SystemClock.elapsedRealtime() + durationMs
+            sleepTimerJob = serviceScope.launch {
+                // Sliced against elapsedRealtime rather than one long delay:
+                // coroutine delays on the main dispatcher are driven by
+                // uptimeMillis, which stops counting while the device is in
+                // deep sleep. A timer set and then paused would come due long
+                // after the wall clock said it should.
+                while (true) {
+                    val remaining = deadline - SystemClock.elapsedRealtime()
+                    if (remaining <= 0L) break
+                    delay(remaining.coerceAtMost(SLEEP_TIMER_TICK_MS))
+                }
+                fadeOutAndPause()
+                clearSleepTimer()
+            }
+        }
+        publishSleepTimerState()
+    }
+
+    /**
+     * Ease the volume down before pausing.
+     *
+     * A sleep timer that cuts the audio dead is worse than one that does not
+     * fire: the silence is what wakes people. Runs on [fadeVolumeJob] so it and
+     * the crossfade fade-in can never drive the volume at the same time.
+     */
+    private fun fadeOutAndPause() {
+        fadeVolumeJob?.cancel()
+        fadeVolumeJob = serviceScope.launch {
+            val steps = 20
+            for (i in steps - 1 downTo 0) {
+                player.volume = i / steps.toFloat()
+                delay(SLEEP_TIMER_FADE_MS / steps)
+            }
+            player.pause()
+            // Back to full straight away, or pressing play would be silent.
+            player.volume = 1f
+        }
+    }
+
+    /** Disarm, whether it fired or the user cancelled it. */
+    private fun clearSleepTimer(publish: Boolean = true) {
+        sleepTimerJob?.cancel()
+        sleepTimerJob = null
+        sleepTimerEndsAt = 0L
+        if (sleepTimerEndOfTrack) {
+            sleepTimerEndOfTrack = false
+            // Leaving this set would silently pause at the end of every
+            // subsequent track too.
+            player.pauseAtEndOfMediaItems = false
+        }
+        if (publish) publishSleepTimerState()
+    }
+
+    /**
+     * Push the timer state to every connected controller. Session extras are
+     * the right channel: they survive the UI being destroyed and rebuilt, so a
+     * player reopened ten minutes later still shows the running countdown.
+     */
+    private fun publishSleepTimerState() {
+        val session = mediaLibrarySession ?: return
+        runCatching {
+            session.setSessionExtras(
+                Bundle().apply {
+                    putLong(EXTRA_SLEEP_TIMER_ENDS_AT, sleepTimerEndsAt)
+                    putBoolean(EXTRA_SLEEP_TIMER_END_OF_TRACK, sleepTimerEndOfTrack)
+                }
+            )
         }
     }
 

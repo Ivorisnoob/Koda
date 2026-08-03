@@ -45,6 +45,7 @@ import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.Lyrics
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.PlaylistAdd
@@ -141,6 +142,9 @@ fun MorphPlayerSheetContent(
     var showQueue by remember { mutableStateOf(false) }
     var showLyrics by remember { mutableStateOf(false) }
     var showAddToPlaylist by remember { mutableStateOf(false) }
+
+    // Morph runs on the theme's own roles, so the picker needs no overrides.
+    val sleepTimer = rememberSleepTimerControl(viewModel = viewModel)
     var controlsVisible by remember { mutableStateOf(true) }
 
     val surfaceColor = MaterialTheme.colorScheme.background
@@ -208,6 +212,15 @@ fun MorphPlayerSheetContent(
                             )
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            MorphUtilityButton(
+                                onClick = sleepTimer.open,
+                                active = sleepTimer.active
+                            ) {
+                                Icon(
+                                    Icons.Rounded.Bedtime, "Sleep timer",
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
                             MorphUtilityButton(onClick = { showLyrics = !showLyrics }) {
                                 Icon(
                                     Icons.Rounded.Lyrics, "Lyrics",
@@ -448,14 +461,19 @@ fun MorphPlayerSheetContent(
 @Composable
 private fun MorphUtilityButton(
     onClick: () -> Unit,
+    active: Boolean = false,
     content: @Composable () -> Unit
 ) {
     FilledIconButton(
         onClick = onClick,
         shape = CircleShape,
         colors = IconButtonDefaults.filledIconButtonColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            contentColor = MaterialTheme.colorScheme.onSurface
+            containerColor = if (active) {
+                MaterialTheme.colorScheme.primary
+            } else MaterialTheme.colorScheme.surfaceContainerHigh,
+            contentColor = if (active) {
+                MaterialTheme.colorScheme.onPrimary
+            } else MaterialTheme.colorScheme.onSurface
         ),
         modifier = Modifier.size(44.dp)
     ) {

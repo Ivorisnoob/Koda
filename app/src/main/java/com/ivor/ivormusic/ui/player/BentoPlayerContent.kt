@@ -42,6 +42,7 @@ import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.Lyrics
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.PlaylistAdd
@@ -127,6 +128,13 @@ fun BentoPlayerSheetContent(
     val boardColor = MaterialTheme.colorScheme.surfaceContainerLowest
     val tileColor = MaterialTheme.colorScheme.surfaceContainerHigh
     val onTile = MaterialTheme.colorScheme.onSurface
+
+    // Bento's own emphasis colour, the one BentoToggleTile lights up with.
+    val sleepTimer = rememberSleepTimerControl(
+        viewModel = viewModel,
+        accent = MaterialTheme.colorScheme.tertiaryContainer,
+        onAccent = MaterialTheme.colorScheme.onTertiaryContainer
+    )
     val onTileVariant = MaterialTheme.colorScheme.onSurfaceVariant
 
     Box(
@@ -188,9 +196,28 @@ fun BentoPlayerSheetContent(
                             Box(contentAlignment = Alignment.Center) {
                                 Text(
                                     text = "NOW PLAYING",
-                                    style = MaterialTheme.typography.labelLarge.copy(letterSpacing = 3.sp)
+                                    style = MaterialTheme.typography.labelLarge.copy(letterSpacing = 3.sp),
+                                    maxLines = 1,
+                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                                 )
                             }
+                        }
+                        BentoTile(
+                            onClick = sleepTimer.open,
+                            color = if (sleepTimer.active) {
+                                MaterialTheme.colorScheme.tertiaryContainer
+                            } else tileColor,
+                            contentColor = if (sleepTimer.active) {
+                                MaterialTheme.colorScheme.onTertiaryContainer
+                            } else onTile,
+                            modifier = Modifier
+                                .width(56.dp)
+                                .fillMaxHeight()
+                        ) {
+                            Icon(
+                                Icons.Rounded.Bedtime, "Sleep timer",
+                                modifier = Modifier.size(24.dp)
+                            )
                         }
                         BentoTile(
                             onClick = { showAddToPlaylist = true },

@@ -41,6 +41,7 @@ import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.Lyrics
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.PlaylistAdd
@@ -143,6 +144,14 @@ fun StickerPlayerSheetContent(
     val inkVariant = MaterialTheme.colorScheme.onSurfaceVariant
     val chipColor = MaterialTheme.colorScheme.secondaryContainer
     val onChip = MaterialTheme.colorScheme.onSecondaryContainer
+
+    // Same chip pair the sticker's own controls use, so the picker looks cut
+    // from the same sheet.
+    val sleepTimer = rememberSleepTimerControl(
+        viewModel = viewModel,
+        accent = chipColor,
+        onAccent = onChip
+    )
     val accent = MaterialTheme.colorScheme.primary
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -200,6 +209,17 @@ fun StickerPlayerSheetContent(
                             )
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            EditorialCircleButton(
+                                onClick = sleepTimer.open,
+                                accent = if (sleepTimer.active) ink else chipColor,
+                                field = if (sleepTimer.active) chipColor else onChip,
+                                size = 44.dp
+                            ) {
+                                Icon(
+                                    Icons.Rounded.Bedtime, "Sleep timer",
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
                             EditorialCircleButton(
                                 onClick = { showAddToPlaylist = true },
                                 accent = chipColor,

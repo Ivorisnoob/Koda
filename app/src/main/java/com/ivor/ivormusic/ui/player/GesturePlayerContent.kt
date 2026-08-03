@@ -104,8 +104,7 @@ fun GesturePlayerSheetContent(
     val addToPlaylistItems by viewModel.addToPlaylistItems.collectAsState()
 
     // Sleep timer
-    val sleepTimerEndsAt by viewModel.sleepTimerEndsAt.collectAsState()
-    var showSleepTimerDialog by remember { mutableStateOf(false) }
+    val sleepTimer = rememberSleepTimerControl(viewModel = viewModel)
 
     val surfaceColor = MaterialTheme.colorScheme.background
     val primaryColor = MaterialTheme.colorScheme.primary
@@ -167,8 +166,8 @@ fun GesturePlayerSheetContent(
                     onToggleRepeat = { viewModel.toggleRepeat() },
                     onToggleFavorite = { viewModel.toggleCurrentSongLike() },
                     onToggleDownload = { currentSong?.let { viewModel.toggleDownload(it) } },
-                    sleepTimerActive = sleepTimerEndsAt != null,
-                    onSleepTimerClick = { showSleepTimerDialog = true },
+                    sleepTimerActive = sleepTimer.active,
+                    onSleepTimerClick = sleepTimer.open,
                     onPlayPauseToggle = {
                         playerHaptics.playPause(!viewModel.isPlaying.value)
                         viewModel.togglePlayPause()
@@ -186,14 +185,6 @@ fun GesturePlayerSheetContent(
         }
     }
 
-    if (showSleepTimerDialog) {
-        com.ivor.ivormusic.ui.components.SleepTimerDialog(
-            endsAt = sleepTimerEndsAt,
-            onStart = { minutes -> viewModel.startSleepTimer(minutes) },
-            onStop = { viewModel.cancelSleepTimer() },
-            onDismiss = { showSleepTimerDialog = false }
-        )
-    }
 
     if (showAddToPlaylist) {
         AddToPlaylistSheet(

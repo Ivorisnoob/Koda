@@ -41,6 +41,7 @@ import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.Lyrics
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Pause
@@ -154,6 +155,17 @@ fun PosterPlayerSheetContent(
     // any cover without fighting the artwork's own palette.
     val glyph = Color.White
     val scrim = Color.Black
+
+    // Canvas is white type on black over the artwork, and the picker keeps
+    // that: a light themed sheet under a full-bleed cover reads as a different
+    // app opening on top of this one.
+    val sleepTimer = rememberSleepTimerControl(
+        viewModel = viewModel,
+        accent = glyph,
+        onAccent = scrim,
+        container = scrim,
+        onContainer = glyph
+    )
 
     Box(
         modifier = Modifier
@@ -335,6 +347,19 @@ fun PosterPlayerSheetContent(
                                 )
                             }
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                // Solid fill while armed - the only contrast
+                                // available over artwork is the scrim's alpha.
+                                EditorialCircleButton(
+                                    onClick = sleepTimer.open,
+                                    accent = if (sleepTimer.active) glyph else scrim.copy(alpha = 0.35f),
+                                    field = if (sleepTimer.active) scrim else glyph,
+                                    size = 44.dp
+                                ) {
+                                    Icon(
+                                        Icons.Rounded.Bedtime, "Sleep timer",
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                }
                                 EditorialCircleButton(
                                     onClick = { showAddToPlaylist = true },
                                     accent = scrim.copy(alpha = 0.35f),
