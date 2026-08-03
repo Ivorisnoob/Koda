@@ -179,12 +179,6 @@ fun VideoPlayerOverlay(
         // player and the settle animation continues from wherever the finger
         // let go instead of jumping.
         val expandProgress = remember { Animatable(if (isExpanded) 1f else 0f) }
-        LaunchedEffect(isExpanded) {
-            expandProgress.animateTo(
-                if (isExpanded) 1f else 0f,
-                MINIMIZE_SETTLE_SPRING
-            )
-        }
 
         // Live value while a finger is down. The drag deliberately does not go
         // through the Animatable: Animatable.snapTo runs under a MutatorMutex,
@@ -198,6 +192,20 @@ fun VideoPlayerOverlay(
         // Where the finger picked the player up, so the commit test can measure
         // real travel instead of an absolute position on the screen.
         var dragStartProgress by remember { mutableFloatStateOf(1f) }
+
+        // Declared after isDragging so it can clear it. Once expanded/collapsed
+        // has actually changed, any drag is over by definition, and this is the
+        // backstop that guarantees the flag cannot survive into the next one -
+        // a latched isDragging freezes the player at the last dragged progress
+        // and leaves every later swipe measuring travel from a start point that
+        // never moves, which is what made minimizing work once per app launch.
+        LaunchedEffect(isExpanded) {
+            isDragging = false
+            expandProgress.animateTo(
+                if (isExpanded) 1f else 0f,
+                MINIMIZE_SETTLE_SPRING
+            )
+        }
 
         // 1:1 with the finger: height interpolates over the full screen and the
         // player is bottom-anchored, so a range of one screen height moves the
@@ -264,12 +272,23 @@ fun VideoPlayerOverlay(
                              else -> dragStartProgress - released > minimizeTravel
                          }
                          scope.launch {
-                             // Hand the dragged position to the Animatable
-                             // before dropping out of drag mode, so the settle
-                             // continues from where the finger let go instead
-                             // of snapping back to fully expanded first.
-                             expandProgress.snapTo(released)
-                             isDragging = false
+                             try {
+                                 // Hand the dragged position to the Animatable
+                                 // before dropping out of drag mode, so the
+                                 // settle continues from where the finger let
+                                 // go instead of snapping back to fully
+                                 // expanded first.
+                                 expandProgress.snapTo(released)
+                             } finally {
+                                 // In a finally because snapTo suspends on the
+                                 // Animatable's mutex: an expand/collapse
+                                 // animation that takes the mutex first
+                                 // cancels it, and the plain sequential version
+                                 // then never reached this line. The flag stuck
+                                 // on, and the gesture was dead until the
+                                 // process restarted.
+                                 isDragging = false
+                             }
                              if (minimize) {
                                  viewModel.setExpanded(false)
                              } else {

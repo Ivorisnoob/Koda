@@ -1226,45 +1226,65 @@ internal fun PlayerGestureSurface(
                 } else Modifier.pointerInput(minimizeDragEnabled, enterFullscreenEnabled) {
                     val velocityTracker = VelocityTracker()
                     val enterTravelPx = ENTER_FULLSCREEN_SWIPE_TRAVEL.toPx()
-                    // 0 undecided, 1 minimize, 2 arming fullscreen, 3 committed
-                    var mode = 0
                     var totalDy = 0f
+                    var wentFullscreen = false
+                    var minimizing = false
                     detectVerticalDragGestures(
                         onDragStart = {
                             velocityTracker.resetTracking()
-                            mode = 0
                             totalDy = 0f
+                            wentFullscreen = false
+                            minimizing = false
                         },
                         onVerticalDrag = { change, dragAmount ->
-                            velocityTracker.addPosition(change.uptimeMillis, change.position)
                             totalDy += dragAmount
-                            if (mode == 0) {
-                                // The first delta past touch slop is the
-                                // direction the user meant. Committing to it for
-                                // the rest of the gesture is what stops a
-                                // wavering swipe from doing both things.
-                                mode = when {
-                                    dragAmount < 0f && enterFullscreenEnabled -> 2
-                                    minimizeDragEnabled -> 1
-                                    else -> 0
-                                }
+
+                            // Velocity from the accumulated delta, NOT from
+                            // change.position. This surface is inside the player
+                            // being dragged, and the minimize drag moves it down
+                            // one-for-one with the finger - so the pointer's
+                            // position *within this node* barely changes, and a
+                            // tracker fed those positions reported almost no
+                            // velocity. That is why a calm downward swipe never
+                            // tripped the velocity test and minimizing felt like
+                            // it needed to be yanked. The deltas are measured
+                            // against the node's current transform and are
+                            // correct; only the absolute positions are not.
+                            velocityTracker.addPosition(
+                                change.uptimeMillis,
+                                Offset(0f, totalDy)
+                            )
+
+                            // Direction is re-read from the accumulated travel
+                            // every event rather than locked in from the first
+                            // delta past touch slop. Locking meant a swipe that
+                            // began with the smallest upward roll of the finger
+                            // - which is most of them - spent the whole gesture
+                            // in the fullscreen lane and minimized nothing.
+                            if (!wentFullscreen &&
+                                enterFullscreenEnabled &&
+                                totalDy <= -enterTravelPx
+                            ) {
+                                wentFullscreen = true
+                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                enterFullscreen?.invoke()
                             }
-                            when (mode) {
-                                1 -> onMinimizeDragDelta(dragAmount)
-                                2 -> if (totalDy <= -enterTravelPx) {
-                                    mode = 3
-                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    enterFullscreen?.invoke()
-                                }
+
+                            if (minimizeDragEnabled && !wentFullscreen) {
+                                // Upward deltas are safe to forward: the player
+                                // clamps at fully expanded, so an early wobble
+                                // costs nothing and the pull still counts.
+                                onMinimizeDragDelta(dragAmount)
+                                if (totalDy > 0f) minimizing = true
                             }
                             change.consume()
                         },
                         onDragEnd = {
-                            if (mode == 1) {
+                            if (minimizing) {
                                 onMinimizeDragRelease(velocityTracker.calculateVelocity().y)
                             }
                         },
-                        onDragCancel = { if (mode == 1) onMinimizeDragRelease(0f) }
+                        onDragCancel = { if (minimizing) onMinimizeDragRelease(0f) }
                     )
                 }
             )
