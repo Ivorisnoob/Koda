@@ -35,13 +35,18 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogWindowProvider
 import androidx.core.view.WindowCompat
@@ -326,6 +331,60 @@ fun VideoPlayerContent(
     // Gate authenticated actions behind login
     fun requireLogin(action: () -> Unit) {
         if (isLoggedIn) action() else showSignInDialog = true
+    }
+
+    /**
+     * Pull the watch page down to minimize, from anywhere on it.
+     *
+     * Swiping the video surface has always worked, but that surface is a 16:9
+     * strip at the top of the screen - and most of it is covered by the
+     * transport controls whenever they are up, since a single tap brings them
+     * out. People reached for the gesture on the page below, where nothing
+     * happened, and concluded it was fussy. Everything under the video is one
+     * scrolling column, so once it is at the top the leftover pull is exactly
+     * the minimize drag, fed through the same callbacks the video surface uses.
+     *
+     * Deliberately attached to the info column rather than the box around it:
+     * the comments panel slides up inside that box and has its own dismiss, so
+     * pulling its list down must not drag the player away underneath it.
+     */
+    val minimizeDelta by rememberUpdatedState(onMinimizeDragDelta)
+    val minimizeRelease by rememberUpdatedState(onMinimizeDragRelease)
+    val pullToMinimize = remember {
+        object : NestedScrollConnection {
+            /** True once this gesture has taken the page over. */
+            private var pulling = false
+
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                // Once the pull has started it keeps the gesture to the end.
+                // Handing it back on the first upward flick would scroll the
+                // list under a player left sitting half way down the screen.
+                if (!pulling || source != NestedScrollSource.UserInput) return Offset.Zero
+                minimizeDelta(available.y)
+                return Offset(0f, available.y)
+            }
+
+            override fun onPostScroll(
+                consumed: Offset,
+                available: Offset,
+                source: NestedScrollSource
+            ): Offset {
+                // Leftover downward drag means the list is already at the top.
+                if (source != NestedScrollSource.UserInput || available.y <= 0f) return Offset.Zero
+                pulling = true
+                minimizeDelta(available.y)
+                return Offset(0f, available.y)
+            }
+
+            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
+                // Only ends a pull this connection actually started, so a fling
+                // that merely runs out of list at the top is left alone.
+                if (!pulling) return Velocity.Zero
+                pulling = false
+                minimizeRelease(available.y)
+                return available
+            }
+        }
     }
 
     // ---------------- UI ----------------
@@ -666,6 +725,7 @@ fun VideoPlayerContent(
                         onVideoSelect = { viewModel.playVideo(it) },
                         modifier = Modifier
                             .fillMaxSize()
+                            .nestedScroll(pullToMinimize)
                             .background(MaterialTheme.colorScheme.surface),
                         engagement = engagement,
                         onLikeClick = { requireLogin { viewModel.toggleLike() } },
