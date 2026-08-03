@@ -340,6 +340,16 @@ fun MusicApp(
     val videoPlayerViewModel: com.ivor.ivormusic.ui.video.VideoPlayerViewModel = viewModel()
     val shortsPlayerViewModel: com.ivor.ivormusic.ui.shorts.ShortsPlayerViewModel = viewModel()
 
+    // A live broadcast that turned up in the Shorts feed. The Shorts player
+    // cannot present one honestly (no chat, and a seek bar for a duration that
+    // does not exist), so it closes itself and the stream reopens here, where
+    // the vertical live layout lives.
+    androidx.compose.runtime.LaunchedEffect(shortsPlayerViewModel) {
+        shortsPlayerViewModel.liveHandoff.collect { liveVideo ->
+            videoPlayerViewModel.playVideo(liveVideo)
+        }
+    }
+
     // Surface music playback failures. Before this, a song that could not be
     // resolved failed silently and the player looked stuck on loading forever.
     val playbackError by playerViewModel.playbackError.collectAsState()

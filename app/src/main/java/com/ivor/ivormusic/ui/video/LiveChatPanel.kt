@@ -22,6 +22,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -63,7 +65,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -349,6 +353,141 @@ fun LiveChatPanel(
                 onSend = onSend,
             )
         }
+    }
+}
+
+/**
+ * Live chat as an overlay on the stream itself, for the vertical live player.
+ *
+ * Neither dress of [LiveChatPanel] fits a full-bleed portrait video: the
+ * portrait one covers the stream outright, and the compact one docks against a
+ * side that does not exist once the video is the whole screen. This is a
+ * read-only ticker instead - the newest messages riding a gradient that fades
+ * up into the frame, older ones dimming as they climb - so chat stays legible
+ * without putting a slab of surface color over what the user came to watch.
+ *
+ * Read-only is the point: sending, scrolling back and the jump-to-latest pill
+ * all still belong to the full panel, which [onOpenFullChat] opens.
+ */
+@Composable
+fun LiveChatOverlay(
+    messages: List<LiveChatMessage>,
+    isAvailable: Boolean?,
+    canSend: Boolean,
+    onOpenFullChat: () -> Unit,
+    modifier: Modifier = Modifier,
+    maxVisible: Int = 5,
+) {
+    // A stream with chat turned off should cost the viewer nothing - no scrim,
+    // no empty state, just video.
+    if (isAvailable == false) return
+
+    val recent = remember(messages, maxVisible) {
+        messages.takeLast(maxVisible).asReversed()
+    }
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(
+                Brush.verticalGradient(
+                    listOf(Color.Transparent, Color.Black.copy(alpha = 0.65f))
+                )
+            )
+            .padding(top = 32.dp),
+    ) {
+        LazyColumn(
+            // Reversed so the newest message sits at the visual bottom and the
+            // list grows upward into the fade. Scrolling is the full panel's
+            // job - here it would fight the player's gesture surface.
+            reverseLayout = true,
+            userScrollEnabled = false,
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+            contentPadding = PaddingValues(horizontal = 16.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 190.dp),
+        ) {
+            items(count = recent.size, key = { recent[it].id }) { index ->
+                LiveChatOverlayRow(
+                    message = recent[index],
+                    // Index 0 is the newest. Older messages recede rather than
+                    // vanishing at a hard edge.
+                    modifier = Modifier
+                        .animateItem()
+                        .alpha(1f - (index * 0.16f).coerceAtMost(0.62f)),
+                )
+            }
+        }
+
+        Spacer(Modifier.height(10.dp))
+
+        Surface(
+            onClick = onOpenFullChat,
+            shape = CircleShape,
+            color = Color.White.copy(alpha = 0.16f),
+            contentColor = Color.White,
+            modifier = Modifier
+                .padding(horizontal = 16.dp)
+                .fillMaxWidth(),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp),
+            ) {
+                Text(
+                    text = if (canSend) "Say something..." else "Open live chat",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.White.copy(alpha = 0.85f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                Icon(
+                    Icons.AutoMirrored.Rounded.Send,
+                    contentDescription = "Open live chat",
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+        }
+    }
+}
+
+/**
+ * One ticker row. Text messages get the flat light treatment; Super Chats,
+ * memberships and gifts keep their own cards - they carry colors YouTube sent
+ * with the message and read fine against video.
+ */
+@Composable
+private fun LiveChatOverlayRow(message: LiveChatMessage, modifier: Modifier = Modifier) {
+    when (message) {
+        is LiveChatMessage.Text -> Row(
+            modifier = modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            AuthorAvatar(message.author, 20.dp)
+            LiveChatRunsText(
+                runs = message.runs,
+                prefix = message.author,
+                style = MaterialTheme.typography.bodySmall,
+                color = Color.White,
+                maxLines = 3,
+                authorColorOverride = Color.White.copy(alpha = 0.72f),
+                modifier = Modifier.weight(1f),
+            )
+        }
+
+        is LiveChatMessage.System -> LiveChatRunsText(
+            runs = message.runs,
+            prefix = null,
+            style = MaterialTheme.typography.bodySmall,
+            color = Color.White.copy(alpha = 0.7f),
+            maxLines = 2,
+            modifier = modifier.fillMaxWidth(),
+        )
+
+        else -> LiveChatMessageRow(message = message, compact = true, modifier = modifier)
     }
 }
 
@@ -683,8 +822,16 @@ private fun LiveChatRunsText(
     modifier: Modifier = Modifier,
     color: Color = MaterialTheme.colorScheme.onSurface,
     maxLines: Int = Int.MAX_VALUE,
+    /**
+     * Overrides the role tint on the author name. The overlay dress sits on
+     * video rather than on a surface, where the tertiary/primary/secondary
+     * role colors are not guaranteed to carry contrast - it passes a flat
+     * light tone instead and leans on the badges, which still render, to keep
+     * owner/moderator/member legible.
+     */
+    authorColorOverride: Color? = null,
 ) {
-    val authorColor = when {
+    val authorColor = authorColorOverride ?: when {
         prefix?.isOwner == true -> MaterialTheme.colorScheme.tertiary
         prefix?.isModerator == true -> MaterialTheme.colorScheme.primary
         prefix?.isMember == true -> MaterialTheme.colorScheme.secondary
@@ -957,11 +1104,17 @@ fun LiveDot(modifier: Modifier = Modifier, size: Dp = 8.dp) {
 /**
  * "LIVE" pill plus the concurrent viewer count, for the metadata row and the
  * player chrome.
+ *
+ * The pill itself is an opaque errorContainer either way, so it reads
+ * anywhere. The viewer count is bare text, and [onVideo] is what keeps it
+ * legible when there is no surface behind it - onSurfaceVariant over a bright
+ * frame in a light theme is close to invisible.
  */
 @Composable
 fun LiveBadge(
     viewerCount: String?,
     modifier: Modifier = Modifier,
+    onVideo: Boolean = false,
 ) {
     Row(
         modifier = modifier,
@@ -990,7 +1143,11 @@ fun LiveBadge(
             Text(
                 text = it,
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = if (onVideo) {
+                    Color.White.copy(alpha = 0.85f)
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )

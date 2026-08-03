@@ -79,6 +79,7 @@ import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.RepeatOne
 import androidx.compose.material.icons.rounded.Replay10
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.StayCurrentPortrait
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.ThumbDown
 import androidx.compose.material.icons.rounded.ThumbUp
@@ -269,6 +270,14 @@ fun FullscreenPlayerContent(
     onLiveChatToggle: () -> Unit = {},
     /** Jump to the live edge of the DVR window. */
     onSeekToLive: () -> Unit = {},
+    /**
+     * Width to keep clear on the trailing edge so the video sits beside the
+     * docked chat column instead of centred underneath it. Only worth doing for
+     * a portrait source: a 16:9 video already spans the screen, and shrinking
+     * it to dodge an overlay that mostly covers letterbox bars would lose more
+     * than it gains.
+     */
+    videoEndPadding: Dp = 0.dp,
     onRetry: (() -> Unit)? = null
 ) {
     // Stable shapes to prevent "square flash"
@@ -287,6 +296,13 @@ fun FullscreenPlayerContent(
         targetValue = if (showControls) maxOf(112.dp, navBarInset + 24.dp) else navBarInset + 24.dp,
         animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
         label = "captionLift"
+    )
+
+    // Animated so the video slides aside as chat docks rather than jumping.
+    val chatInsetAnimated by animateDpAsState(
+        targetValue = videoEndPadding,
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        label = "videoEndPadding"
     )
 
     PlayerGestureSurface(
@@ -324,7 +340,9 @@ fun FullscreenPlayerContent(
             // Hand the surface back before this view is destroyed - the same
             // ExoPlayer is also rendered by the mini and PiP PlayerViews.
             onRelease = { playerView -> playerView.player = null },
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(end = chatInsetAnimated)
         )
 
         CaptionOverlay(
@@ -405,7 +423,7 @@ fun FullscreenPlayerContent(
                         )
                     }
 
-                    if (showTimedCommentsButton) {
+                    if (showTimedCommentsButton && !isLive) {
                         FilledTonalIconButton(
                             onClick = onTimedCommentsToggle,
                             colors = IconButtonDefaults.filledTonalIconButtonColors(
@@ -576,6 +594,12 @@ fun PortraitPlayerContent(
     isLive: Boolean = false,
     /** Jump to the live edge of the DVR window. */
     onSeekToLive: () -> Unit = {},
+    /**
+     * Shown only for a portrait live stream, which this 16:9 box can only
+     * pillarbox. Returns to the full-bleed vertical layout the stream opened in.
+     */
+    showVerticalLiveButton: Boolean = false,
+    onVerticalLiveClick: () -> Unit = {},
     showPipButton: Boolean = false,
     onPipClick: () -> Unit = {},
     minimizeDragEnabled: Boolean = false,
@@ -687,7 +711,7 @@ fun PortraitPlayerContent(
                                 contentDescription = if (isLooping) "Repeat" else "Auto Play"
                             )
                         }
-                        if (showTimedCommentsButton) {
+                        if (showTimedCommentsButton && !isLive) {
                             FilledTonalIconButton(
                                 onClick = onTimedCommentsToggle,
                                 colors = IconButtonDefaults.filledTonalIconButtonColors(
@@ -743,6 +767,21 @@ fun PortraitPlayerContent(
                             shapes = stableShapes
                         ) {
                             Icon(Icons.Rounded.Settings, "Quality")
+                        }
+                        if (showVerticalLiveButton) {
+                            FilledIconButton(
+                                onClick = onVerticalLiveClick,
+                                colors = IconButtonDefaults.filledIconButtonColors(
+                                    containerColor = Color.Black.copy(0.5f),
+                                    contentColor = Color.White
+                                ),
+                                shapes = stableShapes
+                            ) {
+                                Icon(
+                                    Icons.Rounded.StayCurrentPortrait,
+                                    contentDescription = "Fill the screen vertically"
+                                )
+                            }
                         }
                         FilledIconButton(
                             onClick = onFullscreenToggle,
@@ -818,7 +857,7 @@ fun PortraitPlayerContent(
  * The window is hours long, so anything short of the last fraction of a percent
  * is genuinely behind.
  */
-private const val LIVE_EDGE_THRESHOLD = 0.995f
+internal const val LIVE_EDGE_THRESHOLD = 0.995f
 
 /**
  * The "LIVE" marker where a normal video shows its duration. Red and tappable
@@ -826,7 +865,7 @@ private const val LIVE_EDGE_THRESHOLD = 0.995f
  * once they are already there.
  */
 @Composable
-private fun LiveEdgeChip(atLiveEdge: Boolean, onClick: () -> Unit) {
+internal fun LiveEdgeChip(atLiveEdge: Boolean, onClick: () -> Unit) {
     Surface(
         shape = CircleShape,
         color = Color.Transparent,
@@ -865,7 +904,7 @@ private fun LiveEdgeChip(atLiveEdge: Boolean, onClick: () -> Unit) {
  * fighting the finger.
  */
 @Composable
-private fun PlayerSeekBar(
+internal fun PlayerSeekBar(
     progress: Float,
     onSeek: (Float) -> Unit,
     modifier: Modifier = Modifier,
@@ -1007,7 +1046,7 @@ private const val PINCH_ZOOM_OUT_THRESHOLD = 0.87f
  * mini player. Mutually exclusive with the fullscreen level drags.
  */
 @Composable
-private fun PlayerGestureSurface(
+internal fun PlayerGestureSurface(
     onToggleControls: () -> Unit,
     onSeekBackward: () -> Unit,
     onSeekForward: () -> Unit,
@@ -1538,8 +1577,11 @@ fun VideoInfoSection(
             )
         }
 
-        // Live chat entry. Sits above comments because on a live stream it is
-        // the conversation - the comment section is usually empty or off.
+        // Live chat entry. On a live stream this replaces comments outright
+        // rather than sitting above them: chat is where the conversation
+        // actually is, and the comment section on a running broadcast is
+        // usually empty or disabled, so offering both sent people to the dead
+        // one.
         if (isLive) {
             Surface(
                 shape = RoundedCornerShape(16.dp),
@@ -1576,36 +1618,38 @@ fun VideoInfoSection(
         }
 
         // Comments Entry
-        Surface(
-            shape = RoundedCornerShape(16.dp),
-            color = MaterialTheme.colorScheme.surfaceContainer,
-            modifier = Modifier.fillMaxWidth(),
-            onClick = onCommentsClick,
-            enabled = engagement?.commentsToken != null
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+        if (!isLive) {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surfaceContainer,
+                modifier = Modifier.fillMaxWidth(),
+                onClick = onCommentsClick,
+                enabled = engagement?.commentsToken != null
             ) {
-                Icon(
-                    Icons.AutoMirrored.Rounded.Comment,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary
-                )
-                Text(
-                    text = "Comments",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.weight(1f)
-                )
-                Icon(
-                    Icons.Rounded.ExpandMore,
-                    contentDescription = "Open comments",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Rounded.Comment,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = "Comments",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Icon(
+                        Icons.Rounded.ExpandMore,
+                        contentDescription = "Open comments",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
         

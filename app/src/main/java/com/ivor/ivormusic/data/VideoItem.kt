@@ -122,7 +122,17 @@ data class VideoQuality(
      * endpoints, not byte-addressable files - so this doubles as the player's
      * "this video is live" signal.
      */
-    val isLive: Boolean = false
+    val isLive: Boolean = false,
+    /**
+     * Whether the source frame is taller than it is wide, read off the stream
+     * dimensions at parse time.
+     *
+     * The player also learns this from ExoPlayer's onVideoSizeChanged, but only
+     * once the first frame has decoded - too late for the vertical live layout,
+     * which would otherwise compose as a 16:9 box and visibly snap to full
+     * bleed a moment after playback starts.
+     */
+    val isPortrait: Boolean = false
 )
 
 /**
