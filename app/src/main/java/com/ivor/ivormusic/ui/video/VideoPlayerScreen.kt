@@ -114,6 +114,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -122,7 +123,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.input.pointer.util.VelocityTracker
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
@@ -315,7 +318,11 @@ fun FullscreenPlayerContent(
             speedBeforeBoost = exoPlayer.playbackParameters.speed
             exoPlayer.setPlaybackSpeed(2f)
         },
-        onSpeedBoostEnd = { exoPlayer.setPlaybackSpeed(speedBeforeBoost) }
+        onSpeedBoostEnd = { exoPlayer.setPlaybackSpeed(speedBeforeBoost) },
+        // Swipe down the middle of the video to come back to portrait, the
+        // mirror of the swipe up that got here. Same callback as the toolbar's
+        // fullscreen button.
+        onExitFullscreen = onFullscreenToggle
     ) {
         // Video View
         AndroidView(
@@ -631,7 +638,10 @@ fun PortraitPlayerContent(
         onSpeedBoostEnd = { exoPlayer.setPlaybackSpeed(speedBeforeBoost) },
         minimizeDragEnabled = minimizeDragEnabled,
         onMinimizeDragDelta = onMinimizeDragDelta,
-        onMinimizeDragRelease = onMinimizeDragRelease
+        onMinimizeDragRelease = onMinimizeDragRelease,
+        // Swipe up on the video to go fullscreen. Down already minimizes, so
+        // the surface now answers both directions.
+        onEnterFullscreen = onFullscreenToggle
     ) {
         AndroidView(
             factory = { ctx ->
@@ -1027,6 +1037,37 @@ private const val PINCH_ZOOM_IN_THRESHOLD = 1.15f
 private const val PINCH_ZOOM_OUT_THRESHOLD = 0.87f
 
 /**
+ * Upward travel on the inline video that commits to fullscreen.
+ *
+ * Small, because the inline box is only a 16:9 slice of a portrait screen -
+ * there is barely 100dp of room above a finger that started in the middle of
+ * it. Comfortably past touch slop, and the gesture commits the moment it is
+ * reached rather than waiting for the finger to lift, so the rotation starts
+ * while the swipe still feels like it is happening.
+ */
+private val ENTER_FULLSCREEN_SWIPE_TRAVEL = 56.dp
+
+/**
+ * Downward travel in the centre column of a fullscreen video that exits it.
+ *
+ * Deliberately longer than the way in: leaving fullscreen throws away the
+ * orientation the user is holding the phone in, so it should take a gesture
+ * they meant.
+ */
+private val EXIT_FULLSCREEN_SWIPE_TRAVEL = 72.dp
+
+/**
+ * Half-width of the centre column reserved for the exit-fullscreen swipe, as a
+ * fraction of the surface.
+ *
+ * Vertical drags in fullscreen are already spoken for - brightness on the left,
+ * volume on the right - so the exit gesture needs a lane of its own rather than
+ * a direction of its own. A third of the width each still leaves both levels
+ * more than enough to grab, since their travel is vertical.
+ */
+private const val FULLSCREEN_CENTRE_COLUMN_HALF_WIDTH = 0.18f
+
+/**
  * Wraps the video surface with tap gestures: single tap toggles the controls,
  * a double tap on the left rewinds and on the right fast-forwards (YouTube-style),
  * with an animated badge that accumulates when tapped repeatedly.
@@ -1044,6 +1085,21 @@ private const val PINCH_ZOOM_OUT_THRESHOLD = 0.87f
  * on the surface is reported through [onMinimizeDragDelta] /
  * [onMinimizeDragRelease] so the overlay can drag the player down into the
  * mini player. Mutually exclusive with the fullscreen level drags.
+ *
+ * The two fullscreen swipes are the YouTube pair, and they are directional
+ * rather than positional so each one lands where the hand already is:
+ * - inline (portrait): swipe **up** anywhere on the video enters fullscreen,
+ *   through [onEnterFullscreen]. Down is still the minimize drag, so the video
+ *   surface answers both directions with the obvious thing.
+ * - fullscreen (landscape): swipe **down** the centre column exits, through
+ *   [onExitFullscreen]. Only the centre, because the sides are the brightness
+ *   and volume lanes.
+ *
+ * Both commit mid-gesture on travel alone rather than on release. There is no
+ * dragged preview to release into - the layout swap is an orientation change,
+ * not something that can follow a finger - so waiting for the lift would just
+ * make the gesture feel like it had not registered. Leaving either callback
+ * null leaves that swipe out entirely.
  */
 @Composable
 internal fun PlayerGestureSurface(
@@ -1058,6 +1114,8 @@ internal fun PlayerGestureSurface(
     minimizeDragEnabled: Boolean = false,
     onMinimizeDragDelta: (Float) -> Unit = {},
     onMinimizeDragRelease: (Float) -> Unit = {},
+    onEnterFullscreen: (() -> Unit)? = null,
+    onExitFullscreen: (() -> Unit)? = null,
     content: @Composable BoxScope.() -> Unit
 ) {
     // side: -1 rewind, +1 forward, 0 hidden. seconds accumulates on rapid taps.
@@ -1067,6 +1125,20 @@ internal fun PlayerGestureSurface(
 
     // Press-and-hold anywhere temporarily boosts playback to 2x (YouTube-style).
     var isBoosting by remember { mutableStateOf(false) }
+
+    // The player recomposes on every position tick, so these arrive as fresh
+    // lambda instances several times a second. Read through a state holder and
+    // key the pointerInputs on whether the gesture exists at all, or every tick
+    // would restart the gesture detectors and cancel a drag in progress.
+    val enterFullscreen by rememberUpdatedState(onEnterFullscreen)
+    val exitFullscreen by rememberUpdatedState(onExitFullscreen)
+    val enterFullscreenEnabled = onEnterFullscreen != null
+    val exitFullscreenEnabled = onExitFullscreen != null
+
+    // Both fullscreen swipes commit while the finger is still down and have no
+    // dragged preview behind them, so a tick is the only thing that tells the
+    // user the gesture took before the screen turns.
+    val haptics = LocalHapticFeedback.current
 
     // Hide the badge a short while after the last tap. Re-runs (and so resets
     // the timer) every double tap because it is keyed on `pulse`.
@@ -1147,40 +1219,79 @@ internal fun PlayerGestureSurface(
                 )
             }
             .then(
-                if (!minimizeDragEnabled || fullscreenGesturesEnabled) Modifier
-                else Modifier.pointerInput(Unit) {
+                if (fullscreenGesturesEnabled ||
+                    (!minimizeDragEnabled && !enterFullscreenEnabled)
+                ) {
+                    Modifier
+                } else Modifier.pointerInput(minimizeDragEnabled, enterFullscreenEnabled) {
                     val velocityTracker = VelocityTracker()
+                    val enterTravelPx = ENTER_FULLSCREEN_SWIPE_TRAVEL.toPx()
+                    // 0 undecided, 1 minimize, 2 arming fullscreen, 3 committed
+                    var mode = 0
+                    var totalDy = 0f
                     detectVerticalDragGestures(
-                        onDragStart = { velocityTracker.resetTracking() },
+                        onDragStart = {
+                            velocityTracker.resetTracking()
+                            mode = 0
+                            totalDy = 0f
+                        },
                         onVerticalDrag = { change, dragAmount ->
                             velocityTracker.addPosition(change.uptimeMillis, change.position)
-                            onMinimizeDragDelta(dragAmount)
+                            totalDy += dragAmount
+                            if (mode == 0) {
+                                // The first delta past touch slop is the
+                                // direction the user meant. Committing to it for
+                                // the rest of the gesture is what stops a
+                                // wavering swipe from doing both things.
+                                mode = when {
+                                    dragAmount < 0f && enterFullscreenEnabled -> 2
+                                    minimizeDragEnabled -> 1
+                                    else -> 0
+                                }
+                            }
+                            when (mode) {
+                                1 -> onMinimizeDragDelta(dragAmount)
+                                2 -> if (totalDy <= -enterTravelPx) {
+                                    mode = 3
+                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    enterFullscreen?.invoke()
+                                }
+                            }
                             change.consume()
                         },
                         onDragEnd = {
-                            onMinimizeDragRelease(velocityTracker.calculateVelocity().y)
+                            if (mode == 1) {
+                                onMinimizeDragRelease(velocityTracker.calculateVelocity().y)
+                            }
                         },
-                        onDragCancel = { onMinimizeDragRelease(0f) }
+                        onDragCancel = { if (mode == 1) onMinimizeDragRelease(0f) }
                     )
                 }
             )
             .then(
                 if (!fullscreenGesturesEnabled) Modifier
-                else Modifier.pointerInput(activity) {
+                else Modifier.pointerInput(activity, exitFullscreenEnabled) {
+                    val exitTravelPx = EXIT_FULLSCREEN_SWIPE_TRAVEL.toPx()
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false)
                         val leftSide = down.position.x < size.width / 2f
-                        // Level drags only arm in the bottom 70% of the
+                        // Vertical drags only arm in the bottom 70% of the
                         // surface: a swipe from the top area is almost always
                         // the user reaching for the notification shade, and
                         // grabbing it as a brightness/volume drag was a
-                        // constant misfire. Pinch-to-zoom stays available
-                        // everywhere.
-                        val inLevelDragZone = down.position.y >= size.height * 0.3f
-                        // 0 = undecided, 1 = vertical level drag, 2 = pinch
+                        // constant misfire - the same is true of a downward
+                        // swipe meant to leave fullscreen. Pinch-to-zoom stays
+                        // available everywhere.
+                        val inDragZone = down.position.y >= size.height * 0.3f
+                        // The exit-fullscreen lane, between the two level lanes.
+                        val inCentreColumn = abs(down.position.x - size.width / 2f) <=
+                            size.width * FULLSCREEN_CENTRE_COLUMN_HALF_WIDTH
+                        // 0 = undecided, 1 = vertical level drag, 2 = pinch,
+                        // 3 = downward swipe out of fullscreen
                         var mode = 0
                         var accumulatedZoom = 1f
                         var level = 0f
+                        var exitCommitted = false
                         while (true) {
                             val event = awaitPointerEvent()
                             val pressed = event.changes.filter { it.pressed }
@@ -1202,15 +1313,19 @@ internal fun PlayerGestureSurface(
                                 if (mode == 0) {
                                     val totalDx = change.position.x - down.position.x
                                     val totalDy = change.position.y - down.position.y
-                                    if (inLevelDragZone &&
+                                    if (inDragZone &&
                                         abs(totalDy) > viewConfiguration.touchSlop &&
                                         abs(totalDy) > abs(totalDx)
                                     ) {
-                                        mode = 1
-                                        level = if (leftSide) {
-                                            activity?.let { currentWindowBrightness(it) } ?: 0.5f
+                                        if (inCentreColumn && exitFullscreenEnabled) {
+                                            mode = 3
                                         } else {
-                                            currentVolumeFraction(audioManager)
+                                            mode = 1
+                                            level = if (leftSide) {
+                                                activity?.let { currentWindowBrightness(it) } ?: 0.5f
+                                            } else {
+                                                currentVolumeFraction(audioManager)
+                                            }
                                         }
                                     }
                                 }
@@ -1227,6 +1342,18 @@ internal fun PlayerGestureSurface(
                                     }
                                     adjustmentLevel = level
                                     adjustPulse++
+                                    change.consume()
+                                } else if (mode == 3) {
+                                    // Upward in this lane is deliberately
+                                    // nothing: the centre is the way out of
+                                    // fullscreen, not a third level slider.
+                                    if (!exitCommitted &&
+                                        change.position.y - down.position.y >= exitTravelPx
+                                    ) {
+                                        exitCommitted = true
+                                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        exitFullscreen?.invoke()
+                                    }
                                     change.consume()
                                 }
                             }
