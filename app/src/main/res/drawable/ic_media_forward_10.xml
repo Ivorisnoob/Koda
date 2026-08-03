@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    "Forward 10 seconds". The ring is ic_media_replay_10's mirrored about
+    x = 12 so the pair reads as one control; the digits are not mirrored.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="#FFFFFFFF">
+
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12,5V1l5,5l-5,5V7c-3.31,0 -6,2.69 -6,6c0,3.31 2.69,6 6,6c3.31,0 6,-2.69 6,-6h2c0,4.42 -3.58,8 -8,8c-4.42,0 -8,-3.58 -8,-8c0,-4.42 3.58,-8 8,-8z" />
+
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M10.5,10h-0.6l-1.4,0.7v1l1,-0.5v4.8h1z" />
+
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:fillType="evenOdd"
+        android:pathData="M13.75,10c0.97,0 1.75,0.78 1.75,1.75v2.5c0,0.97 -0.78,1.75 -1.75,1.75c-0.97,0 -1.75,-0.78 -1.75,-1.75v-2.5c0,-0.97 0.78,-1.75 1.75,-1.75zM13.75,11.6c-0.28,0 -0.5,0.22 -0.5,0.5v2.3c0,0.28 0.22,0.5 0.5,0.5c0.28,0 0.5,-0.22 0.5,-0.5v-2.3c0,-0.28 -0.22,-0.5 -0.5,-0.5z" />
+</vector>

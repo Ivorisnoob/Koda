@@ -379,6 +379,12 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             .setWakeMode(C.WAKE_MODE_NETWORK)
             .setAudioAttributes(AudioAttributes.DEFAULT, true)
             .setHandleAudioBecomingNoisy(true)
+            // 10s each way, matching the player's own double-tap seek. These
+            // are what the media notification's and PiP window's skip buttons
+            // move by, so they must agree with the in-app gesture rather than
+            // with Media3's 5s/15s defaults.
+            .setSeekBackIncrementMs(SEEK_STEP_MS)
+            .setSeekForwardIncrementMs(SEEK_STEP_MS)
             .build().apply {
             playWhenReady = true
             // Repeat is persisted, so a fresh player must adopt the stored
@@ -737,6 +743,13 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         _playbackSpeed.value = 1f
         _exoPlayer?.setPlaybackSpeed(1f)
 
+        // Publish to the system's media controls. Started here, from a user tap,
+        // because a foreground service may not be started from the background;
+        // repeat calls once it is up are no-ops.
+        _exoPlayer?.let {
+            com.ivor.ivormusic.service.VideoPlaybackService.start(context, it)
+        }
+
         // ========== PHASE 1: START PLAYBACK ASAP (fast) ==========
         // Uses lightweight getVideoStreamQualities() which ONLY fetches stream URLs
         viewModelScope.launch {
@@ -769,7 +782,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                                 audioUrl = null
                             )
                             val source = ProgressiveMediaSource.Factory(streamDataSourceFactory)
-                                .createMediaSource(MediaItem.fromUri(streamUrl))
+                                .createMediaSource(nowPlayingMediaItem(streamUrl))
                             _exoPlayer?.setMediaSource(source)
                             _exoPlayer?.prepare()
                             _exoPlayer?.play() // FORCE PLAY
@@ -801,7 +814,14 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                 if (_currentVideo.value?.videoId != video.videoId) return@launch
                 _engagement.value = watchNext.engagement
                 if (watchNext.updatedVideoItem != null) {
+                    val wasNameless = _currentVideo.value?.title.isNullOrBlank()
                     _currentVideo.value = watchNext.updatedVideoItem
+                    // A video opened from a shared link starts out nameless -
+                    // give the lock screen and shade the real title now that
+                    // there is one. Deliberately only for that case: every other
+                    // entry point already carries a title, and touching the
+                    // media item is not worth it just to swap a thumbnail size.
+                    if (wasNameless) refreshNowPlayingMetadata()
                 }
                 if (watchNext.relatedVideos.isNotEmpty()) {
                     _relatedVideos.value = watchNext.relatedVideos
@@ -898,8 +918,8 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             // Adaptive manifest - hand it to the player and let its MediaSource
             // factory build the DASH/HLS source, no merging needed.
             _exoPlayer?.setMediaItem(
-                MediaItem.Builder()
-                    .setUri(quality.url)
+                nowPlayingMediaItem(quality.url)
+                    .buildUpon()
                     .setMimeType(adaptiveMimeType(quality))
                     .build()
             )
@@ -910,19 +930,75 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                 // Non-DASH with separate audio - use MergingMediaSource.
                 // adjustPeriodTimeOffsets aligns the two tracks' start offsets,
                 // preventing A/V desync when they don't begin at the same time.
+                // The merged source reports the *video* item's MediaItem, which
+                // is why the metadata rides on that one.
                 val videoSource = ProgressiveMediaSource.Factory(dataSourceFactory)
-                    .createMediaSource(MediaItem.fromUri(quality.url))
+                    .createMediaSource(nowPlayingMediaItem(quality.url))
                 val audioSource = ProgressiveMediaSource.Factory(dataSourceFactory)
                     .createMediaSource(MediaItem.fromUri(audioUrl))
                 MergingMediaSource(true, videoSource, audioSource)
             } else {
                 ProgressiveMediaSource.Factory(dataSourceFactory)
-                    .createMediaSource(MediaItem.fromUri(quality.url))
+                    .createMediaSource(nowPlayingMediaItem(quality.url))
             }
 
             _exoPlayer?.setMediaSource(primarySource)
         }
         _exoPlayer?.prepare()
+    }
+
+    /**
+     * A [MediaItem] for [uri] carrying the current video's title, channel and
+     * thumbnail.
+     *
+     * Without this the player has no metadata at all, and the lock screen /
+     * shade / Bluetooth display that [com.ivor.ivormusic.service.VideoPlaybackService]
+     * publishes would be a blank card with transport buttons on it. The artwork
+     * URI is loaded by Media3's own bitmap loader, so no bitmap work happens
+     * here.
+     */
+    private fun nowPlayingMediaItem(uri: String): MediaItem {
+        val video = _currentVideo.value
+        val builder = MediaItem.Builder().setUri(uri)
+        if (video != null) {
+            builder.setMediaId(video.videoId)
+            builder.setMediaMetadata(
+                androidx.media3.common.MediaMetadata.Builder()
+                    .setTitle(video.title.takeIf { it.isNotBlank() })
+                    .setArtist(video.channelName.takeIf { it.isNotBlank() })
+                    .setArtworkUri(video.thumbnailUrl?.let { android.net.Uri.parse(it) })
+                    .setIsBrowsable(false)
+                    .setIsPlayable(true)
+                    .build()
+            )
+        }
+        return builder.build()
+    }
+
+    /**
+     * Push freshly-learned title/channel into the already-playing media item.
+     *
+     * Only matters for the shared-link path, which starts playback from a video
+     * id alone and so hands the session a nameless card until watch-next lands.
+     * [Player.replaceMediaItem] is metadata-only here - the URI is untouched, so
+     * every source type in use reports it can update in place and playback is
+     * not interrupted. Guarded anyway: a wrong guess would rebuild the source
+     * and cost a rebuffer, which is never worth a caption.
+     */
+    private fun refreshNowPlayingMetadata() {
+        val player = _exoPlayer ?: return
+        if (player.mediaItemCount != 1) return
+        val current = player.currentMediaItem ?: return
+        val uri = current.localConfiguration?.uri?.toString() ?: return
+        val metadata = nowPlayingMediaItem(uri).mediaMetadata
+        if (metadata == current.mediaMetadata) return
+        try {
+            // buildUpon rather than a fresh item: the URI, MIME type and cache
+            // key all have to stay byte-identical for the update to be seamless.
+            player.replaceMediaItem(0, current.buildUpon().setMediaMetadata(metadata).build())
+        } catch (e: Exception) {
+            android.util.Log.w("VideoPlayerVM", "Could not refresh now-playing metadata", e)
+        }
     }
 
     /**
@@ -1074,6 +1150,8 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         liveChatStartedForVideoId = null
         _currentVideo.value = null
         _isExpanded.value = false
+        // Nothing is playing any more, so nothing should be on the lock screen.
+        com.ivor.ivormusic.service.VideoPlaybackService.stop(context)
     }
 
     fun togglePlayPause() {
@@ -1082,6 +1160,20 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         } else {
             _exoPlayer?.play()
         }
+    }
+
+    /**
+     * Skip [deltaMs] from the current position, clamped to the media.
+     *
+     * Lives here rather than in the player UI because the same step is driven
+     * from outside the composition too - the Picture-in-Picture window's
+     * RemoteActions have no other way to reach the player.
+     */
+    fun seekBy(deltaMs: Long) {
+        val player = _exoPlayer ?: return
+        val duration = player.duration
+        val upperBound = if (duration > 0) duration else Long.MAX_VALUE
+        player.seekTo((player.currentPosition + deltaMs).coerceIn(0L, upperBound))
     }
 
     /** Pause without closing the player (music or Shorts playback started). */
@@ -1668,6 +1760,12 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         /** Speeds offered in the player's speed menu. */
         val PLAYBACK_SPEED_OPTIONS = listOf(0.25f, 0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f)
 
+        /**
+         * One skip step, shared by the double-tap gesture on the player, the
+         * media notification and the Picture-in-Picture controls.
+         */
+        const val SEEK_STEP_MS = 10_000L
+
         /** Silent re-prepare attempts before a renderer error reaches the UI. */
         private const val MAX_RENDERER_RETRIES = 2
 
@@ -1724,6 +1822,10 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         sourceRecoveryJob?.cancel()
         sourceRecoveryJob = null
         stopLivePolling()
+        // Before the release below, not after: stop() drops the MediaSession
+        // synchronously on this thread, and a session outliving the player it
+        // wraps crashes the next time Media3 reads state off it.
+        com.ivor.ivormusic.service.VideoPlaybackService.stop(context)
         _exoPlayer?.release()
         _exoPlayer = null
     }

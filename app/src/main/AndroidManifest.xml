@@ -115,6 +115,22 @@
         </service>
 
         <!--
+            Puts video playback on the lock screen, in the shade's media area
+            and on Bluetooth/headset transport buttons. The ExoPlayer itself
+            stays owned by VideoPlayerViewModel; this service only wraps it in
+            a MediaSession, which is also what makes background video audio a
+            legitimate foreground service rather than an unannounced one.
+        -->
+        <service
+            android:name=".service.VideoPlaybackService"
+            android:foregroundServiceType="mediaPlayback"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="androidx.media3.session.MediaSessionService"/>
+            </intent-filter>
+        </service>
+
+        <!--
             Keeps the process alive while downloads run. dataSync is the correct
             type for user-initiated file transfers; the matching
             FOREGROUND_SERVICE_DATA_SYNC permission is declared above.

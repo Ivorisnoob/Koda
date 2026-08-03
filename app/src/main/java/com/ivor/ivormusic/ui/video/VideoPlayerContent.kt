@@ -169,11 +169,10 @@ fun VideoPlayerContent(
     if (currentVideo == null || exoPlayer == null) return
 
     // Double-tap seek helper: jump relative to the live playhead, clamped to the clip.
-    fun seekBy(deltaMs: Long) {
-        val target = (exoPlayer.currentPosition + deltaMs)
-            .coerceIn(0L, if (exoPlayer.duration > 0) exoPlayer.duration else Long.MAX_VALUE)
-        exoPlayer.seekTo(target)
-    }
+    // Delegated rather than done here: the PiP window and the media
+    // notification skip through the same ViewModel call, and a gesture that
+    // clamped differently from the buttons would be a bug waiting to happen.
+    fun seekBy(deltaMs: Long) = viewModel.seekBy(deltaMs)
 
     LaunchedEffect(exoPlayer, currentVideo) {
         while (isActive) {
@@ -377,8 +376,8 @@ fun VideoPlayerContent(
                 videoTitle = currentVideo.title,
                 onPlayPause = { viewModel.togglePlayPause() },
                 onSeek = { newProgress -> exoPlayer.seekTo((newProgress * duration).toLong()) },
-                onSeekBackward = { seekBy(-10_000L) },
-                onSeekForward = { seekBy(10_000L) },
+                onSeekBackward = { seekBy(-VideoPlayerViewModel.SEEK_STEP_MS) },
+                onSeekForward = { seekBy(VideoPlayerViewModel.SEEK_STEP_MS) },
                 onBack = { isFullscreen = false },
                 onFullscreenToggle = { isFullscreen = false },
                 onSettings = { showQualitySheet = true },
@@ -513,8 +512,8 @@ fun VideoPlayerContent(
                     videoAspectRatio = videoAspectRatio,
                     onPlayPause = { viewModel.togglePlayPause() },
                     onSeek = { newProgress -> exoPlayer.seekTo((newProgress * duration).toLong()) },
-                    onSeekBackward = { seekBy(-10_000L) },
-                    onSeekForward = { seekBy(10_000L) },
+                    onSeekBackward = { seekBy(-VideoPlayerViewModel.SEEK_STEP_MS) },
+                    onSeekForward = { seekBy(VideoPlayerViewModel.SEEK_STEP_MS) },
                     onSeekToLive = { exoPlayer.seekToDefaultPosition() },
                     onBack = onBackClick,
                     onExitToPage = { showVideoPageForVerticalLive = true },
@@ -604,8 +603,8 @@ fun VideoPlayerContent(
                         videoTitle = currentVideo.title,
                         onPlayPause = { viewModel.togglePlayPause() },
                         onSeek = { newProgress -> exoPlayer.seekTo((newProgress * duration).toLong()) },
-                        onSeekBackward = { seekBy(-10_000L) },
-                        onSeekForward = { seekBy(10_000L) },
+                        onSeekBackward = { seekBy(-VideoPlayerViewModel.SEEK_STEP_MS) },
+                        onSeekForward = { seekBy(VideoPlayerViewModel.SEEK_STEP_MS) },
                         onBack = onBackClick,
                         onFullscreenToggle = { isFullscreen = true },
                         onSettings = { showQualitySheet = true },
