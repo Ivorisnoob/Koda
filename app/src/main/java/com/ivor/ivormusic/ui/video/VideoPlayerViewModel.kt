@@ -186,6 +186,20 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     private val _isLive = MutableStateFlow(false)
     val isLive: StateFlow<Boolean> = _isLive.asStateFlow()
 
+    /**
+     * Whether the source frame is portrait. Set in Phase 1 off the stream
+     * dimensions so the vertical live layout can be composed before the first
+     * frame exists, then confirmed by the player's own video size once it does
+     * (the NewPipe fallback path can resolve a live manifest without ever
+     * listing a dimensioned format).
+     *
+     * Together with [isLive] this is what selects the full-bleed vertical
+     * player: a vertical live stream is an ordinary broadcast with a 9:16
+     * encode, so orientation is the only thing distinguishing it.
+     */
+    private val _isPortraitVideo = MutableStateFlow(false)
+    val isPortraitVideo: StateFlow<Boolean> = _isPortraitVideo.asStateFlow()
+
     /** Concurrent viewers, e.g. "14,618 watching now". Live videos only. */
     private val _liveViewerCount = MutableStateFlow<String?>(null)
     val liveViewerCount: StateFlow<String?> = _liveViewerCount.asStateFlow()
@@ -381,8 +395,11 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                     // reports between media items, which would otherwise
                     // collapse the aspect ratio mid-switch.
                     if (videoSize.width > 0 && videoSize.height > 0) {
-                        _videoAspectRatio.value =
-                            videoSize.width * videoSize.pixelWidthHeightRatio / videoSize.height
+                        val ratio = videoSize.width * videoSize.pixelWidthHeightRatio / videoSize.height
+                        _videoAspectRatio.value = ratio
+                        // Backstop for the parse-time read: authoritative, but
+                        // only available once a frame has decoded.
+                        _isPortraitVideo.value = ratio < 1f
                     }
                 }
 
@@ -703,6 +720,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                 .build()
         }
         _isLive.value = false
+        _isPortraitVideo.value = false
         _liveViewerCount.value = null
         _isLiveChatAvailable.value = null
         _liveChatMessages.value = emptyList()
@@ -732,6 +750,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                     val qualities = youtubeRepository.getVideoStreamQualities(video.videoId)
                     _availableQualities.value = qualities
                     _isLive.value = qualities.any { it.isLive }
+                    if (qualities.any { it.isPortrait }) _isPortraitVideo.value = true
                     if (_isLive.value) startLiveMetadataPolling(video.videoId)
 
                     if (qualities.isNotEmpty()) {

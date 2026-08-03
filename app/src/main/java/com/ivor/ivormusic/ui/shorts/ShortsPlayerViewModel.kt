@@ -71,6 +71,28 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
     private val _playbackError = MutableStateFlow<Throwable?>(null)
     val playbackError: StateFlow<Throwable?> = _playbackError.asStateFlow()
 
+    /**
+     * A live broadcast that arrived through the Shorts feed, to be reopened in
+     * the main video player.
+     *
+     * Nothing in a reel entry says whether it is live - the feed hands back an
+     * id and a thumbnail, and the answer only shows up once the streams
+     * resolve. This player is the wrong home for one when it does: its seek bar
+     * describes a duration a live stream does not have, there is no chat, and
+     * swiping away mid-broadcast is not what the gesture means here. So it is
+     * handed off rather than approximated.
+     *
+     * No replay, one buffered slot: the collector is installed with the overlay
+     * host long before any Short is opened, and a replayed handoff would
+     * reopen the stream every time that host recomposed from scratch. The
+     * buffer is what keeps the emit from suspending.
+     */
+    private val _liveHandoff = kotlinx.coroutines.flow.MutableSharedFlow<VideoItem>(
+        replay = 0,
+        extraBufferCapacity = 1
+    )
+    val liveHandoff: kotlinx.coroutines.flow.SharedFlow<VideoItem> = _liveHandoff
+
     /** Metadata of the current Short, enriched by watch-next (title, channel, avatar). */
     private val _currentVideo = MutableStateFlow<VideoItem?>(null)
     val currentVideo: StateFlow<VideoItem?> = _currentVideo.asStateFlow()
@@ -335,6 +357,19 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
                         ?: youtubeRepository.getVideoStreamQualities(item.videoId)
                             .also { cacheQualities(item.videoId, it) }
                     if (_currentIndex.value != index) return@withTimeout
+                    // Live arrived in the reel feed: hand it to the video
+                    // player, which has the vertical live layout and chat, and
+                    // stand down before touching the surface.
+                    if (qualities.any { it.isLive }) {
+                        val handoff = _currentVideo.value?.takeIf { it.videoId == item.videoId }
+                            ?: item.toVideoItem()
+                        // Emit before close(): close() cancels this very job, so
+                        // a suspending emit after it would be cancelled instead
+                        // of delivered.
+                        _liveHandoff.emit(handoff)
+                        close()
+                        return@withTimeout
+                    }
                     if (qualities.isNotEmpty()) {
                         loadQuality(pickDefaultQuality(qualities))
                         _exoPlayer?.play()

@@ -117,6 +117,7 @@ fun VideoPlayerContent(
     val channelVideos by viewModel.channelVideos.collectAsState()
     val isChannelVideosLoading by viewModel.isChannelVideosLoading.collectAsState()
     val isLive by viewModel.isLive.collectAsState()
+    val isPortraitVideo by viewModel.isPortraitVideo.collectAsState()
     val liveViewerCount by viewModel.liveViewerCount.collectAsState()
     val liveChatMessages by viewModel.liveChatMessages.collectAsState()
     val liveChatBanner by viewModel.liveChatBanner.collectAsState()
@@ -133,6 +134,17 @@ fun VideoPlayerContent(
     var showChaptersSheet by remember { mutableStateOf(false) }
     var showCaptionsSheet by remember { mutableStateOf(false) }
     var showLiveChat by remember { mutableStateOf(false) }
+
+    // A portrait live stream opens full-bleed: the standard layout gives a 9:16
+    // frame about a third of the width and pillarboxes the rest, which is the
+    // worst presentation of the one thing the user opened. Leaving for the
+    // watch page is a deliberate tap, and it only holds for the current video -
+    // the next one gets the treatment its own shape deserves.
+    val verticalLiveAvailable = isLive && isPortraitVideo
+    var showVideoPageForVerticalLive by remember(video?.videoId) { mutableStateOf(false) }
+    val verticalLiveImmersive = verticalLiveAvailable &&
+        !showVideoPageForVerticalLive &&
+        !isFullscreen
 
     // Landscape chat column: about a third of the screen, bounded so it stays
     // readable on a small phone and does not eat a tablet.
@@ -183,18 +195,29 @@ fun VideoPlayerContent(
         }
     }
 
-    // The chat stream only starts once the panel is actually opened, and a
-    // video that turns out not to be live must not leave the panel showing.
-    LaunchedEffect(showLiveChat, isLive) {
-        if (showLiveChat && isLive) viewModel.ensureLiveChatStarted() else viewModel.stopLiveChat()
+    // The chat stream only starts once chat is actually on screen, and a video
+    // that turns out not to be live must not leave the panel showing. The
+    // vertical live layout counts as on screen: its ticker is always visible,
+    // so it needs the poll running without anyone opening a panel.
+    val liveChatOnScreen = isLive && (showLiveChat || verticalLiveImmersive)
+    LaunchedEffect(liveChatOnScreen, isLive) {
+        if (liveChatOnScreen) viewModel.ensureLiveChatStarted() else viewModel.stopLiveChat()
         if (!isLive) showLiveChat = false
+    }
+
+    // Landscape is the one shape where a 9:16 video and a chat column both fit
+    // without either giving anything up - the space beside the video is chat
+    // sized - so rotating a vertical live stream brings chat with it. Coming
+    // back to portrait hands the job back to the ticker.
+    LaunchedEffect(isFullscreen, verticalLiveAvailable) {
+        if (verticalLiveAvailable) showLiveChat = isFullscreen
     }
 
     // Fetch the first page of comments once the overlay is active and the
     // comments entry token has arrived (engagement loads asynchronously)
     val commentsToken = engagement?.commentsToken
-    LaunchedEffect(timedCommentsActive, commentsToken) {
-        if (timedCommentsFeatureEnabled && timedCommentsActive && commentsToken != null) {
+    LaunchedEffect(timedCommentsActive, commentsToken, isLive) {
+        if (timedCommentsFeatureEnabled && timedCommentsActive && !isLive && commentsToken != null) {
             viewModel.ensureCommentsLoaded()
         }
     }
@@ -287,6 +310,13 @@ fun VideoPlayerContent(
     var showCommentsSheet by remember { mutableStateOf(false) }
     var showSignInDialog by remember { mutableStateOf(false) }
 
+    // The sheet outlives the video it was opened on, so playing a live stream
+    // from an open comments sheet would leave the previous video's comments
+    // sitting over a player that no longer offers a way back to them.
+    LaunchedEffect(isLive) {
+        if (isLive) showCommentsSheet = false
+    }
+
     // Save-to-playlist sheet (Save button or long-press on an Up Next video),
     // the download sheet it hands off to, and the channel page sheet (tap on
     // the channel row)
@@ -368,10 +398,21 @@ fun VideoPlayerContent(
                 liveChatActive = showLiveChat,
                 onLiveChatToggle = { showLiveChat = !showLiveChat },
                 onSeekToLive = { exoPlayer.seekToDefaultPosition() },
+                // A pillarboxed 9:16 stream and a docked chat column are the
+                // one pairing where landscape wastes nothing - but only if the
+                // video moves out from under the panel.
+                videoEndPadding = if (showLiveChat && isLive && isPortraitVideo) {
+                    landscapeChatWidth
+                } else {
+                    0.dp
+                },
                 onRetry = { viewModel.retryPlayback() }
             )
 
-                if (timedCommentsFeatureEnabled && timedCommentsActive) {
+                // Timed comments are anchored to a position in a finished
+                // video, so they have nothing to say on a live broadcast -
+                // live chat is the running commentary instead.
+                if (timedCommentsFeatureEnabled && timedCommentsActive && !isLive) {
                     TimedCommentsOverlay(
                         timedComments = timedComments,
                         positionMs = currentPosition,
@@ -426,6 +467,95 @@ fun VideoPlayerContent(
                                 },
                                 indication = null
                             ) {}
+                    )
+                }
+            }
+        } else if (verticalLiveImmersive) {
+            // Vertical live: the video is the screen. See
+            // VerticalLivePlayerContent for why this is a layout decision and
+            // not a different kind of content.
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    // Full-bleed, so the PiP source rect is the whole window
+                    // rather than the inline video box that is not composed here.
+                    .onGloballyPositioned { coords ->
+                        val rect = coords.boundsInWindow()
+                        viewModel.setVideoSurfaceBounds(
+                            android.graphics.Rect(
+                                rect.left.toInt(),
+                                rect.top.toInt(),
+                                rect.right.toInt(),
+                                rect.bottom.toInt()
+                            )
+                        )
+                    }
+            ) {
+                VerticalLivePlayerContent(
+                    exoPlayer = exoPlayer,
+                    video = currentVideo,
+                    showControls = showControls,
+                    onToggleControls = { showControls = !showControls },
+                    isPlaying = isPlaying,
+                    isLoading = isLoading,
+                    isBuffering = isBuffering,
+                    hasError = playbackError != null,
+                    errorMessage = playbackError?.message ?: "",
+                    progress = progress,
+                    bufferedProgress = bufferedProgress,
+                    duration = duration,
+                    liveViewerCount = liveViewerCount,
+                    chatMessages = liveChatMessages,
+                    isChatAvailable = isLiveChatAvailable,
+                    canSendChat = canSendLiveChat,
+                    captionsActive = selectedCaption != null,
+                    captionCues = captionCues,
+                    videoAspectRatio = videoAspectRatio,
+                    onPlayPause = { viewModel.togglePlayPause() },
+                    onSeek = { newProgress -> exoPlayer.seekTo((newProgress * duration).toLong()) },
+                    onSeekBackward = { seekBy(-10_000L) },
+                    onSeekForward = { seekBy(10_000L) },
+                    onSeekToLive = { exoPlayer.seekToDefaultPosition() },
+                    onBack = onBackClick,
+                    onExitToPage = { showVideoPageForVerticalLive = true },
+                    onOpenFullChat = { showLiveChat = true },
+                    onCaptionsClick = {
+                        viewModel.ensureCaptionsLoaded()
+                        showCaptionsSheet = true
+                    },
+                    onSettings = { showQualitySheet = true },
+                    onRetry = { viewModel.retryPlayback() },
+                    onMinimizeDragDelta = onMinimizeDragDelta,
+                    onMinimizeDragRelease = onMinimizeDragRelease
+                )
+
+                // The full panel, for sending and for reading back - the ticker
+                // underneath is deliberately read-only.
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = showLiveChat,
+                    enter = slideInVertically(
+                        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+                        initialOffsetY = { it }
+                    ) + fadeIn(),
+                    exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxHeight(0.6f)
+                ) {
+                    LiveChatPanel(
+                        messages = liveChatMessages,
+                        banner = liveChatBanner,
+                        isLoading = isLiveChatLoading,
+                        isAvailable = isLiveChatAvailable,
+                        canSend = canSendLiveChat,
+                        isSending = isSendingLiveChat,
+                        maxMessageLength = liveChatMaxLength,
+                        restriction = liveChatRestriction,
+                        onSend = { body, onFailure ->
+                            viewModel.sendLiveChatMessage(body, onFailure)
+                        },
+                        onDismiss = { showLiveChat = false },
+                        modifier = Modifier.fillMaxSize()
                     )
                 }
             }
@@ -493,6 +623,8 @@ fun VideoPlayerContent(
                         captionCues = captionCues,
                         isLive = isLive,
                         onSeekToLive = { exoPlayer.seekToDefaultPosition() },
+                        showVerticalLiveButton = verticalLiveAvailable,
+                        onVerticalLiveClick = { showVideoPageForVerticalLive = false },
                         showPipButton = pipSupported,
                         onPipClick = {
                             val host = activity as? androidx.activity.ComponentActivity
@@ -506,7 +638,7 @@ fun VideoPlayerContent(
                         onRetry = { viewModel.retryPlayback() }
                     )
 
-                    if (timedCommentsFeatureEnabled && timedCommentsActive) {
+                    if (timedCommentsFeatureEnabled && timedCommentsActive && !isLive) {
                         // Keep the card clear of the seek bar while controls are up
                         val overlayBottomPadding by animateDpAsState(
                             targetValue = if (showControls) 64.dp else 12.dp,

@@ -82,6 +82,17 @@ Plus an **ambient artwork background**, an optional **chromatic-mist** effect, a
 - **Video playlists** and a save-to-playlist sheet, including Watch Later and Liked videos.
 - **A mini video player** so a clip keeps playing while you browse.
 
+### Live streams
+
+- **Live streams play like any other video**, with a LIVE badge and a viewer count that keeps updating while you watch.
+- **Live chat**, with Super Chats and Super Stickers in their real colors, membership and gift events, pinned messages, channel emoji, and owner / moderator / member badges. Scroll back to read and it holds position instead of yanking you forward; a pill tells you how many you missed.
+- **Send messages** when you are signed in. Yours appears instantly, and if the stream rejects it — slow mode, a word filter, a ban — you get told and your text is handed back rather than silently swallowed.
+- **Jump back to the live edge** with one tap on the LIVE chip whenever you have fallen behind on a stream with a DVR window.
+- **Switching quality is instant.** Every resolution lives in one manifest, so changing it never re-buffers or drops the stream.
+- **Vertical live streams get a player built for them.** A 9:16 broadcast fills the screen instead of sitting as a thin strip between two black bars, with chat over the bottom of the video on a soft gradient so it stays readable without hiding the stream. One tap drops to the normal page for the description and related videos, and one tap goes back.
+- **Rotate a vertical stream to landscape** and the video moves aside for a full-height chat column — the space next to a 9:16 video is exactly chat-shaped, so nothing is wasted.
+- **Comments step aside on live videos**, because live chat is where the conversation actually is.
+
 ### Shorts (opt-in)
 
 - A short-form vertical feed, off by default and only shown once you deliberately enable it.
@@ -182,7 +193,7 @@ app/src/main/java/com/ivor/ivormusic/
     ├── home/                # Home with recommendations and video feed
     ├── library/             # Playlists, liked songs, statistics
     ├── player/              # Music player, queue, and the eight player styles
-    ├── video/               # Video player, comments, subscriptions, notifications
+    ├── video/               # Video player, live streams and chat, comments, subscriptions
     ├── shorts/              # Opt-in Shorts player
     ├── search/              # Search and video explore
     ├── artist/              # Artist and album pages
@@ -255,6 +266,7 @@ For a deeper dive into the architecture, data flows, and the InnerTube layer, se
 - [x] Multiple player styles and a full color-palette system
 - [x] Listening statistics
 - [x] Offline downloads for music and video, saved to your Downloads folder
+- [x] Live streams with live chat, including a full-screen player for vertical broadcasts
 - [ ] Advanced audio: equalizer and gapless playback
 - [ ] Home screen widget for playback controls
 - [ ] Kotlin Multiplatform for desktop and iOS
