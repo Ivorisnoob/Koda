@@ -333,20 +333,24 @@ fun SubscriptionsManagerScreen(
         )
     }
 
-    groupBeingEdited?.let { groupId ->
-        val group = groups.firstOrNull { it.id == groupId }
-        if (group == null) {
-            groupBeingEdited = null
-        } else {
-            GroupChannelsDialog(
-                groupName = group.name,
-                channels = subscriptions.sortedBy { it.name.lowercase() },
-                selectedIds = group.channelIds.toSet(),
-                onToggle = { viewModel.toggleChannelInGroup(groupId, it) },
-                onRename = { viewModel.renameSubscriptionGroup(groupId, it) },
-                onDismiss = { groupBeingEdited = null }
-            )
-        }
+    // Resolved from the live group list, so toggling a channel inside the
+    // dialog re-renders it with the new selection.
+    val editingGroup = groupBeingEdited?.let { id -> groups.firstOrNull { it.id == id } }
+    if (groupBeingEdited != null && editingGroup == null) {
+        // The group went away underneath the open dialog. Clearing the state
+        // has to happen in an effect - writing it straight from the composable
+        // body is a write during composition.
+        LaunchedEffect(groupBeingEdited) { groupBeingEdited = null }
+    }
+    editingGroup?.let { group ->
+        GroupChannelsDialog(
+            groupName = group.name,
+            channels = subscriptions.sortedBy { it.name.lowercase() },
+            selectedIds = group.channelIds.toSet(),
+            onToggle = { viewModel.toggleChannelInGroup(group.id, it) },
+            onRename = { viewModel.renameSubscriptionGroup(group.id, it) },
+            onDismiss = { groupBeingEdited = null }
+        )
     }
 
     channelForGroups?.let { channel ->
