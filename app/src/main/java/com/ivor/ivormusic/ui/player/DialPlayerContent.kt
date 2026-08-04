@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.Lyrics
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.PlaylistAdd
@@ -126,6 +127,9 @@ fun DialPlayerSheetContent(
     val accent = MaterialTheme.colorScheme.primary
     val chipColor = MaterialTheme.colorScheme.surfaceContainerHigh
 
+    // The dial's instrument accent carries into the picker.
+    val sleepTimer = rememberSleepTimerControl(viewModel = viewModel, accent = accent)
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -169,6 +173,17 @@ fun DialPlayerSheetContent(
                             )
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            EditorialCircleButton(
+                                onClick = sleepTimer.open,
+                                accent = if (sleepTimer.active) accent else chipColor,
+                                field = if (sleepTimer.active) MaterialTheme.colorScheme.onPrimary else ink,
+                                size = 44.dp
+                            ) {
+                                Icon(
+                                    Icons.Rounded.Bedtime, "Sleep timer",
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
                             EditorialCircleButton(
                                 onClick = { showAddToPlaylist = true },
                                 accent = chipColor,

@@ -1,10 +1,6 @@
 package com.ivor.ivormusic.ui.video
 
 import android.app.PictureInPictureParams
-import android.app.RemoteAction
-import android.app.PendingIntent
-import android.content.Intent
-import android.graphics.drawable.Icon
 import android.os.Build
 import android.util.Rational
 import androidx.compose.animation.core.Animatable
@@ -25,7 +21,6 @@ import kotlinx.coroutines.launch
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.media3.common.util.UnstableApi
-import com.ivor.ivormusic.R
 
 /**
  * Aspect ratio for the PiP window, from the video's own dimensions.
@@ -35,7 +30,7 @@ import com.ivor.ivormusic.R
  * with an IllegalArgumentException, so the video's ratio is clamped into that
  * range rather than passed through blind.
  */
-private fun pipAspectRatio(videoAspectRatio: Float?): Rational {
+internal fun pipAspectRatio(videoAspectRatio: Float?): Rational {
     val ratio = videoAspectRatio?.takeIf { it.isFinite() && it > 0f } ?: (16f / 9f)
     val clamped = ratio.coerceIn(MIN_PIP_ASPECT, MAX_PIP_ASPECT)
     // Scaled to integers: Rational(width, height) with 1000ths is precise
@@ -108,8 +103,6 @@ fun VideoPlayerOverlay(
     val isExpanded by viewModel.isExpanded.collectAsState()
     val currentVideo by viewModel.currentVideo.collectAsState()
     val isPlaying by viewModel.isPlaying.collectAsState()
-    val videoAspectRatio by viewModel.videoAspectRatio.collectAsState()
-    val videoBounds by viewModel.videoSurfaceBounds.collectAsState()
 
     // Context and Activity
     val context = LocalContext.current
@@ -151,94 +144,10 @@ fun VideoPlayerOverlay(
         }
     }
 
-    // Update PiP Params (Active when video is present)
-    val packageName = context.packageName
-    val pipPlayAction = "$packageName.PIP_PLAY"
-    val pipPauseAction = "$packageName.PIP_PAUSE"
-    
-    LaunchedEffect(currentVideo, isPlaying, isExpanded, videoAspectRatio, videoBounds) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && activity != null) {
-             val videoId = currentVideo?.videoId ?: return@LaunchedEffect
-             // Use collision-resistant request codes: masked hashcode OR'd with action bit
-             val baseCode = videoId.hashCode() and 0x7FFFFFFF
-             val reqCodePlay = baseCode or 0x1
-             val reqCodePause = baseCode or 0x2
-             
-             // Intents for PiP controls - using package-scoped actions for security
-             val playIntent = PendingIntent.getBroadcast(
-                 context, 
-                 reqCodePlay, 
-                 Intent(pipPlayAction).setPackage(packageName), 
-                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-             )
-             val pauseIntent = PendingIntent.getBroadcast(
-                 context, 
-                 reqCodePause, 
-                 Intent(pipPauseAction).setPackage(packageName), 
-                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-             )
-             
-             val playAction = RemoteAction(Icon.createWithResource(context, android.R.drawable.ic_media_play), "Play", "Play", playIntent)
-             val pauseAction = RemoteAction(Icon.createWithResource(context, android.R.drawable.ic_media_pause), "Pause", "Pause", pauseIntent)
-             
-             val actions = if (isPlaying) listOf(pauseAction) else listOf(playAction)
-
-             val paramsBuilder = PictureInPictureParams.Builder()
-                .setAspectRatio(pipAspectRatio(videoAspectRatio))
-                .setActions(actions)
-
-             // Animate the PiP window out of the video rather than out of the
-             // whole activity window. Without a source rect the system scales
-             // the entire screen down - app chrome, nav bar and all - which is
-             // what made the transition look like the UI was being sucked into
-             // the window.
-             videoBounds?.takeIf { !it.isEmpty }?.let { paramsBuilder.setSourceRectHint(it) }
-
-             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                 // Only auto-enter PiP while the full player is on screen.
-                 // Auto-entering from the mini player captures the whole app UI
-                 // into the PiP window instead of just the video surface.
-                 paramsBuilder.setAutoEnterEnabled(isExpanded)
-                 // The content is a video, not a layout that needs to reflow, so
-                 // let the system crossfade the resize instead of re-laying out.
-                 paramsBuilder.setSeamlessResizeEnabled(true)
-             }
-
-             try {
-                 activity.setPictureInPictureParams(paramsBuilder.build())
-             } catch (e: Exception) {
-                 e.printStackTrace()
-             }
-        }
-    }
-    
-    // PiP Broadcast Receiver (Handle actions) - using package-scoped actions for security
-    DisposableEffect(viewModel) {
-        val pipReceiver = object : android.content.BroadcastReceiver() {
-            override fun onReceive(ctx: android.content.Context?, intent: Intent?) {
-                when (intent?.action) {
-                    pipPauseAction -> viewModel.exoPlayer?.pause()
-                    pipPlayAction -> viewModel.exoPlayer?.play()
-                }
-            }
-        }
-        val filter = android.content.IntentFilter().apply {
-            addAction(pipPauseAction)
-            addAction(pipPlayAction)
-        }
-        // Package-scoped actions prevent other apps from triggering on all API levels
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            context.registerReceiver(pipReceiver, filter, android.content.Context.RECEIVER_NOT_EXPORTED)
-        } else {
-            context.registerReceiver(pipReceiver, filter)
-        }
-        onDispose { 
-            context.unregisterReceiver(pipReceiver)
-        }
-    }
-
     // Nothing here renders in system PiP: MainActivity swaps the whole app for
     // PipVideoSurface, so the PiP window contains the video and nothing else.
+    // The PiP window's own shape and controls are driven by VideoPipController,
+    // which MainActivity composes above that swap - see the note there.
 
     // ------------------------------------------------
     // Normal In-App Overlay UI
@@ -270,12 +179,6 @@ fun VideoPlayerOverlay(
         // player and the settle animation continues from wherever the finger
         // let go instead of jumping.
         val expandProgress = remember { Animatable(if (isExpanded) 1f else 0f) }
-        LaunchedEffect(isExpanded) {
-            expandProgress.animateTo(
-                if (isExpanded) 1f else 0f,
-                MINIMIZE_SETTLE_SPRING
-            )
-        }
 
         // Live value while a finger is down. The drag deliberately does not go
         // through the Animatable: Animatable.snapTo runs under a MutatorMutex,
@@ -289,6 +192,20 @@ fun VideoPlayerOverlay(
         // Where the finger picked the player up, so the commit test can measure
         // real travel instead of an absolute position on the screen.
         var dragStartProgress by remember { mutableFloatStateOf(1f) }
+
+        // Declared after isDragging so it can clear it. Once expanded/collapsed
+        // has actually changed, any drag is over by definition, and this is the
+        // backstop that guarantees the flag cannot survive into the next one -
+        // a latched isDragging freezes the player at the last dragged progress
+        // and leaves every later swipe measuring travel from a start point that
+        // never moves, which is what made minimizing work once per app launch.
+        LaunchedEffect(isExpanded) {
+            isDragging = false
+            expandProgress.animateTo(
+                if (isExpanded) 1f else 0f,
+                MINIMIZE_SETTLE_SPRING
+            )
+        }
 
         // 1:1 with the finger: height interpolates over the full screen and the
         // player is bottom-anchored, so a range of one screen height moves the
@@ -355,12 +272,23 @@ fun VideoPlayerOverlay(
                              else -> dragStartProgress - released > minimizeTravel
                          }
                          scope.launch {
-                             // Hand the dragged position to the Animatable
-                             // before dropping out of drag mode, so the settle
-                             // continues from where the finger let go instead
-                             // of snapping back to fully expanded first.
-                             expandProgress.snapTo(released)
-                             isDragging = false
+                             try {
+                                 // Hand the dragged position to the Animatable
+                                 // before dropping out of drag mode, so the
+                                 // settle continues from where the finger let
+                                 // go instead of snapping back to fully
+                                 // expanded first.
+                                 expandProgress.snapTo(released)
+                             } finally {
+                                 // In a finally because snapTo suspends on the
+                                 // Animatable's mutex: an expand/collapse
+                                 // animation that takes the mutex first
+                                 // cancels it, and the plain sequential version
+                                 // then never reached this line. The flag stuck
+                                 // on, and the gesture was dead until the
+                                 // process restarted.
+                                 isDragging = false
+                             }
                              if (minimize) {
                                  viewModel.setExpanded(false)
                              } else {

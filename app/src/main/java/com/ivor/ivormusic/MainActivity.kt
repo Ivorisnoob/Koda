@@ -434,6 +434,12 @@ fun MusicApp(
         }
     )
 
+    // Drives the PiP window's shape and its transport controls. Composed above
+    // the early return on purpose: everything below it is torn out of the
+    // composition the moment PiP starts, which is what used to unregister the
+    // receiver behind the PiP play/pause button and leave it inert.
+    com.ivor.ivormusic.ui.video.VideoPipController(viewModel = videoPlayerViewModel)
+
     // In system PiP the app is just a video surface. Returning here keeps the
     // NavHost, both players and every overlay out of the composition entirely,
     // rather than letting them draw and animate behind a window nobody can see

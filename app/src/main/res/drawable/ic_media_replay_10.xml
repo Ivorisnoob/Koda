@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    "Back 10 seconds" for the Picture-in-Picture controls and the video media
+    notification.
+
+    Three paths: the counter-clockwise ring with its arrow head, then the two
+    digits sitting inside it. The ring is centred on (12,13) with an inner
+    radius of 6, which is what leaves room for a legible "10" at the 24dp the
+    system renders these at.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="#FFFFFFFF">
+
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12,5V1L7,6l5,5V7c3.31,0 6,2.69 6,6c0,3.31 -2.69,6 -6,6c-3.31,0 -6,-2.69 -6,-6H4c0,4.42 3.58,8 8,8c4.42,0 8,-3.58 8,-8c0,-4.42 -3.58,-8 -8,-8z" />
+
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M10.5,10h-0.6l-1.4,0.7v1l1,-0.5v4.8h1z" />
+
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:fillType="evenOdd"
+        android:pathData="M13.75,10c0.97,0 1.75,0.78 1.75,1.75v2.5c0,0.97 -0.78,1.75 -1.75,1.75c-0.97,0 -1.75,-0.78 -1.75,-1.75v-2.5c0,-0.97 0.78,-1.75 1.75,-1.75zM13.75,11.6c-0.28,0 -0.5,0.22 -0.5,0.5v2.3c0,0.28 0.22,0.5 0.5,0.5c0.28,0 0.5,-0.22 0.5,-0.5v-2.3c0,-0.28 -0.22,-0.5 -0.5,-0.5z" />
+</vector>

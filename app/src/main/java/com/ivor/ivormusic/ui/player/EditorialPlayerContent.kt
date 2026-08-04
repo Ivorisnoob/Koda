@@ -42,6 +42,7 @@ import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.GraphicEq
@@ -158,6 +159,16 @@ fun EditorialPlayerSheetContent(
     val field = MaterialTheme.colorScheme.primaryContainer
     val accent = MaterialTheme.colorScheme.onPrimaryContainer
 
+    // The picker follows the same two tones, so it reads as another page of
+    // this player rather than a sheet borrowed from somewhere else.
+    val sleepTimer = rememberSleepTimerControl(
+        viewModel = viewModel,
+        accent = accent,
+        onAccent = field,
+        container = field,
+        onContainer = accent
+    )
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -208,6 +219,8 @@ fun EditorialPlayerSheetContent(
                     onCollapse = onCollapse,
                     onShowQueue = { showQueue = true },
                     onShowAddToPlaylist = { showAddToPlaylist = true },
+                    onShowSleepTimer = sleepTimer.open,
+                    sleepTimerActive = sleepTimer.active,
                     onArtistClick = onArtistClick,
                     field = field,
                     accent = accent
@@ -261,6 +274,8 @@ private fun EditorialNowPlayingView(
     onCollapse: () -> Unit,
     onShowQueue: () -> Unit,
     onShowAddToPlaylist: () -> Unit,
+    onShowSleepTimer: () -> Unit,
+    sleepTimerActive: Boolean,
     onArtistClick: (String) -> Unit,
     field: Color,
     accent: Color
@@ -285,6 +300,16 @@ private fun EditorialNowPlayingView(
                 Icon(Icons.Default.KeyboardArrowDown, "Collapse", modifier = Modifier.size(26.dp))
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                // Inverted while a timer runs - in a two-tone player, swapping
+                // the fill is the only emphasis there is.
+                EditorialCircleButton(
+                    onClick = onShowSleepTimer,
+                    accent = if (sleepTimerActive) accent else field,
+                    field = if (sleepTimerActive) field else accent,
+                    size = 44.dp
+                ) {
+                    Icon(Icons.Rounded.Bedtime, "Sleep timer", modifier = Modifier.size(22.dp))
+                }
                 EditorialCircleButton(
                     onClick = onShowAddToPlaylist,
                     accent = accent,

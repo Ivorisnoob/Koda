@@ -710,9 +710,8 @@ private fun ExpressiveNowPlayingView(
             Spacer(modifier = Modifier.height(24.dp))
             
             // 🌟 Favorite / Download / Sleep Timer - connected button group
-            val sleepTimerEndsAt by viewModel.sleepTimerEndsAt.collectAsState()
-            var showSleepTimerDialog by remember { mutableStateOf(false) }
-            val sleepTimerActive = sleepTimerEndsAt != null
+            val sleepTimer = rememberSleepTimerControl(viewModel = viewModel)
+            val sleepTimerActive = sleepTimer.active
             val groupButtonColors = ToggleButtonDefaults.toggleButtonColors(
                 containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                 contentColor = onSurfaceVariantColor
@@ -773,7 +772,7 @@ private fun ExpressiveNowPlayingView(
                 // Sleep timer (checked while a timer is running; tap opens the dialog)
                 ToggleButton(
                     checked = sleepTimerActive,
-                    onCheckedChange = { showSleepTimerDialog = true },
+                    onCheckedChange = { sleepTimer.open() },
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxHeight(),
@@ -788,14 +787,6 @@ private fun ExpressiveNowPlayingView(
                 }
             }
 
-            if (showSleepTimerDialog) {
-                com.ivor.ivormusic.ui.components.SleepTimerDialog(
-                    endsAt = sleepTimerEndsAt,
-                    onStart = { minutes -> viewModel.startSleepTimer(minutes) },
-                    onStop = { viewModel.cancelSleepTimer() },
-                    onDismiss = { showSleepTimerDialog = false }
-                )
-            }
         }
         }
     } // End Box wrapper

@@ -8,4 +8,12 @@
       up listing "Now playing" twice.
     -->
     <string name="now_playing_channel_name">Now playing</string>
+
+    <!--
+      The video pipeline posts its own media notification from
+      VideoPlaybackService. Separate from "Now playing" on purpose: music and
+      video are separate players here, and a user who wants one of them out of
+      their shade should not have to silence both.
+    -->
+    <string name="video_playback_channel_name">Video playback</string>
 </resources>

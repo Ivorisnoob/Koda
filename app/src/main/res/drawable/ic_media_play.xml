@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Transport icon for the Picture-in-Picture RemoteActions and the video
+    media notification. Both surfaces render a silhouette from the alpha
+    channel, so this is a solid white shape on transparent.
+
+    Koda draws its own rather than using android.R.drawable.ic_media_play:
+    the platform set is the 2011 Holo artwork, which sits badly next to the
+    seek-10 pair below it in the same control row.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="#FFFFFFFF">
+
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M8,5v14l11,-7z" />
+</vector>
