@@ -6301,81 +6301,28 @@ class YouTubeRepository(private val context: Context) {
     }
 
     // ============================================================
-    // "Don't recommend this": telling the account, when there is one.
+    // "Don't recommend this": why there is no InnerTube call here.
     //
-    // Read this before touching it: the feature does NOT depend on any of
-    // it. Probed August 2026, signed out, InnerTube returns no feedbackToken
+    // Probed August 2026, signed out: InnerTube returns no feedbackToken
     // anywhere - watch-next related items, browse feeds and search results
-    // all come back with menus that have no dismissal entry - because there
-    // is no account to record the preference against. Filtering therefore
-    // lives entirely in NotInterestedRepository, and the call below is a
-    // best-effort extra that propagates the same choice to youtube.com for
-    // signed-in users. It must never gate, block or fail the local hide.
+    // all come back with menus carrying no dismissal entry - because there
+    // is no account to record the preference against. Signed out, a server
+    // call is not merely optional, it does not exist.
+    //
+    // Signed in, YouTube does expose dismissal tokens and a youtubei/v1/
+    // feedback endpoint, and propagating the choice to youtube.com would be
+    // a genuine addition. It is deliberately NOT implemented from memory:
+    // this file's rule is that a parser is written against a probed response
+    // or not at all, and the signed-in menu shape could not be probed from
+    // the environment this was written in. Filtering is complete without it
+    // (see NotInterestedRepository), so the gap costs the user nothing today.
+    //
+    // To add it: probe a signed-in /next with .probe/probe.py, find the
+    // feedbackToken next to the "Not interested" and "Don't recommend
+    // channel" labels, and POST {"feedbackTokens": [...]} to feedback via
+    // postWatchApi. It must stay best-effort - the local hide has already
+    // happened by then and must not be undone by a failed request.
     // ============================================================
-
-    /**
-     * Posts dismissal tokens to `youtubei/v1/feedback`. Requires login;
-     * signed out there are no tokens to post in the first place.
-     *
-     * Returns whether YouTube accepted it, which nothing is expected to act
-     * on beyond logging - the video is already hidden locally by the time
-     * this runs.
-     */
-    suspend fun sendNotInterestedFeedback(tokens: List<String>): Boolean =
-        withContext(Dispatchers.IO) {
-            if (tokens.isEmpty()) return@withContext false
-            if (!sessionManager.isLoggedIn()) return@withContext false
-            try {
-                val body = org.json.JSONObject()
-                    .put("context", webContext())
-                    .put(
-                        "feedbackTokens",
-                        org.json.JSONArray().also { array -> tokens.forEach(array::put) }
-                    )
-                    .put("isFeedbackTokenUnencrypted", false)
-                    .put("shouldMerge", false)
-                postWatchApi("feedback", body) != null
-            } catch (e: Exception) {
-                android.util.Log.w("YouTubeRepo", "sendNotInterestedFeedback failed", e)
-                false
-            }
-        }
-
-    /**
-     * Dismissal tokens found in a feed item's own menu, keyed by the menu
-     * label YouTube showed next to them ("not interested", "don't recommend
-     * channel").
-     *
-     * Deliberately shape-tolerant: it collects every `feedbackToken` under
-     * [itemJson] together with the nearest label text, rather than walking a
-     * fixed renderer path. The menu renderers around these tokens have been
-     * renamed more than once, and this is an optional enhancement - a miss
-     * has to degrade to "no remote call", never to a crash or an empty feed.
-     *
-     * Verified only for its absence: signed-out responses carry no such
-     * tokens at all (August 2026). The signed-in shape could not be probed
-     * from this environment, so treat a non-empty result as a bonus rather
-     * than something to depend on.
-     */
-    fun parseFeedbackTokens(itemJson: org.json.JSONObject?): Map<String, String> {
-        if (itemJson == null) return emptyMap()
-        return try {
-            val items = mutableListOf<org.json.JSONObject>()
-            findObjectsByKey(itemJson, "menuServiceItemRenderer", items)
-            items.mapNotNull { entry ->
-                val label = getRunText(entry.optJSONObject("text"))
-                    ?.lowercase()?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
-                val tokens = mutableListOf<org.json.JSONObject>()
-                findObjectsByKey(entry, "feedbackEndpoint", tokens)
-                val token = tokens.firstNotNullOfOrNull {
-                    it.optString("feedbackToken").takeIf { t -> t.isNotBlank() }
-                } ?: return@mapNotNull null
-                label to token
-            }.toMap()
-        } catch (e: Exception) {
-            emptyMap()
-        }
-    }
 
     /**
      * The user's notification inbox (new uploads from subscribed channels,

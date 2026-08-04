@@ -83,8 +83,30 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     private val _currentQuality = MutableStateFlow<VideoQuality?>(null)
     val currentQuality: StateFlow<VideoQuality?> = _currentQuality
 
+    private val notInterestedRepository =
+        com.ivor.ivormusic.data.NotInterestedRepository(context)
+
     private val _relatedVideos = MutableStateFlow<List<VideoItem>>(emptyList())
-    val relatedVideos: StateFlow<List<VideoItem>> = _relatedVideos
+
+    /**
+     * Up Next, minus what the user asked not to see. Derived rather than
+     * written through, so a "not interested" tap removes the row on the next
+     * frame and Undo restores it in place - see HomeViewModel.trendingVideos.
+     */
+    val relatedVideos: StateFlow<List<VideoItem>> =
+        combine(
+            _relatedVideos,
+            notInterestedRepository.hiddenVideos,
+            notInterestedRepository.blockedChannels
+        ) { videos, _, _ -> notInterestedRepository.filter(videos) }
+            .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /** Hide one video from every recommendation feed. */
+    fun markNotInterested(video: VideoItem) = notInterestedRepository.hideVideo(video)
+
+    /** Stop recommending anything from this video's channel. */
+    fun blockChannelFor(video: VideoItem) =
+        notInterestedRepository.blockChannel(video.channelId, video.channelName, video.channelIconUrl)
 
     // Chapter markers for the current video (empty when the video has none)
     private val _chapters = MutableStateFlow<List<com.ivor.ivormusic.data.VideoChapter>>(emptyList())
@@ -446,7 +468,10 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                         // to the next related one. Suppressed during PiP so
                         // the user returns to the video they put there.
                         if (!_isLooping.value && !_isInPipMode) {
-                            val nextVideo = _relatedVideos.value.firstOrNull()
+                            // The filtered list, not the raw one: auto-playing
+                            // a video the user just said "not interested" to is
+                            // the single most annoying way to get this wrong.
+                            val nextVideo = relatedVideos.value.firstOrNull()
                             // Guard: ensure ViewModel/player is still valid before launching
                             if (nextVideo != null && _exoPlayer != null) {
                                 viewModelScope.launch { playVideo(nextVideo) }

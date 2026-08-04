@@ -34,9 +34,11 @@ enum class NotInterestedScope { VIDEO, CHANNEL }
  * own feedback is advisory and takes days to visibly change what it
  * recommends, whereas a filter takes effect on the next frame.
  *
- * Sending the preference on to the account when one exists is handled
- * separately and is strictly a bonus - see
- * [YouTubeRepository.sendNotInterestedFeedback].
+ * Signed in, YouTube does expose dismissal tokens, and telling the account
+ * as well would be a real addition - see the note in [YouTubeRepository]
+ * for why it is not written here and exactly what probing it needs. It
+ * would only ever be a bonus on top of this; filtering is complete without
+ * it, and a failed request must never undo a hide that already happened.
  *
  * The backing flows are process-wide, for the same reason
  * [LocalSubscriptionsRepository]'s are: hiding a video from the player's

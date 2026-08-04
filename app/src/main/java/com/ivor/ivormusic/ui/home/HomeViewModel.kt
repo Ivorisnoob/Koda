@@ -140,14 +140,49 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // Video Mode State
+    private val notInterestedRepository =
+        com.ivor.ivormusic.data.NotInterestedRepository(application)
+
+    /**
+     * Raw feed as fetched. Everything user-facing reads [trendingVideos]
+     * instead, which subtracts what the user asked not to see.
+     */
     private val _trendingVideos = MutableStateFlow<List<VideoItem>>(emptyList())
-    val trendingVideos: StateFlow<List<VideoItem>> = _trendingVideos.asStateFlow()
+
+    /**
+     * The home feed with hidden videos and blocked channels removed.
+     *
+     * Filtering is a derived flow rather than a write into the raw list, so a
+     * "not interested" tap takes the item off screen on the next frame with no
+     * refetch, and Undo puts it straight back where it was. Doing it the other
+     * way - mutating the fetched list - would make undo a re-fetch, and the
+     * video would come back in a different position or not at all.
+     */
+    val trendingVideos: StateFlow<List<VideoItem>> =
+        combine(
+            _trendingVideos,
+            notInterestedRepository.hiddenVideos,
+            notInterestedRepository.blockedChannels
+        ) { videos, _, _ -> notInterestedRepository.filter(videos) }
+            .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     
     private val _historyVideos = MutableStateFlow<List<VideoItem>>(emptyList())
     val historyVideos: StateFlow<List<VideoItem>> = _historyVideos.asStateFlow()
 
     private val _shortsFeed = MutableStateFlow<List<com.ivor.ivormusic.data.ShortsItem>>(emptyList())
-    val shortsFeed: StateFlow<List<com.ivor.ivormusic.data.ShortsItem>> = _shortsFeed.asStateFlow()
+
+    /**
+     * Shorts shelf minus individually hidden Shorts.
+     *
+     * Only video ids can be filtered here: a shelf ShortsItem carries no
+     * channel at all (see ShortsItem), so a channel block cannot reach it.
+     * The block still applies the moment the Short is opened and enriched -
+     * it just cannot pre-empt the shelf.
+     */
+    val shortsFeed: StateFlow<List<com.ivor.ivormusic.data.ShortsItem>> =
+        combine(_shortsFeed, notInterestedRepository.hiddenVideos) { shorts, _ ->
+            shorts.filterNot { notInterestedRepository.isVideoHidden(it.videoId) }
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     
     private val _isHistoryLoading = MutableStateFlow(false)
     val isHistoryLoading: StateFlow<Boolean> = _isHistoryLoading.asStateFlow()
@@ -216,7 +251,20 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     val isSubscriptionsLoading: StateFlow<Boolean> = _isSubscriptionsLoading.asStateFlow()
 
     private val _subscriptionFeed = MutableStateFlow<List<VideoItem>>(emptyList())
-    val subscriptionFeed: StateFlow<List<VideoItem>> = _subscriptionFeed.asStateFlow()
+
+    /**
+     * The subscriptions feed, minus what the user asked not to see. A channel
+     * block does apply here even though the user follows the channel: the two
+     * are different statements, and someone who blocks a channel they follow
+     * has been unambiguous about it.
+     */
+    val subscriptionFeed: StateFlow<List<VideoItem>> =
+        combine(
+            _subscriptionFeed,
+            notInterestedRepository.hiddenVideos,
+            notInterestedRepository.blockedChannels
+        ) { videos, _, _ -> notInterestedRepository.filter(videos) }
+            .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     private val _isSubscriptionFeedLoading = MutableStateFlow(false)
     val isSubscriptionFeedLoading: StateFlow<Boolean> = _isSubscriptionFeedLoading.asStateFlow()
@@ -980,6 +1028,53 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    // ---------------- "Don't recommend this" ----------------
+
+    /** The most recent hide/block, for the app-wide undo snackbar. */
+    val lastNotInterested: StateFlow<com.ivor.ivormusic.data.NotInterestedRepository.UndoableAction?> =
+        notInterestedRepository.lastAction
+
+    val hiddenVideos: StateFlow<List<com.ivor.ivormusic.data.NotInterestedRepository.HiddenVideo>> =
+        notInterestedRepository.hiddenVideos
+
+    val blockedChannels: StateFlow<List<com.ivor.ivormusic.data.BlockedChannel>> =
+        notInterestedRepository.blockedChannels
+
+    /** Hide one video from every recommendation feed. */
+    fun markNotInterested(video: VideoItem) {
+        notInterestedRepository.hideVideo(video)
+        topUpFeedAfterFiltering()
+    }
+
+    /** Stop recommending anything from this video's channel. */
+    fun blockChannelFor(video: VideoItem) {
+        notInterestedRepository.blockChannel(video.channelId, video.channelName, video.channelIconUrl)
+        topUpFeedAfterFiltering()
+    }
+
+    fun unhideVideo(videoId: String) = notInterestedRepository.unhideVideo(videoId)
+
+    fun unblockChannel(channelId: String, name: String) =
+        notInterestedRepository.unblockChannel(channelId, name)
+
+    fun clearHiddenVideos() = notInterestedRepository.clearHiddenVideos()
+
+    fun clearBlockedChannels() = notInterestedRepository.clearBlockedChannels()
+
+    /**
+     * Fetch another page when filtering has left too little on screen.
+     *
+     * Blocking a prolific channel can take a dozen items out of a twenty-item
+     * grid at once. Load-more normally fires on scroll, but there is nothing
+     * left to scroll after a cut like that, so the feed would just sit there
+     * looking broken until the user pulled to refresh.
+     */
+    private fun topUpFeedAfterFiltering() {
+        if (trendingVideos.value.size < FEED_TOP_UP_THRESHOLD && _trendingVideos.value.isNotEmpty()) {
+            loadMoreTrendingVideos()
+        }
+    }
+
     /**
      * Record videos as seen, keeping the newest [SHOWN_VIDEO_MEMORY] ids.
      * Bounded because the set only exists to keep consecutive refreshes from
@@ -1371,6 +1466,14 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private companion object {
         /** Ids kept in [shownVideoIds] before the oldest are forgotten. */
         const val SHOWN_VIDEO_MEMORY = 400
+
+        /**
+         * How few visible items it takes for a "not interested" to trigger a
+         * top-up page. Roughly one screen of the grid - below that there is
+         * nothing left to scroll, so the usual scroll-triggered load-more
+         * would never fire.
+         */
+        const val FEED_TOP_UP_THRESHOLD = 8
 
         /** A refresh stops walking the feed once it has this many new videos. */
         const val MIN_FRESH_VIDEOS_ON_REFRESH = 15

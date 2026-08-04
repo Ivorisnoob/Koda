@@ -53,8 +53,28 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
 
     // ---------------- Feed / pager state ----------------
 
+    private val notInterestedRepository =
+        com.ivor.ivormusic.data.NotInterestedRepository(context)
+
+    /**
+     * The swipe sequence.
+     *
+     * Unlike the grid feeds, this is filtered on the way *in* rather than by a
+     * derived flow. The pager index and [playIndex] both address this list
+     * positionally, so a filtered view layered on top would put the pager on
+     * item N of one list and playback on item N of another the moment anything
+     * was hidden. Dropping items as they arrive keeps one list and one index.
+     */
     private val _shorts = MutableStateFlow<List<ShortsItem>>(emptyList())
     val shorts: StateFlow<List<ShortsItem>> = _shorts.asStateFlow()
+
+    /**
+     * Only ids can be filtered here: a sequence entry carries no channel at
+     * all (see ShortsItem), so a channel block cannot pre-empt one. It still
+     * applies the moment a Short is opened and its channel is known.
+     */
+    private fun withoutHidden(items: List<ShortsItem>): List<ShortsItem> =
+        items.filterNot { notInterestedRepository.isVideoHidden(it.videoId) }
 
     private val _currentIndex = MutableStateFlow(0)
     val currentIndex: StateFlow<Int> = _currentIndex.asStateFlow()
@@ -307,11 +327,17 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
      */
     fun open(items: List<ShortsItem>, startIndex: Int) {
         if (items.isEmpty()) return
-        val index = startIndex.coerceIn(0, items.size - 1)
-        _shorts.value = items
+        // Keep the tapped Short even if it is hidden - the user asked for this
+        // one explicitly, and opening onto a different video would be baffling.
+        val tapped = items.getOrNull(startIndex.coerceIn(0, items.size - 1))
+        val visible = withoutHidden(items).ifEmpty { listOfNotNull(tapped) }
+        val ordered = if (tapped != null && tapped !in visible) listOf(tapped) + visible else visible
+        if (ordered.isEmpty()) return
+        val index = ordered.indexOf(tapped).coerceAtLeast(0)
+        _shorts.value = ordered
         _currentIndex.value = index
-        nextSequenceParams = items[index].sequenceParams
-            ?: items.firstNotNullOfOrNull { it.sequenceParams }
+        nextSequenceParams = ordered[index].sequenceParams
+            ?: ordered.firstNotNullOfOrNull { it.sequenceParams }
         _isActive.value = true
         _isLoggedIn.value = youtubeRepository.isLoggedIn()
         playIndex(index)
@@ -327,6 +353,40 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
         }
         prefetchAround(index)
         maybeLoadMore(index)
+    }
+
+    /**
+     * Hide the Short on screen and move on.
+     *
+     * A grid can just drop an item, but a Shorts feed shows exactly one thing,
+     * so dismissing has to say where the user lands. The item is pulled out of
+     * the list and the pager holds its index, which now addresses the next
+     * Short - or the previous one when the dismissed Short was last.
+     */
+    fun markCurrentNotInterested() {
+        val video = _currentVideo.value ?: return
+        notInterestedRepository.hideVideo(video)
+        dropCurrentAndAdvance(video.videoId)
+    }
+
+    /** Stop recommending this Short's channel, and move on. */
+    fun blockChannelForCurrent() {
+        val video = _currentVideo.value ?: return
+        notInterestedRepository.blockChannel(video.channelId, video.channelName, video.channelIconUrl)
+        dropCurrentAndAdvance(video.videoId)
+    }
+
+    private fun dropCurrentAndAdvance(videoId: String) {
+        val remaining = _shorts.value.filterNot { it.videoId == videoId }
+        if (remaining.isEmpty()) {
+            close()
+            return
+        }
+        _shorts.value = remaining
+        val target = _currentIndex.value.coerceIn(0, remaining.lastIndex)
+        _currentIndex.value = target
+        playIndex(target)
+        prefetchAround(target)
     }
 
     fun close() {
@@ -459,7 +519,7 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
                 val known = _shorts.value.mapTo(HashSet()) { it.videoId }
                 val fresh = page.items.filter { it.videoId !in known }
                 if (fresh.isNotEmpty()) {
-                    _shorts.value = _shorts.value + fresh
+                    _shorts.value = _shorts.value + withoutHidden(fresh)
                     // Newly appended entries may fall inside the prefetch
                     // window of the Short being watched right now
                     prefetchAround(_currentIndex.value)
