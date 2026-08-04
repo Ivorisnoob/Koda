@@ -554,6 +554,7 @@ fun MusicApp(
                     onAmoledThemeToggle = onAmoledThemeToggle,
                     colorPalette = colorPalette,
                     onNavigateToColorPalette = { navController.navigate("color_palette") },
+                    onNavigateToSubscriptions = { navController.navigate("subscriptions") },
                     loadLocalSongs = loadLocalSongs,
                     onLoadLocalSongsToggle = onLoadLocalSongsToggle,
                     ambientBackground = ambientBackground,
@@ -635,6 +636,22 @@ fun MusicApp(
                     onPaletteSelected = onColorPaletteChange,
                     isDarkMode = isDarkMode,
                     onBack = { navController.popBackStack() }
+                )
+            }
+            composable(
+                route = "subscriptions",
+                enterTransition = { slideInHorizontally(initialOffsetX = { it }) + fadeIn() },
+                exitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut() },
+                popEnterTransition = { slideInHorizontally(initialOffsetX = { -it / 3 }) + fadeIn() },
+                popExitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut() }
+            ) {
+                com.ivor.ivormusic.ui.video.SubscriptionsManagerScreen(
+                    viewModel = homeViewModel,
+                    onBack = { navController.popBackStack() },
+                    // The sign-in dialog lives on the home screen, so a login
+                    // ask from here has to go back for it rather than opening a
+                    // second WebView on top of a settings sub-screen.
+                    onLoginClick = { navController.popBackStack("home", inclusive = false) }
                 )
             }
             composable(
