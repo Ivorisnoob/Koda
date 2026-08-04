@@ -55,13 +55,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.Chat
 import androidx.compose.material.icons.automirrored.rounded.Comment
-import androidx.compose.material.icons.automirrored.rounded.VolumeOff
-import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.outlined.ThumbDown
 import androidx.compose.material.icons.outlined.ThumbUp
 import androidx.compose.material.icons.rounded.Autorenew
-import androidx.compose.material.icons.rounded.BrightnessHigh
-import androidx.compose.material.icons.rounded.BrightnessLow
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ClosedCaption
@@ -1029,8 +1025,22 @@ private fun ChapterTitleChip(
 /** Seconds jumped per double-tap on either edge of the video surface. */
 private const val DOUBLE_TAP_SEEK_SECONDS = 10
 
-/** Which level a vertical drag is adjusting, for the feedback overlay. */
-private enum class LevelAdjustment { Brightness, Volume }
+/**
+ * Bounds on the level ladder's segment count.
+ *
+ * The count itself comes from the device's own media volume steps, so one slat
+ * is one real notch of volume and the haptic tick lands on the slat lighting.
+ * That number is not universal though - most phones expose 15, a few expose 7,
+ * and some expose 100, which would be neither drawable nor tickable - so it is
+ * clamped into a range that stays legible at the ladder's height. Brightness is
+ * continuous and borrows the same count, which is what keeps the two lanes
+ * feeling like one control.
+ */
+private const val LEVEL_SEGMENT_MIN = 8
+private const val LEVEL_SEGMENT_MAX = 16
+
+/** How long the level indicator stays up after the last movement. */
+private const val LEVEL_HIDE_MS = 800L
 
 /** Accumulated pinch ratios beyond these thresholds toggle zoom-to-fill. */
 private const val PINCH_ZOOM_IN_THRESHOLD = 1.15f
@@ -1162,9 +1172,18 @@ internal fun PlayerGestureSurface(
     var adjustmentLevel by remember { mutableFloatStateOf(0f) }
     var adjustPulse by remember { mutableIntStateOf(0) }
 
+    // One slat per real volume notch, shared by both lanes. Read once: the
+    // stream's step count does not change while a video is open.
+    val levelSegments = remember(audioManager) {
+        audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+            .coerceIn(LEVEL_SEGMENT_MIN, LEVEL_SEGMENT_MAX)
+    }
+
+    // Re-keyed by every drag frame, so a continuous drag never gets past the
+    // delay and the indicator stays up for as long as the finger moves.
     LaunchedEffect(adjustPulse) {
         if (adjustment != null) {
-            delay(800)
+            delay(LEVEL_HIDE_MS)
             adjustment = null
         }
     }
@@ -1312,6 +1331,10 @@ internal fun PlayerGestureSurface(
                         var accumulatedZoom = 1f
                         var level = 0f
                         var exitCommitted = false
+                        // Whether the level is currently pinned to 0 or 1, so
+                        // the rail tick fires once on arrival rather than on
+                        // every frame the finger keeps pushing past the end.
+                        var atRail = false
                         while (true) {
                             val event = awaitPointerEvent()
                             val pressed = event.changes.filter { it.pressed }
@@ -1352,6 +1375,7 @@ internal fun PlayerGestureSurface(
                                 if (mode == 1) {
                                     val dy = change.position.y - change.previousPosition.y
                                     // Dragging ~70% of the surface height sweeps the full range
+                                    val previousLevel = level
                                     level = (level - dy / (size.height * 0.7f)).coerceIn(0f, 1f)
                                     if (leftSide) {
                                         activity?.let { setWindowBrightness(it, level.coerceAtLeast(0.01f)) }
@@ -1360,6 +1384,25 @@ internal fun PlayerGestureSurface(
                                         setVolumeFraction(audioManager, level)
                                         adjustment = LevelAdjustment.Volume
                                     }
+                                    // One tick per slat, on both lanes, because
+                                    // the ladder is drawn at exactly this
+                                    // granularity - the tick and the slat
+                                    // lighting are meant to be one event, not
+                                    // two that happen near each other.
+                                    val crossed = (level * levelSegments).toInt() !=
+                                        (previousLevel * levelSegments).toInt()
+                                    if (crossed) {
+                                        haptics.performHapticFeedback(
+                                            HapticFeedbackType.SegmentFrequentTick
+                                        )
+                                    }
+                                    val onRail = level <= 0f || level >= 1f
+                                    if (onRail && !atRail) {
+                                        haptics.performHapticFeedback(
+                                            HapticFeedbackType.GestureThresholdActivate
+                                        )
+                                    }
+                                    atRail = onRail
                                     adjustmentLevel = level
                                     adjustPulse++
                                     change.consume()
@@ -1412,59 +1455,25 @@ internal fun PlayerGestureSurface(
             modifier = Modifier.align(Alignment.CenterEnd)
         )
 
-        adjustment?.let { kind ->
-            LevelIndicator(
-                kind = kind,
-                level = adjustmentLevel,
-                modifier = Modifier
-                    .align(if (kind == LevelAdjustment.Brightness) Alignment.CenterStart else Alignment.CenterEnd)
-                    .padding(horizontal = 48.dp)
-            )
-        }
-    }
-}
-
-/** Vertical level bar + icon shown while a brightness/volume drag is active. */
-@Composable
-private fun LevelIndicator(
-    kind: LevelAdjustment,
-    level: Float,
-    modifier: Modifier = Modifier
-) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-        modifier = modifier
-            .clip(RoundedCornerShape(20.dp))
-            .background(Color.Black.copy(alpha = 0.55f))
-            .padding(horizontal = 14.dp, vertical = 18.dp)
-    ) {
-        Box(
+        // One per lane rather than one that moves, so switching sides mid-video
+        // fades the old pill out on its own edge instead of flying it across.
+        PlayerLevelIndicator(
+            kind = LevelAdjustment.Brightness,
+            level = adjustmentLevel,
+            segments = levelSegments,
+            visible = adjustment == LevelAdjustment.Brightness,
             modifier = Modifier
-                .width(6.dp)
-                .height(110.dp)
-                .clip(CircleShape)
-                .background(Color.White.copy(alpha = 0.3f)),
-            contentAlignment = Alignment.BottomCenter
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .fillMaxHeight(level.coerceIn(0f, 1f))
-                    .clip(CircleShape)
-                    .background(Color.White)
-            )
-        }
-        Icon(
-            imageVector = when {
-                kind == LevelAdjustment.Volume && level <= 0.001f -> Icons.AutoMirrored.Rounded.VolumeOff
-                kind == LevelAdjustment.Volume -> Icons.AutoMirrored.Rounded.VolumeUp
-                level < 0.3f -> Icons.Rounded.BrightnessLow
-                else -> Icons.Rounded.BrightnessHigh
-            },
-            contentDescription = null,
-            tint = Color.White,
-            modifier = Modifier.size(22.dp)
+                .align(Alignment.CenterStart)
+                .padding(horizontal = 48.dp)
+        )
+        PlayerLevelIndicator(
+            kind = LevelAdjustment.Volume,
+            level = adjustmentLevel,
+            segments = levelSegments,
+            visible = adjustment == LevelAdjustment.Volume,
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .padding(horizontal = 48.dp)
         )
     }
 }
