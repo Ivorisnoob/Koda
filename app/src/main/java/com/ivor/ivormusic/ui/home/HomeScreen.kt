@@ -150,6 +150,7 @@ fun HomeScreen(
     onNavigateToSettings: () -> Unit = {},
     onNavigateToDownloads: () -> Unit = {},
     onNavigateToStats: () -> Unit = {},
+    onNavigateToSubscriptions: () -> Unit = {},
     onNavigateToUpdate: () -> Unit = {},
     onNavigateToVideoPlayer: (VideoItem) -> Unit = {},
     onOpenShorts: (List<com.ivor.ivormusic.data.ShortsItem>, Int) -> Unit = { _, _ -> },
@@ -494,6 +495,7 @@ fun HomeScreen(
                                     onNavigateToVideoPlayer(video)
                                 },
                                 onLoginClick = { showAuthDialog = true },
+                                onManageSubscriptions = onNavigateToSubscriptions,
                                 contentPadding = listBottomPadding
                             )
                         } else {

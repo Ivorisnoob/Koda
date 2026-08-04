@@ -515,6 +515,7 @@ fun MusicApp(
                     onNavigateToSettings = { navController.navigate("settings") },
                     onNavigateToDownloads = { navController.navigate("downloads") },
                     onNavigateToStats = { navController.navigate("stats") },
+                    onNavigateToSubscriptions = { navController.navigate("subscriptions") },
                     onNavigateToUpdate = { navController.navigate("update") },
                     onNavigateToVideoPlayer = { video ->
                         videoPlayerViewModel.playVideo(video)
