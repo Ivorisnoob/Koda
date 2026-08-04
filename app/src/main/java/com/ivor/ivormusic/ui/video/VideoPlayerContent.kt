@@ -108,6 +108,9 @@ fun VideoPlayerContent(
     val playbackSpeed by viewModel.playbackSpeed.collectAsState()
     val playbackError by viewModel.playbackError.collectAsState()
     val engagement by viewModel.engagement.collectAsState()
+    // Account subscription OR device subscription - engagement only knows the
+    // first, and read alone it showed "Subscribe" for locally followed channels.
+    val isSubscribedToChannel by viewModel.isSubscribedToChannel.collectAsState()
     val isLoggedIn by viewModel.isLoggedIn.collectAsState()
     val comments by viewModel.comments.collectAsState()
     val isCommentsLoading by viewModel.isCommentsLoading.collectAsState()
@@ -331,6 +334,15 @@ fun VideoPlayerContent(
     // Gate authenticated actions behind login
     fun requireLogin(action: () -> Unit) {
         if (isLoggedIn) action() else showSignInDialog = true
+    }
+
+    /**
+     * Subscribing has a signed-out path now - it saves to the device unless
+     * the user explicitly picked the YouTube-account target - so it gets its
+     * own gate instead of the blanket login wall the other actions use.
+     */
+    fun requireSubscribeLogin(action: () -> Unit) {
+        if (viewModel.subscribeNeedsLogin()) showSignInDialog = true else action()
     }
 
     /**
@@ -728,9 +740,10 @@ fun VideoPlayerContent(
                             .nestedScroll(pullToMinimize)
                             .background(MaterialTheme.colorScheme.surface),
                         engagement = engagement,
+                        isSubscribed = isSubscribedToChannel,
                         onLikeClick = { requireLogin { viewModel.toggleLike() } },
                         onDislikeClick = { requireLogin { viewModel.toggleDislike() } },
-                        onSubscribeClick = { requireLogin { viewModel.toggleSubscribe() } },
+                        onSubscribeClick = { requireSubscribeLogin { viewModel.toggleSubscribe() } },
                         onCommentsClick = {
                             viewModel.ensureCommentsLoaded()
                             showCommentsSheet = true
@@ -869,11 +882,11 @@ fun VideoPlayerContent(
             channelName = currentVideo.channelName,
             channelIconUrl = currentVideo.channelIconUrl,
             subscriberCountText = engagement?.subscriberCountText ?: currentVideo.subscriberCount,
-            isSubscribed = engagement?.isSubscribed == true,
+            isSubscribed = isSubscribedToChannel,
             canSubscribe = engagement?.channelId != null,
             videos = channelVideos,
             isLoading = isChannelVideosLoading,
-            onSubscribeClick = { requireLogin { viewModel.toggleSubscribe() } },
+            onSubscribeClick = { requireSubscribeLogin { viewModel.toggleSubscribe() } },
             onVideoClick = { video ->
                 showChannelSheet = false
                 viewModel.playVideo(video)

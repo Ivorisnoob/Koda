@@ -132,6 +132,9 @@ fun ShortsPlayerOverlay(
     val isBuffering by viewModel.isBuffering.collectAsState()
     val playbackError by viewModel.playbackError.collectAsState()
     val engagement by viewModel.engagement.collectAsState()
+    // Account subscription OR device subscription - engagement only knows the
+    // first, and read alone it showed "Subscribe" for locally followed channels.
+    val isSubscribed by viewModel.isSubscribedToChannel.collectAsState()
     val isLoggedIn by viewModel.isLoggedIn.collectAsState()
 
     val comments by viewModel.comments.collectAsState()
@@ -147,6 +150,15 @@ fun ShortsPlayerOverlay(
 
     fun requireLogin(action: () -> Unit) {
         if (isLoggedIn) action() else showSignInDialog = true
+    }
+
+    /**
+     * Subscribing has a signed-out path now - it saves to the device unless
+     * the user explicitly picked the YouTube-account target - so it gets its
+     * own gate instead of the blanket login wall the other actions use.
+     */
+    fun requireSubscribeLogin(action: () -> Unit) {
+        if (viewModel.subscribeNeedsLogin()) showSignInDialog = true else action()
     }
 
     BackHandler { viewModel.close() }
@@ -452,9 +464,8 @@ fun ShortsPlayerOverlay(
                             modifier = Modifier.weight(1f, fill = false)
                         )
                         Spacer(modifier = Modifier.width(12.dp))
-                        val isSubscribed = engagement?.isSubscribed == true
                         Button(
-                            onClick = { requireLogin { viewModel.toggleSubscribe() } },
+                            onClick = { requireSubscribeLogin { viewModel.toggleSubscribe() } },
                             colors = if (isSubscribed) {
                                 ButtonDefaults.buttonColors(
                                     containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.92f),

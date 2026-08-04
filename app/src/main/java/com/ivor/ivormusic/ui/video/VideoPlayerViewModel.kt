@@ -22,6 +22,9 @@ import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import com.ivor.ivormusic.data.CaptionTrack
 import com.ivor.ivormusic.data.CommentItem
 import com.ivor.ivormusic.data.LikeStatus
+import com.ivor.ivormusic.data.LocalSubscription
+import com.ivor.ivormusic.data.SubscriptionActions
+import com.ivor.ivormusic.data.SubscriptionStore
 import com.ivor.ivormusic.data.LiveChatBanner
 import com.ivor.ivormusic.data.LiveChatMessage
 import com.ivor.ivormusic.data.LiveChatPage
@@ -37,6 +40,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -174,6 +178,25 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
     private val _isLoggedIn = MutableStateFlow(youtubeRepository.isLoggedIn())
     val isLoggedIn: StateFlow<Boolean> = _isLoggedIn.asStateFlow()
+
+    private val subscriptionActions =
+        SubscriptionActions(context, youtubeRepository)
+
+    /**
+     * Whether the current video's channel is followed at all - by the signed-in
+     * account or on this device. The subscribe button binds to this rather than
+     * to `engagement.isSubscribed`, which only ever knows about the account and
+     * so read "Subscribe" for a channel the user had followed locally.
+     */
+    val isSubscribedToChannel: StateFlow<Boolean> =
+        combine(_engagement, subscriptionActions.subscriptions) { engagement, localSubs ->
+            val channelId = engagement?.channelId
+            engagement?.isSubscribed == true ||
+                (channelId != null && localSubs.any { it.channelId == channelId })
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    /** True when the subscribe button has to send the user to sign in first. */
+    fun subscribeNeedsLogin(): Boolean = subscriptionActions.subscribeNeedsLogin()
 
     // ---------------- Live broadcast ----------------
 
@@ -1559,14 +1582,39 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         }
     }
 
-    /** Subscribe/unsubscribe to the current video's channel. Optimistic with rollback. */
+    /**
+     * Subscribe/unsubscribe to the current video's channel, routed by the
+     * subscribe-target setting (see [com.ivor.ivormusic.data.SubscriptionActions]).
+     * Optimistic with rollback on a failed remote write.
+     */
     fun toggleSubscribe() {
         val current = _engagement.value ?: return
         val channelId = current.channelId ?: return
-        val subscribe = !current.isSubscribed
-        _engagement.value = current.copy(isSubscribed = subscribe)
+        val video = _currentVideo.value
+        val subscribe = !isSubscribedToChannel.value
+
+        // Only the account half is optimistic here; the local half is a
+        // synchronous write whose process-wide flow already drives the button.
+        // A local-only subscribe must leave the account flag alone, or the
+        // next unsubscribe would fire a pointless network call.
+        val writesRemote = subscriptionActions.resolveTarget() != SubscriptionStore.LOCAL
+        _engagement.value = current.copy(
+            isSubscribed = when {
+                !subscribe -> false
+                writesRemote -> true
+                else -> current.isSubscribed
+            }
+        )
         viewModelScope.launch {
-            val ok = youtubeRepository.setSubscribed(channelId, subscribe)
+            val ok = subscriptionActions.setSubscribed(
+                channel = LocalSubscription(
+                    channelId = channelId,
+                    name = video?.channelName?.takeIf { it.isNotBlank() } ?: channelId,
+                    avatarUrl = video?.channelIconUrl
+                ),
+                subscribe = subscribe,
+                remotelySubscribed = current.isSubscribed
+            )
             if (!ok && _engagement.value?.videoId == current.videoId) {
                 _engagement.value = _engagement.value?.copy(isSubscribed = current.isSubscribed)
             }

@@ -199,6 +199,23 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
     private val _engagement = MutableStateFlow<VideoEngagement?>(null)
     val engagement: StateFlow<VideoEngagement?> = _engagement.asStateFlow()
 
+    private val subscriptionActions =
+        com.ivor.ivormusic.data.SubscriptionActions(context, youtubeRepository)
+
+    /**
+     * Whether the current Short's channel is followed by the account or on
+     * this device - see VideoPlayerViewModel.isSubscribedToChannel.
+     */
+    val isSubscribedToChannel: StateFlow<Boolean> =
+        combine(_engagement, subscriptionActions.subscriptions) { engagement, localSubs ->
+            val channelId = engagement?.channelId
+            engagement?.isSubscribed == true ||
+                (channelId != null && localSubs.any { it.channelId == channelId })
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    /** True when the subscribe button has to send the user to sign in first. */
+    fun subscribeNeedsLogin(): Boolean = subscriptionActions.subscribeNeedsLogin()
+
     private val _isLoggedIn = MutableStateFlow(youtubeRepository.isLoggedIn())
     val isLoggedIn: StateFlow<Boolean> = _isLoggedIn.asStateFlow()
 
@@ -551,13 +568,35 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
         }
     }
 
+    /**
+     * Subscribe/unsubscribe to the current Short's channel, routed by the
+     * subscribe-target setting. Same contract as the video player's.
+     */
     fun toggleSubscribe() {
         val current = _engagement.value ?: return
         val channelId = current.channelId ?: return
-        val subscribe = !current.isSubscribed
-        _engagement.value = current.copy(isSubscribed = subscribe)
+        val video = _currentVideo.value
+        val subscribe = !isSubscribedToChannel.value
+
+        val writesRemote =
+            subscriptionActions.resolveTarget() != com.ivor.ivormusic.data.SubscriptionStore.LOCAL
+        _engagement.value = current.copy(
+            isSubscribed = when {
+                !subscribe -> false
+                writesRemote -> true
+                else -> current.isSubscribed
+            }
+        )
         viewModelScope.launch {
-            val ok = youtubeRepository.setSubscribed(channelId, subscribe)
+            val ok = subscriptionActions.setSubscribed(
+                channel = com.ivor.ivormusic.data.LocalSubscription(
+                    channelId = channelId,
+                    name = video?.channelName?.takeIf { it.isNotBlank() } ?: channelId,
+                    avatarUrl = video?.channelIconUrl
+                ),
+                subscribe = subscribe,
+                remotelySubscribed = current.isSubscribed
+            )
             if (!ok && _engagement.value?.videoId == current.videoId) {
                 _engagement.value = _engagement.value?.copy(isSubscribed = current.isSubscribed)
             }
