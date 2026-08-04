@@ -264,6 +264,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
      * signed in.
      */
     fun loadSubscriptions(force: Boolean = false) {
+        // First, and outside every guard below: imported channels have no
+        // avatar until this runs, and the guards are all about the *account*
+        // half. Behind them, a signed-out user - the exact person most likely
+        // to have imported a list - never got any pictures.
+        backfillLocalChannelProfiles()
+
         if (_isSubscriptionsLoading.value) return
         if (!shouldUseAccountSubscriptions()) return
         if (_accountChannels.value.isNotEmpty() && !force) return
@@ -275,7 +281,6 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 _isSubscriptionsLoading.value = false
             }
         }
-        backfillLocalChannelProfiles()
     }
 
     /**
@@ -372,7 +377,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         if (pending.isEmpty()) return
         viewModelScope.launch {
             val updated = youtubeRepository.fetchMissingChannelProfiles(pending)
-            updated.forEach { localSubscriptionsRepository.subscribe(it) }
+            localSubscriptionsRepository.updateProfiles(updated)
         }
     }
 

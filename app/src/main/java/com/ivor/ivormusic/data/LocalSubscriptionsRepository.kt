@@ -125,6 +125,32 @@ class LocalSubscriptionsRepository(context: Context) {
     }
 
     /**
+     * Refreshes name/avatar/handle for channels already in the store, in one
+     * write.
+     *
+     * Used by the profile backfill, which resolves a dozen channels at a time:
+     * calling [subscribe] per channel would emit the whole list a dozen times
+     * and re-sort it downstream on each. Channels no longer in the store are
+     * skipped rather than re-added - the user may have unfollowed one while
+     * its lookup was in flight, and a backfill must never resurrect it.
+     */
+    fun updateProfiles(updates: List<LocalSubscription>) {
+        if (updates.isEmpty()) return
+        val byId = updates.associateBy { it.channelId }
+        var changed = false
+        val next = subscriptionsState.value.map { existing ->
+            val update = byId[existing.channelId] ?: return@map existing
+            changed = true
+            existing.copy(
+                name = update.name.takeIf { it.isNotBlank() } ?: existing.name,
+                avatarUrl = update.avatarUrl ?: existing.avatarUrl,
+                handle = update.handle ?: existing.handle
+            )
+        }
+        if (changed) saveSubscriptions(next)
+    }
+
+    /**
      * Merges [channels] into the store, keeping whatever is already there.
      * Returns how many were genuinely new.
      */

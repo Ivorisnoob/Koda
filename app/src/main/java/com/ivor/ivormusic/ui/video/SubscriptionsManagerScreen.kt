@@ -104,6 +104,9 @@ fun SubscriptionsManagerScreen(
     var groupBeingEdited by remember { mutableStateOf<String?>(null) }
     var showNewGroupDialog by remember { mutableStateOf(false) }
     var showClearConfirmation by remember { mutableStateOf(false) }
+    // Deleting a group is a small target sitting inside a tappable row, and
+    // rebuilding a fifty-channel grouping by hand is not a cheap undo.
+    var groupToDelete by remember { mutableStateOf<com.ivor.ivormusic.data.SubscriptionGroup?>(null) }
     var channelForGroups by remember { mutableStateOf<LocalSubscription?>(null) }
 
     // SAF rather than a path: the file arrives as a content uri that cannot be
@@ -250,7 +253,7 @@ fun SubscriptionsManagerScreen(
                                 subtitle = "${group.channelIds.size} channels",
                                 onClick = { groupBeingEdited = group.id },
                                 trailing = {
-                                    IconButton(onClick = { viewModel.deleteSubscriptionGroup(group.id) }) {
+                                    IconButton(onClick = { groupToDelete = group }) {
                                         Icon(
                                             Icons.Rounded.Close,
                                             contentDescription = "Delete ${group.name}",
@@ -354,6 +357,25 @@ fun SubscriptionsManagerScreen(
                 .map { it.id }.toSet(),
             onToggle = { viewModel.toggleChannelInGroup(it, channel.channelId) },
             onDismiss = { channelForGroups = null }
+        )
+    }
+
+    groupToDelete?.let { group ->
+        AlertDialog(
+            onDismissRequest = { groupToDelete = null },
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = RoundedCornerShape(32.dp),
+            title = { Text("Delete ${group.name}?", fontWeight = FontWeight.Bold) },
+            text = { Text("The channels in it stay subscribed - only the group goes.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.deleteSubscriptionGroup(group.id)
+                    groupToDelete = null
+                }) { Text("Delete") }
+            },
+            dismissButton = {
+                TextButton(onClick = { groupToDelete = null }) { Text("Cancel") }
+            }
         )
     }
 
