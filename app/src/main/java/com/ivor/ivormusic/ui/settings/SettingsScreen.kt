@@ -70,6 +70,7 @@ import androidx.compose.material.icons.rounded.Interests
 import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Newspaper
+import androidx.compose.material.icons.rounded.NotInterested
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.RadioButtonChecked
@@ -3356,6 +3357,12 @@ private fun ShortsButtonsDialog(
                         label = "Share",
                         shown = ThemePreferences.SHORTS_ACTION_SHARE !in hiddenActions,
                         onToggle = { toggle(ThemePreferences.SHORTS_ACTION_SHARE) }
+                    )
+                    ShortsButtonShapeToggle(
+                        icon = Icons.Rounded.NotInterested,
+                        label = "Not interested",
+                        shown = ThemePreferences.SHORTS_ACTION_NOT_INTERESTED !in hiddenActions,
+                        onToggle = { toggle(ThemePreferences.SHORTS_ACTION_NOT_INTERESTED) }
                     )
                 }
             },

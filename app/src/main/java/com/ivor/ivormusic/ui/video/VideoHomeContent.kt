@@ -173,7 +173,9 @@ fun VideoHomeContent(
                 saveTargetVideo = null
                 downloadTargetVideo = video
             },
-            onDismiss = { saveTargetVideo = null }
+            onDismiss = { saveTargetVideo = null },
+            onNotInterested = { viewModel.markNotInterested(video) },
+            onBlockChannel = { viewModel.blockChannelFor(video) }
         )
     }
 

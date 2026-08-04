@@ -11,7 +11,12 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -24,6 +29,9 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.ui.home.HomeScreen
@@ -770,6 +778,56 @@ fun MusicApp(
             hiddenActions = shortsHiddenActions
         )
 
+        // Undo for "don't recommend", app-wide and last in the stack.
+        //
+        // One host for the whole app rather than one per screen: the action can
+        // be taken from the home grid, the subscriptions feed, search, the
+        // player's Up Next list and Shorts, and two of those are overlays
+        // drawn above the NavHost. A per-screen snackbar would be hidden behind
+        // the Shorts overlay exactly when it is needed most, and could show
+        // twice when a screen and an overlay are both alive.
+        NotInterestedUndoHost(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .padding(bottom = if (musicPillVisible) 96.dp else 16.dp)
+        )
     }
+}
+
+/**
+ * Shows "Video hidden - Undo" whenever something is dismissed.
+ *
+ * Keyed on the action's id rather than the action itself so two identical
+ * dismissals in a row still re-show the snackbar instead of the second one
+ * silently doing nothing.
+ */
+@Composable
+private fun NotInterestedUndoHost(modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val repository = remember(context) {
+        com.ivor.ivormusic.data.NotInterestedRepository(context)
+    }
+    val lastAction by repository.lastAction.collectAsState()
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(lastAction?.id) {
+        val action = lastAction ?: return@LaunchedEffect
+        val result = snackbarHostState.showSnackbar(
+            message = action.message,
+            actionLabel = "Undo",
+            withDismissAction = false,
+            duration = SnackbarDuration.Short
+        )
+        if (result == SnackbarResult.ActionPerformed) {
+            repository.undo(action)
+        } else {
+            // Timed out or was replaced. The hide stands; just stop offering
+            // an undo for something the user has moved on from.
+            repository.clearLastAction()
+        }
+    }
+
+    SnackbarHost(hostState = snackbarHostState, modifier = modifier)
 }
 

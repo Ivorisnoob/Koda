@@ -865,7 +865,14 @@ fun VideoPlayerContent(
                 saveTargetVideo = null
                 downloadTargetVideo = target
             },
-            onDismiss = { saveTargetVideo = null }
+            onDismiss = { saveTargetVideo = null },
+            // Only offered for Up Next rows. Long-pressing the video that is
+            // currently playing and telling the app to hide it would leave the
+            // user watching something they just dismissed.
+            onNotInterested = if (target.videoId != currentVideo.videoId) {
+                { viewModel.markNotInterested(target) }
+            } else null,
+            onBlockChannel = { viewModel.blockChannelFor(target) }
         )
     }
 

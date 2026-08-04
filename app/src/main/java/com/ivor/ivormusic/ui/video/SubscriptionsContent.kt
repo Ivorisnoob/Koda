@@ -200,7 +200,13 @@ fun SubscriptionsContent(
                 saveTargetVideo = null
                 downloadTargetVideo = video
             },
-            onDismiss = { saveTargetVideo = null }
+            onDismiss = { saveTargetVideo = null },
+            onNotInterested = { viewModel.markNotInterested(video) },
+            // No channel block offered here: hiding a channel the user
+            // deliberately follows, from the feed that exists to show it, is a
+            // contradiction. Unfollowing is the tool for that, and it is one
+            // tap away in the same tab.
+            onBlockChannel = null
         )
     }
 

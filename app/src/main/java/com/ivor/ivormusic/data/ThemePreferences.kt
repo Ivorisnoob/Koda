@@ -227,6 +227,7 @@ class ThemePreferences(context: Context) {
         const val SHORTS_ACTION_DISLIKE = "dislike"
         const val SHORTS_ACTION_COMMENTS = "comments"
         const val SHORTS_ACTION_SHARE = "share"
+        const val SHORTS_ACTION_NOT_INTERESTED = "not_interested"
 
         /**
          * Legacy single video-quality key, superseded by the per-network pair
