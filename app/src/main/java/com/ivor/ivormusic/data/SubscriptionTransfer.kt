@@ -30,7 +30,7 @@ object SubscriptionTransfer {
      * turns that into a "couldn't read this file" message.
      */
     fun parse(text: String): List<ImportedChannel> {
-        val trimmed = text.trimStart('﻿', ' ', '\n', '\r', '\t')
+        val trimmed = text.trimStart('\uFEFF', ' ', '\n', '\r', '\t')
         return when {
             trimmed.startsWith("{") || trimmed.startsWith("[") -> parseNewPipeJson(trimmed)
             trimmed.startsWith("<") -> parseOpml(trimmed)
@@ -45,7 +45,7 @@ object SubscriptionTransfer {
      * than silently losing them.
      */
     fun countForeignServiceEntries(text: String): Int {
-        val trimmed = text.trimStart('﻿', ' ', '\n', '\r', '\t')
+        val trimmed = text.trimStart('\uFEFF', ' ', '\n', '\r', '\t')
         if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) return 0
         return try {
             subscriptionArray(trimmed)?.let { array ->

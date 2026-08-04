@@ -279,21 +279,6 @@ class ThemePreferences(context: Context) {
             SUBSCRIPTIONS_AUTO, SUBSCRIPTIONS_LOCAL, SUBSCRIPTIONS_YOUTUBE, SUBSCRIPTIONS_BOTH
         )
 
-        /**
-         * Fresh read of where a Subscribe tap should write. The player and
-         * Shorts ViewModels hold their own ThemePreferences instances, so
-         * their StateFlow copies can be stale at tap time - same reason
-         * [getDefaultVideoQuality] exists.
-         */
-        fun subscribeTarget(context: Context): String =
-            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                .getString(KEY_SUBSCRIBE_TARGET, SUBSCRIPTIONS_AUTO) ?: SUBSCRIPTIONS_AUTO
-
-        /** Fresh read of the feed-refresh mode, for the same reason. */
-        fun isFastSubscriptionFeed(context: Context): Boolean =
-            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                .getBoolean(KEY_FAST_SUBSCRIPTION_FEED, true)
-
         private const val KEY_MUSIC_QUALITY_WIFI = "music_quality_wifi"
         private const val KEY_MUSIC_QUALITY_MOBILE = "music_quality_mobile"
 
