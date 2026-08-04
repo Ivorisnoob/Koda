@@ -96,6 +96,20 @@ There are two places a subscription can live and they are not interchangeable. *
 
 The Subscriptions tab (`ui/video/SubscriptionsContent.kt`) has no hard sign-in wall any more. It blocks only when nothing is followed anywhere, and offers importing as a peer of signing in. `HomeViewModel.logout()` must clear `_accountChannels` explicitly — the tab no longer empties itself on sign-out, so stale account channels would otherwise sit there unreachable.
 
+### "Don't recommend": what the local blocklist is for
+
+`data/NotInterestedRepository.kt` holds hidden video ids and blocked channels (SharedPreferences `not_interested`), with process-wide flows for the same reason `LocalSubscriptionsRepository` has them.
+
+**It is the engine of the feature, not a cache in front of YouTube's.** Probed August 2026: signed out, InnerTube returns no `feedbackToken` anywhere — not on watch-next related items, not on browse, not on search — because there is no account to record the preference against. It is also the only half that acts immediately; YouTube's own feedback is advisory and takes days to change what it recommends. Signed in, YouTube does expose dismissal tokens and a `youtubei/v1/feedback` endpoint, and propagating there would be a real addition — see the comment block in `YouTubeRepository` for exactly what probing it needs. It must stay best-effort: the local hide has already happened by then.
+
+**Filtering is a derived flow over the raw fetch**, never a write into it (`HomeViewModel.trendingVideos`, `subscriptionFeed`, `VideoPlayerViewModel.relatedVideos`). A tap removes the item on the next frame with no refetch, and Undo restores it in place; mutating the fetched list would make undo a re-fetch that brings the video back somewhere else or not at all. Autoplay-next reads the *filtered* list. Blocking a prolific channel can gut a grid, and scroll-triggered load-more cannot fire when there is nothing left to scroll, so a cut below `FEED_TOP_UP_THRESHOLD` requests another page.
+
+**Shorts are the exception: they filter on ingestion.** The pager index and `playIndex` both address `_shorts` positionally, so a filtered view layered on top would put the pager on item N of one list and playback on item N of another. Dismissing a Short removes it and holds the index, which now addresses the next one.
+
+**Search results are never filtered** — searching is explicit intent, and hiding a result somebody just typed the name of is the app arguing with them. Search therefore offers only the channel block (which has a real effect elsewhere), and the Subscriptions feed offers only the video hide (blocking a channel you deliberately follow, from the feed that exists to show it, is a contradiction — unfollow is the tool). The player hides "not interested" for the video currently playing.
+
+Undo is a single app-wide `SnackbarHost` at the root of `MainActivity`, fed by `NotInterestedRepository.lastAction`. The action can be taken from five surfaces, two of them overlays above the NavHost; a per-screen snackbar would be hidden behind the Shorts overlay exactly when it is needed. `NotInterestedScreen` is the permanent list — without it a mis-tap weeks ago would be an invisible, unfixable hole in the feed.
+
 ### Settings plumbing (adding a new setting)
 
 All app settings live in `data/ThemePreferences.kt` (SharedPreferences `ivor_music_theme_prefs`, one `MutableStateFlow` + KEY constant + private getter + public setter per setting). A new setting must be threaded through **four files**:

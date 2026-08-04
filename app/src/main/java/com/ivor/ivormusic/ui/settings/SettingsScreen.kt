@@ -252,6 +252,7 @@ fun SettingsScreen(
     fastSubscriptionFeed: Boolean = true,
     onFastSubscriptionFeedToggle: (Boolean) -> Unit = {},
     onNavigateToSubscriptions: () -> Unit = {},
+    onNavigateToNotInterested: () -> Unit = {},
     excludedFolders: Set<String>,
     onAddExcludedFolder: (String) -> Unit,
     onRemoveExcludedFolder: (String) -> Unit,
@@ -1040,6 +1041,19 @@ fun SettingsScreen(
                             title = "Manage Subscriptions",
                             subtitle = "Import, export and group the channels you follow",
                             onClick = onNavigateToSubscriptions,
+                            textColor = textColor,
+                            secondaryTextColor = secondaryTextColor,
+                            iconTint = accentColor,
+                            showChevron = true
+                        )
+
+                        SettingsDivider()
+
+                        ExpressiveSettingsItem(
+                            icon = Icons.Rounded.NotInterested,
+                            title = "Not Recommended",
+                            subtitle = "Videos and channels you've hidden from your feeds",
+                            onClick = onNavigateToNotInterested,
                             textColor = textColor,
                             secondaryTextColor = secondaryTextColor,
                             iconTint = accentColor,
