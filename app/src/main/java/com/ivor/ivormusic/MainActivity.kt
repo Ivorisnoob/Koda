@@ -104,6 +104,9 @@ class MainActivity : ComponentActivity() {
             val musicQualityWifi by themeViewModel.musicQualityWifi.collectAsState()
             val musicQualityMobile by themeViewModel.musicQualityMobile.collectAsState()
             val preferHdr by themeViewModel.preferHdr.collectAsState()
+            val subscriptionSource by themeViewModel.subscriptionSource.collectAsState()
+            val subscribeTarget by themeViewModel.subscribeTarget.collectAsState()
+            val fastSubscriptionFeed by themeViewModel.fastSubscriptionFeed.collectAsState()
             val excludedFolders by themeViewModel.excludedFolders.collectAsState()
             val oemFixEnabled by themeViewModel.oemFixEnabled.collectAsState()
             val manualScanEnabled by themeViewModel.manualScanEnabled.collectAsState()
@@ -180,6 +183,12 @@ class MainActivity : ComponentActivity() {
                         onMusicQualityMobileChange = { themeViewModel.setMusicQualityMobile(it) },
                         preferHdr = preferHdr,
                         onPreferHdrToggle = { themeViewModel.setPreferHdr(it) },
+                        subscriptionSource = subscriptionSource,
+                        onSubscriptionSourceChange = { themeViewModel.setSubscriptionSource(it) },
+                        subscribeTarget = subscribeTarget,
+                        onSubscribeTargetChange = { themeViewModel.setSubscribeTarget(it) },
+                        fastSubscriptionFeed = fastSubscriptionFeed,
+                        onFastSubscriptionFeedToggle = { themeViewModel.setFastSubscriptionFeed(it) },
                         excludedFolders = excludedFolders,
                         onAddExcludedFolder = { themeViewModel.addExcludedFolder(it) },
                         onRemoveExcludedFolder = { themeViewModel.removeExcludedFolder(it) },
@@ -303,6 +312,12 @@ fun MusicApp(
     onMusicQualityMobileChange: (String) -> Unit,
     preferHdr: Boolean,
     onPreferHdrToggle: (Boolean) -> Unit,
+    subscriptionSource: String,
+    onSubscriptionSourceChange: (String) -> Unit,
+    subscribeTarget: String,
+    onSubscribeTargetChange: (String) -> Unit,
+    fastSubscriptionFeed: Boolean,
+    onFastSubscriptionFeedToggle: (Boolean) -> Unit,
     excludedFolders: Set<String>,
     onAddExcludedFolder: (String) -> Unit,
     onRemoveExcludedFolder: (String) -> Unit,
@@ -573,6 +588,12 @@ fun MusicApp(
                     onMusicQualityMobileChange = onMusicQualityMobileChange,
                     preferHdr = preferHdr,
                     onPreferHdrToggle = onPreferHdrToggle,
+                    subscriptionSource = subscriptionSource,
+                    onSubscriptionSourceChange = onSubscriptionSourceChange,
+                    subscribeTarget = subscribeTarget,
+                    onSubscribeTargetChange = onSubscribeTargetChange,
+                    fastSubscriptionFeed = fastSubscriptionFeed,
+                    onFastSubscriptionFeedToggle = onFastSubscriptionFeedToggle,
                     excludedFolders = excludedFolders,
                     onAddExcludedFolder = onAddExcludedFolder,
                     onRemoveExcludedFolder = onRemoveExcludedFolder,

@@ -47,6 +47,9 @@ import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.Bolt
+import androidx.compose.material.icons.rounded.BookmarkAdd
+import androidx.compose.material.icons.rounded.FilterList
+import androidx.compose.material.icons.rounded.Subscriptions
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Animation
 import androidx.compose.material.icons.rounded.CheckCircle
@@ -241,6 +244,13 @@ fun SettingsScreen(
     onMusicQualityMobileChange: (String) -> Unit,
     preferHdr: Boolean,
     onPreferHdrToggle: (Boolean) -> Unit,
+    subscriptionSource: String = ThemePreferences.SUBSCRIPTIONS_AUTO,
+    onSubscriptionSourceChange: (String) -> Unit = {},
+    subscribeTarget: String = ThemePreferences.SUBSCRIPTIONS_AUTO,
+    onSubscribeTargetChange: (String) -> Unit = {},
+    fastSubscriptionFeed: Boolean = true,
+    onFastSubscriptionFeedToggle: (Boolean) -> Unit = {},
+    onNavigateToSubscriptions: () -> Unit = {},
     excludedFolders: Set<String>,
     onAddExcludedFolder: (String) -> Unit,
     onRemoveExcludedFolder: (String) -> Unit,
@@ -312,6 +322,9 @@ fun SettingsScreen(
     
     // Which per-network quality picker is open, if any
     var qualityDialogTarget by remember { mutableStateOf<QualityDialogTarget?>(null) }
+
+    // Which subscription-routing picker is open, if any
+    var subscriptionDialogTarget by remember { mutableStateOf<SubscriptionDialogTarget?>(null) }
 
     // Dialog state for Folder Exclusion
     var showFolderExclusionDialog by remember { mutableStateOf(false) }
@@ -1018,6 +1031,62 @@ fun SettingsScreen(
                             secondaryTextColor = secondaryTextColor,
                             accentColor = accentColor
                         )
+
+                        SettingsDivider()
+
+                        ExpressiveSettingsItem(
+                            icon = Icons.Rounded.Subscriptions,
+                            title = "Manage Subscriptions",
+                            subtitle = "Import, export and group the channels you follow",
+                            onClick = onNavigateToSubscriptions,
+                            textColor = textColor,
+                            secondaryTextColor = secondaryTextColor,
+                            iconTint = accentColor,
+                            showChevron = true
+                        )
+
+                        SettingsDivider()
+
+                        ExpressiveSettingsItem(
+                            icon = Icons.Rounded.FilterList,
+                            title = "Subscriptions Shown",
+                            subtitle = subscriptionSourceLabel(subscriptionSource),
+                            onClick = { subscriptionDialogTarget = SubscriptionDialogTarget.SOURCE },
+                            textColor = textColor,
+                            secondaryTextColor = secondaryTextColor,
+                            iconTint = accentColor,
+                            showChevron = true
+                        )
+
+                        SettingsDivider()
+
+                        ExpressiveSettingsItem(
+                            icon = Icons.Rounded.BookmarkAdd,
+                            title = "Subscribe Saves To",
+                            subtitle = subscribeTargetLabel(subscribeTarget),
+                            onClick = { subscriptionDialogTarget = SubscriptionDialogTarget.TARGET },
+                            textColor = textColor,
+                            secondaryTextColor = secondaryTextColor,
+                            iconTint = accentColor,
+                            showChevron = true
+                        )
+
+                        SettingsDivider()
+
+                        ExpressiveOemToggleItem(
+                            icon = Icons.Rounded.Bolt,
+                            title = "Fast Subscription Refresh",
+                            subtitle = if (fastSubscriptionFeed) {
+                                "Much less data and exact upload times, but no duration badges"
+                            } else {
+                                "Full details for every video - slow on a large subscription list"
+                            },
+                            enabled = fastSubscriptionFeed,
+                            onToggle = onFastSubscriptionFeedToggle,
+                            textColor = textColor,
+                            secondaryTextColor = secondaryTextColor,
+                            accentColor = accentColor
+                        )
                     }
                 }
             }
@@ -1156,6 +1225,27 @@ fun SettingsScreen(
                 qualityDialogTarget = null
             },
             onDismiss = { qualityDialogTarget = null }
+        )
+    }
+
+    // Where subscriptions are read from / written to
+    subscriptionDialogTarget?.let { target ->
+        val current = when (target) {
+            SubscriptionDialogTarget.SOURCE -> subscriptionSource
+            SubscriptionDialogTarget.TARGET -> subscribeTarget
+        }
+        val onSelected: (String) -> Unit = when (target) {
+            SubscriptionDialogTarget.SOURCE -> onSubscriptionSourceChange
+            SubscriptionDialogTarget.TARGET -> onSubscribeTargetChange
+        }
+        SubscriptionRoutingDialog(
+            target = target,
+            currentValue = current,
+            onValueSelected = {
+                onSelected(it)
+                subscriptionDialogTarget = null
+            },
+            onDismiss = { subscriptionDialogTarget = null }
         )
     }
 
@@ -2302,6 +2392,182 @@ private fun musicQualityOptionLabel(value: String): String = when (value) {
     ThemePreferences.MUSIC_QUALITY_LOW -> "Data Saver (~48 kbps)"
     ThemePreferences.MUSIC_QUALITY_NORMAL -> "Normal (~128 kbps)"
     else -> "High (best available)"
+}
+
+/** Short label for the stored "which subscriptions to show" value. */
+private fun subscriptionSourceLabel(value: String): String = when (value) {
+    ThemePreferences.SUBSCRIPTIONS_LOCAL -> "On this device"
+    ThemePreferences.SUBSCRIPTIONS_YOUTUBE -> "YouTube account"
+    else -> "Everything you follow"
+}
+
+/** Short label for the stored "where Subscribe writes" value. */
+private fun subscribeTargetLabel(value: String): String = when (value) {
+    ThemePreferences.SUBSCRIPTIONS_LOCAL -> "This device only"
+    ThemePreferences.SUBSCRIPTIONS_YOUTUBE -> "YouTube account"
+    ThemePreferences.SUBSCRIPTIONS_BOTH -> "Device and YouTube"
+    else -> "YouTube when signed in"
+}
+
+/** Longer picker-row description for a subscription source option. */
+private fun subscriptionSourceOptionLabel(value: String): Pair<String, String> = when (value) {
+    ThemePreferences.SUBSCRIPTIONS_LOCAL ->
+        "On this device" to "Only channels you follow inside Koda"
+    ThemePreferences.SUBSCRIPTIONS_YOUTUBE ->
+        "YouTube account" to "Only channels your Google account is subscribed to"
+    else ->
+        "Everything you follow" to "Both lists merged, whichever of them exist"
+}
+
+/** Longer picker-row description for a subscribe target option. */
+private fun subscribeTargetOptionLabel(value: String): Pair<String, String> = when (value) {
+    ThemePreferences.SUBSCRIPTIONS_LOCAL ->
+        "This device only" to "Never touches your Google account"
+    ThemePreferences.SUBSCRIPTIONS_YOUTUBE ->
+        "YouTube account" to "Needs you to be signed in"
+    ThemePreferences.SUBSCRIPTIONS_BOTH ->
+        "Device and YouTube" to "Keeps a local copy that survives signing out"
+    else ->
+        "YouTube when signed in" to "Falls back to this device when signed out"
+}
+
+/** One subscription-routing picker the Settings screen can open. */
+private enum class SubscriptionDialogTarget(
+    val title: String,
+    val description: String
+) {
+    SOURCE(
+        title = "Subscriptions Shown",
+        description = "Which list the Subscriptions tab builds its feed from."
+    ),
+    TARGET(
+        title = "Subscribe Saves To",
+        description = "Where tapping Subscribe stores the channel. Saving on this device works signed out and never tells YouTube."
+    )
+}
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun SubscriptionRoutingDialog(
+    target: SubscriptionDialogTarget,
+    currentValue: String,
+    onValueSelected: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val backgroundColor = MaterialTheme.colorScheme.surfaceContainerHigh
+    val textColor = MaterialTheme.colorScheme.onSurface
+    val secondaryTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+
+    var dialogVisible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { dialogVisible = true }
+
+    AnimatedVisibility(
+        visible = dialogVisible,
+        enter = scaleIn(
+            initialScale = 0.8f,
+            animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy)
+        ) + fadeIn(tween(200)),
+        exit = scaleOut(targetScale = 0.8f) + fadeOut(tween(150))
+    ) {
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            containerColor = backgroundColor,
+            shape = RoundedCornerShape(32.dp),
+            icon = {
+                Box(
+                    modifier = Modifier
+                        .size(64.dp)
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(primaryColor.copy(alpha = 0.15f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Subscriptions,
+                        contentDescription = null,
+                        tint = primaryColor,
+                        modifier = Modifier.size(32.dp)
+                    )
+                }
+            },
+            title = {
+                Text(
+                    text = target.title,
+                    color = textColor,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    Text(
+                        text = target.description,
+                        color = secondaryTextColor,
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp,
+                        modifier = Modifier.padding(bottom = 12.dp)
+                    )
+                    val options = when (target) {
+                        SubscriptionDialogTarget.SOURCE -> ThemePreferences.SUBSCRIPTION_SOURCE_OPTIONS
+                        SubscriptionDialogTarget.TARGET -> ThemePreferences.SUBSCRIBE_TARGET_OPTIONS
+                    }
+                    options.forEach { option ->
+                        val selected = option == currentValue
+                        val (label, description) = when (target) {
+                            SubscriptionDialogTarget.SOURCE -> subscriptionSourceOptionLabel(option)
+                            SubscriptionDialogTarget.TARGET -> subscribeTargetOptionLabel(option)
+                        }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(
+                                    if (selected) primaryColor.copy(alpha = 0.12f)
+                                    else Color.Transparent
+                                )
+                                .clickable { onValueSelected(option) }
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = selected,
+                                onClick = { onValueSelected(option) }
+                            )
+                            Column(modifier = Modifier.padding(start = 4.dp)) {
+                                Text(
+                                    text = label,
+                                    color = if (selected) primaryColor else textColor,
+                                    fontSize = 15.sp,
+                                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium
+                                )
+                                Text(
+                                    text = description,
+                                    color = secondaryTextColor,
+                                    fontSize = 12.sp,
+                                    lineHeight = 16.sp
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                OutlinedButton(
+                    onClick = onDismiss,
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.height(48.dp)
+                ) {
+                    Text(text = "Close", fontWeight = FontWeight.SemiBold)
+                }
+            }
+        )
+    }
 }
 
 /** One per-network quality picker the Settings screen can open. */
