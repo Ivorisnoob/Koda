@@ -6047,13 +6047,20 @@ class YouTubeRepository(private val context: Context) {
     }
 
     /**
-     * Parses the YouTube channel Atom feed. Namespace processing stays off so
-     * prefixed tags arrive as the literal "yt:videoId" / "media:thumbnail"
-     * the document uses.
+     * Parses the YouTube channel Atom feed.
+     *
+     * The parser is built namespace-*un*aware on purpose, so `getName()`
+     * returns the literal prefixed tag ("yt:videoId", "media:thumbnail")
+     * matched below. `android.util.Xml.newPullParser()` cannot be used here:
+     * it turns namespace processing on, which strips the prefixes and would
+     * collapse the Atom `<title>` and Media RSS `<media:title>` - two
+     * different values on every entry - onto the same local name.
      */
     private fun parseChannelFeedXml(xml: String, avatarUrl: String?): List<VideoItem> {
         val videos = mutableListOf<VideoItem>()
-        val parser = android.util.Xml.newPullParser()
+        val parser = org.xmlpull.v1.XmlPullParserFactory.newInstance()
+            .apply { isNamespaceAware = false }
+            .newPullParser()
         parser.setInput(java.io.StringReader(xml))
 
         var inEntry = false
