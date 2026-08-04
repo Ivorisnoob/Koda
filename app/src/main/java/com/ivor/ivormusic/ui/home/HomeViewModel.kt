@@ -1070,7 +1070,13 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
      * looking broken until the user pulled to refresh.
      */
     private fun topUpFeedAfterFiltering() {
-        if (trendingVideos.value.size < FEED_TOP_UP_THRESHOLD && _trendingVideos.value.isNotEmpty()) {
+        val raw = _trendingVideos.value
+        if (raw.isEmpty()) return
+        // Recomputed here rather than read off [trendingVideos]: the block was
+        // written to the repository a moment ago, but the derived flow emits
+        // asynchronously, so its current value is still the pre-block list and
+        // the check would decide there was plenty left.
+        if (notInterestedRepository.filter(raw).size < FEED_TOP_UP_THRESHOLD) {
             loadMoreTrendingVideos()
         }
     }
