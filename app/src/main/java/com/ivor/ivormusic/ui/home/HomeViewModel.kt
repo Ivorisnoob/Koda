@@ -342,17 +342,43 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
      */
     private fun resetForProfileChange() {
         youtubeRepository.clearSessionScopedInstanceCaches()
+
+        // Identity first, so the avatar and name change on the next frame
+        // rather than after the feeds have finished loading.
+        _userAvatar.value = sessionManager.getUserAvatar()
+        _userName.value = sessionManager.getUserName()
+        _isYouTubeConnected.value = sessionManager.isLoggedIn()
+
         _youtubeSongs.value = emptyList()
         _likedSongs.value = emptyList()
         _youtubePlaylists.value = emptyList()
         _accountChannels.value = emptyList()
         _subscriptionFeed.value = emptyList()
-        _userAvatar.value = sessionManager.getUserAvatar()
-        _userName.value = sessionManager.getUserName()
-        _isYouTubeConnected.value = sessionManager.isLoggedIn()
+
+        // Both modes are emptied, not just the visible one. Toggling modes
+        // refetches on its own (HomeScreen's LaunchedEffect(videoMode)), but
+        // the old list would stay on screen until that lands - so switching
+        // account and flipping to video mode would show the previous account's
+        // feed for as long as the fetch takes. These loaders also only assign
+        // when the result is non-empty, so clearing is what guarantees a failed
+        // refetch leaves nothing rather than the wrong account's videos.
+        _trendingVideos.value = emptyList()
+        _shortsFeed.value = emptyList()
+        _historyVideos.value = emptyList()
+
         checkYouTubeConnection()
         loadSubscriptions(force = true)
         loadSubscriptionFeed(force = true)
+
+        // Refresh whichever home the user is actually on. Same split the
+        // sign-in handler uses, so a switch and a fresh login behave alike.
+        // loadTrendingVideos already pulls the Shorts shelf itself.
+        if (themePreferences.videoMode.value) {
+            loadTrendingVideos()
+            loadYouTubeHistory()
+        } else {
+            loadYouTubeRecommendations()
+        }
     }
 
     /**
