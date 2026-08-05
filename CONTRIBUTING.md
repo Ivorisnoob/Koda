@@ -35,4 +35,4 @@ First off, thank you for considering contributing to **Koda**! It's people like 
 This project and everyone participating in it is governed by the [Contributor Covenant](https://www.contributor-covenant.org/version/2/1/code_of_conduct/). By participating, you are expected to uphold this code.
 
 ## License
-By contributing, you agree that your contributions will be licensed under the project's **Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)** license.
+By contributing, you agree that your contributions will be licensed under the project's **GNU General Public License v3.0 (GPL-3.0)**, the same license as the rest of Koda. See [LICENSE](LICENSE) for the full text.
