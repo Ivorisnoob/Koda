@@ -6279,6 +6279,22 @@ class YouTubeRepository(private val context: Context) {
      * [onProgress] reports completed channels so a long first refresh can show
      * real progress instead of an indeterminate spinner.
      */
+    /**
+     * A channel's uploads from the InnerTube channel browse, with the merge key
+     * reconstructed.
+     *
+     * The browse path has durations and live badges, which RSS lacks, but only
+     * prose dates ("3 days ago"), so [VideoItem.publishedAtMs] has to be
+     * derived from those to sort alongside RSS items carrying real timestamps.
+     */
+    private suspend fun channelVideosWithTimestamps(channel: LocalSubscription): List<VideoItem> =
+        getChannelVideos(channel.toSubscribedChannel()).map { video ->
+            video.copy(
+                publishedAtMs = video.publishedAtMs
+                    ?: VideoItem.parseRelativeTime(video.uploadedDate)
+            )
+        }
+
     suspend fun getLocalSubscriptionsFeed(
         channels: List<LocalSubscription>,
         fastMode: Boolean = true,
@@ -6297,16 +6313,20 @@ class YouTubeRepository(private val context: Context) {
                     gate.acquire()
                     try {
                         val videos = if (fastMode) {
+                            // RSS is not universally available: some channels
+                            // 404 on the feed URL YouTube itself advertises in
+                            // their own channelMetadataRenderer.rssUrl, uploads
+                            // and all (verified August 2026). Treating that as
+                            // "no uploads" silently drops the channel from the
+                            // feed, and for someone following only a handful it
+                            // empties the tab and reads as a network failure.
+                            // So fast mode means "RSS, else browse", not "RSS
+                            // or nothing" - the fallback costs a request only
+                            // for the channels that actually need it.
                             getChannelFeedRss(channel.channelId, channel.avatarUrl)
+                                .ifEmpty { channelVideosWithTimestamps(channel) }
                         } else {
-                            getChannelVideos(channel.toSubscribedChannel()).map { video ->
-                                // Full mode has durations but only prose dates,
-                                // so the merge key is reconstructed from those.
-                                video.copy(
-                                    publishedAtMs = video.publishedAtMs
-                                        ?: VideoItem.parseRelativeTime(video.uploadedDate)
-                                )
-                            }
+                            channelVideosWithTimestamps(channel)
                         }
                         videos.take(maxPerChannel)
                     } catch (e: Exception) {

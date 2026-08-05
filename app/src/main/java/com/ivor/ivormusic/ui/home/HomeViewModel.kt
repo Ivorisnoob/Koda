@@ -390,6 +390,25 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
      * when the source setting asks for both, and interleaved on upload time so
      * the result reads as one feed rather than two stacked lists.
      */
+    /**
+     * Whether the device has a usable network right now.
+     *
+     * Used only to word a failure correctly: an empty feed on a working
+     * connection is a real empty feed, not something the user can fix by
+     * checking their wifi.
+     */
+    private fun hasNetworkConnection(): Boolean = try {
+        val cm = getApplication<Application>()
+            .getSystemService(android.content.Context.CONNECTIVITY_SERVICE)
+                as android.net.ConnectivityManager
+        val caps = cm.getNetworkCapabilities(cm.activeNetwork)
+        caps?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+    } catch (e: Exception) {
+        // Unknown is treated as connected, so a permissions or API oddity does
+        // not turn every empty feed into a bogus "check your connection".
+        true
+    }
+
     fun loadSubscriptionFeed(force: Boolean = false) {
         if (_isSubscriptionFeedLoading.value) return
         if (_subscriptionFeed.value.isNotEmpty() && !force) return
@@ -415,8 +434,15 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
                 _subscriptionFeed.value = mergeFeeds(accountFeed, localFeed)
                 if (_subscriptionFeed.value.isEmpty() && (useAccount || channels.isNotEmpty())) {
-                    _subscriptionFeedError.value =
+                    // Only blame the connection when nothing was reachable.
+                    // Channels that answer but have nothing recent are a normal
+                    // empty feed, and telling someone to check a connection that
+                    // is plainly working sends them fixing the wrong thing.
+                    _subscriptionFeedError.value = if (hasNetworkConnection()) {
+                        "No recent uploads from the channels you follow."
+                    } else {
                         "Couldn't load recent uploads. Check your connection and try again."
+                    }
                 }
             } catch (e: Exception) {
                 android.util.Log.e("HomeViewModel", "Subscription feed refresh failed", e)
