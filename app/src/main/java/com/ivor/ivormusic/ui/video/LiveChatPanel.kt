@@ -67,7 +67,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -362,9 +361,15 @@ fun LiveChatPanel(
  * Neither dress of [LiveChatPanel] fits a full-bleed portrait video: the
  * portrait one covers the stream outright, and the compact one docks against a
  * side that does not exist once the video is the whole screen. This is a
- * read-only ticker instead - the newest messages riding a gradient that fades
- * up into the frame, older ones dimming as they climb - so chat stays legible
- * without putting a slab of surface color over what the user came to watch.
+ * read-only ticker instead - the newest messages fading up into the frame,
+ * older ones dimming as they climb - so chat stays legible without putting a
+ * slab of surface color over what the user came to watch.
+ *
+ * The scrim behind it belongs to the caller, not to this composable. The
+ * vertical live player stacks a title and a channel row above the ticker, and
+ * a gradient that started here would leave those two sitting on bare video -
+ * one scrim spanning the whole bottom stack is both more legible and one less
+ * darkening to compound.
  *
  * Read-only is the point: sending, scrolling back and the jump-to-latest pill
  * all still belong to the full panel, which [onOpenFullChat] opens.
@@ -378,7 +383,7 @@ fun LiveChatOverlay(
     modifier: Modifier = Modifier,
     maxVisible: Int = 5,
 ) {
-    // A stream with chat turned off should cost the viewer nothing - no scrim,
+    // A stream with chat turned off should cost the viewer nothing - no ticker,
     // no empty state, just video.
     if (isAvailable == false) return
 
@@ -386,16 +391,7 @@ fun LiveChatOverlay(
         messages.takeLast(maxVisible).asReversed()
     }
 
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .background(
-                Brush.verticalGradient(
-                    listOf(Color.Transparent, Color.Black.copy(alpha = 0.65f))
-                )
-            )
-            .padding(top = 32.dp),
-    ) {
+    Column(modifier = modifier.fillMaxWidth()) {
         LazyColumn(
             // Reversed so the newest message sits at the visual bottom and the
             // list grows upward into the fade. Scrolling is the full panel's
@@ -422,11 +418,15 @@ fun LiveChatOverlay(
 
         Spacer(Modifier.height(10.dp))
 
+        // The one control in the ticker, so it is the one thing here that wears
+        // the app's colors rather than the video's. Everything above it is text
+        // on a frame and stays white; this is a surface, and a surface that
+        // ignored the palette is what made the whole screen read as foreign.
         Surface(
             onClick = onOpenFullChat,
             shape = CircleShape,
-            color = Color.White.copy(alpha = 0.16f),
-            contentColor = Color.White,
+            color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.9f),
+            contentColor = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier
                 .padding(horizontal = 16.dp)
                 .fillMaxWidth(),
@@ -434,21 +434,30 @@ fun LiveChatOverlay(
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp),
+                modifier = Modifier.padding(start = 18.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
             ) {
                 Text(
                     text = if (canSend) "Say something..." else "Open live chat",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = Color.White.copy(alpha = 0.85f),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
                 )
-                Icon(
-                    Icons.AutoMirrored.Rounded.Send,
-                    contentDescription = "Open live chat",
-                    modifier = Modifier.size(18.dp),
-                )
+                Box(
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primary),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Rounded.Send,
+                        contentDescription = "Open live chat",
+                        tint = MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier.size(16.dp),
+                    )
+                }
             }
         }
     }
