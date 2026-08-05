@@ -15,8 +15,8 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Platform-Android-green?style=for-the-badge&logo=android" alt="Platform"/>
-  <img src="https://img.shields.io/badge/Min%20SDK-30-blue?style=for-the-badge" alt="Min SDK"/>
+  <img src="https://img.shields.io/badge/Android-11%2B-green?style=for-the-badge&logo=android" alt="Android 11 and newer"/>
+  <img src="https://img.shields.io/badge/Min%20SDK-30-blue?style=for-the-badge" alt="Minimum SDK 30"/>
   <img src="https://img.shields.io/badge/Kotlin-100%25-purple?style=for-the-badge&logo=kotlin" alt="Kotlin"/>
   <img src="https://img.shields.io/badge/Jetpack%20Compose-UI-blue?style=for-the-badge&logo=jetpackcompose" alt="Compose"/>
 </p>
@@ -247,7 +247,7 @@ If you are about to file a feature request, that document is the fastest way to 
 | Image Loading | Coil |
 | Concurrency | Kotlin Coroutines and Flow |
 | Min SDK | 30 (Android 11) |
-| Target SDK | 36 |
+| Target SDK | 36 (Android 16) |
 
 ---
 
