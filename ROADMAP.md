@@ -205,6 +205,46 @@ This is the asymmetry people notice fastest, because it is the same app in two m
 
 Worth pairing with the same controls video history has — clear an entry, clear all, and a pause-history toggle, since `isSaveVideoHistoryEnabled()` already establishes that pattern on the video side.
 
+#### Predictive back, which is currently paid for and switched off
+
+The manifest sets `android:enableOnBackInvokedCallback="true"`, so Koda has opted into the modern back API. It then suppresses the result everywhere: there are **17 `BackHandler`s in the app and zero `PredictiveBackHandler`s**. A plain `BackHandler` consumes the gesture and gives the system nothing to preview, so on Android 14 and up the back-swipe animation — the one that peels the current screen away and shows what is behind it — never appears anywhere it would matter.
+
+That is the worst of both arrangements. The opt-in is declared, so the platform stops applying its own compatibility behaviour, and nothing replaces it. Every sheet, the expanded player, the video overlay, the Shorts overlay and the settings page stack all swallow the gesture and then snap.
+
+**The settings stack is the clearest case and the best place to start.** Back there already unwinds in defined steps — open page, then hub, then clear the search query, then leave — so the states are known and the animation has somewhere obvious to go. `PredictiveBackHandler` hands back a `Flow` of gesture progress, which is exactly the input the existing `AnimatedContent` transition wants.
+
+**The overlays are the hard part and the reason to do this deliberately.** `ExpandablePlayer`, `VideoPlayerOverlay` and the Shorts overlay live above the `NavHost` rather than inside it, so they are not screens the system can peel back to reveal something. Their back gesture collapses a thing rather than popping a destination, and the preview has to be driven by hand from the progress flow into the same spring that already animates the collapse.
+
+**The cancel path is what most implementations get wrong, and it is the entire point of the feature.** `PredictiveBackHandler` is a suspending handler that can be cancelled mid-gesture when the user changes their mind and slides back. If that path does not spring the UI cleanly back to where it was, predictive back is worse than no predictive back — the user gets a preview of leaving, decides not to, and lands somewhere broken. Every one of the 17 sites needs that case handled, not just the commit case.
+
+#### Haptics, more than eight files
+
+Haptic feedback appears in 8 of 135 source files, almost all of it in the video gesture surface. Everything else is silent: the player style wheel spins without detents, drag-to-reorder in playlists gives nothing when an item locks into place, likes and toggles have no confirmation, and the tab bar does not respond to the thumb.
+
+For an app built this heavily on touch — roughly 97 springs, gesture-driven players, a spinnable style wheel — that is a whole sensory channel going unused, and it is the channel that makes physical-feeling UI feel physical.
+
+**The existing use already demonstrates the right instinct, and it should be written down as a rule rather than repeated by memory.** The fullscreen swipes tick because they commit while the finger is still down with no dragged preview behind them, so the tick is the only confirmation the gesture took. Generalised: haptics belong on **commits the user cannot yet see** and on **detents and thresholds** — the wheel clicking to the next style, a reorder locking in, a drag passing the point where releasing will do something. They do not belong on every tap, which is how apps end up buzzing constantly and getting the feature switched off.
+
+Worth routing through one small helper rather than calling `performHapticFeedback` ad hoc, so the vocabulary stays consistent and there is a single place to respect the system haptic setting.
+
+#### Use the skeletons that already exist
+
+`ui/components/Skeleton.kt` is written and includes a text-line placeholder sized to the type it replaces. Several screens do not use it and show a bare centered spinner instead: Subscriptions, video history, and video library.
+
+Those are the same screens carrying the double-indicator defect recorded above, which makes this one pass rather than two. Replacing the centered spinner with a skeleton and guarding the `isRefreshing` binding are the same edit in the same block of each file.
+
+The rule worth settling while doing it: a skeleton when the shape of what is coming is known — a list of rows, a grid of cards — because it tells the user what to expect and stops the layout jumping when content lands. A spinner only when the shape genuinely is not known yet.
+
+#### Channel links should open in the app
+
+`YouTubeLinkParser` handles `youtu.be`, watch links across the www, m and music subdomains, and `shorts`, `live`, `embed`, `v` and playlist forms. It does not handle channels — not `/@handle`, not `/channel/UC...`, and not the legacy `/c/` or `/user/` paths.
+
+**This is worse than simply not supporting them, because the manifest already claims them.** The intent filters match every `youtube.com` host, so Koda appears in the share sheet and as a link handler for a channel URL, accepts the tap, and then does nothing with it. Offering to handle something and then dropping it is a worse experience than not being offered.
+
+**The expensive half is already built.** `resolveChannelId` turns handles, vanity URLs and legacy user paths into canonical `UC` ids through `navigation/resolve_url`, works signed out, and exists today because the subscription importer needed it. The parser only has to recognise the channel shapes and hand them over.
+
+Naturally this lands on the proper channel screen once that exists; until then the existing channel sheet is a reasonable destination, and shipping it early means the share path is fixed rather than waiting on a larger piece of work.
+
 #### One heading system, applied everywhere
 
 Screen titles are set at four different type scales depending on which screen you are on. Home and Library use `displayLarge`; Search and the artist page use `headlineLarge`; Settings, video history, Subscriptions, and the palette picker use `headlineMedium`; Stats uses `displaySmall`. All four are doing the same job — naming the screen you are looking at — and they do not agree on how big that job is.
@@ -274,6 +314,34 @@ The second is **playlist import and export in formats other apps understand** �
 Note that Android's own auto-backup is already declared via `backup_rules.xml`, which is not the same thing and should not be mistaken for it — it is opaque, tied to a Google account, and cannot move data to a device the user is holding.
 
 **One thing to settle before writing it:** what a backup does about the profile split. Local subscriptions and the blocklist are keyed per profile, while playlists, liked songs, stats and theme are device-wide. A restore that flattens that distinction would put one account's blocklist onto another, so the file has to carry the profile structure, not just the data.
+
+#### Surviving process death
+
+`rememberSaveable` appears in exactly one file, and no ViewModel takes a `SavedStateHandle`. Almost nothing in Koda is restored when the process is killed and rebuilt.
+
+**This hides well, which is why it has lasted.** `MainActivity` declares `configChanges` for orientation, screen size and layout, so rotation never recreates anything and the usual way people notice missing state never fires. What does fire is ordinary Android behaviour: the app goes to the background, the system reclaims it, and returning to it rebuilds from nothing. Scroll positions, expanded sections, the search query and its results, and open sheets are all gone. On phones with aggressive memory management this happens several times a day, and it reads as the app having forgotten what you were doing.
+
+**It also gets worse exactly when the tablet work lands.** Large-screen resizing and multi-window produce real recreation that `configChanges` will not absorb, so a gap that is currently intermittent becomes routine on the devices that item is meant to serve. Worth treating as a prerequisite for that work rather than a separate cleanup.
+
+Not everything needs saving. The highest-value targets, roughly in order: which tab was open, feed and library scroll positions, the search query with its results, and the video position for a player that was open when the process died — the last of which matters most, because losing your place in a long video is the most annoying version of this bug.
+
+#### One image loader
+
+There is no central Coil `ImageLoader`. Crossfade is configured per call site and inconsistently — `crossfade(300)` in one component, `crossfade(true)` in others, nothing at all elsewhere — and there is no shared memory or disk cache policy in an app that is almost entirely images.
+
+`IvorMusicApplication` already exists and is the natural place for a single configured loader: one crossfade duration, one cache policy, one shared placeholder and error treatment, so a thumbnail that fails to load looks deliberate everywhere instead of looking different on each screen.
+
+The practical win beyond consistency is memory. Artwork is loaded on Home, in search results, in the queue, in the notification, in the widget when that exists, and behind three of the player styles, and today none of those share a tuned cache. It is also the single place any future image-sizing policy would live.
+
+#### Loose ends the author already flagged
+
+Three small things marked in shipped code, none of them urgent and all of them the kind of thing that only gets fixed if it is written down.
+
+`HomeViewModel.kt:941` carries `// Handle error silently for now` around a swallowed failure. Silent is a real choice in some places, but here nothing tells the user and nothing logs for a bug report, so a failure in that path is invisible from both directions.
+
+`VideoPlayerContent.kt:169` notes `// Let's poll in UI for now as we have the ExoPlayer instance in VM` — a polling loop sitting in the composable because that was the shortest route to the player. It belongs in the ViewModel, where the rest of the player state already lives.
+
+`UserPlaylist.kt:15` has an informal comment about not wanting to do the URI work yet. It is harmless in effect and this is a public repository that people read to learn how the app is built, so it is worth a rewrite into what it actually means: the playlist id is carried in the display item's `url` field rather than a real URI.
 
 #### Dependency audit
 
