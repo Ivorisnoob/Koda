@@ -1597,6 +1597,11 @@ fun VideoInfoSection(
     onVideoSelect: (VideoItem) -> Unit,
     modifier: Modifier = Modifier,
     engagement: VideoEngagement? = null,
+    /**
+     * Followed by the account *or* on this device. Separate from
+     * [engagement], which only ever reports the signed-in account's state.
+     */
+    isSubscribed: Boolean = false,
     onLikeClick: () -> Unit = {},
     onDislikeClick: () -> Unit = {},
     onSubscribeClick: () -> Unit = {},
@@ -1714,7 +1719,6 @@ fun VideoInfoSection(
                     }
                 },
                 trailingContent = {
-                    val isSubscribed = engagement?.isSubscribed == true
                     Button(
                         onClick = onSubscribeClick,
                         enabled = engagement?.channelId != null,

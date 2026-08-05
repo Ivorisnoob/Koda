@@ -77,6 +77,10 @@ Plus an **ambient artwork background**, an optional **chromatic-mist** effect, a
 - **Optional timed comments** that fade in over the video as playback reaches the moment they mention.
 - **Share** a video, playlist, or album out to any app.
 - **A Subscriptions tab** with the latest uploads from channels you follow, a channel-avatar rail, a full channel list, and drill-in to any channel's uploads.
+- **Follow channels without a Google account.** Subscriptions can be saved to the device instead of (or as well as) your YouTube account, and the feed merges both. A **Subscribe saves to** setting picks which.
+- **Import your subscriptions** from NewPipe, PipePipe, Tubular, a Google Takeout CSV, or OPML — the file type is detected for you, and channels Koda cannot play are reported rather than dropped silently. Export writes the NewPipe-compatible format so it round-trips back.
+- **Channel groups** to filter the subscriptions feed.
+- **"Don't recommend this"** on any recommendation: hide a single video, or stop a whole channel being suggested. It works signed out, takes effect immediately, and every dismissal has one app-wide Undo. Signed in, the choice is also sent to your YouTube account so it cleans up recommendations everywhere else too. A **Not recommended** screen in Settings lists everything you have hidden, so nothing is buried forever by a mis-tap.
 - **A dedicated watch-history tab** that syncs your viewing back to YouTube.
 - **A notification inbox** on the video home screen.
 - **Video playlists** and a save-to-playlist sheet, including Watch Later and Liked videos.
@@ -141,10 +145,15 @@ Koda's interface is the product, not a wrapper around one. The whole app is cons
 
 ### Authentication
 
+- **Several accounts at once, and profiles without one.** Add more than one YouTube account and switch between them from the home avatar - instantly, with no network and no signing in again, since each session is stored encrypted on the device. Long-press the avatar to flip straight back to the last one.
+- **Profiles that are not accounts.** A profile can be device-only, with no Google account at all, so you can keep separate sets of subscriptions and hidden recommendations without signing into anything.
+- Subscriptions and hidden recommendations are kept per profile. Playlists, liked songs, downloads and statistics are shared across all of them.
+- An account whose session has expired says so on its own row, instead of quietly showing empty screens.
 - Sign in through an embedded WebView. No password ever leaves the browser.
 - **Or paste a session cookie** from a desktop browser, for when the in-app sign-in fails or a session has gone stale. The sheet walks through getting it and checks what you paste before saving.
 - Cookies are stored with EncryptedSharedPreferences and signed per-origin (SAPISIDHASH).
 - Everything except personalized feeds, watch history, comments, and engagement works fully signed out.
+- Subscriptions and "don't recommend this" both work without an account, stored on the device. Signing in does not replace them, it adds to them: the feeds merge, and dismissals are forwarded to your YouTube account as well.
 
 ---
 
@@ -179,11 +188,18 @@ app/src/main/java/com/ivor/ivormusic/
 │   ├── DownloadMigration    # One-time move of older downloads to shared storage
 │   ├── PlaylistRepository   # Local user playlists
 │   ├── LikedSongsRepository # Local liked songs
+│   ├── LocalSubscriptions.. # Device-only channel subscriptions
+│   ├── SubscriptionActions  # Decides whether Subscribe writes to device or account
+│   ├── SubscriptionTransfer # Import/export: NewPipe, Takeout CSV, OPML
+│   ├── NotInterested..      # Hidden videos and blocked channels
+│   ├── NotInterestedActions # Local hide plus best-effort account feedback
 │   ├── RecommendationEngine # Local taste profile and queue continuation
 │   ├── StatsRepository      # Listening statistics
 │   ├── LyricsRepository     # Synced lyrics (LRCLIB)
 │   ├── UpdateRepository     # In-app updates from GitHub Releases
-│   ├── SessionManager       # Auth and cookies
+│   ├── SessionManager       # The active profile's session cookies
+│   ├── ProfileManager       # Profile roster: YouTube accounts and local ones
+│   ├── AccountSwitcher      # Switching, and everything it has to invalidate
 │   ├── ThemePreferences     # All app settings
 │   └── Models               # Song, Playlist, VideoItem, SubscriptionItem, ...
 ├── service/                 # Background services
@@ -267,6 +283,8 @@ For a deeper dive into the architecture, data flows, and the InnerTube layer, se
 - [x] Listening statistics
 - [x] Offline downloads for music and video, saved to your Downloads folder
 - [x] Live streams with live chat, including a full-screen player for vertical broadcasts
+- [x] Account-free subscriptions with import from other apps, and "don't recommend this"
+- [x] Multiple accounts and device-only profiles, switchable without signing in again
 - [ ] Advanced audio: equalizer and gapless playback
 - [ ] Home screen widget for playback controls
 - [ ] Kotlin Multiplatform for desktop and iOS

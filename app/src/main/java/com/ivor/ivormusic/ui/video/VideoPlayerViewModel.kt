@@ -22,6 +22,9 @@ import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import com.ivor.ivormusic.data.CaptionTrack
 import com.ivor.ivormusic.data.CommentItem
 import com.ivor.ivormusic.data.LikeStatus
+import com.ivor.ivormusic.data.LocalSubscription
+import com.ivor.ivormusic.data.SubscriptionActions
+import com.ivor.ivormusic.data.SubscriptionStore
 import com.ivor.ivormusic.data.LiveChatBanner
 import com.ivor.ivormusic.data.LiveChatMessage
 import com.ivor.ivormusic.data.LiveChatPage
@@ -34,9 +37,12 @@ import com.ivor.ivormusic.data.YouTubeRepository
 import com.ivor.ivormusic.data.ThemePreferences
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -79,8 +85,71 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     private val _currentQuality = MutableStateFlow<VideoQuality?>(null)
     val currentQuality: StateFlow<VideoQuality?> = _currentQuality
 
+    private val notInterestedRepository =
+        com.ivor.ivormusic.data.NotInterestedRepository(context)
+
     private val _relatedVideos = MutableStateFlow<List<VideoItem>>(emptyList())
-    val relatedVideos: StateFlow<List<VideoItem>> = _relatedVideos
+
+    /**
+     * Up Next, minus what the user asked not to see. Derived rather than
+     * written through, so a "not interested" tap removes the row on the next
+     * frame and Undo restores it in place - see HomeViewModel.trendingVideos.
+     */
+    val relatedVideos: StateFlow<List<VideoItem>> =
+        combine(
+            _relatedVideos,
+            notInterestedRepository.hiddenVideos,
+            notInterestedRepository.blockedChannels
+        ) { videos, _, _ -> notInterestedRepository.filter(videos) }
+            .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /** Local hide plus best-effort account propagation - see NotInterestedActions. */
+    private val notInterestedActions =
+        com.ivor.ivormusic.data.NotInterestedActions(notInterestedRepository, youtubeRepository)
+
+    /**
+     * Re-read the playing video's account state when the profile changes.
+     *
+     * Like, dislike, subscribe and the comment list are all the *account's*
+     * view of this video, so after a switch they describe somebody else.
+     * Playback itself is left running - the stream is already resolved, and
+     * stopping it because the user checked another account would be a bad
+     * trade - but everything account-shaped around it is refetched.
+     *
+     * Related videos come back with the engagement refetch, since both are
+     * parsed from the same watch-next response.
+     */
+    private fun observeProfileSwitches() {
+        viewModelScope.launch {
+            com.ivor.ivormusic.data.ProfileManager(context)
+                .activeProfileId
+                .drop(1)
+                .distinctUntilChanged()
+                .collect {
+                    youtubeRepository.clearSessionScopedInstanceCaches()
+                    _engagement.value = null
+                    _comments.value = emptyList()
+                    val playing = _currentVideo.value ?: return@collect
+                    val refreshed = runCatching {
+                        youtubeRepository.getWatchNextData(playing.videoId, playing)
+                    }.getOrNull() ?: return@collect
+                    // The user can have moved on while this was in flight.
+                    if (_currentVideo.value?.videoId != playing.videoId) return@collect
+                    _engagement.value = refreshed.engagement
+                    if (refreshed.relatedVideos.isNotEmpty()) {
+                        _relatedVideos.value = refreshed.relatedVideos
+                    }
+                }
+        }
+    }
+
+    /** Hide one video from every recommendation feed. */
+    fun markNotInterested(video: VideoItem) =
+        notInterestedActions.hideVideo(video, viewModelScope)
+
+    /** Stop recommending anything from this video's channel. */
+    fun blockChannelFor(video: VideoItem) =
+        notInterestedActions.blockChannel(video, viewModelScope)
 
     // Chapter markers for the current video (empty when the video has none)
     private val _chapters = MutableStateFlow<List<com.ivor.ivormusic.data.VideoChapter>>(emptyList())
@@ -174,6 +243,25 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
     private val _isLoggedIn = MutableStateFlow(youtubeRepository.isLoggedIn())
     val isLoggedIn: StateFlow<Boolean> = _isLoggedIn.asStateFlow()
+
+    private val subscriptionActions =
+        SubscriptionActions(context, youtubeRepository)
+
+    /**
+     * Whether the current video's channel is followed at all - by the signed-in
+     * account or on this device. The subscribe button binds to this rather than
+     * to `engagement.isSubscribed`, which only ever knows about the account and
+     * so read "Subscribe" for a channel the user had followed locally.
+     */
+    val isSubscribedToChannel: StateFlow<Boolean> =
+        combine(_engagement, subscriptionActions.subscriptions) { engagement, localSubs ->
+            val channelId = engagement?.channelId
+            engagement?.isSubscribed == true ||
+                (channelId != null && localSubs.any { it.channelId == channelId })
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    /** True when the subscribe button has to send the user to sign in first. */
+    fun subscribeNeedsLogin(): Boolean = subscriptionActions.subscribeNeedsLogin()
 
     // ---------------- Live broadcast ----------------
 
@@ -342,6 +430,8 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         DefaultDataSource.Factory(context, com.ivor.ivormusic.data.ChunkedStreamDataSource.Factory())
 
     init {
+        observeProfileSwitches()
+
         // Near-instant first frame (~1s buffered) plus an aggressive
         // read-ahead: up to 5 minutes (min == max: continuous top-up),
         // hard-capped at 200MB of sample RAM so high-bitrate 4K streams
@@ -423,7 +513,10 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                         // to the next related one. Suppressed during PiP so
                         // the user returns to the video they put there.
                         if (!_isLooping.value && !_isInPipMode) {
-                            val nextVideo = _relatedVideos.value.firstOrNull()
+                            // The filtered list, not the raw one: auto-playing
+                            // a video the user just said "not interested" to is
+                            // the single most annoying way to get this wrong.
+                            val nextVideo = relatedVideos.value.firstOrNull()
                             // Guard: ensure ViewModel/player is still valid before launching
                             if (nextVideo != null && _exoPlayer != null) {
                                 viewModelScope.launch { playVideo(nextVideo) }
@@ -1559,14 +1652,39 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         }
     }
 
-    /** Subscribe/unsubscribe to the current video's channel. Optimistic with rollback. */
+    /**
+     * Subscribe/unsubscribe to the current video's channel, routed by the
+     * subscribe-target setting (see [com.ivor.ivormusic.data.SubscriptionActions]).
+     * Optimistic with rollback on a failed remote write.
+     */
     fun toggleSubscribe() {
         val current = _engagement.value ?: return
         val channelId = current.channelId ?: return
-        val subscribe = !current.isSubscribed
-        _engagement.value = current.copy(isSubscribed = subscribe)
+        val video = _currentVideo.value
+        val subscribe = !isSubscribedToChannel.value
+
+        // Only the account half is optimistic here; the local half is a
+        // synchronous write whose process-wide flow already drives the button.
+        // A local-only subscribe must leave the account flag alone, or the
+        // next unsubscribe would fire a pointless network call.
+        val writesRemote = subscriptionActions.resolveTarget() != SubscriptionStore.LOCAL
+        _engagement.value = current.copy(
+            isSubscribed = when {
+                !subscribe -> false
+                writesRemote -> true
+                else -> current.isSubscribed
+            }
+        )
         viewModelScope.launch {
-            val ok = youtubeRepository.setSubscribed(channelId, subscribe)
+            val ok = subscriptionActions.setSubscribed(
+                channel = LocalSubscription(
+                    channelId = channelId,
+                    name = video?.channelName?.takeIf { it.isNotBlank() } ?: channelId,
+                    avatarUrl = video?.channelIconUrl
+                ),
+                subscribe = subscribe,
+                remotelySubscribed = current.isSubscribed
+            )
             if (!ok && _engagement.value?.videoId == current.videoId) {
                 _engagement.value = _engagement.value?.copy(isSubscribed = current.isSubscribed)
             }

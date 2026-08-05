@@ -401,7 +401,13 @@ fun SearchScreen(
                 saveTargetVideo = null
                 downloadTargetVideo = video
             },
-            onDismiss = { saveTargetVideo = null }
+            onDismiss = { saveTargetVideo = null },
+            // Search results are never filtered - searching is explicit
+            // intent - so "not interested" would visibly do nothing here and
+            // is left out. Blocking the channel still has a real effect on
+            // every feed, and the undo snackbar says so.
+            onNotInterested = null,
+            onBlockChannel = { viewModel.blockChannelFor(video) }
         )
     }
 

@@ -11,7 +11,12 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -24,6 +29,9 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.ui.home.HomeScreen
@@ -104,6 +112,9 @@ class MainActivity : ComponentActivity() {
             val musicQualityWifi by themeViewModel.musicQualityWifi.collectAsState()
             val musicQualityMobile by themeViewModel.musicQualityMobile.collectAsState()
             val preferHdr by themeViewModel.preferHdr.collectAsState()
+            val subscriptionSource by themeViewModel.subscriptionSource.collectAsState()
+            val subscribeTarget by themeViewModel.subscribeTarget.collectAsState()
+            val fastSubscriptionFeed by themeViewModel.fastSubscriptionFeed.collectAsState()
             val excludedFolders by themeViewModel.excludedFolders.collectAsState()
             val oemFixEnabled by themeViewModel.oemFixEnabled.collectAsState()
             val manualScanEnabled by themeViewModel.manualScanEnabled.collectAsState()
@@ -180,6 +191,12 @@ class MainActivity : ComponentActivity() {
                         onMusicQualityMobileChange = { themeViewModel.setMusicQualityMobile(it) },
                         preferHdr = preferHdr,
                         onPreferHdrToggle = { themeViewModel.setPreferHdr(it) },
+                        subscriptionSource = subscriptionSource,
+                        onSubscriptionSourceChange = { themeViewModel.setSubscriptionSource(it) },
+                        subscribeTarget = subscribeTarget,
+                        onSubscribeTargetChange = { themeViewModel.setSubscribeTarget(it) },
+                        fastSubscriptionFeed = fastSubscriptionFeed,
+                        onFastSubscriptionFeedToggle = { themeViewModel.setFastSubscriptionFeed(it) },
                         excludedFolders = excludedFolders,
                         onAddExcludedFolder = { themeViewModel.addExcludedFolder(it) },
                         onRemoveExcludedFolder = { themeViewModel.removeExcludedFolder(it) },
@@ -303,6 +320,12 @@ fun MusicApp(
     onMusicQualityMobileChange: (String) -> Unit,
     preferHdr: Boolean,
     onPreferHdrToggle: (Boolean) -> Unit,
+    subscriptionSource: String,
+    onSubscriptionSourceChange: (String) -> Unit,
+    subscribeTarget: String,
+    onSubscribeTargetChange: (String) -> Unit,
+    fastSubscriptionFeed: Boolean,
+    onFastSubscriptionFeedToggle: (Boolean) -> Unit,
     excludedFolders: Set<String>,
     onAddExcludedFolder: (String) -> Unit,
     onRemoveExcludedFolder: (String) -> Unit,
@@ -500,6 +523,7 @@ fun MusicApp(
                     onNavigateToSettings = { navController.navigate("settings") },
                     onNavigateToDownloads = { navController.navigate("downloads") },
                     onNavigateToStats = { navController.navigate("stats") },
+                    onNavigateToSubscriptions = { navController.navigate("subscriptions") },
                     onNavigateToUpdate = { navController.navigate("update") },
                     onNavigateToVideoPlayer = { video ->
                         videoPlayerViewModel.playVideo(video)
@@ -539,6 +563,8 @@ fun MusicApp(
                     onAmoledThemeToggle = onAmoledThemeToggle,
                     colorPalette = colorPalette,
                     onNavigateToColorPalette = { navController.navigate("color_palette") },
+                    onNavigateToSubscriptions = { navController.navigate("subscriptions") },
+                    onNavigateToNotInterested = { navController.navigate("not_interested") },
                     loadLocalSongs = loadLocalSongs,
                     onLoadLocalSongsToggle = onLoadLocalSongsToggle,
                     ambientBackground = ambientBackground,
@@ -573,6 +599,12 @@ fun MusicApp(
                     onMusicQualityMobileChange = onMusicQualityMobileChange,
                     preferHdr = preferHdr,
                     onPreferHdrToggle = onPreferHdrToggle,
+                    subscriptionSource = subscriptionSource,
+                    onSubscriptionSourceChange = onSubscriptionSourceChange,
+                    subscribeTarget = subscribeTarget,
+                    onSubscribeTargetChange = onSubscribeTargetChange,
+                    fastSubscriptionFeed = fastSubscriptionFeed,
+                    onFastSubscriptionFeedToggle = onFastSubscriptionFeedToggle,
                     excludedFolders = excludedFolders,
                     onAddExcludedFolder = onAddExcludedFolder,
                     onRemoveExcludedFolder = onRemoveExcludedFolder,
@@ -613,6 +645,34 @@ fun MusicApp(
                     currentPalette = colorPalette,
                     onPaletteSelected = onColorPaletteChange,
                     isDarkMode = isDarkMode,
+                    onBack = { navController.popBackStack() }
+                )
+            }
+            composable(
+                route = "subscriptions",
+                enterTransition = { slideInHorizontally(initialOffsetX = { it }) + fadeIn() },
+                exitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut() },
+                popEnterTransition = { slideInHorizontally(initialOffsetX = { -it / 3 }) + fadeIn() },
+                popExitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut() }
+            ) {
+                com.ivor.ivormusic.ui.video.SubscriptionsManagerScreen(
+                    viewModel = homeViewModel,
+                    onBack = { navController.popBackStack() },
+                    // The sign-in dialog lives on the home screen, so a login
+                    // ask from here has to go back for it rather than opening a
+                    // second WebView on top of a settings sub-screen.
+                    onLoginClick = { navController.popBackStack("home", inclusive = false) }
+                )
+            }
+            composable(
+                route = "not_interested",
+                enterTransition = { slideInHorizontally(initialOffsetX = { it }) + fadeIn() },
+                exitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut() },
+                popEnterTransition = { slideInHorizontally(initialOffsetX = { -it / 3 }) + fadeIn() },
+                popExitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut() }
+            ) {
+                com.ivor.ivormusic.ui.video.NotInterestedScreen(
+                    viewModel = homeViewModel,
                     onBack = { navController.popBackStack() }
                 )
             }
@@ -731,6 +791,75 @@ fun MusicApp(
             hiddenActions = shortsHiddenActions
         )
 
+        // Undo for "don't recommend", app-wide and last in the stack.
+        //
+        // One host for the whole app rather than one per screen: the action can
+        // be taken from the home grid, the subscriptions feed, search, the
+        // player's Up Next list and Shorts, and two of those are overlays
+        // drawn above the NavHost. A per-screen snackbar would be hidden behind
+        // the Shorts overlay exactly when it is needed most, and could show
+        // twice when a screen and an overlay are both alive.
+        NotInterestedUndoHost(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .padding(bottom = if (musicPillVisible) 96.dp else 16.dp)
+        )
     }
+}
+
+/**
+ * Shows "Video hidden - Undo" whenever something is dismissed.
+ *
+ * Keyed on the action's id rather than the action itself so two identical
+ * dismissals in a row still re-show the snackbar instead of the second one
+ * silently doing nothing.
+ */
+@Composable
+private fun NotInterestedUndoHost(modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val repository = remember(context) {
+        com.ivor.ivormusic.data.NotInterestedRepository(context)
+    }
+    // Undo also takes back the account-side dismissal when there was one, so it
+    // goes through the actions layer rather than straight to the local store.
+    //
+    // Built lazily: this host is composed for the whole life of the app, while
+    // a YouTubeRepository carries its own OkHttp pool and opens
+    // EncryptedSharedPreferences. Nobody should pay that at startup for a path
+    // that only runs when someone actually taps Undo.
+    val actions = remember(context) {
+        lazy {
+            com.ivor.ivormusic.data.NotInterestedActions(
+                repository,
+                com.ivor.ivormusic.data.YouTubeRepository(context)
+            )
+        }
+    }
+    // Deliberately not the LaunchedEffect's own scope: that is cancelled the
+    // moment another dismissal replaces this one, which would drop the undo
+    // request mid-flight exactly when the user is undoing in a hurry.
+    val undoScope = androidx.compose.runtime.rememberCoroutineScope()
+    val lastAction by repository.lastAction.collectAsState()
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(lastAction?.id) {
+        val action = lastAction ?: return@LaunchedEffect
+        val result = snackbarHostState.showSnackbar(
+            message = action.message,
+            actionLabel = "Undo",
+            withDismissAction = false,
+            duration = SnackbarDuration.Short
+        )
+        if (result == SnackbarResult.ActionPerformed) {
+            actions.value.undo(action, undoScope)
+        } else {
+            // Timed out or was replaced. The hide stands; just stop offering
+            // an undo for something the user has moved on from.
+            repository.clearLastAction()
+        }
+    }
+
+    SnackbarHost(hostState = snackbarHostState, modifier = modifier)
 }
 

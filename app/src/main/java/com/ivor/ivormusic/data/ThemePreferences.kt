@@ -77,6 +77,15 @@ class ThemePreferences(context: Context) {
 
     private val _preferHdr = MutableStateFlow(getPreferHdrPreference())
     val preferHdr: StateFlow<Boolean> = _preferHdr.asStateFlow()
+
+    private val _subscriptionSource = MutableStateFlow(getSubscriptionSourcePreference())
+    val subscriptionSource: StateFlow<String> = _subscriptionSource.asStateFlow()
+
+    private val _subscribeTarget = MutableStateFlow(getSubscribeTargetPreference())
+    val subscribeTarget: StateFlow<String> = _subscribeTarget.asStateFlow()
+
+    private val _fastSubscriptionFeed = MutableStateFlow(getFastSubscriptionFeedPreference())
+    val fastSubscriptionFeed: StateFlow<Boolean> = _fastSubscriptionFeed.asStateFlow()
     
     private val _excludedFolders = MutableStateFlow(getExcludedFoldersPreference())
     val excludedFolders: StateFlow<Set<String>> = _excludedFolders.asStateFlow()
@@ -141,6 +150,9 @@ class ThemePreferences(context: Context) {
             KEY_MUSIC_QUALITY_WIFI -> _musicQualityWifi.value = getMusicQualityWifiPreference()
             KEY_MUSIC_QUALITY_MOBILE -> _musicQualityMobile.value = getMusicQualityMobilePreference()
             KEY_PREFER_HDR -> _preferHdr.value = getPreferHdrPreference()
+            KEY_SUBSCRIPTION_SOURCE -> _subscriptionSource.value = getSubscriptionSourcePreference()
+            KEY_SUBSCRIBE_TARGET -> _subscribeTarget.value = getSubscribeTargetPreference()
+            KEY_FAST_SUBSCRIPTION_FEED -> _fastSubscriptionFeed.value = getFastSubscriptionFeedPreference()
             KEY_EXCLUDED_FOLDERS -> _excludedFolders.value = getExcludedFoldersPreference()
             KEY_CACHE_ENABLED -> _cacheEnabled.value = getCacheEnabledPreference()
             KEY_MAX_CACHE_SIZE_MB -> _maxCacheSizeMb.value = getMaxCacheSizeMbPreference()
@@ -215,6 +227,7 @@ class ThemePreferences(context: Context) {
         const val SHORTS_ACTION_DISLIKE = "dislike"
         const val SHORTS_ACTION_COMMENTS = "comments"
         const val SHORTS_ACTION_SHARE = "share"
+        const val SHORTS_ACTION_NOT_INTERESTED = "not_interested"
 
         /**
          * Legacy single video-quality key, superseded by the per-network pair
@@ -235,6 +248,37 @@ class ThemePreferences(context: Context) {
         )
         private const val DEFAULT_VIDEO_QUALITY_WIFI = "1080p"
         private const val DEFAULT_VIDEO_QUALITY_MOBILE = "720p"
+
+        // ---------------- Subscriptions ----------------
+
+        private const val KEY_SUBSCRIPTION_SOURCE = "subscription_source"
+        private const val KEY_SUBSCRIBE_TARGET = "subscribe_target"
+        private const val KEY_FAST_SUBSCRIPTION_FEED = "fast_subscription_feed"
+
+        /**
+         * Show whichever subscriptions exist - the device's, the account's, or
+         * both merged. The default, because a user who has imported a list
+         * *and* signed in wants both, and picking one for them silently hides
+         * channels they explicitly added.
+         */
+        const val SUBSCRIPTIONS_AUTO = "auto"
+
+        /** Device-local subscriptions only, even when signed in. */
+        const val SUBSCRIPTIONS_LOCAL = "local"
+
+        /** The signed-in YouTube account's subscriptions only. */
+        const val SUBSCRIPTIONS_YOUTUBE = "youtube"
+
+        /** Subscribe writes to both stores at once (subscribe target only). */
+        const val SUBSCRIPTIONS_BOTH = "both"
+
+        val SUBSCRIPTION_SOURCE_OPTIONS = listOf(
+            SUBSCRIPTIONS_AUTO, SUBSCRIPTIONS_LOCAL, SUBSCRIPTIONS_YOUTUBE
+        )
+
+        val SUBSCRIBE_TARGET_OPTIONS = listOf(
+            SUBSCRIPTIONS_AUTO, SUBSCRIPTIONS_LOCAL, SUBSCRIPTIONS_YOUTUBE, SUBSCRIPTIONS_BOTH
+        )
 
         private const val KEY_MUSIC_QUALITY_WIFI = "music_quality_wifi"
         private const val KEY_MUSIC_QUALITY_MOBILE = "music_quality_mobile"
@@ -743,6 +787,49 @@ class ThemePreferences(context: Context) {
         prefs.edit().putString(KEY_VIDEO_QUALITY_MOBILE, quality).apply()
         _videoQualityMobile.value = quality
     }
+
+    // ---------------- Subscriptions ----------------
+
+    private fun getSubscriptionSourcePreference(): String =
+        prefs.getString(KEY_SUBSCRIPTION_SOURCE, SUBSCRIPTIONS_AUTO) ?: SUBSCRIPTIONS_AUTO
+
+    private fun getSubscribeTargetPreference(): String =
+        prefs.getString(KEY_SUBSCRIBE_TARGET, SUBSCRIPTIONS_AUTO) ?: SUBSCRIPTIONS_AUTO
+
+    private fun getFastSubscriptionFeedPreference(): Boolean =
+        prefs.getBoolean(KEY_FAST_SUBSCRIPTION_FEED, true)
+
+    /** Which subscription lists the Subscriptions tab shows. */
+    fun setSubscriptionSource(source: String) {
+        prefs.edit().putString(KEY_SUBSCRIPTION_SOURCE, source).apply()
+        _subscriptionSource.value = source
+    }
+
+    /** Where a Subscribe tap writes: device, YouTube account, or both. */
+    fun setSubscribeTarget(target: String) {
+        prefs.edit().putString(KEY_SUBSCRIBE_TARGET, target).apply()
+        _subscribeTarget.value = target
+    }
+
+    /**
+     * Fast refresh builds the local feed from each channel's Atom feed:
+     * roughly a twentieth of the data, exact upload times, but no duration or
+     * live badge. Off means a full channel fetch per channel, which restores
+     * those at a real cost on a large subscription list.
+     */
+    fun setFastSubscriptionFeed(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_FAST_SUBSCRIPTION_FEED, enabled).apply()
+        _fastSubscriptionFeed.value = enabled
+    }
+
+    /** Fresh read for ViewModels deciding at tap time. */
+    fun currentSubscribeTarget(): String = getSubscribeTargetPreference()
+
+    /** Fresh read for ViewModels deciding at refresh time. */
+    fun currentSubscriptionSource(): String = getSubscriptionSourcePreference()
+
+    /** Fresh read for ViewModels deciding at refresh time. */
+    fun isFastSubscriptionFeedEnabled(): Boolean = getFastSubscriptionFeedPreference()
 
     private fun getMusicQualityWifiPreference(): String {
         return prefs.getString(KEY_MUSIC_QUALITY_WIFI, DEFAULT_MUSIC_QUALITY)

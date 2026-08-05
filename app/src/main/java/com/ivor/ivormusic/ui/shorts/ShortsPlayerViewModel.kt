@@ -24,6 +24,8 @@ import com.ivor.ivormusic.data.VideoQuality
 import com.ivor.ivormusic.data.YouTubeRepository
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -53,8 +55,67 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
 
     // ---------------- Feed / pager state ----------------
 
+    private val notInterestedRepository =
+        com.ivor.ivormusic.data.NotInterestedRepository(context)
+
+    /** Local hide plus best-effort account propagation - see NotInterestedActions. */
+    private val notInterestedActions =
+        com.ivor.ivormusic.data.NotInterestedActions(notInterestedRepository, youtubeRepository)
+
+    /**
+     * Re-read the playing Short's account state when the profile changes.
+     *
+     * Engagement and the prefetched watch-next data are the account's view, so
+     * after a switch they describe somebody else and the like button would be
+     * lit for the wrong person.
+     *
+     * The Shorts sequence itself is deliberately left in place. It is filtered
+     * on ingestion and addressed positionally by both the pager and playIndex,
+     * so swapping the list underneath someone mid-watch would move them to a
+     * different Short than the one on screen. The feed is personalised and does
+     * go stale, but it is refreshed the next time Shorts is opened rather than
+     * yanked away from someone actively watching.
+     */
+    private fun observeProfileSwitches() {
+        viewModelScope.launch {
+            com.ivor.ivormusic.data.ProfileManager(context)
+                .activeProfileId
+                .drop(1)
+                .distinctUntilChanged()
+                .collect {
+                    youtubeRepository.clearSessionScopedInstanceCaches()
+                    synchronized(watchNextCache) { watchNextCache.clear() }
+                    _engagement.value = null
+                    val playing = _currentVideo.value ?: return@collect
+                    val refreshed = runCatching {
+                        youtubeRepository.getVideoEngagement(playing.videoId)
+                    }.getOrNull() ?: return@collect
+                    if (_currentVideo.value?.videoId == playing.videoId) {
+                        _engagement.value = refreshed
+                    }
+                }
+        }
+    }
+
+    /**
+     * The swipe sequence.
+     *
+     * Unlike the grid feeds, this is filtered on the way *in* rather than by a
+     * derived flow. The pager index and [playIndex] both address this list
+     * positionally, so a filtered view layered on top would put the pager on
+     * item N of one list and playback on item N of another the moment anything
+     * was hidden. Dropping items as they arrive keeps one list and one index.
+     */
     private val _shorts = MutableStateFlow<List<ShortsItem>>(emptyList())
     val shorts: StateFlow<List<ShortsItem>> = _shorts.asStateFlow()
+
+    /**
+     * Only ids can be filtered here: a sequence entry carries no channel at
+     * all (see ShortsItem), so a channel block cannot pre-empt one. It still
+     * applies the moment a Short is opened and its channel is known.
+     */
+    private fun withoutHidden(items: List<ShortsItem>): List<ShortsItem> =
+        items.filterNot { notInterestedRepository.isVideoHidden(it.videoId) }
 
     private val _currentIndex = MutableStateFlow(0)
     val currentIndex: StateFlow<Int> = _currentIndex.asStateFlow()
@@ -199,6 +260,23 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
     private val _engagement = MutableStateFlow<VideoEngagement?>(null)
     val engagement: StateFlow<VideoEngagement?> = _engagement.asStateFlow()
 
+    private val subscriptionActions =
+        com.ivor.ivormusic.data.SubscriptionActions(context, youtubeRepository)
+
+    /**
+     * Whether the current Short's channel is followed by the account or on
+     * this device - see VideoPlayerViewModel.isSubscribedToChannel.
+     */
+    val isSubscribedToChannel: StateFlow<Boolean> =
+        combine(_engagement, subscriptionActions.subscriptions) { engagement, localSubs ->
+            val channelId = engagement?.channelId
+            engagement?.isSubscribed == true ||
+                (channelId != null && localSubs.any { it.channelId == channelId })
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    /** True when the subscribe button has to send the user to sign in first. */
+    fun subscribeNeedsLogin(): Boolean = subscriptionActions.subscribeNeedsLogin()
+
     private val _isLoggedIn = MutableStateFlow(youtubeRepository.isLoggedIn())
     val isLoggedIn: StateFlow<Boolean> = _isLoggedIn.asStateFlow()
 
@@ -246,6 +324,8 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
         DefaultDataSource.Factory(context, com.ivor.ivormusic.data.ChunkedStreamDataSource.Factory())
 
     init {
+        observeProfileSwitches()
+
         // First frame after ~1s buffered, like the video player. Shorts are
         // under a minute, so the 60s max buffer already covers the whole clip
         // — no need for the long-form 5-minute read-ahead. Audio focus +
@@ -290,11 +370,17 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
      */
     fun open(items: List<ShortsItem>, startIndex: Int) {
         if (items.isEmpty()) return
-        val index = startIndex.coerceIn(0, items.size - 1)
-        _shorts.value = items
+        // Keep the tapped Short even if it is hidden - the user asked for this
+        // one explicitly, and opening onto a different video would be baffling.
+        val tapped = items.getOrNull(startIndex.coerceIn(0, items.size - 1))
+        val visible = withoutHidden(items).ifEmpty { listOfNotNull(tapped) }
+        val ordered = if (tapped != null && tapped !in visible) listOf(tapped) + visible else visible
+        if (ordered.isEmpty()) return
+        val index = ordered.indexOf(tapped).coerceAtLeast(0)
+        _shorts.value = ordered
         _currentIndex.value = index
-        nextSequenceParams = items[index].sequenceParams
-            ?: items.firstNotNullOfOrNull { it.sequenceParams }
+        nextSequenceParams = ordered[index].sequenceParams
+            ?: ordered.firstNotNullOfOrNull { it.sequenceParams }
         _isActive.value = true
         _isLoggedIn.value = youtubeRepository.isLoggedIn()
         playIndex(index)
@@ -310,6 +396,40 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
         }
         prefetchAround(index)
         maybeLoadMore(index)
+    }
+
+    /**
+     * Hide the Short on screen and move on.
+     *
+     * A grid can just drop an item, but a Shorts feed shows exactly one thing,
+     * so dismissing has to say where the user lands. The item is pulled out of
+     * the list and the pager holds its index, which now addresses the next
+     * Short - or the previous one when the dismissed Short was last.
+     */
+    fun markCurrentNotInterested() {
+        val video = _currentVideo.value ?: return
+        notInterestedActions.hideVideo(video, viewModelScope)
+        dropCurrentAndAdvance(video.videoId)
+    }
+
+    /** Stop recommending this Short's channel, and move on. */
+    fun blockChannelForCurrent() {
+        val video = _currentVideo.value ?: return
+        notInterestedActions.blockChannel(video, viewModelScope)
+        dropCurrentAndAdvance(video.videoId)
+    }
+
+    private fun dropCurrentAndAdvance(videoId: String) {
+        val remaining = _shorts.value.filterNot { it.videoId == videoId }
+        if (remaining.isEmpty()) {
+            close()
+            return
+        }
+        _shorts.value = remaining
+        val target = _currentIndex.value.coerceIn(0, remaining.lastIndex)
+        _currentIndex.value = target
+        playIndex(target)
+        prefetchAround(target)
     }
 
     fun close() {
@@ -442,7 +562,7 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
                 val known = _shorts.value.mapTo(HashSet()) { it.videoId }
                 val fresh = page.items.filter { it.videoId !in known }
                 if (fresh.isNotEmpty()) {
-                    _shorts.value = _shorts.value + fresh
+                    _shorts.value = _shorts.value + withoutHidden(fresh)
                     // Newly appended entries may fall inside the prefetch
                     // window of the Short being watched right now
                     prefetchAround(_currentIndex.value)
@@ -551,13 +671,35 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
         }
     }
 
+    /**
+     * Subscribe/unsubscribe to the current Short's channel, routed by the
+     * subscribe-target setting. Same contract as the video player's.
+     */
     fun toggleSubscribe() {
         val current = _engagement.value ?: return
         val channelId = current.channelId ?: return
-        val subscribe = !current.isSubscribed
-        _engagement.value = current.copy(isSubscribed = subscribe)
+        val video = _currentVideo.value
+        val subscribe = !isSubscribedToChannel.value
+
+        val writesRemote =
+            subscriptionActions.resolveTarget() != com.ivor.ivormusic.data.SubscriptionStore.LOCAL
+        _engagement.value = current.copy(
+            isSubscribed = when {
+                !subscribe -> false
+                writesRemote -> true
+                else -> current.isSubscribed
+            }
+        )
         viewModelScope.launch {
-            val ok = youtubeRepository.setSubscribed(channelId, subscribe)
+            val ok = subscriptionActions.setSubscribed(
+                channel = com.ivor.ivormusic.data.LocalSubscription(
+                    channelId = channelId,
+                    name = video?.channelName?.takeIf { it.isNotBlank() } ?: channelId,
+                    avatarUrl = video?.channelIconUrl
+                ),
+                subscribe = subscribe,
+                remotelySubscribed = current.isSubscribed
+            )
             if (!ok && _engagement.value?.videoId == current.videoId) {
                 _engagement.value = _engagement.value?.copy(isSubscribed = current.isSubscribed)
             }

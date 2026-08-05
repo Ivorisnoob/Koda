@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -31,18 +32,26 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
+import androidx.compose.material.icons.rounded.FileUpload
 import androidx.compose.material.icons.rounded.Login
+import androidx.compose.material.icons.rounded.PersonRemove
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Subscriptions
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearWavyProgressIndicator
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -61,6 +70,7 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.ivor.ivormusic.data.SubscribedChannel
 import com.ivor.ivormusic.data.VideoItem
+import com.ivor.ivormusic.data.SubscriptionGroup
 import com.ivor.ivormusic.ui.components.ExpressivePullToRefresh
 import com.ivor.ivormusic.ui.home.HomeViewModel
 
@@ -69,21 +79,46 @@ import com.ivor.ivormusic.ui.home.HomeViewModel
  * (latest uploads across all subscribed channels) topped by a horizontal
  * rail of channel avatars; an "All channels" entry opens the full channel
  * list, and tapping any channel drills into its latest uploads.
+ *
+ * The feed no longer implies a Google account. Channels followed on this
+ * device sit in the same list as the account's, so the sign-in wall only
+ * appears when there is genuinely nothing to show - and even then it offers
+ * importing a list as an equal alternative to signing in, because for
+ * somebody arriving from NewPipe or PipePipe it is the better one.
  */
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
+@OptIn(
+    ExperimentalMaterial3Api::class,
+    ExperimentalMaterial3ExpressiveApi::class,
+    androidx.compose.foundation.ExperimentalFoundationApi::class
+)
 @Composable
 fun SubscriptionsContent(
     viewModel: HomeViewModel,
     onVideoClick: (VideoItem) -> Unit,
     onLoginClick: () -> Unit,
-    contentPadding: PaddingValues
+    contentPadding: PaddingValues,
+    onManageSubscriptions: () -> Unit = {}
 ) {
     val feed by viewModel.subscriptionFeed.collectAsState()
     val isFeedLoading by viewModel.isSubscriptionFeedLoading.collectAsState()
+    val feedProgress by viewModel.subscriptionFeedProgress.collectAsState()
+    val feedError by viewModel.subscriptionFeedError.collectAsState()
     val channels by viewModel.subscribedChannels.collectAsState()
     val isChannelsLoading by viewModel.isSubscriptionsLoading.collectAsState()
     val isYouTubeConnected by viewModel.isYouTubeConnected.collectAsState()
+    val localSubscriptions by viewModel.localSubscriptions.collectAsState()
+    val groups by viewModel.subscriptionGroups.collectAsState()
+    val selectedGroupId by viewModel.selectedGroupId.collectAsState()
     val backgroundColor = MaterialTheme.colorScheme.background
+
+    val locallyFollowedIds = remember(localSubscriptions) {
+        localSubscriptions.map { it.channelId }.toSet()
+    }
+
+    // Confirmation before dropping a channel, because the gesture that opens
+    // it (a long-press on an avatar) is easy to trigger by accident while
+    // scrolling the rail.
+    var channelToUnfollow by remember { mutableStateOf<SubscribedChannel?>(null) }
 
     // Save-to-playlist sheet (long-press on a video card) and the download
     // sheet it hands off to, mirroring the video home feed so a long-press
@@ -109,11 +144,12 @@ fun SubscriptionsContent(
     var channelVideos by remember { mutableStateOf<List<VideoItem>>(emptyList()) }
     var isChannelLoading by remember { mutableStateOf(false) }
 
-    LaunchedEffect(isYouTubeConnected) {
-        if (isYouTubeConnected) {
-            viewModel.loadSubscriptionFeed()
-            viewModel.loadSubscriptions()
-        }
+    // Re-runs when the account connects or the local list changes size, so
+    // subscribing to a first channel while signed out fills the tab straight
+    // away instead of leaving the empty state up until a manual refresh.
+    LaunchedEffect(isYouTubeConnected, localSubscriptions.size) {
+        viewModel.loadSubscriptionFeed(force = localSubscriptions.isNotEmpty() && feed.isEmpty())
+        viewModel.loadSubscriptions()
     }
 
     val currentChannel = selectedChannel
@@ -135,9 +171,12 @@ fun SubscriptionsContent(
     var isVisible by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { isVisible = true }
 
-    if (!isYouTubeConnected) {
-        SubscriptionsLoginWall(
+    // Nothing followed anywhere is the only case that still blocks the tab -
+    // and it offers importing as well as signing in.
+    if (!isYouTubeConnected && localSubscriptions.isEmpty()) {
+        SubscriptionsEmptyWall(
             onLoginClick = onLoginClick,
+            onImportClick = onManageSubscriptions,
             contentPadding = contentPadding,
             modifier = Modifier
                 .fillMaxSize()
@@ -161,7 +200,13 @@ fun SubscriptionsContent(
                 saveTargetVideo = null
                 downloadTargetVideo = video
             },
-            onDismiss = { saveTargetVideo = null }
+            onDismiss = { saveTargetVideo = null },
+            onNotInterested = { viewModel.markNotInterested(video) },
+            // No channel block offered here: hiding a channel the user
+            // deliberately follows, from the feed that exists to show it, is a
+            // contradiction. Unfollowing is the tool for that, and it is one
+            // tap away in the same tab.
+            onBlockChannel = null
         )
     }
 
@@ -169,6 +214,33 @@ fun SubscriptionsContent(
         VideoDownloadSheet(
             video = video,
             onDismiss = { downloadTargetVideo = null }
+        )
+    }
+
+    channelToUnfollow?.let { channel ->
+        AlertDialog(
+            onDismissRequest = { channelToUnfollow = null },
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = RoundedCornerShape(32.dp),
+            title = { Text("Unfollow ${channel.name}?", fontWeight = FontWeight.Bold) },
+            text = {
+                Text(
+                    "Removes it from this device. Your YouTube account isn't touched."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.unsubscribeLocally(channel.channelId)
+                    // Back out of the drill-in if it was the channel being viewed,
+                    // which would otherwise sit there showing a channel that is no
+                    // longer followed.
+                    if (selectedChannel?.channelId == channel.channelId) selectedChannel = null
+                    channelToUnfollow = null
+                }) { Text("Unfollow") }
+            },
+            dismissButton = {
+                TextButton(onClick = { channelToUnfollow = null }) { Text("Cancel") }
+            }
         )
     }
 
@@ -294,7 +366,11 @@ fun SubscriptionsContent(
                                     color = MaterialTheme.colorScheme.onBackground
                                 )
                                 Text(
-                                    text = "${channels.size} subscriptions",
+                                    text = subscriptionsSubtitle(
+                                        channelCount = channels.size,
+                                        localCount = localSubscriptions.size,
+                                        isConnected = isYouTubeConnected
+                                    ),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -330,7 +406,9 @@ fun SubscriptionsContent(
                         items(channels, key = { it.channelId }) { channel ->
                             ChannelRow(
                                 channel = channel,
+                                isLocal = channel.channelId in locallyFollowedIds,
                                 onClick = { selectedChannel = channel },
+                                onUnfollow = { channelToUnfollow = channel },
                                 modifier = Modifier.padding(horizontal = 16.dp)
                             )
                         }
@@ -367,23 +445,94 @@ fun SubscriptionsContent(
                                 animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy)
                             )
                         ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(start = 20.dp, end = 8.dp)
+                                    .padding(top = 16.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "Subscriptions",
+                                        style = MaterialTheme.typography.headlineSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onBackground
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = subscriptionsSubtitle(
+                                            channelCount = channels.size,
+                                            localCount = localSubscriptions.size,
+                                            isConnected = isYouTubeConnected
+                                        ),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                IconButton(onClick = onManageSubscriptions) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Settings,
+                                        contentDescription = "Manage subscriptions",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // Group filter. Only shown once groups exist, so a user who
+                    // has never made one never sees a row of chrome that does
+                    // nothing.
+                    if (groups.isNotEmpty()) {
+                        item(key = "group-filter") {
+                            LazyRow(
+                                contentPadding = PaddingValues(horizontal = 16.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                item(key = "group-all") {
+                                    FilterChip(
+                                        selected = selectedGroupId == null,
+                                        onClick = { viewModel.selectSubscriptionGroup(null) },
+                                        label = { Text("All") },
+                                        shape = RoundedCornerShape(12.dp)
+                                    )
+                                }
+                                items(groups, key = { it.id }) { group ->
+                                    FilterChip(
+                                        selected = selectedGroupId == group.id,
+                                        onClick = {
+                                            viewModel.selectSubscriptionGroup(
+                                                if (selectedGroupId == group.id) null else group.id
+                                            )
+                                        },
+                                        label = { Text(group.name) },
+                                        shape = RoundedCornerShape(12.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // "42 of 130 channels" during a device-local refresh. That
+                    // refresh is one request per channel, so on a large list an
+                    // indeterminate spinner reads as a hang.
+                    feedProgress?.let { (done, total) ->
+                        item(key = "feed-progress") {
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(horizontal = 20.dp)
-                                    .padding(top = 16.dp)
                             ) {
                                 Text(
-                                    text = "Subscriptions",
-                                    style = MaterialTheme.typography.headlineSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onBackground
-                                )
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = "Latest from channels you follow",
-                                    style = MaterialTheme.typography.bodyMedium,
+                                    text = "Checking $done of $total channels",
+                                    style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(Modifier.height(6.dp))
+                                LinearWavyProgressIndicator(
+                                    progress = { if (total > 0) done.toFloat() / total else 0f },
+                                    modifier = Modifier.fillMaxWidth()
                                 )
                             }
                         }
@@ -397,11 +546,22 @@ fun SubscriptionsContent(
                                 horizontalArrangement = Arrangement.spacedBy(14.dp)
                             ) {
                                 items(channels.take(20), key = { it.channelId }) { channel ->
+                                    val isLocal = channel.channelId in locallyFollowedIds
                                     Column(
                                         horizontalAlignment = Alignment.CenterHorizontally,
                                         modifier = Modifier
                                             .clip(RoundedCornerShape(12.dp))
-                                            .clickable { selectedChannel = channel }
+                                            .combinedClickable(
+                                                onClick = { selectedChannel = channel },
+                                                // Only device-followed channels can be
+                                                // dropped from here; unfollowing an
+                                                // account subscription is a write to
+                                                // the user's Google account and should
+                                                // not hang off an accidental long-press.
+                                                onLongClick = if (isLocal) {
+                                                    { channelToUnfollow = channel }
+                                                } else null
+                                            )
                                             .padding(4.dp)
                                             .width(64.dp)
                                     ) {
@@ -465,15 +625,14 @@ fun SubscriptionsContent(
                         }
                     } else if (feed.isEmpty()) {
                         item {
-                            Box(
-                                modifier = Modifier.fillMaxWidth().padding(32.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    "No recent uploads found",
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
+                            FeedEmptyState(
+                                error = feedError,
+                                hasChannels = channels.isNotEmpty(),
+                                isGroupFiltered = selectedGroupId != null,
+                                onRetry = { viewModel.loadSubscriptionFeed(force = true) },
+                                onClearGroup = { viewModel.selectSubscriptionGroup(null) },
+                                onManage = onManageSubscriptions
+                            )
                         }
                     } else {
                         items(feed, key = { it.videoId }) { video ->
@@ -493,9 +652,18 @@ fun SubscriptionsContent(
     }
 }
 
+/**
+ * Shown only when nothing is followed anywhere.
+ *
+ * Signing in and importing a list are offered as peers rather than one being
+ * the fallback: for someone coming from NewPipe or PipePipe with a
+ * subscriptions.json in Downloads, importing is the shorter path to a working
+ * feed and does not involve a Google account at all.
+ */
 @Composable
-private fun SubscriptionsLoginWall(
+private fun SubscriptionsEmptyWall(
     onLoginClick: () -> Unit,
+    onImportClick: () -> Unit,
     contentPadding: PaddingValues,
     modifier: Modifier = Modifier
 ) {
@@ -523,19 +691,29 @@ private fun SubscriptionsLoginWall(
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "Log in to see the latest videos from the channels you are subscribed to.",
+                text = "Follow channels on this device, or sign in to bring your " +
+                    "YouTube subscriptions across.",
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center
             )
             Spacer(modifier = Modifier.height(32.dp))
             Button(
-                onClick = onLoginClick,
+                onClick = onImportClick,
                 modifier = Modifier.fillMaxWidth().height(50.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     contentColor = MaterialTheme.colorScheme.onPrimary
                 )
+            ) {
+                Icon(Icons.Rounded.FileUpload, null)
+                Spacer(Modifier.width(8.dp))
+                Text("Import subscriptions")
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+            OutlinedButton(
+                onClick = onLoginClick,
+                modifier = Modifier.fillMaxWidth().height(50.dp)
             ) {
                 Icon(Icons.Rounded.Login, null)
                 Spacer(Modifier.width(8.dp))
@@ -545,11 +723,66 @@ private fun SubscriptionsLoginWall(
     }
 }
 
+/**
+ * What an empty feed actually means, which is never just "nothing here":
+ * a failed refresh, a group that filters everything out, and channels that
+ * genuinely have no recent uploads are three different problems with three
+ * different fixes.
+ */
+@Composable
+private fun FeedEmptyState(
+    error: String?,
+    hasChannels: Boolean,
+    isGroupFiltered: Boolean,
+    onRetry: () -> Unit,
+    onClearGroup: () -> Unit,
+    onManage: () -> Unit
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 32.dp, vertical = 40.dp)
+    ) {
+        Text(
+            text = when {
+                error != null -> error
+                isGroupFiltered -> "No recent uploads from this group."
+                !hasChannels -> "You aren't following any channels yet."
+                else -> "No recent uploads from your channels."
+            },
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center
+        )
+        Spacer(Modifier.height(20.dp))
+        when {
+            error != null -> OutlinedButton(onClick = onRetry) { Text("Try again") }
+            isGroupFiltered -> OutlinedButton(onClick = onClearGroup) { Text("Show all channels") }
+            !hasChannels -> Button(onClick = onManage) { Text("Import subscriptions") }
+        }
+    }
+}
+
+/** "128 channels - 40 on this device", or just the count when there is one source. */
+private fun subscriptionsSubtitle(
+    channelCount: Int,
+    localCount: Int,
+    isConnected: Boolean
+): String = when {
+    channelCount == 0 -> "Latest from channels you follow"
+    localCount == 0 -> "$channelCount channels"
+    !isConnected || localCount == channelCount -> "$channelCount on this device"
+    else -> "$channelCount channels - $localCount on this device"
+}
+
 @Composable
 private fun ChannelRow(
     channel: SubscribedChannel,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isLocal: Boolean = false,
+    onUnfollow: (() -> Unit)? = null
 ) {
     Surface(
         // Clip before the click handler so the ripple follows the card's corners
@@ -586,6 +819,18 @@ private fun ChannelRow(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+            // Unfollow only appears for device-followed channels: dropping an
+            // account subscription is a write to the user's Google account,
+            // which belongs behind the channel page, not a list row.
+            if (isLocal && onUnfollow != null) {
+                IconButton(onClick = onUnfollow) {
+                    Icon(
+                        imageVector = Icons.Rounded.PersonRemove,
+                        contentDescription = "Unfollow ${channel.name}",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }

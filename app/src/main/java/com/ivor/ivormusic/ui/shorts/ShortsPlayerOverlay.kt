@@ -46,6 +46,8 @@ import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.NotInterested
+import androidx.compose.material.icons.rounded.RemoveCircleOutline
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.ThumbDown
 import androidx.compose.material.icons.rounded.ThumbUp
@@ -132,6 +134,9 @@ fun ShortsPlayerOverlay(
     val isBuffering by viewModel.isBuffering.collectAsState()
     val playbackError by viewModel.playbackError.collectAsState()
     val engagement by viewModel.engagement.collectAsState()
+    // Account subscription OR device subscription - engagement only knows the
+    // first, and read alone it showed "Subscribe" for locally followed channels.
+    val isSubscribed by viewModel.isSubscribedToChannel.collectAsState()
     val isLoggedIn by viewModel.isLoggedIn.collectAsState()
 
     val comments by viewModel.comments.collectAsState()
@@ -144,9 +149,19 @@ fun ShortsPlayerOverlay(
 
     var showCommentsSheet by remember { mutableStateOf(false) }
     var showSignInDialog by remember { mutableStateOf(false) }
+    var showDismissSheet by remember { mutableStateOf(false) }
 
     fun requireLogin(action: () -> Unit) {
         if (isLoggedIn) action() else showSignInDialog = true
+    }
+
+    /**
+     * Subscribing has a signed-out path now - it saves to the device unless
+     * the user explicitly picked the YouTube-account target - so it gets its
+     * own gate instead of the blanket login wall the other actions use.
+     */
+    fun requireSubscribeLogin(action: () -> Unit) {
+        if (viewModel.subscribeNeedsLogin()) showSignInDialog = true else action()
     }
 
     BackHandler { viewModel.close() }
@@ -452,9 +467,8 @@ fun ShortsPlayerOverlay(
                             modifier = Modifier.weight(1f, fill = false)
                         )
                         Spacer(modifier = Modifier.width(12.dp))
-                        val isSubscribed = engagement?.isSubscribed == true
                         Button(
-                            onClick = { requireLogin { viewModel.toggleSubscribe() } },
+                            onClick = { requireSubscribeLogin { viewModel.toggleSubscribe() } },
                             colors = if (isSubscribed) {
                                 ButtonDefaults.buttonColors(
                                     containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.92f),
@@ -546,6 +560,18 @@ fun ShortsPlayerOverlay(
                         }
                     )
                 }
+                if (ThemePreferences.SHORTS_ACTION_NOT_INTERESTED !in hiddenActions) {
+                    ShortsAction(
+                        icon = Icons.Rounded.NotInterested,
+                        label = "Not interested",
+                        contentDescription = "Not interested",
+                        // Opens a chooser rather than acting straight away: this
+                        // button sits in a rail the thumb rests on while
+                        // swiping, and a one-tap irreversible-looking dismissal
+                        // there would go off by accident constantly.
+                        onClick = { showDismissSheet = true }
+                    )
+                }
             }
         }
 
@@ -587,6 +613,21 @@ fun ShortsPlayerOverlay(
             onLikeComment = { comment -> requireLogin { viewModel.toggleCommentLike(comment) } },
             onDeleteComment = { comment -> viewModel.deleteComment(comment) },
             onDismiss = { showCommentsSheet = false }
+        )
+    }
+
+    if (showDismissSheet) {
+        ShortsDismissSheet(
+            channelName = currentVideo?.channelName.orEmpty(),
+            onNotInterested = {
+                showDismissSheet = false
+                viewModel.markCurrentNotInterested()
+            },
+            onBlockChannel = {
+                showDismissSheet = false
+                viewModel.blockChannelForCurrent()
+            },
+            onDismiss = { showDismissSheet = false }
         )
     }
 
@@ -700,5 +741,115 @@ private fun ShortsAction(
             textAlign = TextAlign.Center,
             modifier = Modifier.widthIn(max = 64.dp)
         )
+    }
+}
+
+/**
+ * The two "stop recommending" choices for the Short on screen.
+ *
+ * A sheet rather than a direct action on the rail button: that rail is where
+ * the thumb rests between swipes, and a single tap that made a video vanish
+ * would fire by accident often enough to be the thing people remember about
+ * the feature. Both choices are still undoable from the app-wide snackbar.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ShortsDismissSheet(
+    channelName: String,
+    onNotInterested: () -> Unit,
+    onBlockChannel: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    androidx.compose.material3.ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = androidx.compose.material3.rememberModalBottomSheetState(
+            skipPartiallyExpanded = true
+        ),
+        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+        contentColor = MaterialTheme.colorScheme.onSurface
+    ) {
+        Column(
+            modifier = Modifier
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 32.dp)
+        ) {
+            Text(
+                text = "Stop recommending",
+                style = MaterialTheme.typography.headlineSmall,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+
+            ShortsDismissRow(
+                icon = Icons.Rounded.NotInterested,
+                title = "Not interested",
+                subtitle = "Hide this Short and move on",
+                onClick = onNotInterested
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            ShortsDismissRow(
+                icon = Icons.Rounded.RemoveCircleOutline,
+                title = "Don't recommend channel",
+                subtitle = channelName.takeIf { it.isNotBlank() }
+                    ?.let { "Hide everything from $it" }
+                    ?: "Hide everything from this channel",
+                onClick = onBlockChannel
+            )
+        }
+    }
+}
+
+@Composable
+private fun ShortsDismissRow(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.12f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+            Spacer(modifier = Modifier.width(14.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
     }
 }

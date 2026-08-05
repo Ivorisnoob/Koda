@@ -45,6 +45,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.guava.future
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -224,6 +226,57 @@ class MusicService : MediaLibraryService() {
         // sessions (and Android Auto) never construct VideoPlayerViewModel,
         // which was the only other place that prefetched it.
         resolveScope.launch { youtubeRepository.prefetchVisitorData() }
+
+        // 8. React to the user switching profile.
+        observeProfileSwitches()
+    }
+
+    /**
+     * Drop this service's account-derived state when the active profile changes.
+     *
+     * The service is a second process-level holder of everything an account
+     * switch invalidates: its own YouTubeRepository, its own visitorData
+     * prefetch, and - the part that is actually visible - a five-minute cache of
+     * the account's recommendations and playlists that it serves to the media
+     * browser. Left alone, Android Auto and any other browser client would list
+     * one account's playlists while the app is signed into another.
+     *
+     * There is no DI, so the service watches the process-wide profile id the
+     * same way the ViewModels do.
+     */
+    private fun observeProfileSwitches() {
+        serviceScope.launch {
+            com.ivor.ivormusic.data.ProfileManager(applicationContext)
+                .activeProfileId
+                .drop(1)
+                .distinctUntilChanged()
+                .collect {
+                    cachedRecommendations = null
+                    cachedPlaylists = null
+                    cachedPlaylistSongs = mutableMapOf()
+                    // Not just "expired": the timestamp gates all three caches
+                    // above, and a switch has to invalidate them regardless of
+                    // how recently they were filled.
+                    lastBrowseCacheTime = 0L
+                    youtubeRepository.clearSessionScopedInstanceCaches()
+
+                    // Playback deliberately continues - the queue's streams are
+                    // already resolved and killing someone's music because they
+                    // checked another account would be a bad trade - but the
+                    // browse tree has to be told it is stale, or a client that
+                    // is already sitting on the old list never re-asks.
+                    runCatching {
+                        mediaLibrarySession?.let { session ->
+                            session.connectedControllers.forEach { controller ->
+                                session.notifyChildrenChanged(controller, "RECOMMENDED", 0, null)
+                                session.notifyChildrenChanged(controller, "PLAYLISTS", 0, null)
+                            }
+                        }
+                    }.onFailure { Log.w(TAG, "notifyChildrenChanged after profile switch failed", it) }
+
+                    resolveScope.launch { youtubeRepository.prefetchVisitorData() }
+                }
+        }
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {

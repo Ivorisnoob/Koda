@@ -36,6 +36,9 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
     val musicQualityWifi: StateFlow<String> = themePreferences.musicQualityWifi
     val musicQualityMobile: StateFlow<String> = themePreferences.musicQualityMobile
     val preferHdr: StateFlow<Boolean> = themePreferences.preferHdr
+    val subscriptionSource: StateFlow<String> = themePreferences.subscriptionSource
+    val subscribeTarget: StateFlow<String> = themePreferences.subscribeTarget
+    val fastSubscriptionFeed: StateFlow<Boolean> = themePreferences.fastSubscriptionFeed
     val excludedFolders: StateFlow<Set<String>> = themePreferences.excludedFolders
     
     val autoLoadQueue: StateFlow<Boolean> = themePreferences.autoLoadQueue
@@ -147,6 +150,18 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setPreferHdr(enabled: Boolean) {
         themePreferences.setPreferHdr(enabled)
+    }
+
+    fun setSubscriptionSource(source: String) {
+        themePreferences.setSubscriptionSource(source)
+    }
+
+    fun setSubscribeTarget(target: String) {
+        themePreferences.setSubscribeTarget(target)
+    }
+
+    fun setFastSubscriptionFeed(enabled: Boolean) {
+        themePreferences.setFastSubscriptionFeed(enabled)
     }
     
     fun addExcludedFolder(folderPath: String) {

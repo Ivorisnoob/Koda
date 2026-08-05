@@ -87,6 +87,28 @@ class YouTubeRepository(private val context: Context) {
         // browse params selecting a channel's Videos tab (protobuf: "videos")
         private const val CHANNEL_VIDEOS_TAB_PARAMS = "EgZ2aWRlb3PyBgQKAjoA"
 
+        // How many subscribed channels the local feed fetches at once. The
+        // local feed costs one request per channel, so this is the only thing
+        // standing between a 300-subscription refresh and 300 simultaneous
+        // sockets - which mobile radios handle badly and which looks like a
+        // scrape from the other end. Six keeps a large refresh moving without
+        // starving whatever else the app is loading.
+        private const val FEED_CONCURRENCY = 6
+
+        // The channel Atom feed only ever returns 15 entries, so this takes
+        // everything it has and lets the global sort decide what survives.
+        private const val MAX_FEED_ITEMS_PER_CHANNEL = 15
+
+        // Ceiling on the merged feed. 300 subscriptions x 15 uploads is 4500
+        // items, which is a lot of LazyColumn for a list nobody scrolls past
+        // the first screen of.
+        private const val MAX_FEED_ITEMS = 300
+
+        // Avatar/name backfill is one channel browse each - the expensive
+        // shape the RSS feed exists to avoid - so a run is capped and the
+        // rest is picked up on later visits.
+        private const val PROFILE_BACKFILL_LIMIT = 12
+
         // YouTube's own account verdict, in the responseContext tracking params
         // of every InnerTube response: {"key":"logged_in","value":"0"|"1"}.
         // Tolerant of the pretty-printed spacing so it matches either form.
@@ -162,6 +184,29 @@ class YouTubeRepository(private val context: Context) {
                 ): Boolean = size > CAPTION_CACHE_MAX_ENTRIES
             }
         )
+
+        /**
+         * Drop the process-wide caches that belong to one profile, so a switch
+         * cannot serve the previous account's identity.
+         *
+         * **visitorData is the one that actually matters.** It is this app's
+         * anti-bot identity, cached here and persisted device-wide with a 6h
+         * TTL, and prefetched independently by MusicService and the video
+         * ViewModel. Replaying an account's token under a different account is
+         * precisely the "stale or shared value gets flagged" case documented
+         * above, so it is cleared from memory and disk and left to be re-minted
+         * lazily on the next call.
+         *
+         * The caption cache is deliberately left alone: it is keyed by video id
+         * and a video's subtitles are the same whoever is watching.
+         */
+        fun invalidateSessionScopedCaches(context: Context) {
+            cachedVisitorData = null
+            visitorDataFetchedAt = 0L
+            context.applicationContext
+                .getSharedPreferences("ivor_visitor_data", Context.MODE_PRIVATE)
+                .edit().remove("visitor_data").remove("visitor_data_at").apply()
+        }
     }
 
     // Local-only kill-switch: checked per request so flipping the setting
@@ -197,6 +242,16 @@ class YouTubeRepository(private val context: Context) {
 
     init {
         initializeNewPipe()
+    }
+
+    /**
+     * Forget everything cached in this instance that belonged to the previous
+     * profile. The process-wide half is [invalidateSessionScopedCaches].
+     */
+    fun clearSessionScopedInstanceCaches() {
+        searchExtractorCache.clear()
+        searchNextPageCache.clear()
+        videoSearchNextPageCache.clear()
     }
 
     private fun initializeNewPipe() {
@@ -3520,12 +3575,105 @@ class YouTubeRepository(private val context: Context) {
                 duration = durationSeconds,
                 viewCount = viewCount,
                 uploadedDate = uploadDate,
-                isLive = isLive
+                isLive = isLive,
+                dismissal = parseDismissalTokens(metadata)
             )
         } catch (e: Exception) {
             return null
         }
     }
+
+    /**
+     * YouTube's own "Not interested" / "Don't recommend channel" tokens for a
+     * lockup, out of its overflow menu.
+     *
+     * Signed in, every feed lockup's menu carries two `feedbackEndpoint`s, each
+     * with a `feedbackToken` and - pre-baked into the notification it would
+     * show - the `undoToken` that reverses it. Signed out there are none at
+     * all, so this returns null and the caller simply does the local half.
+     *
+     * The two items are told apart by `leadingImage`'s `clientResource
+     * .imageName` (`NOT_INTERESTED` vs `REMOVE`), **not** by the visible label:
+     * the label is localized ("Not interested" on the home feed, "Hide" on the
+     * subscriptions feed, translated on a non-English account), and matching on
+     * it would silently stop working for most of the world. Verified against
+     * live /next, FEwhat_to_watch and FEsubscriptions responses, August 2026.
+     */
+    private fun parseDismissalTokens(metadata: org.json.JSONObject?): DismissalTokens? {
+        val listItems = metadata
+            ?.optJSONObject("menuButton")
+            ?.optJSONObject("buttonViewModel")
+            ?.optJSONObject("onTap")
+            ?.optJSONObject("innertubeCommand")
+            ?.optJSONObject("showSheetCommand")
+            ?.optJSONObject("panelLoadingStrategy")
+            ?.optJSONObject("inlineContent")
+            ?.optJSONObject("sheetViewModel")
+            ?.optJSONObject("content")
+            ?.optJSONObject("listViewModel")
+            ?.optJSONArray("listItems") ?: return null
+
+        var notInterested: String? = null
+        var notInterestedUndo: String? = null
+        var blockChannel: String? = null
+        var blockChannelUndo: String? = null
+
+        for (i in 0 until listItems.length()) {
+            val item = listItems.optJSONObject(i)?.optJSONObject("listItemViewModel") ?: continue
+            val endpoint = item
+                .optJSONObject("rendererContext")
+                ?.optJSONObject("commandContext")
+                ?.optJSONObject("onTap")
+                ?.optJSONObject("innertubeCommand")
+                ?.optJSONObject("feedbackEndpoint") ?: continue
+
+            val token = endpoint.optString("feedbackToken").takeIf { it.isNotBlank() } ?: continue
+            val imageName = item
+                .optJSONObject("leadingImage")
+                ?.optJSONArray("sources")
+                ?.optJSONObject(0)
+                ?.optJSONObject("clientResource")
+                ?.optString("imageName")
+
+            when (imageName) {
+                "NOT_INTERESTED" -> {
+                    notInterested = token
+                    notInterestedUndo = parseUndoToken(endpoint)
+                }
+                "REMOVE" -> {
+                    blockChannel = token
+                    blockChannelUndo = parseUndoToken(endpoint)
+                }
+            }
+        }
+
+        if (notInterested == null && blockChannel == null) return null
+        return DismissalTokens(
+            notInterested = notInterested,
+            notInterestedUndo = notInterestedUndo,
+            blockChannel = blockChannel,
+            blockChannelUndo = blockChannelUndo
+        )
+    }
+
+    /**
+     * The undo token YouTube pre-bakes into a feedback endpoint's own
+     * "Video removed - Undo" notification, so undo needs no extra request.
+     */
+    private fun parseUndoToken(feedbackEndpoint: org.json.JSONObject): String? =
+        feedbackEndpoint
+            .optJSONArray("actions")
+            ?.optJSONObject(0)
+            ?.optJSONObject("replaceEnclosingAction")
+            ?.optJSONObject("item")
+            ?.optJSONObject("notificationMultiActionRenderer")
+            ?.optJSONArray("buttons")
+            ?.optJSONObject(0)
+            ?.optJSONObject("buttonRenderer")
+            ?.optJSONObject("serviceEndpoint")
+            ?.optJSONObject("undoFeedbackEndpoint")
+            ?.optString("undoToken")
+            ?.takeIf { it.isNotBlank() }
     
     private fun parseVideoRenderer(videoRenderer: org.json.JSONObject?): VideoItem? {
         if (videoRenderer == null) return null
@@ -5873,6 +6021,472 @@ class YouTubeRepository(private val context: Context) {
         } catch (e: Exception) {
             android.util.Log.e("YouTubeRepo", "getChannelVideos failed", e)
             emptyList()
+        }
+    }
+
+    // ============================================================
+    // Local subscriptions: following channels with no YouTube account.
+    //
+    // The account-backed path above (FEsubscriptions / FEchannels) is one
+    // browse call for the whole feed because YouTube assembles it server
+    // side. Nobody assembles a device-local feed, so it is built here by
+    // fetching each followed channel and merging - which makes the cost per
+    // refresh linear in the number of subscriptions, and makes the choice of
+    // per-channel source the single most important decision in this section.
+    // ============================================================
+
+    /**
+     * Channel identity and display metadata, from one channel browse.
+     *
+     * Everything comes out of `metadata.channelMetadataRenderer`, which has
+     * outlived several redesigns of the visible header (`c4TabbedHeaderRenderer`
+     * is gone entirely as of 2026; the header is a `pageHeaderViewModel` now).
+     * The subscriber count only exists in the header, so it is read from there
+     * and is the one field allowed to come back null on a shape change.
+     * Verified August 2026.
+     */
+    data class ChannelProfile(
+        val channelId: String,
+        val name: String,
+        val avatarUrl: String?,
+        val handle: String?,
+        val subscriberCountText: String?
+    )
+
+    /**
+     * Turns a handle, vanity URL or legacy user URL into a canonical UC id
+     * via `navigation/resolve_url`. Works signed out. Verified August 2026.
+     *
+     * Import files are full of these - a Takeout CSV is all UC ids, but an
+     * OPML from an RSS reader or a hand-written list is usually @handles, and
+     * every other call in the app needs the UC id.
+     */
+    suspend fun resolveChannelId(urlOrHandle: String): String? = withContext(Dispatchers.IO) {
+        val raw = urlOrHandle.trim()
+        if (raw.isBlank()) return@withContext null
+        if (raw.startsWith("UC") && raw.length >= 24) return@withContext raw
+        val url = when {
+            raw.startsWith("http://") || raw.startsWith("https://") -> raw
+            raw.startsWith("@") -> "https://www.youtube.com/$raw"
+            else -> "https://www.youtube.com/${raw.trimStart('/')}"
+        }
+        try {
+            val response = postWatchApi(
+                "navigation/resolve_url",
+                org.json.JSONObject().put("context", webContext()).put("url", url)
+            ) ?: return@withContext null
+            org.json.JSONObject(response)
+                .optJSONObject("endpoint")
+                ?.optJSONObject("browseEndpoint")
+                ?.optString("browseId")
+                ?.takeIf { it.startsWith("UC") }
+        } catch (e: Exception) {
+            android.util.Log.w("YouTubeRepo", "resolveChannelId failed for $url", e)
+            null
+        }
+    }
+
+    /**
+     * Name, avatar and handle for a channel. Used to fill in imported entries,
+     * which arrive carrying a name at best and never an avatar.
+     */
+    suspend fun getChannelProfile(channelId: String): ChannelProfile? = withContext(Dispatchers.IO) {
+        try {
+            val raw = postWatchApi(
+                "browse",
+                org.json.JSONObject().put("context", webContext()).put("browseId", channelId)
+            ) ?: return@withContext null
+            val root = org.json.JSONObject(raw)
+            val metadata = root.optJSONObject("metadata")?.optJSONObject("channelMetadataRenderer")
+            val id = metadata?.optString("externalId")?.takeIf { it.isNotBlank() } ?: channelId
+            val name = metadata?.optString("title")?.takeIf { it.isNotBlank() }
+                ?: return@withContext null
+            val thumbs = metadata.optJSONObject("avatar")?.optJSONArray("thumbnails")
+            val avatarUrl = thumbs?.optJSONObject((thumbs.length() - 1).coerceAtLeast(0))
+                ?.optString("url")?.takeIf { it.isNotBlank() }
+                ?.let { if (it.startsWith("//")) "https:$it" else it }
+            val handle = metadata.optString("vanityChannelUrl")
+                .substringAfterLast('/')
+                .takeIf { it.startsWith("@") }
+
+            // Subscriber count lives only in the visible header. The search is
+            // scoped to the header subtree on purpose: a whole channel page
+            // carries ~95 contentMetadataViewModels, all but one of them a
+            // video card, so a document-wide key search would be a coin flip.
+            // A miss here is not worth failing the whole profile over.
+            val subscriberCountText = runCatching {
+                val header = root.optJSONObject("header") ?: return@runCatching null
+                val texts = mutableListOf<org.json.JSONObject>()
+                findObjectsByKey(header, "text", texts)
+                texts.mapNotNull { it.optString("content").takeIf { c -> c.isNotBlank() } }
+                    .firstOrNull { it.contains("subscriber", ignoreCase = true) }
+            }.getOrNull()
+
+            ChannelProfile(id, name, avatarUrl, handle, subscriberCountText)
+        } catch (e: Exception) {
+            android.util.Log.w("YouTubeRepo", "getChannelProfile failed for $channelId", e)
+            null
+        }
+    }
+
+    /**
+     * A channel's 15 most recent uploads from its public Atom feed.
+     *
+     * This is the cheap half of the local feed. The feed is ~50 KB against
+     * roughly 1 MB for the equivalent channel browse, which is the difference
+     * between a 200-channel refresh costing 10 MB and costing 200 MB, and it
+     * needs no client version, no cookies and no visitorData - so it keeps
+     * working when InnerTube shapes drift.
+     *
+     * It also carries a real ISO timestamp per entry, which the browse path
+     * does not: InnerTube only ever says "3 days ago", and merging fifteen
+     * channels on prose that coarse shuffles the top of the feed arbitrarily.
+     *
+     * What it does not carry is duration or live status, so cards from this
+     * path show no duration badge. That is the documented trade the "Fast
+     * refresh" setting makes.
+     */
+    suspend fun getChannelFeedRss(
+        channelId: String,
+        avatarUrl: String? = null
+    ): List<VideoItem> = withContext(Dispatchers.IO) {
+        try {
+            val request = okhttp3.Request.Builder()
+                .url("https://www.youtube.com/feeds/videos.xml?channel_id=$channelId")
+                .addHeader("User-Agent", BROWSER_USER_AGENT)
+                .build()
+            val body = okHttpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    // 404 means the channel is gone or the id was never valid;
+                    // the caller keeps the subscription either way, because a
+                    // transient failure must not silently delete channels.
+                    android.util.Log.w("YouTubeRepo", "channel feed $channelId HTTP ${response.code}")
+                    return@withContext emptyList()
+                }
+                response.body?.string()
+            } ?: return@withContext emptyList()
+            parseChannelFeedXml(body, avatarUrl)
+        } catch (e: Exception) {
+            android.util.Log.w("YouTubeRepo", "getChannelFeedRss failed for $channelId", e)
+            emptyList()
+        }
+    }
+
+    /**
+     * Parses the YouTube channel Atom feed.
+     *
+     * The parser is built namespace-*un*aware on purpose, so `getName()`
+     * returns the literal prefixed tag ("yt:videoId", "media:thumbnail")
+     * matched below. `android.util.Xml.newPullParser()` cannot be used here:
+     * it turns namespace processing on, which strips the prefixes and would
+     * collapse the Atom `<title>` and Media RSS `<media:title>` - two
+     * different values on every entry - onto the same local name.
+     */
+    private fun parseChannelFeedXml(xml: String, avatarUrl: String?): List<VideoItem> {
+        val videos = mutableListOf<VideoItem>()
+        val parser = org.xmlpull.v1.XmlPullParserFactory.newInstance()
+            .apply { isNamespaceAware = false }
+            .newPullParser()
+        parser.setInput(java.io.StringReader(xml))
+
+        var inEntry = false
+        var inAuthor = false
+        var videoId: String? = null
+        var channelId: String? = null
+        var title: String? = null
+        var author: String? = null
+        var publishedAtMs: Long? = null
+        var thumbnailUrl: String? = null
+        var description: String? = null
+        var viewCount: Long? = null
+
+        fun reset() {
+            videoId = null; channelId = null; title = null; author = null
+            publishedAtMs = null; thumbnailUrl = null; description = null; viewCount = null
+        }
+
+        var event = parser.eventType
+        while (event != org.xmlpull.v1.XmlPullParser.END_DOCUMENT) {
+            when (event) {
+                org.xmlpull.v1.XmlPullParser.START_TAG -> when (parser.name) {
+                    "entry" -> { inEntry = true; reset() }
+                    "author" -> inAuthor = true
+                    "yt:videoId" -> if (inEntry) videoId = parser.nextText().trim()
+                    "yt:channelId" -> if (inEntry) channelId = parser.nextText().trim()
+                    // The feed-level <title> is the channel name; only the one
+                    // inside an <entry> is a video title.
+                    "title" -> if (inEntry && title == null) title = parser.nextText().trim()
+                    "name" -> if (inEntry && inAuthor) author = parser.nextText().trim()
+                    "published" -> if (inEntry) {
+                        publishedAtMs = runCatching {
+                            java.time.OffsetDateTime.parse(parser.nextText().trim())
+                                .toInstant().toEpochMilli()
+                        }.getOrNull()
+                    }
+                    "media:thumbnail" -> if (inEntry && thumbnailUrl == null) {
+                        thumbnailUrl = parser.getAttributeValue(null, "url")
+                    }
+                    "media:description" -> if (inEntry) {
+                        description = runCatching { parser.nextText() }.getOrNull()
+                    }
+                    "media:statistics" -> if (inEntry) {
+                        viewCount = parser.getAttributeValue(null, "views")?.toLongOrNull()
+                    }
+                }
+
+                org.xmlpull.v1.XmlPullParser.END_TAG -> when (parser.name) {
+                    "author" -> inAuthor = false
+                    "entry" -> {
+                        inEntry = false
+                        val id = videoId
+                        if (!id.isNullOrBlank()) {
+                            videos.add(
+                                VideoItem(
+                                    videoId = id,
+                                    title = title.orEmpty(),
+                                    channelName = author.orEmpty(),
+                                    channelId = channelId,
+                                    channelIconUrl = avatarUrl,
+                                    thumbnailUrl = thumbnailUrl,
+                                    duration = 0L,
+                                    viewCount = VideoItem.formatViewCount(viewCount),
+                                    uploadedDate = publishedAtMs?.let { VideoItem.formatRelativeTime(it) },
+                                    description = description,
+                                    publishedAtMs = publishedAtMs
+                                )
+                            )
+                        }
+                        reset()
+                    }
+                }
+            }
+            event = parser.next()
+        }
+        return videos
+    }
+
+    /**
+     * Builds the device-local subscriptions feed: the latest uploads across
+     * [channels], newest first.
+     *
+     * Channels are fetched concurrently but only [FEED_CONCURRENCY] at a time.
+     * Unbounded parallelism here would fire one request per subscription at
+     * once - a couple of hundred sockets on a pull-to-refresh, which mobile
+     * radios handle badly and which reads to YouTube like a scrape.
+     *
+     * A channel that fails contributes nothing and does not fail the refresh:
+     * one dead channel out of two hundred must not empty the feed.
+     * [onProgress] reports completed channels so a long first refresh can show
+     * real progress instead of an indeterminate spinner.
+     */
+    /**
+     * A channel's uploads from the InnerTube channel browse, with the merge key
+     * reconstructed.
+     *
+     * The browse path has durations and live badges, which RSS lacks, but only
+     * prose dates ("3 days ago"), so [VideoItem.publishedAtMs] has to be
+     * derived from those to sort alongside RSS items carrying real timestamps.
+     */
+    private suspend fun channelVideosWithTimestamps(channel: LocalSubscription): List<VideoItem> =
+        getChannelVideos(channel.toSubscribedChannel()).map { video ->
+            video.copy(
+                publishedAtMs = video.publishedAtMs
+                    ?: VideoItem.parseRelativeTime(video.uploadedDate)
+            )
+        }
+
+    suspend fun getLocalSubscriptionsFeed(
+        channels: List<LocalSubscription>,
+        fastMode: Boolean = true,
+        maxPerChannel: Int = MAX_FEED_ITEMS_PER_CHANNEL,
+        maxTotal: Int = MAX_FEED_ITEMS,
+        onProgress: ((completed: Int, total: Int) -> Unit)? = null
+    ): List<VideoItem> = withContext(Dispatchers.IO) {
+        if (channels.isEmpty()) return@withContext emptyList()
+        val gate = kotlinx.coroutines.sync.Semaphore(FEED_CONCURRENCY)
+        val completed = java.util.concurrent.atomic.AtomicInteger(0)
+        val total = channels.size
+
+        val perChannel = kotlinx.coroutines.coroutineScope {
+            channels.map { channel ->
+                async {
+                    gate.acquire()
+                    try {
+                        val videos = if (fastMode) {
+                            // RSS is not universally available: some channels
+                            // 404 on the feed URL YouTube itself advertises in
+                            // their own channelMetadataRenderer.rssUrl, uploads
+                            // and all (verified August 2026). Treating that as
+                            // "no uploads" silently drops the channel from the
+                            // feed, and for someone following only a handful it
+                            // empties the tab and reads as a network failure.
+                            // So fast mode means "RSS, else browse", not "RSS
+                            // or nothing" - the fallback costs a request only
+                            // for the channels that actually need it.
+                            getChannelFeedRss(channel.channelId, channel.avatarUrl)
+                                .ifEmpty { channelVideosWithTimestamps(channel) }
+                        } else {
+                            channelVideosWithTimestamps(channel)
+                        }
+                        videos.take(maxPerChannel)
+                    } catch (e: Exception) {
+                        android.util.Log.w("YouTubeRepo", "feed fetch failed for ${channel.channelId}", e)
+                        emptyList()
+                    } finally {
+                        gate.release()
+                        onProgress?.invoke(completed.incrementAndGet(), total)
+                    }
+                }
+            }.map { it.await() }
+        }
+
+        perChannel.flatten()
+            .distinctBy { it.videoId }
+            // Items with no usable timestamp sink to the bottom rather than
+            // floating to the top on a null-sorts-first comparator.
+            .sortedByDescending { it.publishedAtMs ?: Long.MIN_VALUE }
+            // Cap after the global sort, never per channel: trimming per
+            // channel would hide a prolific channel's recent uploads while
+            // keeping a dormant one's year-old video.
+            .take(maxTotal)
+    }
+
+    /**
+     * Turns parsed import entries into storable subscriptions, resolving the
+     * ones that only carried a handle or vanity URL.
+     *
+     * Entries that already have a UC id cost nothing - the common case, since
+     * both Takeout and every NewPipe-family export write canonical channel
+     * URLs. Only the leftovers hit the network, [FEED_CONCURRENCY] at a time,
+     * and an entry that cannot be resolved is dropped and counted rather than
+     * stored as a broken id that would fail silently on every refresh.
+     */
+    suspend fun resolveImportedChannels(
+        entries: List<ImportedChannel>,
+        onProgress: ((completed: Int, total: Int) -> Unit)? = null
+    ): Pair<List<LocalSubscription>, Int> = withContext(Dispatchers.IO) {
+        val resolved = mutableListOf<LocalSubscription>()
+        val needsNetwork = mutableListOf<ImportedChannel>()
+
+        for (entry in entries) {
+            val id = entry.channelId
+            if (id != null) {
+                resolved.add(LocalSubscription(id, entry.name, entry.avatarUrl))
+            } else if (entry.unresolvedPath != null) {
+                needsNetwork.add(entry)
+            }
+        }
+
+        if (needsNetwork.isEmpty()) {
+            onProgress?.invoke(entries.size, entries.size)
+            return@withContext resolved to 0
+        }
+
+        val gate = kotlinx.coroutines.sync.Semaphore(FEED_CONCURRENCY)
+        val completed = java.util.concurrent.atomic.AtomicInteger(resolved.size)
+        val total = entries.size
+        onProgress?.invoke(completed.get(), total)
+
+        val lookups = kotlinx.coroutines.coroutineScope {
+            needsNetwork.map { entry ->
+                async {
+                    gate.acquire()
+                    try {
+                        resolveChannelId(entry.unresolvedPath!!)?.let { id ->
+                            LocalSubscription(id, entry.name, entry.avatarUrl, handle = entry.unresolvedPath)
+                        }
+                    } finally {
+                        gate.release()
+                        onProgress?.invoke(completed.incrementAndGet(), total)
+                    }
+                }
+            }.map { it.await() }
+        }
+
+        (resolved + lookups.filterNotNull()).distinctBy { it.channelId } to lookups.count { it == null }
+    }
+
+    /**
+     * Fills in name and avatar for subscriptions that are missing them - the
+     * normal state right after an import, where the file gave at most a name
+     * and never a picture.
+     *
+     * Capped at [limit] channels per run because this is one browse per
+     * channel, i.e. the expensive shape the local feed deliberately avoids.
+     * It runs against whichever channels are actually on screen, so a
+     * 300-channel library fills in over a few visits rather than in one
+     * 300-request burst.
+     */
+    suspend fun fetchMissingChannelProfiles(
+        channels: List<LocalSubscription>,
+        limit: Int = PROFILE_BACKFILL_LIMIT
+    ): List<LocalSubscription> = withContext(Dispatchers.IO) {
+        val pending = channels.filter { it.avatarUrl.isNullOrBlank() }.take(limit)
+        if (pending.isEmpty()) return@withContext emptyList()
+        val gate = kotlinx.coroutines.sync.Semaphore(FEED_CONCURRENCY)
+        kotlinx.coroutines.coroutineScope {
+            pending.map { channel ->
+                async {
+                    gate.acquire()
+                    try {
+                        getChannelProfile(channel.channelId)?.let { profile ->
+                            channel.copy(
+                                name = profile.name,
+                                avatarUrl = profile.avatarUrl,
+                                handle = profile.handle ?: channel.handle
+                            )
+                        }
+                    } catch (e: Exception) {
+                        null
+                    } finally {
+                        gate.release()
+                    }
+                }
+            }.map { it.await() }
+        }.filterNotNull()
+    }
+
+    /**
+     * Tell the signed-in account about a dismissal, so the choice also cleans
+     * up recommendations on youtube.com and in the official apps.
+     *
+     * This is the *bonus* half of "don't recommend this", never the mechanism:
+     * the local hide in [NotInterestedRepository] has already happened by the
+     * time this runs, and a failure here must not undo it. YouTube's own
+     * feedback is advisory and takes days to visibly change a feed, whereas
+     * the local filter takes effect on the next frame - so this returning
+     * false is not something the user should ever be told about.
+     *
+     * Signed out there is nothing to call: no response carries a token, so
+     * [token] is null and this is skipped. Search results carry no tokens even
+     * when signed in, which is consistent with search never being filtered.
+     *
+     * The same endpoint reverses a dismissal - pass the undo token. Success is
+     * `feedbackResponses[0].isProcessed`, not the HTTP code: like
+     * `subscription/subscribe`, this endpoint answers 200 to requests it did
+     * not actually act on. Verified against the live endpoint, August 2026.
+     */
+    suspend fun sendDismissalFeedback(token: String?): Boolean = withContext(Dispatchers.IO) {
+        if (token.isNullOrBlank()) return@withContext false
+        if (!sessionManager.isLoggedIn()) return@withContext false
+        try {
+            val body = org.json.JSONObject()
+                .put("context", webContext())
+                .put("feedbackTokens", org.json.JSONArray().put(token))
+                .put("isFeedbackTokenUnencrypted", false)
+                .put("shouldMerge", false)
+            val raw = postWatchApi("feedback", body) ?: return@withContext false
+            val processed = org.json.JSONObject(raw)
+                .optJSONArray("feedbackResponses")
+                ?.optJSONObject(0)
+                ?.optBoolean("isProcessed", false) ?: false
+            if (!processed) {
+                android.util.Log.w("YouTubeRepo", "feedback token not processed")
+            }
+            processed
+        } catch (e: Exception) {
+            android.util.Log.e("YouTubeRepo", "feedback failed", e)
+            false
         }
     }
 

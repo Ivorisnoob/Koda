@@ -30,6 +30,8 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.ErrorOutline
+import androidx.compose.material.icons.rounded.NotInterested
+import androidx.compose.material.icons.rounded.RemoveCircleOutline
 import androidx.compose.material.icons.rounded.WatchLater
 import androidx.compose.material3.ContainedLoadingIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -66,11 +68,18 @@ private enum class SaveRowState { IDLE, SAVING, SAVED, FAILED }
 
 /**
  * Bottom sheet shown when long-pressing a video card: save the video to
- * Watch Later (pinned hero row), download it to the device, or save it to
- * any of the user's playlists. Feedback is inline — the tapped row shows a
- * spinner, then a check, and the sheet dismisses itself; on failure the row
- * flags an error instead. [onDownload] hands off to the download sheet
- * (the caller dismisses this one and opens that one).
+ * Watch Later (pinned hero row), download it to the device, save it to any
+ * of the user's playlists, or tell the app to stop recommending the video
+ * or its channel. Feedback is inline — the tapped row shows a spinner, then
+ * a check, and the sheet dismisses itself; on failure the row flags an error
+ * instead. [onDownload] hands off to the download sheet (the caller
+ * dismisses this one and opens that one).
+ *
+ * The two "don't recommend" rows sit at the bottom, visually separated and
+ * in the muted tone the rest of the sheet is not. They are destructive in a
+ * small way and share a surface with Save, so they should never be the thing
+ * a thumb lands on by accident. Passing null for [onNotInterested] hides
+ * them, which is what surfaces with no recommendation feed behind them do.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -80,7 +89,9 @@ fun SaveToPlaylistSheet(
     isLoading: Boolean,
     onSave: (playlistId: String, onResult: (Boolean) -> Unit) -> Unit,
     onDownload: () -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onNotInterested: (() -> Unit)? = null,
+    onBlockChannel: (() -> Unit)? = null
 ) {
     // Open fully expanded: in the half-expanded state the inner playlist
     // list and the sheet's drag-to-expand fight over scroll gestures,
@@ -231,6 +242,119 @@ fun SaveToPlaylistSheet(
                         }
                     }
                 }
+            }
+
+            if (onNotInterested != null || onBlockChannel != null) {
+                Spacer(modifier = Modifier.height(20.dp))
+                Text(
+                    text = "Stop recommending",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+
+                onNotInterested?.let { action ->
+                    DismissRow(
+                        icon = Icons.Rounded.NotInterested,
+                        title = "Not interested",
+                        subtitle = "Hide this video from your feeds",
+                        onClick = {
+                            action()
+                            onDismiss()
+                        }
+                    )
+                }
+
+                onBlockChannel?.let { action ->
+                    if (onNotInterested != null) Spacer(modifier = Modifier.height(8.dp))
+                    DismissRow(
+                        icon = Icons.Rounded.RemoveCircleOutline,
+                        title = "Don't recommend channel",
+                        subtitle = video.channelName.takeIf { it.isNotBlank() }
+                            ?.let { "Hide everything from $it" }
+                            ?: "Hide everything from this channel",
+                        onClick = {
+                            action()
+                            onDismiss()
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * A "stop recommending" row. Deliberately quieter than the save rows above
+ * it — surfaceContainerHigh with onSurfaceVariant text rather than a filled
+ * container — so the destructive half of the sheet never reads as the
+ * primary action.
+ */
+@Composable
+private fun DismissRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.97f else 1f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
+        label = "dismissRowScale"
+    )
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .scale(scale)
+            .clip(RoundedCornerShape(16.dp))
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick
+            ),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.12f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(14.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
         }
     }
