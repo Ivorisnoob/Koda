@@ -118,18 +118,29 @@ Undo is a single app-wide `SnackbarHost` at the root of `MainActivity`, fed by `
 
 ### Settings plumbing (adding a new setting)
 
-All app settings live in `data/ThemePreferences.kt` (SharedPreferences `ivor_music_theme_prefs`, one `MutableStateFlow` + KEY constant + private getter + public setter per setting). A new setting must be threaded through **four files**:
+All app settings live in `data/ThemePreferences.kt` (SharedPreferences `ivor_music_theme_prefs`, one `MutableStateFlow` + KEY constant + private getter + public setter per setting). A new setting must be threaded through **five files**:
 
 1. `ThemePreferences` — StateFlow, KEY constant, getter/setter.
 2. `ui/theme/ThemeViewModel.kt` — exposes the flow + a `setX()` delegate.
 3. `MainActivity.kt` — collect the flow in `setContent`, add a param pair to the `MusicApp` composable, pass through to the `SettingsScreen` call inside the `settings` nav route (the params are threaded twice: setContent → MusicApp → SettingsScreen).
-4. `ui/settings/SettingsScreen.kt` — new params + a UI item.
+4. `ui/settings/SettingsScreen.kt` — new params on `SettingsScreen`, passed down to whichever page owns the setting.
+5. `ui/settings/SettingsPages.kt` — the actual row, on the right page.
+
+**Then add it to `buildSettingsSearchIndex` in `ui/settings/SettingsSearch.kt`.** A setting that is not in the index is unfindable by search, and there is no compile error to tell you — that is the one omission here that fails silently.
 
 Theming beyond light/dark: a **color palette** setting (`color_palette` pref, default `dynamic`) chooses between wallpaper-based dynamic color and the predefined palettes in `ui/theme/ColorPalettes.kt`, selected through `ColorPaletteScreen` and applied in `ui/theme/Theme.kt`.
 
 Because there is no DI, every consumer news up its own `ThemePreferences` — StateFlow updates do NOT cross instances. ViewModels that need a setting at decision time must do a fresh pref read (pattern: `isSaveVideoHistoryEnabled()` reads straight from prefs; `VideoPlayerViewModel` already holds a `themePreferences` instance).
 
-`SettingsScreen` layout conventions: sections are `SettingsSection(title)` wrapping `ExpressiveSettingsCard`, rows separated by `SettingsDivider()`. Row composables to copy: `ExpressiveSettingsItem` (icon + title/subtitle clickable row, optional chevron), the various `Expressive*ToggleItem` (switch rows with 48dp icon box, `RoundedCornerShape(14.dp)`, press-scale spring animation), and segmented-button groups (`ExpressiveVideoModeToggleItem`, `ExpressivePlayerStyleSelectItem`). Dialogs (`ExpressiveAboutDialog`, `FolderExclusionDialog`): `AlertDialog` with `containerColor = surfaceContainerHigh`, `shape = RoundedCornerShape(32.dp)`, 64dp rounded icon box, spring `scaleIn` entry via `AnimatedVisibility`. Video-related settings belong in the "Content Mode" section. Material icons extended is available (`Icons.Rounded.*` like `FolderOff`, `SwipeRight` are already used).
+**Settings is a hub and eleven detail pages, not one scroll.** `SettingsScreen.kt` holds the hub, the page router and every dialog; `SettingsPages.kt` holds the pages; `SettingsComponents.kt` holds the shared rows; `SettingsSearch.kt` holds the index and the matcher.
+
+Pages are a `SettingsPage` enum driven by `AnimatedContent`, **not** nav routes — `SettingsScreen` takes 74 parameters and a NavHost destination per category would repeat that list eleven times (the Home tab system makes the same trade). Back unwinds one step at a time: open page → hub → clear the search query → leave. **`SettingsScreen`'s signature is the contract with `MainActivity`**; add parameters, do not reorder or restructure it.
+
+Row composables to copy, all in `SettingsComponents.kt`: `SettingsRow` (icon + title/subtitle, optional chevron), `SettingsToggleRow` (the same with a switch; the whole row is the hit target), `SettingsHubRow` (category + live value), `SettingsCard`, `SettingsSection`, `SettingsDivider`, and `SettingsDetailScaffold` for the page chrome. These read their colors from the theme — do not add `textColor`/`accentColor` parameters back, and never hardcode a color. Destructive or blocked rows take `SettingsRowDefaults.destructiveTint`.
+
+**Every hub row shows the live value of what is inside it** ("Dark, Vibrant", "412 MB cached"). A category row without one is a worse version of the flat list this replaced.
+
+Dialogs (`ExpressiveAboutDialog`, `FolderExclusionDialog`, `StreamQualityDialog`, ...) stay hosted by `SettingsScreen` and are opened by pages through callbacks, because a dialog owned by a page would die with the page transition. `AlertDialog` with `containerColor = surfaceContainerHigh`, `shape = RoundedCornerShape(32.dp)`, 64dp rounded icon box, spring `scaleIn` entry via `AnimatedVisibility`. Material icons extended is available (`Icons.Rounded.*` like `FolderOff`, `SwipeRight` are already used).
 
 ### YouTube data layer (`data/YouTubeRepository.kt`, ~3k lines — the heart of the app)
 
@@ -216,9 +227,11 @@ Adding or renaming a style means touching **four** places (an omission compiles 
 1. `data/ThemePreferences.kt` — the `PlayerStyle` enum constant (persisted by `name`, so treat existing constants as frozen).
 2. `ui/player/<Name>PlayerContent.kt` — a `<Name>PlayerSheetContent(viewModel, ...)` composable, the convention every style follows.
 3. `ui/player/ExpandablePlayer.kt` — a branch in the `when (playerStyle)` around line 305 that calls it. This `when` is the only dispatch point.
-4. Both pickers, which are separate hardcoded lists that must stay in sync: `rememberPlayerStyleWheelEntries()` in `ui/player/PlayerStyleWheel.kt` (label + `Icons.Rounded.*` + a `MaterialShapes` shape) and `playerStyleOptions` in `ui/settings/SettingsScreen.kt` (label + subtitle + icon).
+4. `playerStyleCatalog` in `ui/player/PlayerStyleCatalog.kt` — label, subtitle, icon and the `MaterialShapes` polygon that is the style's die-cut identity in the wheel.
 
-Onboarding (`ui/onboarding/OnboardingScreen.kt`) deliberately offers only `CLASSIC` and `GESTURE` — it is a curated first-run pair, not a list to keep in sync with the other four.
+**The catalog is the only list.** The settings picker, onboarding and `rememberPlayerStyleWheelEntries()` all derive from it, so there is nothing left to keep in sync by hand — that used to be three hardcoded lists and the way one of them went stale. A new style also wants a branch in `PlayerStylePicker`'s `PlayerStylePreview`, which sketches a wireframe of each layout; the `when` there is exhaustive over `PlayerStyle`, so a missing one is a compile error rather than a silent gap.
+
+**Both the settings picker and onboarding show every style.** Onboarding used to offer a curated `CLASSIC`/`GESTURE` pair; that was changed deliberately on request — people pick a look at first run and were not finding the other six. `PlayerStylePicker` is non-lazy for exactly this reason: it renders inside onboarding's `verticalScroll` column and inside the settings page's `LazyColumn` item, and a lazy grid nested in a scrollable parent has unbounded height.
 
 ### Reference docs in-repo
 

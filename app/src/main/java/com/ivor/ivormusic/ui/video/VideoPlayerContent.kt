@@ -55,6 +55,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.media3.common.util.UnstableApi
 import coil.compose.AsyncImage
 import com.ivor.ivormusic.data.CaptionTrack
+import com.ivor.ivormusic.data.LikeStatus
 import com.ivor.ivormusic.data.VideoChapter
 import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.data.VideoQuality
@@ -581,6 +582,10 @@ fun VideoPlayerContent(
                     captionsActive = selectedCaption != null,
                     captionCues = captionCues,
                     videoAspectRatio = videoAspectRatio,
+                    // Account OR device subscription, same as everywhere else -
+                    // engagement.isSubscribed only knows about the account.
+                    isSubscribed = isSubscribedToChannel,
+                    likeStatus = engagement?.likeStatus ?: LikeStatus.INDIFFERENT,
                     onPlayPause = { viewModel.togglePlayPause() },
                     onSeek = { newProgress -> exoPlayer.seekTo((newProgress * duration).toLong()) },
                     onSeekBackward = { seekBy(-VideoPlayerViewModel.SEEK_STEP_MS) },
@@ -594,6 +599,8 @@ fun VideoPlayerContent(
                         showCaptionsSheet = true
                     },
                     onSettings = { showQualitySheet = true },
+                    onSubscribeClick = { requireSubscribeLogin { viewModel.toggleSubscribe() } },
+                    onLikeClick = { requireLogin { viewModel.toggleLike() } },
                     onRetry = { viewModel.retryPlayback() },
                     onMinimizeDragDelta = onMinimizeDragDelta,
                     onMinimizeDragRelease = onMinimizeDragRelease

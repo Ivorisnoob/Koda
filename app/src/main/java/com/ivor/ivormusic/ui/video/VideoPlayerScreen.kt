@@ -869,9 +869,18 @@ internal const val LIVE_EDGE_THRESHOLD = 0.995f
  * The "LIVE" marker where a normal video shows its duration. Red and tappable
  * while the viewer is behind, so getting back to the edge is one tap; muted
  * once they are already there.
+ *
+ * [contentTint] is what the chip resolves to when it is *not* at the edge, plus
+ * the label color throughout. It defaults to white because the standard player
+ * puts this straight on the video; the vertical live player sits it inside a
+ * tonal container instead, where white is invisible in a light theme.
  */
 @Composable
-internal fun LiveEdgeChip(atLiveEdge: Boolean, onClick: () -> Unit) {
+internal fun LiveEdgeChip(
+    atLiveEdge: Boolean,
+    onClick: () -> Unit,
+    contentTint: Color = Color.White
+) {
     Surface(
         shape = CircleShape,
         color = Color.Transparent,
@@ -889,12 +898,12 @@ internal fun LiveEdgeChip(atLiveEdge: Boolean, onClick: () -> Unit) {
                     .clip(CircleShape)
                     .background(
                         if (atLiveEdge) MaterialTheme.colorScheme.error
-                        else Color.White.copy(alpha = 0.6f)
+                        else contentTint.copy(alpha = 0.6f)
                     )
             )
             Text(
                 text = "LIVE",
-                color = if (atLiveEdge) Color.White else Color.White.copy(alpha = 0.6f),
+                color = if (atLiveEdge) contentTint else contentTint.copy(alpha = 0.6f),
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.Bold
             )
@@ -908,6 +917,12 @@ internal fun LiveEdgeChip(atLiveEdge: Boolean, onClick: () -> Unit) {
  * The actual seek fires once, on release (onValueChangeFinished). The 500ms
  * progress poll from the parent is ignored during the drag to avoid the thumb
  * fighting the finger.
+ *
+ * [onTonalSurface] switches the track and tick colors from the white-on-video
+ * set to ColorScheme roles. The standard player draws this straight onto the
+ * frame, where white is the only thing that reads on any video; the vertical
+ * live player floats it inside a surfaceContainer, where white would disappear
+ * in a light theme.
  */
 @Composable
 internal fun PlayerSeekBar(
@@ -916,10 +931,27 @@ internal fun PlayerSeekBar(
     modifier: Modifier = Modifier,
     bufferedProgress: Float = 0f,
     chapters: List<VideoChapter> = emptyList(),
-    durationMs: Long = 0L
+    durationMs: Long = 0L,
+    onTonalSurface: Boolean = false
 ) {
     var isScrubbing by remember { mutableStateOf(false) }
     var scrubValue by remember { mutableFloatStateOf(0f) }
+
+    val bufferedColor = if (onTonalSurface) {
+        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f)
+    } else {
+        Color.White.copy(alpha = 0.35f)
+    }
+    val inactiveTrackColor = if (onTonalSurface) {
+        MaterialTheme.colorScheme.surfaceVariant
+    } else {
+        Color.White.copy(0.3f)
+    }
+    val tickColor = if (onTonalSurface) {
+        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f)
+    } else {
+        Color.Black.copy(alpha = 0.85f)
+    }
 
     Box(modifier = modifier) {
         // Buffered-ahead indicator: a soft white bar from the start to the
@@ -931,7 +963,7 @@ internal fun PlayerSeekBar(
             Canvas(modifier = Modifier.matchParentSize()) {
                 val centerY = size.height / 2f
                 drawLine(
-                    color = Color.White.copy(alpha = 0.35f),
+                    color = bufferedColor,
                     start = Offset(0f, centerY),
                     end = Offset(bufferedProgress.coerceIn(0f, 1f) * size.width, centerY),
                     strokeWidth = 4.dp.toPx(),
@@ -953,7 +985,7 @@ internal fun PlayerSeekBar(
             colors = SliderDefaults.colors(
                 thumbColor = MaterialTheme.colorScheme.primary,
                 activeTrackColor = MaterialTheme.colorScheme.primary,
-                inactiveTrackColor = Color.White.copy(0.3f)
+                inactiveTrackColor = inactiveTrackColor
             ),
             modifier = Modifier.fillMaxWidth()
         )
@@ -970,7 +1002,7 @@ internal fun PlayerSeekBar(
                     if (fraction > 0.001f && fraction < 0.999f) {
                         val x = fraction * size.width
                         drawLine(
-                            color = Color.Black.copy(alpha = 0.85f),
+                            color = tickColor,
                             start = Offset(x, centerY - half),
                             end = Offset(x, centerY + half),
                             strokeWidth = stroke
