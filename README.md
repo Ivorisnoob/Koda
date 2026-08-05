@@ -78,10 +78,14 @@ On Android 11 specifically, wallpaper-based dynamic color is unavailable, since 
 - **Recently played** rail on Home that stays fresh across the app.
 - **Your playlists**, including Liked Songs, plus artist and album pages with play, shuffle, and start-radio actions.
 - **Start radio** from any track to spin up an endless, related-song queue.
-- **Local playlists** you own: create, rename, edit, drag to reorder, and delete, with auto-generated cover art.
+- **Local playlists** you own: create, rename, edit, drag to reorder, and delete, with auto-generated cover art. The playlist screen has a manage mode for selecting, removing and reordering, plus total duration.
+- **Reordering YouTube Music playlists** writes back to your account, not just the local view.
+- **Tapping a search result starts a radio** around that song rather than queueing every other upload of it. Playlists, Your Mix and Library still queue their list, because those are real playlists.
+- **Search pages in as you scroll**, for both songs and videos, instead of a Load More button.
 - **Add to playlist** and **add to queue** sheets reachable from the player and lists.
 - **Like tracks straight from the player.** Liked songs appear immediately and are stored locally, no login required.
-- **Sleep timer** with a live countdown, available from both the mini player and the full player sheet.
+- **Sleep timer** in all eight player styles, each in its own idiom, with a live countdown and a visible armed state. It lives with playback rather than the screen, so leaving the app does not cancel it. There is a duration mode that fades out over five seconds rather than cutting the audio dead, and an **end of this track** mode.
+- **Library sort that persists** across launches, including **Most played** and **Recently added**, each showing what it sorted on ("12 plays", "3d ago") so the order never reads as arbitrary.
 - **Synced lyrics** fetched from LRCLIB, scrolling in time with playback.
 - **Listening statistics**: songs played, artists explored, liked-song count, top artist, top songs and artists, daily / weekly / monthly play charts, a listening streak, and recent searches.
 - **Local audio playback** with MediaStore scanning, per-folder exclusion, and a high-compatibility scan mode for devices where MediaStore misses files.
@@ -105,11 +109,16 @@ Plus an **ambient artwork background**, an optional **chromatic-mist** effect, a
 ### Video mode
 
 - **Personalized video home feed**. It shows your real YouTube feed when you are signed in, and falls back to a taste-based feed built from your watch history when you are not.
-- **A real video player** with the full quality ladder up to 2160p60 and a separate audio track, so it never gets stuck on a low muxed quality. A **Default Video Quality** setting picks the starting resolution.
+- **A real video player** with the full quality ladder up to 2160p60 and a separate audio track, so it never gets stuck on a low muxed quality.
 - **Chapters** rendered as seek-bar ticks, a current-chapter chip, and a chapters sheet.
-- **Captions / subtitles** with a CC toggle and a language picker, sideloaded as WebVTT and rendered over the video.
+- **Captions / subtitles** with a CC toggle and a language picker, drawn as an overlay so toggling them costs nothing and they survive a quality switch. They work signed out.
 - **Double-tap** either side to skip forward or back, and **hold to play at 2x**, with an adjustable playback speed.
-- **Picture-in-Picture** that captures just the video, not the whole app.
+- **Swipe up on the video to go fullscreen, and down the middle to come back** — the corner button is a small target on a phone held in both hands. Pull the whole watch page down to minimize.
+- **Drag the left and right edges for brightness and volume**, with a ladder of slats that lights from the bottom, one slat per real system volume notch, so the haptic tick and the light are the same event. It takes its colors from your palette.
+- **Picture-in-Picture** that captures just the video, not the whole app, with play, pause and 10-second skip controls in the window.
+- **Video appears in the system media controls** too — lock screen, the shade's media area, the output switcher, and headset and Bluetooth buttons.
+- **Open YouTube links in Koda.** Share a link to it, or open one with it, and it plays: watch, `youtu.be`, shorts, live, embed and playlist URLs. Music links open in the music player, everything else in the video player.
+- **Links in descriptions and comments are tappable**, including timestamps, which seek the player and close the panel.
 - **Optional timed comments** that fade in over the video as playback reaches the moment they mention.
 - **Share** a video, playlist, or album out to any app.
 - **A Subscriptions tab** with the latest uploads from channels you follow, a channel-avatar rail, a full channel list, and drill-in to any channel's uploads.
@@ -153,6 +162,9 @@ Plus an **ambient artwork background**, an optional **chromatic-mist** effect, a
 - Full queue control with drag to reorder, shuffle, and repeat modes.
 - Auto-load queue that appends recommended songs when the queue runs low.
 - Crossfade between songs with an adjustable duration.
+- **Chunked streaming.** YouTube paces open-ended requests to roughly the bitrate of the media — measured at 32 KB/s on a stream that served 5-22 MB/s over the same connection when asked properly. Every fetch is ranged, which is what makes tap-to-play, seeking and downloads fast.
+- **Skips start from disk.** The head of the next three songs in the queue is pre-cached, so a skip does not pay a round trip before sound starts.
+- **A quicker first play each session.** The identity token needed before any stream resolves is minted from a small endpoint and reused across restarts, so a warm start does no network at all.
 - Stream prefetch and an on-device cache with a configurable size limit and a one-tap clear.
 - OEM and HyperOS fixes: high-compatibility scanning and a battery-optimization opt-out to keep background playback alive on aggressive devices.
 
@@ -179,11 +191,22 @@ Koda's interface is the product, not a wrapper around one. The whole app is cons
 - A rebuilt onboarding flow with a morphing shape hero, wavy progress indicator, and focused first-run steps.
 - A built-in updater that checks GitHub Releases, picks the right APK for your device's ABI, and installs it.
 
+### Settings
+
+- **A hub of eleven categories** rather than one long scroll, and every category row shows the live value of what is inside it — so "what is this set to?" is answered without opening anything.
+- **Settings search.** There are around fifty settings, and people know what they want rather than what it is called, so the index carries synonyms and tolerates typos. "offline" finds Local Only, "battery" finds the OEM fix, "bitrate" finds music quality, "songs not showing" finds compatibility scanning, and "amol" and "crossfde" both land where you meant.
+- **Quality is per-network.** Separate Wi-Fi and mobile-data settings for video and for music, applied automatically based on what you are connected to.
+- **Music streaming quality** of its own — High, Normal, or Data Saver.
+- **Prefer HDR Videos**, off by default. Turned on, HDR variants are listed alongside SDR and preferred at equal resolution, with a clean fallback for videos that have none.
+- **Destructive actions use the theme's error color**, so they read correctly across all palettes and AMOLED rather than being a hardcoded red.
+
 ### Authentication
 
 - **Several accounts at once, and profiles without one.** Add more than one YouTube account and switch between them from the home avatar - instantly, with no network and no signing in again, since each session is stored encrypted on the device. Long-press the avatar to flip straight back to the last one.
 - **Profiles that are not accounts.** A profile can be device-only, with no Google account at all, so you can keep separate sets of subscriptions and hidden recommendations without signing into anything.
 - Subscriptions and hidden recommendations are kept per profile. Playlists, liked songs, downloads and statistics are shared across all of them.
+- **Music keeps playing across a switch.** Everything account-derived resets — both feeds, subscriptions, the player's like and subscribe state — but killing your music because you checked another account is a bad trade.
+- Signing out of your last profile disconnects the account and keeps the profile, so its device-local subscriptions and blocklist survive.
 - An account whose session has expired says so on its own row, instead of quietly showing empty screens.
 - Sign in through an embedded WebView. No password ever leaves the browser.
 - **Or paste a session cookie** from a desktop browser, for when the in-app sign-in fails or a session has gone stale. The sheet walks through getting it and checks what you paste before saving.
