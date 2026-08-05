@@ -270,24 +270,24 @@ APKs are split by ABI for smaller downloads:
 - `arm64-v8a` for 64-bit ARM
 - a universal APK containing both
 
-For a deeper dive into the architecture, data flows, and the InnerTube layer, see [`CLAUDE.md`](CLAUDE.md). For the design system — shape, motion, color, and the rules for contributing UI code — see [`DESIGN.md`](DESIGN.md).
+For a deeper dive into the architecture, data flows, and the InnerTube layer, see [`CLAUDE.md`](CLAUDE.md). For the design system — shape, motion, color, and the rules for contributing UI code — see [`DESIGN.md`](DESIGN.md). For where the app is going and why, see [`ROADMAP.md`](ROADMAP.md).
 
 ---
 
 ## Roadmap
 
-- [x] Playlist management, create and edit playlists
-- [x] Lyrics support with synced display
-- [x] In-app video with a personalized feed, chapters, and captions
-- [x] Multiple player styles and a full color-palette system
-- [x] Listening statistics
-- [x] Offline downloads for music and video, saved to your Downloads folder
-- [x] Live streams with live chat, including a full-screen player for vertical broadcasts
-- [x] Account-free subscriptions with import from other apps, and "don't recommend this"
-- [x] Multiple accounts and device-only profiles, switchable without signing in again
-- [ ] Advanced audio: equalizer and gapless playback
-- [ ] Home screen widget for playback controls
-- [ ] Kotlin Multiplatform for desktop and iOS
+Where Koda is going lives in **[`ROADMAP.md`](ROADMAP.md)**. It is not a checklist — each item explains what it is, who it is for, what already exists in the codebase that it can reuse, and the constraints it has to fit inside. Several entries are diagnoses rather than wishes, with the cause already traced.
+
+The current tracks:
+
+- **Interface** — proper channel screens, per-channel notification settings, saving other people's playlists and albums, a simpler "Discover" home for music mode, a playlist upgrade with custom cover art, predictive back, haptics, and one consistent heading system.
+- **Playback** — carrying audio across a mode switch without a gap, and a crossfade that genuinely overlaps.
+- **Foundations** — backup and restore, playlist import and export, surviving process death, and a dependency audit.
+- **Reach** — Android Auto done properly, voice search, a home screen widget and Quick Settings tile, tablet layouts on every screen, Wear OS, and Android TV.
+
+It also carries a **Known defects** section for bugs that have been diagnosed but not yet fixed, and a **Shipped** section listing everything already done.
+
+If you are about to file a feature request, that document is the fastest way to find out whether it is already planned — and, for a few things, why it deliberately is not.
 
 ---
 

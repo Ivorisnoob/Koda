@@ -389,7 +389,7 @@ The in-app half is separate and smaller: a microphone in the search bar using th
 
 There is no `AppWidgetProvider`, no Glance widget, and no `TileService` in the project. Playback can only be controlled from the app, the notification, or the lock screen.
 
-**The widget** is the one already on the README's list: current artwork, title and artist, and transport controls, resizable, with the artwork colors it already extracts driving the widget's own theme so it does not look pasted on. Glance is the right tool since it is Compose-shaped, though it is a genuinely different rendering model with its own constraints, and the app's Expressive components do not carry over — the widget will need designing rather than porting.
+**The widget** is the long-standing request: current artwork, title and artist, and transport controls, resizable, with the artwork colors it already extracts driving the widget's own theme so it does not look pasted on. Glance is the right tool since it is Compose-shaped, though it is a genuinely different rendering model with its own constraints, and the app's Expressive components do not carry over — the widget will need designing rather than porting.
 
 **The Quick Settings tile** is the cheaper half almost nobody builds, and it is arguably the better fit for this app: a one-tap toggle in the shade to start or pause what was last playing, without unlocking or finding an icon. `PlaybackSessionRepository` already restores the last-played song, which is most of what a cold tile tap needs to do.
 
