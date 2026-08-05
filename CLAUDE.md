@@ -174,6 +174,22 @@ Never write or modify an InnerTube parser from memory or training data — respo
 
 Known browse IDs (verified July 2026): `FElibrary` (library shelves), `FEplaylist_aggregation` (all user playlists as `lockupViewModel`s with `contentType: LOCKUP_CONTENT_TYPE_PLAYLIST`), `VL<playlistId>` (playlist contents as `playlistVideoRenderer`s; `VLWL` = Watch Later, `VLLL` = Liked videos), `FEhistory` (watch history), `FEchannels` (subscriptions). The public `FEtrending` is dead (HTTP 400).
 
+### Profiles: several accounts, and none
+
+An identity in the app is a `Profile` (`data/ProfileManager.kt`): either a **YouTube profile** with a stored cookie string, or a **local profile** with no Google account at all. "Signed out" is not a special case any more — it is simply the local profile that always exists, which is why the roster can never be empty and why the avatar opens the switcher whether or not anyone is signed in.
+
+**Switching is one preference write, and that is the whole trick.** Every consumer already resolves the session fresh on each call — `SessionManager.getCookies()` is a preference read, and NewPipe's downloader, though `NewPipe.init`'d exactly once, holds a `SessionManager` that resolves the same way — so redirecting which profile is active moves the entire app onto another account without touching any of the 27 login-state call sites. **`SessionManager` therefore kept its public API byte-for-byte; do not "clean it up" into something profile-aware.** Consequences worth keeping: a switch needs no re-authentication, costs no network, and works offline.
+
+**The hard half is invalidation** (`data/AccountSwitcher.kt`, the one place that decides what a switch means). `visitorData` is the one that actually matters: it is the anti-bot identity, cached in `YouTubeRepository`'s companion, persisted device-wide in `ivor_visitor_data`, and prefetched independently by `MusicService.onCreate` and `VideoPlayerViewModel.init`. Replaying one account's token under another is exactly the "stale or shared value gets flagged `LOGIN_REQUIRED`" case that file already warns about, so it is dropped from memory *and* disk and left to re-mint. The caption cache is deliberately **not** cleared — it is keyed by video id, and a video's subtitles are the same whoever is watching.
+
+**Nothing can be reached directly, because there is no DI.** Everything account-derived observes the process-wide `ProfileManager.activeProfileId` and resets itself — `HomeViewModel` (both modes' feeds, subscriptions, identity), `VideoPlayerViewModel` (engagement + related, refetched for the playing video), `ShortsPlayerViewModel` (engagement + its watch-next cache), and `MusicService`, which is a second process-level holder: its own repository, its own visitorData prefetch, and a five-minute cache of the account's recommendations and playlists served to the media browser, which without this would list one account's playlists while the app is signed into another. All of them `drop(1)`, since the flow replays the current value on subscribe and that is not a switch.
+
+**Scope of data is a deliberate split.** Local subscriptions and the not-recommended blocklist are keyed per profile (`ProfileManager.profileScopedKey`), because both shape recommendations and those belong to the identity whose feed they shape. Playlists, liked songs, downloads, stats and theme stay device-wide. The profile migrated from a pre-profiles install inherits the **un-suffixed** keys, so upgrading does not orphan what the user already had.
+
+Two rules that are easy to get wrong: **adding an account must clear the WebView cookie jar first** (Google's login page auto-continues as whoever the jar already holds, so otherwise a second account silently hands back the first — stored sessions are untouched by the wipe), and **signing out of the last remaining profile disconnects the account in place rather than deleting the row**, keeping the profile id so its device-local subscriptions and blocklist survive. They never needed an account.
+
+Playback deliberately continues across a switch — streams are already resolved, and killing someone's music because they checked another account is a bad trade.
+
 ### Authentication
 
 - Login = WebView (`YouTubeAuthDialog`) → cookies captured from the **`music.youtube.com` cookie jar specifically** (never the current page URL — mid-login pages are on `accounts.google.com` whose jar also has a SAPISID; saving it produces a broken "logged in but anonymous" state).

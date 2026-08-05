@@ -145,6 +145,10 @@ Koda's interface is the product, not a wrapper around one. The whole app is cons
 
 ### Authentication
 
+- **Several accounts at once, and profiles without one.** Add more than one YouTube account and switch between them from the home avatar - instantly, with no network and no signing in again, since each session is stored encrypted on the device. Long-press the avatar to flip straight back to the last one.
+- **Profiles that are not accounts.** A profile can be device-only, with no Google account at all, so you can keep separate sets of subscriptions and hidden recommendations without signing into anything.
+- Subscriptions and hidden recommendations are kept per profile. Playlists, liked songs, downloads and statistics are shared across all of them.
+- An account whose session has expired says so on its own row, instead of quietly showing empty screens.
 - Sign in through an embedded WebView. No password ever leaves the browser.
 - **Or paste a session cookie** from a desktop browser, for when the in-app sign-in fails or a session has gone stale. The sheet walks through getting it and checks what you paste before saving.
 - Cookies are stored with EncryptedSharedPreferences and signed per-origin (SAPISIDHASH).
@@ -193,7 +197,9 @@ app/src/main/java/com/ivor/ivormusic/
 │   ├── StatsRepository      # Listening statistics
 │   ├── LyricsRepository     # Synced lyrics (LRCLIB)
 │   ├── UpdateRepository     # In-app updates from GitHub Releases
-│   ├── SessionManager       # Auth and cookies
+│   ├── SessionManager       # The active profile's session cookies
+│   ├── ProfileManager       # Profile roster: YouTube accounts and local ones
+│   ├── AccountSwitcher      # Switching, and everything it has to invalidate
 │   ├── ThemePreferences     # All app settings
 │   └── Models               # Song, Playlist, VideoItem, SubscriptionItem, ...
 ├── service/                 # Background services
@@ -278,6 +284,7 @@ For a deeper dive into the architecture, data flows, and the InnerTube layer, se
 - [x] Offline downloads for music and video, saved to your Downloads folder
 - [x] Live streams with live chat, including a full-screen player for vertical broadcasts
 - [x] Account-free subscriptions with import from other apps, and "don't recommend this"
+- [x] Multiple accounts and device-only profiles, switchable without signing in again
 - [ ] Advanced audio: equalizer and gapless playback
 - [ ] Home screen widget for playback controls
 - [ ] Kotlin Multiplatform for desktop and iOS
