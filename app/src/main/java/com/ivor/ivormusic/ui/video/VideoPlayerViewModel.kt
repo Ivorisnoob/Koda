@@ -37,6 +37,8 @@ import com.ivor.ivormusic.data.YouTubeRepository
 import com.ivor.ivormusic.data.ThemePreferences
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -104,6 +106,42 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     /** Local hide plus best-effort account propagation - see NotInterestedActions. */
     private val notInterestedActions =
         com.ivor.ivormusic.data.NotInterestedActions(notInterestedRepository, youtubeRepository)
+
+    /**
+     * Re-read the playing video's account state when the profile changes.
+     *
+     * Like, dislike, subscribe and the comment list are all the *account's*
+     * view of this video, so after a switch they describe somebody else.
+     * Playback itself is left running - the stream is already resolved, and
+     * stopping it because the user checked another account would be a bad
+     * trade - but everything account-shaped around it is refetched.
+     *
+     * Related videos come back with the engagement refetch, since both are
+     * parsed from the same watch-next response.
+     */
+    private fun observeProfileSwitches() {
+        viewModelScope.launch {
+            com.ivor.ivormusic.data.ProfileManager(context)
+                .activeProfileId
+                .drop(1)
+                .distinctUntilChanged()
+                .collect {
+                    youtubeRepository.clearSessionScopedInstanceCaches()
+                    _engagement.value = null
+                    _comments.value = emptyList()
+                    val playing = _currentVideo.value ?: return@collect
+                    val refreshed = runCatching {
+                        youtubeRepository.getWatchNextData(playing.videoId, playing)
+                    }.getOrNull() ?: return@collect
+                    // The user can have moved on while this was in flight.
+                    if (_currentVideo.value?.videoId != playing.videoId) return@collect
+                    _engagement.value = refreshed.engagement
+                    if (refreshed.relatedVideos.isNotEmpty()) {
+                        _relatedVideos.value = refreshed.relatedVideos
+                    }
+                }
+        }
+    }
 
     /** Hide one video from every recommendation feed. */
     fun markNotInterested(video: VideoItem) =
@@ -392,6 +430,8 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         DefaultDataSource.Factory(context, com.ivor.ivormusic.data.ChunkedStreamDataSource.Factory())
 
     init {
+        observeProfileSwitches()
+
         // Near-instant first frame (~1s buffered) plus an aggressive
         // read-ahead: up to 5 minutes (min == max: continuous top-up),
         // hard-capped at 200MB of sample RAM so high-bitrate 4K streams

@@ -24,6 +24,8 @@ import com.ivor.ivormusic.data.VideoQuality
 import com.ivor.ivormusic.data.YouTubeRepository
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -59,6 +61,41 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
     /** Local hide plus best-effort account propagation - see NotInterestedActions. */
     private val notInterestedActions =
         com.ivor.ivormusic.data.NotInterestedActions(notInterestedRepository, youtubeRepository)
+
+    /**
+     * Re-read the playing Short's account state when the profile changes.
+     *
+     * Engagement and the prefetched watch-next data are the account's view, so
+     * after a switch they describe somebody else and the like button would be
+     * lit for the wrong person.
+     *
+     * The Shorts sequence itself is deliberately left in place. It is filtered
+     * on ingestion and addressed positionally by both the pager and playIndex,
+     * so swapping the list underneath someone mid-watch would move them to a
+     * different Short than the one on screen. The feed is personalised and does
+     * go stale, but it is refreshed the next time Shorts is opened rather than
+     * yanked away from someone actively watching.
+     */
+    private fun observeProfileSwitches() {
+        viewModelScope.launch {
+            com.ivor.ivormusic.data.ProfileManager(context)
+                .activeProfileId
+                .drop(1)
+                .distinctUntilChanged()
+                .collect {
+                    youtubeRepository.clearSessionScopedInstanceCaches()
+                    synchronized(watchNextCache) { watchNextCache.clear() }
+                    _engagement.value = null
+                    val playing = _currentVideo.value ?: return@collect
+                    val refreshed = runCatching {
+                        youtubeRepository.getVideoEngagement(playing.videoId)
+                    }.getOrNull() ?: return@collect
+                    if (_currentVideo.value?.videoId == playing.videoId) {
+                        _engagement.value = refreshed
+                    }
+                }
+        }
+    }
 
     /**
      * The swipe sequence.
@@ -287,6 +324,8 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
         DefaultDataSource.Factory(context, com.ivor.ivormusic.data.ChunkedStreamDataSource.Factory())
 
     init {
+        observeProfileSwitches()
+
         // First frame after ~1s buffered, like the video player. Shorts are
         // under a minute, so the 60s max buffer already covers the whole clip
         // — no need for the long-form 5-minute read-ahead. Audio focus +
