@@ -146,6 +146,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
@@ -330,10 +331,16 @@ fun SettingsScreen(
         onDispose { lifecycle?.removeObserver(observer) }
     }
 
-    // Which category page is open. Back pops to the hub before it leaves
-    // Settings altogether.
+    // Which category page is open, and what is typed in the hub's search box.
     var page by remember { mutableStateOf(SettingsPage.HUB) }
-    BackHandler(enabled = page != SettingsPage.HUB) { page = SettingsPage.HUB }
+    var searchQuery by remember { mutableStateOf("") }
+
+    // Back unwinds one step at a time: an open page returns to the hub, then a
+    // live query clears, and only then does Settings close. The query survives
+    // opening a result on purpose, so coming back lands on the same list.
+    BackHandler(enabled = page != SettingsPage.HUB || searchQuery.isNotEmpty()) {
+        if (page != SettingsPage.HUB) page = SettingsPage.HUB else searchQuery = ""
+    }
 
     // Dialog state for YouTube auth
     var showAuthDialog by remember { mutableStateOf(false) }
@@ -369,6 +376,21 @@ fun SettingsScreen(
         showFolderExclusionDialog = true
     }
 
+    // Not remembered: the closures capture callbacks that arrive as parameters,
+    // and ~38 small objects per recomposition is cheaper than a stale index.
+    val searchEntries = buildSettingsSearchIndex(
+        onOpenPage = { page = it },
+        onOpenQualityPicker = { qualityDialogTarget = it },
+        onOpenRoutingPicker = { subscriptionDialogTarget = it },
+        onShowAbout = { showAboutDialog = true },
+        onShowShortsButtons = { showShortsButtonsDialog = true },
+        onOpenFolderExclusion = openFolderExclusion,
+        onNavigateToColorPalette = onNavigateToColorPalette,
+        onNavigateToSubscriptions = onNavigateToSubscriptions,
+        onNavigateToNotInterested = onNavigateToNotInterested,
+        supportsLiveUpdates = ThemePreferences.SUPPORTS_LIVE_UPDATES
+    )
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -396,6 +418,9 @@ fun SettingsScreen(
         ) { currentPage ->
             when (currentPage) {
                 SettingsPage.HUB -> SettingsHub(
+                    searchQuery = searchQuery,
+                    onSearchQueryChange = { searchQuery = it },
+                    searchEntries = searchEntries,
                     isLoggedIn = isLoggedIn,
                     accountRefreshKey = accountRefreshKey,
                     sessionManager = sessionManager,
@@ -653,6 +678,9 @@ fun SettingsScreen(
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun SettingsHub(
+    searchQuery: String,
+    onSearchQueryChange: (String) -> Unit,
+    searchEntries: List<SettingsSearchEntry>,
     isLoggedIn: Boolean,
     accountRefreshKey: Int,
     sessionManager: SessionManager,
@@ -682,6 +710,9 @@ private fun SettingsHub(
         isVisible = true
     }
 
+    // Opening a result should put the keyboard away before the page slides in.
+    val focusManager = LocalFocusManager.current
+
     val accountValue = key(accountRefreshKey) {
         when {
             !isLoggedIn -> "Not signed in"
@@ -699,8 +730,7 @@ private fun SettingsHub(
     } else {
         com.ivor.ivormusic.ui.theme.findPalette(colorPalette)?.name ?: "Dynamic"
     }
-    val playerStyleLabel = (playerStyleOptions.firstOrNull { it.style == playerStyle }
-        ?: playerStyleOptions.first()).label
+    val playerStyleLabel = com.ivor.ivormusic.ui.player.playerStyleInfo(playerStyle).label
 
     val contentValue = when {
         localOnlyMode -> "Local only, offline"
@@ -773,6 +803,36 @@ private fun SettingsHub(
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
+            item {
+                SettingsSearchField(
+                    query = searchQuery,
+                    onQueryChange = onSearchQueryChange
+                )
+            }
+
+            val results = searchSettings(searchQuery, searchEntries)
+
+            if (searchQuery.isNotBlank()) {
+                if (results.isEmpty()) {
+                    item { SettingsSearchEmptyState(query = searchQuery) }
+                } else {
+                    item {
+                        SettingsCard {
+                            results.forEachIndexed { index, entry ->
+                                if (index > 0) SettingsDivider()
+                                SettingsSearchResultRow(
+                                    entry = entry,
+                                    onClick = {
+                                        focusManager.clearFocus()
+                                        entry.action()
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+            } else {
+
             item {
                 SettingsSection(title = "You") {
                     SettingsCard {
@@ -896,6 +956,8 @@ private fun SettingsHub(
                         )
                     }
                 }
+            }
+
             }
 
             item { Spacer(modifier = Modifier.height(32.dp)) }
@@ -1125,107 +1187,6 @@ internal fun ExpressiveVideoModeToggleItem(
                 ) {
                     Text(label)
                 }
-            }
-        }
-    }
-}
-
-internal data class PlayerStyleOption(
-    val style: PlayerStyle,
-    val label: String,
-    val subtitle: String,
-    val icon: androidx.compose.ui.graphics.vector.ImageVector
-)
-
-internal val playerStyleOptions = listOf(
-    PlayerStyleOption(PlayerStyle.CLASSIC, "Classic", "Button controls for playback", Icons.Rounded.PlayCircle),
-    PlayerStyleOption(PlayerStyle.GESTURE, "Gesture", "Swipe album art to navigate", Icons.Rounded.SwipeRight),
-    PlayerStyleOption(PlayerStyle.EDITORIAL, "Editorial", "Two-tone magazine layout", Icons.Rounded.Newspaper),
-    PlayerStyleOption(PlayerStyle.POSTER, "Canvas", "Full-bleed album art", Icons.Rounded.Wallpaper),
-    PlayerStyleOption(PlayerStyle.BENTO, "Bento", "Squishy grid of flat tiles", Icons.Rounded.GridView),
-    PlayerStyleOption(PlayerStyle.STICKER, "Sticker", "Die-cut art with toy physics", Icons.Rounded.Interests),
-    PlayerStyleOption(PlayerStyle.MORPH, "Morph", "Living shape that breathes", Icons.Rounded.Animation),
-    PlayerStyleOption(PlayerStyle.DIAL, "Dial", "Rotary ring, spin to scrub", Icons.Rounded.RadioButtonChecked)
-)
-
-@OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
-@Composable
-internal fun ExpressivePlayerStyleSelectItem(
-    currentStyle: PlayerStyle,
-    onStyleSelected: (PlayerStyle) -> Unit,
-    textColor: Color,
-    secondaryTextColor: Color,
-    accentColor: Color
-) {
-    val current = playerStyleOptions.firstOrNull { it.style == currentStyle }
-        ?: playerStyleOptions.first()
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 14.dp)
-    ) {
-        // Header Row
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Icon
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(accentColor.copy(alpha = 0.12f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = current.icon,
-                    contentDescription = null,
-                    tint = accentColor,
-                    modifier = Modifier.size(26.dp)
-                )
-            }
-
-            Spacer(modifier = Modifier.width(16.dp))
-
-            // Text
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "Player Style",
-                    color = textColor,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = current.subtitle,
-                    color = secondaryTextColor,
-                    fontSize = 13.sp
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        // Wrapping chip grid - scales past the point where a segmented row
-        // stops fitting.
-        FlowRow(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            playerStyleOptions.forEach { option ->
-                FilterChip(
-                    selected = currentStyle == option.style,
-                    onClick = { onStyleSelected(option.style) },
-                    label = { Text(option.label) },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = option.icon,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                )
             }
         }
     }

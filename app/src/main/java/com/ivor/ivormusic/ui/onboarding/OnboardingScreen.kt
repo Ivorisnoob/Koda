@@ -112,6 +112,7 @@ import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberPermissionState
 import com.ivor.ivormusic.data.PlayerStyle
+import com.ivor.ivormusic.ui.player.PlayerStylePicker
 import com.ivor.ivormusic.data.SessionManager
 import com.ivor.ivormusic.ui.auth.YouTubeAuthDialog
 import com.ivor.ivormusic.ui.theme.ThemeMode
@@ -684,23 +685,16 @@ private fun LookAndFeelPage(
         )
 
         ChoiceCard(title = "Player style") {
-            ConnectedChoiceGroup(
-                options = listOf(
-                    PlayerStyle.CLASSIC to "Classic",
-                    PlayerStyle.GESTURE to "Gesture"
-                ),
-                selected = playerStyle,
-                onSelect = onPlayerStyleChange
-            )
-            Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = if (playerStyle == PlayerStyle.GESTURE) {
-                    "Swipe-driven player with fluid, physical motion."
-                } else {
-                    "Familiar buttons for play, pause and skipping."
-                },
+                text = "Pick the player you want. You can change it any time in " +
+                    "Settings, or by long-pressing the artwork while a song plays.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            PlayerStylePicker(
+                currentStyle = playerStyle,
+                onStyleSelected = onPlayerStyleChange
             )
         }
     }

@@ -182,19 +182,16 @@ fun Modifier.styleWheelHold(controller: PlayerStyleWheelController?): Modifier {
     }
 }
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+/**
+ * Derived from [playerStyleCatalog] rather than listed again here - the wheel,
+ * the settings picker and onboarding all describe the same eight styles, and
+ * keeping three copies in step by hand is how one of them goes stale.
+ */
 @Composable
 internal fun rememberPlayerStyleWheelEntries(): List<PlayerStyleWheelEntry> = remember {
-    listOf(
-        PlayerStyleWheelEntry(PlayerStyle.CLASSIC, "Classic", Icons.Rounded.PlayCircle, MaterialShapes.Circle),
-        PlayerStyleWheelEntry(PlayerStyle.GESTURE, "Gesture", Icons.Rounded.SwipeRight, MaterialShapes.Pill),
-        PlayerStyleWheelEntry(PlayerStyle.EDITORIAL, "Editorial", Icons.Rounded.Newspaper, MaterialShapes.Flower),
-        PlayerStyleWheelEntry(PlayerStyle.POSTER, "Canvas", Icons.Rounded.Wallpaper, MaterialShapes.Gem),
-        PlayerStyleWheelEntry(PlayerStyle.BENTO, "Bento", Icons.Rounded.GridView, MaterialShapes.Cookie4Sided),
-        PlayerStyleWheelEntry(PlayerStyle.STICKER, "Sticker", Icons.Rounded.Interests, MaterialShapes.Clover4Leaf),
-        PlayerStyleWheelEntry(PlayerStyle.MORPH, "Morph", Icons.Rounded.Animation, MaterialShapes.SoftBurst),
-        PlayerStyleWheelEntry(PlayerStyle.DIAL, "Dial", Icons.Rounded.RadioButtonChecked, MaterialShapes.Sunny)
-    )
+    playerStyleCatalog.map { info ->
+        PlayerStyleWheelEntry(info.style, info.label, info.icon, info.polygon)
+    }
 }
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)

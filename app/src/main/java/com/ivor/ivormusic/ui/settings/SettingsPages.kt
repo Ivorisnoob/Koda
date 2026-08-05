@@ -79,6 +79,7 @@ import com.ivor.ivormusic.data.CacheManager
 import com.ivor.ivormusic.data.PlayerStyle
 import com.ivor.ivormusic.data.SessionManager
 import com.ivor.ivormusic.data.ThemePreferences
+import com.ivor.ivormusic.ui.player.PlayerStylePicker
 import com.ivor.ivormusic.ui.theme.ThemeMode
 
 /**
@@ -282,15 +283,30 @@ internal fun PlayerSettingsPage(
         item {
             SettingsSection(title = "Style") {
                 SettingsCard {
-                    ExpressivePlayerStyleSelectItem(
-                        currentStyle = playerStyle,
-                        onStyleSelected = onPlayerStyleChange,
-                        textColor = MaterialTheme.colorScheme.onBackground,
-                        secondaryTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        accentColor = MaterialTheme.colorScheme.primary
-                    )
+                    Column(modifier = Modifier.padding(10.dp)) {
+                        Text(
+                            text = "Every style plays the same music - they differ in " +
+                                "layout and how you control it.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 13.sp,
+                            lineHeight = 18.sp,
+                            modifier = Modifier.padding(bottom = 12.dp)
+                        )
+                        PlayerStylePicker(
+                            currentStyle = playerStyle,
+                            onStyleSelected = onPlayerStyleChange
+                        )
+                    }
                 }
             }
+        }
+
+        item {
+            SettingsNotice(
+                icon = Icons.Rounded.Info,
+                text = "Long-press the artwork in any player to switch styles from " +
+                    "the wheel without coming back here."
+            )
         }
 
         item {
