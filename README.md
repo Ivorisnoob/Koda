@@ -9,6 +9,12 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/Ivorisnoob/Koda/releases/latest"><img src="https://img.shields.io/github/v/release/Ivorisnoob/Koda?style=for-the-badge&label=Download&color=6750A4" alt="Latest release"/></a>
+  <a href="https://github.com/Ivorisnoob/Koda/releases"><img src="https://img.shields.io/github/downloads/Ivorisnoob/Koda/total?style=for-the-badge&color=1B6C3A" alt="Downloads"/></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/Ivorisnoob/Koda?style=for-the-badge&color=8B4513" alt="License"/></a>
+</p>
+
+<p align="center">
   <img src="https://img.shields.io/badge/Platform-Android-green?style=for-the-badge&logo=android" alt="Platform"/>
   <img src="https://img.shields.io/badge/Min%20SDK-30-blue?style=for-the-badge" alt="Min SDK"/>
   <img src="https://img.shields.io/badge/Kotlin-100%25-purple?style=for-the-badge&logo=kotlin" alt="Kotlin"/>
@@ -31,6 +37,36 @@ Koda is built entirely with Kotlin and Jetpack Compose, and it is built **ground
 It streams music and video from YouTube, learns what you like, and does it without any official API keys. Everything runs through NewPipe Extractor and direct InnerTube calls.
 
 There is one app with two modes. Leave the video toggle off and Koda is a full music player with a queue, downloads, playlists, statistics, and a library. Turn it on and the Home, Search, and Library tabs reshape into a proper video experience with a personalized feed, a real player, chapters, captions, comments, subscriptions, and notifications. No Google API key is ever required, and the whole app works — search, streaming, downloads, a local taste profile — even without signing in.
+
+## Download
+
+Get the latest APK from **[Releases](https://github.com/Ivorisnoob/Koda/releases/latest)**. Builds are also posted in the [Telegram chat](https://t.me/ivorisnoob_chat) as they are cut.
+
+Each release publishes three APKs. Pick the one that matches your device:
+
+| APK | Who it is for |
+|-----|---------------|
+| `arm64-v8a` | Essentially every phone made since around 2017. **Start here.** |
+| `armeabi-v7a` | Older 32-bit devices. |
+| `universal` | Both of the above in one larger file. Use it if you are not sure. |
+
+Android will warn you before installing an app from outside the Play Store — that is expected for a sideloaded app, not a sign of a problem. You only have to do this once: Koda's built-in updater watches Releases, picks the right APK for your device's ABI automatically, and installs it from then on.
+
+Koda is published here and in the Telegram chat, nowhere else. See [SECURITY.md](SECURITY.md) for why a build from anywhere else cannot be vouched for.
+
+**Requirements:** Android 11 (API 30) or newer. No Google account is required — see [Authentication](#authentication) for what changes if you sign in.
+
+---
+
+## Signing in is optional
+
+Personalized feeds, watch history, comments, and engagement need a signed-in account. To connect one, open Settings and tap **Connect YouTube Account**.
+
+Everything else works signed out: search, streaming, downloads, local playlists, liked songs, subscriptions, and recommendations built from a local taste profile of your own listening. Signing in adds to that rather than replacing it — the feeds merge. See [Authentication](#authentication) for the full split.
+
+On Android 11 specifically, wallpaper-based dynamic color is unavailable, since that is an Android 12 platform feature. Koda falls back to its bundled palettes; everything else behaves the same.
+
+---
 
 ## Features
 
@@ -157,6 +193,23 @@ Koda's interface is the product, not a wrapper around one. The whole app is cons
 
 ---
 
+## Roadmap
+
+Where Koda is going lives in **[`ROADMAP.md`](ROADMAP.md)**. It is not a checklist — each item explains what it is, who it is for, what already exists in the codebase that it can reuse, and the constraints it has to fit inside. Several entries are diagnoses rather than wishes, with the cause already traced.
+
+The current tracks:
+
+- **Interface** — proper channel screens, per-channel notification settings, saving other people's playlists and albums, a simpler "Discover" home for music mode, a playlist upgrade with custom cover art, predictive back, haptics, and one consistent heading system.
+- **Playback** — carrying audio across a mode switch without a gap, and a crossfade that genuinely overlaps.
+- **Foundations** — backup and restore, playlist import and export, surviving process death, and a dependency audit.
+- **Reach** — Android Auto done properly, voice search, a home screen widget and Quick Settings tile, tablet layouts on every screen, Wear OS, and Android TV.
+
+It also carries a **Known defects** section for bugs that have been diagnosed but not yet fixed, and a **Shipped** section listing everything already done.
+
+If you are about to file a feature request, that document is the fastest way to find out whether it is already planned — and, for a few things, why it deliberately is not.
+
+---
+
 ## Technical Stack
 
 | Component | Technology |
@@ -172,11 +225,13 @@ Koda's interface is the product, not a wrapper around one. The whole app is cons
 | Concurrency | Kotlin Coroutines and Flow |
 | Min SDK | 30 (Android 11) |
 | Target SDK | 36 |
-| Version | 4.3 |
 
 ---
 
 ## Project Structure
+
+<details>
+<summary>Expand the source tree</summary>
 
 ```
 app/src/main/java/com/ivor/ivormusic/
@@ -221,73 +276,46 @@ app/src/main/java/com/ivor/ivormusic/
     └── theme/               # Material 3 theming and color palettes
 ```
 
+</details>
+
 ---
 
-## Getting Started
+## Building from source
 
 ### Prerequisites
 
 - Android Studio Ladybug or newer
-- An Android device or emulator running API 30 (Android 11) or higher
+- A device or emulator running API 30 (Android 11) or higher
 
-On Android 11, wallpaper-based dynamic color is unavailable — that is an Android 12 platform feature — so Koda falls back to its bundled palettes. Everything else (playback, downloads, video, sign-in) works the same.
-
-### Installation
-
-1. Clone the repository
-   ```bash
-   git clone https://github.com/Ivorisnoob/Koda.git
-   ```
-2. Open it in Android Studio.
-3. Sync Gradle to download dependencies.
-4. Run it on your device.
-
-### YouTube account (optional)
-
-Personalized feeds, watch history, comments, and engagement need a signed-in account. To connect one, open Settings, tap Connect YouTube Account, and sign in with Google. Koda works without an account too, using a local taste profile for recommendations.
-
----
-
-## Building
-
-### Debug APK
+### Debug build
 
 ```bash
+git clone https://github.com/Ivorisnoob/Koda.git
+cd Koda
 ./gradlew assembleDebug
 ```
 
-### Release APK
+Or open the project in Android Studio, sync Gradle, and hit run.
 
-Configure the keystore in `app/build.gradle.kts` (or the `KEYSTORE_PASSWORD` / `KEY_ALIAS` / `KEY_PASSWORD` env vars), then:
+### Release build
+
+Configure the keystore in `app/build.gradle.kts`, or set the `KEYSTORE_PASSWORD`, `KEY_ALIAS` and `KEY_PASSWORD` environment variables, then:
 
 ```bash
 ./gradlew assembleRelease
 ```
 
-APKs are split by ABI for smaller downloads:
+Both build types split by ABI — `arm64-v8a`, `armeabi-v7a`, and a universal APK containing both.
 
-- `armeabi-v7a` for 32-bit ARM
-- `arm64-v8a` for 64-bit ARM
-- a universal APK containing both
+### Where to read next
 
-For a deeper dive into the architecture, data flows, and the InnerTube layer, see [`CLAUDE.md`](CLAUDE.md). For the design system — shape, motion, color, and the rules for contributing UI code — see [`DESIGN.md`](DESIGN.md). For where the app is going and why, see [`ROADMAP.md`](ROADMAP.md).
-
----
-
-## Roadmap
-
-Where Koda is going lives in **[`ROADMAP.md`](ROADMAP.md)**. It is not a checklist — each item explains what it is, who it is for, what already exists in the codebase that it can reuse, and the constraints it has to fit inside. Several entries are diagnoses rather than wishes, with the cause already traced.
-
-The current tracks:
-
-- **Interface** — proper channel screens, per-channel notification settings, saving other people's playlists and albums, a simpler "Discover" home for music mode, a playlist upgrade with custom cover art, predictive back, haptics, and one consistent heading system.
-- **Playback** — carrying audio across a mode switch without a gap, and a crossfade that genuinely overlaps.
-- **Foundations** — backup and restore, playlist import and export, surviving process death, and a dependency audit.
-- **Reach** — Android Auto done properly, voice search, a home screen widget and Quick Settings tile, tablet layouts on every screen, Wear OS, and Android TV.
-
-It also carries a **Known defects** section for bugs that have been diagnosed but not yet fixed, and a **Shipped** section listing everything already done.
-
-If you are about to file a feature request, that document is the fastest way to find out whether it is already planned — and, for a few things, why it deliberately is not.
+| Document | What is in it |
+|----------|---------------|
+| [`CLAUDE.md`](CLAUDE.md) | Architecture, data flows, and the InnerTube layer in depth |
+| [`DESIGN.md`](DESIGN.md) | The design system: shape, motion, color, and the rules for UI code |
+| [`ROADMAP.md`](ROADMAP.md) | Where the app is going, and the defects already diagnosed |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | How to open a pull request |
+| [`SECURITY.md`](SECURITY.md) | Reporting a vulnerability, and what is in scope |
 
 ---
 
@@ -299,15 +327,21 @@ Join the Telegram chat at **[t.me/ivorisnoob_chat](https://t.me/ivorisnoob_chat)
 
 ## Contributing
 
-Contributions are welcome, whether it is a bug report, a feature idea, or a pull request. See [CONTRIBUTING.md](CONTRIBUTING.md) to get started.
+Contributions are welcome, whether it is a bug report, a feature idea, or a pull request. See [CONTRIBUTING.md](CONTRIBUTING.md) to get started, and [ROADMAP.md](ROADMAP.md) if you are looking for something to pick up — the **Known defects** section lists bugs that have already been traced to a file and a line.
+
+Everyone taking part is expected to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
+
+---
+
+## Security
+
+Found a vulnerability? Please do not open a public issue or post it in the Telegram chat. Report it privately through the [Security tab](https://github.com/Ivorisnoob/Koda/security/advisories), and see [SECURITY.md](SECURITY.md) for what is in scope.
 
 ---
 
 ## License
 
-GNU GPL V3
-
-See the [LICENSE](LICENSE) file.
+Koda is licensed under the **GNU General Public License v3.0**. See the [LICENSE](LICENSE) file for the full text.
 
 ---
 
