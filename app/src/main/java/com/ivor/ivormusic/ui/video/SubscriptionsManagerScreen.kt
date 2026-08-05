@@ -187,16 +187,19 @@ fun SubscriptionsManagerScreen(
                     ManagerRow(
                         icon = Icons.Rounded.FileUpload,
                         title = "Import from a file",
-                        subtitle = "NewPipe, PipePipe, Tubular or a Google Takeout export",
+                        subtitle = "A NewPipe, PipePipe or Tubular export or backup, " +
+                            "or a Google Takeout file",
                         enabled = !isImporting,
                         onClick = {
-                            // Exports are .json, .csv, .opml or .xml, and a
-                            // fair number of file providers report all of them
-                            // as octet-stream, so the filter has to stay wide.
+                            // Exports are .json, .csv, .opml or .xml, backups
+                            // are .zip, and a fair number of file providers
+                            // report all of them as octet-stream, so the filter
+                            // has to stay wide.
                             importLauncher.launch(
                                 arrayOf(
                                     "application/json", "text/csv", "text/comma-separated-values",
                                     "text/xml", "application/xml", "text/plain",
+                                    "application/zip", "application/x-zip-compressed",
                                     "application/octet-stream"
                                 )
                             )

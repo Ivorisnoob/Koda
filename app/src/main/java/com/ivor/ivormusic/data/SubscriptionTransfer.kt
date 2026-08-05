@@ -1,7 +1,23 @@
 package com.ivor.ivormusic.data
 
+import android.database.sqlite.SQLiteDatabase
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
+import java.util.zip.ZipInputStream
+
+/**
+ * Everything one picked file yielded.
+ *
+ * The foreign-service count rides along rather than being derived by a second
+ * pass, because a database export is opened once and closed again - the count
+ * is only knowable while that read is happening.
+ */
+data class ImportedFile(
+    val channels: List<ImportedChannel> = emptyList(),
+    val groups: List<SubscriptionGroup> = emptyList(),
+    val foreignServiceEntries: Int = 0
+)
 
 /**
  * Reads and writes the subscription-list file formats users actually have on
@@ -9,20 +25,66 @@ import org.json.JSONObject
  *
  * - **NewPipe / PipePipe / Tubular `subscriptions.json`** - the de-facto
  *   interchange format across the whole NewPipe fork family.
+ * - **A NewPipe-family backup archive** - `NewPipeData-*.zip` /
+ *   `PipePipeData-*.zip`, holding the app's whole Room database.
  * - **Google Takeout `subscriptions.csv`** - what YouTube itself hands you.
  * - **OPML** - what most RSS readers and the old `subscription_manager`
  *   export produce.
  *
  * The format is sniffed rather than asked for, because a user picking a file
- * out of Downloads should not have to know which of the three they grabbed.
+ * out of Downloads should not have to know which of them they grabbed - and in
+ * PipePipe's case the two exports live in different menus, so people routinely
+ * arrive with the backup when they wanted the subscription list.
  *
- * Everything here is pure parsing over a String; resolving handles to
- * canonical UC ids needs the network and belongs to [YouTubeRepository].
+ * Text parsing here is pure; the database path needs a real file (see [read]).
+ * Resolving handles to canonical UC ids needs the network and belongs to
+ * [YouTubeRepository].
  */
 object SubscriptionTransfer {
 
     /** NewPipe's service id for YouTube. Other services cannot be played here. */
     private const val SERVICE_ID_YOUTUBE = 0
+
+    /**
+     * Reads whichever export [bytes] turned out to be.
+     *
+     * [scratchFile] is where a database is unpacked to: SQLite can only open a
+     * real path, so a backup archive cannot be parsed from the bytes alone.
+     * It is written and deleted within this call - the caller only has to
+     * name somewhere private, normally in `cacheDir`.
+     */
+    fun read(bytes: ByteArray, scratchFile: File): ImportedFile {
+        if (looksLikeZip(bytes)) {
+            return if (unpackDatabase(bytes, scratchFile)) {
+                try {
+                    parseDatabase(scratchFile)
+                } finally {
+                    scratchFile.delete()
+                }
+            } else {
+                ImportedFile()
+            }
+        }
+        // Someone who unzipped the backup by hand and picked the database out
+        // of it lands here, and means exactly the same thing.
+        if (looksLikeSqlite(bytes)) {
+            return try {
+                scratchFile.writeBytes(bytes)
+                parseDatabase(scratchFile)
+            } catch (e: Exception) {
+                android.util.Log.w(TAG, "Could not read that database", e)
+                ImportedFile()
+            } finally {
+                scratchFile.delete()
+            }
+        }
+        val text = bytes.toString(Charsets.UTF_8)
+        return ImportedFile(
+            channels = parse(text),
+            groups = parseGroups(text),
+            foreignServiceEntries = countForeignServiceEntries(text)
+        )
+    }
 
     /**
      * Parses [text] as whichever of the supported formats it looks like.
@@ -56,6 +118,175 @@ object SubscriptionTransfer {
             } ?: 0
         } catch (e: Exception) {
             0
+        }
+    }
+
+    // ---------------- NewPipe-family backup archive ----------------
+
+    private fun looksLikeZip(bytes: ByteArray): Boolean =
+        bytes.size >= 4 && bytes[0] == 0x50.toByte() && bytes[1] == 0x4B.toByte() &&
+            bytes[2] == 0x03.toByte() && bytes[3] == 0x04.toByte()
+
+    private fun looksLikeSqlite(bytes: ByteArray): Boolean =
+        bytes.size >= SQLITE_MAGIC.size &&
+            SQLITE_MAGIC.indices.all { bytes[it] == SQLITE_MAGIC[it] }
+
+    /**
+     * Pulls the database out of a `NewPipeData-*.zip` / `PipePipeData-*.zip`
+     * into [destination]. The archive also carries a `.settings` file, which
+     * is of no interest here.
+     *
+     * Entry names are only used to spot the database - never to build the
+     * destination path, so a crafted archive cannot write outside cacheDir -
+     * and the copy is capped, since an export is a couple of megabytes and
+     * anything wildly past that is not one.
+     */
+    private fun unpackDatabase(bytes: ByteArray, destination: File): Boolean {
+        return try {
+            ZipInputStream(bytes.inputStream()).use { zip ->
+                while (true) {
+                    val entry = zip.nextEntry ?: break
+                    val name = entry.name.substringAfterLast('/')
+                    if (entry.isDirectory || !name.endsWith(".db", ignoreCase = true)) {
+                        zip.closeEntry()
+                        continue
+                    }
+                    destination.outputStream().use { out ->
+                        val buffer = ByteArray(64 * 1024)
+                        var written = 0L
+                        while (true) {
+                            val read = zip.read(buffer)
+                            if (read <= 0) break
+                            written += read
+                            if (written > MAX_DATABASE_BYTES) {
+                                throw IllegalStateException("Database entry too large")
+                            }
+                            out.write(buffer, 0, read)
+                        }
+                    }
+                    return true
+                }
+            }
+            android.util.Log.w(TAG, "No database inside that archive")
+            false
+        } catch (e: Exception) {
+            android.util.Log.w(TAG, "Could not unpack that archive", e)
+            destination.delete()
+            false
+        }
+    }
+
+    /**
+     * Reads the NewPipe-family Room schema directly:
+     *
+     * ```
+     * subscriptions(uid, service_id, url, name, avatar_url, ...)
+     * feed_group(uid, name, ...)
+     * feed_group_subscription_join(group_id, subscription_id)
+     * ```
+     *
+     * Verified against a PipePipe export, August 2026. Columns are located by
+     * name and every one but `url` is optional, because the schema has grown
+     * over the years and the forks are not all on the same revision - an
+     * import that fails outright on a missing `avatar_url` would be a worse
+     * answer than one that simply has no pictures yet.
+     *
+     * Avatars are carried across, which the JSON export cannot do, so a
+     * database import arrives with channel pictures already filled in.
+     */
+    private fun parseDatabase(file: File): ImportedFile {
+        return try {
+            SQLiteDatabase.openDatabase(
+                file.absolutePath, null, SQLiteDatabase.OPEN_READONLY
+            ).use { db ->
+                val channels = mutableListOf<ImportedChannel>()
+                // Kept so the group join, which addresses rows by uid, can be
+                // turned into channel ids.
+                val channelIdByRow = mutableMapOf<Long, String>()
+                var foreign = 0
+
+                db.rawQuery(
+                    "SELECT uid, service_id, url, name, avatar_url FROM subscriptions", null
+                ).use { cursor ->
+                    val uidCol = cursor.getColumnIndex("uid")
+                    val serviceCol = cursor.getColumnIndex("service_id")
+                    val urlCol = cursor.getColumnIndex("url")
+                    val nameCol = cursor.getColumnIndex("name")
+                    val avatarCol = cursor.getColumnIndex("avatar_url")
+                    while (cursor.moveToNext()) {
+                        val service =
+                            if (serviceCol >= 0) cursor.getInt(serviceCol) else SERVICE_ID_YOUTUBE
+                        if (service != SERVICE_ID_YOUTUBE) {
+                            foreign++
+                            continue
+                        }
+                        val url = if (urlCol >= 0) cursor.getString(urlCol) else null
+                        if (url.isNullOrBlank()) continue
+                        val name = if (nameCol >= 0) {
+                            cursor.getString(nameCol)?.takeIf { it.isNotBlank() }
+                        } else null
+                        val avatar = if (avatarCol >= 0) {
+                            cursor.getString(avatarCol)?.takeIf { it.isNotBlank() }
+                        } else null
+                        val channel = fromUrl(url, name)?.copy(avatarUrl = avatar) ?: continue
+                        channels.add(channel)
+                        val channelId = channel.channelId
+                        if (uidCol >= 0 && channelId != null) {
+                            channelIdByRow[cursor.getLong(uidCol)] = channelId
+                        }
+                    }
+                }
+                ImportedFile(channels, readDatabaseGroups(db, channelIdByRow), foreign)
+            }
+        } catch (e: Exception) {
+            android.util.Log.w(TAG, "Not a NewPipe-family database", e)
+            ImportedFile()
+        }
+    }
+
+    /**
+     * Feed groups, mapped onto Koda's own. Older schema revisions have no
+     * group tables at all, so a failure here costs the groups and keeps the
+     * channels rather than failing the import - the channels are the point.
+     *
+     * A group member whose row did not resolve to a canonical UC id is
+     * dropped: groups are matched by channel id everywhere else, and a
+     * handle placed in one would silently never match.
+     */
+    private fun readDatabaseGroups(
+        db: SQLiteDatabase,
+        channelIdByRow: Map<Long, String>
+    ): List<SubscriptionGroup> {
+        if (channelIdByRow.isEmpty()) return emptyList()
+        return try {
+            val members = linkedMapOf<String, MutableList<String>>()
+            db.rawQuery(
+                """
+                SELECT g.name AS group_name, j.subscription_id AS subscription_id
+                FROM feed_group g
+                JOIN feed_group_subscription_join j ON j.group_id = g.uid
+                """.trimIndent(),
+                null
+            ).use { cursor ->
+                val nameCol = cursor.getColumnIndex("group_name")
+                val subCol = cursor.getColumnIndex("subscription_id")
+                if (nameCol < 0 || subCol < 0) return emptyList()
+                while (cursor.moveToNext()) {
+                    val name = cursor.getString(nameCol)?.takeIf { it.isNotBlank() } ?: continue
+                    val channelId = channelIdByRow[cursor.getLong(subCol)] ?: continue
+                    members.getOrPut(name) { mutableListOf() }.add(channelId)
+                }
+            }
+            members.map { (name, ids) ->
+                SubscriptionGroup(
+                    id = java.util.UUID.randomUUID().toString(),
+                    name = name,
+                    channelIds = ids.distinct()
+                )
+            }
+        } catch (e: Exception) {
+            android.util.Log.w(TAG, "No readable feed groups in that database", e)
+            emptyList()
         }
     }
 
@@ -289,6 +520,17 @@ object SubscriptionTransfer {
     }
 
     private const val TAG = "SubscriptionTransfer"
+
+    /**
+     * The 16-byte header every SQLite file opens with. The terminating NUL is
+     * appended rather than written into the literal, where it would be an
+     * invisible character in source and a trap for whoever edits the line next.
+     */
+    private val SQLITE_MAGIC =
+        "SQLite format 3".toByteArray(Charsets.US_ASCII) + 0.toByte()
+
+    /** A real export is a few MB; this is only here to bound a hostile zip. */
+    private const val MAX_DATABASE_BYTES = 128L * 1024 * 1024
 
     private val UC_ID = Regex("""^UC[\w-]{20,}$""")
     private val CHANNEL_ID_IN_URL =

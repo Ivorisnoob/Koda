@@ -78,7 +78,7 @@ Plus an **ambient artwork background**, an optional **chromatic-mist** effect, a
 - **Share** a video, playlist, or album out to any app.
 - **A Subscriptions tab** with the latest uploads from channels you follow, a channel-avatar rail, a full channel list, and drill-in to any channel's uploads.
 - **Follow channels without a Google account.** Subscriptions can be saved to the device instead of (or as well as) your YouTube account, and the feed merges both. A **Subscribe saves to** setting picks which.
-- **Import your subscriptions** from NewPipe, PipePipe, Tubular, a Google Takeout CSV, or OPML — the file type is detected for you, and channels Koda cannot play are reported rather than dropped silently. Export writes the NewPipe-compatible format so it round-trips back.
+- **Import your subscriptions** from NewPipe, PipePipe or Tubular — either their subscriptions file or their whole backup zip — or from a Google Takeout CSV or OPML. The file type is detected for you, and channels Koda cannot play are reported rather than dropped silently. A backup also brings across channel pictures and your feed groups. Export writes the NewPipe-compatible format so it round-trips back.
 - **Channel groups** to filter the subscriptions feed.
 - **"Don't recommend this"** on any recommendation: hide a single video, or stop a whole channel being suggested. It works signed out, takes effect immediately, and every dismissal has one app-wide Undo. Signed in, the choice is also sent to your YouTube account so it cleans up recommendations everywhere else too. A **Not recommended** screen in Settings lists everything you have hidden, so nothing is buried forever by a mis-tap.
 - **A dedicated watch-history tab** that syncs your viewing back to YouTube.
@@ -190,7 +190,7 @@ app/src/main/java/com/ivor/ivormusic/
 │   ├── LikedSongsRepository # Local liked songs
 │   ├── LocalSubscriptions.. # Device-only channel subscriptions
 │   ├── SubscriptionActions  # Decides whether Subscribe writes to device or account
-│   ├── SubscriptionTransfer # Import/export: NewPipe, Takeout CSV, OPML
+│   ├── SubscriptionTransfer # Import/export: NewPipe json/backup, CSV, OPML
 │   ├── NotInterested..      # Hidden videos and blocked channels
 │   ├── NotInterestedActions # Local hide plus best-effort account feedback
 │   ├── RecommendationEngine # Local taste profile and queue continuation

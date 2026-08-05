@@ -555,13 +555,15 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     val importProgress: StateFlow<Pair<Int, Int>?> = _importProgress.asStateFlow()
 
     /**
-     * Imports a subscription file - NewPipe/PipePipe JSON, Takeout CSV or
-     * OPML, sniffed rather than asked for.
+     * Imports a subscription file - NewPipe/PipePipe JSON, a NewPipe-family
+     * backup archive, Takeout CSV or OPML, sniffed rather than asked for.
      *
      * Reading happens through the content resolver because the file arrives as
-     * a SAF uri, which is not a path and cannot be opened as one. The whole
-     * run is one merge into the existing list: importing twice, or importing a
-     * second device's export, adds what is missing and touches nothing else.
+     * a SAF uri, which is not a path and cannot be opened as one. Bytes rather
+     * than text, since a backup archive is a zipped database and decoding one
+     * as UTF-8 first would corrupt it. The whole run is one merge into the
+     * existing list: importing twice, or importing a second device's export,
+     * adds what is missing and touches nothing else.
      */
     fun importSubscriptions(
         uri: android.net.Uri,
@@ -572,11 +574,22 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             _isImportingSubscriptions.value = true
             _importProgress.value = null
             try {
-                val text = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                    getApplication<Application>().contentResolver
-                        .openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) }
+                val imported = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    val bytes = getApplication<Application>().contentResolver
+                        .openInputStream(uri)?.use { it.readBytes() }
+                    if (bytes == null || bytes.isEmpty()) {
+                        null
+                    } else {
+                        com.ivor.ivormusic.data.SubscriptionTransfer.read(
+                            bytes,
+                            java.io.File(
+                                getApplication<Application>().cacheDir,
+                                "subscription-import.db"
+                            )
+                        )
+                    }
                 }
-                if (text.isNullOrBlank()) {
+                if (imported == null) {
                     onResult(
                         com.ivor.ivormusic.data.SubscriptionImportResult(
                             0, 0, 0, error = "That file was empty or could not be opened."
@@ -585,8 +598,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     return@launch
                 }
 
-                val entries = com.ivor.ivormusic.data.SubscriptionTransfer.parse(text)
-                val foreign = com.ivor.ivormusic.data.SubscriptionTransfer.countForeignServiceEntries(text)
+                val entries = imported.channels
+                val foreign = imported.foreignServiceEntries
                 if (entries.isEmpty()) {
                     onResult(
                         com.ivor.ivormusic.data.SubscriptionImportResult(
@@ -607,9 +620,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 val alreadyPresent = resolved.count { localSubscriptionsRepository.isSubscribed(it.channelId) }
                 val added = localSubscriptionsRepository.importAll(resolved)
 
-                // Groups only ever come from Koda's own export; other apps in
-                // the family have never put them in a file.
-                com.ivor.ivormusic.data.SubscriptionTransfer.parseGroups(text).forEach { group ->
+                // Groups come from Koda's own export, or from the feed groups
+                // inside a NewPipe-family backup - never from the JSON export,
+                // which has never carried them.
+                imported.groups.forEach { group ->
                     val existing = subscriptionGroups.value.firstOrNull { it.name.equals(group.name, true) }
                     if (existing == null) {
                         localSubscriptionsRepository.createGroup(group.name, group.channelIds)
