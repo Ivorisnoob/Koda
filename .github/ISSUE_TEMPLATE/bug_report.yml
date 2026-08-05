@@ -1,0 +1,150 @@
+name: Bug report
+description: Something in Koda is broken or behaves unexpectedly
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this. The fields below exist because Koda behaves
+        differently depending on mode and sign-in state, so knowing which one you were in usually
+        narrows the cause immediately.
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Before reporting
+      options:
+        - label: I searched the existing issues and this has not been reported
+          required: true
+        - label: I am on the latest release from the Releases page
+          required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Koda version
+      description: Settings, then About. Include the version code if it is shown.
+      placeholder: "4.3"
+    validations:
+      required: true
+
+  - type: input
+    id: device
+    attributes:
+      label: Device and Android version
+      placeholder: "Pixel 7a, Android 15"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: apk
+    attributes:
+      label: Which APK did you install
+      options:
+        - arm64-v8a
+        - armeabi-v7a
+        - universal
+        - Not sure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Which mode were you in
+      description: The video toggle in Settings switches Home, Search and Library between the two.
+      options:
+        - Music mode
+        - Video mode
+        - Both
+        - Not related to a mode
+    validations:
+      required: true
+
+  - type: dropdown
+    id: account
+    attributes:
+      label: Were you signed in
+      description: Koda works signed out, and a lot of behaviour differs between the two, so this matters.
+      options:
+        - Signed in with a YouTube account
+        - Signed out, using a local profile
+        - Not sure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which area
+      options:
+        - Music playback
+        - Video playback
+        - Live streams or live chat
+        - Shorts
+        - Downloads or offline
+        - Search
+        - Subscriptions
+        - Library, playlists or liked songs
+        - Local audio files
+        - Settings, theming or player styles
+        - Login, accounts or profiles
+        - Something else
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open ...
+        2. Tap ...
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: behaviour
+    attributes:
+      label: What you expected, and what happened instead
+    validations:
+      required: true
+
+  - type: dropdown
+    id: youtube
+    attributes:
+      label: Does the same content work on youtube.com in a browser
+      description: >
+        This is the single most useful thing you can tell us. Koda reads YouTube's internal API,
+        which changes without notice. If it is broken on YouTube's own site too, the cause is on
+        their end. If it works there and not here, it is ours.
+      options:
+        - Works fine on youtube.com
+        - Broken on youtube.com too
+        - Did not check
+        - Not applicable, this is not YouTube content
+    validations:
+      required: true
+
+  - type: input
+    id: player_style
+    attributes:
+      label: Player style
+      description: Only if this involves the music player. There are eight, and some bugs only affect one.
+      placeholder: "Classic, Gesture, Editorial, Canvas, Bento, Sticker, Morph, Dial"
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: >
+        If you can, capture logcat while reproducing. Please review it before pasting, since logs
+        can contain account information. This will be formatted as code automatically.
+      render: shell
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Screenshots, recording, or anything else
+      description: A screen recording is worth a great deal for playback, motion or layout problems.

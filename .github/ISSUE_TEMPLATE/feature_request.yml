@@ -1,0 +1,90 @@
+name: Feature request
+description: Suggest something Koda should do
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Ideas are welcome. Two things worth knowing before you write, because they save everyone time.
+
+        **Check [ROADMAP.md](https://github.com/Ivorisnoob/Koda/blob/main/ROADMAP.md) first.** A fair amount is already planned and
+        written up in detail, including widgets, tablet layouts, Wear OS, Android Auto, crossfade,
+        channel screens, playlist covers, backup and restore, and voice search. If your idea is
+        already there, adding what you specifically want out of it is more useful than a new issue.
+
+        **Koda is built ground-up on Material 3 Expressive**, and an alternate or "classic" design
+        language is not something the project will take on. See [DESIGN.md](https://github.com/Ivorisnoob/Koda/blob/main/DESIGN.md)
+        for why. Specific complaints about a radius, a spacing, or one animation are completely fair
+        and are treated as normal work.
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Before suggesting
+      options:
+        - label: I searched the existing issues
+          required: true
+        - label: I checked ROADMAP.md and this is not already planned there
+          required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What is the problem
+      description: >
+        Describe the situation you are in, not the solution. When does this come up, and what are
+        you trying to do at the time? This is the most important field, because a well-described
+        problem often has a better solution than the one that first comes to mind.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What should Koda do
+      description: How you imagine it working, and where in the app it would live.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which area
+      options:
+        - Music playback
+        - Video playback
+        - Live streams
+        - Shorts
+        - Downloads or offline
+        - Search
+        - Subscriptions
+        - Library, playlists or liked songs
+        - Local audio files
+        - Settings, theming or player styles
+        - Accounts or profiles
+        - A new surface (widget, watch, TV, car)
+        - Something else
+    validations:
+      required: true
+
+  - type: dropdown
+    id: signed_out
+    attributes:
+      label: Would this work without a YouTube account
+      description: >
+        Roughly half of Koda's users never sign in, and the signed-out path is treated as a
+        first-class path rather than a degraded one. Account-only features are still possible,
+        but they need to be honest about it.
+      options:
+        - Yes, it works entirely on-device or signed out
+        - No, it needs a signed-in YouTube account
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Anything else
+      description: >
+        Other apps that do this well, mockups, or alternatives you considered and rejected.
