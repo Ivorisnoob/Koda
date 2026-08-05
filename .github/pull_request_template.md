@@ -39,7 +39,7 @@ Delete the ones that genuinely do not apply rather than leaving them blank.
 
 ### If this touches one of these areas
 
-- [ ] **New setting** threaded through all five files (`ThemePreferences`, `ThemeViewModel`, `MainActivity`, `SettingsScreen`, `SettingsPages`) **and added to `buildSettingsSearchIndex`** in `SettingsSearch.kt` — a setting missing from the index is unfindable and there is no compile error to catch it
+- [ ] **New setting** threaded through all five files (`ThemePreferences`, `ThemeViewModel`, `MainActivity`, `SettingsScreen`, `SettingsPages`) **and added to `buildSettingsSearchIndex`** in `SettingsSearch.kt`. A setting missing from the index is unfindable and there is no compile error to catch it
 - [ ] **New player style** added in all four places: the `PlayerStyle` enum, the `<Name>PlayerContent.kt` composable, the `when` in `ExpandablePlayer.kt`, and `playerStyleCatalog`
 - [ ] **InnerTube parser change** probed against a live response, not written from memory, with the month and year noted in the KDoc
 - [ ] No cookie dumps, response JSON, or `.probe/` contents committed

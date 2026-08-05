@@ -42,7 +42,7 @@ To save you the time of writing them up:
 
 - **That Koda uses YouTube's internal API at all.** This is how the app works and it is documented. It is a design decision, not a vulnerability.
 - **That Koda can download or play YouTube content.** That is the purpose of the app.
-- **Missing hardening in the abstract** — no certificate pinning, no root detection, no obfuscation, debuggable builds — without a concrete exploit that the hardening would have prevented.
+- **Missing hardening in the abstract** (no certificate pinning, no root detection, no obfuscation, debuggable builds), without a concrete exploit that the hardening would have prevented.
 - **Attacks that require an already-compromised device**, such as a rooted phone with an attacker holding it unlocked, or malware that already has root.
 - **Vulnerabilities in YouTube, Google, or other third-party services.** Report those to the vendor. If a YouTube-side change breaks Koda, that is a normal bug and belongs in a public issue.
 - **Automated scanner output** with no demonstrated impact.

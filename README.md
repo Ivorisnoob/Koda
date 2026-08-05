@@ -32,11 +32,11 @@
 
 ---
 
-Koda is built entirely with Kotlin and Jetpack Compose, and it is built **ground-up on Material 3 Expressive** — not themed with it, constructed from it. Shapes, motion, color, and typography all resolve through a single `MaterialExpressiveTheme` at the root of the app, and every screen is composed from Expressive primitives. See [DESIGN.md](DESIGN.md) for how that works and why the design is not a swappable layer.
+Koda is built entirely with Kotlin and Jetpack Compose, and it is built **ground-up on Material 3 Expressive**, not themed with it but constructed from it. Shapes, motion, color, and typography all resolve through a single `MaterialExpressiveTheme` at the root of the app, and every screen is composed from Expressive primitives. See [DESIGN.md](DESIGN.md) for how that works and why the design is not a swappable layer.
 
 It streams music and video from YouTube, learns what you like, and does it without any official API keys. Everything runs through NewPipe Extractor and direct InnerTube calls.
 
-There is one app with two modes. Leave the video toggle off and Koda is a full music player with a queue, downloads, playlists, statistics, and a library. Turn it on and the Home, Search, and Library tabs reshape into a proper video experience with a personalized feed, a real player, chapters, captions, comments, subscriptions, and notifications. No Google API key is ever required, and the whole app works — search, streaming, downloads, a local taste profile — even without signing in.
+There is one app with two modes. Leave the video toggle off and Koda is a full music player with a queue, downloads, playlists, statistics, and a library. Turn it on and the Home, Search, and Library tabs reshape into a proper video experience with a personalized feed, a real player, chapters, captions, comments, subscriptions, and notifications. No Google API key is ever required, and the whole app works even without signing in, including search, streaming, downloads, and a local taste profile.
 
 ## Download
 
@@ -50,11 +50,11 @@ Each release publishes three APKs. Pick the one that matches your device:
 | `armeabi-v7a` | Older 32-bit devices. |
 | `universal` | Both of the above in one larger file. Use it if you are not sure. |
 
-Android will warn you before installing an app from outside the Play Store — that is expected for a sideloaded app, not a sign of a problem. You only have to do this once: Koda's built-in updater watches Releases, picks the right APK for your device's ABI automatically, and installs it from then on.
+Android will warn you before installing an app from outside the Play Store. That is expected for a sideloaded app, not a sign of a problem. You only have to do this once: Koda's built-in updater watches Releases, picks the right APK for your device's ABI automatically, and installs it from then on.
 
 Koda is published here and in the Telegram chat, nowhere else. See [SECURITY.md](SECURITY.md) for why a build from anywhere else cannot be vouched for.
 
-**Requirements:** Android 11 (API 30) or newer. No Google account is required — see [Authentication](#authentication) for what changes if you sign in.
+**Requirements:** Android 11 (API 30) or newer. No Google account is required. See [Authentication](#authentication) for what changes if you sign in.
 
 ---
 
@@ -62,7 +62,7 @@ Koda is published here and in the Telegram chat, nowhere else. See [SECURITY.md]
 
 Personalized feeds, watch history, comments, and engagement need a signed-in account. To connect one, open Settings and tap **Connect YouTube Account**.
 
-Everything else works signed out: search, streaming, downloads, local playlists, liked songs, subscriptions, and recommendations built from a local taste profile of your own listening. Signing in adds to that rather than replacing it — the feeds merge. See [Authentication](#authentication) for the full split.
+Everything else works signed out: search, streaming, downloads, local playlists, liked songs, subscriptions, and recommendations built from a local taste profile of your own listening. Signing in adds to that rather than replacing it, so the feeds merge. See [Authentication](#authentication) for the full split.
 
 On Android 11 specifically, wallpaper-based dynamic color is unavailable, since that is an Android 12 platform feature. Koda falls back to its bundled palettes; everything else behaves the same.
 
@@ -95,14 +95,14 @@ On Android 11 specifically, wallpaper-based dynamic color is unavailable, since 
 
 Eight distinct, fully animated player UIs, switchable from a spinnable style wheel:
 
-- **Classic** — familiar transport with play / pause / next / previous.
-- **Gesture** — swipeable carousel you flick between tracks.
-- **Editorial** — two-tone magazine layout with die-cut art and a word-pill transport.
-- **Canvas** — full-bleed album art as the whole screen, with chrome that fades away while playing and swipe-to-skip that follows your finger.
-- **Bento** — a squish grid of flat tonal tiles with press physics.
-- **Sticker** — a die-cut sticker with drag, peel, and squash-and-stretch physics.
-- **Morph** — a living hero shape that cycles organic cuts while playing.
-- **Dial** — a rotary tick-ring instrument you spin to scrub.
+- **Classic:** familiar transport with play / pause / next / previous.
+- **Gesture:** swipeable carousel you flick between tracks.
+- **Editorial:** two-tone magazine layout with die-cut art and a word-pill transport.
+- **Canvas:** full-bleed album art as the whole screen, with chrome that fades away while playing and swipe-to-skip that follows your finger.
+- **Bento:** a squish grid of flat tonal tiles with press physics.
+- **Sticker:** a die-cut sticker with drag, peel, and squash-and-stretch physics.
+- **Morph:** a living hero shape that cycles organic cuts while playing.
+- **Dial:** a rotary tick-ring instrument you spin to scrub.
 
 Plus an **ambient artwork background**, an optional **chromatic-mist** effect, and an option to color the expanded player's controls straight from the current cover art.
 
@@ -113,17 +113,17 @@ Plus an **ambient artwork background**, an optional **chromatic-mist** effect, a
 - **Chapters** rendered as seek-bar ticks, a current-chapter chip, and a chapters sheet.
 - **Captions / subtitles** with a CC toggle and a language picker, drawn as an overlay so toggling them costs nothing and they survive a quality switch. They work signed out.
 - **Double-tap** either side to skip forward or back, and **hold to play at 2x**, with an adjustable playback speed.
-- **Swipe up on the video to go fullscreen, and down the middle to come back** — the corner button is a small target on a phone held in both hands. Pull the whole watch page down to minimize.
+- **Swipe up on the video to go fullscreen, and down the middle to come back:** the corner button is a small target on a phone held in both hands. Pull the whole watch page down to minimize.
 - **Drag the left and right edges for brightness and volume**, with a ladder of slats that lights from the bottom, one slat per real system volume notch, so the haptic tick and the light are the same event. It takes its colors from your palette.
 - **Picture-in-Picture** that captures just the video, not the whole app, with play, pause and 10-second skip controls in the window.
-- **Video appears in the system media controls** too — lock screen, the shade's media area, the output switcher, and headset and Bluetooth buttons.
+- **Video appears in the system media controls** too: the lock screen, the shade's media area, the output switcher, and headset and Bluetooth buttons.
 - **Open YouTube links in Koda.** Share a link to it, or open one with it, and it plays: watch, `youtu.be`, shorts, live, embed and playlist URLs. Music links open in the music player, everything else in the video player.
 - **Links in descriptions and comments are tappable**, including timestamps, which seek the player and close the panel.
 - **Optional timed comments** that fade in over the video as playback reaches the moment they mention.
 - **Share** a video, playlist, or album out to any app.
 - **A Subscriptions tab** with the latest uploads from channels you follow, a channel-avatar rail, a full channel list, and drill-in to any channel's uploads.
 - **Follow channels without a Google account.** Subscriptions can be saved to the device instead of (or as well as) your YouTube account, and the feed merges both. A **Subscribe saves to** setting picks which.
-- **Import your subscriptions** from NewPipe, PipePipe or Tubular — either their subscriptions file or their whole backup zip — or from a Google Takeout CSV or OPML. The file type is detected for you, and channels Koda cannot play are reported rather than dropped silently. A backup also brings across channel pictures and your feed groups. Export writes the NewPipe-compatible format so it round-trips back.
+- **Import your subscriptions** from NewPipe, PipePipe or Tubular (either their subscriptions file or their whole backup zip), or from a Google Takeout CSV or OPML. The file type is detected for you, and channels Koda cannot play are reported rather than dropped silently. A backup also brings across channel pictures and your feed groups. Export writes the NewPipe-compatible format so it round-trips back.
 - **Channel groups** to filter the subscriptions feed.
 - **"Don't recommend this"** on any recommendation: hide a single video, or stop a whole channel being suggested. It works signed out, takes effect immediately, and every dismissal has one app-wide Undo. Signed in, the choice is also sent to your YouTube account so it cleans up recommendations everywhere else too. A **Not recommended** screen in Settings lists everything you have hidden, so nothing is buried forever by a mis-tap.
 - **A dedicated watch-history tab** that syncs your viewing back to YouTube.
@@ -135,18 +135,18 @@ Plus an **ambient artwork background**, an optional **chromatic-mist** effect, a
 
 - **Live streams play like any other video**, with a LIVE badge and a viewer count that keeps updating while you watch.
 - **Live chat**, with Super Chats and Super Stickers in their real colors, membership and gift events, pinned messages, channel emoji, and owner / moderator / member badges. Scroll back to read and it holds position instead of yanking you forward; a pill tells you how many you missed.
-- **Send messages** when you are signed in. Yours appears instantly, and if the stream rejects it — slow mode, a word filter, a ban — you get told and your text is handed back rather than silently swallowed.
+- **Send messages** when you are signed in. Yours appears instantly, and if the stream rejects it for slow mode, a word filter or a ban, you get told and your text is handed back rather than silently swallowed.
 - **Jump back to the live edge** with one tap on the LIVE chip whenever you have fallen behind on a stream with a DVR window.
 - **Switching quality is instant.** Every resolution lives in one manifest, so changing it never re-buffers or drops the stream.
 - **Vertical live streams get a player built for them.** A 9:16 broadcast fills the screen instead of sitting as a thin strip between two black bars, with chat over the bottom of the video on a soft gradient so it stays readable without hiding the stream. One tap drops to the normal page for the description and related videos, and one tap goes back.
-- **Rotate a vertical stream to landscape** and the video moves aside for a full-height chat column — the space next to a 9:16 video is exactly chat-shaped, so nothing is wasted.
+- **Rotate a vertical stream to landscape** and the video moves aside for a full-height chat column. The space next to a 9:16 video is exactly chat-shaped, so nothing is wasted.
 - **Comments step aside on live videos**, because live chat is where the conversation actually is.
 
 ### Shorts (opt-in)
 
 - A short-form vertical feed, off by default and only shown once you deliberately enable it.
 - Swipe-through pager player with prefetch for instant next-video playback.
-- An action rail for like, dislike, comments, and share — and you can hide any of those buttons you do not want.
+- An action rail for like, dislike, comments, and share, and you can hide any of those buttons you do not want.
 
 ### Comments and engagement
 
@@ -162,7 +162,7 @@ Plus an **ambient artwork background**, an optional **chromatic-mist** effect, a
 - Full queue control with drag to reorder, shuffle, and repeat modes.
 - Auto-load queue that appends recommended songs when the queue runs low.
 - Crossfade between songs with an adjustable duration.
-- **Chunked streaming.** YouTube paces open-ended requests to roughly the bitrate of the media — measured at 32 KB/s on a stream that served 5-22 MB/s over the same connection when asked properly. Every fetch is ranged, which is what makes tap-to-play, seeking and downloads fast.
+- **Chunked streaming.** YouTube paces open-ended requests to roughly the bitrate of the media, measured at 32 KB/s on a stream that served 5-22 MB/s over the same connection when asked properly. Every fetch is ranged, which is what makes tap-to-play, seeking and downloads fast.
 - **Skips start from disk.** The head of the next three songs in the queue is pre-cached, so a skip does not pay a round trip before sound starts.
 - **A quicker first play each session.** The identity token needed before any stream resolves is minted from a small endpoint and reused across restarts, so a warm start does no network at all.
 - Stream prefetch and an on-device cache with a configurable size limit and a one-tap clear.
@@ -172,7 +172,7 @@ Plus an **ambient artwork background**, an optional **chromatic-mist** effect, a
 
 - **Download songs and videos** for offline playback. Video is stitched back together from YouTube's separate high-quality video and audio streams into a single MP4, so downloads are not stuck at the 360p that comes as a ready-made file.
 - **Download a whole album or playlist** in one tap. Anything you already have is skipped, so re-running it only fetches what is missing.
-- **Files go where you can find them** — `Downloads/Koda/Music` and `Downloads/Koda/Video` — named after the track, not the video id. They show up in the Files app and play in anything else on your device.
+- **Files go where you can find them:** `Downloads/Koda/Music` and `Downloads/Koda/Video`, named after the track rather than the video id. They show up in the Files app and play in anything else on your device.
 - **Downloads survive leaving the screen.** They run in the background through a foreground service instead of dying when you navigate away.
 - **A download manager** with separate Music and Video tabs, a live queue, progress, cancel, delete, and one-tap retry on anything that failed.
 - **Progress notifications with album art**, and on Android 16 an optional **Live Update** that puts download progress in the status bar as a chip with a progress bar. On by default there, switchable off in Settings.
@@ -180,11 +180,11 @@ Plus an **ambient artwork background**, an optional **chromatic-mist** effect, a
 
 ### Interface and theming
 
-Koda's interface is the product, not a wrapper around one. The whole app is constructed from Material 3 Expressive: 39 source files use Expressive-only APIs directly, `MaterialShapes` is referenced 131 times across 14 shapes, and spring physics drives 97 animation specs. There is no alternate design language and no fallback path — details and rationale in [DESIGN.md](DESIGN.md).
+Koda's interface is the product, not a wrapper around one. The whole app is constructed from Material 3 Expressive: 39 source files use Expressive-only APIs directly, `MaterialShapes` is referenced 131 times across 14 shapes, and spring physics drives 97 animation specs. There is no alternate design language and no fallback path. Details and rationale are in [DESIGN.md](DESIGN.md).
 
 - Material 3 Expressive design with shape morphing, spring physics, and dynamic color, applied through one root `MaterialExpressiveTheme`.
 - Dynamic theming that pulls its palette from your wallpaper (Android 12+) or from album artwork.
-- Over two dozen curated color palettes across six families — Vibrant, Pastel, Aesthetic, Earthy, Moody, and Jewel & Mono.
+- Over two dozen curated color palettes across six families: Vibrant, Pastel, Aesthetic, Earthy, Moody, and Jewel & Mono.
 - Light, dark, and system themes, plus an AMOLED true-black mode.
 - Gesture-based navigation and physics-based transitions with a floating pill nav bar.
 - A one-tap Home mode toggle to switch between music and video.
@@ -193,10 +193,10 @@ Koda's interface is the product, not a wrapper around one. The whole app is cons
 
 ### Settings
 
-- **A hub of eleven categories** rather than one long scroll, and every category row shows the live value of what is inside it — so "what is this set to?" is answered without opening anything.
+- **A hub of eleven categories** rather than one long scroll, and every category row shows the live value of what is inside it, so "what is this set to?" is answered without opening anything.
 - **Settings search.** There are around fifty settings, and people know what they want rather than what it is called, so the index carries synonyms and tolerates typos. "offline" finds Local Only, "battery" finds the OEM fix, "bitrate" finds music quality, "songs not showing" finds compatibility scanning, and "amol" and "crossfde" both land where you meant.
 - **Quality is per-network.** Separate Wi-Fi and mobile-data settings for video and for music, applied automatically based on what you are connected to.
-- **Music streaming quality** of its own — High, Normal, or Data Saver.
+- **Music streaming quality** of its own: High, Normal, or Data Saver.
 - **Prefer HDR Videos**, off by default. Turned on, HDR variants are listed alongside SDR and preferred at equal resolution, with a clean fallback for videos that have none.
 - **Destructive actions use the theme's error color**, so they read correctly across all palettes and AMOLED rather than being a hardcoded red.
 
@@ -205,7 +205,7 @@ Koda's interface is the product, not a wrapper around one. The whole app is cons
 - **Several accounts at once, and profiles without one.** Add more than one YouTube account and switch between them from the home avatar - instantly, with no network and no signing in again, since each session is stored encrypted on the device. Long-press the avatar to flip straight back to the last one.
 - **Profiles that are not accounts.** A profile can be device-only, with no Google account at all, so you can keep separate sets of subscriptions and hidden recommendations without signing into anything.
 - Subscriptions and hidden recommendations are kept per profile. Playlists, liked songs, downloads and statistics are shared across all of them.
-- **Music keeps playing across a switch.** Everything account-derived resets — both feeds, subscriptions, the player's like and subscribe state — but killing your music because you checked another account is a bad trade.
+- **Music keeps playing across a switch.** Everything account-derived resets, including both feeds, subscriptions and the player's like and subscribe state, but killing your music because you checked another account is a bad trade.
 - Signing out of your last profile disconnects the account and keeps the profile, so its device-local subscriptions and blocklist survive.
 - An account whose session has expired says so on its own row, instead of quietly showing empty screens.
 - Sign in through an embedded WebView. No password ever leaves the browser.
@@ -218,18 +218,18 @@ Koda's interface is the product, not a wrapper around one. The whole app is cons
 
 ## Roadmap
 
-Where Koda is going lives in **[`ROADMAP.md`](ROADMAP.md)**. It is not a checklist — each item explains what it is, who it is for, what already exists in the codebase that it can reuse, and the constraints it has to fit inside. Several entries are diagnoses rather than wishes, with the cause already traced.
+Where Koda is going lives in **[`ROADMAP.md`](ROADMAP.md)**. It is not a checklist. Each item explains what it is, who it is for, what already exists in the codebase that it can reuse, and the constraints it has to fit inside. Several entries are diagnoses rather than wishes, with the cause already traced.
 
 The current tracks:
 
-- **Interface** — proper channel screens, per-channel notification settings, saving other people's playlists and albums, a simpler "Discover" home for music mode, a playlist upgrade with custom cover art, predictive back, haptics, and one consistent heading system.
-- **Playback** — carrying audio across a mode switch without a gap, and a crossfade that genuinely overlaps.
-- **Foundations** — backup and restore, playlist import and export, surviving process death, and a dependency audit.
-- **Reach** — Android Auto done properly, voice search, a home screen widget and Quick Settings tile, tablet layouts on every screen, Wear OS, and Android TV.
+- **Interface:** proper channel screens, per-channel notification settings, saving other people's playlists and albums, a simpler "Discover" home for music mode, a playlist upgrade with custom cover art, predictive back, haptics, and one consistent heading system.
+- **Playback:** carrying audio across a mode switch without a gap, and a crossfade that genuinely overlaps.
+- **Foundations:** backup and restore, playlist import and export, surviving process death, and a dependency audit.
+- **Reach:** Android Auto done properly, voice search, a home screen widget and Quick Settings tile, tablet layouts on every screen, Wear OS, and Android TV.
 
 It also carries a **Known defects** section for bugs that have been diagnosed but not yet fixed, and a **Shipped** section listing everything already done.
 
-If you are about to file a feature request, that document is the fastest way to find out whether it is already planned — and, for a few things, why it deliberately is not.
+If you are about to file a feature request, that document is the fastest way to find out whether it is already planned, and for a few things, why it deliberately is not.
 
 ---
 
@@ -328,7 +328,7 @@ Configure the keystore in `app/build.gradle.kts`, or set the `KEYSTORE_PASSWORD`
 ./gradlew assembleRelease
 ```
 
-Both build types split by ABI — `arm64-v8a`, `armeabi-v7a`, and a universal APK containing both.
+Both build types split by ABI: `arm64-v8a`, `armeabi-v7a`, and a universal APK containing both.
 
 ### Where to read next
 
@@ -350,7 +350,7 @@ Join the Telegram chat at **[t.me/ivorisnoob_chat](https://t.me/ivorisnoob_chat)
 
 ## Contributing
 
-Contributions are welcome, whether it is a bug report, a feature idea, or a pull request. See [CONTRIBUTING.md](CONTRIBUTING.md) to get started, and [ROADMAP.md](ROADMAP.md) if you are looking for something to pick up — the **Known defects** section lists bugs that have already been traced to a file and a line.
+Contributions are welcome, whether it is a bug report, a feature idea, or a pull request. See [CONTRIBUTING.md](CONTRIBUTING.md) to get started, and [ROADMAP.md](ROADMAP.md) if you are looking for something to pick up. The **Known defects** section lists bugs that have already been traced to a file and a line.
 
 Everyone taking part is expected to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 
