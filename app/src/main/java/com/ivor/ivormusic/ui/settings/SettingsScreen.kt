@@ -2,7 +2,12 @@ package com.ivor.ivormusic.ui.settings
 
 import android.content.Intent
 import android.net.Uri
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -146,6 +151,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -200,6 +206,26 @@ private class PolygonShape(private val polygon: RoundedPolygon) : Shape {
         path.transform(matrix)
         return Outline.Generic(path)
     }
+}
+
+/**
+ * One page of the settings screen. These are not nav routes on purpose: the
+ * screen takes ~60 parameters, and threading those into a NavHost destination
+ * per category would mean repeating the whole list eleven times. The Home tab
+ * system solves the same problem the same way.
+ */
+internal enum class SettingsPage {
+    HUB,
+    ACCOUNT,
+    APPEARANCE,
+    PLAYER,
+    PLAYBACK,
+    CONTENT,
+    SUBSCRIPTIONS,
+    STORAGE,
+    NOTIFICATIONS,
+    LOCAL_LIBRARY,
+    ADVANCED
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
@@ -283,7 +309,7 @@ fun SettingsScreen(
     val context = LocalContext.current
     val sessionManager = remember { SessionManager(context) }
     val coroutineScope = rememberCoroutineScope()
-    
+
     // Check actual login status
     var isLoggedIn by remember { mutableStateOf(sessionManager.isLoggedIn()) }
 
@@ -303,12 +329,11 @@ fun SettingsScreen(
         lifecycle?.addObserver(observer)
         onDispose { lifecycle?.removeObserver(observer) }
     }
-    
-    val backgroundColor = MaterialTheme.colorScheme.background
-    val surfaceColor = MaterialTheme.colorScheme.surfaceContainer
-    val textColor = MaterialTheme.colorScheme.onBackground
-    val secondaryTextColor = MaterialTheme.colorScheme.onSurfaceVariant
-    val accentColor = MaterialTheme.colorScheme.primary
+
+    // Which category page is open. Back pops to the hub before it leaves
+    // Settings altogether.
+    var page by remember { mutableStateOf(SettingsPage.HUB) }
+    BackHandler(enabled = page != SettingsPage.HUB) { page = SettingsPage.HUB }
 
     // Dialog state for YouTube auth
     var showAuthDialog by remember { mutableStateOf(false) }
@@ -321,7 +346,7 @@ fun SettingsScreen(
 
     // Dialog state for About
     var showAboutDialog by remember { mutableStateOf(false) }
-    
+
     // Which per-network quality picker is open, if any
     var qualityDialogTarget by remember { mutableStateOf<QualityDialogTarget?>(null) }
 
@@ -333,849 +358,184 @@ fun SettingsScreen(
     var showShortsButtonsDialog by remember { mutableStateOf(false) }
     var availableFolders by remember { mutableStateOf<List<FolderInfo>>(emptyList()) }
     var isFoldersLoading by remember { mutableStateOf(false) }
-    
-    // Animation states for staggered entry
-    var isVisible by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        delay(100)
-        isVisible = true
+
+    val openFolderExclusion: () -> Unit = {
+        // Load available folders when opening dialog
+        isFoldersLoading = true
+        coroutineScope.launch {
+            availableFolders = homeViewModel.getAvailableFolders()
+            isFoldersLoading = false
+        }
+        showFolderExclusionDialog = true
     }
 
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(backgroundColor)
+            .background(MaterialTheme.colorScheme.background)
             .padding(contentPadding)
     ) {
-        // Top App Bar with expressive back button
-        TopAppBar(
-            title = {
-                AnimatedVisibility(
-                    visible = isVisible,
-                    enter = fadeIn(tween(400)) + slideInVertically(
-                        initialOffsetY = { -it / 2 },
-                        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy)
-                    )
-                ) {
-                    Text(
-                        text = "Settings",
-                        color = textColor,
-                        fontWeight = FontWeight.Bold,
-                        style = MaterialTheme.typography.headlineMedium
-                    )
+        AnimatedContent(
+            targetState = page,
+            transitionSpec = {
+                // Going deeper slides in from the trailing edge; coming back
+                // reverses it, so the hierarchy stays legible.
+                val slide = spring<IntOffset>(
+                    dampingRatio = Spring.DampingRatioNoBouncy,
+                    stiffness = Spring.StiffnessMediumLow
+                )
+                if (targetState != SettingsPage.HUB) {
+                    (slideInHorizontally(slide) { it / 5 } + fadeIn(tween(200))) togetherWith
+                        (fadeOut(tween(130)) + slideOutHorizontally(slide) { -it / 12 })
+                } else {
+                    (slideInHorizontally(slide) { -it / 5 } + fadeIn(tween(200))) togetherWith
+                        (fadeOut(tween(130)) + slideOutHorizontally(slide) { it / 12 })
                 }
             },
-            navigationIcon = {
-                IconButton(
-                    onClick = onBackClick,
-                    shapes = IconButtonDefaults.shapes(),
-                    colors = IconButtonDefaults.iconButtonColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        contentColor = textColor
-                    ),
-                    modifier = Modifier
-                        .padding(start = 8.dp)
-                        .size(44.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                        contentDescription = "Back"
-                    )
-                }
-            },
-            colors = TopAppBarDefaults.topAppBarColors(
-                containerColor = Color.Transparent
-            ),
-            modifier = Modifier.windowInsetsPadding(WindowInsets.statusBars)
-        )
+            label = "settingsPage"
+        ) { currentPage ->
+            when (currentPage) {
+                SettingsPage.HUB -> SettingsHub(
+                    isLoggedIn = isLoggedIn,
+                    accountRefreshKey = accountRefreshKey,
+                    sessionManager = sessionManager,
+                    currentThemeMode = currentThemeMode,
+                    colorPalette = colorPalette,
+                    playerStyle = playerStyle,
+                    musicQualityWifi = musicQualityWifi,
+                    videoQualityWifi = videoQualityWifi,
+                    localOnlyMode = localOnlyMode,
+                    videoMode = videoMode,
+                    subscriptionSource = subscriptionSource,
+                    cacheEnabled = cacheEnabled,
+                    currentCacheSize = currentCacheSize,
+                    liveDownloadUpdates = liveDownloadUpdates,
+                    livePlaybackUpdates = livePlaybackUpdates,
+                    canPostPromoted = canPostPromoted,
+                    loadLocalSongs = loadLocalSongs,
+                    excludedFolderCount = excludedFolders.size,
+                    onOpenPage = { page = it },
+                    onShowAbout = { showAboutDialog = true },
+                    onBackClick = onBackClick
+                )
 
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(20.dp)
-        ) {
-            // Appearance Section with staggered animation
-            item {
-                SettingsSection(
-                    title = "Appearance",
-                    textColor = secondaryTextColor
-                ) {
-                    ExpressiveSettingsCard(surfaceColor = surfaceColor) {
-                        ExpressiveThemeSelectGroup(
-                            currentMode = currentThemeMode,
-                            onModeSelected = onThemeModeChange,
-                            textColor = textColor,
-                            accentColor = accentColor
-                        )
+                SettingsPage.ACCOUNT -> AccountSettingsPage(
+                    isLoggedIn = isLoggedIn,
+                    accountRefreshKey = accountRefreshKey,
+                    sessionManager = sessionManager,
+                    saveVideoHistory = saveVideoHistory,
+                    onSaveVideoHistoryToggle = onSaveVideoHistoryToggle,
+                    onShowAuthDialog = { showAuthDialog = true },
+                    onShowCookieSheet = { showCookiePasteSheet = true },
+                    onSignOut = {
+                        sessionManager.clearSession()
+                        isLoggedIn = false
+                        onLogoutClick()
+                    },
+                    onBack = { page = SettingsPage.HUB }
+                )
 
-                        SettingsDivider()
+                SettingsPage.APPEARANCE -> AppearanceSettingsPage(
+                    currentThemeMode = currentThemeMode,
+                    onThemeModeChange = onThemeModeChange,
+                    colorPalette = colorPalette,
+                    onNavigateToColorPalette = onNavigateToColorPalette,
+                    amoledTheme = amoledTheme,
+                    onAmoledThemeToggle = onAmoledThemeToggle,
+                    ambientBackground = ambientBackground,
+                    onAmbientBackgroundToggle = onAmbientBackgroundToggle,
+                    onBack = { page = SettingsPage.HUB }
+                )
 
-                        // Color palette picker link
-                        val paletteName = if (colorPalette == ThemePreferences.DEFAULT_COLOR_PALETTE) {
-                            "Dynamic (from wallpaper)"
-                        } else {
-                            com.ivor.ivormusic.ui.theme.findPalette(colorPalette)?.name ?: "Dynamic"
-                        }
-                        ExpressiveSettingsItem(
-                            icon = Icons.Rounded.Palette,
-                            title = "Color palette",
-                            subtitle = paletteName,
-                            onClick = onNavigateToColorPalette,
-                            textColor = textColor,
-                            secondaryTextColor = secondaryTextColor,
-                            iconTint = accentColor,
-                            showChevron = true
-                        )
+                SettingsPage.PLAYER -> PlayerSettingsPage(
+                    playerStyle = playerStyle,
+                    onPlayerStyleChange = onPlayerStyleChange,
+                    playerArtworkColors = playerArtworkColors,
+                    onPlayerArtworkColorsToggle = onPlayerArtworkColorsToggle,
+                    onBack = { page = SettingsPage.HUB }
+                )
 
-                        SettingsDivider()
+                SettingsPage.PLAYBACK -> PlaybackSettingsPage(
+                    crossfadeEnabled = crossfadeEnabled,
+                    onCrossfadeEnabledToggle = onCrossfadeEnabledToggle,
+                    crossfadeDurationMs = crossfadeDurationMs,
+                    onCrossfadeDurationChange = onCrossfadeDurationChange,
+                    autoLoadQueue = autoLoadQueue,
+                    onAutoLoadQueueToggle = onAutoLoadQueueToggle,
+                    musicQualityWifi = musicQualityWifi,
+                    musicQualityMobile = musicQualityMobile,
+                    videoQualityWifi = videoQualityWifi,
+                    videoQualityMobile = videoQualityMobile,
+                    preferHdr = preferHdr,
+                    onPreferHdrToggle = onPreferHdrToggle,
+                    onOpenQualityPicker = { qualityDialogTarget = it },
+                    onBack = { page = SettingsPage.HUB }
+                )
 
-                        // AMOLED pure black toggle
-                        ExpressiveAmoledThemeToggleItem(
-                            enabled = amoledTheme,
-                            onToggle = onAmoledThemeToggle,
-                            textColor = textColor,
-                            secondaryTextColor = secondaryTextColor,
-                            accentColor = accentColor
-                        )
+                SettingsPage.CONTENT -> ContentSettingsPage(
+                    localOnlyMode = localOnlyMode,
+                    onLocalOnlyModeToggle = onLocalOnlyModeToggle,
+                    videoMode = videoMode,
+                    onVideoModeToggle = onVideoModeToggle,
+                    homeModeToggleEnabled = homeModeToggleEnabled,
+                    onHomeModeToggleChange = onHomeModeToggleChange,
+                    timedCommentsEnabled = timedCommentsEnabled,
+                    onTimedCommentsToggle = onTimedCommentsToggle,
+                    shortsEnabled = shortsEnabled,
+                    onShortsEnabledToggle = onShortsEnabledToggle,
+                    shortsHiddenActions = shortsHiddenActions,
+                    onShowShortsButtons = { showShortsButtonsDialog = true },
+                    onNavigateToNotInterested = onNavigateToNotInterested,
+                    onBack = { page = SettingsPage.HUB }
+                )
 
-                        SettingsDivider()
+                SettingsPage.SUBSCRIPTIONS -> SubscriptionsSettingsPage(
+                    subscriptionSource = subscriptionSource,
+                    subscribeTarget = subscribeTarget,
+                    fastSubscriptionFeed = fastSubscriptionFeed,
+                    onFastSubscriptionFeedToggle = onFastSubscriptionFeedToggle,
+                    onNavigateToSubscriptions = onNavigateToSubscriptions,
+                    onOpenRoutingPicker = { subscriptionDialogTarget = it },
+                    onBack = { page = SettingsPage.HUB }
+                )
 
-                        // Ambient Background toggle
-                        ExpressiveAmbientBackgroundToggleItem(
-                            enabled = ambientBackground,
-                            onToggle = onAmbientBackgroundToggle,
-                            textColor = textColor,
-                            secondaryTextColor = secondaryTextColor,
-                            accentColor = accentColor
-                        )
-                    }
-                }
-            }
-            
-            // Player UI Section
-            item {
-                SettingsSection(
-                    title = "Player UI",
-                    textColor = secondaryTextColor
-                ) {
-                    ExpressiveSettingsCard(surfaceColor = surfaceColor) {
-                        ExpressivePlayerStyleSelectItem(
-                            currentStyle = playerStyle,
-                            onStyleSelected = onPlayerStyleChange,
-                            textColor = textColor,
-                            secondaryTextColor = secondaryTextColor,
-                            accentColor = accentColor
-                        )
+                SettingsPage.STORAGE -> StorageSettingsPage(
+                    cacheEnabled = cacheEnabled,
+                    onCacheEnabledToggle = onCacheEnabledToggle,
+                    maxCacheSizeMb = maxCacheSizeMb,
+                    onMaxCacheSizeMbChange = onMaxCacheSizeMbChange,
+                    currentCacheSize = currentCacheSize,
+                    onClearCacheClick = onClearCacheClick,
+                    onBack = { page = SettingsPage.HUB }
+                )
 
-                        SettingsDivider()
+                SettingsPage.NOTIFICATIONS -> NotificationsSettingsPage(
+                    liveDownloadUpdates = liveDownloadUpdates,
+                    onLiveDownloadUpdatesToggle = onLiveDownloadUpdatesToggle,
+                    livePlaybackUpdates = livePlaybackUpdates,
+                    onLivePlaybackUpdatesToggle = onLivePlaybackUpdatesToggle,
+                    canPostPromoted = canPostPromoted,
+                    onOpenSystemSettings = {
+                        notificationHelper
+                            .promotedNotificationSettingsIntent()
+                            ?.let { runCatching { context.startActivity(it) } }
+                    },
+                    onBack = { page = SettingsPage.HUB }
+                )
 
-                        // Album-art button colors, applies to every player style
-                        ExpressiveOemToggleItem(
-                            icon = Icons.Rounded.Palette,
-                            title = "Album Art Colors",
-                            subtitle = "Color the expanded player's buttons from the current cover",
-                            enabled = playerArtworkColors,
-                            onToggle = onPlayerArtworkColorsToggle,
-                            textColor = textColor,
-                            secondaryTextColor = secondaryTextColor,
-                            accentColor = accentColor
-                        )
-                    }
-                }
-            }
+                SettingsPage.LOCAL_LIBRARY -> LocalLibrarySettingsPage(
+                    loadLocalSongs = loadLocalSongs,
+                    onLoadLocalSongsToggle = onLoadLocalSongsToggle,
+                    excludedFolderCount = excludedFolders.size,
+                    onOpenFolderExclusion = openFolderExclusion,
+                    onBack = { page = SettingsPage.HUB }
+                )
 
-            // Playback Section
-            item {
-                SettingsSection(
-                    title = "Playback",
-                    textColor = secondaryTextColor
-                ) {
-                    ExpressiveSettingsCard(surfaceColor = surfaceColor) {
-                        // Crossfade Toggle
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 14.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = "Crossfade",
-                                    color = textColor,
-                                    fontSize = 16.sp,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Text(
-                                    text = "Smoothly fade between songs",
-                                    color = secondaryTextColor,
-                                    fontSize = 13.sp
-                                )
-                            }
-                            Switch(
-                                checked = crossfadeEnabled,
-                                onCheckedChange = onCrossfadeEnabledToggle,
-                                colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = accentColor)
-                            )
-                        }
-                        
-                        AnimatedVisibility(visible = crossfadeEnabled) {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 8.dp)
-                            ) {
-                                Text(
-                                    text = "Duration: ${crossfadeDurationMs / 1000}s",
-                                    color = textColor,
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.Medium
-                                )
-                                androidx.compose.material3.Slider(
-                                    value = crossfadeDurationMs.toFloat(),
-                                    onValueChange = { onCrossfadeDurationChange(it.toInt()) },
-                                    valueRange = 1000f..12000f,
-                                    steps = 10,
-                                    colors = androidx.compose.material3.SliderDefaults.colors(
-                                        thumbColor = accentColor,
-                                        activeTrackColor = accentColor
-                                    )
-                                )
-                            }
-                        }
-
-                        SettingsDivider()
-
-                        // Auto-load Queue Toggle
-                        ExpressiveOemToggleItem(
-                            icon = Icons.AutoMirrored.Rounded.QueueMusic,
-                            title = "Auto-load Queue",
-                            subtitle = "Add recommended songs when the queue runs low",
-                            enabled = autoLoadQueue,
-                            onToggle = onAutoLoadQueueToggle,
-                            textColor = textColor,
-                            secondaryTextColor = secondaryTextColor,
-                            accentColor = accentColor
-                        )
-
-                        SettingsDivider()
-
-                        ExpressiveSettingsItem(
-                            icon = Icons.Rounded.Wifi,
-                            title = "Music Quality on Wi-Fi",
-                            subtitle = musicQualityLabel(musicQualityWifi),
-                            onClick = { qualityDialogTarget = QualityDialogTarget.MUSIC_WIFI },
-                            textColor = textColor,
-                            secondaryTextColor = secondaryTextColor,
-                            iconTint = accentColor,
-                            showChevron = true
-                        )
-
-                        SettingsDivider()
-
-                        ExpressiveSettingsItem(
-                            icon = Icons.Rounded.SignalCellularAlt,
-                            title = "Music Quality on Mobile Data",
-                            subtitle = musicQualityLabel(musicQualityMobile),
-                            onClick = { qualityDialogTarget = QualityDialogTarget.MUSIC_MOBILE },
-                            textColor = textColor,
-                            secondaryTextColor = secondaryTextColor,
-                            iconTint = accentColor,
-                            showChevron = true
-                        )
-                    }
-                }
-            }
-
-            // OEM & HyperOS Fixes Section
-            item {
-                SettingsSection(
-                    title = "OEM & HyperOS Fixes",
-                    textColor = secondaryTextColor
-                ) {
-                    ExpressiveSettingsCard(surfaceColor = surfaceColor) {
-                        // High Compatibility Scanning (Manual Scan)
-                        ExpressiveOemToggleItem(
-                            icon = Icons.Rounded.Security,
-                            title = "High Compatibility Scanning",
-                            subtitle = "Bypasses MediaStore (Fixes missing music on HyperOS)",
-                            enabled = manualScanEnabled,
-                            onToggle = { enabled ->
-                                if (enabled && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
-                                    if (!android.os.Environment.isExternalStorageManager()) {
-                                        val intent = Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
-                                            data = Uri.parse("package:${context.packageName}")
-                                        }
-                                        context.startActivity(intent)
-                                    }
-                                }
-                                onManualScanEnabledToggle(enabled)
-                            },
-                            textColor = textColor,
-                            secondaryTextColor = secondaryTextColor,
-                            accentColor = Color(0xFF4CAF50)
-                        )
-                        
-                        SettingsDivider()
-                        
-                        // Battery Optimization Fix
-                        ExpressiveSettingsItem(
-                            icon = Icons.Rounded.FlashOn,
-                            title = "Ignore Battery Optimizations",
-                            subtitle = "Prevents playback from stopping in background",
-                            onClick = {
-                                val packageName = context.packageName
-                                val intent = Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
-                                    data = Uri.parse("package:$packageName")
-                                }
-                                try {
-                                    context.startActivity(intent)
-                                } catch (e: Exception) {
-                                    // Fallback for HyperOS/Restrictive OEMs: Open App Info
-                                    // From here user can manually set "No restrictions" in Battery saver
-                                    try {
-                                        val appInfoIntent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                                            data = Uri.parse("package:$packageName")
-                                        }
-                                        context.startActivity(appInfoIntent)
-                                    } catch (e2: Exception) {
-                                        // Absolute fallback
-                                        context.startActivity(Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
-                                    }
-                                }
-                            },
-                            textColor = textColor,
-                            secondaryTextColor = secondaryTextColor,
-                            iconTint = Color(0xFFFFB300),
-                            showChevron = true
-                        )
-                    }
-                    
-                    if (isXiaomiDevice()) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Surface(
-                            shape = RoundedCornerShape(16.dp),
-                            color = Color(0xFFFFB300).copy(alpha = 0.1f),
-                            modifier = Modifier.padding(horizontal = 4.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Info,
-                                    contentDescription = null,
-                                    tint = Color(0xFFF57C00),
-                                    modifier = Modifier.size(20.dp)
-                                )
-                                Spacer(modifier = Modifier.width(10.dp))
-                                Text(
-                                    text = "Xiaomi device detected. Enabling these is highly recommended.",
-                                    color = Color(0xFFF57C00),
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Medium
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-            
-            // Storage & Cache Section
-            item {
-                SettingsSection(
-                    title = "Storage & Cache",
-                    textColor = secondaryTextColor
-                ) {
-                    ExpressiveSettingsCard(surfaceColor = surfaceColor) {
-                        // Music Cache Toggle
-                        ExpressiveOemToggleItem(
-                            icon = Icons.Rounded.Save,
-                            title = "Cache Music",
-                            subtitle = "Store streamed songs for instant replay",
-                            enabled = cacheEnabled,
-                            onToggle = onCacheEnabledToggle,
-                            textColor = textColor,
-                            secondaryTextColor = secondaryTextColor,
-                            accentColor = accentColor
-                        )
-
-                        SettingsDivider()
-
-                        // Cache Size Display (Expressive Card)
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(12.dp)
-                                .clip(RoundedCornerShape(16.dp))
-                                .background(accentColor.copy(alpha = 0.1f))
-                                .padding(16.dp)
-                        ) {
-                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                 Icon(
-                                     imageVector = Icons.Rounded.Folder,
-                                     contentDescription = null,
-                                     tint = accentColor,
-                                     modifier = Modifier.size(32.dp)
-                                 )
-                                 Spacer(modifier = Modifier.width(16.dp))
-                                 Column {
-                                     Text(
-                                         text = "Local Cache",
-                                         color = textColor,
-                                         fontWeight = FontWeight.SemiBold,
-                                         fontSize = 16.sp
-                                     )
-                                     Text(
-                                         text = com.ivor.ivormusic.data.CacheManager.formatSize(currentCacheSize), 
-                                         color = accentColor,
-                                         fontWeight = FontWeight.Bold,
-                                         fontSize = 24.sp
-                                     )
-                                 }
-                             }
-                        }
-                        
-                        // Limit Selector
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Text(
-                                text = "Max Cache Size",
-                                color = secondaryTextColor,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Medium,
-                                modifier = Modifier.padding(bottom = 8.dp)
-                            )
-                            SingleChoiceSegmentedButtonRow(
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                val options = listOf(256L, 512L, 1024L, 2048L)
-                                val labels = listOf("256MB", "512MB", "1GB", "2GB")
-                                
-                                options.forEachIndexed { index, size ->
-                                    SegmentedButton(
-                                        selected = maxCacheSizeMb == size,
-                                        onClick = { onMaxCacheSizeMbChange(size) },
-                                        shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size)
-                                    ) {
-                                        Text(text = labels[index])
-                                    }
-                                }
-                            }
-                        }
-                        
-                        SettingsDivider()
-                        
-                        // Clear Cache Button
-                        ExpressiveSettingsItem(
-                            icon = Icons.Rounded.FolderOff,
-                            title = "Clear Cache",
-                            subtitle = "Free up storage space",
-                            onClick = onClearCacheClick,
-                            textColor = Color(0xFFE53935),
-                            secondaryTextColor = secondaryTextColor,
-                            iconTint = Color(0xFFE53935)
-                        )
-                    }
-                }
-            }
-
-            // YouTube Music Section
-            item {
-                SettingsSection(
-                    title = "YouTube Music",
-                    textColor = secondaryTextColor
-                ) {
-                    ExpressiveSettingsCard(surfaceColor = surfaceColor) {
-                    if (isLoggedIn) {
-                            // Logged in state with user avatar
-                            key(accountRefreshKey) {
-                                ExpressiveAccountItem(
-                                    sessionManager = sessionManager,
-                                    textColor = textColor,
-                                    secondaryTextColor = secondaryTextColor
-                                )
-                            }
-                            SettingsDivider()
-                            // Save Video History Toggle
-                            ExpressiveSaveHistoryToggleItem(
-                                enabled = saveVideoHistory,
-                                onToggle = onSaveVideoHistoryToggle,
-                                textColor = textColor,
-                                secondaryTextColor = secondaryTextColor,
-                                accentColor = Color(0xFFFF0000) // YouTube red
-                            )
-                            SettingsDivider()
-                            ExpressiveSettingsItem(
-                                icon = Icons.Rounded.Cookie,
-                                title = "Replace Session Cookies",
-                                subtitle = "Paste a fresh cookie header if your session goes stale",
-                                onClick = { showCookiePasteSheet = true },
-                                textColor = textColor,
-                                secondaryTextColor = secondaryTextColor,
-                                iconTint = accentColor,
-                                showChevron = true
-                            )
-                            SettingsDivider()
-                            ExpressiveSettingsItem(
-                                icon = Icons.AutoMirrored.Rounded.Logout,
-                                title = "Sign Out",
-                                subtitle = "Disconnect your YouTube account",
-                                onClick = {
-                                    sessionManager.clearSession()
-                                    isLoggedIn = false
-                                    onLogoutClick()
-                                },
-                                textColor = Color(0xFFE53935),
-                                secondaryTextColor = secondaryTextColor,
-                                iconTint = Color(0xFFE53935)
-                            )
-                        } else {
-                            // Logged out state
-                            ExpressiveSettingsItem(
-                                icon = Icons.Rounded.MusicNote,
-                                title = "Connect YouTube Music",
-                                subtitle = "Sign in to access your playlists and liked songs",
-                                onClick = { showAuthDialog = true },
-                                textColor = textColor,
-                                secondaryTextColor = secondaryTextColor,
-                                iconTint = Color(0xFFFF0000),
-                                showChevron = true
-                            )
-                            SettingsDivider()
-                            ExpressiveSettingsItem(
-                                icon = Icons.Rounded.Cookie,
-                                title = "Sign In With Cookies",
-                                subtitle = "Paste a cookie header instead of using the web sign-in",
-                                onClick = { showCookiePasteSheet = true },
-                                textColor = textColor,
-                                secondaryTextColor = secondaryTextColor,
-                                iconTint = accentColor,
-                                showChevron = true
-                            )
-                        }
-                    }
-                }
-            }
-
-            // Notifications Section - only meaningful where the platform can
-            // actually promote an ongoing notification (Android 16+)
-            if (ThemePreferences.SUPPORTS_LIVE_UPDATES) {
-                item {
-                    SettingsSection(
-                        title = "Notifications",
-                        textColor = secondaryTextColor
-                    ) {
-                        ExpressiveSettingsCard(surfaceColor = surfaceColor) {
-                            ExpressiveOemToggleItem(
-                                icon = Icons.Rounded.Bolt,
-                                title = "Live download updates",
-                                subtitle = "Show download progress as a live status bar chip",
-                                enabled = liveDownloadUpdates,
-                                onToggle = onLiveDownloadUpdatesToggle,
-                                textColor = textColor,
-                                secondaryTextColor = secondaryTextColor,
-                                accentColor = accentColor
-                            )
-
-                            SettingsDivider()
-                            ExpressiveOemToggleItem(
-                                icon = Icons.Rounded.GraphicEq,
-                                title = "Live playback updates",
-                                subtitle = "Show what's playing as a live status bar chip",
-                                enabled = livePlaybackUpdates,
-                                onToggle = onLivePlaybackUpdatesToggle,
-                                textColor = textColor,
-                                secondaryTextColor = secondaryTextColor,
-                                accentColor = accentColor
-                            )
-
-                            // Promotion is a request the system can refuse. When
-                            // the user has revoked it at the OS level the toggles
-                            // above are a lie, so surface the way to fix it.
-                            if ((liveDownloadUpdates || livePlaybackUpdates) && !canPostPromoted) {
-                                SettingsDivider()
-                                ExpressiveSettingsItem(
-                                    icon = Icons.Rounded.Security,
-                                    title = "Blocked by system settings",
-                                    subtitle = "Allow live updates for Koda in Android settings",
-                                    onClick = {
-                                        notificationHelper
-                                            .promotedNotificationSettingsIntent()
-                                            ?.let { runCatching { context.startActivity(it) } }
-                                    },
-                                    textColor = Color(0xFFE53935),
-                                    secondaryTextColor = secondaryTextColor,
-                                    iconTint = Color(0xFFE53935),
-                                    showChevron = true
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Content Mode Section (Video/Music toggle)
-            item {
-                SettingsSection(
-                    title = "Content Mode",
-                    textColor = secondaryTextColor
-                ) {
-                    ExpressiveSettingsCard(surfaceColor = surfaceColor) {
-                        ExpressiveLocalOnlyToggleItem(
-                            enabled = localOnlyMode,
-                            onToggle = onLocalOnlyModeToggle,
-                            textColor = textColor,
-                            secondaryTextColor = secondaryTextColor,
-                            accentColor = accentColor
-                        )
-
-                        SettingsDivider()
-
-                        ExpressiveVideoModeToggleItem(
-                            enabled = videoMode,
-                            onToggle = onVideoModeToggle,
-                            textColor = textColor,
-                            secondaryTextColor = secondaryTextColor,
-                            accentColor = Color(0xFFFF0000) // YouTube red
-                        )
-
-                        SettingsDivider()
-
-                        ExpressiveHomeModeToggleItem(
-                            enabled = homeModeToggleEnabled,
-                            onToggle = onHomeModeToggleChange,
-                            textColor = textColor,
-                            secondaryTextColor = secondaryTextColor,
-                            accentColor = accentColor
-                        )
-
-                        SettingsDivider()
-
-                        ExpressiveTimedCommentsToggleItem(
-                            enabled = timedCommentsEnabled,
-                            onToggle = onTimedCommentsToggle,
-                            textColor = textColor,
-                            secondaryTextColor = secondaryTextColor,
-                            accentColor = accentColor
-                        )
-
-                        SettingsDivider()
-
-                        ExpressiveShortsToggleItem(
-                            enabled = shortsEnabled,
-                            onToggle = onShortsEnabledToggle,
-                            textColor = textColor,
-                            secondaryTextColor = secondaryTextColor,
-                            accentColor = accentColor
-                        )
-
-                        // Shorts button visibility - only relevant while Shorts are on
-                        AnimatedVisibility(
-                            visible = shortsEnabled,
-                            enter = fadeIn(tween(200)) + slideInVertically(
-                                initialOffsetY = { -it / 4 },
-                                animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy)
-                            ),
-                            exit = fadeOut(tween(150))
-                        ) {
-                            Column {
-                                SettingsDivider()
-                                ExpressiveSettingsItem(
-                                    icon = Icons.Rounded.Visibility,
-                                    title = "Shorts Buttons",
-                                    subtitle = if (shortsHiddenActions.isEmpty()) "All buttons shown"
-                                        else "${shortsHiddenActions.size} hidden",
-                                    onClick = { showShortsButtonsDialog = true },
-                                    textColor = textColor,
-                                    secondaryTextColor = secondaryTextColor,
-                                    iconTint = accentColor,
-                                    showChevron = true
-                                )
-                            }
-                        }
-
-                        SettingsDivider()
-
-                        ExpressiveSettingsItem(
-                            icon = Icons.Rounded.Wifi,
-                            title = "Video Quality on Wi-Fi",
-                            subtitle = videoQualityLabel(videoQualityWifi),
-                            onClick = { qualityDialogTarget = QualityDialogTarget.VIDEO_WIFI },
-                            textColor = textColor,
-                            secondaryTextColor = secondaryTextColor,
-                            iconTint = accentColor,
-                            showChevron = true
-                        )
-
-                        SettingsDivider()
-
-                        ExpressiveSettingsItem(
-                            icon = Icons.Rounded.SignalCellularAlt,
-                            title = "Video Quality on Mobile Data",
-                            subtitle = videoQualityLabel(videoQualityMobile),
-                            onClick = { qualityDialogTarget = QualityDialogTarget.VIDEO_MOBILE },
-                            textColor = textColor,
-                            secondaryTextColor = secondaryTextColor,
-                            iconTint = accentColor,
-                            showChevron = true
-                        )
-
-                        SettingsDivider()
-
-                        ExpressiveOemToggleItem(
-                            icon = Icons.Rounded.HdrOn,
-                            title = "Prefer HDR Videos",
-                            subtitle = "Fetch HDR streams when a video has them",
-                            enabled = preferHdr,
-                            onToggle = onPreferHdrToggle,
-                            textColor = textColor,
-                            secondaryTextColor = secondaryTextColor,
-                            accentColor = accentColor
-                        )
-
-                        SettingsDivider()
-
-                        ExpressiveSettingsItem(
-                            icon = Icons.Rounded.Subscriptions,
-                            title = "Manage Subscriptions",
-                            subtitle = "Import, export and group the channels you follow",
-                            onClick = onNavigateToSubscriptions,
-                            textColor = textColor,
-                            secondaryTextColor = secondaryTextColor,
-                            iconTint = accentColor,
-                            showChevron = true
-                        )
-
-                        SettingsDivider()
-
-                        ExpressiveSettingsItem(
-                            icon = Icons.Rounded.NotInterested,
-                            title = "Not Recommended",
-                            subtitle = "Videos and channels you've hidden from your feeds",
-                            onClick = onNavigateToNotInterested,
-                            textColor = textColor,
-                            secondaryTextColor = secondaryTextColor,
-                            iconTint = accentColor,
-                            showChevron = true
-                        )
-
-                        SettingsDivider()
-
-                        ExpressiveSettingsItem(
-                            icon = Icons.Rounded.FilterList,
-                            title = "Subscriptions Shown",
-                            subtitle = subscriptionSourceLabel(subscriptionSource),
-                            onClick = { subscriptionDialogTarget = SubscriptionDialogTarget.SOURCE },
-                            textColor = textColor,
-                            secondaryTextColor = secondaryTextColor,
-                            iconTint = accentColor,
-                            showChevron = true
-                        )
-
-                        SettingsDivider()
-
-                        ExpressiveSettingsItem(
-                            icon = Icons.Rounded.BookmarkAdd,
-                            title = "Subscribe Saves To",
-                            subtitle = subscribeTargetLabel(subscribeTarget),
-                            onClick = { subscriptionDialogTarget = SubscriptionDialogTarget.TARGET },
-                            textColor = textColor,
-                            secondaryTextColor = secondaryTextColor,
-                            iconTint = accentColor,
-                            showChevron = true
-                        )
-
-                        SettingsDivider()
-
-                        ExpressiveOemToggleItem(
-                            icon = Icons.Rounded.Bolt,
-                            title = "Fast Subscription Refresh",
-                            subtitle = if (fastSubscriptionFeed) {
-                                "Much less data and exact upload times, but no duration badges"
-                            } else {
-                                "Full details for every video - slow on a large subscription list"
-                            },
-                            enabled = fastSubscriptionFeed,
-                            onToggle = onFastSubscriptionFeedToggle,
-                            textColor = textColor,
-                            secondaryTextColor = secondaryTextColor,
-                            accentColor = accentColor
-                        )
-                    }
-                }
-            }
-
-            // Library Section
-            item {
-                SettingsSection(
-                    title = "Library",
-                    textColor = secondaryTextColor
-                ) {
-                    ExpressiveSettingsCard(surfaceColor = surfaceColor) {
-                        ExpressiveLocalSongsToggleItem(
-                            loadLocalSongs = loadLocalSongs,
-                            onToggle = onLoadLocalSongsToggle,
-                            textColor = textColor,
-                            secondaryTextColor = secondaryTextColor,
-                            accentColor = accentColor
-                        )
-                        
-                        // Folder Exclusion - only show when local songs are enabled
-                        AnimatedVisibility(
-                            visible = loadLocalSongs,
-                            enter = fadeIn(tween(200)) + slideInVertically(
-                                initialOffsetY = { -it / 4 },
-                                animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy)
-                            ),
-                            exit = fadeOut(tween(150))
-                        ) {
-                            Column {
-                                SettingsDivider()
-                                ExpressiveFolderExclusionItem(
-                                    excludedFoldersCount = excludedFolders.size,
-                                    onClick = {
-                                        // Load available folders when opening dialog
-                                        isFoldersLoading = true
-                                        coroutineScope.launch {
-                                            availableFolders = homeViewModel.getAvailableFolders()
-                                            isFoldersLoading = false
-                                        }
-                                        showFolderExclusionDialog = true
-                                    },
-                                    textColor = textColor,
-                                    secondaryTextColor = secondaryTextColor,
-                                    accentColor = accentColor
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-
-            // About Section
-            item {
-                SettingsSection(
-                    title = "About",
-                    textColor = secondaryTextColor
-                ) {
-                    ExpressiveSettingsCard(surfaceColor = surfaceColor) {
-                        ExpressiveSettingsItem(
-                            icon = Icons.Rounded.Info,
-                            title = "Koda",
-                            subtitle = "Version ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
-                            onClick = { showAboutDialog = true },
-                            textColor = textColor,
-                            secondaryTextColor = secondaryTextColor,
-                            iconTint = accentColor,
-                            showChevron = true
-                        )
-                    }
-                }
-            }
-
-            item {
-                Spacer(modifier = Modifier.height(32.dp))
+                SettingsPage.ADVANCED -> AdvancedSettingsPage(
+                    manualScanEnabled = manualScanEnabled,
+                    onManualScanEnabledToggle = onManualScanEnabledToggle,
+                    onBack = { page = SettingsPage.HUB }
+                )
             }
         }
     }
@@ -1217,7 +577,7 @@ fun SettingsScreen(
             onNavigateToUpdate = onNavigateToUpdate
         )
     }
-    
+
     // Per-network stream quality pickers (video + music, Wi-Fi + mobile data)
     qualityDialogTarget?.let { target ->
         val currentQuality = when (target) {
@@ -1285,50 +645,267 @@ fun SettingsScreen(
     }
 }
 
+/**
+ * The category list. Every row carries the live value of what is inside it, so
+ * the common "what is this set to?" question is answered without opening
+ * anything.
+ */
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun SettingsSection(
-    title: String,
-    textColor: Color,
-    content: @Composable () -> Unit
+private fun SettingsHub(
+    isLoggedIn: Boolean,
+    accountRefreshKey: Int,
+    sessionManager: SessionManager,
+    currentThemeMode: ThemeMode,
+    colorPalette: String,
+    playerStyle: PlayerStyle,
+    musicQualityWifi: String,
+    videoQualityWifi: String,
+    localOnlyMode: Boolean,
+    videoMode: Boolean,
+    subscriptionSource: String,
+    cacheEnabled: Boolean,
+    currentCacheSize: Long,
+    liveDownloadUpdates: Boolean,
+    livePlaybackUpdates: Boolean,
+    canPostPromoted: Boolean,
+    loadLocalSongs: Boolean,
+    excludedFolderCount: Int,
+    onOpenPage: (SettingsPage) -> Unit,
+    onShowAbout: () -> Unit,
+    onBackClick: () -> Unit
 ) {
-    // No entrance animation on purpose: these live in a LazyColumn, which
-    // recomposes items as they scroll into view — any enter animation replays
-    // on every scroll and makes the cards look like they're "loading".
-    Column {
-        Text(
-            text = title.uppercase(),
-            color = textColor,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.SemiBold,
-            letterSpacing = 1.2.sp,
-            modifier = Modifier.padding(start = 8.dp, bottom = 10.dp)
-        )
-        content()
+    // Animation states for staggered entry
+    var isVisible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        delay(100)
+        isVisible = true
     }
-}
 
-@Composable
-private fun ExpressiveSettingsCard(
-    surfaceColor: Color,
-    content: @Composable () -> Unit
-) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
-        color = surfaceColor,
-        tonalElevation = 2.dp,
-        shadowElevation = 0.dp
-    ) {
-        Column(modifier = Modifier.padding(6.dp)) {
-            content()
+    val accountValue = key(accountRefreshKey) {
+        when {
+            !isLoggedIn -> "Not signed in"
+            else -> sessionManager.getUserName() ?: "Signed in"
+        }
+    }
+
+    val themeLabel = when (currentThemeMode) {
+        ThemeMode.SYSTEM -> "System"
+        ThemeMode.LIGHT -> "Light"
+        ThemeMode.DARK -> "Dark"
+    }
+    val paletteName = if (colorPalette == ThemePreferences.DEFAULT_COLOR_PALETTE) {
+        "Dynamic"
+    } else {
+        com.ivor.ivormusic.ui.theme.findPalette(colorPalette)?.name ?: "Dynamic"
+    }
+    val playerStyleLabel = (playerStyleOptions.firstOrNull { it.style == playerStyle }
+        ?: playerStyleOptions.first()).label
+
+    val contentValue = when {
+        localOnlyMode -> "Local only, offline"
+        videoMode -> "Video mode"
+        else -> "Music mode"
+    }
+
+    val storageValue = if (cacheEnabled) {
+        "${com.ivor.ivormusic.data.CacheManager.formatSize(currentCacheSize)} cached"
+    } else {
+        "Caching off"
+    }
+
+    val notificationsValue = when {
+        !canPostPromoted && (liveDownloadUpdates || livePlaybackUpdates) -> "Blocked by system"
+        liveDownloadUpdates && livePlaybackUpdates -> "Downloads and playback"
+        liveDownloadUpdates -> "Downloads only"
+        livePlaybackUpdates -> "Playback only"
+        else -> "Off"
+    }
+
+    val localLibraryValue = when {
+        !loadLocalSongs -> "Off"
+        excludedFolderCount > 0 -> "On, $excludedFolderCount folder${if (excludedFolderCount == 1) "" else "s"} excluded"
+        else -> "On"
+    }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        TopAppBar(
+            title = {
+                AnimatedVisibility(
+                    visible = isVisible,
+                    enter = fadeIn(tween(400)) + slideInVertically(
+                        initialOffsetY = { -it / 2 },
+                        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy)
+                    )
+                ) {
+                    Text(
+                        text = "Settings",
+                        color = MaterialTheme.colorScheme.onBackground,
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.headlineMedium
+                    )
+                }
+            },
+            navigationIcon = {
+                IconButton(
+                    onClick = onBackClick,
+                    shapes = IconButtonDefaults.shapes(),
+                    colors = IconButtonDefaults.iconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        contentColor = MaterialTheme.colorScheme.onBackground
+                    ),
+                    modifier = Modifier
+                        .padding(start = 8.dp)
+                        .size(44.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                        contentDescription = "Back"
+                    )
+                }
+            },
+            colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
+            modifier = Modifier.windowInsetsPadding(WindowInsets.statusBars)
+        )
+
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp)
+        ) {
+            item {
+                SettingsSection(title = "You") {
+                    SettingsCard {
+                        SettingsHubRow(
+                            icon = Icons.Rounded.AccountCircle,
+                            title = "Account",
+                            value = accountValue,
+                            onClick = { onOpenPage(SettingsPage.ACCOUNT) }
+                        )
+                    }
+                }
+            }
+
+            item {
+                SettingsSection(title = "Look and feel") {
+                    SettingsCard {
+                        SettingsHubRow(
+                            icon = Icons.Rounded.Palette,
+                            title = "Appearance",
+                            value = "$themeLabel, $paletteName",
+                            onClick = { onOpenPage(SettingsPage.APPEARANCE) }
+                        )
+                        SettingsDivider()
+                        SettingsHubRow(
+                            icon = Icons.Rounded.PlayCircle,
+                            title = "Player",
+                            value = playerStyleLabel,
+                            onClick = { onOpenPage(SettingsPage.PLAYER) }
+                        )
+                    }
+                }
+            }
+
+            item {
+                SettingsSection(title = "Playback and content") {
+                    SettingsCard {
+                        SettingsHubRow(
+                            icon = Icons.Rounded.GraphicEq,
+                            title = "Playback and quality",
+                            value = "${musicQualityLabel(musicQualityWifi)} music, " +
+                                "${videoQualityLabel(videoQualityWifi)} video on Wi-Fi",
+                            onClick = { onOpenPage(SettingsPage.PLAYBACK) }
+                        )
+                        SettingsDivider()
+                        SettingsHubRow(
+                            icon = Icons.Rounded.VideoLibrary,
+                            title = "Content and feeds",
+                            value = contentValue,
+                            onClick = { onOpenPage(SettingsPage.CONTENT) }
+                        )
+                        SettingsDivider()
+                        SettingsHubRow(
+                            icon = Icons.Rounded.Subscriptions,
+                            title = "Subscriptions",
+                            value = subscriptionSourceLabel(subscriptionSource),
+                            onClick = { onOpenPage(SettingsPage.SUBSCRIPTIONS) }
+                        )
+                    }
+                }
+            }
+
+            item {
+                SettingsSection(title = "System") {
+                    SettingsCard {
+                        SettingsHubRow(
+                            icon = Icons.Rounded.Folder,
+                            title = "Storage and cache",
+                            value = storageValue,
+                            onClick = { onOpenPage(SettingsPage.STORAGE) }
+                        )
+                        if (ThemePreferences.SUPPORTS_LIVE_UPDATES) {
+                            SettingsDivider()
+                            SettingsHubRow(
+                                icon = Icons.Rounded.Bolt,
+                                title = "Notifications",
+                                value = notificationsValue,
+                                onClick = { onOpenPage(SettingsPage.NOTIFICATIONS) },
+                                tint = if (!canPostPromoted && (liveDownloadUpdates || livePlaybackUpdates)) {
+                                    SettingsRowDefaults.destructiveTint
+                                } else {
+                                    MaterialTheme.colorScheme.primary
+                                }
+                            )
+                        }
+                        SettingsDivider()
+                        SettingsHubRow(
+                            icon = Icons.Rounded.MusicNote,
+                            title = "Local library",
+                            value = localLibraryValue,
+                            onClick = { onOpenPage(SettingsPage.LOCAL_LIBRARY) }
+                        )
+                        SettingsDivider()
+                        SettingsHubRow(
+                            icon = Icons.Rounded.Security,
+                            title = "Advanced",
+                            value = if (isXiaomiDevice()) {
+                                "Recommended on this device"
+                            } else {
+                                "Scanning and battery fixes"
+                            },
+                            onClick = { onOpenPage(SettingsPage.ADVANCED) },
+                            tint = if (isXiaomiDevice()) {
+                                MaterialTheme.colorScheme.tertiary
+                            } else {
+                                MaterialTheme.colorScheme.primary
+                            }
+                        )
+                    }
+                }
+            }
+
+            item {
+                SettingsSection(title = "About") {
+                    SettingsCard {
+                        SettingsRow(
+                            icon = Icons.Rounded.Info,
+                            title = "Koda",
+                            subtitle = "Version ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+                            onClick = onShowAbout,
+                            showChevron = true
+                        )
+                    }
+                }
+            }
+
+            item { Spacer(modifier = Modifier.height(32.dp)) }
         }
     }
 }
 
-
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun ExpressiveThemeSelectGroup(
+internal fun ExpressiveThemeSelectGroup(
     currentMode: ThemeMode,
     onModeSelected: (ThemeMode) -> Unit,
     textColor: Color,
@@ -1388,103 +965,15 @@ private fun ExpressiveThemeSelectGroup(
 }
 
 @Composable
-private fun ExpressiveSettingsItem(
-    icon: ImageVector,
-    title: String,
-    subtitle: String,
-    onClick: () -> Unit,
-    textColor: Color,
-    secondaryTextColor: Color,
-    iconTint: Color,
-    showChevron: Boolean = false
-) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-    
-    val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.97f else 1f,
-        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
-        label = "scale"
-    )
-    
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .scale(scale)
-            .clip(RoundedCornerShape(18.dp))
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = onClick
-            )
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        // Icon with expressive background
-        Box(
-            modifier = Modifier
-                .size(48.dp)
-                .clip(RoundedCornerShape(14.dp))
-                .background(iconTint.copy(alpha = 0.12f)),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = iconTint,
-                modifier = Modifier.size(26.dp)
-            )
-        }
-
-        Spacer(modifier = Modifier.width(16.dp))
-
-        // Text
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = title,
-                color = textColor,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.SemiBold
-            )
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = subtitle,
-                color = secondaryTextColor,
-                fontSize = 13.sp
-            )
-        }
-
-        if (showChevron) {
-            Icon(
-                imageVector = Icons.Rounded.ChevronRight,
-                contentDescription = null,
-                tint = secondaryTextColor,
-                modifier = Modifier.size(24.dp)
-            )
-        }
-    }
-}
-
-@Composable
-private fun SettingsDivider() {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 4.dp)
-            .height(1.dp)
-            .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-    )
-}
-
-@Composable
-private fun ExpressiveAccountItem(
+internal fun ExpressiveAccountItem(
     sessionManager: SessionManager,
     textColor: Color,
     secondaryTextColor: Color
 ) {
     val userAvatar = sessionManager.getUserAvatar()
     val userName = sessionManager.getUserName()
-    
+    val connectedColor = MaterialTheme.colorScheme.primary
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1497,7 +986,7 @@ private fun ExpressiveAccountItem(
             modifier = Modifier
                 .size(52.dp)
                 .clip(CircleShape)
-                .background(Color(0xFF4CAF50).copy(alpha = 0.12f)),
+                .background(connectedColor.copy(alpha = 0.12f)),
             contentAlignment = Alignment.Center
         ) {
             if (!userAvatar.isNullOrEmpty()) {
@@ -1513,7 +1002,7 @@ private fun ExpressiveAccountItem(
                 Icon(
                     imageVector = Icons.Rounded.AccountCircle,
                     contentDescription = null,
-                    tint = Color(0xFF4CAF50),
+                    tint = connectedColor,
                     modifier = Modifier.size(32.dp)
                 )
             }
@@ -1539,12 +1028,12 @@ private fun ExpressiveAccountItem(
                 Icon(
                     imageVector = Icons.Rounded.CheckCircle,
                     contentDescription = null,
-                    tint = Color(0xFF4CAF50),
+                    tint = connectedColor,
                     modifier = Modifier.size(14.dp)
                 )
                 Text(
                     text = "Connected",
-                    color = Color(0xFF4CAF50),
+                    color = connectedColor,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Medium
                 )
@@ -1553,329 +1042,9 @@ private fun ExpressiveAccountItem(
     }
 }
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
-@Composable
-private fun ExpressiveLocalSongsToggleItem(
-    loadLocalSongs: Boolean,
-    onToggle: (Boolean) -> Unit,
-    textColor: Color,
-    secondaryTextColor: Color,
-    accentColor: Color
-) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-    
-    val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.97f else 1f,
-        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
-        label = "scale"
-    )
-    
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .scale(scale)
-            .clip(RoundedCornerShape(18.dp))
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null
-            ) { onToggle(!loadLocalSongs) }
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        // Icon
-        Box(
-            modifier = Modifier
-                .size(48.dp)
-                .clip(RoundedCornerShape(14.dp))
-                .background(accentColor.copy(alpha = 0.12f)),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = Icons.Rounded.Folder,
-                contentDescription = null,
-                tint = accentColor,
-                modifier = Modifier.size(26.dp)
-            )
-        }
-
-        Spacer(modifier = Modifier.width(16.dp))
-
-        // Text
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = "Load Local Songs",
-                color = textColor,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.SemiBold
-            )
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = if (loadLocalSongs) "Shows songs from your device" else "YouTube Music only",
-                color = secondaryTextColor,
-                fontSize = 13.sp
-            )
-        }
-
-        // Switch
-        Switch(
-            checked = loadLocalSongs,
-            onCheckedChange = onToggle,
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = Color.White,
-                checkedTrackColor = accentColor,
-                uncheckedThumbColor = Color.White,
-                uncheckedTrackColor = secondaryTextColor.copy(alpha = 0.3f),
-                uncheckedBorderColor = Color.Transparent,
-                checkedBorderColor = Color.Transparent
-            )
-        )
-    }
-}
-
-/**
- * Local only mode: the app stays fully offline — device library only, all
- * YouTube features and network calls disabled.
- */
-@Composable
-private fun ExpressiveLocalOnlyToggleItem(
-    enabled: Boolean,
-    onToggle: (Boolean) -> Unit,
-    textColor: Color,
-    secondaryTextColor: Color,
-    accentColor: Color
-) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-
-    val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.97f else 1f,
-        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
-        label = "scale"
-    )
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .scale(scale)
-            .clip(RoundedCornerShape(18.dp))
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null
-            ) { onToggle(!enabled) }
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            modifier = Modifier
-                .size(48.dp)
-                .clip(RoundedCornerShape(14.dp))
-                .background(accentColor.copy(alpha = 0.12f)),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = Icons.Rounded.CloudOff,
-                contentDescription = null,
-                tint = accentColor,
-                modifier = Modifier.size(26.dp)
-            )
-        }
-
-        Spacer(modifier = Modifier.width(16.dp))
-
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = "Local Only",
-                color = textColor,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.SemiBold
-            )
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = if (enabled) "Offline: device library only, no internet"
-                else "YouTube features enabled",
-                color = secondaryTextColor,
-                fontSize = 13.sp
-            )
-        }
-
-        Switch(
-            checked = enabled,
-            onCheckedChange = onToggle,
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = Color.White,
-                checkedTrackColor = accentColor,
-                uncheckedThumbColor = Color.White,
-                uncheckedTrackColor = secondaryTextColor.copy(alpha = 0.3f),
-                uncheckedBorderColor = Color.Transparent,
-                checkedBorderColor = Color.Transparent
-            )
-        )
-    }
-}
-
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
-@Composable
-private fun ExpressiveAmoledThemeToggleItem(
-    enabled: Boolean,
-    onToggle: (Boolean) -> Unit,
-    textColor: Color,
-    secondaryTextColor: Color,
-    accentColor: Color
-) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-
-    val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.97f else 1f,
-        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
-        label = "scale"
-    )
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .scale(scale)
-            .clip(RoundedCornerShape(18.dp))
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null
-            ) { onToggle(!enabled) }
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        // Icon
-        Box(
-            modifier = Modifier
-                .size(48.dp)
-                .clip(RoundedCornerShape(14.dp))
-                .background(accentColor.copy(alpha = 0.12f)),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = Icons.Rounded.Contrast,
-                contentDescription = null,
-                tint = accentColor,
-                modifier = Modifier.size(26.dp)
-            )
-        }
-
-        Spacer(modifier = Modifier.width(16.dp))
-
-        // Text
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = "AMOLED Black",
-                color = textColor,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.SemiBold
-            )
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = if (enabled) "Pure black backgrounds in dark theme" else "Standard dark backgrounds",
-                color = secondaryTextColor,
-                fontSize = 13.sp
-            )
-        }
-
-        // Switch
-        Switch(
-            checked = enabled,
-            onCheckedChange = onToggle,
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = Color.White,
-                checkedTrackColor = accentColor,
-                uncheckedThumbColor = Color.White,
-                uncheckedTrackColor = secondaryTextColor.copy(alpha = 0.3f),
-                uncheckedBorderColor = Color.Transparent,
-                checkedBorderColor = Color.Transparent
-            )
-        )
-    }
-}
-
-@Composable
-private fun ExpressiveAmbientBackgroundToggleItem(
-    enabled: Boolean,
-    onToggle: (Boolean) -> Unit,
-    textColor: Color,
-    secondaryTextColor: Color,
-    accentColor: Color
-) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-    
-    val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.97f else 1f,
-        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
-        label = "scale"
-    )
-    
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .scale(scale)
-            .clip(RoundedCornerShape(18.dp))
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null
-            ) { onToggle(!enabled) }
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        // Icon
-        Box(
-            modifier = Modifier
-                .size(48.dp)
-                .clip(RoundedCornerShape(14.dp))
-                .background(accentColor.copy(alpha = 0.12f)),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = Icons.Rounded.Palette,
-                contentDescription = null,
-                tint = accentColor,
-                modifier = Modifier.size(26.dp)
-            )
-        }
-
-        Spacer(modifier = Modifier.width(16.dp))
-
-        // Text
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = "Ambient Background",
-                color = textColor,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.SemiBold
-            )
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = if (enabled) "Dynamic colors from album art" else "Solid background",
-                color = secondaryTextColor,
-                fontSize = 13.sp
-            )
-        }
-
-        // Switch
-        Switch(
-            checked = enabled,
-            onCheckedChange = onToggle,
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = Color.White,
-                checkedTrackColor = accentColor,
-                uncheckedThumbColor = Color.White,
-                uncheckedTrackColor = secondaryTextColor.copy(alpha = 0.3f),
-                uncheckedBorderColor = Color.Transparent,
-                checkedBorderColor = Color.Transparent
-            )
-        )
-    }
-}
-
 @OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class)
 @Composable
-private fun ExpressiveVideoModeToggleItem(
+internal fun ExpressiveVideoModeToggleItem(
     enabled: Boolean,
     onToggle: (Boolean) -> Unit,
     textColor: Color,
@@ -1961,343 +1130,14 @@ private fun ExpressiveVideoModeToggleItem(
     }
 }
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
-@Composable
-private fun ExpressiveHomeModeToggleItem(
-    enabled: Boolean,
-    onToggle: (Boolean) -> Unit,
-    textColor: Color,
-    secondaryTextColor: Color,
-    accentColor: Color
-) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-
-    val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.97f else 1f,
-        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
-        label = "scale"
-    )
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .scale(scale)
-            .clip(RoundedCornerShape(18.dp))
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null
-            ) { onToggle(!enabled) }
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        // Icon
-        Box(
-            modifier = Modifier
-                .size(48.dp)
-                .clip(RoundedCornerShape(14.dp))
-                .background(accentColor.copy(alpha = 0.12f)),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = Icons.Rounded.ToggleOn,
-                contentDescription = null,
-                tint = accentColor,
-                modifier = Modifier.size(26.dp)
-            )
-        }
-
-        Spacer(modifier = Modifier.width(16.dp))
-
-        // Text
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = "Home Screen Mode Toggle",
-                color = textColor,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.SemiBold
-            )
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = if (enabled) "Music/video switch shown in the Home top bar" else "Switch modes from Settings only",
-                color = secondaryTextColor,
-                fontSize = 13.sp
-            )
-        }
-
-        // Switch
-        Switch(
-            checked = enabled,
-            onCheckedChange = onToggle,
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = Color.White,
-                checkedTrackColor = accentColor,
-                uncheckedThumbColor = Color.White,
-                uncheckedTrackColor = secondaryTextColor.copy(alpha = 0.3f),
-                uncheckedBorderColor = Color.Transparent,
-                checkedBorderColor = Color.Transparent
-            )
-        )
-    }
-}
-
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
-@Composable
-private fun ExpressiveTimedCommentsToggleItem(
-    enabled: Boolean,
-    onToggle: (Boolean) -> Unit,
-    textColor: Color,
-    secondaryTextColor: Color,
-    accentColor: Color
-) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-
-    val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.97f else 1f,
-        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
-        label = "scale"
-    )
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .scale(scale)
-            .clip(RoundedCornerShape(18.dp))
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null
-            ) { onToggle(!enabled) }
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        // Icon
-        Box(
-            modifier = Modifier
-                .size(48.dp)
-                .clip(RoundedCornerShape(14.dp))
-                .background(accentColor.copy(alpha = 0.12f)),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Rounded.Comment,
-                contentDescription = null,
-                tint = accentColor,
-                modifier = Modifier.size(26.dp)
-            )
-        }
-
-        Spacer(modifier = Modifier.width(16.dp))
-
-        // Text
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = "Timed Comments",
-                color = textColor,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.SemiBold
-            )
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = if (enabled) "Timestamped comments briefly appear over videos" else "Adds a comments button to the video player",
-                color = secondaryTextColor,
-                fontSize = 13.sp
-            )
-        }
-
-        // Switch
-        Switch(
-            checked = enabled,
-            onCheckedChange = onToggle,
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = Color.White,
-                checkedTrackColor = accentColor,
-                uncheckedThumbColor = Color.White,
-                uncheckedTrackColor = secondaryTextColor.copy(alpha = 0.3f),
-                uncheckedBorderColor = Color.Transparent,
-                checkedBorderColor = Color.Transparent
-            )
-        )
-    }
-}
-
-/**
- * Opt-in toggle for YouTube Shorts, off by default. The subtitle carries a
- * deliberate warning: short-form feeds are engineered to be compulsive, so
- * the user should choose them consciously rather than get them by default.
- */
-@Composable
-private fun ExpressiveShortsToggleItem(
-    enabled: Boolean,
-    onToggle: (Boolean) -> Unit,
-    textColor: Color,
-    secondaryTextColor: Color,
-    accentColor: Color
-) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-
-    val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.97f else 1f,
-        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
-        label = "scale"
-    )
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .scale(scale)
-            .clip(RoundedCornerShape(18.dp))
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null
-            ) { onToggle(!enabled) }
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        // Icon
-        Box(
-            modifier = Modifier
-                .size(48.dp)
-                .clip(RoundedCornerShape(14.dp))
-                .background(accentColor.copy(alpha = 0.12f)),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = Icons.Rounded.Bolt,
-                contentDescription = null,
-                tint = accentColor,
-                modifier = Modifier.size(26.dp)
-            )
-        }
-
-        Spacer(modifier = Modifier.width(16.dp))
-
-        // Text
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = "Shorts",
-                color = textColor,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.SemiBold
-            )
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = if (enabled) {
-                    "Shorts shelf shown in video mode. Mind your screen time"
-                } else {
-                    "Off by default. Endless short-form feeds are designed to keep you scrolling"
-                },
-                color = if (enabled) MaterialTheme.colorScheme.error.copy(alpha = 0.9f)
-                    else secondaryTextColor,
-                fontSize = 13.sp
-            )
-        }
-
-        // Switch
-        Switch(
-            checked = enabled,
-            onCheckedChange = onToggle,
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = Color.White,
-                checkedTrackColor = accentColor,
-                uncheckedThumbColor = Color.White,
-                uncheckedTrackColor = secondaryTextColor.copy(alpha = 0.3f),
-                uncheckedBorderColor = Color.Transparent,
-                checkedBorderColor = Color.Transparent
-            )
-        )
-    }
-}
-
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
-@Composable
-private fun ExpressiveSaveHistoryToggleItem(
-    enabled: Boolean,
-    onToggle: (Boolean) -> Unit,
-    textColor: Color,
-    secondaryTextColor: Color,
-    accentColor: Color
-) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-    
-    val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.97f else 1f,
-        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
-        label = "scale"
-    )
-    
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .scale(scale)
-            .clip(RoundedCornerShape(18.dp))
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null
-            ) { onToggle(!enabled) }
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        // Icon
-        Box(
-            modifier = Modifier
-                .size(48.dp)
-                .clip(RoundedCornerShape(14.dp))
-                .background(accentColor.copy(alpha = 0.12f)),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = Icons.Rounded.CheckCircle,
-                contentDescription = null,
-                tint = accentColor,
-                modifier = Modifier.size(26.dp)
-            )
-        }
-
-        Spacer(modifier = Modifier.width(16.dp))
-
-        // Text
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = "Save Watch History",
-                color = textColor,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.SemiBold
-            )
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = if (enabled) "Videos saved to your YouTube account" else "Watch history not saved",
-                color = secondaryTextColor,
-                fontSize = 13.sp
-            )
-        }
-
-        // Switch
-        Switch(
-            checked = enabled,
-            onCheckedChange = onToggle,
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = Color.White,
-                checkedTrackColor = accentColor,
-                uncheckedThumbColor = Color.White,
-                uncheckedTrackColor = secondaryTextColor.copy(alpha = 0.3f),
-                uncheckedBorderColor = Color.Transparent,
-                checkedBorderColor = Color.Transparent
-            )
-        )
-    }
-}
-
-private data class PlayerStyleOption(
+internal data class PlayerStyleOption(
     val style: PlayerStyle,
     val label: String,
     val subtitle: String,
     val icon: androidx.compose.ui.graphics.vector.ImageVector
 )
 
-private val playerStyleOptions = listOf(
+internal val playerStyleOptions = listOf(
     PlayerStyleOption(PlayerStyle.CLASSIC, "Classic", "Button controls for playback", Icons.Rounded.PlayCircle),
     PlayerStyleOption(PlayerStyle.GESTURE, "Gesture", "Swipe album art to navigate", Icons.Rounded.SwipeRight),
     PlayerStyleOption(PlayerStyle.EDITORIAL, "Editorial", "Two-tone magazine layout", Icons.Rounded.Newspaper),
@@ -2310,7 +1150,7 @@ private val playerStyleOptions = listOf(
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-private fun ExpressivePlayerStyleSelectItem(
+internal fun ExpressivePlayerStyleSelectItem(
     currentStyle: PlayerStyle,
     onStyleSelected: (PlayerStyle) -> Unit,
     textColor: Color,
@@ -2392,11 +1232,11 @@ private fun ExpressivePlayerStyleSelectItem(
 }
 
 /** Human-readable label for a stored default video quality value. */
-private fun videoQualityLabel(value: String): String =
+internal fun videoQualityLabel(value: String): String =
     if (value == ThemePreferences.VIDEO_QUALITY_AUTO) "Auto (Highest)" else value
 
 /** Human-readable label for a stored music quality value. */
-private fun musicQualityLabel(value: String): String = when (value) {
+internal fun musicQualityLabel(value: String): String = when (value) {
     ThemePreferences.MUSIC_QUALITY_LOW -> "Data Saver"
     ThemePreferences.MUSIC_QUALITY_NORMAL -> "Normal"
     else -> "High"
@@ -2410,14 +1250,14 @@ private fun musicQualityOptionLabel(value: String): String = when (value) {
 }
 
 /** Short label for the stored "which subscriptions to show" value. */
-private fun subscriptionSourceLabel(value: String): String = when (value) {
+internal fun subscriptionSourceLabel(value: String): String = when (value) {
     ThemePreferences.SUBSCRIPTIONS_LOCAL -> "On this device"
     ThemePreferences.SUBSCRIPTIONS_YOUTUBE -> "YouTube account"
     else -> "Everything you follow"
 }
 
 /** Short label for the stored "where Subscribe writes" value. */
-private fun subscribeTargetLabel(value: String): String = when (value) {
+internal fun subscribeTargetLabel(value: String): String = when (value) {
     ThemePreferences.SUBSCRIPTIONS_LOCAL -> "This device only"
     ThemePreferences.SUBSCRIPTIONS_YOUTUBE -> "YouTube account"
     ThemePreferences.SUBSCRIPTIONS_BOTH -> "Device and YouTube"
@@ -2447,7 +1287,7 @@ private fun subscribeTargetOptionLabel(value: String): Pair<String, String> = wh
 }
 
 /** One subscription-routing picker the Settings screen can open. */
-private enum class SubscriptionDialogTarget(
+internal enum class SubscriptionDialogTarget(
     val title: String,
     val description: String
 ) {
@@ -2586,7 +1426,7 @@ private fun SubscriptionRoutingDialog(
 }
 
 /** One per-network quality picker the Settings screen can open. */
-private enum class QualityDialogTarget(
+internal enum class QualityDialogTarget(
     val title: String,
     val description: String,
     val isMusic: Boolean
@@ -2931,85 +1771,6 @@ private fun AboutDetailRow(
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun ExpressiveFolderExclusionItem(
-    excludedFoldersCount: Int,
-    onClick: () -> Unit,
-    textColor: Color,
-    secondaryTextColor: Color,
-    accentColor: Color
-) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-    
-    val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.97f else 1f,
-        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
-        label = "scale"
-    )
-    
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .scale(scale)
-            .clip(RoundedCornerShape(18.dp))
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = onClick
-            )
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        // Icon
-        Box(
-            modifier = Modifier
-                .size(48.dp)
-                .clip(RoundedCornerShape(14.dp))
-                .background(
-                    if (excludedFoldersCount > 0) Color(0xFFE57373).copy(alpha = 0.12f)
-                    else accentColor.copy(alpha = 0.12f)
-                ),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = if (excludedFoldersCount > 0) Icons.Rounded.FolderOff else Icons.Rounded.Folder,
-                contentDescription = null,
-                tint = if (excludedFoldersCount > 0) Color(0xFFE57373) else accentColor,
-                modifier = Modifier.size(26.dp)
-            )
-        }
-
-        Spacer(modifier = Modifier.width(16.dp))
-
-        // Text
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = "Excluded Folders",
-                color = textColor,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.SemiBold
-            )
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = if (excludedFoldersCount == 0) "All folders included"
-                       else "$excludedFoldersCount folder${if (excludedFoldersCount > 1) "s" else ""} hidden",
-                color = secondaryTextColor,
-                fontSize = 13.sp
-            )
-        }
-
-        // Chevron
-        Icon(
-            imageVector = Icons.Rounded.ChevronRight,
-            contentDescription = null,
-            tint = secondaryTextColor,
-            modifier = Modifier.size(24.dp)
-        )
-    }
-}
-
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
-@Composable
 private fun FolderExclusionDialog(
     availableFolders: List<FolderInfo>,
     excludedFolders: Set<String>,
@@ -3196,7 +1957,8 @@ private fun FolderItem(
     accentColor: Color
 ) {
     val interactionSource = remember { MutableInteractionSource() }
-    
+    val excludedColor = MaterialTheme.colorScheme.error
+
     Surface(
         modifier = Modifier
             .fillMaxWidth()
@@ -3207,7 +1969,7 @@ private fun FolderItem(
                 onClick = onToggle
             ),
         shape = RoundedCornerShape(12.dp),
-        color = if (isExcluded) Color(0xFFE57373).copy(alpha = 0.08f) else Color.Transparent
+        color = if (isExcluded) excludedColor.copy(alpha = 0.08f) else Color.Transparent
     ) {
         Row(
             modifier = Modifier
@@ -3220,7 +1982,7 @@ private fun FolderItem(
                 checked = isExcluded,
                 onCheckedChange = { onToggle() },
                 colors = CheckboxDefaults.colors(
-                    checkedColor = Color(0xFFE57373),
+                    checkedColor = excludedColor,
                     uncheckedColor = secondaryTextColor.copy(alpha = 0.5f),
                     checkmarkColor = Color.White
                 )
@@ -3232,7 +1994,7 @@ private fun FolderItem(
             Icon(
                 imageVector = if (isExcluded) Icons.Rounded.FolderOff else Icons.Rounded.Folder,
                 contentDescription = null,
-                tint = if (isExcluded) Color(0xFFE57373) else accentColor,
+                tint = if (isExcluded) excludedColor else accentColor,
                 modifier = Modifier.size(24.dp)
             )
             
@@ -3242,7 +2004,7 @@ private fun FolderItem(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = folder.displayName,
-                    color = if (isExcluded) Color(0xFFE57373) else textColor,
+                    color = if (isExcluded) excludedColor else textColor,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Medium,
                     maxLines = 1,
@@ -3477,89 +2239,7 @@ private fun ShortsButtonShapeToggle(
     }
 }
 
-@Composable
-private fun ExpressiveOemToggleItem(
-    icon: ImageVector,
-    title: String,
-    subtitle: String,
-    enabled: Boolean,
-    onToggle: (Boolean) -> Unit,
-    textColor: Color,
-    secondaryTextColor: Color,
-    accentColor: Color
-) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-    
-    val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.97f else 1f,
-        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
-        label = "scale"
-    )
-    
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .scale(scale)
-            .clip(RoundedCornerShape(18.dp))
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null
-            ) { onToggle(!enabled) }
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        // Icon
-        Box(
-            modifier = Modifier
-                .size(48.dp)
-                .clip(RoundedCornerShape(14.dp))
-                .background(accentColor.copy(alpha = 0.12f)),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = accentColor,
-                modifier = Modifier.size(26.dp)
-            )
-        }
-
-        Spacer(modifier = Modifier.width(16.dp))
-
-        // Text
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = title,
-                color = textColor,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.SemiBold
-            )
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = subtitle,
-                color = secondaryTextColor,
-                fontSize = 13.sp
-            )
-        }
-
-        // Switch
-        Switch(
-            checked = enabled,
-            onCheckedChange = onToggle,
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = Color.White,
-                checkedTrackColor = accentColor,
-                uncheckedThumbColor = Color.White,
-                uncheckedTrackColor = secondaryTextColor.copy(alpha = 0.3f),
-                uncheckedBorderColor = Color.Transparent,
-                checkedBorderColor = Color.Transparent
-            )
-        )
-    }
-}
-
-private fun isXiaomiDevice(): Boolean {
+internal fun isXiaomiDevice(): Boolean {
     val manufacturer = android.os.Build.MANUFACTURER.lowercase()
     val brand = android.os.Build.BRAND.lowercase()
     return manufacturer.contains("xiaomi") || brand.contains("xiaomi") || 
