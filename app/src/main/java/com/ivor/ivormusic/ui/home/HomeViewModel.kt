@@ -143,6 +143,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val notInterestedRepository =
         com.ivor.ivormusic.data.NotInterestedRepository(application)
 
+    /** Local hide plus best-effort account propagation - see NotInterestedActions. */
+    private val notInterestedActions =
+        com.ivor.ivormusic.data.NotInterestedActions(notInterestedRepository, youtubeRepository)
+
     /**
      * Raw feed as fetched. Everything user-facing reads [trendingVideos]
      * instead, which subtracts what the user asked not to see.
@@ -1042,13 +1046,13 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Hide one video from every recommendation feed. */
     fun markNotInterested(video: VideoItem) {
-        notInterestedRepository.hideVideo(video)
+        notInterestedActions.hideVideo(video, viewModelScope)
         topUpFeedAfterFiltering()
     }
 
     /** Stop recommending anything from this video's channel. */
     fun blockChannelFor(video: VideoItem) {
-        notInterestedRepository.blockChannel(video.channelId, video.channelName, video.channelIconUrl)
+        notInterestedActions.blockChannel(video, viewModelScope)
         topUpFeedAfterFiltering()
     }
 

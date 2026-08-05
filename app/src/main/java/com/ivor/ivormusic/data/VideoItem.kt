@@ -1,6 +1,27 @@
 package com.ivor.ivormusic.data
 
 /**
+ * YouTube's own dismissal tokens for one feed item, when it carried any.
+ *
+ * These only exist on a signed-in InnerTube response - there is no account to
+ * record a preference against otherwise - so every field is null for RSS,
+ * NewPipe and signed-out items, and telling the account is skipped rather than
+ * failed. Tokens are single-use and tied to the response that carried them,
+ * which is why they ride along on the item instead of being fetched later.
+ *
+ * The undo tokens are pre-baked by YouTube into the same response, so taking
+ * back a dismissal costs no extra round trip either. Verified August 2026.
+ */
+data class DismissalTokens(
+    /** Hides this one video from the account's recommendations. */
+    val notInterested: String? = null,
+    val notInterestedUndo: String? = null,
+    /** Stops the account being recommended this video's channel at all. */
+    val blockChannel: String? = null,
+    val blockChannelUndo: String? = null
+)
+
+/**
  * Represents a YouTube video item for Video Mode.
  * This is distinct from Song as it contains video-specific metadata.
  */
@@ -31,7 +52,12 @@ data class VideoItem(
      * channel RSS feed carries a proper ISO timestamp, so the local
      * subscriptions feed is built from that and sorts on this field.
      */
-    val publishedAtMs: Long? = null
+    val publishedAtMs: Long? = null,
+    /**
+     * YouTube's dismissal tokens for this item, when the response carried
+     * them. Null everywhere except signed-in InnerTube feeds.
+     */
+    val dismissal: DismissalTokens? = null
 ) {
     /**
      * High-resolution thumbnail URL.

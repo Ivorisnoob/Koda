@@ -3542,12 +3542,105 @@ class YouTubeRepository(private val context: Context) {
                 duration = durationSeconds,
                 viewCount = viewCount,
                 uploadedDate = uploadDate,
-                isLive = isLive
+                isLive = isLive,
+                dismissal = parseDismissalTokens(metadata)
             )
         } catch (e: Exception) {
             return null
         }
     }
+
+    /**
+     * YouTube's own "Not interested" / "Don't recommend channel" tokens for a
+     * lockup, out of its overflow menu.
+     *
+     * Signed in, every feed lockup's menu carries two `feedbackEndpoint`s, each
+     * with a `feedbackToken` and - pre-baked into the notification it would
+     * show - the `undoToken` that reverses it. Signed out there are none at
+     * all, so this returns null and the caller simply does the local half.
+     *
+     * The two items are told apart by `leadingImage`'s `clientResource
+     * .imageName` (`NOT_INTERESTED` vs `REMOVE`), **not** by the visible label:
+     * the label is localized ("Not interested" on the home feed, "Hide" on the
+     * subscriptions feed, translated on a non-English account), and matching on
+     * it would silently stop working for most of the world. Verified against
+     * live /next, FEwhat_to_watch and FEsubscriptions responses, August 2026.
+     */
+    private fun parseDismissalTokens(metadata: org.json.JSONObject?): DismissalTokens? {
+        val listItems = metadata
+            ?.optJSONObject("menuButton")
+            ?.optJSONObject("buttonViewModel")
+            ?.optJSONObject("onTap")
+            ?.optJSONObject("innertubeCommand")
+            ?.optJSONObject("showSheetCommand")
+            ?.optJSONObject("panelLoadingStrategy")
+            ?.optJSONObject("inlineContent")
+            ?.optJSONObject("sheetViewModel")
+            ?.optJSONObject("content")
+            ?.optJSONObject("listViewModel")
+            ?.optJSONArray("listItems") ?: return null
+
+        var notInterested: String? = null
+        var notInterestedUndo: String? = null
+        var blockChannel: String? = null
+        var blockChannelUndo: String? = null
+
+        for (i in 0 until listItems.length()) {
+            val item = listItems.optJSONObject(i)?.optJSONObject("listItemViewModel") ?: continue
+            val endpoint = item
+                .optJSONObject("rendererContext")
+                ?.optJSONObject("commandContext")
+                ?.optJSONObject("onTap")
+                ?.optJSONObject("innertubeCommand")
+                ?.optJSONObject("feedbackEndpoint") ?: continue
+
+            val token = endpoint.optString("feedbackToken").takeIf { it.isNotBlank() } ?: continue
+            val imageName = item
+                .optJSONObject("leadingImage")
+                ?.optJSONArray("sources")
+                ?.optJSONObject(0)
+                ?.optJSONObject("clientResource")
+                ?.optString("imageName")
+
+            when (imageName) {
+                "NOT_INTERESTED" -> {
+                    notInterested = token
+                    notInterestedUndo = parseUndoToken(endpoint)
+                }
+                "REMOVE" -> {
+                    blockChannel = token
+                    blockChannelUndo = parseUndoToken(endpoint)
+                }
+            }
+        }
+
+        if (notInterested == null && blockChannel == null) return null
+        return DismissalTokens(
+            notInterested = notInterested,
+            notInterestedUndo = notInterestedUndo,
+            blockChannel = blockChannel,
+            blockChannelUndo = blockChannelUndo
+        )
+    }
+
+    /**
+     * The undo token YouTube pre-bakes into a feedback endpoint's own
+     * "Video removed - Undo" notification, so undo needs no extra request.
+     */
+    private fun parseUndoToken(feedbackEndpoint: org.json.JSONObject): String? =
+        feedbackEndpoint
+            .optJSONArray("actions")
+            ?.optJSONObject(0)
+            ?.optJSONObject("replaceEnclosingAction")
+            ?.optJSONObject("item")
+            ?.optJSONObject("notificationMultiActionRenderer")
+            ?.optJSONArray("buttons")
+            ?.optJSONObject(0)
+            ?.optJSONObject("buttonRenderer")
+            ?.optJSONObject("serviceEndpoint")
+            ?.optJSONObject("undoFeedbackEndpoint")
+            ?.optString("undoToken")
+            ?.takeIf { it.isNotBlank() }
     
     private fun parseVideoRenderer(videoRenderer: org.json.JSONObject?): VideoItem? {
         if (videoRenderer == null) return null
@@ -6300,29 +6393,49 @@ class YouTubeRepository(private val context: Context) {
         }.filterNotNull()
     }
 
-    // ============================================================
-    // "Don't recommend this": why there is no InnerTube call here.
-    //
-    // Probed August 2026, signed out: InnerTube returns no feedbackToken
-    // anywhere - watch-next related items, browse feeds and search results
-    // all come back with menus carrying no dismissal entry - because there
-    // is no account to record the preference against. Signed out, a server
-    // call is not merely optional, it does not exist.
-    //
-    // Signed in, YouTube does expose dismissal tokens and a youtubei/v1/
-    // feedback endpoint, and propagating the choice to youtube.com would be
-    // a genuine addition. It is deliberately NOT implemented from memory:
-    // this file's rule is that a parser is written against a probed response
-    // or not at all, and the signed-in menu shape could not be probed from
-    // the environment this was written in. Filtering is complete without it
-    // (see NotInterestedRepository), so the gap costs the user nothing today.
-    //
-    // To add it: probe a signed-in /next with .probe/probe.py, find the
-    // feedbackToken next to the "Not interested" and "Don't recommend
-    // channel" labels, and POST {"feedbackTokens": [...]} to feedback via
-    // postWatchApi. It must stay best-effort - the local hide has already
-    // happened by then and must not be undone by a failed request.
-    // ============================================================
+    /**
+     * Tell the signed-in account about a dismissal, so the choice also cleans
+     * up recommendations on youtube.com and in the official apps.
+     *
+     * This is the *bonus* half of "don't recommend this", never the mechanism:
+     * the local hide in [NotInterestedRepository] has already happened by the
+     * time this runs, and a failure here must not undo it. YouTube's own
+     * feedback is advisory and takes days to visibly change a feed, whereas
+     * the local filter takes effect on the next frame - so this returning
+     * false is not something the user should ever be told about.
+     *
+     * Signed out there is nothing to call: no response carries a token, so
+     * [token] is null and this is skipped. Search results carry no tokens even
+     * when signed in, which is consistent with search never being filtered.
+     *
+     * The same endpoint reverses a dismissal - pass the undo token. Success is
+     * `feedbackResponses[0].isProcessed`, not the HTTP code: like
+     * `subscription/subscribe`, this endpoint answers 200 to requests it did
+     * not actually act on. Verified against the live endpoint, August 2026.
+     */
+    suspend fun sendDismissalFeedback(token: String?): Boolean = withContext(Dispatchers.IO) {
+        if (token.isNullOrBlank()) return@withContext false
+        if (!sessionManager.isLoggedIn()) return@withContext false
+        try {
+            val body = org.json.JSONObject()
+                .put("context", webContext())
+                .put("feedbackTokens", org.json.JSONArray().put(token))
+                .put("isFeedbackTokenUnencrypted", false)
+                .put("shouldMerge", false)
+            val raw = postWatchApi("feedback", body) ?: return@withContext false
+            val processed = org.json.JSONObject(raw)
+                .optJSONArray("feedbackResponses")
+                ?.optJSONObject(0)
+                ?.optBoolean("isProcessed", false) ?: false
+            if (!processed) {
+                android.util.Log.w("YouTubeRepo", "feedback token not processed")
+            }
+            processed
+        } catch (e: Exception) {
+            android.util.Log.e("YouTubeRepo", "feedback failed", e)
+            false
+        }
+    }
 
     /**
      * The user's notification inbox (new uploads from subscribed channels,

@@ -34,11 +34,12 @@ enum class NotInterestedScope { VIDEO, CHANNEL }
  * own feedback is advisory and takes days to visibly change what it
  * recommends, whereas a filter takes effect on the next frame.
  *
- * Signed in, YouTube does expose dismissal tokens, and telling the account
- * as well would be a real addition - see the note in [YouTubeRepository]
- * for why it is not written here and exactly what probing it needs. It
- * would only ever be a bonus on top of this; filtering is complete without
- * it, and a failed request must never undo a hide that already happened.
+ * Signed in, the dismissal is *also* sent to the account, so it cleans up
+ * recommendations on youtube.com and in the official apps too. That half is
+ * [NotInterestedActions]' job and is strictly a bonus on top of this one: it
+ * is best-effort, it never blocks the hide, and a failed request must never
+ * undo a hide that already happened. This class stays purely local and
+ * synchronous; it only carries the undo token through to the snackbar.
  *
  * The backing flows are process-wide, for the same reason
  * [LocalSubscriptionsRepository]'s are: hiding a video from the player's
@@ -85,6 +86,12 @@ class NotInterestedRepository(context: Context) {
         val videoId: String? = null,
         val channelId: String? = null,
         val channelName: String = "",
+        /**
+         * YouTube's token for reversing the account-side dismissal, when the
+         * item came from a signed-in feed and the propagation was attempted.
+         * Null means there is nothing to take back but the local hide.
+         */
+        val undoToken: String? = null,
         /** Distinguishes consecutive identical actions so the UI re-shows. */
         val id: Long = System.nanoTime()
     )
@@ -165,7 +172,8 @@ class NotInterestedRepository(context: Context) {
         sharedLastAction!!.value = UndoableAction(
             scope = NotInterestedScope.VIDEO,
             message = "Video hidden",
-            videoId = video.videoId
+            videoId = video.videoId,
+            undoToken = video.dismissal?.notInterestedUndo
         )
     }
 
@@ -174,7 +182,12 @@ class NotInterestedRepository(context: Context) {
         if (next.size != hiddenState.value.size) saveHidden(next)
     }
 
-    fun blockChannel(channelId: String?, name: String, avatarUrl: String? = null) {
+    fun blockChannel(
+        channelId: String?,
+        name: String,
+        avatarUrl: String? = null,
+        undoToken: String? = null
+    ) {
         // A blank id is still worth storing: the name-based fallback in
         // [isFiltered] is the only thing that can filter feed items whose
         // lockup omitted the channel id.
@@ -189,7 +202,8 @@ class NotInterestedRepository(context: Context) {
             scope = NotInterestedScope.CHANNEL,
             message = if (name.isNotBlank()) "$name won't be recommended" else "Channel hidden",
             channelId = id,
-            channelName = name
+            channelName = name,
+            undoToken = undoToken
         )
     }
 

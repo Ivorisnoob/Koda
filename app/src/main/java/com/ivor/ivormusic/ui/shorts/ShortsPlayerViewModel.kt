@@ -56,6 +56,10 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
     private val notInterestedRepository =
         com.ivor.ivormusic.data.NotInterestedRepository(context)
 
+    /** Local hide plus best-effort account propagation - see NotInterestedActions. */
+    private val notInterestedActions =
+        com.ivor.ivormusic.data.NotInterestedActions(notInterestedRepository, youtubeRepository)
+
     /**
      * The swipe sequence.
      *
@@ -365,14 +369,14 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
      */
     fun markCurrentNotInterested() {
         val video = _currentVideo.value ?: return
-        notInterestedRepository.hideVideo(video)
+        notInterestedActions.hideVideo(video, viewModelScope)
         dropCurrentAndAdvance(video.videoId)
     }
 
     /** Stop recommending this Short's channel, and move on. */
     fun blockChannelForCurrent() {
         val video = _currentVideo.value ?: return
-        notInterestedRepository.blockChannel(video.channelId, video.channelName, video.channelIconUrl)
+        notInterestedActions.blockChannel(video, viewModelScope)
         dropCurrentAndAdvance(video.videoId)
     }
 

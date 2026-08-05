@@ -101,12 +101,17 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         ) { videos, _, _ -> notInterestedRepository.filter(videos) }
             .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
+    /** Local hide plus best-effort account propagation - see NotInterestedActions. */
+    private val notInterestedActions =
+        com.ivor.ivormusic.data.NotInterestedActions(notInterestedRepository, youtubeRepository)
+
     /** Hide one video from every recommendation feed. */
-    fun markNotInterested(video: VideoItem) = notInterestedRepository.hideVideo(video)
+    fun markNotInterested(video: VideoItem) =
+        notInterestedActions.hideVideo(video, viewModelScope)
 
     /** Stop recommending anything from this video's channel. */
     fun blockChannelFor(video: VideoItem) =
-        notInterestedRepository.blockChannel(video.channelId, video.channelName, video.channelIconUrl)
+        notInterestedActions.blockChannel(video, viewModelScope)
 
     // Chapter markers for the current video (empty when the video has none)
     private val _chapters = MutableStateFlow<List<com.ivor.ivormusic.data.VideoChapter>>(emptyList())

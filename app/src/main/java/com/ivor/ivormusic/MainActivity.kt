@@ -821,6 +821,25 @@ private fun NotInterestedUndoHost(modifier: Modifier = Modifier) {
     val repository = remember(context) {
         com.ivor.ivormusic.data.NotInterestedRepository(context)
     }
+    // Undo also takes back the account-side dismissal when there was one, so it
+    // goes through the actions layer rather than straight to the local store.
+    //
+    // Built lazily: this host is composed for the whole life of the app, while
+    // a YouTubeRepository carries its own OkHttp pool and opens
+    // EncryptedSharedPreferences. Nobody should pay that at startup for a path
+    // that only runs when someone actually taps Undo.
+    val actions = remember(context) {
+        lazy {
+            com.ivor.ivormusic.data.NotInterestedActions(
+                repository,
+                com.ivor.ivormusic.data.YouTubeRepository(context)
+            )
+        }
+    }
+    // Deliberately not the LaunchedEffect's own scope: that is cancelled the
+    // moment another dismissal replaces this one, which would drop the undo
+    // request mid-flight exactly when the user is undoing in a hurry.
+    val undoScope = androidx.compose.runtime.rememberCoroutineScope()
     val lastAction by repository.lastAction.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -833,7 +852,7 @@ private fun NotInterestedUndoHost(modifier: Modifier = Modifier) {
             duration = SnackbarDuration.Short
         )
         if (result == SnackbarResult.ActionPerformed) {
-            repository.undo(action)
+            actions.value.undo(action, undoScope)
         } else {
             // Timed out or was replaced. The hide stands; just stop offering
             // an undo for something the user has moved on from.
