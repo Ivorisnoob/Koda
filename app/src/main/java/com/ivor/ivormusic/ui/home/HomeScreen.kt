@@ -271,10 +271,11 @@ fun HomeScreen(
     var showAuthDialog by remember { mutableStateOf(false) }
     var showAccountSheet by remember { mutableStateOf(false) }
 
-    // When logged in the profile button shows the account sheet, not the login dialog
-    val onProfileClick: () -> Unit = {
-        if (isYouTubeConnected) showAccountSheet = true else showAuthDialog = true
-    }
+    // The avatar always opens the profile switcher now, signed in or not: with
+    // device-only profiles there is always something to switch between, and
+    // sending a signed-out user straight to a Google login was the app assuming
+    // an account is the only way to have an identity.
+    val onProfileClick: () -> Unit = { showAccountSheet = true }
 
     val backgroundColor = MaterialTheme.colorScheme.background
     
@@ -760,83 +761,22 @@ fun HomeScreen(
         )
     }
 
-    // Account sheet (shown when tapping the avatar while logged in)
+    // The profile switcher. Replaces the old account sheet, whose "Switch
+    // account" logged you out and made you sign in again - with a roster of
+    // stored sessions, switching is instant and needs no network at all.
     if (showAccountSheet) {
-        val userAvatar by viewModel.userAvatar.collectAsState()
-        val userName by viewModel.userName.collectAsState()
-        ModalBottomSheet(
-            onDismissRequest = { showAccountSheet = false },
-            containerColor = MaterialTheme.colorScheme.surfaceContainer
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp)
-                    .padding(bottom = 40.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(72.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.surfaceContainerHigh),
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (userAvatar != null) {
-                        coil.compose.AsyncImage(
-                            model = userAvatar,
-                            contentDescription = "Profile",
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = androidx.compose.ui.layout.ContentScale.Crop
-                        )
-                    } else {
-                        Icon(
-                            imageVector = Icons.Default.Person,
-                            contentDescription = "Profile",
-                            modifier = Modifier.size(36.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-
-                Text(
-                    text = userName ?: "YouTube Account",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-
-                Button(
-                    onClick = {
-                        showAccountSheet = false
-                        viewModel.logout()
-                        if (videoMode) {
-                            viewModel.loadTrendingVideos()
-                            viewModel.loadYouTubeHistory()
-                        }
-                    },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.errorContainer,
-                        contentColor = MaterialTheme.colorScheme.onErrorContainer
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Log out")
-                }
-
-                TextButton(
-                    onClick = {
-                        showAccountSheet = false
-                        viewModel.logout()
-                        showAuthDialog = true
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Switch account")
-                }
+        com.ivor.ivormusic.ui.account.AccountSwitcherSheet(
+            onDismiss = { showAccountSheet = false },
+            onAddYouTubeAccount = {
+                // Google's login page auto-continues as whoever the WebView jar
+                // already holds, so adding a second account without clearing it
+                // silently hands back the first one. Stored sessions live in
+                // EncryptedSharedPreferences and are untouched by this.
+                android.webkit.CookieManager.getInstance().removeAllCookies(null)
+                android.webkit.CookieManager.getInstance().flush()
+                showAuthDialog = true
             }
-        }
+        )
     }
 }
 
