@@ -119,6 +119,48 @@ The target is the full page: banner art, the about text with links and join date
 
 The second is a design question worth settling before any code: **`ArtistScreen.kt` already exists, at 1,458 lines, and it is good.** It is the music-mode view of what is often the same entity — a musician's YouTube channel and their YouTube Music artist page are one creator with two faces. Building a channel screen without deciding how it relates to the artist screen means two large screens that drift apart, each missing half of what the other knows. The likely answer is that they stay separate surfaces because their content genuinely differs, but share a header, a subscribe path, and a navigation entry, so that arriving at a musician from video mode and from music mode does not feel like arriving at two different people.
 
+#### Per-channel notification settings
+
+The bell, as YouTube has it: for each channel you follow, choose whether new uploads notify you for everything, only occasionally, or not at all. Today there is no bell anywhere, and no per-channel state to put behind one.
+
+**The uncomfortable part is that the bell is an output control for something that does not run.** `getNotifications()` exists and reads YouTube's own inbox through `notification/get_notification_menu`, but it is a pull that only happens when the notifications sheet is opened, and it needs an account. Nothing in Koda checks for new uploads in the background, and nothing ever posts an Android notification. Adding a per-channel preference without that is building a volume knob with no speaker attached — the setting would be recorded and never consulted.
+
+So this item really contains two, and the order matters: **a background upload check has to come first**, and the data for it already exists. `getLocalSubscriptionsFeed` merges each followed channel's Atom feed and is cheap by design, roughly 50 KB per channel against about 1 MB for the equivalent browse. A periodic `WorkManager` job over that feed, remembering the last-seen timestamp per channel, is the whole delivery mechanism. The per-channel preference then becomes the filter it consults.
+
+**The two-store split shapes what the bell can honestly offer.** For an account subscription the preference can be written to YouTube, so it also affects notifications on youtube.com and in the official apps. For a device-local subscription there is no account to record it against, so it is a device preference driving a device-side check. YouTube's middle setting, "Personalized", is a server-side judgement about which uploads are worth surfacing — there is no local equivalent, and offering it signed out would be a lie. Signed out, the honest set is All or None; signed in, all three.
+
+`SubscriptionGroup` already exists — user-defined bundles of local channels like "Music" or "Tech" — and it is the obvious place to set this in bulk rather than channel by channel. Someone following two hundred channels will not tap two hundred bells.
+
+Two Android specifics worth deciding early. `POST_NOTIFICATIONS` is already declared but is a runtime permission from Android 13, and the request should come when the user first enables a bell rather than at startup, so it arrives with a reason attached. And notifications should share one Android notification channel for uploads with grouping, not one Android channel per YouTube channel — the latter looks tempting and becomes unusable at any real subscription count.
+
+#### Saving other people's playlists and albums
+
+There is no way to keep a playlist you did not make. You can play someone else's playlist and you can build your own from scratch, but the ordinary move — find a good playlist, save it, come back to it next week — has nowhere to land.
+
+**The signed-in half is close to free.** Saving a playlist to your library on YouTube Music is a like on the playlist id, and `postPlaylistApi` with `like/like` and `like/removelike` is already wired for playlists in `YouTubeRepository`. `getUserPlaylists()` reads `FEplaylist_aggregation`, which already returns saved playlists alongside owned ones, so a saved playlist would appear in Library through the existing read path without a new call. This is mostly a button and an entry in the long-press sheet.
+
+**The signed-out half is the real work, and the existing model is the wrong shape for it.** `UserPlaylist` embeds its full `Song` list, which is right for a playlist you own and wrong for one you saved: the owner keeps editing theirs, and a copy taken today is stale by next month. A saved playlist should be stored as a *reference* — id, title, author, artwork, saved-at — and re-fetched when opened, so it stays live. The temptation to reuse `UserPlaylist` because it is already there should be resisted; these are different things that happen to render similarly.
+
+Offline is the exception that proves it. A reference cannot play without signal, so the answer is the download system that already exists rather than a snapshot baked into the save. Saving and downloading stay separate actions with separate meanings, the way they are everywhere else in the app.
+
+**Albums need the same feature and are not the same object.** They browse by their own id rather than as playlists, so the save path has to handle both rather than assuming everything is a playlist with a `list=` in its URL.
+
+In the Library, saved items want to be visibly distinct from owned ones. They cannot be renamed, reordered, or edited, and a user who cannot tell which is which will try. A separate section, or at minimum a clear marker plus a disabled edit affordance, avoids a whole category of confusion.
+
+#### Discover: a simpler home for music mode
+
+An alternative Home for music mode. Off by default, chosen in Settings, for people who find the current Home busy and want something that gets out of the way — still unmistakably this app, still Expressive, just fewer decisions per screen.
+
+**The pattern already exists, which makes this cheaper than it sounds.** The video toggle already swaps Home's entire content through `AnimatedContent` while keeping the tab system, the overlays, and the nav bar untouched. A third variant of Home is an established move in this codebase rather than a new kind of thing. The setting itself is the usual five-file thread plus the settings search index, and the index is the one that fails silently if forgotten.
+
+**The rule that keeps this from rotting: same data, different composition.** Discover should be a different arrangement of the flows `HomeViewModel` already exposes — recently played, liked songs, quick picks, user playlists, play counts — not a new ViewModel, not new fetches, not its own network path. The moment it owns data the current Home does not, there are two homes to keep working and one of them will quietly fall behind. Everything Discover shows should already be on screen somewhere today.
+
+**What "simpler" should mean is worth deciding rather than discovering during implementation.** The strongest candidate is fewer, larger units and one clear thing to do — the current Home's density comes largely from horizontal rails nested inside a vertical scroll, which asks the user to navigate two axes at once. Removing that is most of the perceived simplification on its own. Bigger artwork, fewer rows, and a single obvious entry point ("pick up where you left off") is a different shape from the current screen without being a different design language.
+
+**Simpler is not plainer.** The Expressive shapes, the palette, the springs, and the artwork colors all stay — this is not a "lite mode" or a flat theme, and it must not become the alternate design language `DESIGN.md` rules out. The reduction is in how many choices are presented at once, not in how the app looks.
+
+Two states deserve more care here than on the main Home, because this screen is meant to be the calm one: signed out, where there is no account feed and the taste profile may be thin, and brand new, where there is no history at all. A simplified home that is mostly empty is worse than the busy one it replaced.
+
 #### Playlists: creation, editing, and covers
 
 Local playlists work, and they are plain. You can create, rename, reorder by drag, and delete. What is missing is everything that makes a playlist feel like yours.
