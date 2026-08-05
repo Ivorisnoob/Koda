@@ -226,9 +226,19 @@ class ProfileManager(context: Context) {
     /** Point the app at another profile. Invalidation is [AccountSwitcher]'s job. */
     fun setActive(id: String) {
         if (get(id) == null) return
+        val leaving = sharedActiveId!!.value
+        if (leaving.isNotBlank() && leaving != id) sharedPreviousId.value = leaving
         prefs.edit().putString(KEY_ACTIVE_PROFILE, id).apply()
         sharedActiveId!!.value = id
     }
+
+    /**
+     * The profile the user was on before this one, for the long-press
+     * quick-toggle. In memory only: it describes what this session has been
+     * doing, and a value restored from disk would send the first long-press
+     * after a restart somewhere the user did not just come from.
+     */
+    val previousProfileId: StateFlow<String?> get() = sharedPreviousId.asStateFlow()
 
     // ---------------- Internals ----------------
 
@@ -438,5 +448,7 @@ class ProfileManager(context: Context) {
 
         @Volatile
         private var sharedActiveId: MutableStateFlow<String>? = null
+
+        private val sharedPreviousId = MutableStateFlow<String?>(null)
     }
 }

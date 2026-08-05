@@ -5,6 +5,7 @@ import android.os.Build
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
@@ -67,6 +68,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.NavigationItemIconPosition
@@ -958,7 +960,8 @@ fun TopBarSection(
     val surfaceColor = MaterialTheme.colorScheme.surfaceContainer
     val iconColor = MaterialTheme.colorScheme.onSurface
     val containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-    
+    val context = androidx.compose.ui.platform.LocalContext.current
+
     val userAvatar by viewModel.userAvatar.collectAsState()
     val downloadingIds by viewModel.downloadingIds.collectAsState()
     
@@ -969,13 +972,32 @@ fun TopBarSection(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Profile avatar
+        // Profile avatar. Tap opens the switcher; long-press flips straight
+        // back to the last profile, which is the whole point of a switcher for
+        // someone bouncing between two accounts.
+        val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
+        val accountSwitcher = remember(context) {
+            com.ivor.ivormusic.data.AccountSwitcher(context)
+        }
+        val isSwitching by accountSwitcher.switching.collectAsState()
         Box(
             modifier = Modifier
                 .size(44.dp)
                 .clip(CircleShape)
                 .background(surfaceColor)
-                .clickable(onClick = onProfileClick),
+                .combinedClickable(
+                    onClick = onProfileClick,
+                    onLongClick = {
+                        // A long-press that does nothing reads as broken, so
+                        // this only fires when there is somewhere to go.
+                        if (accountSwitcher.quickSwitchTarget() != null) {
+                            haptics.performHapticFeedback(
+                                androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress
+                            )
+                            accountSwitcher.quickSwitch()
+                        }
+                    }
+                ),
             contentAlignment = Alignment.Center
         ) {
             if (userAvatar != null) {
@@ -991,6 +1013,20 @@ fun TopBarSection(
                     contentDescription = "Profile",
                     tint = iconColor,
                     modifier = Modifier.size(26.dp)
+                )
+            }
+            // Progress rides on the avatar rather than blocking the screen: the
+            // switch itself is instant, but the feeds behind it are refetching,
+            // and the status belongs where the user just tapped.
+            androidx.compose.animation.AnimatedVisibility(
+                visible = isSwitching,
+                enter = androidx.compose.animation.fadeIn(),
+                exit = androidx.compose.animation.fadeOut()
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier.fillMaxSize(),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.primary
                 )
             }
         }

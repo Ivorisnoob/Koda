@@ -112,6 +112,30 @@ class AccountSwitcher(context: Context) {
     }
 
     /**
+     * The profile a long-press on the avatar would flip to, or null when there
+     * is nothing to flip back to yet.
+     */
+    fun quickSwitchTarget(): Profile? =
+        profileManager.previousProfileId.value
+            ?.takeIf { it != profileManager.activeProfileId.value }
+            ?.let { profileManager.get(it) }
+            ?: profiles.value.firstOrNull { it.id != profileManager.activeProfileId.value }
+                ?.takeIf { profiles.value.size == 2 }
+
+    /**
+     * Flip straight back to the last profile, skipping the sheet.
+     *
+     * Falls back to "the other one" when there are exactly two profiles and no
+     * history yet, because with two the intent is unambiguous - and two is the
+     * common case this shortcut exists for. Returns the profile switched to, or
+     * null when there was nothing to switch to.
+     */
+    fun quickSwitch(): Profile? {
+        val target = quickSwitchTarget() ?: return null
+        return if (switchTo(target.id)) target else null
+    }
+
+    /**
      * Sign a YouTube profile out without removing it from the roster.
      *
      * Used when it is the only profile there is: the app must always have an
