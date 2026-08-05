@@ -48,8 +48,9 @@ enum class NotInterestedScope { VIDEO, CHANNEL }
  */
 class NotInterestedRepository(context: Context) {
 
-    private val prefs = context.applicationContext
-        .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private val appContext = context.applicationContext
+
+    private val prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     init {
         synchronized(LOCK) {
@@ -60,6 +61,24 @@ class NotInterestedRepository(context: Context) {
             }
         }
     }
+
+    /**
+     * Which profile's blocklist this is.
+     *
+     * Read fresh rather than captured: instances outlive a profile switch, and
+     * a captured id would keep writing into the profile the user just left.
+     */
+    private fun hiddenKey() = ProfileManager.profileScopedKey(
+        KEY_HIDDEN_VIDEOS,
+        ProfileManager.activeProfileId(appContext),
+        ProfileManager.legacyProfileId(appContext)
+    )
+
+    private fun blockedKey() = ProfileManager.profileScopedKey(
+        KEY_BLOCKED_CHANNELS,
+        ProfileManager.activeProfileId(appContext),
+        ProfileManager.legacyProfileId(appContext)
+    )
 
     private val hiddenState: MutableStateFlow<List<HiddenVideo>> get() = sharedHiddenVideos!!
     private val blockedState: MutableStateFlow<List<BlockedChannel>> get() = sharedBlockedChannels!!
@@ -236,11 +255,11 @@ class NotInterestedRepository(context: Context) {
                 put("hiddenAt", entry.hiddenAt)
             })
         }
-        prefs.edit().putString(KEY_HIDDEN_VIDEOS, array.toString()).apply()
+        prefs.edit().putString(hiddenKey(), array.toString()).apply()
     }
 
     private fun loadHiddenVideos(): List<HiddenVideo> {
-        val raw = prefs.getString(KEY_HIDDEN_VIDEOS, null) ?: return emptyList()
+        val raw = prefs.getString(hiddenKey(), null) ?: return emptyList()
         return try {
             val array = JSONArray(raw)
             (0 until array.length()).mapNotNull { i ->
@@ -271,11 +290,11 @@ class NotInterestedRepository(context: Context) {
                 put("blockedAt", channel.blockedAt)
             })
         }
-        prefs.edit().putString(KEY_BLOCKED_CHANNELS, array.toString()).apply()
+        prefs.edit().putString(blockedKey(), array.toString()).apply()
     }
 
     private fun loadBlockedChannels(): List<BlockedChannel> {
-        val raw = prefs.getString(KEY_BLOCKED_CHANNELS, null) ?: return emptyList()
+        val raw = prefs.getString(blockedKey(), null) ?: return emptyList()
         return try {
             val array = JSONArray(raw)
             (0 until array.length()).mapNotNull { i ->
@@ -312,6 +331,25 @@ class NotInterestedRepository(context: Context) {
         private const val MAX_HIDDEN_VIDEOS = 1000
 
         private val LOCK = Any()
+
+        /**
+         * Re-seed the shared flows from the newly active profile's keys.
+         *
+         * The blocklist shapes recommendations, so it belongs to the identity
+         * whose feed it is shaping - a channel muted on a work account should
+         * not disappear from a personal one. The flows are process-wide, so a
+         * switch has to push new values through them rather than wait for a
+         * new instance that will never come.
+         */
+        fun reloadForActiveProfile(context: Context) {
+            val repo = NotInterestedRepository(context)
+            synchronized(LOCK) {
+                sharedHiddenVideos?.value = repo.loadHiddenVideos()
+                sharedBlockedChannels?.value = repo.loadBlockedChannels()
+                // A pending undo belongs to the profile that was left behind.
+                sharedLastAction?.value = null
+            }
+        }
 
         @Volatile
         private var sharedHiddenVideos: MutableStateFlow<List<HiddenVideo>>? = null

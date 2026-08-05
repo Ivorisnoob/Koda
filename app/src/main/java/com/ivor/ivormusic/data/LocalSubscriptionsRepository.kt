@@ -24,8 +24,28 @@ import java.util.UUID
  */
 class LocalSubscriptionsRepository(context: Context) {
 
-    private val prefs = context.applicationContext
-        .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private val appContext = context.applicationContext
+
+    private val prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+    /**
+     * Which profile's subscriptions these are.
+     *
+     * Resolved fresh on every read and write: an instance outlives a profile
+     * switch, and a captured id would keep writing into the profile the user
+     * just left.
+     */
+    private fun subscriptionsKey() = ProfileManager.profileScopedKey(
+        KEY_SUBSCRIPTIONS,
+        ProfileManager.activeProfileId(appContext),
+        ProfileManager.legacyProfileId(appContext)
+    )
+
+    private fun groupsKey() = ProfileManager.profileScopedKey(
+        KEY_GROUPS,
+        ProfileManager.activeProfileId(appContext),
+        ProfileManager.legacyProfileId(appContext)
+    )
 
     init {
         // First instance in the process seeds the shared state from disk.
@@ -219,11 +239,11 @@ class LocalSubscriptionsRepository(context: Context) {
                 put("subscribedAt", sub.subscribedAt)
             })
         }
-        prefs.edit().putString(KEY_SUBSCRIPTIONS, array.toString()).apply()
+        prefs.edit().putString(subscriptionsKey(), array.toString()).apply()
     }
 
     private fun loadSubscriptions(): List<LocalSubscription> {
-        val raw = prefs.getString(KEY_SUBSCRIPTIONS, null) ?: return emptyList()
+        val raw = prefs.getString(subscriptionsKey(), null) ?: return emptyList()
         return try {
             val array = JSONArray(raw)
             (0 until array.length()).mapNotNull { i ->
@@ -254,11 +274,11 @@ class LocalSubscriptionsRepository(context: Context) {
                 put("channelIds", JSONArray().also { ids -> group.channelIds.forEach(ids::put) })
             })
         }
-        prefs.edit().putString(KEY_GROUPS, array.toString()).apply()
+        prefs.edit().putString(groupsKey(), array.toString()).apply()
     }
 
     private fun loadGroups(): List<SubscriptionGroup> {
-        val raw = prefs.getString(KEY_GROUPS, null) ?: return emptyList()
+        val raw = prefs.getString(groupsKey(), null) ?: return emptyList()
         return try {
             val array = JSONArray(raw)
             (0 until array.length()).mapNotNull { i ->
@@ -289,6 +309,22 @@ class LocalSubscriptionsRepository(context: Context) {
         private const val KEY_GROUPS = "groups"
 
         private val LOCK = Any()
+
+        /**
+         * Re-seed the shared flows from the newly active profile's keys.
+         *
+         * Local subscriptions follow the profile because they are what the
+         * device-local feed is built from, and that feed is the identity's.
+         * The flows are process-wide, so a switch has to push new values
+         * through them - no new instance is coming.
+         */
+        fun reloadForActiveProfile(context: Context) {
+            val repo = LocalSubscriptionsRepository(context)
+            synchronized(LOCK) {
+                sharedSubscriptions?.value = repo.loadSubscriptions()
+                sharedGroups?.value = repo.loadGroups()
+            }
+        }
 
         @Volatile
         private var sharedSubscriptions: MutableStateFlow<List<LocalSubscription>>? = null

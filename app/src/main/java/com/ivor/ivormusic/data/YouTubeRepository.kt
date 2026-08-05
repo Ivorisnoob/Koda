@@ -184,6 +184,29 @@ class YouTubeRepository(private val context: Context) {
                 ): Boolean = size > CAPTION_CACHE_MAX_ENTRIES
             }
         )
+
+        /**
+         * Drop the process-wide caches that belong to one profile, so a switch
+         * cannot serve the previous account's identity.
+         *
+         * **visitorData is the one that actually matters.** It is this app's
+         * anti-bot identity, cached here and persisted device-wide with a 6h
+         * TTL, and prefetched independently by MusicService and the video
+         * ViewModel. Replaying an account's token under a different account is
+         * precisely the "stale or shared value gets flagged" case documented
+         * above, so it is cleared from memory and disk and left to be re-minted
+         * lazily on the next call.
+         *
+         * The caption cache is deliberately left alone: it is keyed by video id
+         * and a video's subtitles are the same whoever is watching.
+         */
+        fun invalidateSessionScopedCaches(context: Context) {
+            cachedVisitorData = null
+            visitorDataFetchedAt = 0L
+            context.applicationContext
+                .getSharedPreferences("ivor_visitor_data", Context.MODE_PRIVATE)
+                .edit().remove("visitor_data").remove("visitor_data_at").apply()
+        }
     }
 
     // Local-only kill-switch: checked per request so flipping the setting
@@ -219,6 +242,16 @@ class YouTubeRepository(private val context: Context) {
 
     init {
         initializeNewPipe()
+    }
+
+    /**
+     * Forget everything cached in this instance that belonged to the previous
+     * profile. The process-wide half is [invalidateSessionScopedCaches].
+     */
+    fun clearSessionScopedInstanceCaches() {
+        searchExtractorCache.clear()
+        searchNextPageCache.clear()
+        videoSearchNextPageCache.clear()
     }
 
     private fun initializeNewPipe() {

@@ -17,6 +17,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -307,6 +309,50 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         checkYouTubeConnection()
+        observeProfileSwitches()
+    }
+
+    /**
+     * Reload everything account-derived when the active profile changes.
+     *
+     * There is no DI, so a switch cannot reach this ViewModel directly - it
+     * watches the process-wide id instead, the same pattern the subscription
+     * and blocklist stores use. Without this the app would keep showing the
+     * previous account's feeds, playlists and name under the new identity,
+     * which is the single most visible way an account switcher can be wrong.
+     *
+     * `drop(1)` because the flow replays the current profile on subscribe and
+     * that is not a switch; `checkYouTubeConnection()` already covers startup.
+     */
+    private fun observeProfileSwitches() {
+        viewModelScope.launch {
+            com.ivor.ivormusic.data.ProfileManager(getApplication())
+                .activeProfileId
+                .drop(1)
+                .distinctUntilChanged()
+                .collect { resetForProfileChange() }
+        }
+    }
+
+    /**
+     * Drop the previous profile's state and refetch for the new one.
+     *
+     * Mirrors [logout]'s clearing - the same flows go stale for the same
+     * reason - but follows it with a reload rather than leaving the app empty.
+     */
+    private fun resetForProfileChange() {
+        youtubeRepository.clearSessionScopedInstanceCaches()
+        _youtubeSongs.value = emptyList()
+        _likedSongs.value = emptyList()
+        _youtubePlaylists.value = emptyList()
+        _accountChannels.value = emptyList()
+        _subscriptionFeed.value = emptyList()
+        _userAvatar.value = sessionManager.getUserAvatar()
+        _userName.value = sessionManager.getUserName()
+        _isYouTubeConnected.value = sessionManager.isLoggedIn()
+        checkYouTubeConnection()
+        loadSubscriptions(force = true)
+        loadSubscriptionFeed(force = true)
     }
 
     /**
