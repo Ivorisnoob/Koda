@@ -1,93 +1,124 @@
 name: Telegram Notifications
 
 on:
-  issues:
-    types: [opened, closed, reopened]
-  issue_comment:
-    types: [created]
   watch:
     types: [started]  # Stars
   fork:
   release:
     types: [published]
 
+# These jobs only talk to the Telegram API, they never touch GitHub, so they get
+# no token at all.
+permissions: {}
+
 env:
   TELEGRAM_CHAT_ID: "@ivorisnoob_projects"
+  API: "https://api.telegram.org"
 
 jobs:
   # Star Milestone (only notify on 10, 20, 30, 40, 50, etc.)
   notify-star-milestone:
-    if: github.event_name == 'watch' && github.event.action == 'started'
+    # Never run in a fork: the notifications belong to this repository's owner.
+    if: >-
+      github.repository == 'Ivorisnoob/Koda'
+      && github.event_name == 'watch'
+      && github.event.action == 'started'
     runs-on: ubuntu-latest
+    permissions: {}
     steps:
       - name: Check if Star Milestone
         id: check-milestone
+        env:
+          STAR_COUNT: ${{ github.event.repository.stargazers_count }}
         run: |
-          STAR_COUNT=${{ github.event.repository.stargazers_count }}
           # Notify on every 10 stars (10, 20, 30, 40, 50, etc.)
-          if [ $((STAR_COUNT % 10)) -eq 0 ] && [ $STAR_COUNT -gt 0 ]; then
-            echo "is_milestone=true" >> $GITHUB_OUTPUT
+          if [ $((STAR_COUNT % 10)) -eq 0 ] && [ "$STAR_COUNT" -gt 0 ]; then
+            echo "is_milestone=true" >> "$GITHUB_OUTPUT"
           else
-            echo "is_milestone=false" >> $GITHUB_OUTPUT
+            echo "is_milestone=false" >> "$GITHUB_OUTPUT"
           fi
-      
+
       - name: Send Star Milestone Notification
         if: steps.check-milestone.outputs.is_milestone == 'true'
         env:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHAT_ID: ${{ env.TELEGRAM_CHAT_ID }}
+          STAR_COUNT: ${{ github.event.repository.stargazers_count }}
+          SENDER: ${{ github.event.sender.login }}
+          REPO_URL: ${{ github.event.repository.html_url }}
         run: |
-          curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
-            -d "chat_id=${{ env.TELEGRAM_CHAT_ID }}" \
-            -d "parse_mode=HTML" \
-            -d "text=<b>Koda</b> | ⭐ Star Milestone!
+          curl -s -X POST "${API}/bot${BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${CHAT_ID}" \
+            --data-urlencode "parse_mode=HTML" \
+            --data-urlencode "text=<b>Koda</b> | ⭐ Star Milestone!
 
-          🎉 We reached <b>${{ github.event.repository.stargazers_count }}</b> stars!
+          🎉 We reached <b>${STAR_COUNT}</b> stars!
 
-          Latest stargazer: <b>${{ github.event.sender.login }}</b>
+          Latest stargazer: <b>${SENDER}</b>
 
           Thank you for your amazing support!
-          <a href='https://github.com/${{ github.repository }}'>Visit Repo</a>"
-
+          <a href='${REPO_URL}'>Visit Repo</a>"
 
   # Fork
   notify-fork:
-    if: github.event_name == 'fork'
+    if: github.repository == 'Ivorisnoob/Koda' && github.event_name == 'fork'
     runs-on: ubuntu-latest
+    permissions: {}
     steps:
       - name: Send Fork Notification
         env:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHAT_ID: ${{ env.TELEGRAM_CHAT_ID }}
+          SENDER: ${{ github.event.sender.login }}
+          FORK_NAME: ${{ github.event.forkee.full_name }}
+          FORK_URL: ${{ github.event.forkee.html_url }}
         run: |
-          curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
-            -d "chat_id=${{ env.TELEGRAM_CHAT_ID }}" \
-            -d "parse_mode=HTML" \
-            -d "text=<b>Koda</b> | Forked!
+          curl -s -X POST "${API}/bot${BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${CHAT_ID}" \
+            --data-urlencode "parse_mode=HTML" \
+            --data-urlencode "text=<b>Koda</b> | Forked!
 
           Repository forked!
 
-          <b>${{ github.event.sender.login }}</b> forked the project!
-          Fork: <code>${{ github.event.forkee.full_name }}</code>
+          <b>${SENDER}</b> forked the project!
+          Fork: <code>${FORK_NAME}</code>
 
           Happy coding!
-          <a href='${{ github.event.forkee.html_url }}'>View Fork</a>"
+          <a href='${FORK_URL}'>View Fork</a>"
 
-  # Release
+  # Release. Only a maintainer can publish one, but gate on the author anyway so
+  # a release created by anything else stays silent. Add logins to the
+  # TRUSTED_ACTORS repo variable to let someone else's releases notify.
   notify-release:
-    if: github.event_name == 'release'
+    if: >-
+      github.repository == 'Ivorisnoob/Koda'
+      && github.event_name == 'release'
+      && (github.event.release.author.login == github.repository_owner
+          || contains(format(' {0} ', vars.TRUSTED_ACTORS), format(' {0} ', github.event.release.author.login)))
     runs-on: ubuntu-latest
+    permissions: {}
     steps:
       - name: Send Release Notification
         env:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHAT_ID: ${{ env.TELEGRAM_CHAT_ID }}
+          TAG_NAME: ${{ github.event.release.tag_name }}
+          RELEASE_NAME: ${{ github.event.release.name }}
+          RELEASE_AUTHOR: ${{ github.event.release.author.login }}
+          RELEASE_URL: ${{ github.event.release.html_url }}
         run: |
-          curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
-            -d "chat_id=${{ env.TELEGRAM_CHAT_ID }}" \
-            -d "parse_mode=HTML" \
-            -d "text=<b>Koda</b> | New Release!
+          # Release titles are free text, so strip the HTML control characters
+          # before they reach Telegram's HTML parse mode.
+          esc() { sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g' <<< "$1"; }
 
-          Version <b>${{ github.event.release.tag_name }}</b>
+          curl -s -X POST "${API}/bot${BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${CHAT_ID}" \
+            --data-urlencode "parse_mode=HTML" \
+            --data-urlencode "text=<b>Koda</b> | New Release!
 
-          Name: <b>${{ github.event.release.name }}</b>
-          Author: <b>${{ github.event.release.author.login }}</b>
+          Version <b>$(esc "$TAG_NAME")</b>
 
-          <a href='${{ github.event.release.html_url }}'>Download Now</a>"
+          Name: <b>$(esc "$RELEASE_NAME")</b>
+          Author: <b>$(esc "$RELEASE_AUTHOR")</b>
+
+          <a href='${RELEASE_URL}'>Download Now</a>"

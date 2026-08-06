@@ -5,18 +5,131 @@ on:
     branches: [ main, master, develop ]
   pull_request:
     branches: [ main, master, develop ]
+  workflow_dispatch:
+
+# Least privilege by default: no job gets a token unless it asks for one below.
+permissions: {}
+
+concurrency:
+  group: build-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 env:
   TELEGRAM_APK_CHAT_ID: "@ivorisnoob_chat"
 
 jobs:
+  # Nothing builds until this job says the run was started by someone with write
+  # access to this repository. Every other job hangs off it via `needs`, so an
+  # untrusted PR costs a few seconds of a runner and stops.
+  authorize:
+    name: Authorize run
+    runs-on: ubuntu-latest
+    permissions: {}
+    outputs:
+      allowed: ${{ steps.gate.outputs.allowed }}
+      is-fork-pr: ${{ steps.gate.outputs.is-fork-pr }}
+    steps:
+      - name: Check the actor is the owner or a trusted collaborator
+        id: gate
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          ACTOR: ${{ github.actor }}
+          REPO: ${{ github.repository }}
+          REPO_OWNER: ${{ github.repository_owner }}
+          # Computed by GitHub from repo membership; a PR author cannot set it.
+          PR_ASSOCIATION: ${{ github.event.pull_request.author_association }}
+          PR_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          # Optional repo variable, a space separated list of logins the owner
+          # wants treated as trusted (Settings > Secrets and variables > Actions).
+          # Commas are tolerated here; the release gate in telegram-notify.yml
+          # matches on spaces, so prefer spaces.
+          EXTRA_TRUSTED: ${{ vars.TRUSTED_ACTORS }}
+        run: |
+          set -euo pipefail
+
+          # Bots that push on the owner's behalf. Everything else has to earn it
+          # through repository membership.
+          # read -a splits on whitespace without pathname expansion, which the
+          # bracketed bot logins need: unquoted `claude[bot]` is a glob pattern.
+          read -r -a TRUSTED <<< "${REPO_OWNER} claude claude[bot] claude-bot claude-code[bot] ${EXTRA_TRUSTED//,/ }"
+
+          actor_is_trusted() {
+            local candidate
+            for candidate in "${TRUSTED[@]}"; do
+              if [ "${candidate,,}" = "${ACTOR,,}" ]; then
+                return 0
+              fi
+            done
+            return 1
+          }
+
+          allowed=false
+          is_fork_pr=false
+          reason=""
+
+          case "${EVENT_NAME}" in
+            pull_request)
+              if [ "${PR_HEAD_REPO}" = "${REPO}" ]; then
+                # A branch can only exist in this repo if someone with write
+                # access pushed it, so a same-repo PR is authorized by construction.
+                allowed=true
+                reason="same-repo pull request"
+              else
+                is_fork_pr=true
+                case "${PR_ASSOCIATION}" in
+                  # To also let previously merged contributors build fork PRs,
+                  # add CONTRIBUTOR to this list. Left out on purpose: it is not
+                  # a permission the owner granted.
+                  OWNER|MEMBER|COLLABORATOR)
+                    allowed=true
+                    reason="fork pull request from ${PR_ASSOCIATION}"
+                    ;;
+                  *)
+                    reason="fork pull request from ${PR_ASSOCIATION:-NONE}"
+                    ;;
+                esac
+              fi
+              ;;
+            push|workflow_dispatch)
+              if actor_is_trusted; then
+                allowed=true
+                reason="${EVENT_NAME} by trusted actor"
+              else
+                reason="${EVENT_NAME} by untrusted actor"
+              fi
+              ;;
+            *)
+              reason="unhandled event ${EVENT_NAME}"
+              ;;
+          esac
+
+          echo "allowed=${allowed}" >> "$GITHUB_OUTPUT"
+          echo "is-fork-pr=${is_fork_pr}" >> "$GITHUB_OUTPUT"
+
+          if [ "${allowed}" = "true" ]; then
+            echo "Authorized: ${ACTOR} (${reason})." >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo "### Build skipped"
+              echo ""
+              echo "\`${ACTOR}\` is not the repository owner or a collaborator (${reason})."
+              echo "A maintainer can run this build by pushing the change to a branch in this repository."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
   build-debug:
     name: Build Debug APK
+    needs: authorize
+    if: needs.authorize.outputs.allowed == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+      with:
+        persist-credentials: false
 
     - name: Set up JDK 17
       uses: actions/setup-java@v4
@@ -57,11 +170,19 @@ jobs:
 
   build-release:
     name: Build Release APK
+    needs: authorize
+    # Fork PRs never receive the signing secrets, so a release build there would
+    # fail on the keystore decode. Debug still runs for them.
+    if: needs.authorize.outputs.allowed == 'true' && needs.authorize.outputs.is-fork-pr != 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+      with:
+        persist-credentials: false
 
     - name: Set up JDK 17
       uses: actions/setup-java@v4
@@ -74,9 +195,11 @@ jobs:
       run: chmod +x gradlew
 
     - name: Decode keystore
+      env:
+        KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
       run: |
         mkdir -p keystore
-        echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > keystore/ivormusic.jks
+        echo "$KEYSTORE_BASE64" | base64 --decode > keystore/ivormusic.jks
 
     - name: Build Release APK
       env:
@@ -113,6 +236,9 @@ jobs:
       if: github.event_name == 'pull_request'
       env:
         BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        CHAT_ID: ${{ env.TELEGRAM_APK_CHAT_ID }}
+        REPO: ${{ github.repository }}
+        RUN_ID: ${{ github.run_id }}
         PR_NUMBER: ${{ github.event.pull_request.number }}
         PR_TITLE: ${{ github.event.pull_request.title }}
         PR_URL: ${{ github.event.pull_request.html_url }}
@@ -121,7 +247,7 @@ jobs:
         esc() { sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g' <<< "$1"; }
 
         VERSION=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts || echo "unknown")
-        RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        RUN_URL="https://github.com/${REPO}/actions/runs/${RUN_ID}"
 
         CONTEXT="PR <a href=\"${PR_URL}\">#${PR_NUMBER}</a>: $(esc "$PR_TITLE")
         By: <b>$(esc "$PR_AUTHOR")</b>"
@@ -136,13 +262,13 @@ jobs:
           SIZE=$(stat -c%s "$apk")
           if [ "$SIZE" -gt 50000000 ]; then
             curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
-              -d "chat_id=${{ env.TELEGRAM_APK_CHAT_ID }}" \
-              -d "parse_mode=HTML" \
+              --data-urlencode "chat_id=${CHAT_ID}" \
+              --data-urlencode "parse_mode=HTML" \
               --data-urlencode "text=<b>Koda</b> | $(esc "$(basename "$apk")") is over Telegram's 50 MB bot limit — grab it from the <a href=\"${RUN_URL}\">workflow artifacts</a>."
             continue
           fi
           RESPONSE=$(curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendDocument" \
-            --form-string "chat_id=${{ env.TELEGRAM_APK_CHAT_ID }}" \
+            --form-string "chat_id=${CHAT_ID}" \
             --form-string "parse_mode=HTML" \
             --form-string "caption=${CAPTION}" \
             -F "document=@${apk}")
