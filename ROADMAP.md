@@ -133,6 +133,20 @@ So this item really contains two, and the order matters: **a background upload c
 
 Two Android specifics worth deciding early. `POST_NOTIFICATIONS` is already declared but is a runtime permission from Android 13, and the request should come when the user first enables a bell rather than at startup, so it arrives with a reason attached. And notifications should share one Android notification channel for uploads with grouping, not one Android channel per YouTube channel. The latter looks tempting and becomes unusable at any real subscription count.
 
+#### Search the channels you follow
+
+Someone following two hundred channels has no way to find one. The Subscriptions tab offers an avatar rail and a feed; "All channels" (`SubscriptionsContent.kt:332`) is a flat list in whatever order the source returned it, with no filter and no ordering control. The same is true of `SubscriptionsManagerScreen.kt`, 868 lines whose entire job is assigning channels to groups, and where the absence hurts more, because that screen is only ever opened with a specific channel already in mind.
+
+**Nothing here needs fetching.** `subscribedChannels` and `localSubscriptions` are both already collected as state at the top of the composable (`SubscriptionsContent.kt:106` and `:109`), so this is a filter over a list the screen is holding. It costs no request, and it works signed out and with no connection, which makes it the rare item where the signed-out path is not a separate design problem.
+
+**A matcher already exists, and it is better than the one this would otherwise get.** Settings search scores exact hits, prefixes, substrings, compact subsequences ("amld" finds "amoled"), and bounded edit distance for outright typos (`SettingsSearch.kt:108-205`). Channel names are exactly the input that needs all of that: they are long, they carry punctuation and emoji, and people remember them approximately. `normalize`, `editDistance`, `isSubsequence` and `scoreToken` are generic; only `scoreSettingsEntry` is bound to `SettingsSearchEntry`. All of them are private to a settings-package file today, so the work is lifting the generic half somewhere shared, rather than writing the `contains()` that gets regretted the first time somebody types a name slightly wrong.
+
+**Handles do not come free, which is worth knowing before promising them.** `ChannelProfile` carries a `handle` (`YouTubeRepository.kt:6048`) and so does `LocalSubscription`, but the list this tab actually renders is `SubscribedChannel`, which holds only an id, a name, an avatar and `subscriberCountText`. Local follows smuggle their handle into that last field through `toSubscribedChannel()`, and account subscriptions do not carry one at all. So matching "@handle" means either widening `SubscribedChannel` or accepting that handle search works for device-local channels and silently does not for account ones. That asymmetry is the kind of thing users report as a bug rather than as a limit.
+
+Two decisions worth making before any code. **What the results are:** the ask is channel names, and filtering the *feed* by channel is a different feature that already has an answer in the channel drill-in. The recommendation is that results are channels and tapping one opens the existing drill-in through `selectedChannel`, so "now show me their videos" lands on a screen that is already built, and later on the proper channel screen. **Where the field lives:** inline at the top of "All channels" is cheap and unambiguous, while putting it on the tab root sets it competing with the header and the avatar rail for the same space.
+
+One structural note. There is no shared search field in `ui/components`: the one on Search is a private `OutlinedTextField` inside `SearchHeroHeader` (`SearchScreen.kt:1351`), and `SettingsSearchField` (`SettingsSearch.kt:456`) is internal to settings. This would be the third hand-rolled search field in the app, which is the point where extracting one shared composable stops being premature. Group filtering already lives on this screen, so search and `SubscriptionGroup` should be designed as one control surface rather than two rows stacked on each other.
+
 #### Saving other people's playlists and albums
 
 There is no way to keep a playlist you did not make. You can play someone else's playlist and you can build your own from scratch, but the ordinary move (find a good playlist, save it, come back to it next week), has nowhere to land.
@@ -186,6 +200,28 @@ One call site covers everything: all three surfaces (the inline player, fullscre
 Overriding `LocalViewConfiguration.longPressTimeoutMillis` around the gesture surface avoids that, because it moves the tap and long-press boundaries together. Below the threshold is cleanly a tap, above it is cleanly a boost, and there is no gap. The one thing to check is that the override does not leak into anything nested that uses its own long-press. The related-videos row does use `combinedClickable`, but it lives in `VideoInfoSection`, outside the gesture surface, so on current structure this looks clear.
 
 Worth pairing with a look at whether the boost should be interruptible by the volume and brightness drags, which share the same surface.
+
+#### Re-tapping a tab should return it to the top
+
+Every tab bar people use daily does this: tap the tab you are already on and the list goes back to the top. Koda's does nothing at all, on any tab, in either mode. The video feeds page endlessly, so "scroll back up" has no bound, and the only route to the top of Home, Search results, Subscriptions or Library is to flick until you arrive.
+
+**The bar is not in the file its name suggests.** `ui/components/FloatingPillNavBar.kt` is 191 lines and dead: imported at `HomeScreen.kt:117`, never called. What renders is an inline `HorizontalFloatingToolbar` built in `HomeScreen.kt:583-670`, whose tab handler is one line (`HomeScreen.kt:627`):
+
+```kotlin
+onClick = { selectedTab = index },
+```
+
+Assigning the index the state already holds is a no-op, which is why a re-tap does nothing rather than doing something wrong. Both `CLAUDE.md` and the tablet entry further down name `FloatingPillNavBar` as the app's tab bar, so whoever picks this up should delete the dead file rather than leave the next reader to find it first and edit the wrong one.
+
+That file does contain one thing worth keeping. It already distinguishes a re-tap from a switch (`FloatingPillNavBar.kt:111-118`, where the haptic deliberately fires only on an actual change of tab). That branch is exactly where the scroll belongs, and by the rule in the haptics entry a re-tap that scrolls is a commit with nothing dragged behind it, so it is one of the cases that has earned a tick.
+
+**The work is that no tab owns a scroll state anything else can reach.** Music Home's `LazyColumn` (`HomeScreen.kt:837`), Library's (`LibraryScreen.kt:573`), video Library's (`VideoLibraryScreen.kt:215`) and all three of Subscriptions' (`SubscriptionsContent.kt:250`, `:338`, `:432`) pass no `state` at all. Video Home (`VideoHomeContent.kt:225`) and Search (`SearchScreen.kt:460`) do hold one each, but both are remembered inside their own composable for paging (`VideoHomeContent.kt:208`, `SearchScreen.kt:256`) and neither is reachable from the nav bar. So this is a hoisting pass: each tab takes a `LazyListState` as a parameter, `HomeScreen` remembers one per tab, and the re-tap branch scrolls it.
+
+**Hoisting pays for a second bug on the way past.** Tab content renders inside `AnimatedContent(targetState = selectedTab)` (`HomeScreen.kt:341`), and anything `remember`ed inside that content lambda is scoped to the target's own composition and disposed once the transition settles. Scroll position is therefore already discarded on every tab switch: leave Home halfway down, glance at Search, come back, and you are at the top with no way back to where you were. Hoisting the states above the `AnimatedContent` is what fixes that as well, and it is a prerequisite the "Surviving process death" entry needs regardless, since a state nothing owns is a state nothing can save.
+
+**One decision to settle: what a re-tap means on a tab that is drilled in.** Subscriptions has two levels under its root (`showChannelList`, then a selected channel), and Library reaches artist pages and playlist detail. The usual convention is that the tab button pops to the tab's root first and scrolls to the top only when it is already there, which also gives the gesture something to do when the list has not been scrolled. That has to agree with the `BackHandler` at `HomeScreen.kt:256`, which currently sends any non-Home tab straight back to Home. Two controls on one screen with different ideas of what "up" means is worse than either of them alone.
+
+Whether the scroll animates or jumps is worth choosing rather than inheriting. `animateScrollToItem` visibly flies through a few hundred items, and an instant `scrollToItem` reads as more responsive at the cost of hiding how far you came.
 
 #### Respect reduced motion
 
