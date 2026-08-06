@@ -1,0 +1,216 @@
+# For most projects, this workflow file will not need changing; you simply need
+# to commit it to your repository.
+#
+# You may wish to alter this file to override the set of languages analyzed,
+# or to provide custom queries or build logic.
+#
+# ******** NOTE ********
+# We have attempted to detect the languages in your repository. Please check
+# the `language` matrix defined below to confirm you have the correct set of
+# supported CodeQL languages.
+#
+name: "CodeQL Advanced"
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  schedule:
+    - cron: '20 21 * * 2'
+  workflow_dispatch:
+
+# Least privilege by default. The analyze job re-adds exactly what CodeQL needs.
+permissions: {}
+
+concurrency:
+  group: codeql-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Same gate as build.yml: nothing scans until the run is attributable to
+  # someone with write access. Analyzing a fork PR means executing that fork's
+  # Gradle build on a runner, which is the part worth gating.
+  authorize:
+    name: Authorize run
+    runs-on: ubuntu-latest
+    permissions: {}
+    outputs:
+      allowed: ${{ steps.gate.outputs.allowed }}
+    steps:
+      - name: Check the actor is the owner or a trusted collaborator
+        id: gate
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          ACTOR: ${{ github.actor }}
+          REPO: ${{ github.repository }}
+          REPO_OWNER: ${{ github.repository_owner }}
+          # Computed by GitHub from repo membership; a PR author cannot set it.
+          PR_ASSOCIATION: ${{ github.event.pull_request.author_association }}
+          PR_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          # Optional repo variable, a space separated list of extra trusted
+          # logins (Settings > Secrets and variables > Actions).
+          EXTRA_TRUSTED: ${{ vars.TRUSTED_ACTORS }}
+        run: |
+          set -euo pipefail
+
+          # read -a splits on whitespace without pathname expansion, which the
+          # bracketed bot logins need: unquoted `claude[bot]` is a glob pattern.
+          read -r -a TRUSTED <<< "${REPO_OWNER} claude claude[bot] claude-bot claude-code[bot] ${EXTRA_TRUSTED//,/ }"
+
+          actor_is_trusted() {
+            local candidate
+            for candidate in "${TRUSTED[@]}"; do
+              if [ "${candidate,,}" = "${ACTOR,,}" ]; then
+                return 0
+              fi
+            done
+            return 1
+          }
+
+          allowed=false
+          reason=""
+
+          case "${EVENT_NAME}" in
+            pull_request)
+              if [ "${PR_HEAD_REPO}" = "${REPO}" ]; then
+                # A branch can only exist in this repo if someone with write
+                # access pushed it, so a same-repo PR is authorized by construction.
+                allowed=true
+                reason="same-repo pull request"
+              else
+                case "${PR_ASSOCIATION}" in
+                  OWNER|MEMBER|COLLABORATOR)
+                    allowed=true
+                    reason="fork pull request from ${PR_ASSOCIATION}"
+                    ;;
+                  *)
+                    reason="fork pull request from ${PR_ASSOCIATION:-NONE}"
+                    ;;
+                esac
+              fi
+              ;;
+            schedule)
+              # Only ever fires on the default branch of this repo, and the
+              # actor on a scheduled run is not a reliable signal anyway.
+              if [ "${REPO}" = "${REPO_OWNER}/Koda" ]; then
+                allowed=true
+                reason="scheduled scan"
+              else
+                reason="scheduled run in a fork"
+              fi
+              ;;
+            push|workflow_dispatch)
+              if actor_is_trusted; then
+                allowed=true
+                reason="${EVENT_NAME} by trusted actor"
+              else
+                reason="${EVENT_NAME} by untrusted actor"
+              fi
+              ;;
+            *)
+              reason="unhandled event ${EVENT_NAME}"
+              ;;
+          esac
+
+          echo "allowed=${allowed}" >> "$GITHUB_OUTPUT"
+
+          if [ "${allowed}" = "true" ]; then
+            echo "Authorized: ${ACTOR} (${reason})." >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo "### CodeQL analysis skipped"
+              echo ""
+              echo "\`${ACTOR}\` is not the repository owner or a collaborator (${reason})."
+              echo "A maintainer can scan this change by pushing it to a branch in this repository."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    needs: authorize
+    if: needs.authorize.outputs.allowed == 'true'
+    # Runner size impacts CodeQL analysis time. To learn more, please see:
+    #   - https://gh.io/recommended-hardware-resources-for-running-codeql
+    #   - https://gh.io/supported-runners-and-hardware-resources
+    #   - https://gh.io/using-larger-runners (GitHub.com only)
+    # Consider using larger runners or machines with greater resources for possible analysis time improvements.
+    runs-on: ${{ (matrix.language == 'swift' && 'macos-latest') || 'ubuntu-latest' }}
+    # An Android build under CodeQL tracing is slow; fail rather than sit on a
+    # runner for the default six hours.
+    timeout-minutes: 120
+    permissions:
+      # required for all workflows
+      security-events: write
+
+      # required to fetch internal or private CodeQL packs
+      packages: read
+
+      # only required for workflows in private repositories
+      actions: read
+      contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - language: actions
+          build-mode: none
+        - language: java-kotlin
+          build-mode: manual
+        # CodeQL supports the following values keywords for 'language': 'actions', 'c-cpp', 'csharp', 'go', 'java-kotlin', 'javascript-typescript', 'python', 'ruby', 'rust', 'swift'
+        # Use `c-cpp` to analyze code written in C, C++ or both
+        # Use 'java-kotlin' to analyze code written in Java, Kotlin or both
+        # Use 'javascript-typescript' to analyze code written in JavaScript, TypeScript or both
+        # To learn more about changing the languages that are analyzed or customizing the build mode for your analysis,
+        # see https://docs.github.com/en/code-security/code-scanning/creating-an-advanced-setup-for-code-scanning/customizing-your-advanced-setup-for-code-scanning.
+        # If you are analyzing a compiled language, you can modify the 'build-mode' for that language to customize how
+        # your codebase is analyzed, see https://docs.github.com/en/code-security/code-scanning/creating-an-advanced-setup-for-code-scanning/codeql-code-scanning-for-compiled-languages
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v7
+      with:
+        persist-credentials: false
+
+    # Add any setup steps before running the `github/codeql-action/init` action.
+    # This includes steps like installing compilers or runtimes (`actions/setup-node`
+    # or others). This is typically only required for manual builds.
+
+    # Koda targets JDK 17 (see build.yml). Without this, the runner's default
+    # JDK is whatever the image ships, and the Gradle build fails on a toolchain
+    # mismatch rather than on anything CodeQL found.
+    - name: Set up JDK 17
+      if: matrix.language == 'java-kotlin'
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+        cache: gradle
+
+    # Initializes the CodeQL tools for scanning.
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@v4
+      with:
+        languages: ${{ matrix.language }}
+        build-mode: ${{ matrix.build-mode }}
+        # If you wish to specify custom queries, you can do so here or in a config file.
+        # By default, queries listed here will override any specified in a config file.
+        # Prefix the list here with "+" to use these queries and those in the config file.
+
+        # For more details on CodeQL's query packs, refer to: https://docs.github.com/en/code-security/code-scanning/automatically-scanning-your-code-for-vulnerabilities-and-errors/configuring-code-scanning#using-queries-in-ql-packs
+        # queries: security-extended,security-and-quality
+
+    # assembleDebug is the command build.yml already proves works on a runner.
+    # Autobuild guesses at the Gradle task, which on Android projects is the
+    # usual source of "We were unable to automatically build your code".
+    - name: Run manual build steps
+      if: matrix.build-mode == 'manual'
+      shell: bash
+      run: |
+        chmod +x gradlew
+        ./gradlew assembleDebug --no-daemon
+
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v4
+      with:
+        category: "/language:${{matrix.language}}"
