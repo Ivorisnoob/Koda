@@ -208,7 +208,7 @@ private fun LibraryRoot(
     }
 
     ExpressivePullToRefresh(
-        isRefreshing = isPlaylistsLoading,
+        isRefreshing = isPlaylistsLoading && playlists.isNotEmpty(),
         onRefresh = onRefresh,
         modifier = Modifier.fillMaxSize()
     ) {

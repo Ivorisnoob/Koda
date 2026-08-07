@@ -134,7 +134,7 @@ fun VideoHistoryContent(
     }
 
     ExpressivePullToRefresh(
-        isRefreshing = isHistoryLoading,
+        isRefreshing = isHistoryLoading && historyVideos.isNotEmpty(),
         onRefresh = { viewModel.loadYouTubeHistory() },
         modifier = Modifier.fillMaxSize()
     ) {

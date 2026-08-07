@@ -331,7 +331,7 @@ fun SubscriptionsContent(
         // Full channel list
         showChannelList -> {
             ExpressivePullToRefresh(
-                isRefreshing = isChannelsLoading,
+                isRefreshing = isChannelsLoading && channels.isNotEmpty(),
                 onRefresh = { viewModel.loadSubscriptions(force = true) },
                 modifier = Modifier.fillMaxSize()
             ) {
@@ -422,7 +422,7 @@ fun SubscriptionsContent(
         // Default: subscriptions feed with the channel avatar rail
         else -> {
             ExpressivePullToRefresh(
-                isRefreshing = isFeedLoading,
+                isRefreshing = isFeedLoading && feed.isNotEmpty(),
                 onRefresh = {
                     viewModel.loadSubscriptionFeed(force = true)
                     viewModel.loadSubscriptions(force = true)
