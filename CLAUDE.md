@@ -259,6 +259,8 @@ Adding or renaming a style means touching **four** places (an omission compiles 
 
 ## Issues, labels, and how work is tracked
 
+**Finishing a piece of work means updating `ROADMAP.md` in the same change.** A planned item that ships has its section deleted from Planned work and a line added to Shipped; a defect that is fixed leaves Known defects, keeping whatever about the diagnosis is worth carrying to the next problem of its kind. Then correct the prose elsewhere that leaned on the old behaviour, because those paragraphs are what the next decision gets made from and a stale one will be believed. (Channel search shipped saying account subscriptions carry no `@handle`; they always did, and that paragraph would have talked the next person out of supporting them.) Re-derive any count or line reference you touch rather than trusting it. This is not a follow-up task and not something to ask about first - it is part of the same commit as the code.
+
 `ROADMAP.md` is the prose and the reasoning; **GitHub issues are the task list.** Most issues quote the roadmap entry they came from and link back to it, epics carry the `epic` label, and their children open with "Sub-issue of #N". A roadmap entry that names a file and a line number has usually already been turned into an issue, so search the issues before writing a new one.
 
 Every open issue carries one label from each of the first three families below:

@@ -4,11 +4,13 @@ This document is the long view: where Koda stands today, where it is going, and 
 
 For how the app is built, see [`CLAUDE.md`](CLAUDE.md). For the design system and why it is not a swappable layer, see [`DESIGN.md`](DESIGN.md).
 
+**Keeping this current is part of shipping, not a follow-up.** When a planned item lands, its section moves to [Shipped](#shipped) in the same change that lands the work: the entry leaves Planned work rather than staying put with a note on it, and any prose elsewhere that leaned on the old behaviour is corrected in the same pass. A fixed defect leaves [Known defects](#known-defects) the same way, keeping whatever about the diagnosis is worth carrying to the next problem of its kind. This matters more here than in a changelog, because what is written down is reasoning, and the reasoning is what the next decision gets made from. A section describing the app as it was last month will be believed. Counts, file names and line references drift constantly; re-derive them rather than trusting them.
+
 ---
 
 ## Where Koda is today
 
-Version **4.3** (`versionCode` 21), targeting Android 16 (API 36) with a floor at Android 11 (API 30). Roughly **69,000 lines** of Kotlin across **136 files**, all of it Compose, all of it rendered inside a single `MaterialExpressiveTheme`.
+Version **4.3** (`versionCode` 21), targeting Android 16 (API 36) with a floor at Android 11 (API 30). Roughly **71,000 lines** of Kotlin across **139 files**, all of it Compose, all of it rendered inside a single `MaterialExpressiveTheme`.
 
 The app is past the point of proving itself. The core loops all work end to end:
 
@@ -26,12 +28,12 @@ Where the weight sits today:
 
 | Area | Lines | What lives there |
 | --- | --- | --- |
-| `ui/video` | 14,900 | Video player, live streams, live chat, subscriptions |
+| `ui/video` | 15,300 | Video player, live streams, live chat, subscriptions |
 | `ui/player` | 11,200 | Eight music player styles |
 | `data/YouTubeRepository.kt` | 6,500 | The InnerTube and NewPipe layer, single file |
-| `ui/settings` | 5,900 | Hub, eleven pages, search index |
+| `ui/settings` | 5,800 | Hub, eleven pages, search index |
+| `ui/library` | 4,700 | Playlists, liked songs, local audio, listening history |
 | `ui/home` | 3,600 | Both modes' feeds |
-| `ui/library` | 3,400 | Playlists, liked songs, local audio |
 
 That table is also a map of the risk. `YouTubeRepository.kt` is the single point of failure for every network path in the app, and the two largest UI areas are the two youngest.
 
@@ -92,20 +94,6 @@ So this item really contains two, and the order matters: **a background upload c
 `SubscriptionGroup` already exists (user-defined bundles of local channels like "Music" or "Tech"), and it is the obvious place to set this in bulk rather than channel by channel. Someone following two hundred channels will not tap two hundred bells.
 
 Two Android specifics worth deciding early. `POST_NOTIFICATIONS` is already declared but is a runtime permission from Android 13, and the request should come when the user first enables a bell rather than at startup, so it arrives with a reason attached. And notifications should share one Android notification channel for uploads with grouping, not one Android channel per YouTube channel. The latter looks tempting and becomes unusable at any real subscription count.
-
-#### Search the channels you follow
-
-Someone following two hundred channels has no way to find one. The Subscriptions tab offers an avatar rail and a feed; "All channels" (`SubscriptionsContent.kt:332`) is a flat list in whatever order the source returned it, with no filter and no ordering control. The same is true of `SubscriptionsManagerScreen.kt`, 868 lines whose entire job is assigning channels to groups, and where the absence hurts more, because that screen is only ever opened with a specific channel already in mind.
-
-**Nothing here needs fetching.** `subscribedChannels` and `localSubscriptions` are both already collected as state at the top of the composable (`SubscriptionsContent.kt:106` and `:109`), so this is a filter over a list the screen is holding. It costs no request, and it works signed out and with no connection, which makes it the rare item where the signed-out path is not a separate design problem.
-
-**A matcher already exists, and it is better than the one this would otherwise get.** Settings search scores exact hits, prefixes, substrings, compact subsequences ("amld" finds "amoled"), and bounded edit distance for outright typos (`SettingsSearch.kt:108-205`). Channel names are exactly the input that needs all of that: they are long, they carry punctuation and emoji, and people remember them approximately. `normalize`, `editDistance`, `isSubsequence` and `scoreToken` are generic; only `scoreSettingsEntry` is bound to `SettingsSearchEntry`. All of them are private to a settings-package file today, so the work is lifting the generic half somewhere shared, rather than writing the `contains()` that gets regretted the first time somebody types a name slightly wrong.
-
-**Handles do not come free, which is worth knowing before promising them.** `ChannelProfile` carries a `handle` (`YouTubeRepository.kt:6048`) and so does `LocalSubscription`, but the list this tab actually renders is `SubscribedChannel`, which holds only an id, a name, an avatar and `subscriberCountText`. Local follows smuggle their handle into that last field through `toSubscribedChannel()`, and account subscriptions do not carry one at all. So matching "@handle" means either widening `SubscribedChannel` or accepting that handle search works for device-local channels and silently does not for account ones. That asymmetry is the kind of thing users report as a bug rather than as a limit.
-
-Two decisions worth making before any code. **What the results are:** the ask is channel names, and filtering the *feed* by channel is a different feature that already has an answer in the channel drill-in. The recommendation is that results are channels and tapping one opens the existing drill-in through `selectedChannel`, so "now show me their videos" lands on a screen that is already built, and later on the proper channel screen. **Where the field lives:** inline at the top of "All channels" is cheap and unambiguous, while putting it on the tab root sets it competing with the header and the avatar rail for the same space.
-
-One structural note. There is no shared search field in `ui/components`: the one on Search is a private `OutlinedTextField` inside `SearchHeroHeader` (`SearchScreen.kt:1351`), and `SettingsSearchField` (`SettingsSearch.kt:456`) is internal to settings. This would be the third hand-rolled search field in the app, which is the point where extracting one shared composable stops being premature. Group filtering already lives on this screen, so search and `SubscriptionGroup` should be designed as one control surface rather than two rows stacked on each other.
 
 #### Saving other people's playlists and albums
 
@@ -329,7 +317,7 @@ Both are read-mostly surfaces over a `MediaController`, so neither needs changes
 
 #### Tablet optimisation, on every screen
 
-Koda is portrait-only, twice over: `android:screenOrientation="portrait"` in the manifest with the lint warning explicitly suppressed, and `requestedOrientation` set again at runtime in `MainActivity`. Across roughly 69,000 lines there is no `WindowSizeClass`, no `NavigationRail`, no list-detail pane, and no `sw600dp` resource qualifier. The app assumes one hand and one column everywhere except the video player, which overrides orientation itself to go fullscreen.
+Koda is portrait-only, twice over: `android:screenOrientation="portrait"` in the manifest with the lint warning explicitly suppressed, and `requestedOrientation` set again at runtime in `MainActivity`. Across roughly 71,000 lines there is no `WindowSizeClass`, no `NavigationRail`, no list-detail pane, and no `sw600dp` resource qualifier. The app assumes one hand and one column everywhere except the video player, which overrides orientation itself to go fullscreen.
 
 **This is more urgent than a nice-to-have, because the platform has already taken the decision away.** Koda targets SDK 36, and on Android 16 large-screen devices the system ignores orientation and resizability restrictions for apps at that target. The manifest sets no opt-out property, which means on an Android 16 tablet the app is *already* being shown rotated and resized right now, with a UI built on the assumption that cannot happen. The choice is not whether to support landscape; it is whether landscape looks designed or looks like a stretched phone. This should be confirmed on a real Android 16 tablet before planning around it, but if it holds, tablet work stops being a feature and becomes a correctness issue.
 
@@ -400,3 +388,4 @@ The milestones behind us, kept here so the direction of travel is visible.
 - Skeleton placeholders on every feed's first load, replacing the doubled spinners
 - A listening history for music, grouped by day, searchable, with a pause toggle
 - Vertical videos given a player box their own shape instead of a pillarboxed 16:9 frame
+- Search over the channels you follow, by name or @handle, on every list long enough to need it
