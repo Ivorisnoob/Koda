@@ -8,11 +8,13 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -439,12 +441,18 @@ fun SettingsScreen(
     }
 
     // Put the peel away once the page layer has gone, ready for the next
-    // gesture. Invisible: there is nothing left on top to snap.
+    // gesture.
+    //
+    // The flags come down before the value, and that order is the whole point:
+    // `snapTo` suspends, so clearing `isPeeling` after it leaves a frame where
+    // the peel reads 0 while the hub is still wearing its peel layer, and the
+    // hub jumps to 0.94 scale for exactly one frame. With the flag cleared
+    // first there is no layer left for the value to feed.
     LaunchedEffect(page) {
         if (page == SettingsPage.HUB && peelCommitted) {
-            peel.snapTo(0f)
             peelCommitted = false
             isPeeling = false
+            peel.snapTo(0f)
         }
     }
 
@@ -590,41 +598,44 @@ fun SettingsScreen(
             AnimatedContent(
                 targetState = page,
                 transitionSpec = {
-                    when {
+                    val slide = spring<IntOffset>(
+                        dampingRatio = Spring.DampingRatioNoBouncy,
+                        stiffness = Spring.StiffnessMediumLow
+                    )
+                    val content = when {
                         // The finger already performed this exit. Animating it
                         // again would snap the page back to full size to replay
                         // the move it just made.
                         peelCommitted -> EnterTransition.None togetherWith ExitTransition.None
                         // Going deeper slides in from the trailing edge; coming
                         // back reverses it, so the hierarchy stays legible.
-                        targetState != SettingsPage.HUB -> {
-                            val slide = spring<IntOffset>(
-                                dampingRatio = Spring.DampingRatioNoBouncy,
-                                stiffness = Spring.StiffnessMediumLow
-                            )
+                        targetState != SettingsPage.HUB ->
                             (slideInHorizontally(slide) { it / 5 } + fadeIn(tween(200))) togetherWith
                                 (fadeOut(tween(130)) + slideOutHorizontally(slide) { -it / 12 })
-                        }
                         // Returning by button. The page now carries the whole
                         // movement, where it used to share it with a hub that
                         // slid in from the leading edge - the hub is underneath
                         // and staying put, so a token 1/12 nudge would read as
                         // the page dissolving rather than leaving.
-                        else -> {
-                            val slide = spring<IntOffset>(
-                                dampingRatio = Spring.DampingRatioNoBouncy,
-                                stiffness = Spring.StiffnessMediumLow
-                            )
-                            fadeIn(tween(200)) togetherWith
-                                (fadeOut(tween(180)) + slideOutHorizontally(slide) { it / 3 })
-                        }
+                        else -> fadeIn(tween(200)) togetherWith
+                            (fadeOut(tween(180)) + slideOutHorizontally(slide) { it / 3 })
                     }
+                    // No size animation, and no clipping to one. The hub state
+                    // of this layer is empty, so the default SizeTransform
+                    // animates the container between nothing and full screen
+                    // and clips the page to it on the way - which is a page
+                    // unfolding out of a growing rectangle rather than sliding
+                    // in, and a clipped snap on the way out.
+                    content using SizeTransform(clip = false) { _, _ -> snap() }
                 },
                 label = "settingsPage"
             ) { currentPage ->
                 when (currentPage) {
-                    // Nothing on top: the hub below is the screen.
-                    SettingsPage.HUB -> Unit
+                    // Nothing on top: the hub below is the screen. Full size
+                    // rather than empty so this layer measures the same in
+                    // both states, and takes no touches so the hub underneath
+                    // still gets them.
+                    SettingsPage.HUB -> Spacer(Modifier.fillMaxSize())
 
                     SettingsPage.ACCOUNT -> AccountSettingsPage(
                     isLoggedIn = isLoggedIn,
