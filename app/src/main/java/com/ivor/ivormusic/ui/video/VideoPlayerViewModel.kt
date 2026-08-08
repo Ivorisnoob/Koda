@@ -199,9 +199,14 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
     // ---------------- Picture-in-Picture ----------------
 
-    // Width/height of the video being played, so the PiP window takes the
-    // shape of the video instead of a hardcoded 16:9 that letterboxes
-    // everything else. Null until the first frame is decoded.
+    // Width/height of the video being played, so the PiP window and the watch
+    // page's video box both take the shape of the video instead of a hardcoded
+    // 16:9 that letterboxes everything else.
+    //
+    // Seeded from the stream dimensions when the quality list arrives and
+    // refined by onVideoSizeChanged once a frame has decoded, so it is usually
+    // known before the box is laid out. Null only for a source that declared no
+    // dimensions, where consumers fall back to 16:9.
     private val _videoAspectRatio = MutableStateFlow<Float?>(null)
     val videoAspectRatio: StateFlow<Float?> = _videoAspectRatio.asStateFlow()
 
@@ -887,6 +892,11 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         }
         _isLive.value = false
         _isPortraitVideo.value = false
+        // Carrying the previous video's shape over would size the watch page's
+        // box for the wrong video until the first frame of this one decodes -
+        // the same snap the parse-time read exists to avoid, just one video
+        // late. 16:9 is the right thing to show while the shape is unknown.
+        _videoAspectRatio.value = null
         _liveViewerCount.value = null
         _isLiveChatAvailable.value = null
         _liveChatMessages.value = emptyList()
@@ -923,7 +933,13 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                     val qualities = youtubeRepository.getVideoStreamQualities(video.videoId)
                     _availableQualities.value = qualities
                     _isLive.value = qualities.any { it.isLive }
-                    if (qualities.any { it.isPortrait }) _isPortraitVideo.value = true
+                    // Before the first frame: the stream dimensions are the only
+                    // shape signal there is, and both the vertical live layout
+                    // and the watch page's video box are sized from it.
+                    qualities.firstNotNullOfOrNull { it.sourceAspectRatio }?.let { ratio ->
+                        _videoAspectRatio.value = ratio
+                        if (ratio < 1f) _isPortraitVideo.value = true
+                    }
                     if (_isLive.value) startLiveMetadataPolling(video.videoId)
 
                     if (qualities.isNotEmpty()) {

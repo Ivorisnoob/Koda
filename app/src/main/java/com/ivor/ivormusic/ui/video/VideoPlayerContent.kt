@@ -13,6 +13,7 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
@@ -61,6 +62,20 @@ import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.data.VideoQuality
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+
+/** The shape of the watch page's video box when the source shape is unknown. */
+private const val DEFAULT_VIDEO_ASPECT = 16f / 9f
+
+/**
+ * The tallest the watch page's video box may grow, as a fraction of the screen.
+ *
+ * A 9:16 video at full width wants about 80% of the height of a modern phone,
+ * which leaves the watch page with room for nothing. This is the line where the
+ * title, the channel row and the action row still fit underneath - the point of
+ * keeping the video on the watch page at all. Past it the video letterboxes
+ * rather than pushing the page off the screen.
+ */
+private const val MAX_VIDEO_BOX_HEIGHT_FRACTION = 0.62f
 
 /**
  * Content for the full Video Player Overlay.
@@ -155,12 +170,99 @@ fun VideoPlayerContent(
         !showVideoPageForVerticalLive &&
         !isFullscreen
 
+    /**
+     * Fullscreen has two shapes, and which one it takes follows the video.
+     *
+     * Fullscreen used to mean "rotate to landscape" unconditionally, which is
+     * right for the 16:9 uploads that are most of YouTube and exactly wrong for
+     * a 9:16 one: asking to fill the screen turned the phone sideways and put
+     * the video in a letterboxed strip using less of the screen than the watch
+     * page had just given it. A vertical video fills a phone held upright, so
+     * that is what fullscreen does for it.
+     *
+     * **Live portrait streams are excluded on purpose.** For those, fullscreen
+     * already means something: rotating is how the docked chat column appears,
+     * and the space beside a 9:16 stream in landscape is chat-shaped. Their
+     * upright full-bleed layout is `VerticalLivePlayerContent`, which they open
+     * in by default.
+     */
+    // Which shape fullscreen takes is decided at the point it is entered: the
+    // button and the swipe follow the video, physically rotating the device
+    // does not (see the orientation listener below).
+    //
+    // Everything effectful about this lives after the early return further
+    // down, with the rest of this composable's effects. This composable returns
+    // early while the video is still resolving, and putting a LaunchedEffect or
+    // a local function above that return desynchronised the slot table enough
+    // that the restart lambda came back with a corrupt argument list -
+    // "ClassCastException: EmptyCoroutineContext cannot be cast to Function1",
+    // on every video open. Plain values and remember are fine here; effects are
+    // not.
+    val portraitFullscreenAvailable = isPortraitVideo && !isLive
+    var fullscreenIsPortrait by remember { mutableStateOf(false) }
+
     // Landscape chat column: about a third of the screen, bounded so it stays
     // readable on a small phone and does not eat a tablet.
     val configuration = LocalConfiguration.current
     val landscapeChatWidth = remember(configuration.screenWidthDp) {
         (configuration.screenWidthDp * 0.34f).dp.coerceIn(260.dp, 360.dp)
     }
+
+    /**
+     * The shape of the video box on the watch page.
+     *
+     * A fixed 16:9 frame is right for the overwhelming majority of uploads and
+     * wrong for the rest: a 9:16 video inside it gets about a third of the width
+     * and pillarbox down both sides, which is the worst possible presentation of
+     * the one thing the user opened. So a portrait source gets a box its own
+     * shape instead, capped by [MAX_VIDEO_BOX_HEIGHT_FRACTION] so the watch page
+     * underneath survives.
+     *
+     * **Landscape sources are deliberately left at 16:9**, including 4:3, which
+     * this could just as easily follow. Nothing is badly broken there, it is the
+     * shape every feed thumbnail and the mini player already use, and changing
+     * the common path is not what this is for.
+     *
+     * **The video is fitted inside the box, never zoomed to fill it.** The
+     * vertical live player crops the sides of a 9:16 frame to fill the screen,
+     * which is the bargain Shorts makes and is fine there; here the box is never
+     * narrower than the video, so filling it would crop the top and bottom
+     * instead - exactly where a vertical upload puts faces and captions. Fitting
+     * means an uncapped source lands on an exact fit with no bars at all, and
+     * only a very tall video on a very tall phone keeps a slim pair, far less
+     * than 16:9 was giving it. The MAX_ACCEPTABLE_CROP judgement the vertical
+     * live player makes about 4:5 and 1:1 not being "vertical" in the Shorts
+     * sense is inherited for free: those get a 4:5 or 1:1 box and no crop.
+     */
+    val targetVideoBoxAspect = run {
+        val source = videoAspectRatio?.takeIf { it.isFinite() && it > 0f }
+        if (source == null || source >= 1f) {
+            DEFAULT_VIDEO_ASPECT
+        } else {
+            // The narrowest box that still fits the height budget. Written as
+            // an aspect so the whole thing stays one number the layout can
+            // animate; coerced rather than coerceIn because a window wider than
+            // it is tall would put the floor above the ceiling and throw.
+            val heightCapAspect = configuration.screenWidthDp.toFloat() /
+                (configuration.screenHeightDp.toFloat() * MAX_VIDEO_BOX_HEIGHT_FRACTION)
+                    .coerceAtLeast(1f)
+            maxOf(source, heightCapAspect).coerceAtMost(DEFAULT_VIDEO_ASPECT)
+        }
+    }
+    // The shape is usually known from the stream dimensions before the first
+    // frame decodes, but not before the player opens, so the box would still
+    // snap from 16:9 the moment the quality list lands. Animated, it reads as
+    // the frame opening out to meet the video. Non-bouncy on purpose: an
+    // overshoot on an aspect ratio drives the box past the screen, and an
+    // undershoot below zero throws.
+    val videoBoxAspect by animateFloatAsState(
+        targetValue = targetVideoBoxAspect,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioNoBouncy,
+            stiffness = Spring.StiffnessMediumLow
+        ),
+        label = "videoBoxAspect"
+    )
     // Timed comments overlay toggle; persists across videos while the player is open
     var timedCommentsActive by remember { mutableStateOf(false) }
     
@@ -181,6 +283,13 @@ fun VideoPlayerContent(
     // notification skip through the same ViewModel call, and a gesture that
     // clamped differently from the buttons would be a bug waiting to happen.
     fun seekBy(deltaMs: Long) = viewModel.seekBy(deltaMs)
+
+    // Autoplay can hand a landscape video to a fullscreen still locked upright
+    // for the portrait one before it, which plays the next video in a
+    // letterboxed strip with the phone held the wrong way round.
+    LaunchedEffect(portraitFullscreenAvailable) {
+        if (!portraitFullscreenAvailable) fullscreenIsPortrait = false
+    }
 
     // Auto-hide controls
     LaunchedEffect(showControls, isPlaying) {
@@ -221,7 +330,7 @@ fun VideoPlayerContent(
     // fullscreen temporarily requests sensor landscape and every exit path
     // restores PORTRAIT — never UNSPECIFIED, which used to leave the whole
     // app free-rotating in broken half-landscape states.
-    DisposableEffect(isFullscreen) {
+    DisposableEffect(isFullscreen, fullscreenIsPortrait) {
         val window = activity?.window
         val insetsController = window?.let { WindowCompat.getInsetsController(it, it.decorView) }
 
@@ -237,8 +346,15 @@ fun VideoPlayerContent(
             // Draw into the camera cutout area too, otherwise the system
             // letterboxes the window and background shows around the notch
             setCutoutMode(WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES)
-            // Sensor landscape: both landscape directions work, like YouTube
-            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            // A vertical video fills the screen held upright, so fullscreen
+            // holds it there rather than rotating into a letterboxed strip.
+            // Everything else gets sensor landscape, both directions, like
+            // YouTube.
+            activity?.requestedOrientation = if (fullscreenIsPortrait) {
+                ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            } else {
+                ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            }
             insetsController?.apply {
                 hide(WindowInsetsCompat.Type.systemBars())
                 systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
@@ -286,9 +402,16 @@ fun VideoPlayerContent(
                 val isFirstReading = lastDeviceOrientation == -1
                 lastDeviceOrientation = orientation
                 if (isFirstReading) return
-                if (orientation == 1 && !isFullscreen) {
+                // Turning the phone sideways means landscape fullscreen, even
+                // from an upright fullscreen: the user has just said which way
+                // round they want it, and for a vertical video a pillarboxed
+                // frame they asked for beats a portrait lock they did not.
+                if (orientation == 1 && (!isFullscreen || fullscreenIsPortrait)) {
+                    fullscreenIsPortrait = false
                     isFullscreen = true
-                } else if (orientation == 0 && isFullscreen) {
+                } else if (orientation == 0 && isFullscreen && !fullscreenIsPortrait) {
+                    // Upright does not end a fullscreen that is already
+                    // upright, which is the whole point of the portrait one.
                     isFullscreen = false
                 }
             }
@@ -437,8 +560,14 @@ fun VideoPlayerContent(
                 onSeek = { newProgress -> exoPlayer.seekTo((newProgress * duration).toLong()) },
                 onSeekBackward = { seekBy(-VideoPlayerViewModel.SEEK_STEP_MS) },
                 onSeekForward = { seekBy(VideoPlayerViewModel.SEEK_STEP_MS) },
-                onBack = { isFullscreen = false },
-                onFullscreenToggle = { isFullscreen = false },
+                onBack = {
+                    isFullscreen = false
+                    fullscreenIsPortrait = false
+                },
+                onFullscreenToggle = {
+                    isFullscreen = false
+                    fullscreenIsPortrait = false
+                },
                 onSettings = { showQualitySheet = true },
                 onLoopToggle = { viewModel.toggleLooping() },
                 showTimedCommentsButton = timedCommentsFeatureEnabled,
@@ -464,6 +593,7 @@ fun VideoPlayerContent(
                 } else {
                     0.dp
                 },
+                compactChrome = fullscreenIsPortrait,
                 onRetry = { viewModel.retryPlayback() }
             )
 
@@ -634,7 +764,9 @@ fun VideoPlayerContent(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .aspectRatio(16f / 9f)
+                        // Follows the video rather than assuming 16:9 - see
+                        // videoBoxAspect above for why, and why only upward.
+                        .aspectRatio(videoBoxAspect.coerceAtLeast(0.1f))
                         .background(Color.Black)
                         // Reported so PictureInPictureParams can animate the
                         // window out of the video rect instead of the whole
@@ -671,7 +803,12 @@ fun VideoPlayerContent(
                         onSeekBackward = { seekBy(-VideoPlayerViewModel.SEEK_STEP_MS) },
                         onSeekForward = { seekBy(VideoPlayerViewModel.SEEK_STEP_MS) },
                         onBack = onBackClick,
-                        onFullscreenToggle = { isFullscreen = true },
+                        onFullscreenToggle = {
+                            // Fullscreen from the button or the swipe-up takes
+                            // the shape the video wants.
+                            fullscreenIsPortrait = portraitFullscreenAvailable
+                            isFullscreen = true
+                        },
                         onSettings = { showQualitySheet = true },
                         onLoopToggle = { viewModel.toggleLooping() },
                         showTimedCommentsButton = timedCommentsFeatureEnabled,

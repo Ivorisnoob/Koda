@@ -102,6 +102,7 @@ class MainActivity : ComponentActivity() {
             val homeModeToggleEnabled by themeViewModel.homeModeToggleEnabled.collectAsState()
             val playerStyle by themeViewModel.playerStyle.collectAsState()
             val saveVideoHistory by themeViewModel.saveVideoHistory.collectAsState()
+            val saveMusicHistory by themeViewModel.saveMusicHistory.collectAsState()
             val liveDownloadUpdates by themeViewModel.liveDownloadUpdates.collectAsState()
             val livePlaybackUpdates by themeViewModel.livePlaybackUpdates.collectAsState()
             val timedCommentsEnabled by themeViewModel.timedCommentsEnabled.collectAsState()
@@ -171,6 +172,8 @@ class MainActivity : ComponentActivity() {
                         onPlayerStyleChange = { themeViewModel.setPlayerStyle(it) },
                         saveVideoHistory = saveVideoHistory,
                         onSaveVideoHistoryToggle = { themeViewModel.setSaveVideoHistory(it) },
+                        saveMusicHistory = saveMusicHistory,
+                        onSaveMusicHistoryToggle = { themeViewModel.setSaveMusicHistory(it) },
                         liveDownloadUpdates = liveDownloadUpdates,
                         onLiveDownloadUpdatesToggle = { themeViewModel.setLiveDownloadUpdates(it) },
                         livePlaybackUpdates = livePlaybackUpdates,
@@ -300,6 +303,8 @@ fun MusicApp(
     onPlayerStyleChange: (PlayerStyle) -> Unit,
     saveVideoHistory: Boolean,
     onSaveVideoHistoryToggle: (Boolean) -> Unit,
+    saveMusicHistory: Boolean,
+    onSaveMusicHistoryToggle: (Boolean) -> Unit,
     liveDownloadUpdates: Boolean,
     onLiveDownloadUpdatesToggle: (Boolean) -> Unit,
     livePlaybackUpdates: Boolean,
@@ -579,6 +584,8 @@ fun MusicApp(
                     onPlayerStyleChange = onPlayerStyleChange,
                     saveVideoHistory = saveVideoHistory,
                     onSaveVideoHistoryToggle = onSaveVideoHistoryToggle,
+                    saveMusicHistory = saveMusicHistory,
+                    onSaveMusicHistoryToggle = onSaveMusicHistoryToggle,
                     liveDownloadUpdates = liveDownloadUpdates,
                     onLiveDownloadUpdatesToggle = onLiveDownloadUpdatesToggle,
                     livePlaybackUpdates = livePlaybackUpdates,

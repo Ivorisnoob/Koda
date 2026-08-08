@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
@@ -280,10 +281,111 @@ fun FullscreenPlayerContent(
      * than it gains.
      */
     videoEndPadding: Dp = 0.dp,
+    /**
+     * True when fullscreen is being shown upright, for a vertical video.
+     *
+     * The top bar was laid out for a landscape window and does not fit a
+     * portrait one: a back button, a title and up to five actions on a single
+     * line need more width than a phone has on its short edge, so the title
+     * collapses to nothing and the actions still run off the edge. Set, the
+     * actions move to a row of their own underneath the title.
+     */
+    compactChrome: Boolean = false,
     onRetry: (() -> Unit)? = null
 ) {
     // Stable shapes to prevent "square flash"
     val stableShapes = IconButtonDefaults.shapes()
+
+    // The top-bar actions, defined once and placed either beside the title or
+    // on a line of their own. Landscape has width for one row and portrait
+    // does not, and the alternative to hoisting them is the same five buttons
+    // written twice.
+    val topBarActions: @Composable RowScope.() -> Unit = {
+        // Combined mode toggle: repeat off = auto-play next, repeat on = loop this video
+        FilledTonalIconButton(
+            onClick = onLoopToggle,
+            colors = IconButtonDefaults.filledTonalIconButtonColors(
+                containerColor = if (isLooping) MaterialTheme.colorScheme.primary else Color.Black.copy(0.5f),
+                contentColor = if (isLooping) MaterialTheme.colorScheme.onPrimary else Color.White
+            ),
+            shapes = stableShapes
+        ) {
+            Icon(
+                if (isLooping) Icons.Rounded.RepeatOne else Icons.Rounded.Autorenew,
+                contentDescription = if (isLooping) "Repeat" else "Auto Play"
+            )
+        }
+
+        if (showTimedCommentsButton && !isLive) {
+            FilledTonalIconButton(
+                onClick = onTimedCommentsToggle,
+                colors = IconButtonDefaults.filledTonalIconButtonColors(
+                    containerColor = if (timedCommentsActive) MaterialTheme.colorScheme.primary else Color.Black.copy(0.5f),
+                    contentColor = if (timedCommentsActive) MaterialTheme.colorScheme.onPrimary else Color.White
+                ),
+                shapes = stableShapes
+            ) {
+                Icon(
+                    Icons.AutoMirrored.Rounded.Comment,
+                    contentDescription = "Timed comments"
+                )
+            }
+        }
+
+        // Landscape is where a side-by-side chat actually fits, so
+        // the toggle only exists here.
+        if (isLive) {
+            FilledTonalIconButton(
+                onClick = onLiveChatToggle,
+                colors = IconButtonDefaults.filledTonalIconButtonColors(
+                    containerColor = if (liveChatActive) MaterialTheme.colorScheme.primary else Color.Black.copy(0.5f),
+                    contentColor = if (liveChatActive) MaterialTheme.colorScheme.onPrimary else Color.White
+                ),
+                shapes = stableShapes
+            ) {
+                Icon(
+                    Icons.AutoMirrored.Rounded.Chat,
+                    contentDescription = if (liveChatActive) "Hide live chat" else "Show live chat"
+                )
+            }
+        }
+
+        FilledTonalIconButton(
+            onClick = onCaptionsClick,
+            colors = IconButtonDefaults.filledTonalIconButtonColors(
+                containerColor = if (captionsActive) MaterialTheme.colorScheme.primary else Color.Black.copy(0.5f),
+                contentColor = if (captionsActive) MaterialTheme.colorScheme.onPrimary else Color.White
+            ),
+            shapes = stableShapes
+        ) {
+            Icon(
+                if (captionsActive) Icons.Rounded.ClosedCaption else Icons.Rounded.ClosedCaptionOff,
+                contentDescription = "Captions"
+            )
+        }
+
+        FilledIconButton(
+            onClick = onSettings,
+            colors = IconButtonDefaults.filledIconButtonColors(
+                containerColor = Color.Black.copy(0.5f),
+                contentColor = Color.White
+            ),
+            shapes = stableShapes
+        ) {
+            Icon(Icons.Rounded.Settings, "Quality")
+        }
+
+        FilledIconButton(
+            onClick = onFullscreenToggle,
+            colors = IconButtonDefaults.filledIconButtonColors(
+                containerColor = Color.Black.copy(0.5f),
+                contentColor = Color.White
+            ),
+            shapes = stableShapes
+        ) {
+            Icon(Icons.Rounded.FullscreenExit, "Exit Fullscreen")
+        }
+    }
 
     // Pinch-to-zoom: fill the screen (crop) vs fit inside it
     var isZoomedToFill by remember { mutableStateOf(false) }
@@ -380,7 +482,7 @@ fun FullscreenPlayerContent(
                     .background(Color.Black.copy(alpha = 0.5f))
             ) {
                 // Top Bar
-                Row(
+                Column(
                     modifier = Modifier
                         .align(Alignment.TopCenter)
                         .fillMaxWidth()
@@ -390,113 +492,51 @@ fun FullscreenPlayerContent(
                         // makes the hidden system bars reappear — statusBarsPadding
                         // here made the whole top bar jump down when a sheet opened
                         .displayCutoutPadding()
-                        .padding(horizontal = 24.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                        .padding(
+                            horizontal = if (compactChrome) 16.dp else 24.dp,
+                            vertical = 12.dp
+                        ),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    FilledIconButton(
-                        onClick = onBack,
-                        colors = IconButtonDefaults.filledIconButtonColors(
-                            containerColor = Color.Black.copy(0.5f),
-                            contentColor = Color.White
-                        ),
-                        shapes = stableShapes
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back")
-                    }
-                    
-                    Text(
-                        text = videoTitle,
-                        style = MaterialTheme.typography.titleLarge,
-                        color = Color.White,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f)
-                    )
-                    
-                    // Combined mode toggle: repeat off = auto-play next, repeat on = loop this video
-                    FilledTonalIconButton(
-                        onClick = onLoopToggle,
-                        colors = IconButtonDefaults.filledTonalIconButtonColors(
-                            containerColor = if (isLooping) MaterialTheme.colorScheme.primary else Color.Black.copy(0.5f),
-                            contentColor = if (isLooping) MaterialTheme.colorScheme.onPrimary else Color.White
-                        ),
-                        shapes = stableShapes
-                    ) {
-                        Icon(
-                            if (isLooping) Icons.Rounded.RepeatOne else Icons.Rounded.Autorenew,
-                            contentDescription = if (isLooping) "Repeat" else "Auto Play"
-                        )
-                    }
-
-                    if (showTimedCommentsButton && !isLive) {
-                        FilledTonalIconButton(
-                            onClick = onTimedCommentsToggle,
-                            colors = IconButtonDefaults.filledTonalIconButtonColors(
-                                containerColor = if (timedCommentsActive) MaterialTheme.colorScheme.primary else Color.Black.copy(0.5f),
-                                contentColor = if (timedCommentsActive) MaterialTheme.colorScheme.onPrimary else Color.White
+                        FilledIconButton(
+                            onClick = onBack,
+                            colors = IconButtonDefaults.filledIconButtonColors(
+                                containerColor = Color.Black.copy(0.5f),
+                                contentColor = Color.White
                             ),
                             shapes = stableShapes
                         ) {
-                            Icon(
-                                Icons.AutoMirrored.Rounded.Comment,
-                                contentDescription = "Timed comments"
-                            )
+                            Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back")
                         }
-                    }
 
-                    // Landscape is where a side-by-side chat actually fits, so
-                    // the toggle only exists here.
-                    if (isLive) {
-                        FilledTonalIconButton(
-                            onClick = onLiveChatToggle,
-                            colors = IconButtonDefaults.filledTonalIconButtonColors(
-                                containerColor = if (liveChatActive) MaterialTheme.colorScheme.primary else Color.Black.copy(0.5f),
-                                contentColor = if (liveChatActive) MaterialTheme.colorScheme.onPrimary else Color.White
-                            ),
-                            shapes = stableShapes
-                        ) {
-                            Icon(
-                                Icons.AutoMirrored.Rounded.Chat,
-                                contentDescription = if (liveChatActive) "Hide live chat" else "Show live chat"
-                            )
-                        }
-                    }
-
-                    FilledTonalIconButton(
-                        onClick = onCaptionsClick,
-                        colors = IconButtonDefaults.filledTonalIconButtonColors(
-                            containerColor = if (captionsActive) MaterialTheme.colorScheme.primary else Color.Black.copy(0.5f),
-                            contentColor = if (captionsActive) MaterialTheme.colorScheme.onPrimary else Color.White
-                        ),
-                        shapes = stableShapes
-                    ) {
-                        Icon(
-                            if (captionsActive) Icons.Rounded.ClosedCaption else Icons.Rounded.ClosedCaptionOff,
-                            contentDescription = "Captions"
+                        Text(
+                            text = videoTitle,
+                            style = MaterialTheme.typography.titleLarge,
+                            color = Color.White,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
                         )
+
+                        // Landscape keeps the single row it always had.
+                        if (!compactChrome) topBarActions()
                     }
 
-                    FilledIconButton(
-                        onClick = onSettings,
-                        colors = IconButtonDefaults.filledIconButtonColors(
-                            containerColor = Color.Black.copy(0.5f),
-                            contentColor = Color.White
-                        ),
-                        shapes = stableShapes
-                    ) {
-                        Icon(Icons.Rounded.Settings, "Quality")
-                    }
-
-                    FilledIconButton(
-                        onClick = onFullscreenToggle,
-                        colors = IconButtonDefaults.filledIconButtonColors(
-                            containerColor = Color.Black.copy(0.5f),
-                            contentColor = Color.White
-                        ),
-                        shapes = stableShapes
-                    ) {
-                        Icon(Icons.Rounded.FullscreenExit, "Exit Fullscreen")
+                    if (compactChrome) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(
+                                space = 8.dp,
+                                alignment = Alignment.End
+                            ),
+                            content = topBarActions
+                        )
                     }
                 }
                 
@@ -601,8 +641,13 @@ fun PortraitPlayerContent(
     /** Jump to the live edge of the DVR window. */
     onSeekToLive: () -> Unit = {},
     /**
-     * Shown only for a portrait live stream, which this 16:9 box can only
-     * pillarbox. Returns to the full-bleed vertical layout the stream opened in.
+     * Shown only for a portrait live stream. Returns to the full-bleed vertical
+     * layout the stream opened in.
+     *
+     * A portrait VOD gets no such button, deliberately: the watch page's box now
+     * takes the shape of the video, so the page is a reasonable home for it, and
+     * the full-bleed layout is built around live chat with nothing to say on a
+     * finished video.
      */
     showVerticalLiveButton: Boolean = false,
     onVerticalLiveClick: () -> Unit = {},

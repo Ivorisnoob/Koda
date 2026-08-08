@@ -3961,29 +3961,28 @@ class YouTubeRepository(private val context: Context) {
             val isLiveStream = streamExtractor.streamType == StreamType.LIVE_STREAM ||
                 streamExtractor.streamType == StreamType.AUDIO_LIVE_STREAM
 
-            // Same orientation read as parseQualitiesFromStreamingData, off the
+            // Same shape read as parseQualitiesFromStreamingData, off the
             // extractor's declared dimensions. A live broadcast returns before
             // the stream lists below are touched, so this has to look at them
             // up front or the vertical live layout gets nothing on this path.
-            val isPortraitSource = (streamExtractor.videoOnlyStreams + streamExtractor.videoStreams)
+            val sourceAspect = (streamExtractor.videoOnlyStreams + streamExtractor.videoStreams)
                 .filter { it.width > 0 && it.height > 0 }
                 .maxByOrNull { it.height }
-                ?.let { it.height > it.width }
-                ?: false
+                ?.let { it.width.toFloat() / it.height.toFloat() }
 
             // 1. DASH/HLS (best quality, adaptive)
             streamExtractor.dashMpdUrl?.takeIf { it.isNotBlank() }?.let { url ->
                 qualities.add(
                     VideoQuality(
                         "Auto (Best)", url, "DASH", true,
-                        isLive = isLiveStream, isPortrait = isPortraitSource
+                        isLive = isLiveStream, sourceAspectRatio = sourceAspect
                     )
                 )
             } ?: streamExtractor.hlsUrl?.takeIf { it.isNotBlank() }?.let { url ->
                 qualities.add(
                     VideoQuality(
                         "Auto (HLS)", url, "HLS", true,
-                        isLive = isLiveStream, isPortrait = isPortraitSource
+                        isLive = isLiveStream, sourceAspectRatio = sourceAspect
                     )
                 )
             }
@@ -4005,7 +4004,7 @@ class YouTubeRepository(private val context: Context) {
                         val url = stream.content ?: return@mapNotNull null
                         VideoQuality(
                             res, url, stream.format?.name, false, bestAudio.content,
-                            isPortrait = isPortraitSource
+                            sourceAspectRatio = sourceAspect
                         )
                     }
                 )
@@ -4018,7 +4017,7 @@ class YouTubeRepository(private val context: Context) {
                     val url = stream.content ?: return@mapNotNull null
                     VideoQuality(
                         res, url, stream.format?.name, false,
-                        isPortrait = isPortraitSource
+                        sourceAspectRatio = sourceAspect
                     )
                 }
             )
@@ -4048,20 +4047,19 @@ class YouTubeRepository(private val context: Context) {
         val adaptive = streamingData.optJSONArray("adaptiveFormats")?.objects() ?: emptyList()
         val muxed = streamingData.optJSONArray("formats")?.objects() ?: emptyList()
 
-        // Source orientation, taken from the largest video format that declares
-        // both dimensions. A vertical live stream is an ordinary broadcast with
-        // a 9:16 encode - nothing in the response labels it as such, and
+        // Source shape, taken from the largest video format that declares both
+        // dimensions. A vertical live stream is an ordinary broadcast with a
+        // 9:16 encode - nothing in the response labels it as such, and
         // /shorts/<id> resolves straight back to /watch?v= (verified August
         // 2026), so the frame dimensions are the only signal there is.
         //
-        // Read here rather than from the player so the vertical layout is right
-        // on the first composition instead of snapping into place once the
-        // first frame decodes.
-        val isPortraitSource = (adaptive + muxed)
+        // Read here rather than from the player so any layout that sizes itself
+        // from the video is right on the first composition instead of snapping
+        // into place once the first frame decodes.
+        val sourceAspect = (adaptive + muxed)
             .filter { it.optInt("width") > 0 && it.optInt("height") > 0 }
             .maxByOrNull { it.optInt("height") }
-            ?.let { it.optInt("height") > it.optInt("width") }
-            ?: false
+            ?.let { it.optInt("width").toFloat() / it.optInt("height").toFloat() }
 
         // HDR variants ride separate adaptiveFormats entries whose qualityLabel
         // carries " HDR" and whose colorInfo declares a PQ or HLG transfer
@@ -4105,7 +4103,7 @@ class YouTubeRepository(private val context: Context) {
         if (hlsManifestUrl != null) {
             fun liveEntry(label: String) = VideoQuality(
                 label, hlsManifestUrl, "HLS",
-                isDASH = true, isLive = true, isPortrait = isPortraitSource
+                isDASH = true, isLive = true, sourceAspectRatio = sourceAspect
             )
 
             val ladder = adaptive
@@ -4171,7 +4169,7 @@ class YouTubeRepository(private val context: Context) {
                             format = container(best.optString("mimeType")),
                             isDASH = false,
                             audioUrl = bestAudioUrl,
-                            isPortrait = isPortraitSource
+                            sourceAspectRatio = sourceAspect
                         )
                     )
                 }
@@ -4186,7 +4184,7 @@ class YouTubeRepository(private val context: Context) {
                 qualities.add(
                     VideoQuality(
                         label, url, container(f.optString("mimeType")), false,
-                        isPortrait = isPortraitSource
+                        sourceAspectRatio = sourceAspect
                     )
                 )
             }

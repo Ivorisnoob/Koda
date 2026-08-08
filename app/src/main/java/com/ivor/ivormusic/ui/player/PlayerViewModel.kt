@@ -452,7 +452,14 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                                 if (isActive && (_isPlaying.value || controller?.playWhenReady == true)) {
                                     lastRecordedSongId = currentSongId
                                     youTubeRepository.reportPlayback(currentSongId)
-                                    statsRepository.addPlayEvent(it)
+                                    // Fresh pref read: the toggle is flipped
+                                    // from the settings screen and from the
+                                    // history screen's own menu, both holding
+                                    // their own ThemePreferences, so this VM's
+                                    // StateFlow copy is stale at decision time.
+                                    if (themePreferences.isSaveMusicHistoryEnabled()) {
+                                        statsRepository.addPlayEvent(it)
+                                    }
                                 }
                             }
                         }

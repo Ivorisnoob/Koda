@@ -1572,6 +1572,75 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    // ---------------- Listening history ----------------
+
+    // The raw play log, newest first - what the listening history screen shows.
+    // Distinct from recentlyPlayed, which is the same source deduplicated down
+    // to one card per song for the Library rail.
+    private val _playHistory =
+        MutableStateFlow<List<com.ivor.ivormusic.data.PlayHistoryEntry>>(emptyList())
+    val playHistory: StateFlow<List<com.ivor.ivormusic.data.PlayHistoryEntry>> =
+        _playHistory.asStateFlow()
+
+    private val _isPlayHistoryLoading = MutableStateFlow(false)
+    val isPlayHistoryLoading: StateFlow<Boolean> = _isPlayHistoryLoading.asStateFlow()
+
+    fun loadPlayHistory() {
+        viewModelScope.launch {
+            _isPlayHistoryLoading.value = true
+            _playHistory.value = statsRepository.loadHistory()
+            _isPlayHistoryLoading.value = false
+        }
+    }
+
+    /**
+     * Remove one play, or every play of a song when [allPlaysOfSong] is set.
+     *
+     * [onRemoved] receives the list as it was beforehand, which is what Undo
+     * needs: removing a song's whole run takes an unknown number of entries
+     * with it, and putting them back in order is not something a single entry
+     * can describe.
+     */
+    fun removePlayHistoryEntry(
+        songId: String,
+        timestamp: Long,
+        allPlaysOfSong: Boolean = false,
+        onRemoved: (List<com.ivor.ivormusic.data.PlayHistoryEntry>) -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            val before = _playHistory.value
+            _playHistory.value = if (allPlaysOfSong) {
+                statsRepository.removeAllPlaysOf(songId)
+            } else {
+                statsRepository.removeEntry(songId, timestamp)
+            }
+            onRemoved(before)
+            // The rail, the "Most played" sort and the stats screen all read the
+            // same file. Leaving them stale is how a song deleted from history
+            // stays visible one screen over.
+            refreshRecentlyPlayed()
+            refreshStats()
+        }
+    }
+
+    fun restorePlayHistory(entries: List<com.ivor.ivormusic.data.PlayHistoryEntry>) {
+        viewModelScope.launch {
+            statsRepository.restoreHistory(entries)
+            _playHistory.value = entries
+            refreshRecentlyPlayed()
+            refreshStats()
+        }
+    }
+
+    fun clearPlayHistory() {
+        viewModelScope.launch {
+            statsRepository.clearHistory()
+            _playHistory.value = emptyList()
+            refreshRecentlyPlayed()
+            refreshStats()
+        }
+    }
+
     // --- Search History Actions ---
 
     fun addToSearchHistory(query: String) {

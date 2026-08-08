@@ -39,6 +39,7 @@ import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.FolderOff
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.HdrOn
+import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.NotInterested
@@ -308,6 +309,14 @@ internal fun buildSettingsSearchIndex(
         "autoqueue", "Auto-load Queue", "Playback and quality",
         Icons.AutoMirrored.Rounded.QueueMusic,
         listOf("queue", "autoplay", "radio", "recommended", "keep playing", "endless")
+    ) { onOpenPage(SettingsPage.PLAYBACK) }
+    entry(
+        "music_history", "Save Listening History", "Playback and quality",
+        Icons.Rounded.History,
+        listOf(
+            "history", "listening", "recently played", "played", "log", "track",
+            "incognito", "private", "pause history", "clear history", "stats"
+        )
     ) { onOpenPage(SettingsPage.PLAYBACK) }
     entry(
         "music_q_wifi", "Music quality on Wi-Fi", "Playback and quality",
