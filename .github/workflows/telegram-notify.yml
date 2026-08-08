@@ -3,7 +3,6 @@ name: Telegram Notifications
 on:
   watch:
     types: [started]  # Stars
-  fork:
   release:
     types: [published]
 
@@ -14,6 +13,10 @@ permissions: {}
 env:
   TELEGRAM_CHAT_ID: "@ivorisnoob_projects"
   API: "https://api.telegram.org"
+  # The repository owner's name is rendered as a link to this. Anyone else who
+  # shows up as an author stays plain text, because this is a personal site and
+  # not a generic "the person who did the thing" link.
+  OWNER_URL: "https://ivorisnoob.lol"
 
 jobs:
   # Star Milestone (only notify on 10, 20, 30, 40, 50, etc.)
@@ -59,33 +62,6 @@ jobs:
           Thank you for your amazing support!
           <a href='${REPO_URL}'>Visit Repo</a>"
 
-  # Fork
-  notify-fork:
-    if: github.repository == 'Ivorisnoob/Koda' && github.event_name == 'fork'
-    runs-on: ubuntu-latest
-    permissions: {}
-    steps:
-      - name: Send Fork Notification
-        env:
-          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          CHAT_ID: ${{ env.TELEGRAM_CHAT_ID }}
-          SENDER: ${{ github.event.sender.login }}
-          FORK_NAME: ${{ github.event.forkee.full_name }}
-          FORK_URL: ${{ github.event.forkee.html_url }}
-        run: |
-          curl -s -X POST "${API}/bot${BOT_TOKEN}/sendMessage" \
-            --data-urlencode "chat_id=${CHAT_ID}" \
-            --data-urlencode "parse_mode=HTML" \
-            --data-urlencode "text=<b>Koda</b> | Forked!
-
-          Repository forked!
-
-          <b>${SENDER}</b> forked the project!
-          Fork: <code>${FORK_NAME}</code>
-
-          Happy coding!
-          <a href='${FORK_URL}'>View Fork</a>"
-
   # Release. Only a maintainer can publish one, but gate on the author anyway so
   # a release created by anything else stays silent. Add logins to the
   # TRUSTED_ACTORS repo variable to let someone else's releases notify.
@@ -102,23 +78,151 @@ jobs:
         env:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           CHAT_ID: ${{ env.TELEGRAM_CHAT_ID }}
+          REPO_OWNER: ${{ github.repository_owner }}
           TAG_NAME: ${{ github.event.release.tag_name }}
           RELEASE_NAME: ${{ github.event.release.name }}
           RELEASE_AUTHOR: ${{ github.event.release.author.login }}
           RELEASE_URL: ${{ github.event.release.html_url }}
+          IS_PRERELEASE: ${{ github.event.release.prerelease }}
+          # Release notes and asset metadata are attacker-shaped free text in the
+          # general case, so they arrive as environment variables and are never
+          # interpolated into this script by the expression engine.
+          RELEASE_BODY: ${{ github.event.release.body }}
+          ASSETS_JSON: ${{ toJSON(github.event.release.assets) }}
         run: |
-          # Release titles are free text, so strip the HTML control characters
-          # before they reach Telegram's HTML parse mode.
-          esc() { sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g' <<< "$1"; }
+          set -euo pipefail
 
-          curl -s -X POST "${API}/bot${BOT_TOKEN}/sendMessage" \
+          # Telegram's HTML parse mode understands b/i/u/s/a/code/pre and nothing
+          # else, and rejects the whole message on a malformed tag. Everything
+          # below therefore escapes first and only then adds tags we control.
+          esc() { sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' <<< "$1"; }
+
+          # Author: the owner links to their portfolio, everybody else is a name.
+          author_html() {
+            local login="$1" safe
+            safe=$(esc "$login")
+            if [ "${login,,}" = "${REPO_OWNER,,}" ]; then
+              printf '<b><a href="%s">%s</a></b>' "$OWNER_URL" "$safe"
+            else
+              printf '<b>%s</b>' "$safe"
+            fi
+          }
+
+          # Markdown -> Telegram HTML. Every rule is line-local on purpose: that
+          # is what makes truncating whole lines further down tag-balanced, and
+          # an unbalanced tag is a rejected message, not a cosmetic problem.
+          notes_to_html() {
+            sed -e 's/\r$//' -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' \
+              | sed -E \
+                -e 's@^[[:space:]]*(-{3,}|\*{3,}|_{3,})[[:space:]]*$@@' \
+                -e 's@^[[:space:]]*#{1,6}[[:space:]]+(.*)$@<b>\1</b>@' \
+                -e 's@^([[:space:]]*)[-*+][[:space:]]+@\1• @' \
+                -e 's@`([^`]+)`@<code>\1</code>@g' \
+                -e 's@\*\*([^*]+)\*\*@<b>\1</b>@g' \
+                -e 's@\[([^]]+)\]\(([^)]+)\)@<a href="\2">\1</a>@g'
+          }
+
+          # Headline. A release whose name just repeats the tag reads badly as
+          # "Release 4.3 - 4.3", so collapse that case.
+          if [ -z "${RELEASE_NAME}" ] || [ "${RELEASE_NAME}" = "${TAG_NAME}" ]; then
+            HEADLINE="<b>$(esc "$TAG_NAME")</b>"
+          else
+            HEADLINE="<b>$(esc "$RELEASE_NAME")</b>  <code>$(esc "$TAG_NAME")</code>"
+          fi
+
+          if [ "${IS_PRERELEASE}" = "true" ]; then
+            TOP="<b>Koda</b> | New Pre-release"
+          else
+            TOP="<b>Koda</b> | New Release"
+          fi
+
+          HEAD_PART="${TOP}
+
+          ${HEADLINE}
+          Author: $(author_html "$RELEASE_AUTHOR")"
+
+          FOOT_PART="<a href=\"${RELEASE_URL}\">View release on GitHub</a>"
+
+          # Assets are what a Telegram subscriber actually came for. They can be
+          # empty when the release is published before the APKs finish uploading,
+          # which is a normal ordering and not an error.
+          ASSET_PART=""
+          ASSET_LINES=$(jq -r '
+            def human: if . >= 1048576 then "\((. / 1048576) | floor) MB"
+                       elif . >= 1024 then "\((. / 1024) | floor) KB"
+                       else "\(.) B" end;
+            def esc: gsub("&"; "&amp;") | gsub("<"; "&lt;") | gsub(">"; "&gt;");
+            (. // []) | .[:12][]
+            | "• <a href=\"\(.browser_download_url)\">\(.name | esc)</a>  <i>\(.size | human)</i>"
+          ' <<< "${ASSETS_JSON}" 2>/dev/null || true)
+          if [ -n "${ASSET_LINES}" ]; then
+            ASSET_PART="<b>Downloads</b>
+          ${ASSET_LINES}"
+          fi
+
+          # Telegram caps a message at 4096 UTF-16 units. Spend whatever the
+          # fixed parts leave on the notes rather than picking a constant that
+          # is either wasteful or occasionally over.
+          BUDGET=$(( 3900 - ${#HEAD_PART} - ${#FOOT_PART} - ${#ASSET_PART} - 140 ))
+
+          NOTES=""
+          TRUNCATED=false
+          if [ -n "${RELEASE_BODY//[[:space:]]/}" ] && [ "${BUDGET}" -gt 200 ]; then
+            NOTES=$(notes_to_html <<< "${RELEASE_BODY}")
+            if [ "${#NOTES}" -gt "${BUDGET}" ]; then
+              CUT=$(head -c "${BUDGET}" <<< "${NOTES}" | sed '$d')
+              # A single enormous line leaves nothing behind; fall back to a hard
+              # cut with any half-written tag shaved off the end.
+              if [ -z "${CUT}" ]; then
+                CUT=$(head -c "${BUDGET}" <<< "${NOTES}" | sed -E 's@<[^>]*$@@')
+              fi
+              NOTES="${CUT}"
+              TRUNCATED=true
+            fi
+          fi
+
+          MSG="${HEAD_PART}"
+          if [ -n "${NOTES}" ]; then
+            MSG="${MSG}
+
+          <b>What's new</b>
+          ${NOTES}"
+            if [ "${TRUNCATED}" = "true" ]; then
+              MSG="${MSG}
+
+          <i>Notes trimmed to fit. Full changelog on GitHub.</i>"
+            fi
+          fi
+          if [ -n "${ASSET_PART}" ]; then
+            MSG="${MSG}
+
+          ${ASSET_PART}"
+          fi
+          MSG="${MSG}
+
+          ${FOOT_PART}"
+
+          RESPONSE=$(curl -s -X POST "${API}/bot${BOT_TOKEN}/sendMessage" \
             --data-urlencode "chat_id=${CHAT_ID}" \
             --data-urlencode "parse_mode=HTML" \
-            --data-urlencode "text=<b>Koda</b> | New Release!
+            --data-urlencode "disable_web_page_preview=true" \
+            --data-urlencode "text=${MSG}" || true)
 
-          Version <b>$(esc "$TAG_NAME")</b>
+          if ! grep -q '"ok":true' <<< "${RESPONSE}"; then
+            echo "HTML send rejected: ${RESPONSE}"
+            # Release notes are free text and Telegram's parser is strict. A
+            # release going out with no announcement at all is worse than one
+            # announced without formatting, so retry as plain text.
+            PLAIN=$(sed -E 's@<[^>]+>@@g' <<< "${MSG}" \
+              | sed -e 's/&lt;/</g' -e 's/&gt;/>/g' -e 's/&amp;/\&/g')
+            RESPONSE=$(curl -s -X POST "${API}/bot${BOT_TOKEN}/sendMessage" \
+              --data-urlencode "chat_id=${CHAT_ID}" \
+              --data-urlencode "disable_web_page_preview=true" \
+              --data-urlencode "text=${PLAIN}
 
-          Name: <b>$(esc "$RELEASE_NAME")</b>
-          Author: <b>$(esc "$RELEASE_AUTHOR")</b>
-
-          <a href='${RELEASE_URL}'>Download Now</a>"
+          ${RELEASE_URL}" || true)
+            if ! grep -q '"ok":true' <<< "${RESPONSE}"; then
+              echo "Plain-text send also failed: ${RESPONSE}"
+              exit 1
+            fi
+          fi
