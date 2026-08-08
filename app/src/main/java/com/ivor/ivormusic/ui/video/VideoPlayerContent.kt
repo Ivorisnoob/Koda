@@ -170,6 +170,50 @@ fun VideoPlayerContent(
         !showVideoPageForVerticalLive &&
         !isFullscreen
 
+    /**
+     * Fullscreen has two shapes, and which one it takes follows the video.
+     *
+     * Fullscreen used to mean "rotate to landscape" unconditionally, which is
+     * right for the 16:9 uploads that are most of YouTube and exactly wrong for
+     * a 9:16 one: asking to fill the screen turned the phone sideways and put
+     * the video in a letterboxed strip using less of the screen than the watch
+     * page had just given it. A vertical video fills a phone held upright, so
+     * that is what fullscreen does for it.
+     *
+     * **Live portrait streams are excluded on purpose.** For those, fullscreen
+     * already means something: rotating is how the docked chat column appears,
+     * and the space beside a 9:16 stream in landscape is chat-shaped. Their
+     * upright full-bleed layout is `VerticalLivePlayerContent`, which they open
+     * in by default.
+     */
+    val portraitFullscreenAvailable = isPortraitVideo && !isLive
+    var fullscreenIsPortrait by remember { mutableStateOf(false) }
+
+    /**
+     * Enter fullscreen in a given shape.
+     *
+     * [portrait] defaults to whatever the video wants, so the button and the
+     * swipe get the shape that fits. Physically rotating the device passes
+     * false: the user has said which way up they want it, and a portrait lock
+     * fighting a sideways phone is worse than a pillarboxed frame.
+     */
+    fun enterFullscreen(portrait: Boolean = portraitFullscreenAvailable) {
+        fullscreenIsPortrait = portrait && portraitFullscreenAvailable
+        isFullscreen = true
+    }
+
+    fun exitFullscreen() {
+        isFullscreen = false
+        fullscreenIsPortrait = false
+    }
+
+    // Autoplay can hand a landscape video to a fullscreen that is currently
+    // locked upright for the portrait one before it. Left alone, the next video
+    // plays in a letterboxed strip with the phone locked the wrong way round.
+    LaunchedEffect(portraitFullscreenAvailable) {
+        if (!portraitFullscreenAvailable) fullscreenIsPortrait = false
+    }
+
     // Landscape chat column: about a third of the screen, bounded so it stays
     // readable on a small phone and does not eat a tablet.
     val configuration = LocalConfiguration.current
@@ -292,7 +336,7 @@ fun VideoPlayerContent(
     // fullscreen temporarily requests sensor landscape and every exit path
     // restores PORTRAIT — never UNSPECIFIED, which used to leave the whole
     // app free-rotating in broken half-landscape states.
-    DisposableEffect(isFullscreen) {
+    DisposableEffect(isFullscreen, fullscreenIsPortrait) {
         val window = activity?.window
         val insetsController = window?.let { WindowCompat.getInsetsController(it, it.decorView) }
 
@@ -308,8 +352,15 @@ fun VideoPlayerContent(
             // Draw into the camera cutout area too, otherwise the system
             // letterboxes the window and background shows around the notch
             setCutoutMode(WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES)
-            // Sensor landscape: both landscape directions work, like YouTube
-            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            // A vertical video fills the screen held upright, so fullscreen
+            // holds it there rather than rotating into a letterboxed strip.
+            // Everything else gets sensor landscape, both directions, like
+            // YouTube.
+            activity?.requestedOrientation = if (fullscreenIsPortrait) {
+                ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            } else {
+                ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            }
             insetsController?.apply {
                 hide(WindowInsetsCompat.Type.systemBars())
                 systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
@@ -357,10 +408,16 @@ fun VideoPlayerContent(
                 val isFirstReading = lastDeviceOrientation == -1
                 lastDeviceOrientation = orientation
                 if (isFirstReading) return
-                if (orientation == 1 && !isFullscreen) {
-                    isFullscreen = true
-                } else if (orientation == 0 && isFullscreen) {
-                    isFullscreen = false
+                // Turning the phone sideways means landscape fullscreen, even
+                // from an upright fullscreen: the user has just said which way
+                // round they want it, and for a vertical video a pillarboxed
+                // frame they asked for beats a portrait lock they did not.
+                if (orientation == 1 && (!isFullscreen || fullscreenIsPortrait)) {
+                    enterFullscreen(portrait = false)
+                } else if (orientation == 0 && isFullscreen && !fullscreenIsPortrait) {
+                    // Upright does not end a fullscreen that is already
+                    // upright, which is the whole point of the portrait one.
+                    exitFullscreen()
                 }
             }
         }
@@ -508,8 +565,8 @@ fun VideoPlayerContent(
                 onSeek = { newProgress -> exoPlayer.seekTo((newProgress * duration).toLong()) },
                 onSeekBackward = { seekBy(-VideoPlayerViewModel.SEEK_STEP_MS) },
                 onSeekForward = { seekBy(VideoPlayerViewModel.SEEK_STEP_MS) },
-                onBack = { isFullscreen = false },
-                onFullscreenToggle = { isFullscreen = false },
+                onBack = { exitFullscreen() },
+                onFullscreenToggle = { exitFullscreen() },
                 onSettings = { showQualitySheet = true },
                 onLoopToggle = { viewModel.toggleLooping() },
                 showTimedCommentsButton = timedCommentsFeatureEnabled,
@@ -535,6 +592,7 @@ fun VideoPlayerContent(
                 } else {
                     0.dp
                 },
+                compactChrome = fullscreenIsPortrait,
                 onRetry = { viewModel.retryPlayback() }
             )
 
@@ -744,7 +802,7 @@ fun VideoPlayerContent(
                         onSeekBackward = { seekBy(-VideoPlayerViewModel.SEEK_STEP_MS) },
                         onSeekForward = { seekBy(VideoPlayerViewModel.SEEK_STEP_MS) },
                         onBack = onBackClick,
-                        onFullscreenToggle = { isFullscreen = true },
+                        onFullscreenToggle = { enterFullscreen() },
                         onSettings = { showQualitySheet = true },
                         onLoopToggle = { viewModel.toggleLooping() },
                         showTimedCommentsButton = timedCommentsFeatureEnabled,
