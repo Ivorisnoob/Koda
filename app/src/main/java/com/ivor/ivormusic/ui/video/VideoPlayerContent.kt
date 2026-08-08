@@ -186,33 +186,20 @@ fun VideoPlayerContent(
      * upright full-bleed layout is `VerticalLivePlayerContent`, which they open
      * in by default.
      */
+    // Which shape fullscreen takes is decided at the point it is entered: the
+    // button and the swipe follow the video, physically rotating the device
+    // does not (see the orientation listener below).
+    //
+    // Everything effectful about this lives after the early return further
+    // down, with the rest of this composable's effects. This composable returns
+    // early while the video is still resolving, and putting a LaunchedEffect or
+    // a local function above that return desynchronised the slot table enough
+    // that the restart lambda came back with a corrupt argument list -
+    // "ClassCastException: EmptyCoroutineContext cannot be cast to Function1",
+    // on every video open. Plain values and remember are fine here; effects are
+    // not.
     val portraitFullscreenAvailable = isPortraitVideo && !isLive
     var fullscreenIsPortrait by remember { mutableStateOf(false) }
-
-    /**
-     * Enter fullscreen in a given shape.
-     *
-     * [portrait] defaults to whatever the video wants, so the button and the
-     * swipe get the shape that fits. Physically rotating the device passes
-     * false: the user has said which way up they want it, and a portrait lock
-     * fighting a sideways phone is worse than a pillarboxed frame.
-     */
-    fun enterFullscreen(portrait: Boolean = portraitFullscreenAvailable) {
-        fullscreenIsPortrait = portrait && portraitFullscreenAvailable
-        isFullscreen = true
-    }
-
-    fun exitFullscreen() {
-        isFullscreen = false
-        fullscreenIsPortrait = false
-    }
-
-    // Autoplay can hand a landscape video to a fullscreen that is currently
-    // locked upright for the portrait one before it. Left alone, the next video
-    // plays in a letterboxed strip with the phone locked the wrong way round.
-    LaunchedEffect(portraitFullscreenAvailable) {
-        if (!portraitFullscreenAvailable) fullscreenIsPortrait = false
-    }
 
     // Landscape chat column: about a third of the screen, bounded so it stays
     // readable on a small phone and does not eat a tablet.
@@ -296,6 +283,13 @@ fun VideoPlayerContent(
     // notification skip through the same ViewModel call, and a gesture that
     // clamped differently from the buttons would be a bug waiting to happen.
     fun seekBy(deltaMs: Long) = viewModel.seekBy(deltaMs)
+
+    // Autoplay can hand a landscape video to a fullscreen still locked upright
+    // for the portrait one before it, which plays the next video in a
+    // letterboxed strip with the phone held the wrong way round.
+    LaunchedEffect(portraitFullscreenAvailable) {
+        if (!portraitFullscreenAvailable) fullscreenIsPortrait = false
+    }
 
     // Auto-hide controls
     LaunchedEffect(showControls, isPlaying) {
@@ -413,11 +407,12 @@ fun VideoPlayerContent(
                 // round they want it, and for a vertical video a pillarboxed
                 // frame they asked for beats a portrait lock they did not.
                 if (orientation == 1 && (!isFullscreen || fullscreenIsPortrait)) {
-                    enterFullscreen(portrait = false)
+                    fullscreenIsPortrait = false
+                    isFullscreen = true
                 } else if (orientation == 0 && isFullscreen && !fullscreenIsPortrait) {
                     // Upright does not end a fullscreen that is already
                     // upright, which is the whole point of the portrait one.
-                    exitFullscreen()
+                    isFullscreen = false
                 }
             }
         }
@@ -565,8 +560,14 @@ fun VideoPlayerContent(
                 onSeek = { newProgress -> exoPlayer.seekTo((newProgress * duration).toLong()) },
                 onSeekBackward = { seekBy(-VideoPlayerViewModel.SEEK_STEP_MS) },
                 onSeekForward = { seekBy(VideoPlayerViewModel.SEEK_STEP_MS) },
-                onBack = { exitFullscreen() },
-                onFullscreenToggle = { exitFullscreen() },
+                onBack = {
+                    isFullscreen = false
+                    fullscreenIsPortrait = false
+                },
+                onFullscreenToggle = {
+                    isFullscreen = false
+                    fullscreenIsPortrait = false
+                },
                 onSettings = { showQualitySheet = true },
                 onLoopToggle = { viewModel.toggleLooping() },
                 showTimedCommentsButton = timedCommentsFeatureEnabled,
@@ -802,7 +803,12 @@ fun VideoPlayerContent(
                         onSeekBackward = { seekBy(-VideoPlayerViewModel.SEEK_STEP_MS) },
                         onSeekForward = { seekBy(VideoPlayerViewModel.SEEK_STEP_MS) },
                         onBack = onBackClick,
-                        onFullscreenToggle = { enterFullscreen() },
+                        onFullscreenToggle = {
+                            // Fullscreen from the button or the swipe-up takes
+                            // the shape the video wants.
+                            fullscreenIsPortrait = portraitFullscreenAvailable
+                            isFullscreen = true
+                        },
                         onSettings = { showQualitySheet = true },
                         onLoopToggle = { viewModel.toggleLooping() },
                         showTimedCommentsButton = timedCommentsFeatureEnabled,
