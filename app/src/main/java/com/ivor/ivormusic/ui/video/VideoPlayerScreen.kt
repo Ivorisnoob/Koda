@@ -101,6 +101,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.DisposableEffect
@@ -121,6 +122,8 @@ import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalViewConfiguration
+import androidx.compose.ui.platform.ViewConfiguration
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -1058,6 +1061,42 @@ private fun ChapterTitleChip(
 private const val DOUBLE_TAP_SEEK_SECONDS = 10
 
 /**
+ * How long a press has to be held before playback boosts to 2x.
+ *
+ * Deliberately longer than the platform's long-press timeout (roughly 500ms).
+ * A press meant as a tap to bring the controls up was crossing the system
+ * threshold and jumping the video to double speed instead, which is startling
+ * in a way a mis-tap should not be. The boost is a sustained gesture held for
+ * seconds, so asking for a little more commitment up front costs nothing and
+ * stops the accident.
+ *
+ * Applied by overriding [LocalViewConfiguration] around the gesture surface
+ * rather than by delaying the boost off `onLongPress`. Delaying would leave a
+ * dead zone: `detectTapGestures` still consumes the gesture as a long press at
+ * the system timeout, so a press landing between the two thresholds would
+ * neither toggle the controls nor boost, and the video would feel unresponsive.
+ * Moving the view configuration's threshold moves the tap and long-press
+ * boundaries together, so below it is cleanly a tap and above it cleanly a
+ * boost.
+ */
+private const val SPEED_BOOST_HOLD_MS = 650L
+
+/**
+ * [ViewConfiguration] that reports a longer long-press timeout and delegates
+ * everything else, so raising the boost threshold does not also move touch slop
+ * or the double-tap window that the seek gesture depends on.
+ */
+private class SpeedBoostViewConfiguration(
+    private val base: ViewConfiguration,
+    private val longPressMs: Long
+) : ViewConfiguration {
+    override val longPressTimeoutMillis: Long get() = longPressMs
+    override val doubleTapTimeoutMillis: Long get() = base.doubleTapTimeoutMillis
+    override val doubleTapMinTimeMillis: Long get() = base.doubleTapMinTimeMillis
+    override val touchSlop: Float get() = base.touchSlop
+}
+
+/**
  * Bounds on the level ladder's segment count.
  *
  * The count itself comes from the device's own media volume steps, so one slat
@@ -1240,273 +1279,284 @@ internal fun PlayerGestureSurface(
         }
     }
 
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .background(Color.Black)
-            .pointerInput(Unit) {
-                detectTapGestures(
-                    onTap = { onToggleControls() },
-                    onLongPress = {
-                        isBoosting = true
-                        onSpeedBoostStart()
-                    },
-                    onPress = {
-                        // Suspends until the finger lifts (or the gesture is
-                        // cancelled); undo the boost if this press started one.
-                        tryAwaitRelease()
-                        if (isBoosting) {
-                            isBoosting = false
-                            onSpeedBoostEnd()
+    // Raise the long-press threshold for the whole surface so a tap meant for
+    // the controls cannot trip the 2x boost. Scoped here rather than app-wide,
+    // and nothing inside this surface uses its own long-press (the content is
+    // the PlayerView and the caption overlay; the badges below are not
+    // interactive), so the override has nothing to leak into.
+    val baseViewConfiguration = LocalViewConfiguration.current
+    val boostViewConfiguration = remember(baseViewConfiguration) {
+        SpeedBoostViewConfiguration(baseViewConfiguration, SPEED_BOOST_HOLD_MS)
+    }
+    CompositionLocalProvider(LocalViewConfiguration provides boostViewConfiguration) {
+        Box(
+            modifier = modifier
+                .fillMaxSize()
+                .background(Color.Black)
+                .pointerInput(Unit) {
+                    detectTapGestures(
+                        onTap = { onToggleControls() },
+                        onLongPress = {
+                            isBoosting = true
+                            onSpeedBoostStart()
+                        },
+                        onPress = {
+                            // Suspends until the finger lifts (or the gesture is
+                            // cancelled); undo the boost if this press started one.
+                            tryAwaitRelease()
+                            if (isBoosting) {
+                                isBoosting = false
+                                onSpeedBoostEnd()
+                            }
+                        },
+                        onDoubleTap = { offset ->
+                            val tappedSide = if (offset.x < size.width / 2f) -1 else 1
+                            seconds = if (tappedSide == side) seconds + DOUBLE_TAP_SEEK_SECONDS else DOUBLE_TAP_SEEK_SECONDS
+                            side = tappedSide
+                            pulse++
+                            if (tappedSide < 0) onSeekBackward() else onSeekForward()
                         }
-                    },
-                    onDoubleTap = { offset ->
-                        val tappedSide = if (offset.x < size.width / 2f) -1 else 1
-                        seconds = if (tappedSide == side) seconds + DOUBLE_TAP_SEEK_SECONDS else DOUBLE_TAP_SEEK_SECONDS
-                        side = tappedSide
-                        pulse++
-                        if (tappedSide < 0) onSeekBackward() else onSeekForward()
-                    }
-                )
-            }
-            .then(
-                if (fullscreenGesturesEnabled ||
-                    (!minimizeDragEnabled && !enterFullscreenEnabled)
-                ) {
-                    Modifier
-                } else Modifier.pointerInput(minimizeDragEnabled, enterFullscreenEnabled) {
-                    val velocityTracker = VelocityTracker()
-                    val enterTravelPx = ENTER_FULLSCREEN_SWIPE_TRAVEL.toPx()
-                    var totalDy = 0f
-                    var wentFullscreen = false
-                    var minimizing = false
-                    detectVerticalDragGestures(
-                        onDragStart = {
-                            velocityTracker.resetTracking()
-                            totalDy = 0f
-                            wentFullscreen = false
-                            minimizing = false
-                        },
-                        onVerticalDrag = { change, dragAmount ->
-                            totalDy += dragAmount
-
-                            // Velocity from the accumulated delta, NOT from
-                            // change.position. This surface is inside the player
-                            // being dragged, and the minimize drag moves it down
-                            // one-for-one with the finger - so the pointer's
-                            // position *within this node* barely changes, and a
-                            // tracker fed those positions reported almost no
-                            // velocity. That is why a calm downward swipe never
-                            // tripped the velocity test and minimizing felt like
-                            // it needed to be yanked. The deltas are measured
-                            // against the node's current transform and are
-                            // correct; only the absolute positions are not.
-                            velocityTracker.addPosition(
-                                change.uptimeMillis,
-                                Offset(0f, totalDy)
-                            )
-
-                            // Direction is re-read from the accumulated travel
-                            // every event rather than locked in from the first
-                            // delta past touch slop. Locking meant a swipe that
-                            // began with the smallest upward roll of the finger
-                            // - which is most of them - spent the whole gesture
-                            // in the fullscreen lane and minimized nothing.
-                            if (!wentFullscreen &&
-                                enterFullscreenEnabled &&
-                                totalDy <= -enterTravelPx
-                            ) {
-                                wentFullscreen = true
-                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                enterFullscreen?.invoke()
-                            }
-
-                            if (minimizeDragEnabled && !wentFullscreen) {
-                                // Upward deltas are safe to forward: the player
-                                // clamps at fully expanded, so an early wobble
-                                // costs nothing and the pull still counts.
-                                onMinimizeDragDelta(dragAmount)
-                                if (totalDy > 0f) minimizing = true
-                            }
-                            change.consume()
-                        },
-                        onDragEnd = {
-                            if (minimizing) {
-                                onMinimizeDragRelease(velocityTracker.calculateVelocity().y)
-                            }
-                        },
-                        onDragCancel = { if (minimizing) onMinimizeDragRelease(0f) }
                     )
                 }
-            )
-            .then(
-                if (!fullscreenGesturesEnabled) Modifier
-                else Modifier.pointerInput(activity, exitFullscreenEnabled) {
-                    val exitTravelPx = EXIT_FULLSCREEN_SWIPE_TRAVEL.toPx()
-                    awaitEachGesture {
-                        val down = awaitFirstDown(requireUnconsumed = false)
-                        val leftSide = down.position.x < size.width / 2f
-                        // Vertical drags only arm in the bottom 70% of the
-                        // surface: a swipe from the top area is almost always
-                        // the user reaching for the notification shade, and
-                        // grabbing it as a brightness/volume drag was a
-                        // constant misfire - the same is true of a downward
-                        // swipe meant to leave fullscreen. Pinch-to-zoom stays
-                        // available everywhere.
-                        val inDragZone = down.position.y >= size.height * 0.3f
-                        // The exit-fullscreen lane, between the two level lanes.
-                        val inCentreColumn = abs(down.position.x - size.width / 2f) <=
-                            size.width * FULLSCREEN_CENTRE_COLUMN_HALF_WIDTH
-                        // 0 = undecided, 1 = vertical level drag, 2 = pinch,
-                        // 3 = downward swipe out of fullscreen
-                        var mode = 0
-                        var accumulatedZoom = 1f
-                        var level = 0f
-                        var exitCommitted = false
-                        // Whether the level is currently pinned to 0 or 1, so
-                        // the rail tick fires once on arrival rather than on
-                        // every frame the finger keeps pushing past the end.
-                        var atRail = false
-                        while (true) {
-                            val event = awaitPointerEvent()
-                            val pressed = event.changes.filter { it.pressed }
-                            if (pressed.isEmpty()) break
-                            // A child (slider, button) claimed the gesture
-                            if (mode == 0 && event.changes.any { it.isConsumed }) break
+                .then(
+                    if (fullscreenGesturesEnabled ||
+                        (!minimizeDragEnabled && !enterFullscreenEnabled)
+                    ) {
+                        Modifier
+                    } else Modifier.pointerInput(minimizeDragEnabled, enterFullscreenEnabled) {
+                        val velocityTracker = VelocityTracker()
+                        val enterTravelPx = ENTER_FULLSCREEN_SWIPE_TRAVEL.toPx()
+                        var totalDy = 0f
+                        var wentFullscreen = false
+                        var minimizing = false
+                        detectVerticalDragGestures(
+                            onDragStart = {
+                                velocityTracker.resetTracking()
+                                totalDy = 0f
+                                wentFullscreen = false
+                                minimizing = false
+                            },
+                            onVerticalDrag = { change, dragAmount ->
+                                totalDy += dragAmount
 
-                            if (pressed.size > 1 && mode != 1) {
-                                mode = 2
-                                accumulatedZoom *= event.calculateZoom()
-                                if (accumulatedZoom > PINCH_ZOOM_IN_THRESHOLD) {
-                                    onZoomedToFillChange(true)
-                                } else if (accumulatedZoom < PINCH_ZOOM_OUT_THRESHOLD) {
-                                    onZoomedToFillChange(false)
+                                // Velocity from the accumulated delta, NOT from
+                                // change.position. This surface is inside the player
+                                // being dragged, and the minimize drag moves it down
+                                // one-for-one with the finger - so the pointer's
+                                // position *within this node* barely changes, and a
+                                // tracker fed those positions reported almost no
+                                // velocity. That is why a calm downward swipe never
+                                // tripped the velocity test and minimizing felt like
+                                // it needed to be yanked. The deltas are measured
+                                // against the node's current transform and are
+                                // correct; only the absolute positions are not.
+                                velocityTracker.addPosition(
+                                    change.uptimeMillis,
+                                    Offset(0f, totalDy)
+                                )
+
+                                // Direction is re-read from the accumulated travel
+                                // every event rather than locked in from the first
+                                // delta past touch slop. Locking meant a swipe that
+                                // began with the smallest upward roll of the finger
+                                // - which is most of them - spent the whole gesture
+                                // in the fullscreen lane and minimized nothing.
+                                if (!wentFullscreen &&
+                                    enterFullscreenEnabled &&
+                                    totalDy <= -enterTravelPx
+                                ) {
+                                    wentFullscreen = true
+                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    enterFullscreen?.invoke()
                                 }
-                                event.changes.forEach { if (it.positionChanged()) it.consume() }
-                            } else if (pressed.size == 1 && mode != 2) {
-                                val change = pressed.first()
-                                if (mode == 0) {
-                                    val totalDx = change.position.x - down.position.x
-                                    val totalDy = change.position.y - down.position.y
-                                    if (inDragZone &&
-                                        abs(totalDy) > viewConfiguration.touchSlop &&
-                                        abs(totalDy) > abs(totalDx)
-                                    ) {
-                                        if (inCentreColumn && exitFullscreenEnabled) {
-                                            mode = 3
-                                        } else {
-                                            mode = 1
-                                            level = if (leftSide) {
-                                                activity?.let { currentWindowBrightness(it) } ?: 0.5f
+
+                                if (minimizeDragEnabled && !wentFullscreen) {
+                                    // Upward deltas are safe to forward: the player
+                                    // clamps at fully expanded, so an early wobble
+                                    // costs nothing and the pull still counts.
+                                    onMinimizeDragDelta(dragAmount)
+                                    if (totalDy > 0f) minimizing = true
+                                }
+                                change.consume()
+                            },
+                            onDragEnd = {
+                                if (minimizing) {
+                                    onMinimizeDragRelease(velocityTracker.calculateVelocity().y)
+                                }
+                            },
+                            onDragCancel = { if (minimizing) onMinimizeDragRelease(0f) }
+                        )
+                    }
+                )
+                .then(
+                    if (!fullscreenGesturesEnabled) Modifier
+                    else Modifier.pointerInput(activity, exitFullscreenEnabled) {
+                        val exitTravelPx = EXIT_FULLSCREEN_SWIPE_TRAVEL.toPx()
+                        awaitEachGesture {
+                            val down = awaitFirstDown(requireUnconsumed = false)
+                            val leftSide = down.position.x < size.width / 2f
+                            // Vertical drags only arm in the bottom 70% of the
+                            // surface: a swipe from the top area is almost always
+                            // the user reaching for the notification shade, and
+                            // grabbing it as a brightness/volume drag was a
+                            // constant misfire - the same is true of a downward
+                            // swipe meant to leave fullscreen. Pinch-to-zoom stays
+                            // available everywhere.
+                            val inDragZone = down.position.y >= size.height * 0.3f
+                            // The exit-fullscreen lane, between the two level lanes.
+                            val inCentreColumn = abs(down.position.x - size.width / 2f) <=
+                                size.width * FULLSCREEN_CENTRE_COLUMN_HALF_WIDTH
+                            // 0 = undecided, 1 = vertical level drag, 2 = pinch,
+                            // 3 = downward swipe out of fullscreen
+                            var mode = 0
+                            var accumulatedZoom = 1f
+                            var level = 0f
+                            var exitCommitted = false
+                            // Whether the level is currently pinned to 0 or 1, so
+                            // the rail tick fires once on arrival rather than on
+                            // every frame the finger keeps pushing past the end.
+                            var atRail = false
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                val pressed = event.changes.filter { it.pressed }
+                                if (pressed.isEmpty()) break
+                                // A child (slider, button) claimed the gesture
+                                if (mode == 0 && event.changes.any { it.isConsumed }) break
+
+                                if (pressed.size > 1 && mode != 1) {
+                                    mode = 2
+                                    accumulatedZoom *= event.calculateZoom()
+                                    if (accumulatedZoom > PINCH_ZOOM_IN_THRESHOLD) {
+                                        onZoomedToFillChange(true)
+                                    } else if (accumulatedZoom < PINCH_ZOOM_OUT_THRESHOLD) {
+                                        onZoomedToFillChange(false)
+                                    }
+                                    event.changes.forEach { if (it.positionChanged()) it.consume() }
+                                } else if (pressed.size == 1 && mode != 2) {
+                                    val change = pressed.first()
+                                    if (mode == 0) {
+                                        val totalDx = change.position.x - down.position.x
+                                        val totalDy = change.position.y - down.position.y
+                                        if (inDragZone &&
+                                            abs(totalDy) > viewConfiguration.touchSlop &&
+                                            abs(totalDy) > abs(totalDx)
+                                        ) {
+                                            if (inCentreColumn && exitFullscreenEnabled) {
+                                                mode = 3
                                             } else {
-                                                currentVolumeFraction(audioManager)
+                                                mode = 1
+                                                level = if (leftSide) {
+                                                    activity?.let { currentWindowBrightness(it) } ?: 0.5f
+                                                } else {
+                                                    currentVolumeFraction(audioManager)
+                                                }
                                             }
                                         }
                                     }
-                                }
-                                if (mode == 1) {
-                                    val dy = change.position.y - change.previousPosition.y
-                                    // Dragging ~70% of the surface height sweeps the full range
-                                    val previousLevel = level
-                                    level = (level - dy / (size.height * 0.7f)).coerceIn(0f, 1f)
-                                    if (leftSide) {
-                                        activity?.let { setWindowBrightness(it, level.coerceAtLeast(0.01f)) }
-                                        adjustment = LevelAdjustment.Brightness
-                                    } else {
-                                        setVolumeFraction(audioManager, level)
-                                        adjustment = LevelAdjustment.Volume
+                                    if (mode == 1) {
+                                        val dy = change.position.y - change.previousPosition.y
+                                        // Dragging ~70% of the surface height sweeps the full range
+                                        val previousLevel = level
+                                        level = (level - dy / (size.height * 0.7f)).coerceIn(0f, 1f)
+                                        if (leftSide) {
+                                            activity?.let { setWindowBrightness(it, level.coerceAtLeast(0.01f)) }
+                                            adjustment = LevelAdjustment.Brightness
+                                        } else {
+                                            setVolumeFraction(audioManager, level)
+                                            adjustment = LevelAdjustment.Volume
+                                        }
+                                        // One tick per slat, on both lanes, because
+                                        // the ladder is drawn at exactly this
+                                        // granularity - the tick and the slat
+                                        // lighting are meant to be one event, not
+                                        // two that happen near each other.
+                                        val crossed = (level * levelSegments).toInt() !=
+                                            (previousLevel * levelSegments).toInt()
+                                        if (crossed) {
+                                            haptics.performHapticFeedback(
+                                                HapticFeedbackType.SegmentFrequentTick
+                                            )
+                                        }
+                                        val onRail = level <= 0f || level >= 1f
+                                        if (onRail && !atRail) {
+                                            haptics.performHapticFeedback(
+                                                HapticFeedbackType.GestureThresholdActivate
+                                            )
+                                        }
+                                        atRail = onRail
+                                        adjustmentLevel = level
+                                        adjustPulse++
+                                        change.consume()
+                                    } else if (mode == 3) {
+                                        // Upward in this lane is deliberately
+                                        // nothing: the centre is the way out of
+                                        // fullscreen, not a third level slider.
+                                        if (!exitCommitted &&
+                                            change.position.y - down.position.y >= exitTravelPx
+                                        ) {
+                                            exitCommitted = true
+                                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            exitFullscreen?.invoke()
+                                        }
+                                        change.consume()
                                     }
-                                    // One tick per slat, on both lanes, because
-                                    // the ladder is drawn at exactly this
-                                    // granularity - the tick and the slat
-                                    // lighting are meant to be one event, not
-                                    // two that happen near each other.
-                                    val crossed = (level * levelSegments).toInt() !=
-                                        (previousLevel * levelSegments).toInt()
-                                    if (crossed) {
-                                        haptics.performHapticFeedback(
-                                            HapticFeedbackType.SegmentFrequentTick
-                                        )
-                                    }
-                                    val onRail = level <= 0f || level >= 1f
-                                    if (onRail && !atRail) {
-                                        haptics.performHapticFeedback(
-                                            HapticFeedbackType.GestureThresholdActivate
-                                        )
-                                    }
-                                    atRail = onRail
-                                    adjustmentLevel = level
-                                    adjustPulse++
-                                    change.consume()
-                                } else if (mode == 3) {
-                                    // Upward in this lane is deliberately
-                                    // nothing: the centre is the way out of
-                                    // fullscreen, not a third level slider.
-                                    if (!exitCommitted &&
-                                        change.position.y - down.position.y >= exitTravelPx
-                                    ) {
-                                        exitCommitted = true
-                                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        exitFullscreen?.invoke()
-                                    }
-                                    change.consume()
                                 }
                             }
-                        }
-                        // Persist once the finger lifts, not on every frame of
-                        // the drag. Volume is deliberately not stored: it is
-                        // the system STREAM_MUSIC level, which already carries
-                        // over on its own.
-                        if (mode == 1 && leftSide) {
-                            themePreferences.setVideoBrightness(level)
+                            // Persist once the finger lifts, not on every frame of
+                            // the drag. Volume is deliberately not stored: it is
+                            // the system STREAM_MUSIC level, which already carries
+                            // over on its own.
+                            if (mode == 1 && leftSide) {
+                                themePreferences.setVideoBrightness(level)
+                            }
                         }
                     }
-                }
+                )
+        ) {
+            content()
+
+            // "2x" pill shown at the top while the hold-to-speed-up is active
+            SpeedBoostBadge(
+                visible = isBoosting,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 24.dp)
             )
-    ) {
-        content()
 
-        // "2x" pill shown at the top while the hold-to-speed-up is active
-        SpeedBoostBadge(
-            visible = isBoosting,
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .padding(top = 24.dp)
-        )
+            SeekFeedbackBadge(
+                visible = side < 0,
+                seconds = seconds,
+                forward = false,
+                modifier = Modifier.align(Alignment.CenterStart)
+            )
+            SeekFeedbackBadge(
+                visible = side > 0,
+                seconds = seconds,
+                forward = true,
+                modifier = Modifier.align(Alignment.CenterEnd)
+            )
 
-        SeekFeedbackBadge(
-            visible = side < 0,
-            seconds = seconds,
-            forward = false,
-            modifier = Modifier.align(Alignment.CenterStart)
-        )
-        SeekFeedbackBadge(
-            visible = side > 0,
-            seconds = seconds,
-            forward = true,
-            modifier = Modifier.align(Alignment.CenterEnd)
-        )
-
-        // One per lane rather than one that moves, so switching sides mid-video
-        // fades the old pill out on its own edge instead of flying it across.
-        PlayerLevelIndicator(
-            kind = LevelAdjustment.Brightness,
-            level = adjustmentLevel,
-            segments = levelSegments,
-            visible = adjustment == LevelAdjustment.Brightness,
-            modifier = Modifier
-                .align(Alignment.CenterStart)
-                .padding(horizontal = 48.dp)
-        )
-        PlayerLevelIndicator(
-            kind = LevelAdjustment.Volume,
-            level = adjustmentLevel,
-            segments = levelSegments,
-            visible = adjustment == LevelAdjustment.Volume,
-            modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .padding(horizontal = 48.dp)
-        )
+            // One per lane rather than one that moves, so switching sides mid-video
+            // fades the old pill out on its own edge instead of flying it across.
+            PlayerLevelIndicator(
+                kind = LevelAdjustment.Brightness,
+                level = adjustmentLevel,
+                segments = levelSegments,
+                visible = adjustment == LevelAdjustment.Brightness,
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .padding(horizontal = 48.dp)
+            )
+            PlayerLevelIndicator(
+                kind = LevelAdjustment.Volume,
+                level = adjustmentLevel,
+                segments = levelSegments,
+                visible = adjustment == LevelAdjustment.Volume,
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .padding(horizontal = 48.dp)
+            )
+        }
     }
 }
 

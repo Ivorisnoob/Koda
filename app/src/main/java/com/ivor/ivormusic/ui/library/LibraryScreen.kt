@@ -22,8 +22,10 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -37,7 +39,6 @@ import androidx.compose.material.icons.automirrored.rounded.List
 import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material.icons.rounded.*
-import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -100,7 +101,14 @@ fun LibraryContent(
     onDownloadsClick: () -> Unit = {},
     initialArtist: String? = null,
     onInitialArtistConsumed: () -> Unit = {},
-    onStatsClick: () -> Unit = {}
+    onStatsClick: () -> Unit = {},
+    /**
+     * Hoisted by HomeScreen for the main route's All tab, which is the one the
+     * tab opens on. The other sub-tabs and the playlist/artist/album routes keep
+     * their own states, since each is a different list and sharing one would
+     * restore another list's index.
+     */
+    allSongsListState: LazyListState = rememberLazyListState()
 ) {
     // Navigation State
     var currentRoute by rememberSaveable { mutableStateOf(LibraryRoute.Main) }
@@ -166,7 +174,8 @@ fun LibraryContent(
                     },
                     onNavigateToStats = {
                         currentRoute = LibraryRoute.Stats
-                    }
+                    },
+                    allSongsListState = allSongsListState
                 )
             }
             LibraryRoute.Playlist -> {
@@ -269,7 +278,8 @@ fun LibraryMainScreen(
     onNavigateToPlaylist: (PlaylistDisplayItem) -> Unit,
     onNavigateToArtist: (String) -> Unit,
     onNavigateToAlbum: (String, List<Song>) -> Unit,
-    onNavigateToStats: () -> Unit
+    onNavigateToStats: () -> Unit,
+    allSongsListState: LazyListState = rememberLazyListState()
 ) {
     val userPlaylists by viewModel.userPlaylists.collectAsState()
     val localPlaylistIds by viewModel.localPlaylistIds.collectAsState()
@@ -402,7 +412,12 @@ fun LibraryMainScreen(
 
         // --- Main Content ---
         ExpressivePullToRefresh(
-            isRefreshing = isLoading,
+            // Unlike the video screens this one never doubled up, because the
+            // tab content has no loading state of its own. The problem was the
+            // other way round: on first load the pull spinner span over a
+            // completely blank tab. It now means only "refreshing what is
+            // already here", and the empty first load gets skeletons below.
+            isRefreshing = isLoading && librarySongs.isNotEmpty(),
             onRefresh = { viewModel.refresh() }
         ) {
             // Using AnimatedContent for tab switching (expressive motion physics)
@@ -419,7 +434,13 @@ fun LibraryMainScreen(
                 modifier = Modifier.fillMaxSize()
             ) { tab ->
                 when (tab) {
-                    LibraryTab.All -> {
+                    LibraryTab.All -> if (isLoading && sortedSongs.isEmpty()) {
+                        // First load over an empty library: placeholder rows
+                        // rather than a bare pull spinner over nothing.
+                        Column(modifier = Modifier.fillMaxSize().padding(top = 8.dp)) {
+                            TrackSkeletonList()
+                        }
+                    } else {
                         AllSongsList(
                             songs = sortedSongs,
                             likedSongs = likedSongs,
@@ -434,7 +455,8 @@ fun LibraryMainScreen(
                             onLikedSongsClick = {
                                 onNavigateToPlaylist(PlaylistDisplayItem("Liked Songs", "LM", "You", likedSongs.size, null))
                             },
-                            contentPadding = contentPadding
+                            contentPadding = contentPadding,
+                            listState = allSongsListState
                         )
                     }
                     LibraryTab.Playlists -> {
@@ -565,12 +587,14 @@ fun AllSongsList(
     onPlayQueue: (List<Song>, Song?) -> Unit,
     onDownloadsClick: () -> Unit,
     onLikedSongsClick: () -> Unit,
-    contentPadding: PaddingValues
+    contentPadding: PaddingValues,
+    listState: LazyListState = rememberLazyListState()
 ) {
     val likedIds = remember(likedSongs) { likedSongs.map { it.id }.toSet() }
     val downloadedIds = remember(downloadedSongs) { downloadedSongs.map { it.id }.toSet() }
 
     LazyColumn(
+        state = listState,
         verticalArrangement = Arrangement.spacedBy(8.dp),
         contentPadding = PaddingValues(
             top = 8.dp,

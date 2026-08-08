@@ -1051,7 +1051,7 @@ class MusicService : MediaLibraryService() {
                         .setMediaMetadata(MediaMetadata.Builder()
                             .setTitle(playlist.name)
                             .setSubtitle(playlist.uploaderName)
-                            .setArtworkUri(Uri.parse(playlist.thumbnailUrl ?: ""))
+                            .setArtworkUri(playlist.thumbnailUrl.toArtworkUri())
                             .setIsBrowsable(true)
                             .setIsPlayable(false)
                             .build())
@@ -1073,6 +1073,17 @@ class MusicService : MediaLibraryService() {
         }
     }
 
+    /**
+     * A usable artwork [Uri], or null when there is no artwork.
+     *
+     * `Uri.parse("")` yields an empty Uri rather than "no artwork", and a media
+     * browser handed one tries to load it and fails. Android Auto can fail the
+     * whole item on that, not just the picture, so a missing thumbnail has to
+     * mean the field is absent.
+     */
+    private fun String?.toArtworkUri(): Uri? =
+        this?.takeIf { it.isNotBlank() }?.let(Uri::parse)
+
     private fun mapSongToMediaItem(song: Song): MediaItem {
         return MediaItem.Builder()
             .setMediaId(song.id)
@@ -1080,7 +1091,7 @@ class MusicService : MediaLibraryService() {
                 .setTitle(song.title)
                 .setArtist(song.artist)
                 .setAlbumTitle(song.album)
-                .setArtworkUri(Uri.parse(song.thumbnailUrl ?: ""))
+                .setArtworkUri(song.thumbnailUrl.toArtworkUri())
                 .setIsBrowsable(false)
                 .setIsPlayable(true)
                 .build())

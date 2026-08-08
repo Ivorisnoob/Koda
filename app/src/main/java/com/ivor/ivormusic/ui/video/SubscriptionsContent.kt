@@ -25,8 +25,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -71,7 +73,10 @@ import coil.compose.AsyncImage
 import com.ivor.ivormusic.data.SubscribedChannel
 import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.data.SubscriptionGroup
+import com.ivor.ivormusic.ui.components.ChannelRowSkeleton
 import com.ivor.ivormusic.ui.components.ExpressivePullToRefresh
+import com.ivor.ivormusic.ui.components.SkeletonList
+import com.ivor.ivormusic.ui.components.VideoCardSkeleton
 import com.ivor.ivormusic.ui.home.HomeViewModel
 
 /**
@@ -97,7 +102,14 @@ fun SubscriptionsContent(
     onVideoClick: (VideoItem) -> Unit,
     onLoginClick: () -> Unit,
     contentPadding: PaddingValues,
-    onManageSubscriptions: () -> Unit = {}
+    onManageSubscriptions: () -> Unit = {},
+    /**
+     * Hoisted by HomeScreen for the tab's root feed only. The channel list and
+     * the channel drill-in below keep their own states: they are reached
+     * deliberately and popped with Back, so the tab button scrolling the feed
+     * underneath them would act on a list the user cannot see.
+     */
+    feedListState: LazyListState = rememberLazyListState()
 ) {
     val feed by viewModel.subscriptionFeed.collectAsState()
     val isFeedLoading by viewModel.isSubscriptionFeedLoading.collectAsState()
@@ -331,7 +343,10 @@ fun SubscriptionsContent(
         // Full channel list
         showChannelList -> {
             ExpressivePullToRefresh(
-                isRefreshing = isChannelsLoading,
+                // The pull spinner only ever means "refreshing what is already
+                // on screen". First load is the skeleton's job below, and
+                // driving both off the same flag runs two indicators at once.
+                isRefreshing = isChannelsLoading && channels.isNotEmpty(),
                 onRefresh = { viewModel.loadSubscriptions(force = true) },
                 modifier = Modifier.fillMaxSize()
             ) {
@@ -380,15 +395,14 @@ fun SubscriptionsContent(
 
                     if (isChannelsLoading && channels.isEmpty()) {
                         item {
-                            Box(
-                                Modifier.fillMaxWidth().height(200.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                LoadingIndicator(
-                                    modifier = Modifier.size(48.dp),
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                            }
+                            // A list of rows is a known shape, so it gets
+                            // placeholders rather than a spinner: nothing jumps
+                            // when the channels land.
+                            SkeletonList(
+                                count = 7,
+                                modifier = Modifier.padding(horizontal = 16.dp),
+                                spacing = 8.dp
+                            ) { alpha -> ChannelRowSkeleton(alpha = alpha) }
                         }
                     } else if (channels.isEmpty()) {
                         item {
@@ -422,7 +436,9 @@ fun SubscriptionsContent(
         // Default: subscriptions feed with the channel avatar rail
         else -> {
             ExpressivePullToRefresh(
-                isRefreshing = isFeedLoading,
+                // As above: the pull spinner covers refreshes over existing
+                // videos, the skeleton covers the empty first load.
+                isRefreshing = isFeedLoading && feed.isNotEmpty(),
                 onRefresh = {
                     viewModel.loadSubscriptionFeed(force = true)
                     viewModel.loadSubscriptions(force = true)
@@ -430,6 +446,7 @@ fun SubscriptionsContent(
                 modifier = Modifier.fillMaxSize()
             ) {
                 LazyColumn(
+                    state = feedListState,
                     modifier = Modifier
                         .fillMaxSize()
                         .background(backgroundColor)
@@ -613,15 +630,10 @@ fun SubscriptionsContent(
 
                     if (isFeedLoading && feed.isEmpty()) {
                         item {
-                            Box(
-                                Modifier.fillMaxWidth().height(200.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                LoadingIndicator(
-                                    modifier = Modifier.size(48.dp),
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                            }
+                            SkeletonList(
+                                count = 3,
+                                modifier = Modifier.padding(horizontal = 16.dp)
+                            ) { alpha -> VideoCardSkeleton(alpha = alpha) }
                         }
                     } else if (feed.isEmpty()) {
                         item {

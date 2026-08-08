@@ -123,21 +123,18 @@ dependencies {
     implementation(libs.androidx.media3.exoplayer.hls)
     implementation(libs.androidx.media3.ui)
     implementation(libs.androidx.media3.session)
-    implementation(libs.accompanist.permissions)
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.compose.material.icons.extended)
     implementation(libs.coil.compose)
     implementation(libs.androidx.graphics.shapes)
     implementation(libs.androidx.ui.text.google.fonts)
-    implementation("androidx.palette:palette-ktx:1.0.0")
+    implementation(libs.androidx.palette.ktx)
 
     // YouTube Music Integration
     implementation(libs.newpipe.extractor)
     implementation(libs.okhttp)
-    implementation(libs.ktor.client.okhttp)
-    implementation(libs.ktor.client.content.negotiation)
-    implementation(libs.ktor.serialization.kotlinx.json)
+    implementation(libs.kotlinx.serialization.json)
     implementation(libs.androidx.security.crypto)
     implementation(libs.kotlinx.coroutines.guava)
 

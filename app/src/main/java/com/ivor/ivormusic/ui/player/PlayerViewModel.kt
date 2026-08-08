@@ -852,7 +852,15 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                     androidx.media3.common.MediaMetadata.Builder()
                         .setTitle(song.title)
                         .setArtist(song.artist)
-                        .setArtworkUri(android.net.Uri.parse(song.highResThumbnailUrl ?: song.thumbnailUrl ?: ""))
+                        // Absent rather than an empty Uri when there is no
+                        // artwork: Uri.parse("") is a valid-looking Uri that
+                        // every consumer then fails to load, and this metadata
+                        // feeds the notification and the lock screen.
+                        .setArtworkUri(
+                            (song.highResThumbnailUrl ?: song.thumbnailUrl)
+                                ?.takeIf { it.isNotBlank() }
+                                ?.let(android.net.Uri::parse)
+                        )
                         .build()
                 )
                 .build()

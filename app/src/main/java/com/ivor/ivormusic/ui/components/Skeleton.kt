@@ -7,12 +7,23 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Shape
@@ -84,4 +95,162 @@ fun SkeletonTextLine(
         shape = RoundedCornerShape(height / 2),
         alpha = alpha
     )
+}
+
+/**
+ * Stand-in for a `VideoCard`: 16:9 thumbnail, then a 40dp channel avatar beside
+ * a two-line title and one line of metadata. Mirrors the real card's shape,
+ * colors and padding so the swap does not reflow.
+ */
+@Composable
+fun VideoCardSkeleton(
+    modifier: Modifier = Modifier,
+    alpha: Float = rememberSkeletonAlpha()
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        tonalElevation = 1.dp
+    ) {
+        Column {
+            SkeletonBox(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(16f / 9f),
+                shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
+                alpha = alpha
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                SkeletonBox(
+                    modifier = Modifier.size(40.dp),
+                    shape = CircleShape,
+                    alpha = alpha
+                )
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    // Two title lines, the second short, the way a wrapped
+                    // title actually lands.
+                    SkeletonBox(
+                        modifier = Modifier.fillMaxWidth().height(14.dp),
+                        shape = RoundedCornerShape(7.dp),
+                        alpha = alpha
+                    )
+                    SkeletonBox(
+                        modifier = Modifier.fillMaxWidth(0.6f).height(14.dp),
+                        shape = RoundedCornerShape(7.dp),
+                        alpha = alpha
+                    )
+                    SkeletonTextLine(width = 120.dp, height = 11.dp, alpha = alpha)
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Stand-in for a `ChannelRow`: a 48dp avatar beside a name and a subscriber
+ * count. Also the right shape for any other avatar-plus-two-lines row.
+ */
+@Composable
+fun ChannelRowSkeleton(
+    modifier: Modifier = Modifier,
+    alpha: Float = rememberSkeletonAlpha()
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        tonalElevation = 1.dp
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            SkeletonBox(
+                modifier = Modifier.size(48.dp),
+                shape = CircleShape,
+                alpha = alpha
+            )
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                SkeletonTextLine(width = 160.dp, height = 14.dp, alpha = alpha)
+                SkeletonTextLine(width = 96.dp, height = 11.dp, alpha = alpha)
+            }
+        }
+    }
+}
+
+/**
+ * Stand-in for a `PlaylistRow`: a 120dp-wide 16:9 thumbnail beside a title and
+ * a count.
+ */
+@Composable
+fun PlaylistRowSkeleton(
+    modifier: Modifier = Modifier,
+    alpha: Float = rememberSkeletonAlpha()
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        tonalElevation = 1.dp
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            SkeletonBox(
+                modifier = Modifier
+                    .width(120.dp)
+                    .aspectRatio(16f / 9f),
+                shape = RoundedCornerShape(10.dp),
+                alpha = alpha
+            )
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                SkeletonTextLine(width = 150.dp, height = 14.dp, alpha = alpha)
+                SkeletonTextLine(width = 80.dp, height = 11.dp, alpha = alpha)
+            }
+        }
+    }
+}
+
+/**
+ * A run of identical placeholders, spaced like the list they stand in for.
+ *
+ * Takes the whole run rather than one row because these are emitted from a
+ * single `LazyColumn` item: the placeholder count is fixed, so there is nothing
+ * for lazy layout to save, and one item keeps the pulse hoisted once for the
+ * whole group instead of per row.
+ */
+@Composable
+fun SkeletonList(
+    count: Int,
+    modifier: Modifier = Modifier,
+    spacing: Dp = 16.dp,
+    row: @Composable (alpha: Float) -> Unit
+) {
+    val alpha = rememberSkeletonAlpha()
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(spacing)
+    ) {
+        repeat(count) { row(alpha) }
+    }
 }

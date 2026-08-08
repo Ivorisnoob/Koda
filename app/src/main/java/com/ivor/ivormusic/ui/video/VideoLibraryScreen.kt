@@ -26,9 +26,11 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -81,6 +83,8 @@ import coil.compose.AsyncImage
 import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.data.VideoPlaylist
 import com.ivor.ivormusic.ui.components.ExpressivePullToRefresh
+import com.ivor.ivormusic.ui.components.PlaylistRowSkeleton
+import com.ivor.ivormusic.ui.components.SkeletonList
 import com.ivor.ivormusic.ui.home.HomeViewModel
 
 /** Internal navigation state of the Library tab. */
@@ -100,7 +104,13 @@ fun VideoLibraryContent(
     viewModel: HomeViewModel,
     onVideoClick: (VideoItem) -> Unit,
     onLoginClick: () -> Unit,
-    contentPadding: PaddingValues
+    contentPadding: PaddingValues,
+    /**
+     * Hoisted by HomeScreen for the tab's root page only. History and playlist
+     * pages are drill-ins popped with Back, so scrolling the root beneath them
+     * would act on a list the user cannot see.
+     */
+    rootListState: LazyListState = rememberLazyListState()
 ) {
     val isYouTubeConnected by viewModel.isYouTubeConnected.collectAsState()
     val historyVideos by viewModel.historyVideos.collectAsState()
@@ -146,6 +156,7 @@ fun VideoLibraryContent(
                 },
                 onCreatePlaylist = { name -> viewModel.createVideoPlaylist(name) },
                 onDeletePlaylist = { playlist -> viewModel.deleteVideoPlaylist(playlist.playlistId) },
+                listState = rootListState,
                 onRefresh = {
                     viewModel.loadYouTubeHistory()
                     if (isYouTubeConnected) viewModel.loadVideoPlaylists(force = true)
@@ -193,7 +204,8 @@ private fun LibraryRoot(
     onCreatePlaylist: (String) -> Unit,
     onDeletePlaylist: (VideoPlaylist) -> Unit,
     onRefresh: () -> Unit,
-    contentPadding: PaddingValues
+    contentPadding: PaddingValues,
+    listState: LazyListState = rememberLazyListState()
 ) {
     var showCreateDialog by remember { mutableStateOf(false) }
 
@@ -208,11 +220,14 @@ private fun LibraryRoot(
     }
 
     ExpressivePullToRefresh(
-        isRefreshing = isPlaylistsLoading,
+        // The pull spinner only represents a refresh over existing playlists;
+        // the empty first load is the skeleton's job below.
+        isRefreshing = isPlaylistsLoading && playlists.isNotEmpty(),
         onRefresh = onRefresh,
         modifier = Modifier.fillMaxSize()
     ) {
         LazyColumn(
+            state = listState,
             modifier = Modifier
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)
@@ -313,17 +328,11 @@ private fun LibraryRoot(
                 item { LibraryLoginCard(onLoginClick = onLoginClick) }
             } else if (isPlaylistsLoading && playlists.isEmpty()) {
                 item {
-                    Box(
-                        Modifier
-                            .fillMaxWidth()
-                            .height(120.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        LoadingIndicator(
-                            modifier = Modifier.size(40.dp),
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
+                    SkeletonList(
+                        count = 4,
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        spacing = 8.dp
+                    ) { alpha -> PlaylistRowSkeleton(alpha = alpha) }
                 }
             } else if (playlists.isEmpty()) {
                 item {

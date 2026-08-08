@@ -31,13 +31,14 @@ import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Login
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import com.ivor.ivormusic.ui.components.ExpressivePullToRefresh
+import com.ivor.ivormusic.ui.components.SkeletonList
+import com.ivor.ivormusic.ui.components.VideoCardSkeleton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -134,7 +135,10 @@ fun VideoHistoryContent(
     }
 
     ExpressivePullToRefresh(
-        isRefreshing = isHistoryLoading,
+        // The pull spinner only represents a refresh over existing history; the
+        // empty first load is the skeleton's job below. Bound to the same flag
+        // they both run at once.
+        isRefreshing = isHistoryLoading && historyVideos.isNotEmpty(),
         onRefresh = { viewModel.loadYouTubeHistory() },
         modifier = Modifier.fillMaxSize()
     ) {
@@ -167,12 +171,10 @@ fun VideoHistoryContent(
             
             if (isHistoryLoading && historyVideos.isEmpty()) {
                 item {
-                    Box(Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
-                         LoadingIndicator(
-                             modifier = Modifier.size(48.dp),
-                             color = MaterialTheme.colorScheme.primary
-                         )
-                    }
+                    SkeletonList(
+                        count = 3,
+                        modifier = Modifier.padding(horizontal = 16.dp)
+                    ) { alpha -> VideoCardSkeleton(alpha = alpha) }
                 }
             } else if (historyVideos.isEmpty()) {
                  item {

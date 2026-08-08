@@ -65,7 +65,7 @@ graph TD
     C --> F[ExpressiveShapes]
     C --> G[Typography]
     C --> H[NavHost: onboarding, home, settings, downloads, stats, update]
-    H --> I[Home tabs via AnimatedContent + FloatingPillNavBar]
+    H --> I[Home tabs via AnimatedContent + HorizontalFloatingToolbar]
     C --> J[ExpandablePlayer overlay]
     C --> K[VideoPlayerOverlay overlay]
 
