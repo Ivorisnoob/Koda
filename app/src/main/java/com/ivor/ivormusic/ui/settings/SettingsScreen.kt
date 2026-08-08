@@ -2,12 +2,16 @@ package com.ivor.ivormusic.ui.settings
 
 import android.content.Intent
 import android.net.Uri
-import androidx.activity.compose.BackHandler
+import androidx.activity.BackEventCompat
+import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -129,6 +133,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -144,7 +149,12 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.asComposePath
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.util.lerp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
@@ -171,6 +181,7 @@ import com.ivor.ivormusic.data.YouTubeAuthUtils
 import com.ivor.ivormusic.ui.auth.YouTubeAuthDialog
 import com.ivor.ivormusic.data.PlayerStyle
 import com.ivor.ivormusic.ui.theme.ThemeMode
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -337,11 +348,104 @@ fun SettingsScreen(
     var page by remember { mutableStateOf(SettingsPage.HUB) }
     var searchQuery by remember { mutableStateOf("") }
 
-    // Back unwinds one step at a time: an open page returns to the hub, then a
-    // live query clears, and only then does Settings close. The query survives
-    // opening a result on purpose, so coming back lands on the same list.
-    BackHandler(enabled = page != SettingsPage.HUB || searchQuery.isNotEmpty()) {
-        if (page != SettingsPage.HUB) page = SettingsPage.HUB else searchQuery = ""
+    /**
+     * Back unwinds one step at a time: an open page returns to the hub, then a
+     * live query clears, and only then does Settings close. The query survives
+     * opening a result on purpose, so coming back lands on the same list.
+     *
+     * The first of those steps is previewed while the finger is still down.
+     * The manifest has opted into the modern back API for a long time, so a
+     * plain `BackHandler` here was not neutral: it swallowed the gesture and
+     * left the platform with nothing to draw, which is worse than never having
+     * opted in.
+     *
+     * `peel` runs 0..2 and is deliberately one continuous value rather than a
+     * preview animation plus a separate exit. 0..1 is the drag, 1..2 carries
+     * the page the rest of the way off after the user commits, so releasing
+     * continues the movement instead of snapping home to replay it.
+     *
+     * Clearing the query is not previewed. Nothing leaves the screen for that
+     * step - the hub restates itself - so there is nothing to draw behind, and
+     * a page-shaped animation over a list that is staying put would be a lie
+     * about what is happening.
+     */
+    val peel = remember { Animatable(0f) }
+    var isPeeling by remember { mutableStateOf(false) }
+    var peelCommitted by remember { mutableStateOf(false) }
+    // +1 when the finger came from the left edge, so the page leaves the way
+    // the hand is already moving. Physical, so it needs no RTL adjustment.
+    var peelSign by remember { mutableFloatStateOf(1f) }
+    var containerWidth by remember { mutableFloatStateOf(0f) }
+
+    PredictiveBackHandler(enabled = page != SettingsPage.HUB || searchQuery.isNotEmpty()) { events ->
+        val hasPage = page != SettingsPage.HUB
+        var dragged = false
+        try {
+            events.collect { event ->
+                if (!hasPage) return@collect
+                dragged = true
+                isPeeling = true
+                peelSign = if (event.swipeEdge == BackEventCompat.EDGE_LEFT) 1f else -1f
+                peel.snapTo(event.progress.coerceIn(0f, 1f))
+            }
+            when {
+                // Committed a real drag: finish the move it started.
+                hasPage && dragged -> {
+                    peelCommitted = true
+                    peel.animateTo(
+                        targetValue = 2f,
+                        animationSpec = spring(
+                            dampingRatio = Spring.DampingRatioNoBouncy,
+                            stiffness = Spring.StiffnessMedium
+                        )
+                    )
+                    page = SettingsPage.HUB
+                }
+                // A button press, or three-button navigation: no gesture to
+                // continue from, so the ordinary transition is still the right
+                // one and the peel stays out of it entirely.
+                hasPage -> page = SettingsPage.HUB
+                else -> searchQuery = ""
+            }
+        } catch (cancelled: CancellationException) {
+            // The user changed their mind, and this is the case the feature
+            // lives or dies on: a preview of leaving that does not come back
+            // cleanly is worse than no preview at all.
+            //
+            // The spring has to be launched from the screen's own scope. This
+            // coroutine is the one the system has just cancelled, so an
+            // animation started here would be dead on arrival and the page
+            // would stay stranded mid-peel.
+            // Cleared here as well as after a swap: a second gesture can start
+            // while the first is still finishing, and a commit flag left set on
+            // a page that came back would make the next ordinary back vanish it
+            // with no animation at all.
+            peelCommitted = false
+            if (dragged) {
+                coroutineScope.launch {
+                    peel.animateTo(
+                        targetValue = 0f,
+                        animationSpec = spring(
+                            dampingRatio = Spring.DampingRatioNoBouncy,
+                            stiffness = Spring.StiffnessMediumLow
+                        )
+                    )
+                    isPeeling = false
+                }
+            } else {
+                isPeeling = false
+            }
+        }
+    }
+
+    // Put the peel away once the page layer has gone, ready for the next
+    // gesture. Invisible: there is nothing left on top to snap.
+    LaunchedEffect(page) {
+        if (page == SettingsPage.HUB && peelCommitted) {
+            peel.snapTo(0f)
+            peelCommitted = false
+            isPeeling = false
+        }
     }
 
     // Dialog state for YouTube auth
@@ -398,55 +502,131 @@ fun SettingsScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
             .padding(contentPadding)
+            .onSizeChanged { containerWidth = it.width.toFloat() }
     ) {
-        AnimatedContent(
-            targetState = page,
-            transitionSpec = {
-                // Going deeper slides in from the trailing edge; coming back
-                // reverses it, so the hierarchy stays legible.
-                val slide = spring<IntOffset>(
-                    dampingRatio = Spring.DampingRatioNoBouncy,
-                    stiffness = Spring.StiffnessMediumLow
-                )
-                if (targetState != SettingsPage.HUB) {
-                    (slideInHorizontally(slide) { it / 5 } + fadeIn(tween(200))) togetherWith
-                        (fadeOut(tween(130)) + slideOutHorizontally(slide) { -it / 12 })
-                } else {
-                    (slideInHorizontally(slide) { -it / 5 } + fadeIn(tween(200))) togetherWith
-                        (fadeOut(tween(130)) + slideOutHorizontally(slide) { it / 12 })
-                }
-            },
-            label = "settingsPage"
-        ) { currentPage ->
-            when (currentPage) {
-                SettingsPage.HUB -> SettingsHub(
-                    searchQuery = searchQuery,
-                    onSearchQueryChange = { searchQuery = it },
-                    searchEntries = searchEntries,
-                    isLoggedIn = isLoggedIn,
-                    accountRefreshKey = accountRefreshKey,
-                    sessionManager = sessionManager,
-                    currentThemeMode = currentThemeMode,
-                    colorPalette = colorPalette,
-                    playerStyle = playerStyle,
-                    musicQualityWifi = musicQualityWifi,
-                    videoQualityWifi = videoQualityWifi,
-                    localOnlyMode = localOnlyMode,
-                    videoMode = videoMode,
-                    subscriptionSource = subscriptionSource,
-                    cacheEnabled = cacheEnabled,
-                    currentCacheSize = currentCacheSize,
-                    liveDownloadUpdates = liveDownloadUpdates,
-                    livePlaybackUpdates = livePlaybackUpdates,
-                    canPostPromoted = canPostPromoted,
-                    loadLocalSongs = loadLocalSongs,
-                    excludedFolderCount = excludedFolders.size,
-                    onOpenPage = { page = it },
-                    onShowAbout = { showAboutDialog = true },
-                    onBackClick = onBackClick
-                )
+        val dragFraction = peel.value.coerceIn(0f, 1f)
+        val leavingFraction = (peel.value - 1f).coerceIn(0f, 1f)
 
-                SettingsPage.ACCOUNT -> AccountSettingsPage(
+        // The hub is composed underneath whatever page is open, rather than
+        // being one branch of the AnimatedContent below. That is what makes a
+        // preview possible at all - a page cannot peel away to reveal
+        // something that is not composed - and it settles a smaller annoyance
+        // on the way past: the hub's scroll position used to be discarded
+        // every time a page was opened, because the hub left composition.
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .then(
+                    if (isPeeling) {
+                        Modifier.graphicsLayer {
+                            // Comes forward as the page leaves, so the two read
+                            // as one stack rather than two slides.
+                            val scale = lerp(0.94f, 1f, dragFraction)
+                            scaleX = scale
+                            scaleY = scale
+                            translationX =
+                                -peelSign * containerWidth * 0.08f * (1f - dragFraction)
+                        }
+                    } else {
+                        Modifier
+                    }
+                )
+                // A composed hub behind a page is one whose rows are still
+                // tappable through it and still read out by TalkBack.
+                .coveredBy(page != SettingsPage.HUB)
+        ) {
+            SettingsHub(
+                searchQuery = searchQuery,
+                onSearchQueryChange = { searchQuery = it },
+                searchEntries = searchEntries,
+                isLoggedIn = isLoggedIn,
+                accountRefreshKey = accountRefreshKey,
+                sessionManager = sessionManager,
+                currentThemeMode = currentThemeMode,
+                colorPalette = colorPalette,
+                playerStyle = playerStyle,
+                musicQualityWifi = musicQualityWifi,
+                videoQualityWifi = videoQualityWifi,
+                localOnlyMode = localOnlyMode,
+                videoMode = videoMode,
+                subscriptionSource = subscriptionSource,
+                cacheEnabled = cacheEnabled,
+                currentCacheSize = currentCacheSize,
+                liveDownloadUpdates = liveDownloadUpdates,
+                livePlaybackUpdates = livePlaybackUpdates,
+                canPostPromoted = canPostPromoted,
+                loadLocalSongs = loadLocalSongs,
+                excludedFolderCount = excludedFolders.size,
+                onOpenPage = { page = it },
+                onShowAbout = { showAboutDialog = true },
+                onBackClick = onBackClick
+            )
+        }
+
+        // The open page, riding on top of the hub.
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .then(
+                    if (isPeeling) {
+                        Modifier.graphicsLayer {
+                            val scale = lerp(1f, 0.90f, dragFraction)
+                            scaleX = scale
+                            scaleY = scale
+                            translationX = peelSign * containerWidth *
+                                (0.10f * dragFraction + 0.95f * leavingFraction)
+                            alpha = 1f - leavingFraction
+                            // Lifts off the hub as a card rather than a slab.
+                            // Driven by a value the system clamps to 0..1, so
+                            // it cannot undershoot into a negative corner.
+                            shape = RoundedCornerShape(lerp(0f, 28f, dragFraction).dp)
+                            clip = true
+                        }
+                    } else {
+                        Modifier
+                    }
+                )
+        ) {
+            AnimatedContent(
+                targetState = page,
+                transitionSpec = {
+                    when {
+                        // The finger already performed this exit. Animating it
+                        // again would snap the page back to full size to replay
+                        // the move it just made.
+                        peelCommitted -> EnterTransition.None togetherWith ExitTransition.None
+                        // Going deeper slides in from the trailing edge; coming
+                        // back reverses it, so the hierarchy stays legible.
+                        targetState != SettingsPage.HUB -> {
+                            val slide = spring<IntOffset>(
+                                dampingRatio = Spring.DampingRatioNoBouncy,
+                                stiffness = Spring.StiffnessMediumLow
+                            )
+                            (slideInHorizontally(slide) { it / 5 } + fadeIn(tween(200))) togetherWith
+                                (fadeOut(tween(130)) + slideOutHorizontally(slide) { -it / 12 })
+                        }
+                        // Returning by button. The page now carries the whole
+                        // movement, where it used to share it with a hub that
+                        // slid in from the leading edge - the hub is underneath
+                        // and staying put, so a token 1/12 nudge would read as
+                        // the page dissolving rather than leaving.
+                        else -> {
+                            val slide = spring<IntOffset>(
+                                dampingRatio = Spring.DampingRatioNoBouncy,
+                                stiffness = Spring.StiffnessMediumLow
+                            )
+                            fadeIn(tween(200)) togetherWith
+                                (fadeOut(tween(180)) + slideOutHorizontally(slide) { it / 3 })
+                        }
+                    }
+                },
+                label = "settingsPage"
+            ) { currentPage ->
+                when (currentPage) {
+                    // Nothing on top: the hub below is the screen.
+                    SettingsPage.HUB -> Unit
+
+                    SettingsPage.ACCOUNT -> AccountSettingsPage(
                     isLoggedIn = isLoggedIn,
                     accountRefreshKey = accountRefreshKey,
                     sessionManager = sessionManager,
@@ -560,11 +740,12 @@ fun SettingsScreen(
                     onBack = { page = SettingsPage.HUB }
                 )
 
-                SettingsPage.ADVANCED -> AdvancedSettingsPage(
-                    manualScanEnabled = manualScanEnabled,
-                    onManualScanEnabledToggle = onManualScanEnabledToggle,
-                    onBack = { page = SettingsPage.HUB }
-                )
+                    SettingsPage.ADVANCED -> AdvancedSettingsPage(
+                        manualScanEnabled = manualScanEnabled,
+                        onManualScanEnabledToggle = onManualScanEnabledToggle,
+                        onBack = { page = SettingsPage.HUB }
+                    )
+                }
             }
         }
     }
@@ -673,6 +854,31 @@ fun SettingsScreen(
         )
     }
 }
+
+/**
+ * Makes a layer inert while something opaque sits on top of it.
+ *
+ * The hub stays composed behind an open page so that predictive back has
+ * something to reveal, and a composed layer is a live one: its rows still take
+ * taps that fall through gaps in the page above, and TalkBack still reads them
+ * out as if they were on screen. Both are invisible in normal use and both are
+ * wrong.
+ */
+private fun Modifier.coveredBy(covered: Boolean): Modifier =
+    if (!covered) {
+        this
+    } else {
+        this
+            .clearAndSetSemantics { }
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        awaitPointerEvent(PointerEventPass.Initial).changes
+                            .forEach { it.consume() }
+                    }
+                }
+            }
+    }
 
 /**
  * The category list. Every row carries the live value of what is inside it, so
