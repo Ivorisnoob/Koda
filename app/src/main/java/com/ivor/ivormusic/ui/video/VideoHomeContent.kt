@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -102,7 +103,11 @@ fun VideoHomeContent(
     videoMode: Boolean = true,
     onVideoModeToggle: (Boolean) -> Unit = {},
     showModeToggle: Boolean = true,
-    modeToggleState: MusicVideoToggleState = rememberMusicVideoToggleState(videoMode)
+    modeToggleState: MusicVideoToggleState = rememberMusicVideoToggleState(videoMode),
+    // Hoisted by HomeScreen so the position survives a tab switch and the nav
+    // bar can send it back to the top on a re-tap. Defaulted for previews and
+    // any caller that does not care.
+    listState: LazyListState = rememberLazyListState()
 ) {
     val backgroundColor = MaterialTheme.colorScheme.background
     val textColor = MaterialTheme.colorScheme.onBackground
@@ -205,7 +210,6 @@ fun VideoHomeContent(
                 )
             }
         } else {
-            val listState = rememberLazyListState()
             val isLoadingMore by viewModel.isVideoLoadingMore.collectAsState()
 
             // Endless feed: ask for the next page whenever the last visible

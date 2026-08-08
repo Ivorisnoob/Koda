@@ -101,23 +101,25 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
-import com.google.accompanist.permissions.ExperimentalPermissionsApi
-import com.google.accompanist.permissions.isGranted
-import com.google.accompanist.permissions.rememberPermissionState
 import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.data.PlayerStyle
-import com.ivor.ivormusic.ui.components.FloatingPillNavBar
 import com.ivor.ivormusic.ui.components.MusicVideoToggle
 import com.ivor.ivormusic.ui.components.MusicVideoToggleState
 import com.ivor.ivormusic.ui.components.rememberMusicVideoToggleState
+import com.ivor.ivormusic.ui.components.rememberPermissionState
+import com.ivor.ivormusic.ui.components.scrollToTop
 import com.ivor.ivormusic.ui.player.PlayerViewModel
 import com.ivor.ivormusic.ui.player.ExpandablePlayer
 import com.ivor.ivormusic.ui.player.PlayerSheetContent
@@ -141,7 +143,7 @@ import com.ivor.ivormusic.R
 import com.ivor.ivormusic.data.UpdateRepository
 import com.ivor.ivormusic.data.UpdateResult
 
-@OptIn(ExperimentalPermissionsApi::class, ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class, ExperimentalAnimationApi::class)
+@OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class, ExperimentalAnimationApi::class)
 @Composable
 fun HomeScreen(
     onSongClick: (Song) -> Unit,
@@ -209,7 +211,7 @@ fun HomeScreen(
     LaunchedEffect(Unit, loadLocalSongs, excludedFolders, manualScan) {
         viewModel.checkYouTubeConnection()
         if (loadLocalSongs) {
-            if (!permissionState.status.isGranted) {
+            if (!permissionState.isGranted) {
                 permissionState.launchPermissionRequest()
             } else {
                 viewModel.loadSongs(excludedFolders, manualScan)
@@ -220,8 +222,8 @@ fun HomeScreen(
         }
     }
 
-    LaunchedEffect(permissionState.status.isGranted, loadLocalSongs, excludedFolders, manualScan) {
-        if (permissionState.status.isGranted && loadLocalSongs) {
+    LaunchedEffect(permissionState.isGranted, loadLocalSongs, excludedFolders, manualScan) {
+        if (permissionState.isGranted && loadLocalSongs) {
             viewModel.loadSongs(excludedFolders, manualScan)
         }
     }
@@ -247,6 +249,36 @@ fun HomeScreen(
     }
 
     var selectedTab by remember { mutableIntStateOf(0) }
+
+    // Every tab's scroll position, remembered HERE rather than inside the tab
+    // content, for two reasons.
+    //
+    // Anything remembered inside the AnimatedContent below is scoped to that
+    // target's own composition and disposed once the transition settles, so a
+    // state living down there is discarded on every tab switch - leave Home
+    // halfway down, glance at Search, come back, and you are at the top. Above
+    // the AnimatedContent the position survives.
+    //
+    // It also has to be reachable from the nav bar, so re-tapping the current
+    // tab can send its list back to the top.
+    //
+    // One per tab AND per mode where the mode swaps the content: video Home and
+    // music Home are different lists, and sharing a state between them would
+    // restore one list's index into the other.
+    val videoHomeScrollState = rememberLazyListState()
+    val musicHomeScrollState = rememberLazyListState()
+    val searchScrollState = rememberLazyListState()
+    val subscriptionsScrollState = rememberLazyListState()
+    val musicLibraryScrollState = rememberLazyListState()
+    val videoLibraryScrollState = rememberLazyListState()
+
+    // Which of the above the visible tab is currently driving.
+    val currentTabScrollState = when (selectedTab) {
+        0 -> if (videoMode) videoHomeScrollState else musicHomeScrollState
+        1 -> searchScrollState
+        2 -> if (videoMode) subscriptionsScrollState else musicLibraryScrollState
+        else -> videoLibraryScrollState
+    }
 
     // Lives outside the mode-swapped content so the thumb keeps animating
     // while the music/video home content cross-fades underneath it
@@ -337,7 +369,7 @@ fun HomeScreen(
             .background(backgroundColor)
     ) {
         // Main content
-        if (!loadLocalSongs || permissionState.status.isGranted) {
+        if (!loadLocalSongs || permissionState.isGranted) {
             androidx.compose.animation.AnimatedContent(
                 targetState = selectedTab,
                 label = "TabTransition",
@@ -407,7 +439,8 @@ fun HomeScreen(
                                     videoMode = videoMode,
                                     onVideoModeToggle = onVideoModeToggle,
                                     showModeToggle = showModeToggle,
-                                    modeToggleState = modeToggleState
+                                    modeToggleState = modeToggleState,
+                                    listState = videoHomeScrollState
                                 )
                             }
                             // Music Mode: Show original content. The first load
@@ -448,7 +481,8 @@ fun HomeScreen(
                                     videoMode = videoMode,
                                     onVideoModeToggle = onVideoModeToggle,
                                     showModeToggle = showModeToggle,
-                                    modeToggleState = modeToggleState
+                                    modeToggleState = modeToggleState,
+                                    listState = musicHomeScrollState
                                 )
                             }
                         }
@@ -483,7 +517,8 @@ fun HomeScreen(
                         viewModel = viewModel,
                         isDarkMode = isDarkMode,
                         videoMode = videoMode,
-                        localOnly = localOnly
+                        localOnly = localOnly,
+                        listState = searchScrollState
                     )
                     2 -> {
                         if (videoMode && localOnly) {
@@ -499,7 +534,8 @@ fun HomeScreen(
                                 },
                                 onLoginClick = { showAuthDialog = true },
                                 onManageSubscriptions = onNavigateToSubscriptions,
-                                contentPadding = listBottomPadding
+                                contentPadding = listBottomPadding,
+                                feedListState = subscriptionsScrollState
                             )
                         } else {
                             LibraryContent(
@@ -523,7 +559,8 @@ fun HomeScreen(
                                 isDarkMode = isDarkMode,
                                 initialArtist = viewedArtistFromPlayer,
                                 onInitialArtistConsumed = { viewedArtistFromPlayer = null },
-                                onStatsClick = onNavigateToStats
+                                onStatsClick = onNavigateToStats,
+                                allSongsListState = musicLibraryScrollState
                             )
                         }
                     }
@@ -542,7 +579,8 @@ fun HomeScreen(
                                     onNavigateToVideoPlayer(video)
                                 },
                                 onLoginClick = { showAuthDialog = true },
-                                contentPadding = listBottomPadding
+                                contentPadding = listBottomPadding,
+                                rootListState = videoLibraryScrollState
                             )
                         }
                     }
@@ -580,6 +618,7 @@ fun HomeScreen(
         }
         
         // Floating Navigation bar - truly floating overlay using Material 3 Expressive HorizontalFloatingToolbar
+        val navBarHaptics = LocalHapticFeedback.current
         HorizontalFloatingToolbar(
             expanded = true,
             modifier = Modifier
@@ -624,7 +663,28 @@ fun HomeScreen(
                     
                     Surface(
                         selected = selected,
-                        onClick = { selectedTab = index },
+                        onClick = {
+                            // A re-tap is a different gesture from a switch, and
+                            // the two are told apart here.
+                            if (selected) {
+                                // Re-tap: back to the top, the thing every tab
+                                // bar people use daily does. Only worth a tick
+                                // when there is somewhere to go, otherwise
+                                // tapping an already-topped tab buzzes for
+                                // nothing.
+                                if (currentTabScrollState.canScrollBackward) {
+                                    navBarHaptics.performHapticFeedback(
+                                        HapticFeedbackType.ContextClick
+                                    )
+                                    scope.launch { currentTabScrollState.scrollToTop() }
+                                }
+                            } else {
+                                // Switching commits something the finger has no
+                                // preview of, so the tick is the confirmation.
+                                navBarHaptics.performHapticFeedback(HapticFeedbackType.ContextClick)
+                                selectedTab = index
+                            }
+                        },
                         shape = CircleShape,
                         color = animatedContainerColor,
                         contentColor = animatedContentColor,
@@ -815,11 +875,13 @@ fun YourMixContent(
     videoMode: Boolean = false,
     onVideoModeToggle: (Boolean) -> Unit = {},
     showModeToggle: Boolean = true,
-    modeToggleState: MusicVideoToggleState = rememberMusicVideoToggleState(videoMode)
+    modeToggleState: MusicVideoToggleState = rememberMusicVideoToggleState(videoMode),
+    /** Hoisted by HomeScreen: survives tab switches, reachable by the nav bar. */
+    listState: LazyListState = rememberLazyListState()
 ) {
     val backgroundColor = MaterialTheme.colorScheme.background
     val textColor = MaterialTheme.colorScheme.onBackground
-    
+
     val isRefreshing by viewModel.isLoading.collectAsState()
 
     // One pulse shared by every placeholder on the screen, so they breathe in
@@ -835,6 +897,7 @@ fun YourMixContent(
         modifier = Modifier.fillMaxSize()
     ) {
         LazyColumn(
+            state = listState,
             modifier = Modifier
                 .fillMaxSize()
                 .background(backgroundColor)
@@ -1577,7 +1640,9 @@ fun SearchContent(
     viewModel: HomeViewModel,
     isDarkMode: Boolean,
     videoMode: Boolean = false,
-    localOnly: Boolean = false
+    localOnly: Boolean = false,
+    /** Hoisted by HomeScreen: survives tab switches, reachable by the nav bar. */
+    listState: LazyListState = rememberLazyListState()
 ) {
     var viewedPlaylist by remember { mutableStateOf<com.ivor.ivormusic.data.PlaylistDisplayItem?>(null) }
     var viewedArtist by remember { mutableStateOf<com.ivor.ivormusic.data.ArtistItem?>(null) }
@@ -1686,7 +1751,8 @@ fun SearchContent(
                     viewModel = viewModel,
                     isDarkMode = isDarkMode,
                     videoMode = videoMode,
-                    localOnly = localOnly
+                    localOnly = localOnly,
+                    listState = listState
                 )
             }
         }

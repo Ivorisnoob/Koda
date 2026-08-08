@@ -108,10 +108,8 @@ import androidx.compose.ui.unit.dp
 import androidx.graphics.shapes.Morph
 import androidx.graphics.shapes.RoundedPolygon
 import androidx.graphics.shapes.toPath
-import com.google.accompanist.permissions.ExperimentalPermissionsApi
-import com.google.accompanist.permissions.isGranted
-import com.google.accompanist.permissions.rememberPermissionState
 import com.ivor.ivormusic.data.PlayerStyle
+import com.ivor.ivormusic.ui.components.rememberPermissionState
 import com.ivor.ivormusic.ui.player.PlayerStylePicker
 import com.ivor.ivormusic.data.SessionManager
 import com.ivor.ivormusic.ui.auth.YouTubeAuthDialog
@@ -121,7 +119,7 @@ import kotlinx.coroutines.launch
 
 private const val ONBOARDING_PAGE_COUNT = 6
 
-@OptIn(ExperimentalPermissionsApi::class, ExperimentalMaterial3ExpressiveApi::class)
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun OnboardingScreen(
     currentThemeMode: ThemeMode,
@@ -267,7 +265,7 @@ fun OnboardingScreen(
                         1 -> LibraryPage(
                             loadLocalSongs = loadLocalSongs,
                             onLoadLocalSongsToggle = onLoadLocalSongsToggle,
-                            storagePermissionGranted = storagePermissionState.status.isGranted,
+                            storagePermissionGranted = storagePermissionState.isGranted,
                             onRequestStoragePermission = { storagePermissionState.launchPermissionRequest() }
                         )
                         2 -> YouTubePage(
@@ -293,7 +291,7 @@ fun OnboardingScreen(
                         else -> FinalTouchesPage(
                             crossfadeEnabled = crossfadeEnabled,
                             onCrossfadeEnabledToggle = onCrossfadeEnabledToggle,
-                            notificationPermissionGranted = notificationPermissionState?.status?.isGranted ?: true,
+                            notificationPermissionGranted = notificationPermissionState?.isGranted ?: true,
                             onRequestNotificationPermission = { notificationPermissionState?.launchPermissionRequest() },
                             manualScanEnabled = manualScanEnabled,
                             onManualScanEnabledToggle = { enabled ->

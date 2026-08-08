@@ -199,7 +199,14 @@ fun SearchScreen(
     isDarkMode: Boolean,
     videoMode: Boolean = false,
     localOnly: Boolean = false,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /**
+     * Hoisted by HomeScreen so the results keep their place across a tab switch
+     * and the nav bar can send them back to the top on a re-tap. Still drives
+     * the paging trigger below, which is what it was remembered here for.
+     */
+    listState: androidx.compose.foundation.lazy.LazyListState =
+        androidx.compose.foundation.lazy.rememberLazyListState()
 ) {
     var query by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
@@ -252,8 +259,8 @@ fun SearchScreen(
     var linkRetryToken by remember { mutableIntStateOf(0) }
 
     // Endless scroll: pull the next page once the bottom of the list is in
-    // sight, rather than making the user hunt for a "load more" button.
-    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    // sight, rather than making the user hunt for a "load more" button. The
+    // state itself is a parameter now, hoisted by HomeScreen.
     val isNearListEnd by remember {
         androidx.compose.runtime.derivedStateOf {
             val layout = listState.layoutInfo

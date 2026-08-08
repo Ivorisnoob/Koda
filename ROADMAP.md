@@ -75,30 +75,6 @@ What it should do instead is a genuine design decision rather than a one-line fl
 
 The first is the recommended default, since it degrades gracefully for the awkward middle ratios. 4:5 and 1:1 uploads are common and are not "vertical" in the Shorts sense. The existing `MAX_ACCEPTABLE_CROP` logic in the vertical live player already encodes that judgement and can be borrowed.
 
-**Two loading indicators on first load.** Several screens show the pull-to-refresh spinner and a centered `LoadingIndicator` at the same time while loading into an empty list, so the screen has two spinners running at once.
-
-The fix already exists in the codebase and simply was not applied everywhere. `VideoHomeContent.kt:193` gets it right:
-
-```kotlin
-isRefreshing = isLoading && videos.isNotEmpty(),
-```
-
-Pairing that with an inner indicator guarded on `isLoading && videos.isEmpty()` makes the two states mutually exclusive: the centered indicator owns the first load, the pull-to-refresh spinner owns every refresh after it. Every screen below already has the inner guard written correctly; only the `isRefreshing` binding was left bare, so the two overlap on exactly the first load.
-
-A sweep of every `isRefreshing` binding in the app found five unguarded sites across four files:
-
-| File | Line | Binding | Inner indicator |
-| --- | --- | --- | --- |
-| `SubscriptionsContent.kt` | 334 | `isChannelsLoading` | `:387`, guarded on `channels.isEmpty()` |
-| `SubscriptionsContent.kt` | 425 | `isFeedLoading` | `:620`, guarded on `feed.isEmpty()` |
-| `VideoHistoryScreen.kt` | 137 | `isHistoryLoading` | `:168`, guarded on `historyVideos.isEmpty()` |
-| `VideoLibraryScreen.kt` | 211 | `isPlaylistsLoading` | `:314`, guarded on `playlists.isEmpty()` |
-| `LibraryScreen.kt` | 405 | `isLoading` | none found. Needs checking before changing |
-
-The first four are confirmed doubles with a mechanical fix. `LibraryScreen.kt:405` is unguarded in the same way, but no paired inner indicator turned up, so it may not double in practice and should be looked at rather than patched by pattern. Worth noting the fifth is in music mode, not video. The issue is slightly wider than the video screens where it was noticed.
-
-Two screens already handle this correctly and are the reference: `VideoHomeContent.kt:193`, and `HomeScreen.kt:833`, which solves it a second way with `isRefreshing && !isInitialLoading`.
-
 ---
 
 ## Planned work
@@ -187,42 +163,6 @@ Beyond covers, the editing experience is where the bump lands: a real creation f
 
 **One structural note.** Playlists serialize to SharedPreferences with the full `Song` list embedded in each record, so every add rewrites the whole playlist. That is invisible at forty songs and will not be at four thousand. It does not need solving now, but a playlist feature set that encourages large playlists should not be built without knowing that is the storage underneath.
 
-#### Hold-to-2x should take longer to trigger
-
-The speed boost fires too eagerly. A press that was meant as a tap on the video (to bring the controls up), crosses the threshold and jumps playback to 2x instead, which is startling in a way a mis-tap should not be.
-
-The reason there is no value to tune is that the app never sets one. `PlayerGestureSurface` boosts from the `onLongPress` callback of `detectTapGestures` (`VideoPlayerScreen.kt:1250`), and that fires on Compose's default long-press timeout, which is the platform's roughly half a second. Every other timing in that file is a named, documented constant (`DOUBLE_TAP_SEEK_SECONDS`, `LEVEL_HIDE_MS`, the pinch thresholds), and this one is the only interaction whose feel is inherited from a system default rather than chosen. It wants a `SPEED_BOOST_HOLD_MS` sitting in the same block as the others, deliberately longer than the platform figure.
-
-One call site covers everything: all three surfaces (the inline player, fullscreen, and the vertical live player), route through the same composable, so this is tuned in one place.
-
-**The implementation choice matters more than the number.** The obvious route is to keep `onLongPress` and start the boost from a delayed job instead, but that opens a dead zone: `detectTapGestures` still consumes the gesture as a long press at the system timeout, so a press landing between the two thresholds would neither toggle the controls nor boost. It would feel like the video stopped responding.
-
-Overriding `LocalViewConfiguration.longPressTimeoutMillis` around the gesture surface avoids that, because it moves the tap and long-press boundaries together. Below the threshold is cleanly a tap, above it is cleanly a boost, and there is no gap. The one thing to check is that the override does not leak into anything nested that uses its own long-press. The related-videos row does use `combinedClickable`, but it lives in `VideoInfoSection`, outside the gesture surface, so on current structure this looks clear.
-
-Worth pairing with a look at whether the boost should be interruptible by the volume and brightness drags, which share the same surface.
-
-#### Re-tapping a tab should return it to the top
-
-Every tab bar people use daily does this: tap the tab you are already on and the list goes back to the top. Koda's does nothing at all, on any tab, in either mode. The video feeds page endlessly, so "scroll back up" has no bound, and the only route to the top of Home, Search results, Subscriptions or Library is to flick until you arrive.
-
-**The bar is not in the file its name suggests.** `ui/components/FloatingPillNavBar.kt` is 191 lines and dead: imported at `HomeScreen.kt:117`, never called. What renders is an inline `HorizontalFloatingToolbar` built in `HomeScreen.kt:583-670`, whose tab handler is one line (`HomeScreen.kt:627`):
-
-```kotlin
-onClick = { selectedTab = index },
-```
-
-Assigning the index the state already holds is a no-op, which is why a re-tap does nothing rather than doing something wrong. Both `CLAUDE.md` and the tablet entry further down name `FloatingPillNavBar` as the app's tab bar, so whoever picks this up should delete the dead file rather than leave the next reader to find it first and edit the wrong one.
-
-That file does contain one thing worth keeping. It already distinguishes a re-tap from a switch (`FloatingPillNavBar.kt:111-118`, where the haptic deliberately fires only on an actual change of tab). That branch is exactly where the scroll belongs, and by the rule in the haptics entry a re-tap that scrolls is a commit with nothing dragged behind it, so it is one of the cases that has earned a tick.
-
-**The work is that no tab owns a scroll state anything else can reach.** Music Home's `LazyColumn` (`HomeScreen.kt:837`), Library's (`LibraryScreen.kt:573`), video Library's (`VideoLibraryScreen.kt:215`) and all three of Subscriptions' (`SubscriptionsContent.kt:250`, `:338`, `:432`) pass no `state` at all. Video Home (`VideoHomeContent.kt:225`) and Search (`SearchScreen.kt:460`) do hold one each, but both are remembered inside their own composable for paging (`VideoHomeContent.kt:208`, `SearchScreen.kt:256`) and neither is reachable from the nav bar. So this is a hoisting pass: each tab takes a `LazyListState` as a parameter, `HomeScreen` remembers one per tab, and the re-tap branch scrolls it.
-
-**Hoisting pays for a second bug on the way past.** Tab content renders inside `AnimatedContent(targetState = selectedTab)` (`HomeScreen.kt:341`), and anything `remember`ed inside that content lambda is scoped to the target's own composition and disposed once the transition settles. Scroll position is therefore already discarded on every tab switch: leave Home halfway down, glance at Search, come back, and you are at the top with no way back to where you were. Hoisting the states above the `AnimatedContent` is what fixes that as well, and it is a prerequisite the "Surviving process death" entry needs regardless, since a state nothing owns is a state nothing can save.
-
-**One decision to settle: what a re-tap means on a tab that is drilled in.** Subscriptions has two levels under its root (`showChannelList`, then a selected channel), and Library reaches artist pages and playlist detail. The usual convention is that the tab button pops to the tab's root first and scrolls to the top only when it is already there, which also gives the gesture something to do when the list has not been scrolled. That has to agree with the `BackHandler` at `HomeScreen.kt:256`, which currently sends any non-Home tab straight back to Home. Two controls on one screen with different ideas of what "up" means is worse than either of them alone.
-
-Whether the scroll animates or jumps is worth choosing rather than inheriting. `animateScrollToItem` visibly flies through a few hundred items, and an instant `scrollToItem` reads as more responsive at the cost of hiding how far you came.
-
 #### Respect reduced motion
 
 Koda animates more than almost anything in its category (roughly 97 spring animations, eight player styles built on motion, staggered entrances on every screen), and it reads nothing about whether the person using it wants that. There is no read of `Settings.Global.ANIMATOR_DURATION_SCALE` anywhere in the source, so a user who has turned animations off system-wide, whether for vestibular reasons or because they are on a slow device, still gets every spring and every stagger.
@@ -255,21 +195,13 @@ That is the worst of both arrangements. The opt-in is declared, so the platform 
 
 #### Haptics, more than eight files
 
-Haptic feedback appears in 8 of 135 source files, almost all of it in the video gesture surface. Everything else is silent: the player style wheel spins without detents, drag-to-reorder in playlists gives nothing when an item locks into place, likes and toggles have no confirmation, and the tab bar does not respond to the thumb.
+Haptic feedback is still thin on the ground, almost all of it in the video gesture surface and the tab bar. Everything else is silent: the player style wheel spins without detents, drag-to-reorder in playlists gives nothing when an item locks into place, and likes and toggles have no confirmation.
 
 For an app built this heavily on touch (roughly 97 springs, gesture-driven players, a spinnable style wheel), that is a whole sensory channel going unused, and it is the channel that makes physical-feeling UI feel physical.
 
 **The existing use already demonstrates the right instinct, and it should be written down as a rule rather than repeated by memory.** The fullscreen swipes tick because they commit while the finger is still down with no dragged preview behind them, so the tick is the only confirmation the gesture took. Generalised: haptics belong on **commits the user cannot yet see** and on **detents and thresholds:** the wheel clicking to the next style, a reorder locking in, a drag passing the point where releasing will do something. They do not belong on every tap, which is how apps end up buzzing constantly and getting the feature switched off.
 
 Worth routing through one small helper rather than calling `performHapticFeedback` ad hoc, so the vocabulary stays consistent and there is a single place to respect the system haptic setting.
-
-#### Use the skeletons that already exist
-
-`ui/components/Skeleton.kt` is written and includes a text-line placeholder sized to the type it replaces. Several screens do not use it and show a bare centered spinner instead: Subscriptions, video history, and video library.
-
-Those are the same screens carrying the double-indicator defect recorded above, which makes this one pass rather than two. Replacing the centered spinner with a skeleton and guarding the `isRefreshing` binding are the same edit in the same block of each file.
-
-The rule worth settling while doing it: a skeleton when the shape of what is coming is known (a list of rows, a grid of cards), because it tells the user what to expect and stops the layout jumping when content lands. A spinner only when the shape genuinely is not known yet.
 
 #### Channel links should open in the app
 
@@ -361,6 +293,8 @@ Note that Android's own auto-backup is already declared via `backup_rules.xml`, 
 
 Not everything needs saving. The highest-value targets, roughly in order: which tab was open, feed and library scroll positions, the search query with its results, and the video position for a player that was open when the process died. The last of which matters most, because losing your place in a long video is the most annoying version of this bug.
 
+**One prerequisite is already paid for.** Each Home tab's `LazyListState` is now hoisted above the tab `AnimatedContent` in `HomeScreen`, so the positions survive a tab switch and, more to the point here, there is finally a single owner to save them from. They are still plain `remember`, and so is `selectedTab`, so this entry is unchanged in substance. What has gone away is having to do the hoisting first.
+
 #### One image loader
 
 There is no central Coil `ImageLoader`. Crossfade is configured per call site and inconsistently (`crossfade(300)` in one component, `crossfade(true)` in others, nothing at all elsewhere), and there is no shared memory or disk cache policy in an app that is almost entirely images.
@@ -369,29 +303,15 @@ There is no central Coil `ImageLoader`. Crossfade is configured per call site an
 
 The practical win beyond consistency is memory. Artwork is loaded on Home, in search results, in the queue, in the notification, in the widget when that exists, and behind three of the player styles, and today none of those share a tuned cache. It is also the single place any future image-sizing policy would live.
 
-#### Loose ends the author already flagged
-
-Three small things marked in shipped code, none of them urgent and all of them the kind of thing that only gets fixed if it is written down.
-
-`HomeViewModel.kt:941` carries `// Handle error silently for now` around a swallowed failure. Silent is a real choice in some places, but here nothing tells the user and nothing logs for a bug report, so a failure in that path is invisible from both directions.
-
-`VideoPlayerContent.kt:169` notes `// Let's poll in UI for now as we have the ExoPlayer instance in VM`. A polling loop sitting in the composable because that was the shortest route to the player. It belongs in the ViewModel, where the rest of the player state already lives.
-
-`UserPlaylist.kt:15` has an informal comment about not wanting to do the URI work yet. It is harmless in effect and this is a public repository that people read to learn how the app is built, so it is worth a rewrite into what it actually means: the playlist id is carried in the display item's `url` field rather than a real URI.
-
 #### Dependency audit
 
-The dependency list has accumulated things nothing uses. The clearest case is **Ktor: three declared artifacts, zero imports.**
+The dependency list has accumulated things nothing uses. Ktor (three artifacts, zero imports), the hardcoded `palette-ktx` version, and Accompanist Permissions have all been dealt with; **the trap that pass uncovered is worth keeping.**
 
-`ktor-client-okhttp`, `ktor-client-content-negotiation`, and `ktor-serialization-kotlinx-json` are all declared in the version catalog and in `app/build.gradle.kts`, and `import io.ktor` appears nowhere in the 135 Kotlin source files. The app talks to the network through OkHttp directly and parses InnerTube with manual `org.json` traversal, which is a deliberate architectural choice documented in `CLAUDE.md`. Ktor was presumably an early direction that was not taken. It carries a real transitive graph (client core, http, io, utils, serialization), for nothing at all, and removing all three is safe.
+`kotlinx-serialization-json` was never declared. Only the `kotlin-serialization` *plugin* was, and a plugin ships the compiler side, not the runtime. The whole data layer's `Json.decode` calls were compiling against a runtime that arrived transitively through `ktor-serialization-kotlinx-json`, so removing Ktor as an "unused" dependency broke the build rather than shrinking it. It is a direct dependency now. **Any future dependency removal should check what else was riding on the artifact before trusting an import count.**
 
-Two smaller items in the same pass:
+Still open: **`androidx.compose.ui.tooling.preview` is declared at `implementation` scope and there is not a single `@Preview` in the project.** It is small, and removing it means the next preview someone writes fails to compile with a confusing error, so it is a judgement call rather than an obvious win.
 
-**`androidx.palette:palette-ktx:1.0.0` is declared inline with a hardcoded version** in `app/build.gradle.kts`, and it is the only dependency that bypasses the version catalog. The rule that dependency versions live only in `gradle/libs.versions.toml` has exactly one exception, and there is no reason for it. The library itself is genuinely used (`ArtworkColorScheme` and `ChromaticMistBackground` both extract colors from artwork through it), so this is a move into the catalog, not a removal.
-
-**Accompanist Permissions is a migration candidate rather than a removal.** It is used in two files, `HomeScreen` and `OnboardingScreen`, and the library is in maintenance upstream now that the platform covers the same ground. Two call sites is a small enough surface to move deliberately rather than urgently.
-
-**One warning for whoever does this pass.** `media3-exoplayer-dash` and `media3-exoplayer-hls` will look unused to any tool and to any grep, because `DefaultMediaSourceFactory` loads them reflectively. They are load-bearing: without them the player dead-ends on "Source error" for every live stream and for the videos where the NewPipe fallback returns a DASH manifest. The build file already carries a comment saying so. Do not let an automated unused-dependency sweep take them out. `kotlinx-coroutines-guava` is similarly easy to misjudge. One import, in `MusicService`, where the `ListenableFuture` API of `MediaLibraryService` requires it.
+**One warning for whoever does the next pass.** `media3-exoplayer-dash` and `media3-exoplayer-hls` will look unused to any tool and to any grep, because `DefaultMediaSourceFactory` loads them reflectively. They are load-bearing: without them the player dead-ends on "Source error" for every live stream and for the videos where the NewPipe fallback returns a DASH manifest. The build file already carries a comment saying so. Do not let an automated unused-dependency sweep take them out. `kotlinx-coroutines-guava` is similarly easy to misjudge. One import, in `MusicService`, where the `ListenableFuture` API of `MediaLibraryService` requires it.
 
 While the file is open, `material-icons-extended` is worth a look for a different reason. It is not unused, but it is one of the largest artifacts in the graph, and if only a bounded set of icons is actually referenced there may be a size win in pulling them out.
 
@@ -439,7 +359,7 @@ Koda is portrait-only, twice over: `android:screenOrientation="portrait"` in the
 
 The good news is that the app is not starting from zero conceptually. `FullscreenPlayerContent` already reflows for landscape and slides the video clear of the docked live chat; `VideoPlayerContent` already computes a chat width from `screenWidthDp`. The patterns exist, they are just applied in one place and reached by a manual orientation override rather than by measuring the window.
 
-The work, roughly in the order it pays off: adopt `WindowSizeClass` as the single source of truth and retire the manual orientation locks; move the `FloatingPillNavBar` to a navigation rail at medium width and up, since a bottom bar on a 12-inch screen is a long reach to a small target; give the grid-shaped screens (Home, Search, Library, Subscriptions), real column counts instead of a stretched single column; and adopt list-detail where the content is genuinely two-panel, which is most of Library and all of Settings, whose eleven-page hub is close to a list-detail layout already.
+The work, roughly in the order it pays off: adopt `WindowSizeClass` as the single source of truth and retire the manual orientation locks; move the bottom tab bar to a navigation rail at medium width and up, since a bottom bar on a 12-inch screen is a long reach to a small target; give the grid-shaped screens (Home, Search, Library, Subscriptions), real column counts instead of a stretched single column; and adopt list-detail where the content is genuinely two-panel, which is most of Library and all of Settings, whose eleven-page hub is close to a list-detail layout already.
 
 **The expensive part is the player styles.** There are eight of them across 11,200 lines, each a deliberate composition, and several (the sticker's drag physics, the morph's hero shape, the rotary dial), are designed around a thumb reaching a specific part of a phone-sized screen. They do not become correct by widening. Each needs a decision about what it means on a tablet, and "centered at phone width in the middle of a large screen" is a legitimate answer for some of them rather than a failure to do the work.
 
@@ -500,3 +420,5 @@ The milestones behind us, kept here so the direction of travel is visible.
 - "Don't recommend this" with a local blocklist, account propagation, and app-wide undo
 - Multiple accounts and device-only profiles, switchable without signing in again
 - Settings split into a searchable hub of eleven pages
+- Tab scroll positions that survive a switch, and a re-tap that returns the list to the top
+- Skeleton placeholders on every feed's first load, replacing the doubled spinners

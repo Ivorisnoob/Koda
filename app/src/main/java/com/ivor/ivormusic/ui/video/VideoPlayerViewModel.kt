@@ -48,6 +48,8 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 @UnstableApi
@@ -77,7 +79,27 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
     private val _isBuffering = MutableStateFlow(false)
     val isBuffering: StateFlow<Boolean> = _isBuffering
-    
+
+    // Playback progress. Polled rather than pushed, because ExoPlayer has no
+    // position callback - something has to tick - but it belongs here with the
+    // rest of the player state rather than in a composable. The seek bar, the
+    // chapter chip, the timed-comments overlay and the chapter list all read
+    // it, and a loop living in one composable meant every other reader either
+    // duplicated the poll or did without.
+    private val _positionMs = MutableStateFlow(0L)
+    val positionMs: StateFlow<Long> = _positionMs
+
+    private val _durationMs = MutableStateFlow(0L)
+    val durationMs: StateFlow<Long> = _durationMs
+
+    private val _progress = MutableStateFlow(0f)
+    val progress: StateFlow<Float> = _progress
+
+    private val _bufferedProgress = MutableStateFlow(0f)
+    val bufferedProgress: StateFlow<Float> = _bufferedProgress
+
+    private var progressJob: Job? = null
+
     // Qualities and Related
     private val _availableQualities = MutableStateFlow<List<VideoQuality>>(emptyList())
     val availableQualities: StateFlow<List<VideoQuality>> = _availableQualities
@@ -561,6 +583,10 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             })
         }
 
+        // The position poll runs for as long as the player exists. Started here
+        // rather than per video, so nothing has to remember to restart it.
+        startProgressUpdates()
+
         // Warm the visitorData cache so the first playback doesn't pay for
         // the youtube.com bootstrap download on its critical path.
         viewModelScope.launch { youtubeRepository.prefetchVisitorData() }
@@ -598,6 +624,44 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
             .setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, false)
             .build()
+    }
+
+    /**
+     * Starts the position poll, replacing any run already going.
+     *
+     * Idempotent, so it is safe to call from wherever the player is (re)built.
+     * The tick is cheap even while paused: an unchanged position writes the same
+     * value to a [MutableStateFlow], which conflates it and emits nothing.
+     */
+    private fun startProgressUpdates() {
+        progressJob?.cancel()
+        progressJob = viewModelScope.launch {
+            while (isActive) {
+                _exoPlayer?.let { player ->
+                    // A non-positive duration means "not known yet" (and is the
+                    // normal case for a live stream), so leave the last good
+                    // values alone rather than dividing by it.
+                    val duration = player.duration
+                    if (duration > 0) {
+                        val position = player.currentPosition.coerceAtLeast(0L)
+                        _durationMs.value = duration
+                        _positionMs.value = position
+                        _progress.value = (position.toFloat() / duration).coerceIn(0f, 1f)
+                        _bufferedProgress.value =
+                            (player.bufferedPosition.toFloat() / duration).coerceIn(0f, 1f)
+                    }
+                }
+                delay(PROGRESS_POLL_MS)
+            }
+        }
+    }
+
+    /** Zeroes the progress state, so a new video does not inherit the old position. */
+    private fun resetProgress() {
+        _positionMs.value = 0L
+        _durationMs.value = 0L
+        _progress.value = 0f
+        _bufferedProgress.value = 0f
     }
 
     /**
@@ -775,6 +839,9 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         _currentVideo.value = video
         _isExpanded.value = true
         _isLoading.value = true
+        // Zero the progress for the new video rather than letting the previous
+        // one's position sit in the seek bar until the first poll lands.
+        resetProgress()
         _relatedVideos.value = emptyList() // Clear previous related
         _chapters.value = emptyList() // Clear previous chapters
         _captionTracks.value = emptyList() // Clear previous caption tracks
@@ -1930,6 +1997,16 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
          * number does not need it that often.
          */
         private const val LIVE_METADATA_POLL_MS = 25_000L
+
+        /**
+         * How often the playhead is sampled for the seek bar.
+         *
+         * Twice a second: the bar is a thin progress line, so a finer tick buys
+         * nothing visible, and the chapter chip only changes at chapter
+         * boundaries. The music player ticks once a second, but it is driving a
+         * timestamp rather than a scrub bar being watched.
+         */
+        private const val PROGRESS_POLL_MS = 500L
     }
 
     override fun onCleared() {
@@ -1939,6 +2016,8 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         qualityChangeListener = null
         sourceRecoveryJob?.cancel()
         sourceRecoveryJob = null
+        progressJob?.cancel()
+        progressJob = null
         stopLivePolling()
         // Before the release below, not after: stop() drops the MediaSession
         // synchronously on this thread, and a session outliving the player it

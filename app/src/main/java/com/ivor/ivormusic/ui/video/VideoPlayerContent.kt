@@ -164,14 +164,13 @@ fun VideoPlayerContent(
     // Timed comments overlay toggle; persists across videos while the player is open
     var timedCommentsActive by remember { mutableStateOf(false) }
     
-    // Progress polling (ViewModel doesn't poll, so we do it here or update ViewModel to poll)
-    // Ideally ViewModel should emit progress, but for smoother slider we often poll in UI or VM. 
-    // Let's poll in UI for now as we have the ExoPlayer instance in VM
-    var currentPosition by remember { mutableLongStateOf(0L) }
-    var duration by remember { mutableLongStateOf(0L) }
-    var progress by remember { mutableFloatStateOf(0f) }
-    var bufferedProgress by remember { mutableFloatStateOf(0f) }
-    
+    // Playback progress comes from the ViewModel, which owns the poll along with
+    // the rest of the player state.
+    val currentPosition by viewModel.positionMs.collectAsState()
+    val duration by viewModel.durationMs.collectAsState()
+    val progress by viewModel.progress.collectAsState()
+    val bufferedProgress by viewModel.bufferedProgress.collectAsState()
+
     val exoPlayer = viewModel.exoPlayer
     val currentVideo = video
 
@@ -183,18 +182,6 @@ fun VideoPlayerContent(
     // clamped differently from the buttons would be a bug waiting to happen.
     fun seekBy(deltaMs: Long) = viewModel.seekBy(deltaMs)
 
-    LaunchedEffect(exoPlayer, currentVideo) {
-        while (isActive) {
-            if (exoPlayer.duration > 0) {
-                duration = exoPlayer.duration
-                currentPosition = exoPlayer.currentPosition
-                progress = currentPosition.toFloat() / duration.toFloat()
-                bufferedProgress = exoPlayer.bufferedPosition.toFloat() / duration.toFloat()
-            }
-            delay(500)
-        }
-    }
-    
     // Auto-hide controls
     LaunchedEffect(showControls, isPlaying) {
         if (showControls && isPlaying) {

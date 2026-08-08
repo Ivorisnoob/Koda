@@ -938,7 +938,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
             } catch (e: Exception) {
-                // Handle error silently for now
+                // The feed keeps whatever it already had - both branches above
+                // only assign a non-empty result - so a failure here is not
+                // destructive and does not warrant tearing the screen down.
+                // It does have to be visible in a bug report though, which is
+                // what this was missing.
+                android.util.Log.e("HomeViewModel", "Home recommendations failed to load", e)
             } finally {
                 _isLoading.value = false
             }
