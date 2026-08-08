@@ -151,11 +151,8 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.asComposePath
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.util.lerp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
@@ -181,6 +178,7 @@ import com.ivor.ivormusic.data.ThemePreferences
 import com.ivor.ivormusic.data.YouTubeAuthUtils
 
 import com.ivor.ivormusic.ui.auth.YouTubeAuthDialog
+import com.ivor.ivormusic.ui.components.coveredBy
 import com.ivor.ivormusic.data.PlayerStyle
 import com.ivor.ivormusic.ui.theme.ThemeMode
 import kotlinx.coroutines.CancellationException
@@ -865,31 +863,6 @@ fun SettingsScreen(
         )
     }
 }
-
-/**
- * Makes a layer inert while something opaque sits on top of it.
- *
- * The hub stays composed behind an open page so that predictive back has
- * something to reveal, and a composed layer is a live one: its rows still take
- * taps that fall through gaps in the page above, and TalkBack still reads them
- * out as if they were on screen. Both are invisible in normal use and both are
- * wrong.
- */
-private fun Modifier.coveredBy(covered: Boolean): Modifier =
-    if (!covered) {
-        this
-    } else {
-        this
-            .clearAndSetSemantics { }
-            .pointerInput(Unit) {
-                awaitPointerEventScope {
-                    while (true) {
-                        awaitPointerEvent(PointerEventPass.Initial).changes
-                            .forEach { it.consume() }
-                    }
-                }
-            }
-    }
 
 /**
  * The category list. Every row carries the live value of what is inside it, so

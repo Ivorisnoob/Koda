@@ -1,6 +1,5 @@
 package com.ivor.ivormusic.ui.video
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
@@ -76,6 +75,7 @@ import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.data.SubscriptionGroup
 import com.ivor.ivormusic.ui.components.ChannelRowSkeleton
 import com.ivor.ivormusic.ui.components.ExpressivePullToRefresh
+import com.ivor.ivormusic.ui.components.PredictiveBackStack
 import com.ivor.ivormusic.ui.components.SEARCH_FIELD_MIN_ITEMS
 import com.ivor.ivormusic.ui.components.SearchEmptyState
 import com.ivor.ivormusic.ui.components.SearchField
@@ -210,16 +210,23 @@ fun SubscriptionsContent(
         }
     }
 
-    BackHandler(enabled = selectedChannel != null || showChannelList) {
+    // Back unwinds: drill-in, then a running query, then the channel list.
+    // The query step is deliberately not previewed - nothing leaves the screen
+    // for it, the list simply widens again - and neither is popping a drill-in
+    // that was opened from the channel list, because what that reveals is the
+    // list rather than the feed underneath.
+    val subscriptionsBack = {
         when {
             selectedChannel != null -> selectedChannel = null
-            // A running query is a step, and Back unwinds one step at a time -
-            // the same order Settings search uses. Leaving the list with a
-            // filter still applied is how you come back to a list that looks
-            // like half your channels went missing.
             channelQuery.isNotBlank() -> channelQuery = ""
             else -> showChannelList = false
         }
+    }
+    val subscriptionsChildOpen = selectedChannel != null || showChannelList
+    val subscriptionsPreviewable = when {
+        selectedChannel != null -> !showChannelList
+        showChannelList -> channelQuery.isBlank()
+        else -> false
     }
 
     // Animation state
@@ -299,222 +306,11 @@ fun SubscriptionsContent(
         )
     }
 
-    when {
-        // Channel drill-in: latest uploads of the selected channel
-        currentChannel != null -> {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(backgroundColor)
-                    .windowInsetsPadding(WindowInsets.statusBars),
-                contentPadding = PaddingValues(bottom = contentPadding.calculateBottomPadding()),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                item {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 8.dp)
-                            .padding(top = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        IconButton(onClick = { selectedChannel = null }) {
-                            Icon(
-                                Icons.AutoMirrored.Rounded.ArrowBack,
-                                contentDescription = "Back",
-                                tint = MaterialTheme.colorScheme.onBackground
-                            )
-                        }
-                        ChannelAvatar(channel = currentChannel, size = 40.dp)
-                        Spacer(Modifier.width(12.dp))
-                        Column {
-                            Text(
-                                text = currentChannel.name,
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onBackground,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            if (currentChannel.subscriberCountText != null) {
-                                Text(
-                                    text = currentChannel.subscriberCountText,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    }
-                }
-
-                if (isChannelLoading) {
-                    item {
-                        Box(
-                            Modifier.fillMaxWidth().height(200.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            LoadingIndicator(
-                                modifier = Modifier.size(48.dp),
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    }
-                } else if (channelVideos.isEmpty()) {
-                    item {
-                        Box(
-                            modifier = Modifier.fillMaxWidth().padding(32.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text("No videos found", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                } else {
-                    items(channelVideos) { video ->
-                        VideoCard(
-                            video = video,
-                            onClick = { onVideoClick(video) },
-                            onLongClick = { onVideoLongPress(video) },
-                            modifier = Modifier.padding(horizontal = 16.dp)
-                        )
-                    }
-                }
-
-                item { Spacer(modifier = Modifier.height(32.dp)) }
-            }
-        }
-
-        // Full channel list
-        showChannelList -> {
-            ExpressivePullToRefresh(
-                // The pull spinner only ever means "refreshing what is already
-                // on screen". First load is the skeleton's job below, and
-                // driving both off the same flag runs two indicators at once.
-                isRefreshing = isChannelsLoading && channels.isNotEmpty(),
-                onRefresh = { viewModel.loadSubscriptions(force = true) },
-                modifier = Modifier.fillMaxSize()
-            ) {
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(backgroundColor)
-                        .windowInsetsPadding(WindowInsets.statusBars),
-                    contentPadding = PaddingValues(bottom = contentPadding.calculateBottomPadding()),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    item {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 8.dp)
-                                .padding(top = 8.dp, bottom = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            IconButton(onClick = {
-                                showChannelList = false
-                                channelQuery = ""
-                            }) {
-                                Icon(
-                                    Icons.AutoMirrored.Rounded.ArrowBack,
-                                    contentDescription = "Back",
-                                    tint = MaterialTheme.colorScheme.onBackground
-                                )
-                            }
-                            Column {
-                                Text(
-                                    text = "All channels",
-                                    style = MaterialTheme.typography.headlineSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onBackground
-                                )
-                                Text(
-                                    // While filtering, the subtitle answers the
-                                    // question the filter asked instead of
-                                    // repeating a total the list no longer shows.
-                                    text = if (channelQuery.isBlank()) {
-                                        subscriptionsSubtitle(
-                                            channelCount = channels.size,
-                                            localCount = localSubscriptions.size,
-                                            isConnected = isYouTubeConnected
-                                        )
-                                    } else {
-                                        "${matchedChannels.size} of ${channels.size} channels"
-                                    },
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    }
-
-                    // Only once the list is long enough to be worth searching,
-                    // and never while it is still loading: a field over a
-                    // skeleton is a control that cannot do anything yet.
-                    if (channels.size >= SEARCH_FIELD_MIN_ITEMS) {
-                        item(key = "channel-search") {
-                            SearchField(
-                                query = channelQuery,
-                                onQueryChange = { channelQuery = it },
-                                placeholder = "Search channels",
-                                modifier = Modifier.padding(horizontal = 16.dp)
-                            )
-                        }
-                    }
-
-                    if (isChannelsLoading && channels.isEmpty()) {
-                        item {
-                            // A list of rows is a known shape, so it gets
-                            // placeholders rather than a spinner: nothing jumps
-                            // when the channels land.
-                            SkeletonList(
-                                count = 7,
-                                modifier = Modifier.padding(horizontal = 16.dp),
-                                spacing = 8.dp
-                            ) { alpha -> ChannelRowSkeleton(alpha = alpha) }
-                        }
-                    } else if (channels.isEmpty()) {
-                        item {
-                            Box(
-                                modifier = Modifier.fillMaxWidth().padding(32.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    "No subscriptions found",
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    } else if (matchedChannels.isEmpty()) {
-                        item(key = "no-channel-matches") {
-                            SearchEmptyState(
-                                title = "No channels match \"$channelQuery\"",
-                                hint = "Try part of the name, or the @handle."
-                            )
-                        }
-                    } else {
-                        items(matchedChannels, key = { it.channelId }) { channel ->
-                            ChannelRow(
-                                channel = channel,
-                                isLocal = channel.channelId in locallyFollowedIds,
-                                onClick = {
-                                    // The keyboard outlives the field it was
-                                    // opened from, and a drill-in behind an open
-                                    // keyboard is half a screen of video list.
-                                    focusManager.clearFocus()
-                                    selectedChannel = channel
-                                },
-                                onUnfollow = { channelToUnfollow = channel },
-                                modifier = Modifier.padding(horizontal = 16.dp)
-                            )
-                        }
-                    }
-
-                    item { Spacer(modifier = Modifier.height(32.dp)) }
-                }
-            }
-        }
-
-        // Default: subscriptions feed with the channel avatar rail
-        else -> {
+    PredictiveBackStack(
+        childOpen = subscriptionsChildOpen,
+        onBack = subscriptionsBack,
+        previewable = subscriptionsPreviewable,
+        background = {
             ExpressivePullToRefresh(
                 // As above: the pull spinner covers refreshes over existing
                 // videos, the skeleton covers the empty first load.
@@ -741,6 +537,226 @@ fun SubscriptionsContent(
                 }
             }
         }
+    ) { _ ->
+    when {
+        // Channel drill-in: latest uploads of the selected channel
+        currentChannel != null -> {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(backgroundColor)
+                    .windowInsetsPadding(WindowInsets.statusBars),
+                contentPadding = PaddingValues(bottom = contentPadding.calculateBottomPadding()),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                item {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp)
+                            .padding(top = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(onClick = { selectedChannel = null }) {
+                            Icon(
+                                Icons.AutoMirrored.Rounded.ArrowBack,
+                                contentDescription = "Back",
+                                tint = MaterialTheme.colorScheme.onBackground
+                            )
+                        }
+                        ChannelAvatar(channel = currentChannel, size = 40.dp)
+                        Spacer(Modifier.width(12.dp))
+                        Column {
+                            Text(
+                                text = currentChannel.name,
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onBackground,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            if (currentChannel.subscriberCountText != null) {
+                                Text(
+                                    text = currentChannel.subscriberCountText,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+
+                if (isChannelLoading) {
+                    item {
+                        Box(
+                            Modifier.fillMaxWidth().height(200.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            LoadingIndicator(
+                                modifier = Modifier.size(48.dp),
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                } else if (channelVideos.isEmpty()) {
+                    item {
+                        Box(
+                            modifier = Modifier.fillMaxWidth().padding(32.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("No videos found", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                } else {
+                    items(channelVideos) { video ->
+                        VideoCard(
+                            video = video,
+                            onClick = { onVideoClick(video) },
+                            onLongClick = { onVideoLongPress(video) },
+                            modifier = Modifier.padding(horizontal = 16.dp)
+                        )
+                    }
+                }
+
+                item { Spacer(modifier = Modifier.height(32.dp)) }
+            }
+        }
+
+        // Full channel list
+        showChannelList -> {
+            ExpressivePullToRefresh(
+                // The pull spinner only ever means "refreshing what is already
+                // on screen". First load is the skeleton's job below, and
+                // driving both off the same flag runs two indicators at once.
+                isRefreshing = isChannelsLoading && channels.isNotEmpty(),
+                onRefresh = { viewModel.loadSubscriptions(force = true) },
+                modifier = Modifier.fillMaxSize()
+            ) {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(backgroundColor)
+                        .windowInsetsPadding(WindowInsets.statusBars),
+                    contentPadding = PaddingValues(bottom = contentPadding.calculateBottomPadding()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    item {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 8.dp)
+                                .padding(top = 8.dp, bottom = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            IconButton(onClick = {
+                                showChannelList = false
+                                channelQuery = ""
+                            }) {
+                                Icon(
+                                    Icons.AutoMirrored.Rounded.ArrowBack,
+                                    contentDescription = "Back",
+                                    tint = MaterialTheme.colorScheme.onBackground
+                                )
+                            }
+                            Column {
+                                Text(
+                                    text = "All channels",
+                                    style = MaterialTheme.typography.headlineSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onBackground
+                                )
+                                Text(
+                                    // While filtering, the subtitle answers the
+                                    // question the filter asked instead of
+                                    // repeating a total the list no longer shows.
+                                    text = if (channelQuery.isBlank()) {
+                                        subscriptionsSubtitle(
+                                            channelCount = channels.size,
+                                            localCount = localSubscriptions.size,
+                                            isConnected = isYouTubeConnected
+                                        )
+                                    } else {
+                                        "${matchedChannels.size} of ${channels.size} channels"
+                                    },
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+
+                    // Only once the list is long enough to be worth searching,
+                    // and never while it is still loading: a field over a
+                    // skeleton is a control that cannot do anything yet.
+                    if (channels.size >= SEARCH_FIELD_MIN_ITEMS) {
+                        item(key = "channel-search") {
+                            SearchField(
+                                query = channelQuery,
+                                onQueryChange = { channelQuery = it },
+                                placeholder = "Search channels",
+                                modifier = Modifier.padding(horizontal = 16.dp)
+                            )
+                        }
+                    }
+
+                    if (isChannelsLoading && channels.isEmpty()) {
+                        item {
+                            // A list of rows is a known shape, so it gets
+                            // placeholders rather than a spinner: nothing jumps
+                            // when the channels land.
+                            SkeletonList(
+                                count = 7,
+                                modifier = Modifier.padding(horizontal = 16.dp),
+                                spacing = 8.dp
+                            ) { alpha -> ChannelRowSkeleton(alpha = alpha) }
+                        }
+                    } else if (channels.isEmpty()) {
+                        item {
+                            Box(
+                                modifier = Modifier.fillMaxWidth().padding(32.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    "No subscriptions found",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    } else if (matchedChannels.isEmpty()) {
+                        item(key = "no-channel-matches") {
+                            SearchEmptyState(
+                                title = "No channels match \"$channelQuery\"",
+                                hint = "Try part of the name, or the @handle."
+                            )
+                        }
+                    } else {
+                        items(matchedChannels, key = { it.channelId }) { channel ->
+                            ChannelRow(
+                                channel = channel,
+                                isLocal = channel.channelId in locallyFollowedIds,
+                                onClick = {
+                                    // The keyboard outlives the field it was
+                                    // opened from, and a drill-in behind an open
+                                    // keyboard is half a screen of video list.
+                                    focusManager.clearFocus()
+                                    selectedChannel = channel
+                                },
+                                onUnfollow = { channelToUnfollow = channel },
+                                modifier = Modifier.padding(horizontal = 16.dp)
+                            )
+                        }
+                    }
+
+                    item { Spacer(modifier = Modifier.height(32.dp)) }
+                }
+            }
+        }
+
+        // Default: subscriptions feed with the channel avatar rail
+        // The feed lives underneath now; this layer is empty over it,
+        // and full size so every state measures the same.
+        else -> Spacer(Modifier.fillMaxSize())
+    }
     }
 }
 

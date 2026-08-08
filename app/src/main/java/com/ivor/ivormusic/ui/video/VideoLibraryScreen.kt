@@ -1,7 +1,10 @@
 package com.ivor.ivormusic.ui.video
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -85,6 +88,7 @@ import com.ivor.ivormusic.data.VideoPlaylist
 import com.ivor.ivormusic.ui.components.ExpressivePullToRefresh
 import com.ivor.ivormusic.ui.components.PlaylistRowSkeleton
 import com.ivor.ivormusic.ui.components.SkeletonList
+import com.ivor.ivormusic.ui.components.PredictiveBackStack
 import com.ivor.ivormusic.ui.home.HomeViewModel
 
 /** Internal navigation state of the Library tab. */
@@ -124,25 +128,11 @@ fun VideoLibraryContent(
         if (isYouTubeConnected) viewModel.loadVideoPlaylists()
     }
 
-    BackHandler(enabled = page != LibraryPage.Root) {
-        page = LibraryPage.Root
-    }
-
-    AnimatedContent(
-        targetState = page,
-        label = "LibraryPage",
-        transitionSpec = {
-            if (targetState == LibraryPage.Root) {
-                (slideInHorizontally { -it / 3 } + fadeIn()) togetherWith
-                    (slideOutHorizontally { it } + fadeOut())
-            } else {
-                (slideInHorizontally { it } + fadeIn()) togetherWith
-                    (slideOutHorizontally { -it / 3 } + fadeOut())
-            }
-        }
-    ) { target ->
-        when (target) {
-            is LibraryPage.Root -> LibraryRoot(
+    PredictiveBackStack(
+        childOpen = page != LibraryPage.Root,
+        onBack = { page = LibraryPage.Root },
+        background = {
+            LibraryRoot(
                 isLoggedIn = isYouTubeConnected,
                 historyVideos = historyVideos,
                 playlists = playlists,
@@ -163,6 +153,31 @@ fun VideoLibraryContent(
                 },
                 contentPadding = contentPadding
             )
+        }
+    ) { committedByGesture ->
+    AnimatedContent(
+        targetState = page,
+        label = "LibraryPage",
+        transitionSpec = {
+            val content = when {
+                // The finger already performed this exit.
+                committedByGesture -> EnterTransition.None togetherWith ExitTransition.None
+                targetState == LibraryPage.Root ->
+                    fadeIn() togetherWith (slideOutHorizontally { it } + fadeOut())
+                else ->
+                    (slideInHorizontally { it } + fadeIn()) togetherWith
+                        (slideOutHorizontally { -it / 3 } + fadeOut())
+            }
+            // The Root state of this layer is empty, so the default
+            // SizeTransform would animate the container between nothing and
+            // full screen and clip the page to it on the way.
+            content using SizeTransform(clip = false) { _, _ -> snap() }
+        }
+    ) { target ->
+        when (target) {
+            // The root lives underneath now; this layer is empty over it, and
+            // full size so both states measure the same.
+            is LibraryPage.Root -> Spacer(Modifier.fillMaxSize())
 
             is LibraryPage.History -> Column(
                 modifier = Modifier
@@ -187,6 +202,7 @@ fun VideoLibraryContent(
                 contentPadding = contentPadding
             )
         }
+    }
     }
 }
 

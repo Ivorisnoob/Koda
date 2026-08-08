@@ -3,6 +3,7 @@ package com.ivor.ivormusic.ui.library
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
@@ -68,6 +69,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import coil.compose.AsyncImage
 import androidx.compose.ui.platform.LocalContext
+import com.ivor.ivormusic.ui.components.PredictiveBackStack
 import com.ivor.ivormusic.data.PlaylistDisplayItem
 import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.data.ThemePreferences
@@ -129,59 +131,72 @@ fun LibraryContent(
         }
     }
 
-    // Back Handler
-    BackHandler(enabled = currentRoute != LibraryRoute.Main) {
-        currentRoute = LibraryRoute.Main
-    }
-
     // Expressive motion physics for screen pushes/pops
     val spatialSpec = MaterialTheme.motionScheme.defaultSpatialSpec<androidx.compose.ui.unit.IntOffset>()
     val effectsSpec = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
+
+    PredictiveBackStack(
+        childOpen = currentRoute != LibraryRoute.Main,
+        onBack = { currentRoute = LibraryRoute.Main },
+        background = {
+            LibraryMainScreen(
+                songs = songs,
+                isLocalLibrary = isLocalLibrary,
+                viewModel = viewModel,
+                contentPadding = contentPadding,
+                onSongClick = onSongClick,
+                onPlayQueue = onPlayQueue,
+                onDownloadsClick = onDownloadsClick,
+                onNavigateToPlaylist = { playlist ->
+                    selectedPlaylist = playlist
+                    currentRoute = LibraryRoute.Playlist
+                },
+                onNavigateToArtist = { artist ->
+                    selectedArtistName = artist
+                    currentRoute = LibraryRoute.Artist
+                },
+                onNavigateToAlbum = { album, songs ->
+                    selectedAlbumName = album
+                    selectedAlbumSongs = songs
+                    currentRoute = LibraryRoute.Album
+                },
+                onNavigateToStats = {
+                    currentRoute = LibraryRoute.Stats
+                },
+                onNavigateToHistory = {
+                    currentRoute = LibraryRoute.History
+                },
+                allSongsListState = allSongsListState
+            )
+        }
+    ) { committedByGesture ->
     AnimatedContent(
         targetState = currentRoute,
         label = "LibraryNavigation",
         transitionSpec = {
-            if (targetState == LibraryRoute.Main) {
-                slideInHorizontally(animationSpec = spatialSpec) { -it } + fadeIn(animationSpec = effectsSpec) togetherWith
-                        slideOutHorizontally(animationSpec = spatialSpec) { it } + fadeOut(animationSpec = effectsSpec)
-            } else {
-                slideInHorizontally(animationSpec = spatialSpec) { it } + fadeIn(animationSpec = effectsSpec) togetherWith
-                        slideOutHorizontally(animationSpec = spatialSpec) { -it / 3 } + fadeOut(animationSpec = effectsSpec)
+            val content = when {
+                // The finger already performed this exit.
+                committedByGesture -> EnterTransition.None togetherWith ExitTransition.None
+                targetState == LibraryRoute.Main ->
+                    fadeIn(animationSpec = effectsSpec) togetherWith
+                        (slideOutHorizontally(animationSpec = spatialSpec) { it } +
+                            fadeOut(animationSpec = effectsSpec))
+                else ->
+                    (slideInHorizontally(animationSpec = spatialSpec) { it } +
+                        fadeIn(animationSpec = effectsSpec)) togetherWith
+                        (slideOutHorizontally(animationSpec = spatialSpec) { -it / 3 } +
+                            fadeOut(animationSpec = effectsSpec))
             }
+            // Main is empty on this layer, so the default SizeTransform would
+            // animate the container between nothing and full screen and clip
+            // the route to it on the way.
+            content using SizeTransform(clip = false) { _, _ -> snap() }
         }
     ) { route ->
         when (route) {
-            LibraryRoute.Main -> {
-                LibraryMainScreen(
-                    songs = songs,
-                    isLocalLibrary = isLocalLibrary,
-                    viewModel = viewModel,
-                    contentPadding = contentPadding,
-                    onSongClick = onSongClick,
-                    onPlayQueue = onPlayQueue,
-                    onDownloadsClick = onDownloadsClick,
-                    onNavigateToPlaylist = { playlist ->
-                        selectedPlaylist = playlist
-                        currentRoute = LibraryRoute.Playlist
-                    },
-                    onNavigateToArtist = { artist ->
-                        selectedArtistName = artist
-                        currentRoute = LibraryRoute.Artist
-                    },
-                    onNavigateToAlbum = { album, songs ->
-                        selectedAlbumName = album
-                        selectedAlbumSongs = songs
-                        currentRoute = LibraryRoute.Album
-                    },
-                    onNavigateToStats = {
-                        currentRoute = LibraryRoute.Stats
-                    },
-                    onNavigateToHistory = {
-                        currentRoute = LibraryRoute.History
-                    },
-                    allSongsListState = allSongsListState
-                )
-            }
+            // Main lives underneath now; this layer is empty over it, and full
+            // size so both states measure the same.
+            LibraryRoute.Main -> Spacer(Modifier.fillMaxSize())
             LibraryRoute.Playlist -> {
                 selectedPlaylist?.let { playlist ->
                     PlaylistDetailScreen(
@@ -251,6 +266,7 @@ fun LibraryContent(
                 )
             }
         }
+    }
     }
 }
 

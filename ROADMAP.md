@@ -149,7 +149,7 @@ Two things worth deciding rather than assuming: transitions that carry meaning (
 
 The manifest sets `android:enableOnBackInvokedCallback="true"`, so Koda has opted into the modern back API and then spent a long time suppressing the result everywhere. **19 `BackHandler`s against zero `PredictiveBackHandler`s** was the worst of both arrangements: the opt-in is declared, so the platform stops applying its own compatibility behaviour, and nothing replaced it.
 
-It now stands at **ten against three**, and the three are the surfaces people actually spend the day in: the settings page stack, the expanded music player, and the video player.
+It now stands at **six against seven**, and the seven are every screen stack and both players: settings, Library, the video library, Home's search drill-ins, the Subscriptions channel list, the expanded music player, and the video player.
 
 **The two players turned out to be the easy case, for the same reason.** Both already keep a single progress value from mini pill to full screen, with every height, padding, corner and alpha derived from it, so a preview is that value scrubbed rather than a second animation running alongside the first. What the finger reveals is the real destination, because neither has a separate "leaving" state to draw. The video one also has a drag channel built for its swipe-down minimize, and back rides that rather than a parallel one, so the two ways of dismissing it cannot drift apart. Expect this shape wherever a surface already animates itself open.
 
@@ -163,7 +163,13 @@ The second is that **the commit has to continue the gesture rather than restart 
 
 The third is the trap in the cancel path, below.
 
-**What is left is the in-screen stacks, and they are the settings problem again rather than the player one.** Library's route, the video library's page, the Subscriptions channel list and drill-in, and Home's viewed playlist or artist are all a sub-screen sitting on a parent that is not composed while it is open, so each needs the same lift the settings hub needed before a gesture has anything to reveal. Four screens, four restructures, and each one is large enough to be worth doing and testing on its own rather than in a sweep. The video player's own comments and live-chat panels are smaller versions of the same thing.
+**The in-screen stacks were the settings problem four more times, so that shape is a component now.** Library's route, the video library's page, the Subscriptions channel list and drill-in, and Home's search drill-ins were each one `AnimatedContent` over a route enum, which composes one state at a time and therefore had nothing behind the child to reveal. `ui/components/PredictiveBackStack.kt` owns the answer: parent in `background`, child in `foreground`, the peel, the cancel spring, and the modifier that makes the covered parent stop taking taps and stop talking to TalkBack. Each call site is now the lift plus three lines.
+
+Two details it carries that are easy to get wrong alone. The child's own exit has to be suppressed when a gesture committed, or it snaps back to full size to replay the move the finger just made. And the parent state of the child layer must stay full size (an empty `Spacer`, not nothing), because the default `SizeTransform` will otherwise animate the container between nothing and full screen and clip the child to it, which reads as a page unfolding out of a growing rectangle.
+
+**A step that does not close the child must not be previewed**, which is what `previewable` is for. Clearing the Subscriptions channel filter widens the list in place, and popping an album back to the artist page reveals another child rather than the screen underneath. Previewing either animates a departure that is not happening.
+
+**What is left is small and mostly panels.** The video player's comments and live-chat panels and its fullscreen quality sheet, and the player style wheel.
 
 **Two sites should keep a plain `BackHandler`, and it is the same rule as the settings search query.** Back on a non-default Home tab returns to the first tab, and back in Library leaves search or reorder mode. Nothing leaves the screen in either case, so there is nothing to draw behind, and a peel would describe a departure that is not happening.
 
