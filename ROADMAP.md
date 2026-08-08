@@ -147,9 +147,13 @@ Two things worth deciding rather than assuming: transitions that carry meaning (
 
 #### Predictive back, which is currently paid for and switched off
 
-The manifest sets `android:enableOnBackInvokedCallback="true"`, so Koda has opted into the modern back API. It then suppresses the result almost everywhere: **19 `BackHandler`s against one `PredictiveBackHandler`**. A plain `BackHandler` consumes the gesture and gives the system nothing to preview, so on Android 14 and up the back-swipe animation (the one that peels the current screen away and shows what is behind it), never appears at those sites.
+The manifest sets `android:enableOnBackInvokedCallback="true"`, so Koda has opted into the modern back API and then spent a long time suppressing the result everywhere. **19 `BackHandler`s against zero `PredictiveBackHandler`s** was the worst of both arrangements: the opt-in is declared, so the platform stops applying its own compatibility behaviour, and nothing replaced it.
 
-That is the worst of both arrangements. The opt-in is declared, so the platform stops applying its own compatibility behaviour, and nothing replaces it. Every sheet, the expanded player, the video overlay and the Shorts overlay still swallow the gesture and then snap.
+It now stands at **ten against three**, and the three are the surfaces people actually spend the day in: the settings page stack, the expanded music player, and the video player.
+
+**The two players turned out to be the easy case, for the same reason.** Both already keep a single progress value from mini pill to full screen, with every height, padding, corner and alpha derived from it, so a preview is that value scrubbed rather than a second animation running alongside the first. What the finger reveals is the real destination, because neither has a separate "leaving" state to draw. The video one also has a drag channel built for its swipe-down minimize, and back rides that rather than a parallel one, so the two ways of dismissing it cannot drift apart. Expect this shape wherever a surface already animates itself open.
+
+The music player also lost eight identical `BackHandler(enabled = true) { onCollapse() }` blocks, one per style, replaced by one handler on `ExpandablePlayer`. Back handlers resolve most recent first, so eight children each claiming the gesture made "which one answers" a question about composition order.
 
 **The settings page stack is done, and three things it turned out to need are worth carrying to the rest.**
 
@@ -159,7 +163,9 @@ The second is that **the commit has to continue the gesture rather than restart 
 
 The third is the trap in the cancel path, below.
 
-**The overlays are the hard part and the reason to do this deliberately.** `ExpandablePlayer`, `VideoPlayerOverlay` and the Shorts overlay live above the `NavHost` rather than inside it, so they are not screens the system can peel back to reveal something. Their back gesture collapses a thing rather than popping a destination, and the preview has to be driven by hand from the progress flow into the same spring that already animates the collapse. They do at least start from the opposite side of the settings problem: what is behind them is already composed and already on screen.
+**What is left is the in-screen stacks, and they are the settings problem again rather than the player one.** Library's route, the video library's page, the Subscriptions channel list and drill-in, and Home's viewed playlist or artist are all a sub-screen sitting on a parent that is not composed while it is open, so each needs the same lift the settings hub needed before a gesture has anything to reveal. Four screens, four restructures, and each one is large enough to be worth doing and testing on its own rather than in a sweep. The video player's own comments and live-chat panels are smaller versions of the same thing.
+
+**Two sites should keep a plain `BackHandler`, and it is the same rule as the settings search query.** Back on a non-default Home tab returns to the first tab, and back in Library leaves search or reorder mode. Nothing leaves the screen in either case, so there is nothing to draw behind, and a peel would describe a departure that is not happening.
 
 **The cancel path is what most implementations get wrong, and it is the entire point of the feature.** `PredictiveBackHandler` is a suspending handler that can be cancelled mid-gesture when the user changes their mind and slides back. If that path does not spring the UI cleanly back to where it was, predictive back is worse than no predictive back. The user gets a preview of leaving, decides not to, and lands somewhere broken. Every remaining site needs that case handled, not just the commit case.
 

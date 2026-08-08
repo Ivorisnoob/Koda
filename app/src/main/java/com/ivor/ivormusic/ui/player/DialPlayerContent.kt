@@ -1,6 +1,5 @@
 package com.ivor.ivormusic.ui.player
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
@@ -100,7 +99,9 @@ fun DialPlayerSheetContent(
     onLoadMore: () -> Unit = {},
     onArtistClick: (String) -> Unit = {}
 ) {
-    BackHandler(enabled = true) { onCollapse() }
+    // Back is handled once by ExpandablePlayer, which previews the collapse
+    // as a gesture instead of firing at the end of one. A BackHandler here
+    // would be registered later and silently win.
 
     val currentSong by viewModel.currentSong.collectAsState()
     val isPlaying by viewModel.isPlaying.collectAsState()
