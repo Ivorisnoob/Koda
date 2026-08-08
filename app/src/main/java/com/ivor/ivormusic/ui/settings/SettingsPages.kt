@@ -37,6 +37,7 @@ import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.FolderOff
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.HdrOn
+import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.HighQuality
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.MusicNote
@@ -338,6 +339,8 @@ internal fun PlaybackSettingsPage(
     onCrossfadeDurationChange: (Int) -> Unit,
     autoLoadQueue: Boolean,
     onAutoLoadQueueToggle: (Boolean) -> Unit,
+    saveMusicHistory: Boolean,
+    onSaveMusicHistoryToggle: (Boolean) -> Unit,
     musicQualityWifi: String,
     musicQualityMobile: String,
     videoQualityWifi: String,
@@ -404,6 +407,24 @@ internal fun PlaybackSettingsPage(
                         subtitle = "Add recommended songs when the queue runs low",
                         enabled = autoLoadQueue,
                         onToggle = onAutoLoadQueueToggle
+                    )
+
+                    SettingsDivider()
+
+                    // Device-local, and not the same switch as "Save Watch
+                    // History" on the Account page - that one governs the
+                    // YouTube account's history. The subtitle spells out what
+                    // stops growing, because this feeds four other surfaces.
+                    SettingsToggleRow(
+                        icon = Icons.Rounded.History,
+                        title = "Save Listening History",
+                        subtitle = if (saveMusicHistory) {
+                            "Songs you play are logged on this device"
+                        } else {
+                            "Paused: new plays are not recorded"
+                        },
+                        enabled = saveMusicHistory,
+                        onToggle = onSaveMusicHistoryToggle
                     )
                 }
             }

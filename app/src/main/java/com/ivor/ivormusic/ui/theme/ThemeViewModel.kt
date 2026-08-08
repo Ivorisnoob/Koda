@@ -25,6 +25,7 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
     val homeModeToggleEnabled: StateFlow<Boolean> = themePreferences.homeModeToggleEnabled
     val playerStyle: StateFlow<PlayerStyle> = themePreferences.playerStyle
     val saveVideoHistory: StateFlow<Boolean> = themePreferences.saveVideoHistory
+    val saveMusicHistory: StateFlow<Boolean> = themePreferences.saveMusicHistory
 
     val liveDownloadUpdates: StateFlow<Boolean> = themePreferences.liveDownloadUpdates
     val livePlaybackUpdates: StateFlow<Boolean> = themePreferences.livePlaybackUpdates
@@ -110,6 +111,10 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
     
     fun toggleSaveVideoHistory() {
         themePreferences.toggleSaveVideoHistory()
+    }
+
+    fun setSaveMusicHistory(enabled: Boolean) {
+        themePreferences.setSaveMusicHistory(enabled)
     }
 
     fun setLiveDownloadUpdates(enabled: Boolean) {

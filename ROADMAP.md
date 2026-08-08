@@ -8,7 +8,7 @@ For how the app is built, see [`CLAUDE.md`](CLAUDE.md). For the design system an
 
 ## Where Koda is today
 
-Version **4.3** (`versionCode` 21), targeting Android 16 (API 36) with a floor at Android 11 (API 30). Roughly **69,000 lines** of Kotlin across **135 files**, all of it Compose, all of it rendered inside a single `MaterialExpressiveTheme`.
+Version **4.3** (`versionCode` 21), targeting Android 16 (API 36) with a floor at Android 11 (API 30). Roughly **69,000 lines** of Kotlin across **136 files**, all of it Compose, all of it rendered inside a single `MaterialExpressiveTheme`.
 
 The app is past the point of proving itself. The core loops all work end to end:
 
@@ -26,11 +26,11 @@ Where the weight sits today:
 
 | Area | Lines | What lives there |
 | --- | --- | --- |
-| `ui/video` | 14,800 | Video player, live streams, live chat, subscriptions |
+| `ui/video` | 14,900 | Video player, live streams, live chat, subscriptions |
 | `ui/player` | 11,200 | Eight music player styles |
 | `data/YouTubeRepository.kt` | 6,500 | The InnerTube and NewPipe layer, single file |
 | `ui/settings` | 5,900 | Hub, eleven pages, search index |
-| `ui/home` | 3,500 | Both modes' feeds |
+| `ui/home` | 3,600 | Both modes' feeds |
 | `ui/library` | 3,400 | Playlists, liked songs, local audio |
 
 That table is also a map of the risk. `YouTubeRepository.kt` is the single point of failure for every network path in the app, and the two largest UI areas are the two youngest.
@@ -57,23 +57,7 @@ These are not goals. They are the walls the roadmap has to fit inside, and any p
 
 Not roadmap items. These are things that are wrong today, recorded here because they were raised alongside the planning and because each has a diagnosed cause rather than a suspicion.
 
-**Vertical videos are pillarboxed on the watch page.** Open a Short from watch history (or any 9:16 upload that is not a live broadcast), and it plays inside the standard 16:9 player box with black bars down both sides, using a fraction of the screen.
-
-The cause is a single condition. The app already detects portrait video correctly and in two independent ways: `VideoQuality.isPortrait` is derived at parse time from the largest dimensioned format on both the InnerTube and NewPipe paths, and `onVideoSizeChanged` backstops it from the first frame. Both feed `VideoPlayerViewModel.isPortraitVideo`, which is accurate for every video. But the only consumer is `VideoPlayerContent.kt:152`:
-
-```kotlin
-val verticalLiveAvailable = isLive && isPortraitVideo
-```
-
-The vertical treatment was built for live streams and gated behind `isLive`, so a portrait signal that is already correct for every video is discarded for all of them except broadcasts. Nothing needs detecting; an existing, working signal is simply being ignored.
-
-What it should do instead is a genuine design decision rather than a one-line flip, which is why it is worth writing down rather than patching blind. Three candidate behaviours, in the order they seem right:
-
-- **Let the player box take the video's aspect ratio** on the standard watch page, capped at some maximum height, with the title, actions, and comments below it as normal. This is what YouTube itself does for vertical uploads that are not Shorts, and it keeps the whole watch page (description, comments, related), reachable.
-- **Reuse the vertical chrome** from `VerticalLivePlayerContent` without the chat ticker. Full-bleed and immersive, closest to how the video was meant to be seen, but it hides the watch page behind a gesture.
-- **Hand off to the Shorts overlay**, which is wrong: Shorts is opt-in and is a feed, and a video opened deliberately from history is not a feed.
-
-The first is the recommended default, since it degrades gracefully for the awkward middle ratios. 4:5 and 1:1 uploads are common and are not "vertical" in the Shorts sense. The existing `MAX_ACCEPTABLE_CROP` logic in the vertical live player already encodes that judgement and can be borrowed.
+Nothing is currently open here. The last entry, **vertical videos pillarboxed on the watch page**, is fixed: the video box now takes the source aspect ratio when the source is portrait, capped so the watch page underneath survives. What made that one worth writing down rather than patching blind is worth keeping in mind for the next layout of its kind. The portrait signal was already correct on both parse paths and simply discarded for everything but live streams, so the work was never detection; and the fix is fit rather than zoom, because the box is never narrower than the video and filling it would have cropped the top and bottom, which is exactly where a vertical upload puts faces and captions.
 
 ---
 
@@ -172,14 +156,6 @@ This matters more here than in a typical app precisely *because* the motion is s
 The fix is a single source of truth. Read the animation scale, expose it as a composition local or a theme value, and have the shared animation specs collapse to instant when it is zero. Because springs in this app are used through `spring()` calls scattered across the UI rather than through a shared motion vocabulary, the honest first step is probably introducing that vocabulary, which the design system would benefit from anyway.
 
 Two things worth deciding rather than assuming: transitions that carry meaning (the player expanding, a sheet arriving), should probably become instant rather than disappearing, so the user still understands what happened. And the player styles whose entire identity is motion (Morph's cycling shape, Sticker's squash-and-stretch) need a defined still state rather than a broken one.
-
-#### A listening history for music
-
-Video mode has `VideoHistoryScreen`. Music has no equivalent surface. Play history exists and is tracked. `StatsRepository` builds charts, streaks, and top artists from it, and the taste profile in `RecommendationEngine` is derived from it, but there is nowhere to simply see what you listened to, in order, and play something again.
-
-This is the asymmetry people notice fastest, because it is the same app in two modes and one of them forgot. It is also the cheapest item in this document: the data is already recorded and already aggregated, so this is a screen over an existing store rather than new plumbing.
-
-Worth pairing with the same controls video history has. Clear an entry, clear all, and a pause-history toggle, since `isSaveVideoHistoryEnabled()` already establishes that pattern on the video side.
 
 #### Predictive back, which is currently paid for and switched off
 
@@ -329,7 +305,7 @@ Auto is declared correctly and still does not work in practice. The manifest car
 
 **The fourth is timing.** Auto expects browse responses quickly, and `onGetChildren` goes to the network on a cold cache. A slow InnerTube call can exceed what Auto will wait for, which surfaces as an error or an empty list rather than as loading. Serving something instantly from local data and refreshing behind it would be more robust than making the car wait.
 
-One small bug while in there: playlist items call `setArtworkUri(Uri.parse(playlist.thumbnailUrl ?: ""))`, which turns a missing thumbnail into an empty `Uri` rather than omitting artwork, and that can fail Auto's image loading on the whole item.
+One small bug that used to sit under this heading is now fixed: playlist items called `setArtworkUri(Uri.parse(playlist.thumbnailUrl ?: ""))`, which turned a missing thumbnail into an empty `Uri` rather than omitting artwork and could fail Auto's image loading for the whole item. Every media item now goes through a `toArtworkUri()` helper that returns null instead. Worth knowing because it is the shape of bug this area produces: Auto fails an entire item on a malformed extra rather than degrading to no artwork, so anything fed into `MediaMetadata` for a remote surface should be null rather than empty.
 
 Because Auto and Wear both consume this same browse tree, widening it pays twice. It is listed as the first step of the Wear work for the same reason.
 
@@ -422,3 +398,5 @@ The milestones behind us, kept here so the direction of travel is visible.
 - Settings split into a searchable hub of eleven pages
 - Tab scroll positions that survive a switch, and a re-tap that returns the list to the top
 - Skeleton placeholders on every feed's first load, replacing the doubled spinners
+- A listening history for music, grouped by day, searchable, with a pause toggle
+- Vertical videos given a player box their own shape instead of a pillarboxed 16:9 frame

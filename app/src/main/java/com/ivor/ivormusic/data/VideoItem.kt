@@ -210,16 +210,25 @@ data class VideoQuality(
      */
     val isLive: Boolean = false,
     /**
-     * Whether the source frame is taller than it is wide, read off the stream
-     * dimensions at parse time.
+     * Width over height of the source frame, read off the stream dimensions at
+     * parse time. Null when no format declared both dimensions.
      *
      * The player also learns this from ExoPlayer's onVideoSizeChanged, but only
-     * once the first frame has decoded - too late for the vertical live layout,
-     * which would otherwise compose as a 16:9 box and visibly snap to full
-     * bleed a moment after playback starts.
+     * once the first frame has decoded - too late for any layout that sizes
+     * itself from the shape of the video, which would otherwise compose as a
+     * 16:9 box and visibly snap a moment after playback starts. That is the
+     * vertical live player, and it is also the watch page, whose video box
+     * follows the source aspect ratio rather than assuming 16:9.
+     *
+     * The exact ratio matters and a portrait flag is not enough: "vertical"
+     * covers 9:16, 4:5 and 1:1, and a box sized for one of those is wrong for
+     * the other two.
      */
-    val isPortrait: Boolean = false
-)
+    val sourceAspectRatio: Float? = null
+) {
+    /** Taller than it is wide. Unknown dimensions read as landscape. */
+    val isPortrait: Boolean get() = sourceAspectRatio?.let { it > 0f && it < 1f } ?: false
+}
 
 /**
  * Complete video details including qualities and related videos.

@@ -13,6 +13,7 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
@@ -61,6 +62,20 @@ import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.data.VideoQuality
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+
+/** The shape of the watch page's video box when the source shape is unknown. */
+private const val DEFAULT_VIDEO_ASPECT = 16f / 9f
+
+/**
+ * The tallest the watch page's video box may grow, as a fraction of the screen.
+ *
+ * A 9:16 video at full width wants about 80% of the height of a modern phone,
+ * which leaves the watch page with room for nothing. This is the line where the
+ * title, the channel row and the action row still fit underneath - the point of
+ * keeping the video on the watch page at all. Past it the video letterboxes
+ * rather than pushing the page off the screen.
+ */
+private const val MAX_VIDEO_BOX_HEIGHT_FRACTION = 0.62f
 
 /**
  * Content for the full Video Player Overlay.
@@ -161,6 +176,62 @@ fun VideoPlayerContent(
     val landscapeChatWidth = remember(configuration.screenWidthDp) {
         (configuration.screenWidthDp * 0.34f).dp.coerceIn(260.dp, 360.dp)
     }
+
+    /**
+     * The shape of the video box on the watch page.
+     *
+     * A fixed 16:9 frame is right for the overwhelming majority of uploads and
+     * wrong for the rest: a 9:16 video inside it gets about a third of the width
+     * and pillarbox down both sides, which is the worst possible presentation of
+     * the one thing the user opened. So a portrait source gets a box its own
+     * shape instead, capped by [MAX_VIDEO_BOX_HEIGHT_FRACTION] so the watch page
+     * underneath survives.
+     *
+     * **Landscape sources are deliberately left at 16:9**, including 4:3, which
+     * this could just as easily follow. Nothing is badly broken there, it is the
+     * shape every feed thumbnail and the mini player already use, and changing
+     * the common path is not what this is for.
+     *
+     * **The video is fitted inside the box, never zoomed to fill it.** The
+     * vertical live player crops the sides of a 9:16 frame to fill the screen,
+     * which is the bargain Shorts makes and is fine there; here the box is never
+     * narrower than the video, so filling it would crop the top and bottom
+     * instead - exactly where a vertical upload puts faces and captions. Fitting
+     * means an uncapped source lands on an exact fit with no bars at all, and
+     * only a very tall video on a very tall phone keeps a slim pair, far less
+     * than 16:9 was giving it. The MAX_ACCEPTABLE_CROP judgement the vertical
+     * live player makes about 4:5 and 1:1 not being "vertical" in the Shorts
+     * sense is inherited for free: those get a 4:5 or 1:1 box and no crop.
+     */
+    val targetVideoBoxAspect = run {
+        val source = videoAspectRatio?.takeIf { it.isFinite() && it > 0f }
+        if (source == null || source >= 1f) {
+            DEFAULT_VIDEO_ASPECT
+        } else {
+            // The narrowest box that still fits the height budget. Written as
+            // an aspect so the whole thing stays one number the layout can
+            // animate; coerced rather than coerceIn because a window wider than
+            // it is tall would put the floor above the ceiling and throw.
+            val heightCapAspect = configuration.screenWidthDp.toFloat() /
+                (configuration.screenHeightDp.toFloat() * MAX_VIDEO_BOX_HEIGHT_FRACTION)
+                    .coerceAtLeast(1f)
+            maxOf(source, heightCapAspect).coerceAtMost(DEFAULT_VIDEO_ASPECT)
+        }
+    }
+    // The shape is usually known from the stream dimensions before the first
+    // frame decodes, but not before the player opens, so the box would still
+    // snap from 16:9 the moment the quality list lands. Animated, it reads as
+    // the frame opening out to meet the video. Non-bouncy on purpose: an
+    // overshoot on an aspect ratio drives the box past the screen, and an
+    // undershoot below zero throws.
+    val videoBoxAspect by animateFloatAsState(
+        targetValue = targetVideoBoxAspect,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioNoBouncy,
+            stiffness = Spring.StiffnessMediumLow
+        ),
+        label = "videoBoxAspect"
+    )
     // Timed comments overlay toggle; persists across videos while the player is open
     var timedCommentsActive by remember { mutableStateOf(false) }
     
@@ -634,7 +705,9 @@ fun VideoPlayerContent(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .aspectRatio(16f / 9f)
+                        // Follows the video rather than assuming 16:9 - see
+                        // videoBoxAspect above for why, and why only upward.
+                        .aspectRatio(videoBoxAspect.coerceAtLeast(0.1f))
                         .background(Color.Black)
                         // Reported so PictureInPictureParams can animate the
                         // window out of the video rect instead of the whole

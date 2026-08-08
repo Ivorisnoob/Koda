@@ -174,6 +174,64 @@ class StatsRepository(private val context: Context) {
             }.mapValues { it.value.size }
     }
 
+    /**
+     * Drop a single play.
+     *
+     * Identity is the song plus the instant it was played: entries carry no id
+     * of their own, and [addPlayEvent] already debounces repeats of the same
+     * song inside ten seconds, so the pair cannot collide in practice.
+     *
+     * Returns the surviving history so the caller can publish it without a
+     * second read - the screen doing the removing is showing the list.
+     */
+    suspend fun removeEntry(songId: String, timestamp: Long): List<PlayHistoryEntry> =
+        withContext(Dispatchers.IO) {
+            mutex.withLock {
+                val remaining = loadHistory().filterNot {
+                    it.songId == songId && it.timestamp == timestamp
+                }
+                writeHistory(remaining)
+                remaining
+            }
+        }
+
+    /**
+     * Drop every play of one song. The list-level version of [removeEntry], for
+     * a song that has been on repeat and owns half the log.
+     */
+    suspend fun removeAllPlaysOf(songId: String): List<PlayHistoryEntry> =
+        withContext(Dispatchers.IO) {
+            mutex.withLock {
+                val remaining = loadHistory().filterNot { it.songId == songId }
+                writeHistory(remaining)
+                remaining
+            }
+        }
+
+    /**
+     * Put entries back exactly as they were, newest first.
+     *
+     * Undo restores the whole list rather than re-inserting one entry, because
+     * a removal can take a run of plays with it and the order has to come back
+     * unchanged. Callers hold the pre-removal list; this only writes it.
+     */
+    suspend fun restoreHistory(entries: List<PlayHistoryEntry>) = withContext(Dispatchers.IO) {
+        mutex.withLock { writeHistory(entries) }
+    }
+
+    /** Caller must hold [mutex]. */
+    private fun writeHistory(entries: List<PlayHistoryEntry>) {
+        try {
+            if (entries.isEmpty()) {
+                if (historyFile.exists()) historyFile.delete()
+            } else {
+                historyFile.writeText(json.encodeToString(entries))
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error writing history", e)
+        }
+    }
+
     suspend fun clearHistory() = withContext(Dispatchers.IO) {
         if (historyFile.exists()) historyFile.delete()
     }

@@ -35,6 +35,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.automirrored.rounded.List
 import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
@@ -175,6 +176,9 @@ fun LibraryContent(
                     onNavigateToStats = {
                         currentRoute = LibraryRoute.Stats
                     },
+                    onNavigateToHistory = {
+                        currentRoute = LibraryRoute.History
+                    },
                     allSongsListState = allSongsListState
                 )
             }
@@ -238,12 +242,20 @@ fun LibraryContent(
                     contentPadding = contentPadding
                 )
             }
+            LibraryRoute.History -> {
+                ListeningHistoryScreen(
+                    onBack = { currentRoute = LibraryRoute.Main },
+                    viewModel = viewModel,
+                    onPlayQueue = onPlayQueue,
+                    contentPadding = contentPadding
+                )
+            }
         }
     }
 }
 
 enum class LibraryRoute {
-    Main, Playlist, Album, Artist, Stats
+    Main, Playlist, Album, Artist, Stats, History
 }
 
 enum class LibraryTab(val label: String) {
@@ -279,6 +291,7 @@ fun LibraryMainScreen(
     onNavigateToArtist: (String) -> Unit,
     onNavigateToAlbum: (String, List<Song>) -> Unit,
     onNavigateToStats: () -> Unit,
+    onNavigateToHistory: () -> Unit,
     allSongsListState: LazyListState = rememberLazyListState()
 ) {
     val userPlaylists by viewModel.userPlaylists.collectAsState()
@@ -361,10 +374,19 @@ fun LibraryMainScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.Top
             ) {
+                // displayLarge is 57sp and "Library" is most of the width at
+                // that size, so this row has space for exactly one action.
+                // Listening history is reached from the Recently played rail
+                // and the FAB menu instead; a second button here truncated the
+                // title, and dropping the title a step would split Home and
+                // Library, the only two screens that share this scale.
                 Text(
                     text = "Library",
                     style = MaterialTheme.typography.displayLarge,
-                    color = MaterialTheme.colorScheme.onBackground
+                    color = MaterialTheme.colorScheme.onBackground,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
                 )
 
                 FilledTonalIconButton(
@@ -455,6 +477,7 @@ fun LibraryMainScreen(
                             onLikedSongsClick = {
                                 onNavigateToPlaylist(PlaylistDisplayItem("Liked Songs", "LM", "You", likedSongs.size, null))
                             },
+                            onNavigateToHistory = onNavigateToHistory,
                             contentPadding = contentPadding,
                             listState = allSongsListState
                         )
@@ -549,6 +572,14 @@ fun LibraryMainScreen(
         FloatingActionButtonMenuItem(
             onClick = {
                 fabMenuExpanded = false
+                onNavigateToHistory()
+            },
+            icon = { Icon(Icons.Rounded.History, null) },
+            text = { Text("Listening history") }
+        )
+        FloatingActionButtonMenuItem(
+            onClick = {
+                fabMenuExpanded = false
                 onNavigateToStats()
             },
             icon = { Icon(Icons.Rounded.Insights, null) },
@@ -587,6 +618,7 @@ fun AllSongsList(
     onPlayQueue: (List<Song>, Song?) -> Unit,
     onDownloadsClick: () -> Unit,
     onLikedSongsClick: () -> Unit,
+    onNavigateToHistory: () -> Unit,
     contentPadding: PaddingValues,
     listState: LazyListState = rememberLazyListState()
 ) {
@@ -624,16 +656,43 @@ fun AllSongsList(
             }
         }
 
+        item(key = "history_card") {
+            ListeningHistoryQuickCard(
+                playCount = playCounts.values.sum(),
+                onClick = onNavigateToHistory
+            )
+        }
+
         // Recently played rail
         if (recentlyPlayed.isNotEmpty()) {
             item(key = "recent_header") {
-                Text(
-                    "Recently played",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onBackground,
-                    modifier = Modifier.padding(top = 16.dp, bottom = 4.dp)
-                )
+                // The rail is this list deduplicated down to one card a song,
+                // so "See all" opening the full log is the honest thing behind
+                // it - and it is where someone already looking at recents will
+                // reach when the song they want is not one of the fifteen.
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 16.dp, bottom = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        "Recently played",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                    TextButton(onClick = onNavigateToHistory) {
+                        Text("See all")
+                        Spacer(Modifier.width(4.dp))
+                        Icon(
+                            Icons.AutoMirrored.Rounded.ArrowForward,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
             }
             item(key = "recent_row") {
                 LazyRow(
@@ -818,6 +877,76 @@ private fun DownloadsQuickCard(count: Int, onClick: () -> Unit) {
                 Icons.Rounded.ChevronRight,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSecondaryContainer
+            )
+        }
+    }
+}
+
+/**
+ * The way into the listening history.
+ *
+ * A card rather than a header button: the Library title is `displayLarge` and
+ * leaves room for exactly one action, which Statistics already holds. Shown
+ * unconditionally, unlike the Downloads and Liked cards above it, because it is
+ * the only permanent entry point and a screen nobody can find is not shipped -
+ * the history screen has a proper empty state for the case where there is
+ * nothing behind this yet.
+ */
+@Composable
+private fun ListeningHistoryQuickCard(playCount: Int, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.tertiaryContainer,
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(76.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 20.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Surface(
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.tertiary,
+                modifier = Modifier.size(44.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        Icons.Rounded.History,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onTertiary,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+            }
+            Spacer(Modifier.width(16.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "Listening history",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onTertiaryContainer
+                )
+                Text(
+                    // The live value, the same as every settings hub row: a
+                    // card that says nothing about what is inside is a worse
+                    // version of the link it replaced.
+                    when {
+                        playCount <= 0 -> "Everything you play, in order"
+                        playCount == 1 -> "1 play so far"
+                        else -> "$playCount plays so far"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.8f)
+                )
+            }
+            Icon(
+                Icons.Rounded.ChevronRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onTertiaryContainer
             )
         }
     }
@@ -1601,7 +1730,7 @@ private fun TrackSectionHeader(
  * much is coming, which a bare spinner cannot.
  */
 @Composable
-private fun TrackSkeletonList(rows: Int = 6) {
+internal fun TrackSkeletonList(rows: Int = 6) {
     val transition = rememberInfiniteTransition(label = "trackSkeleton")
     val alpha by transition.animateFloat(
         initialValue = 0.30f,

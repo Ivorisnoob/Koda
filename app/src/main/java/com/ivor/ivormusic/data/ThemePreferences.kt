@@ -48,6 +48,9 @@ class ThemePreferences(context: Context) {
     private val _saveVideoHistory = MutableStateFlow(getSaveVideoHistoryPreference())
     val saveVideoHistory: StateFlow<Boolean> = _saveVideoHistory.asStateFlow()
 
+    private val _saveMusicHistory = MutableStateFlow(getSaveMusicHistoryPreference())
+    val saveMusicHistory: StateFlow<Boolean> = _saveMusicHistory.asStateFlow()
+
     private val _liveDownloadUpdates = MutableStateFlow(getLiveDownloadUpdatesPreference())
     val liveDownloadUpdates: StateFlow<Boolean> = _liveDownloadUpdates.asStateFlow()
 
@@ -140,6 +143,7 @@ class ThemePreferences(context: Context) {
             KEY_HOME_MODE_TOGGLE_ENABLED -> _homeModeToggleEnabled.value = getHomeModeToggleEnabledPreference()
             KEY_PLAYER_STYLE -> _playerStyle.value = getPlayerStylePreference()
             KEY_SAVE_VIDEO_HISTORY -> _saveVideoHistory.value = getSaveVideoHistoryPreference()
+            KEY_SAVE_MUSIC_HISTORY -> _saveMusicHistory.value = getSaveMusicHistoryPreference()
             KEY_LIVE_DOWNLOAD_UPDATES -> _liveDownloadUpdates.value = getLiveDownloadUpdatesPreference()
             KEY_LIVE_PLAYBACK_UPDATES -> _livePlaybackUpdates.value = getLivePlaybackUpdatesPreference()
             KEY_TIMED_COMMENTS_ENABLED -> _timedCommentsEnabled.value = getTimedCommentsEnabledPreference()
@@ -186,6 +190,7 @@ class ThemePreferences(context: Context) {
         private const val KEY_HOME_MODE_TOGGLE_ENABLED = "home_mode_toggle_enabled"
         private const val KEY_PLAYER_STYLE = "player_style"
         private const val KEY_SAVE_VIDEO_HISTORY = "save_video_history"
+        private const val KEY_SAVE_MUSIC_HISTORY = "save_music_history"
         private const val KEY_LIVE_DOWNLOAD_UPDATES = "live_download_updates"
 
         /**
@@ -656,6 +661,33 @@ class ThemePreferences(context: Context) {
      */
     fun toggleSaveVideoHistory() {
         setSaveVideoHistory(!_saveVideoHistory.value)
+    }
+
+    /**
+     * Whether songs that play are written to the local listening history.
+     *
+     * Separate from [getSaveVideoHistoryPreference], which governs the YouTube
+     * account's watch history: this one is device-local, works signed out, and
+     * feeds the listening history screen, the recently-played rail, the Library
+     * "Most played" sort and the taste profile behind recommendations. Turning
+     * it off stops all of those growing; it does not erase what is already
+     * recorded, which is what Clear history is for.
+     */
+    private fun getSaveMusicHistoryPreference(): Boolean {
+        return prefs.getBoolean(KEY_SAVE_MUSIC_HISTORY, true)
+    }
+
+    /**
+     * Fresh read of the listening-history preference. Same reasoning as
+     * [isSaveVideoHistoryEnabled]: PlayerViewModel holds its own
+     * ThemePreferences and decides at playback time, long after the settings
+     * screen wrote through a different instance.
+     */
+    fun isSaveMusicHistoryEnabled(): Boolean = getSaveMusicHistoryPreference()
+
+    fun setSaveMusicHistory(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_SAVE_MUSIC_HISTORY, enabled).apply()
+        _saveMusicHistory.value = enabled
     }
 
     /**

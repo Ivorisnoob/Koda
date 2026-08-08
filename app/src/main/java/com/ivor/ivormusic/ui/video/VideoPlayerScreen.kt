@@ -601,8 +601,13 @@ fun PortraitPlayerContent(
     /** Jump to the live edge of the DVR window. */
     onSeekToLive: () -> Unit = {},
     /**
-     * Shown only for a portrait live stream, which this 16:9 box can only
-     * pillarbox. Returns to the full-bleed vertical layout the stream opened in.
+     * Shown only for a portrait live stream. Returns to the full-bleed vertical
+     * layout the stream opened in.
+     *
+     * A portrait VOD gets no such button, deliberately: the watch page's box now
+     * takes the shape of the video, so the page is a reasonable home for it, and
+     * the full-bleed layout is built around live chat with nothing to say on a
+     * finished video.
      */
     showVerticalLiveButton: Boolean = false,
     onVerticalLiveClick: () -> Unit = {},
