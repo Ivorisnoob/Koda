@@ -149,7 +149,9 @@ Two things worth deciding rather than assuming: transitions that carry meaning (
 
 The manifest sets `android:enableOnBackInvokedCallback="true"`, so Koda has opted into the modern back API and then spent a long time suppressing the result everywhere. **19 `BackHandler`s against zero `PredictiveBackHandler`s** was the worst of both arrangements: the opt-in is declared, so the platform stops applying its own compatibility behaviour, and nothing replaced it.
 
-It now stands at **six against seven**, and the seven are every screen stack and both players: settings, Library, the video library, Home's search drill-ins, the Subscriptions channel list, the expanded music player, and the video player.
+It now stands at **six against eight**, and the eight are every screen stack and every overlay: settings, Library, the video library, Home's search drill-ins, the Subscriptions channel list, the expanded music player, the video player and the Shorts overlay.
+
+**A note for the next inventory of this.** The Shorts overlay was missed by the first sweep because it was written `BackHandler { ... }` with no argument list, and a grep for `BackHandler(` does not find it. Count both forms.
 
 **The two players turned out to be the easy case, for the same reason.** Both already keep a single progress value from mini pill to full screen, with every height, padding, corner and alpha derived from it, so a preview is that value scrubbed rather than a second animation running alongside the first. What the finger reveals is the real destination, because neither has a separate "leaving" state to draw. The video one also has a drag channel built for its swipe-down minimize, and back rides that rather than a parallel one, so the two ways of dismissing it cannot drift apart. Expect this shape wherever a surface already animates itself open.
 
@@ -169,7 +171,9 @@ Two details it carries that are easy to get wrong alone. The child's own exit ha
 
 **A step that does not close the child must not be previewed**, which is what `previewable` is for. Clearing the Subscriptions channel filter widens the list in place, and popping an album back to the artist page reveals another child rather than the screen underneath. Previewing either animates a departure that is not happening.
 
-**What is left is small and mostly panels.** The video player's comments and live-chat panels and its fullscreen quality sheet, and the player style wheel.
+**The Shorts overlay is the odd one out among the overlays**, and worth knowing before the next one like it. The two players collapse into a mini pill and already own a value describing that journey, so their preview is a scrub of it. Shorts has no smaller resting state - it closes, and what is behind it is the app it was opened from - so its peel is its own value shrinking the whole overlay inward, which is the shape the system uses for leaving with no parent to reveal.
+
+**What is left is small and mostly panels.** The video player's comments and live-chat panels and its fullscreen quality sheet, and the player style wheel. These slide up over content rather than sitting on a parent, so they want their own treatment rather than [PredictiveBackStack].
 
 **Two sites should keep a plain `BackHandler`, and it is the same rule as the settings search query.** Back on a non-default Home tab returns to the first tab, and back in Library leaves search or reorder mode. Nothing leaves the screen in either case, so there is nothing to draw behind, and a peel would describe a departure that is not happening.
 
