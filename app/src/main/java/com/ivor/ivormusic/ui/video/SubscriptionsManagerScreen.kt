@@ -70,7 +70,12 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.ivor.ivormusic.data.LocalSubscription
 import com.ivor.ivormusic.data.SubscriptionImportResult
+import com.ivor.ivormusic.ui.components.SEARCH_FIELD_MIN_ITEMS
+import com.ivor.ivormusic.ui.components.SearchEmptyState
+import com.ivor.ivormusic.ui.components.SearchField
 import com.ivor.ivormusic.ui.home.HomeViewModel
+import com.ivor.ivormusic.util.MatchField
+import com.ivor.ivormusic.util.fuzzyScore
 import kotlinx.coroutines.launch
 
 /**
@@ -108,6 +113,18 @@ fun SubscriptionsManagerScreen(
     // rebuilding a fifty-channel grouping by hand is not a cheap undo.
     var groupToDelete by remember { mutableStateOf<com.ivor.ivormusic.data.SubscriptionGroup?>(null) }
     var channelForGroups by remember { mutableStateOf<LocalSubscription?>(null) }
+
+    // This screen is only ever opened with a particular channel in mind -
+    // to put it in a group, or to drop it - so a long list without a filter
+    // is the whole job done by hand.
+    var channelQuery by remember { mutableStateOf("") }
+
+    val sortedSubscriptions = remember(subscriptions) {
+        subscriptions.sortedBy { it.name.lowercase() }
+    }
+    val matchedSubscriptions = remember(sortedSubscriptions, channelQuery) {
+        filterChannels(sortedSubscriptions, channelQuery)
+    }
 
     // SAF rather than a path: the file arrives as a content uri that cannot be
     // opened as a File, and asking for storage permission to read one export
@@ -280,16 +297,39 @@ fun SubscriptionsManagerScreen(
 
             if (subscriptions.isNotEmpty()) {
                 item(key = "channels-title") {
-                    Text(
-                        text = "Channels",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(start = 4.dp, top = 8.dp)
-                    )
+                    Column {
+                        Text(
+                            text = if (channelQuery.isBlank()) {
+                                "Channels"
+                            } else {
+                                "Channels - ${matchedSubscriptions.size} of ${subscriptions.size}"
+                            },
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(start = 4.dp, top = 8.dp)
+                        )
+                        if (subscriptions.size >= SEARCH_FIELD_MIN_ITEMS) {
+                            Spacer(Modifier.height(8.dp))
+                            SearchField(
+                                query = channelQuery,
+                                onQueryChange = { channelQuery = it },
+                                placeholder = "Search channels"
+                            )
+                        }
+                    }
                 }
 
-                items(subscriptions.sortedBy { it.name.lowercase() }, key = { it.channelId }) { channel ->
+                if (matchedSubscriptions.isEmpty()) {
+                    item(key = "no-channel-matches") {
+                        SearchEmptyState(
+                            title = "No channels match \"$channelQuery\"",
+                            hint = "Try part of the name, or the @handle."
+                        )
+                    }
+                }
+
+                items(matchedSubscriptions, key = { it.channelId }) { channel ->
                     ManagedChannelRow(
                         channel = channel,
                         groupCount = groups.count { channel.channelId in it.channelIds },
@@ -298,7 +338,10 @@ fun SubscriptionsManagerScreen(
                     )
                 }
 
-                item(key = "clear-all") {
+                // Hidden while filtering. "Remove all" sitting directly under
+                // three search results reads as "remove these three", and it
+                // is not - it clears the lot.
+                if (channelQuery.isBlank()) item(key = "clear-all") {
                     OutlinedButton(
                         onClick = { showClearConfirmation = true },
                         modifier = Modifier
@@ -348,7 +391,7 @@ fun SubscriptionsManagerScreen(
     editingGroup?.let { group ->
         GroupChannelsDialog(
             groupName = group.name,
-            channels = subscriptions.sortedBy { it.name.lowercase() },
+            channels = sortedSubscriptions,
             selectedIds = group.channelIds.toSet(),
             onToggle = { viewModel.toggleChannelInGroup(group.id, it) },
             onRename = { viewModel.renameSubscriptionGroup(group.id, it) },
@@ -760,6 +803,28 @@ private fun GroupNameDialog(
     )
 }
 
+/**
+ * Name first, @handle second, ranked by how well each matched. Both stores
+ * carry a handle, so typing one behaves the same wherever the channel came
+ * from.
+ */
+private fun filterChannels(
+    channels: List<LocalSubscription>,
+    query: String
+): List<LocalSubscription> {
+    if (query.isBlank()) return channels
+    return channels
+        .mapNotNull { channel ->
+            fuzzyScore(
+                query,
+                MatchField(channel.name, weight = 3),
+                MatchField(channel.handle.orEmpty(), weight = 2)
+            )?.let { channel to it }
+        }
+        .sortedByDescending { it.second }
+        .map { it.first }
+}
+
 /** Pick which channels belong to a group. */
 @Composable
 private fun GroupChannelsDialog(
@@ -771,6 +836,12 @@ private fun GroupChannelsDialog(
     onDismiss: () -> Unit
 ) {
     var showRename by remember { mutableStateOf(false) }
+
+    // Building a group means picking a handful out of everything followed, so
+    // this list is the one that is always too long by definition.
+    var query by remember { mutableStateOf("") }
+    val showSearch = channels.size >= SEARCH_FIELD_MIN_ITEMS
+    val matched = remember(channels, query) { filterChannels(channels, query) }
 
     if (showRename) {
         GroupNameDialog(
@@ -798,26 +869,51 @@ private fun GroupChannelsDialog(
             }
         },
         text = {
-            LazyColumn(
-                modifier = Modifier.height(360.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                items(channels, key = { it.channelId }) { channel ->
-                    val selected = channel.channelId in selectedIds
-                    FilterChip(
-                        selected = selected,
-                        onClick = { onToggle(channel.channelId) },
-                        label = {
-                            Text(
-                                channel.name,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(14.dp),
-                        colors = FilterChipDefaults.filterChipColors()
+            Column {
+                if (showSearch) {
+                    SearchField(
+                        query = query,
+                        onQueryChange = { query = it },
+                        placeholder = "Search channels"
                     )
+                    Spacer(Modifier.height(12.dp))
+                }
+                // Shorter when the field is above it, so the dialog does not
+                // grow past a small phone's screen.
+                LazyColumn(
+                    modifier = Modifier.height(if (showSearch) 300.dp else 360.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    if (matched.isEmpty()) {
+                        item(key = "no-matches") {
+                            Text(
+                                text = "No channels match \"$query\"",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 24.dp),
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            )
+                        }
+                    }
+                    items(matched, key = { it.channelId }) { channel ->
+                        val selected = channel.channelId in selectedIds
+                        FilterChip(
+                            selected = selected,
+                            onClick = { onToggle(channel.channelId) },
+                            label = {
+                                Text(
+                                    channel.name,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(14.dp),
+                            colors = FilterChipDefaults.filterChipColors()
+                        )
+                    }
                 }
             }
         },

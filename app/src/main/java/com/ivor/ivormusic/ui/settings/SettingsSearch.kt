@@ -7,7 +7,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -18,9 +17,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Comment
 import androidx.compose.material.icons.automirrored.rounded.Logout
@@ -30,7 +26,6 @@ import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.BookmarkAdd
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.CloudOff
-import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Contrast
 import androidx.compose.material.icons.rounded.Cookie
 import androidx.compose.material.icons.rounded.FilterList
@@ -46,8 +41,6 @@ import androidx.compose.material.icons.rounded.NotInterested
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.Save
-import androidx.compose.material.icons.rounded.Search
-import androidx.compose.material.icons.rounded.SearchOff
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.SignalCellularAlt
 import androidx.compose.material.icons.rounded.Subscriptions
@@ -64,18 +57,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlin.math.max
-import kotlin.math.min
+import com.ivor.ivormusic.ui.components.SearchEmptyState
+import com.ivor.ivormusic.ui.components.SearchField
+import com.ivor.ivormusic.util.MatchField
+import com.ivor.ivormusic.util.fuzzyScore
 
 /**
  * Settings search.
@@ -106,104 +96,21 @@ internal data class SettingsSearchEntry(
 /* Matching                                                            */
 /* ------------------------------------------------------------------ */
 
-private fun normalize(text: String): String =
-    text.lowercase().map { if (it.isLetterOrDigit()) it else ' ' }.joinToString("")
-
-/** Levenshtein distance, bailing out once it cannot beat [limit]. */
-private fun editDistance(a: String, b: String, limit: Int): Int {
-    if (a == b) return 0
-    if (kotlin.math.abs(a.length - b.length) > limit) return limit + 1
-    var previous = IntArray(b.length + 1) { it }
-    var current = IntArray(b.length + 1)
-    for (i in 1..a.length) {
-        current[0] = i
-        var best = current[0]
-        for (j in 1..b.length) {
-            val cost = if (a[i - 1] == b[j - 1]) 0 else 1
-            current[j] = min(
-                min(current[j - 1] + 1, previous[j] + 1),
-                previous[j - 1] + cost
-            )
-            best = min(best, current[j])
-        }
-        if (best > limit) return limit + 1
-        val swap = previous
-        previous = current
-        current = swap
-    }
-    return previous[b.length]
-}
-
-/** True when every character of [token] appears in [word], in order. */
-private fun isSubsequence(token: String, word: String): Boolean {
-    var t = 0
-    for (c in word) {
-        if (t < token.length && token[t] == c) t++
-    }
-    return t == token.length
-}
-
 /**
- * Scores one token against a field. Higher is better, null means no match.
+ * Scores a whole query against an entry, or null when it does not match.
  *
- * The tiers are deliberate: a word that starts with what you typed is what you
- * meant far more often than a word that merely contains it, and a typo match
- * should never outrank a real one.
+ * The matcher itself lives in [com.ivor.ivormusic.util.fuzzyScore], shared
+ * with channel search. All that belongs here is the weighting: a title hit is
+ * worth far more than the same hit in a synonym, and a synonym more than the
+ * page it happens to sit on.
  */
-private fun scoreToken(token: String, field: String): Int? {
-    if (token.isEmpty()) return null
-    val words = field.split(' ').filter { it.isNotEmpty() }
-
-    if (field.startsWith(token)) return 120
-    words.forEachIndexed { index, word ->
-        if (word.startsWith(token)) return 100 - min(index, 8)
-    }
-    if (field.contains(token)) return 70
-
-    // "amld" -> "amoled": compact subsequences beat scattered ones.
-    words.forEach { word ->
-        if (token.length >= 3 && isSubsequence(token, word)) {
-            return max(30, 55 - (word.length - token.length))
-        }
-    }
-
-    // Outright typos: "quailty" -> "quality".
-    if (token.length >= 4) {
-        val limit = if (token.length <= 5) 1 else 2
-        words.forEach { word ->
-            if (word.length >= 3 && editDistance(token, word, limit) <= limit) return 35
-        }
-    }
-    return null
-}
-
-/**
- * Scores a whole query against an entry, or null if any token fails to match
- * anywhere. Every token must land somewhere - an AND, not an OR, because
- * "cache size" returning everything that mentions "size" is noise.
- */
-internal fun scoreSettingsEntry(query: String, entry: SettingsSearchEntry): Int? {
-    val tokens = normalize(query).split(' ').filter { it.isNotEmpty() }
-    if (tokens.isEmpty()) return null
-
-    val title = normalize(entry.title)
-    val category = normalize(entry.category)
-    val keywords = normalize(entry.keywords.joinToString(" "))
-
-    var total = 0
-    for (token in tokens) {
-        // A title hit is worth far more than the same hit in a synonym.
-        val best = listOfNotNull(
-            scoreToken(token, title)?.let { it * 3 },
-            scoreToken(token, keywords)?.let { it * 2 },
-            scoreToken(token, category)
-        ).maxOrNull() ?: return null
-        total += best
-    }
-    // Nudge shorter titles up: an exact-ish hit on "Shorts" beats the same hit
-    // buried in a longer name.
-    return total - title.length / 8
-}
+internal fun scoreSettingsEntry(query: String, entry: SettingsSearchEntry): Int? =
+    fuzzyScore(
+        query,
+        MatchField(entry.title, weight = 3),
+        MatchField(entry.keywords.joinToString(" "), weight = 2),
+        MatchField(entry.category, weight = 1)
+    )
 
 /** Best matches first, capped so the list stays scannable. */
 internal fun searchSettings(
@@ -467,72 +374,12 @@ internal fun SettingsSearchField(
     onQueryChange: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val focusManager = LocalFocusManager.current
-
-    Row(
+    SearchField(
+        query = query,
+        onQueryChange = onQueryChange,
+        placeholder = "Search settings",
         modifier = modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(28.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Icon(
-            imageVector = Icons.Rounded.Search,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(22.dp)
-        )
-
-        Spacer(modifier = Modifier.width(12.dp))
-
-        Box(modifier = Modifier.weight(1f)) {
-            if (query.isEmpty()) {
-                Text(
-                    text = "Search settings",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 16.sp
-                )
-            }
-            BasicTextField(
-                value = query,
-                onValueChange = onQueryChange,
-                singleLine = true,
-                textStyle = TextStyle(
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontSize = 16.sp
-                ),
-                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(
-                    onSearch = { focusManager.clearFocus() }
-                ),
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
-
-        if (query.isNotEmpty()) {
-            Spacer(modifier = Modifier.width(8.dp))
-            Box(
-                modifier = Modifier
-                    .size(28.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(MaterialTheme.colorScheme.surfaceContainerHighest)
-                    .clickable {
-                        onQueryChange("")
-                        focusManager.clearFocus()
-                    },
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.Close,
-                    contentDescription = "Clear search",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(16.dp)
-                )
-            }
-        }
-    }
+    )
 }
 
 @Composable
@@ -602,40 +449,8 @@ internal fun SettingsSearchResultRow(
 /** Shown when a query matches nothing - names the query so it reads as an answer. */
 @Composable
 internal fun SettingsSearchEmptyState(query: String) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 48.dp, horizontal = 24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Box(
-            modifier = Modifier
-                .size(64.dp)
-                .clip(RoundedCornerShape(20.dp))
-                .background(MaterialTheme.colorScheme.surfaceContainerHigh),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = Icons.Rounded.SearchOff,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(30.dp)
-            )
-        }
-        Text(
-            text = "No settings match \"$query\"",
-            color = MaterialTheme.colorScheme.onBackground,
-            fontSize = 16.sp,
-            fontWeight = FontWeight.SemiBold,
-            textAlign = TextAlign.Center
-        )
-        Text(
-            text = "Try a shorter word, or what the setting does rather than its name.",
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontSize = 13.sp,
-            lineHeight = 18.sp,
-            textAlign = TextAlign.Center
-        )
-    }
+    SearchEmptyState(
+        title = "No settings match \"$query\"",
+        hint = "Try a shorter word, or what the setting does rather than its name."
+    )
 }

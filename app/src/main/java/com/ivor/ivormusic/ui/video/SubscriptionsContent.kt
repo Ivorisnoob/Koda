@@ -65,6 +65,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -75,9 +76,14 @@ import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.data.SubscriptionGroup
 import com.ivor.ivormusic.ui.components.ChannelRowSkeleton
 import com.ivor.ivormusic.ui.components.ExpressivePullToRefresh
+import com.ivor.ivormusic.ui.components.SEARCH_FIELD_MIN_ITEMS
+import com.ivor.ivormusic.ui.components.SearchEmptyState
+import com.ivor.ivormusic.ui.components.SearchField
 import com.ivor.ivormusic.ui.components.SkeletonList
 import com.ivor.ivormusic.ui.components.VideoCardSkeleton
 import com.ivor.ivormusic.ui.home.HomeViewModel
+import com.ivor.ivormusic.util.MatchField
+import com.ivor.ivormusic.util.fuzzyScore
 
 /**
  * Subscriptions tab for Video Mode. Default view is the subscriptions feed
@@ -156,6 +162,35 @@ fun SubscriptionsContent(
     var channelVideos by remember { mutableStateOf<List<VideoItem>>(emptyList()) }
     var isChannelLoading by remember { mutableStateOf(false) }
 
+    /**
+     * Filter over the channel list. Held out here rather than inside the branch
+     * so it survives a drill-in: going into a channel and coming back to a list
+     * that had silently reset itself is the worse of the two behaviours, and
+     * comparing two channels is exactly what the search was opened for.
+     */
+    var channelQuery by remember { mutableStateOf("") }
+    val focusManager = LocalFocusManager.current
+
+    // Name first, @handle second - both sources carry a handle, so typing one
+    // finds account and device-local channels alike. Ranked by score while a
+    // query is running; the underlying list is already alphabetical without one.
+    val matchedChannels = remember(channels, channelQuery) {
+        if (channelQuery.isBlank()) {
+            channels
+        } else {
+            channels
+                .mapNotNull { channel ->
+                    fuzzyScore(
+                        channelQuery,
+                        MatchField(channel.name, weight = 3),
+                        MatchField(channel.handle.orEmpty(), weight = 2)
+                    )?.let { channel to it }
+                }
+                .sortedByDescending { it.second }
+                .map { it.first }
+        }
+    }
+
     // Re-runs when the account connects or the local list changes size, so
     // subscribing to a first channel while signed out fills the tab straight
     // away instead of leaving the empty state up until a manual refresh.
@@ -176,7 +211,15 @@ fun SubscriptionsContent(
     }
 
     BackHandler(enabled = selectedChannel != null || showChannelList) {
-        if (selectedChannel != null) selectedChannel = null else showChannelList = false
+        when {
+            selectedChannel != null -> selectedChannel = null
+            // A running query is a step, and Back unwinds one step at a time -
+            // the same order Settings search uses. Leaving the list with a
+            // filter still applied is how you come back to a list that looks
+            // like half your channels went missing.
+            channelQuery.isNotBlank() -> channelQuery = ""
+            else -> showChannelList = false
+        }
     }
 
     // Animation state
@@ -366,7 +409,10 @@ fun SubscriptionsContent(
                                 .padding(top = 8.dp, bottom = 4.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            IconButton(onClick = { showChannelList = false }) {
+                            IconButton(onClick = {
+                                showChannelList = false
+                                channelQuery = ""
+                            }) {
                                 Icon(
                                     Icons.AutoMirrored.Rounded.ArrowBack,
                                     contentDescription = "Back",
@@ -381,15 +427,36 @@ fun SubscriptionsContent(
                                     color = MaterialTheme.colorScheme.onBackground
                                 )
                                 Text(
-                                    text = subscriptionsSubtitle(
-                                        channelCount = channels.size,
-                                        localCount = localSubscriptions.size,
-                                        isConnected = isYouTubeConnected
-                                    ),
+                                    // While filtering, the subtitle answers the
+                                    // question the filter asked instead of
+                                    // repeating a total the list no longer shows.
+                                    text = if (channelQuery.isBlank()) {
+                                        subscriptionsSubtitle(
+                                            channelCount = channels.size,
+                                            localCount = localSubscriptions.size,
+                                            isConnected = isYouTubeConnected
+                                        )
+                                    } else {
+                                        "${matchedChannels.size} of ${channels.size} channels"
+                                    },
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
+                        }
+                    }
+
+                    // Only once the list is long enough to be worth searching,
+                    // and never while it is still loading: a field over a
+                    // skeleton is a control that cannot do anything yet.
+                    if (channels.size >= SEARCH_FIELD_MIN_ITEMS) {
+                        item(key = "channel-search") {
+                            SearchField(
+                                query = channelQuery,
+                                onQueryChange = { channelQuery = it },
+                                placeholder = "Search channels",
+                                modifier = Modifier.padding(horizontal = 16.dp)
+                            )
                         }
                     }
 
@@ -416,12 +483,25 @@ fun SubscriptionsContent(
                                 )
                             }
                         }
+                    } else if (matchedChannels.isEmpty()) {
+                        item(key = "no-channel-matches") {
+                            SearchEmptyState(
+                                title = "No channels match \"$channelQuery\"",
+                                hint = "Try part of the name, or the @handle."
+                            )
+                        }
                     } else {
-                        items(channels, key = { it.channelId }) { channel ->
+                        items(matchedChannels, key = { it.channelId }) { channel ->
                             ChannelRow(
                                 channel = channel,
                                 isLocal = channel.channelId in locallyFollowedIds,
-                                onClick = { selectedChannel = channel },
+                                onClick = {
+                                    // The keyboard outlives the field it was
+                                    // opened from, and a drill-in behind an open
+                                    // keyboard is half a screen of video list.
+                                    focusManager.clearFocus()
+                                    selectedChannel = channel
+                                },
                                 onUnfollow = { channelToUnfollow = channel },
                                 modifier = Modifier.padding(horizontal = 16.dp)
                             )

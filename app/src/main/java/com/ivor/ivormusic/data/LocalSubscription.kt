@@ -23,7 +23,11 @@ data class LocalSubscription(
         channelId = channelId,
         name = name,
         avatarUrl = avatarUrl,
-        subscriberCountText = handle
+        // A local follow has no subscriber count to show, so the row's second
+        // line carries the handle instead. It also travels in its own field,
+        // because search needs it separately from whatever is being displayed.
+        subscriberCountText = handle,
+        handle = handle
     )
 }
 
