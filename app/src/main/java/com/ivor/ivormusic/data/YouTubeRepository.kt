@@ -5962,9 +5962,16 @@ class YouTubeRepository(private val context: Context) {
                     if (avatarUrl?.startsWith("//") == true) avatarUrl = "https:$avatarUrl"
                     // InnerTube quirk: on FEchannels the subscriber count arrives in
                     // videoCountText; subscriberCountText carries the @handle.
-                    val subscriberCount = renderer.optJSONObject("videoCountText")
-                        ?.optString("simpleText")?.takeIf { it.isNotBlank() }
-                    channels.add(SubscribedChannel(channelId, name, avatarUrl, subscriberCount))
+                    // Verified again August 2026 - both fields are present on every
+                    // renderer, so the handle is free here and account channels are
+                    // searchable by it exactly like device-local ones.
+                    val subscriberCount = getRunText(renderer.optJSONObject("videoCountText"))
+                        ?.takeIf { it.isNotBlank() }
+                    val handle = getRunText(renderer.optJSONObject("subscriberCountText"))
+                        ?.takeIf { it.startsWith("@") }
+                    channels.add(
+                        SubscribedChannel(channelId, name, avatarUrl, subscriberCount, handle)
+                    )
                 }
                 val token = if (renderers.isNotEmpty()) extractContinuationToken(response) else null
                 response = token?.let {

@@ -17,6 +17,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
+import androidx.activity.compose.PredictiveBackHandler
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -53,6 +55,15 @@ private val MINIMIZE_SETTLE_SPRING = spring<Float>(
     dampingRatio = 0.9f,
     stiffness = 260f
 )
+
+/**
+ * How far a back gesture shrinks the expanded video player before release.
+ *
+ * Shallower than the music player's peek, because this one is usually showing
+ * moving video: the same amount of travel reads as much larger when the thing
+ * being resized is playing.
+ */
+private const val VIDEO_BACK_PEEK = 0.82f
 
 /**
  * Put the app into system Picture-in-Picture now.
@@ -153,11 +164,6 @@ fun VideoPlayerOverlay(
     // Normal In-App Overlay UI
     // ------------------------------------------------
 
-    // Handle Back Press to minimize player
-    androidx.activity.compose.BackHandler(enabled = isExpanded) {
-        viewModel.setExpanded(false)
-    }
-
     val density = LocalDensity.current
     val bottomWindowInsets = WindowInsets.navigationBars
     val bottomInset = with(density) { bottomWindowInsets.getBottom(this).toDp() }
@@ -219,6 +225,54 @@ fun VideoPlayerOverlay(
         // every screen density - as a fraction of screen height it silently
         // asked for a much longer pull on tall devices.
         val minimizeTravel = with(density) { 40.dp.toPx() } / dragRangePx
+
+        /**
+         * Back previews the minimize instead of performing it.
+         *
+         * It rides the same channel the swipe-down gesture uses rather than a
+         * parallel one: plain snapshot state while the finger is down (the
+         * Animatable's MutatorMutex cancels each snapTo with the next, which
+         * is why the drag above avoids it too), and the same release path
+         * afterwards, so the two ways of dismissing this player cannot drift
+         * apart. Which also means back inherits the fix in that `finally` for
+         * free - a latched isDragging leaves the player frozen at the last
+         * dragged position, and it used to take a process restart to clear.
+         */
+        PredictiveBackHandler(enabled = isExpanded) { events ->
+            try {
+                events.collect { event ->
+                    isDragging = true
+                    dragProgress = androidx.compose.ui.util.lerp(
+                        1f,
+                        VIDEO_BACK_PEEK,
+                        event.progress.coerceIn(0f, 1f)
+                    )
+                }
+                val released = dragProgress
+                scope.launch {
+                    try {
+                        expandProgress.snapTo(released)
+                    } finally {
+                        isDragging = false
+                    }
+                    viewModel.setExpanded(false)
+                }
+            } catch (cancelled: CancellationException) {
+                // Launched from the overlay's scope, not this one: this
+                // coroutine is the one being cancelled, and a spring started
+                // inside it never runs - leaving the player parked at the
+                // peeked size with no way back short of another gesture.
+                val released = dragProgress
+                scope.launch {
+                    try {
+                        expandProgress.snapTo(released)
+                    } finally {
+                        isDragging = false
+                    }
+                    expandProgress.animateTo(1f, MINIMIZE_SETTLE_SPRING)
+                }
+            }
+        }
 
         // Minimized resting position sits above the nav bar, and above the
         // music mini player too when both players are alive at the same time

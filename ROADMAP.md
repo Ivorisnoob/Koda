@@ -4,11 +4,13 @@ This document is the long view: where Koda stands today, where it is going, and 
 
 For how the app is built, see [`CLAUDE.md`](CLAUDE.md). For the design system and why it is not a swappable layer, see [`DESIGN.md`](DESIGN.md).
 
+**Keeping this current is part of shipping, not a follow-up.** When a planned item lands, its section moves to [Shipped](#shipped) in the same change that lands the work: the entry leaves Planned work rather than staying put with a note on it, and any prose elsewhere that leaned on the old behaviour is corrected in the same pass. A fixed defect leaves [Known defects](#known-defects) the same way, keeping whatever about the diagnosis is worth carrying to the next problem of its kind. This matters more here than in a changelog, because what is written down is reasoning, and the reasoning is what the next decision gets made from. A section describing the app as it was last month will be believed. Counts, file names and line references drift constantly; re-derive them rather than trusting them.
+
 ---
 
 ## Where Koda is today
 
-Version **4.3** (`versionCode` 21), targeting Android 16 (API 36) with a floor at Android 11 (API 30). Roughly **69,000 lines** of Kotlin across **136 files**, all of it Compose, all of it rendered inside a single `MaterialExpressiveTheme`.
+Version **4.3** (`versionCode` 21), targeting Android 16 (API 36) with a floor at Android 11 (API 30). Roughly **71,000 lines** of Kotlin across **139 files**, all of it Compose, all of it rendered inside a single `MaterialExpressiveTheme`.
 
 The app is past the point of proving itself. The core loops all work end to end:
 
@@ -26,12 +28,12 @@ Where the weight sits today:
 
 | Area | Lines | What lives there |
 | --- | --- | --- |
-| `ui/video` | 14,900 | Video player, live streams, live chat, subscriptions |
+| `ui/video` | 15,300 | Video player, live streams, live chat, subscriptions |
 | `ui/player` | 11,200 | Eight music player styles |
 | `data/YouTubeRepository.kt` | 6,500 | The InnerTube and NewPipe layer, single file |
-| `ui/settings` | 5,900 | Hub, eleven pages, search index |
+| `ui/settings` | 5,800 | Hub, eleven pages, search index |
+| `ui/library` | 4,700 | Playlists, liked songs, local audio, listening history |
 | `ui/home` | 3,600 | Both modes' feeds |
-| `ui/library` | 3,400 | Playlists, liked songs, local audio |
 
 That table is also a map of the risk. `YouTubeRepository.kt` is the single point of failure for every network path in the app, and the two largest UI areas are the two youngest.
 
@@ -93,20 +95,6 @@ So this item really contains two, and the order matters: **a background upload c
 
 Two Android specifics worth deciding early. `POST_NOTIFICATIONS` is already declared but is a runtime permission from Android 13, and the request should come when the user first enables a bell rather than at startup, so it arrives with a reason attached. And notifications should share one Android notification channel for uploads with grouping, not one Android channel per YouTube channel. The latter looks tempting and becomes unusable at any real subscription count.
 
-#### Search the channels you follow
-
-Someone following two hundred channels has no way to find one. The Subscriptions tab offers an avatar rail and a feed; "All channels" (`SubscriptionsContent.kt:332`) is a flat list in whatever order the source returned it, with no filter and no ordering control. The same is true of `SubscriptionsManagerScreen.kt`, 868 lines whose entire job is assigning channels to groups, and where the absence hurts more, because that screen is only ever opened with a specific channel already in mind.
-
-**Nothing here needs fetching.** `subscribedChannels` and `localSubscriptions` are both already collected as state at the top of the composable (`SubscriptionsContent.kt:106` and `:109`), so this is a filter over a list the screen is holding. It costs no request, and it works signed out and with no connection, which makes it the rare item where the signed-out path is not a separate design problem.
-
-**A matcher already exists, and it is better than the one this would otherwise get.** Settings search scores exact hits, prefixes, substrings, compact subsequences ("amld" finds "amoled"), and bounded edit distance for outright typos (`SettingsSearch.kt:108-205`). Channel names are exactly the input that needs all of that: they are long, they carry punctuation and emoji, and people remember them approximately. `normalize`, `editDistance`, `isSubsequence` and `scoreToken` are generic; only `scoreSettingsEntry` is bound to `SettingsSearchEntry`. All of them are private to a settings-package file today, so the work is lifting the generic half somewhere shared, rather than writing the `contains()` that gets regretted the first time somebody types a name slightly wrong.
-
-**Handles do not come free, which is worth knowing before promising them.** `ChannelProfile` carries a `handle` (`YouTubeRepository.kt:6048`) and so does `LocalSubscription`, but the list this tab actually renders is `SubscribedChannel`, which holds only an id, a name, an avatar and `subscriberCountText`. Local follows smuggle their handle into that last field through `toSubscribedChannel()`, and account subscriptions do not carry one at all. So matching "@handle" means either widening `SubscribedChannel` or accepting that handle search works for device-local channels and silently does not for account ones. That asymmetry is the kind of thing users report as a bug rather than as a limit.
-
-Two decisions worth making before any code. **What the results are:** the ask is channel names, and filtering the *feed* by channel is a different feature that already has an answer in the channel drill-in. The recommendation is that results are channels and tapping one opens the existing drill-in through `selectedChannel`, so "now show me their videos" lands on a screen that is already built, and later on the proper channel screen. **Where the field lives:** inline at the top of "All channels" is cheap and unambiguous, while putting it on the tab root sets it competing with the header and the avatar rail for the same space.
-
-One structural note. There is no shared search field in `ui/components`: the one on Search is a private `OutlinedTextField` inside `SearchHeroHeader` (`SearchScreen.kt:1351`), and `SettingsSearchField` (`SettingsSearch.kt:456`) is internal to settings. This would be the third hand-rolled search field in the app, which is the point where extracting one shared composable stops being premature. Group filtering already lives on this screen, so search and `SubscriptionGroup` should be designed as one control surface rather than two rows stacked on each other.
-
 #### Saving other people's playlists and albums
 
 There is no way to keep a playlist you did not make. You can play someone else's playlist and you can build your own from scratch, but the ordinary move (find a good playlist, save it, come back to it next week), has nowhere to land.
@@ -159,15 +147,39 @@ Two things worth deciding rather than assuming: transitions that carry meaning (
 
 #### Predictive back, which is currently paid for and switched off
 
-The manifest sets `android:enableOnBackInvokedCallback="true"`, so Koda has opted into the modern back API. It then suppresses the result everywhere: there are **17 `BackHandler`s in the app and zero `PredictiveBackHandler`s**. A plain `BackHandler` consumes the gesture and gives the system nothing to preview, so on Android 14 and up the back-swipe animation (the one that peels the current screen away and shows what is behind it), never appears anywhere it would matter.
+The manifest sets `android:enableOnBackInvokedCallback="true"`, so Koda has opted into the modern back API and then spent a long time suppressing the result everywhere. **19 `BackHandler`s against zero `PredictiveBackHandler`s** was the worst of both arrangements: the opt-in is declared, so the platform stops applying its own compatibility behaviour, and nothing replaced it.
 
-That is the worst of both arrangements. The opt-in is declared, so the platform stops applying its own compatibility behaviour, and nothing replaces it. Every sheet, the expanded player, the video overlay, the Shorts overlay and the settings page stack all swallow the gesture and then snap.
+It now stands at **six against eight**, and the eight are every screen stack and every overlay: settings, Library, the video library, Home's search drill-ins, the Subscriptions channel list, the expanded music player, the video player and the Shorts overlay.
 
-**The settings stack is the clearest case and the best place to start.** Back there already unwinds in defined steps (open page, then hub, then clear the search query, then leave), so the states are known and the animation has somewhere obvious to go. `PredictiveBackHandler` hands back a `Flow` of gesture progress, which is exactly the input the existing `AnimatedContent` transition wants.
+**A note for the next inventory of this.** The Shorts overlay was missed by the first sweep because it was written `BackHandler { ... }` with no argument list, and a grep for `BackHandler(` does not find it. Count both forms.
 
-**The overlays are the hard part and the reason to do this deliberately.** `ExpandablePlayer`, `VideoPlayerOverlay` and the Shorts overlay live above the `NavHost` rather than inside it, so they are not screens the system can peel back to reveal something. Their back gesture collapses a thing rather than popping a destination, and the preview has to be driven by hand from the progress flow into the same spring that already animates the collapse.
+**The two players turned out to be the easy case, for the same reason.** Both already keep a single progress value from mini pill to full screen, with every height, padding, corner and alpha derived from it, so a preview is that value scrubbed rather than a second animation running alongside the first. What the finger reveals is the real destination, because neither has a separate "leaving" state to draw. The video one also has a drag channel built for its swipe-down minimize, and back rides that rather than a parallel one, so the two ways of dismissing it cannot drift apart. Expect this shape wherever a surface already animates itself open.
 
-**The cancel path is what most implementations get wrong, and it is the entire point of the feature.** `PredictiveBackHandler` is a suspending handler that can be cancelled mid-gesture when the user changes their mind and slides back. If that path does not spring the UI cleanly back to where it was, predictive back is worse than no predictive back. The user gets a preview of leaving, decides not to, and lands somewhere broken. Every one of the 17 sites needs that case handled, not just the commit case.
+The music player also lost eight identical `BackHandler(enabled = true) { onCollapse() }` blocks, one per style, replaced by one handler on `ExpandablePlayer`. Back handlers resolve most recent first, so eight children each claiming the gesture made "which one answers" a question about composition order.
+
+**The settings page stack is done, and three things it turned out to need are worth carrying to the rest.**
+
+The first is that **a preview needs its destination already composed.** Settings pages are an `AnimatedContent` over a `SettingsPage` enum, and `AnimatedContent` renders one state at a time, so there was literally nothing behind the open page to reveal. The hub had to be lifted out of it and composed permanently underneath, with the pages layered on top. That happens to fix a smaller thing on the way past (the hub's scroll position used to be discarded whenever a page opened), and it costs a modifier that makes the covered layer inert, because a composed hub behind a page is one whose rows still take taps falling through and still read out to TalkBack.
+
+The second is that **the commit has to continue the gesture rather than restart it.** The peel is one continuous value spanning both the drag and the flight off screen, and the `AnimatedContent` exit is suppressed for that case specifically; handing back to the normal transition snaps the page to full size to replay the move the finger just made.
+
+The third is the trap in the cancel path, below.
+
+**The in-screen stacks were the settings problem four more times, so that shape is a component now.** Library's route, the video library's page, the Subscriptions channel list and drill-in, and Home's search drill-ins were each one `AnimatedContent` over a route enum, which composes one state at a time and therefore had nothing behind the child to reveal. `ui/components/PredictiveBackStack.kt` owns the answer: parent in `background`, child in `foreground`, the peel, the cancel spring, and the modifier that makes the covered parent stop taking taps and stop talking to TalkBack. Each call site is now the lift plus three lines.
+
+Two details it carries that are easy to get wrong alone. The child's own exit has to be suppressed when a gesture committed, or it snaps back to full size to replay the move the finger just made. And the parent state of the child layer must stay full size (an empty `Spacer`, not nothing), because the default `SizeTransform` will otherwise animate the container between nothing and full screen and clip the child to it, which reads as a page unfolding out of a growing rectangle.
+
+**A step that does not close the child must not be previewed**, which is what `previewable` is for. Clearing the Subscriptions channel filter widens the list in place, and popping an album back to the artist page reveals another child rather than the screen underneath. Previewing either animates a departure that is not happening.
+
+**The Shorts overlay is the odd one out among the overlays**, and worth knowing before the next one like it. The two players collapse into a mini pill and already own a value describing that journey, so their preview is a scrub of it. Shorts has no smaller resting state - it closes, and what is behind it is the app it was opened from - so its peel is its own value shrinking the whole overlay inward, which is the shape the system uses for leaving with no parent to reveal.
+
+**What is left is small and mostly panels.** The video player's comments and live-chat panels and its fullscreen quality sheet, and the player style wheel. These slide up over content rather than sitting on a parent, so they want their own treatment rather than [PredictiveBackStack].
+
+**Two sites should keep a plain `BackHandler`, and it is the same rule as the settings search query.** Back on a non-default Home tab returns to the first tab, and back in Library leaves search or reorder mode. Nothing leaves the screen in either case, so there is nothing to draw behind, and a peel would describe a departure that is not happening.
+
+**The cancel path is what most implementations get wrong, and it is the entire point of the feature.** `PredictiveBackHandler` is a suspending handler that can be cancelled mid-gesture when the user changes their mind and slides back. If that path does not spring the UI cleanly back to where it was, predictive back is worse than no predictive back. The user gets a preview of leaving, decides not to, and lands somewhere broken. Every remaining site needs that case handled, not just the commit case.
+
+**And it carries a trap that is easy to walk into, because the obvious code compiles and does nothing.** Cancellation arrives as a `CancellationException` thrown out of the flow, so the natural place to spring the UI back is the `catch` block. That coroutine is the one being cancelled: an animation started there never runs, and the screen stays stranded mid-gesture. The spring has to be launched from a scope that outlives the gesture (the screen's `rememberCoroutineScope`), which is what the settings implementation does.
 
 #### Haptics, more than eight files
 
@@ -329,7 +341,7 @@ Both are read-mostly surfaces over a `MediaController`, so neither needs changes
 
 #### Tablet optimisation, on every screen
 
-Koda is portrait-only, twice over: `android:screenOrientation="portrait"` in the manifest with the lint warning explicitly suppressed, and `requestedOrientation` set again at runtime in `MainActivity`. Across roughly 69,000 lines there is no `WindowSizeClass`, no `NavigationRail`, no list-detail pane, and no `sw600dp` resource qualifier. The app assumes one hand and one column everywhere except the video player, which overrides orientation itself to go fullscreen.
+Koda is portrait-only, twice over: `android:screenOrientation="portrait"` in the manifest with the lint warning explicitly suppressed, and `requestedOrientation` set again at runtime in `MainActivity`. Across roughly 71,000 lines there is no `WindowSizeClass`, no `NavigationRail`, no list-detail pane, and no `sw600dp` resource qualifier. The app assumes one hand and one column everywhere except the video player, which overrides orientation itself to go fullscreen.
 
 **This is more urgent than a nice-to-have, because the platform has already taken the decision away.** Koda targets SDK 36, and on Android 16 large-screen devices the system ignores orientation and resizability restrictions for apps at that target. The manifest sets no opt-out property, which means on an Android 16 tablet the app is *already* being shown rotated and resized right now, with a UI built on the assumption that cannot happen. The choice is not whether to support landscape; it is whether landscape looks designed or looks like a stretched phone. This should be confirmed on a real Android 16 tablet before planning around it, but if it holds, tablet work stops being a feature and becomes a correctness issue.
 
@@ -400,3 +412,4 @@ The milestones behind us, kept here so the direction of travel is visible.
 - Skeleton placeholders on every feed's first load, replacing the doubled spinners
 - A listening history for music, grouped by day, searchable, with a pause toggle
 - Vertical videos given a player box their own shape instead of a pillarboxed 16:9 frame
+- Search over the channels you follow, by name or @handle, on every list long enough to need it

@@ -1,7 +1,8 @@
 package com.ivor.ivormusic.ui.shorts
 
 import android.content.Intent
-import androidx.activity.compose.BackHandler
+import androidx.activity.compose.PredictiveBackHandler
+import kotlinx.coroutines.CancellationException
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
@@ -74,6 +75,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -164,7 +166,40 @@ fun ShortsPlayerOverlay(
         if (viewModel.subscribeNeedsLogin()) showSignInDialog = true else action()
     }
 
-    BackHandler { viewModel.close() }
+    /**
+     * Back previews the Shorts overlay leaving.
+     *
+     * The odd one out among the overlays: the two players collapse into a mini
+     * pill and already own a progress value describing that journey, but this
+     * one has no smaller resting state - it simply closes, and what is behind
+     * it is the app it was opened from. So the peel is its own value rather
+     * than a scrub of an existing one, and it shrinks the whole overlay
+     * inward, which is the shape the system uses for leaving a screen with no
+     * parent inside the app.
+     */
+    val shortsScope = rememberCoroutineScope()
+    val shortsPeel = remember { Animatable(0f) }
+    PredictiveBackHandler(enabled = true) { events ->
+        try {
+            events.collect { event ->
+                shortsPeel.snapTo(event.progress.coerceIn(0f, 1f))
+            }
+            viewModel.close()
+        } catch (cancelled: CancellationException) {
+            // From the overlay's own scope: this coroutine is the one being
+            // cancelled, and a spring started here would leave the Shorts
+            // sitting shrunken with no way back.
+            shortsScope.launch {
+                shortsPeel.animateTo(
+                    targetValue = 0f,
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioNoBouncy,
+                        stiffness = Spring.StiffnessMediumLow
+                    )
+                )
+            }
+        }
+    }
 
     // Pause when the app stops being visible. Shorts are short-form video with
     // no audio-only expectation, and decoding on into a Surface the system is
@@ -220,6 +255,18 @@ fun ShortsPlayerOverlay(
     Box(
         modifier = Modifier
             .fillMaxSize()
+            .graphicsLayer {
+                val p = shortsPeel.value
+                val scale = androidx.compose.ui.util.lerp(1f, 0.88f, p)
+                scaleX = scale
+                scaleY = scale
+                // Rounds off as it shrinks, so it reads as a card being put
+                // down rather than the screen contents scaling.
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(
+                    androidx.compose.ui.util.lerp(0f, 32f, p).dp
+                )
+                clip = true
+            }
             .background(Color.Black)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },

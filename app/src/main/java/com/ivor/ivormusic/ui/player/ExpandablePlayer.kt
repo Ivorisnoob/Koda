@@ -1,6 +1,8 @@
 package com.ivor.ivormusic.ui.player
 
+import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
@@ -29,8 +31,19 @@ import androidx.compose.ui.unit.lerp
 import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.data.PlayerStyle
 import com.ivor.ivormusic.ui.components.MiniPlayerContent
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
 import kotlin.math.absoluteValue
 import kotlin.math.roundToInt
+
+/**
+ * How far a back gesture shrinks the expanded player before it is released.
+ *
+ * Not all the way to the mini pill: a preview that arrives at the destination
+ * has stopped being a preview, and there would be nothing left for releasing
+ * to do.
+ */
+private const val PLAYER_BACK_PEEK = 0.72f
 
 /**
  * A container that expands from a MiniPlayer (floating pill) to a Full Screen Player.
@@ -82,13 +95,54 @@ fun ExpandablePlayer(
     val bottomInset = with(density) { bottomWindowInsets.getBottom(this).toDp() }
     
     // Single animated progress (0f = collapsed, 1f = expanded)
-    // Using Material Physics slowSpatialSpec for full-screen animations
-    val expandProgress by animateFloatAsState(
-        targetValue = if (isExpanded) 1f else 0f,
-        animationSpec = MaterialTheme.motionScheme.slowSpatialSpec(),
-        label = "expandProgress"
-    )
-    
+    // Using Material Physics slowSpatialSpec for full-screen animations.
+    //
+    // An Animatable rather than animateFloatAsState so a back gesture can
+    // scrub it. Same spec, same overshoot, so the coerceAtLeast guards below
+    // stay exactly as load-bearing as they were.
+    val expandSpec = MaterialTheme.motionScheme.slowSpatialSpec<Float>()
+    val expand = remember { Animatable(if (isExpanded) 1f else 0f) }
+    LaunchedEffect(isExpanded) {
+        expand.animateTo(if (isExpanded) 1f else 0f, expandSpec)
+    }
+    val expandProgress = expand.value
+
+    /**
+     * Back on the expanded player previews the collapse it is going to do.
+     *
+     * This surface is the easy case, and the reason is [expandProgress]: the
+     * player is already one value from mini pill to full screen, with every
+     * height, padding, corner and alpha derived from it, so a preview is that
+     * value scrubbed rather than a new animation invented alongside it. What
+     * the finger reveals is the real destination, because there is no
+     * separate "leaving" state to draw.
+     *
+     * It also replaces eight identical `BackHandler(enabled = true) {
+     * onCollapse() }` blocks, one per player style. Back handlers resolve most
+     * recent first, so eight children each claiming the gesture made which one
+     * answered a question about composition order. One handler on the
+     * container is both fewer lines and better defined.
+     */
+    val playerScope = rememberCoroutineScope()
+    PredictiveBackHandler(enabled = isExpanded) { events ->
+        try {
+            events.collect { event ->
+                expand.snapTo(
+                    androidx.compose.ui.util.lerp(1f, PLAYER_BACK_PEEK, event.progress.coerceIn(0f, 1f))
+                )
+            }
+            // Committed. LaunchedEffect(isExpanded) carries it the rest of the
+            // way down from wherever the finger left it.
+            onExpandChange(false)
+        } catch (cancelled: CancellationException) {
+            // Launched from the player's own scope: the coroutine this runs in
+            // is the one being cancelled, so a spring started here would never
+            // move and the player would sit shrunken.
+            playerScope.launch { expand.animateTo(1f, expandSpec) }
+        }
+    }
+
+
     // Derive all properties from the single progress value
     val collapsedHeight = 80.dp
     val collapsedWidthPadding = 16.dp

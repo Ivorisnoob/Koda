@@ -8,7 +8,18 @@ data class SubscribedChannel(
     val channelId: String,
     val name: String,
     val avatarUrl: String?,
-    val subscriberCountText: String?  // e.g. "701K subscribers"
+    val subscriberCountText: String?,  // e.g. "701K subscribers"
+    /**
+     * "@handle" when known. Searchable, never used for fetching - every call
+     * in this app keys off the canonical UC id.
+     *
+     * Both sources carry one: FEchannels puts it in the renderer's
+     * `subscriberCountText` (verified August 2026, see getSubscribedChannels),
+     * and a device-local follow brings its own. Without that symmetry, typing
+     * an @handle would find device channels and silently miss account ones,
+     * which is the kind of gap people report as a bug rather than a limit.
+     */
+    val handle: String? = null
 )
 
 /**

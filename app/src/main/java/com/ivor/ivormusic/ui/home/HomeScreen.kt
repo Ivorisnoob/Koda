@@ -1648,17 +1648,6 @@ fun SearchContent(
     var viewedArtist by remember { mutableStateOf<com.ivor.ivormusic.data.ArtistItem?>(null) }
     var viewedVideoPlaylist by remember { mutableStateOf<com.ivor.ivormusic.data.VideoPlaylist?>(null) }
 
-    // Handle system back button for nested screens.
-    // Playlist/album is the deepest layer (search → artist → album), so it
-    // pops first; backing out of an album returns to the artist page.
-    BackHandler(enabled = viewedPlaylist != null || viewedArtist != null || viewedVideoPlaylist != null) {
-        when {
-            viewedVideoPlaylist != null -> viewedVideoPlaylist = null
-            viewedPlaylist != null -> viewedPlaylist = null
-            viewedArtist != null -> viewedArtist = null
-        }
-    }
-
     val currentScreen = when {
         viewedVideoPlaylist != null -> "videoPlaylist"
         viewedPlaylist != null -> "playlist"
@@ -1669,22 +1658,71 @@ fun SearchContent(
     // Expressive motion physics for screen pushes/pops
     val searchNavSpatialSpec = MaterialTheme.motionScheme.defaultSpatialSpec<androidx.compose.ui.unit.IntOffset>()
     val searchNavEffectsSpec = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
+    // Playlist/album is the deepest layer (search -> artist -> album), so it
+    // pops first; backing out of an album returns to the artist page. Only the
+    // last step out is previewed: popping an album back to the artist reveals
+    // another child, not the search screen underneath.
+    com.ivor.ivormusic.ui.components.PredictiveBackStack(
+        childOpen = currentScreen != "search",
+        onBack = {
+            when {
+                viewedVideoPlaylist != null -> viewedVideoPlaylist = null
+                viewedPlaylist != null -> viewedPlaylist = null
+                viewedArtist != null -> viewedArtist = null
+            }
+        },
+        previewable = listOfNotNull(viewedVideoPlaylist, viewedPlaylist, viewedArtist).size == 1,
+        background = {
+            com.ivor.ivormusic.ui.search.SearchScreen(
+                songs = songs,
+                onSongClick = onSongClick,
+                onPlayQueue = onPlayQueue,
+                onPlayRadio = onPlayRadio,
+                onVideoClick = onVideoClick,
+                onArtistClick = { artistItem -> viewedArtist = artistItem },
+                onAlbumClick = { albumItem -> viewedPlaylist = albumItem },
+                onPlaylistClick = { playlistItem -> viewedPlaylist = playlistItem },
+                onVideoPlaylistClick = { videoPlaylist ->
+                    viewModel.loadPlaylistVideos(videoPlaylist.playlistId)
+                    viewedVideoPlaylist = videoPlaylist
+                },
+                onProfileClick = onProfileClick,
+                contentPadding = contentPadding,
+                viewModel = viewModel,
+                isDarkMode = isDarkMode,
+                videoMode = videoMode,
+                localOnly = localOnly,
+                listState = listState
+            )
+        }
+    ) { committedByGesture ->
     androidx.compose.animation.AnimatedContent(
         targetState = currentScreen,
         label = "SearchNav",
         transitionSpec = {
-            if (targetState != "search") {
-                // Push (Going deeper)
-                (androidx.compose.animation.slideInHorizontally(animationSpec = searchNavSpatialSpec) { width -> width } +
-                        androidx.compose.animation.fadeIn(animationSpec = searchNavEffectsSpec)) togetherWith
-                        (androidx.compose.animation.slideOutHorizontally(animationSpec = searchNavSpatialSpec) { width -> -width / 3 } +
-                                androidx.compose.animation.fadeOut(animationSpec = searchNavEffectsSpec))
-            } else {
-                // Pop (Going back)
-                (androidx.compose.animation.slideInHorizontally(animationSpec = searchNavSpatialSpec) { width -> -width / 3 } +
-                        androidx.compose.animation.fadeIn(animationSpec = searchNavEffectsSpec)) togetherWith
-                        (androidx.compose.animation.slideOutHorizontally(animationSpec = searchNavSpatialSpec) { width -> width } +
-                                androidx.compose.animation.fadeOut(animationSpec = searchNavEffectsSpec))
+            val content = when {
+                // The finger already performed this exit.
+                committedByGesture ->
+                    androidx.compose.animation.EnterTransition.None togetherWith
+                        androidx.compose.animation.ExitTransition.None
+                targetState != "search" ->
+                    // Push (Going deeper)
+                    (androidx.compose.animation.slideInHorizontally(animationSpec = searchNavSpatialSpec) { width -> width } +
+                            androidx.compose.animation.fadeIn(animationSpec = searchNavEffectsSpec)) togetherWith
+                            (androidx.compose.animation.slideOutHorizontally(animationSpec = searchNavSpatialSpec) { width -> -width / 3 } +
+                                    androidx.compose.animation.fadeOut(animationSpec = searchNavEffectsSpec))
+                else ->
+                    // Pop (Going back). The search screen is underneath and
+                    // staying put, so the child carries the whole movement.
+                    androidx.compose.animation.fadeIn(animationSpec = searchNavEffectsSpec) togetherWith
+                            (androidx.compose.animation.slideOutHorizontally(animationSpec = searchNavSpatialSpec) { width -> width } +
+                                    androidx.compose.animation.fadeOut(animationSpec = searchNavEffectsSpec))
+            }
+            // The search state of this layer is empty, so the default
+            // SizeTransform would animate the container between nothing and
+            // full screen and clip the child to it on the way.
+            content using androidx.compose.animation.SizeTransform(clip = false) { _, _ ->
+                androidx.compose.animation.core.snap()
             }
         }
     ) { screen ->
@@ -1732,30 +1770,11 @@ fun SearchContent(
                     )
                 }
             }
-            else -> {
-                com.ivor.ivormusic.ui.search.SearchScreen(
-                    songs = songs,
-                    onSongClick = onSongClick,
-                    onPlayQueue = onPlayQueue,
-                    onPlayRadio = onPlayRadio,
-                    onVideoClick = onVideoClick,
-                    onArtistClick = { artistItem -> viewedArtist = artistItem },
-                    onAlbumClick = { albumItem -> viewedPlaylist = albumItem },
-                    onPlaylistClick = { playlistItem -> viewedPlaylist = playlistItem },
-                    onVideoPlaylistClick = { videoPlaylist ->
-                        viewModel.loadPlaylistVideos(videoPlaylist.playlistId)
-                        viewedVideoPlaylist = videoPlaylist
-                    },
-                    onProfileClick = onProfileClick,
-                    contentPadding = contentPadding,
-                    viewModel = viewModel,
-                    isDarkMode = isDarkMode,
-                    videoMode = videoMode,
-                    localOnly = localOnly,
-                    listState = listState
-                )
-            }
+            // Search lives underneath now; this layer is empty over it, and
+            // full size so both states measure the same.
+            else -> Spacer(Modifier.fillMaxSize())
         }
+    }
     }
 }
 
