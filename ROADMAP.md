@@ -135,6 +135,32 @@ Beyond covers, the editing experience is where the bump lands: a real creation f
 
 **One structural note.** Playlists serialize to SharedPreferences with the full `Song` list embedded in each record, so every add rewrites the whole playlist. That is invisible at forty songs and will not be at four thousand. It does not need solving now, but a playlist feature set that encourages large playlists should not be built without knowing that is the storage underneath.
 
+#### Black and white custom palettes
+
+The custom color palette picker should offer two deliberate monochrome presets: **Black** and **White**. This is related to the earlier pure-black AMOLED request in [#51](https://github.com/Ivorisnoob/Koda/issues/51), but it is a smaller, better-scoped feature: the presets belong inside the existing palette system rather than becoming a separate theme mode.
+
+Both palettes need to flow through the shared theme everywhere it is used — surfaces, text, controls, navigation, dialogs, settings, and player styles — with readable contrast in every state. They should persist like the other palette choices, work signed out, and keep the project's rule that colors live in the theme rather than being hardcoded at call sites.
+
+Tracked in [#179](https://github.com/Ivorisnoob/Koda/issues/179).
+
+#### Swipe song information to change tracks
+
+The player already uses the album-cover area for the previous/next-song swipe. The same gesture should also work on the **song title and artist-name area**, so the visible song information is an equally natural navigation surface.
+
+This should be one gesture contract, not a second interaction model: identical direction, threshold, animation, and playback behavior across every player style and every compact, expanded, or full-screen surface where song navigation exists. Taps on the text, controls, menus, links, scrolling titles, larger text, and accessibility must continue to work, and a gesture crossing from the artwork into the text must not trigger navigation twice.
+
+Tracked in [#180](https://github.com/Ivorisnoob/Koda/issues/180).
+
+#### A choice between the floating nav pill and a short bottom bar
+
+Koda's current navigation is the inline `HorizontalFloatingToolbar` in `HomeScreen.kt`, an expressive floating pill shared by music and video mode. Some users will prefer a familiar, compact bottom navigation bar that stays anchored to the bottom of the screen.
+
+Add a local preference under **Settings → Appearance** with the floating pill as the default and a short standard bottom navigation bar as the alternative. Both surfaces should use the same tab model and selection handler, including selected and unselected icons, labels, haptics, accessibility, and the existing re-tap-to-scroll behavior. Insets must leave room for the system navigation bar and the mini-player, and the choice must persist across restarts and work signed out. The setting also belongs in the settings search index.
+
+This is an appearance choice, not a second navigation architecture. The tablet work may still move navigation to a rail at medium width and up; this preference describes the phone-sized bottom-navigation alternatives, so those decisions should be coordinated rather than allowed to drift.
+
+Tracked in [#181](https://github.com/Ivorisnoob/Koda/issues/181).
+
 #### Respect reduced motion
 
 Koda animates more than almost anything in its category (roughly 97 spring animations, eight player styles built on motion, staggered entrances on every screen), and it reads nothing about whether the person using it wants that. There is no read of `Settings.Global.ANIMATOR_DURATION_SCALE` anywhere in the source, so a user who has turned animations off system-wide, whether for vestibular reasons or because they are on a slow device, still gets every spring and every stagger.
