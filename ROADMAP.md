@@ -241,6 +241,16 @@ This is low-risk, high-legibility work with no architectural weight, which makes
 
 ### Playback
 
+#### A genuinely YouTube Music-first catalogue
+
+Music mode should be a YouTube Music-first catalogue and playback experience, not ordinary YouTube search presented inside a music-shaped UI. The current repository already asks NewPipe for `music_songs`, `music_artists`, `music_albums`, and `music_playlists`, and Koda already has the artist, album, playlist, authentication, and audio-service pieces around those results. What is missing is an enforced identity contract from source selection through metadata, browse, queue, and playback.
+
+The target is to prefer official releases, Topic-channel tracks, and album-linked recordings; preserve stable track, album, artist, and playlist IDs; carry canonical artwork and structured metadata; and keep music results separate from generic uploads. Ordinary YouTube remains available as an explicit fallback when a music result cannot be resolved, but it should not silently become the primary result or substitute an unrelated video. Live, acoustic, remix, and remastered versions must remain distinct rather than being over-aggressively deduplicated.
+
+This is an architectural push rather than a search-screen tweak. It needs a probe-first audit of the current InnerTube/NewPipe renderer families and continuation paths, parser fixtures for songs/albums/artists/playlists and missing fields, a source-aware result model, deterministic ranking and deduplication, and playback tests covering signed-out and signed-in states. Album and artist relationships should survive movement through search, browse, queue, history, and restored playback; unavailable tracks need an honest unavailable state or deterministic fallback.
+
+Tracked in [#182](https://github.com/Ivorisnoob/Koda/issues/182). Related work includes [#84](https://github.com/Ivorisnoob/Koda/issues/84), [#106](https://github.com/Ivorisnoob/Koda/issues/106), [#119](https://github.com/Ivorisnoob/Koda/issues/119), [#136](https://github.com/Ivorisnoob/Koda/issues/136), [#139](https://github.com/Ivorisnoob/Koda/issues/139), and [#178](https://github.com/Ivorisnoob/Koda/issues/178).
+
 #### Switching modes without stopping the audio
 
 Watching a video and deciding you only want to listen should not mean stopping, switching mode, finding the thing again, and starting over. The toggle should carry the playback across.
