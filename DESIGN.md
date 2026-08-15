@@ -24,8 +24,8 @@ These are counts from the current source tree, not aspirations.
 | Lines of UI code | ~37,500 |
 | Files importing `androidx.compose.material3` | 53 |
 | Files using Expressive-only APIs | 39 |
-| `MaterialShapes` references | 131, across 14 distinct shapes |
-| `spring()` animation specs | 97, across 28 files |
+| `MaterialShapes` references | 141, across 14 distinct shapes |
+| `spring()` animation specs | 120, across 42 files |
 | `animate*AsState` call sites | 104 |
 | Built-in color palettes | 27, in 6 families |
 | Player styles | 8, each a full independent layout |
@@ -79,7 +79,7 @@ Because the theme sits above the `NavHost` **and** above both player overlays, t
 
 ## Shape
 
-Material 3 Expressive ships a shape library, and Koda leans on it hard rather than drawing its own polygons. 131 references across 14 shapes, with a deliberate bias toward a handful that define the app's visual signature.
+Material 3 Expressive ships a shape library, and Koda leans on it hard rather than drawing its own polygons. 141 references across 14 shapes, with a deliberate bias toward a handful that define the app's visual signature.
 
 ```mermaid
 pie showData
@@ -113,7 +113,7 @@ Seven files go further and animate between shapes at runtime using `RoundedPolyg
 
 ## Motion
 
-Expressive motion is spring-physics motion. Koda uses `spring()` 97 times across 28 files, and the distribution of damping ratios is itself a design statement: bouncy is the default, not the exception.
+Expressive motion is spring-physics motion. Koda uses `spring()` 120 times across 42 files, and the distribution of damping ratios is itself a design statement: bouncy is the default, not the exception.
 
 | Spring constant | Uses |
 |---|---|
@@ -238,7 +238,7 @@ Between palettes, theme modes, and player styles, that is a very large number of
 
 The reasons are practical, not stubborn:
 
-1. **It is not a theme, it is the app.** 39 files use Expressive-only APIs directly. Replacing the design language means rewriting every screen, both players, all eight player styles, onboarding, and settings. Roughly 37,500 lines of UI code.
+1. **It is not a theme, it is the app.** 47 files use Expressive-only APIs directly. Replacing the design language means rewriting every screen, both players, all eight player styles, both music homes, onboarding, and settings. Roughly 54,000 lines of UI code.
 2. **Two design languages means two apps.** Every future feature would need building twice, and every bug would need reproducing twice. In a project this size that is not a sustainable trade.
 3. **The design is the differentiator.** There are many capable NewPipe-based players. What Koda offers on top of the same extraction stack is this interface. Making it generic removes the reason to choose it.
 

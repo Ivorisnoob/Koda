@@ -81,6 +81,10 @@ class ThemePreferences(context: Context) {
     private val _preferHdr = MutableStateFlow(getPreferHdrPreference())
     val preferHdr: StateFlow<Boolean> = _preferHdr.asStateFlow()
 
+    private val _spotlightHome = MutableStateFlow(getSpotlightHomePreference())
+    val spotlightHome: StateFlow<Boolean> = _spotlightHome.asStateFlow()
+
+
     private val _subscriptionSource = MutableStateFlow(getSubscriptionSourcePreference())
     val subscriptionSource: StateFlow<String> = _subscriptionSource.asStateFlow()
 
@@ -154,6 +158,7 @@ class ThemePreferences(context: Context) {
             KEY_MUSIC_QUALITY_WIFI -> _musicQualityWifi.value = getMusicQualityWifiPreference()
             KEY_MUSIC_QUALITY_MOBILE -> _musicQualityMobile.value = getMusicQualityMobilePreference()
             KEY_PREFER_HDR -> _preferHdr.value = getPreferHdrPreference()
+            KEY_SPOTLIGHT_HOME -> _spotlightHome.value = getSpotlightHomePreference()
             KEY_SUBSCRIPTION_SOURCE -> _subscriptionSource.value = getSubscriptionSourcePreference()
             KEY_SUBSCRIBE_TARGET -> _subscribeTarget.value = getSubscribeTargetPreference()
             KEY_FAST_SUBSCRIPTION_FEED -> _fastSubscriptionFeed.value = getFastSubscriptionFeedPreference()
@@ -335,6 +340,15 @@ class ThemePreferences(context: Context) {
         private const val KEY_PREFER_HDR = "prefer_hdr_video"
 
         /**
+         * Spotlight: the alternative music Home, built from a shortcut grid,
+         * paged quick picks and artwork shelves (see
+         * ui/home/SpotlightHomeContent.kt). A boolean rather than a home-style
+         * enum on purpose - PlayerStyle's constants are persisted by name and are
+         * therefore frozen forever, and there is no third Home planned.
+         */
+        private const val KEY_SPOTLIGHT_HOME = "spotlight_home"
+
+        /**
          * Default quality for video downloads, one of [VIDEO_QUALITY_OPTIONS].
          * Set from the download sheet's "remember" toggle rather than the
          * Settings screen, so like the video session state below it has no
@@ -352,6 +366,17 @@ class ThemePreferences(context: Context) {
             context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                 .getString(KEY_DOWNLOAD_VIDEO_QUALITY, VIDEO_QUALITY_AUTO)
                 ?: VIDEO_QUALITY_AUTO
+
+        /**
+         * Static fresh read of the active palette id, for the playlist cover
+         * generator. It runs when a playlist is created or renamed, long after
+         * the Settings screen changed the palette through its own
+         * ThemePreferences instance, and instance StateFlows do not cross.
+         */
+        fun currentColorPalette(context: Context): String =
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getString(KEY_COLOR_PALETTE, DEFAULT_COLOR_PALETTE)
+                ?: DEFAULT_COLOR_PALETTE
 
         /**
          * Static fresh read of the HDR opt-in for the quality parser, which
@@ -899,6 +924,19 @@ class ThemePreferences(context: Context) {
     fun setPreferHdr(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_PREFER_HDR, enabled).apply()
         _preferHdr.value = enabled
+    }
+
+    private fun getSpotlightHomePreference(): Boolean {
+        return prefs.getBoolean(KEY_SPOTLIGHT_HOME, false)
+    }
+
+    /**
+     * Save the Spotlight home opt-in and update the flow. Off by default: the
+     * classic Home stays what an upgrading user and a first run both get.
+     */
+    fun setSpotlightHome(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_SPOTLIGHT_HOME, enabled).apply()
+        _spotlightHome.value = enabled
     }
 
     /**

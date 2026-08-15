@@ -12,6 +12,9 @@ import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -83,6 +86,14 @@ import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 /**
+ * Feeds the app synthesizes rather than fetches, and the account's own
+ * built-ins. None of them is a playlist that could be kept: "LM" (Your Likes)
+ * and "LL" are assembled locally, "RTM" is the generated Supermix, and Watch
+ * Later is the account's own list, already in the library by definition.
+ */
+private val NON_SAVABLE_PLAYLIST_IDS = setOf("LM", "VLLM", "LL", "VLLL", "RTM", "WL", "VLWL")
+
+/**
  * The Main Library Navigation Hub.
  * Manages transitions between:
  * - Main Library View (Lists/Grid)
@@ -104,6 +115,14 @@ fun LibraryContent(
     onDownloadsClick: () -> Unit = {},
     initialArtist: String? = null,
     onInitialArtistConsumed: () -> Unit = {},
+    /**
+     * Open straight onto a playlist, for callers outside the Library that have
+     * one in hand - Spotlight's shortcut grid and shelves. Same hand-off shape
+     * as [initialArtist]: the caller clears it through the consumed callback so
+     * coming back to the tab later does not re-open the playlist.
+     */
+    initialPlaylist: PlaylistDisplayItem? = null,
+    onInitialPlaylistConsumed: () -> Unit = {},
     onStatsClick: () -> Unit = {},
     /**
      * Hoisted by HomeScreen for the main route's All tab, which is the one the
@@ -128,6 +147,15 @@ fun LibraryContent(
             selectedArtistName = initialArtist
             currentRoute = LibraryRoute.Artist
             onInitialArtistConsumed()
+        }
+    }
+
+    // Handle initial deep link to a playlist
+    LaunchedEffect(initialPlaylist) {
+        if (initialPlaylist != null) {
+            selectedPlaylist = initialPlaylist
+            currentRoute = LibraryRoute.Playlist
+            onInitialPlaylistConsumed()
         }
     }
 
@@ -312,6 +340,7 @@ fun LibraryMainScreen(
 ) {
     val userPlaylists by viewModel.userPlaylists.collectAsState()
     val localPlaylistIds by viewModel.localPlaylistIds.collectAsState()
+    val savedPlaylistIds by viewModel.savedPlaylistIds.collectAsState()
     val likedSongs by viewModel.likedSongs.collectAsState()
     val downloadedSongs by viewModel.downloadedSongs.collectAsState()
     val recentlyPlayed by viewModel.recentlyPlayed.collectAsState()
@@ -502,8 +531,12 @@ fun LibraryMainScreen(
                         PlaylistsGrid(
                             playlists = userPlaylists,
                             localPlaylistIds = localPlaylistIds,
+                            savedPlaylistIds = savedPlaylistIds,
                             likedSongs = likedSongs,
                             onPlaylistClick = onNavigateToPlaylist,
+                            onRemoveSavedPlaylist = { playlist ->
+                                viewModel.removeSavedPlaylist(playlist.id)
+                            },
                             onEditPlaylist = { playlist, newName, newDescription ->
                                 if (localPlaylistIds.contains(playlist.id)) {
                                     viewModel.updateLocalPlaylist(playlist.id, newName, newDescription)
@@ -1024,7 +1057,9 @@ fun PlaylistsGrid(
     onEditPlaylist: (playlist: PlaylistDisplayItem, newName: String, newDescription: String?) -> Unit,
     onDeletePlaylist: (playlist: PlaylistDisplayItem) -> Unit,
     onLikedSongsClick: () -> Unit,
-    contentPadding: PaddingValues
+    contentPadding: PaddingValues,
+    savedPlaylistIds: Set<String> = emptySet(),
+    onRemoveSavedPlaylist: (PlaylistDisplayItem) -> Unit = {}
 ) {
     LazyVerticalGrid(
         columns = GridCells.Fixed(2),
@@ -1069,19 +1104,31 @@ fun PlaylistsGrid(
 
         items(playlists) { playlist ->
             val isLocalPlaylist = localPlaylistIds.contains(playlist.id)
+            // Kept, not owned: renaming or deleting one would be a write
+            // against somebody else's playlist, so it gets "Remove from
+            // library" in place of Edit/Delete.
+            val isSavedPlaylist = savedPlaylistIds.contains(playlist.id)
             // YouTube playlists are editable through InnerTube; the synthesized
             // Supermix ("RTM") and Your Likes ("LM") entries are not real playlists
-            val isYouTubeEditable = !isLocalPlaylist &&
+            val isYouTubeEditable = !isLocalPlaylist && !isSavedPlaylist &&
                 playlist.id != "RTM" && playlist.id != "LM"
             ExpressivePlaylistCard(
                 name = playlist.name ?: "Untitled",
                 count = playlist.itemCount,
-                subtitle = if (playlist.itemCount < 0) playlist.uploaderName.ifBlank { "Playlist" } else null,
+                // A saved playlist's author is the thing that tells it apart
+                // from the user's own at a glance, so it wins the subtitle.
+                subtitle = when {
+                    isSavedPlaylist -> playlist.uploaderName.ifBlank { "Playlist" }
+                    playlist.itemCount < 0 -> playlist.uploaderName.ifBlank { "Playlist" }
+                    else -> null
+                },
                 thumbnailUrl = playlist.thumbnailUrl,
                 description = playlist.description,
                 isEditable = isLocalPlaylist || isYouTubeEditable,
+                isSaved = isSavedPlaylist,
                 onEditConfirmed = { name, description -> onEditPlaylist(playlist, name, description) },
                 onDeleteConfirmed = { onDeletePlaylist(playlist) },
+                onRemoveSaved = { onRemoveSavedPlaylist(playlist) },
                 onClick = { onPlaylistClick(playlist) }
             )
         }
@@ -1277,8 +1324,10 @@ fun ExpressivePlaylistCard(
     description: String? = null,
     isLiked: Boolean = false,
     isEditable: Boolean = false,
+    isSaved: Boolean = false,
     onEditConfirmed: (String, String?) -> Unit = { _, _ -> },
     onDeleteConfirmed: () -> Unit = {},
+    onRemoveSaved: () -> Unit = {},
     onClick: () -> Unit
 ) {
     var showMenu by remember { mutableStateOf(false) }
@@ -1338,6 +1387,27 @@ fun ExpressivePlaylistCard(
                     }
                 }
             }
+            // Saved marker, opposite corner to the track count. A saved
+            // playlist otherwise looks exactly like one the user made, and the
+            // actions behind it are not the same.
+            if (isSaved) {
+                Surface(
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    shape = CircleShape,
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(10.dp)
+                ) {
+                    Icon(
+                        Icons.Rounded.Bookmark,
+                        contentDescription = "Saved to library",
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier
+                            .padding(6.dp)
+                            .size(16.dp)
+                    )
+                }
+            }
             // Track-count chip floating on the artwork
             if (count > 0) {
                 Surface(
@@ -1384,28 +1454,44 @@ fun ExpressivePlaylistCard(
                     maxLines = 1
                 )
             }
-            if (isEditable) {
+            if (isEditable || isSaved) {
                 Box {
                     IconButton(onClick = { showMenu = true }) {
                         Icon(Icons.Rounded.MoreVert, contentDescription = "Playlist options", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
-                        DropdownMenuItem(
-                            text = { Text("Edit") },
-                            onClick = {
-                                showMenu = false
-                                showEditDialog = true
-                            },
-                            leadingIcon = { Icon(Icons.Rounded.Edit, contentDescription = null) }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Delete") },
-                            onClick = {
-                                showMenu = false
-                                showDeleteDialog = true
-                            },
-                            leadingIcon = { Icon(Icons.Rounded.Delete, contentDescription = null) }
-                        )
+                        if (isSaved) {
+                            // Removing the reference, not the playlist: no
+                            // confirmation dialog, because nothing is destroyed
+                            // and saving it again is one tap on its page.
+                            DropdownMenuItem(
+                                text = { Text("Remove from library") },
+                                onClick = {
+                                    showMenu = false
+                                    onRemoveSaved()
+                                },
+                                leadingIcon = {
+                                    Icon(Icons.Rounded.BookmarkRemove, contentDescription = null)
+                                }
+                            )
+                        } else {
+                            DropdownMenuItem(
+                                text = { Text("Edit") },
+                                onClick = {
+                                    showMenu = false
+                                    showEditDialog = true
+                                },
+                                leadingIcon = { Icon(Icons.Rounded.Edit, contentDescription = null) }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Delete") },
+                                onClick = {
+                                    showMenu = false
+                                    showDeleteDialog = true
+                                },
+                                leadingIcon = { Icon(Icons.Rounded.Delete, contentDescription = null) }
+                            )
+                        }
                     }
                 }
             }
@@ -1978,19 +2064,37 @@ fun PlaylistDetailScreen(
 ) {
     val userPlaylists by viewModel.userPlaylists.collectAsState()
     val localPlaylistIds by viewModel.localPlaylistIds.collectAsState()
+    val savedPlaylistIds by viewModel.savedPlaylistIds.collectAsState()
     val resolvedPlaylist = remember(playlist, userPlaylists) {
         userPlaylists.firstOrNull { it.id == playlist.id } ?: playlist
     }
     val isLocalPlaylist = remember(playlist.id, localPlaylistIds, isAlbum) {
         !isAlbum && localPlaylistIds.contains(playlist.id)
     }
+    val isSavedPlaylist = savedPlaylistIds.contains(playlist.id)
+    /**
+     * Whether this page can be kept.
+     *
+     * Anything already in the library that is not a saved reference is the
+     * user's own - local or on their account - and saving it would be a second
+     * copy of something they already have. The synthesized feeds have no
+     * playlist behind them to keep at all.
+     */
+    val canSavePlaylist = remember(playlist.id, userPlaylists, isLocalPlaylist, isSavedPlaylist) {
+        !isLocalPlaylist &&
+            playlist.id !in NON_SAVABLE_PLAYLIST_IDS &&
+            (isSavedPlaylist || userPlaylists.none { it.id == playlist.id })
+    }
     // YouTube playlists can be edited through InnerTube. "LM" (Your Likes) only
     // supports song removal (= removing the like), not rename/delete, and the
     // synthesized Supermix ("RTM") and radio mixes are not editable at all.
     val isYouTubePlaylist = !isAlbum && !isLocalPlaylist
-    val canEditYouTubeSongs = isYouTubePlaylist &&
+    val canEditYouTubeSongs = isYouTubePlaylist && !isSavedPlaylist &&
         (playlist.id.startsWith("PL") || playlist.id == "LM")
-    val canRenameDeleteYouTube = isYouTubePlaylist && playlist.id.startsWith("PL")
+    // A saved playlist starts with "PL" like any other, but it belongs to
+    // whoever made it: rename and delete would be writes the account has no
+    // rights to, and offering them is the UI promising something it cannot do.
+    val canRenameDeleteYouTube = isYouTubePlaylist && playlist.id.startsWith("PL") && !isSavedPlaylist
     // Real "PL" playlists can be reordered remotely via edit_playlist moves;
     // "LM" (Your Likes) only supports removal.
     val canReorderRemote = isYouTubePlaylist && playlist.id.startsWith("PL")
@@ -2021,6 +2125,22 @@ fun PlaylistDetailScreen(
     var searchQuery by remember { mutableStateOf("") }
     var isSearchActive by remember { mutableStateOf(false) }
     val searchFocus = remember { FocusRequester() }
+
+    // Cover art. Only a playlist the user made has artwork of its own to
+    // replace - a YouTube playlist's cover belongs to whoever published it.
+    val hasCustomCover = resolvedPlaylist.thumbnailUrl?.contains("/custom_") == true
+    val coverPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        // Null is the user backing out of the picker, which is not a failure
+        // and must not clear the cover they already have.
+        if (uri != null) viewModel.setLocalPlaylistCover(resolvedPlaylist.id, uri)
+    }
+    val pickCover: () -> Unit = {
+        coverPicker.launch(
+            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+        )
+    }
 
     // Drag state. The dragged row is addressed by its lazy list key so the
     // reorder maths can read real offsets and sizes out of the layout.
@@ -2298,6 +2418,29 @@ fun PlaylistDetailScreen(
                                                 }
                                             )
                                         }
+                                        if (isLocalPlaylist) {
+                                            DropdownMenuItem(
+                                                text = { Text("Change cover") },
+                                                leadingIcon = { Icon(Icons.Rounded.PhotoCamera, null) },
+                                                onClick = {
+                                                    showOverflow = false
+                                                    pickCover()
+                                                }
+                                            )
+                                            // Only offered once there is
+                                            // something to undo: on a generated
+                                            // cover it would do nothing visible.
+                                            if (hasCustomCover) {
+                                                DropdownMenuItem(
+                                                    text = { Text("Reset cover") },
+                                                    leadingIcon = { Icon(Icons.Rounded.Refresh, null) },
+                                                    onClick = {
+                                                        showOverflow = false
+                                                        viewModel.resetLocalPlaylistCover(resolvedPlaylist.id)
+                                                    }
+                                                )
+                                            }
+                                        }
                                         if (hasShare) {
                                             DropdownMenuItem(
                                                 text = { Text("Share") },
@@ -2472,51 +2615,90 @@ fun PlaylistDetailScreen(
                             .padding(top = padding.calculateTopPadding(), bottom = 20.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Surface(
-                            shape = RoundedCornerShape(28.dp),
-                            modifier = Modifier
-                                // Padding before size, so the artwork stays a
-                                // true square instead of losing 16dp of height.
-                                .padding(top = 16.dp)
-                                .size(220.dp)
-                                .graphicsLayer {
-                                    // Scroll-driven, not time-driven: the art
-                                    // trails the list instead of animating on
-                                    // its own, so there is nothing to reduce.
-                                    val collapse = headerCollapse.value
-                                    translationY = collapse * 220.dp.toPx() * 0.28f
-                                    val shrink = 1f - collapse * 0.12f
-                                    scaleX = shrink
-                                    scaleY = shrink
-                                    alpha = 1f - collapse * 0.75f
-                                },
-                            shadowElevation = 12.dp,
-                            color = MaterialTheme.colorScheme.surfaceContainerHighest
-                        ) {
-                            if (resolvedPlaylist.thumbnailUrl != null && resolvedPlaylist.thumbnailUrl != "null") {
-                                AsyncImage(
-                                    model = resolvedPlaylist.thumbnailUrl,
-                                    contentDescription = null,
-                                    contentScale = ContentScale.Crop
-                                )
-                            } else {
-                                // Expressive placeholder: icon seated in a material
-                                // shape, matching the liked-songs hero treatment
-                                Box(contentAlignment = Alignment.Center) {
-                                    Surface(
-                                        shape = MaterialShapes.Cookie9Sided.toShape(),
-                                        color = MaterialTheme.colorScheme.primaryContainer,
-                                        modifier = Modifier.size(120.dp)
-                                    ) {
-                                        Box(contentAlignment = Alignment.Center) {
-                                            Icon(
-                                                imageVector = if (isAlbum) Icons.Rounded.Album else Icons.AutoMirrored.Rounded.PlaylistPlay,
-                                                contentDescription = null,
-                                                modifier = Modifier.size(56.dp),
-                                                tint = MaterialTheme.colorScheme.onPrimaryContainer
-                                            )
+                        Box(modifier = Modifier.padding(top = 16.dp)) {
+                            Surface(
+                                shape = RoundedCornerShape(28.dp),
+                                modifier = Modifier
+                                    .size(220.dp)
+                                    .then(
+                                        // The artwork is the affordance: 220dp of
+                                        // obvious target, exactly where someone
+                                        // looking to change the picture looks.
+                                        if (isLocalPlaylist) {
+                                            Modifier.clickable(onClick = pickCover)
+                                        } else Modifier
+                                    )
+                                    .graphicsLayer {
+                                        // Scroll-driven, not time-driven: the art
+                                        // trails the list instead of animating on
+                                        // its own, so there is nothing to reduce.
+                                        val collapse = headerCollapse.value
+                                        translationY = collapse * 220.dp.toPx() * 0.28f
+                                        val shrink = 1f - collapse * 0.12f
+                                        scaleX = shrink
+                                        scaleY = shrink
+                                        alpha = 1f - collapse * 0.75f
+                                    },
+                                shadowElevation = 12.dp,
+                                color = MaterialTheme.colorScheme.surfaceContainerHighest
+                            ) {
+                                if (resolvedPlaylist.thumbnailUrl != null && resolvedPlaylist.thumbnailUrl != "null") {
+                                    AsyncImage(
+                                        model = resolvedPlaylist.thumbnailUrl,
+                                        contentDescription = null,
+                                        contentScale = ContentScale.Crop
+                                    )
+                                } else {
+                                    // Expressive placeholder: icon seated in a material
+                                    // shape, matching the liked-songs hero treatment
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Surface(
+                                            shape = MaterialShapes.Cookie9Sided.toShape(),
+                                            color = MaterialTheme.colorScheme.primaryContainer,
+                                            modifier = Modifier.size(120.dp)
+                                        ) {
+                                            Box(contentAlignment = Alignment.Center) {
+                                                Icon(
+                                                    imageVector = if (isAlbum) Icons.Rounded.Album else Icons.AutoMirrored.Rounded.PlaylistPlay,
+                                                    contentDescription = null,
+                                                    modifier = Modifier.size(56.dp),
+                                                    tint = MaterialTheme.colorScheme.onPrimaryContainer
+                                                )
+                                            }
                                         }
                                     }
+                                }
+                            }
+
+                            // Badge on the corner, so the artwork reads as
+                            // editable without a caption telling people to tap it.
+                            // Rides the same collapse as the art it sits on.
+                            if (isLocalPlaylist) {
+                                Surface(
+                                    shape = CircleShape,
+                                    color = MaterialTheme.colorScheme.primaryContainer,
+                                    shadowElevation = 4.dp,
+                                    modifier = Modifier
+                                        .align(Alignment.BottomEnd)
+                                        .padding(6.dp)
+                                        .graphicsLayer {
+                                            val collapse = headerCollapse.value
+                                            translationY = collapse * 220.dp.toPx() * 0.28f
+                                            val shrink = 1f - collapse * 0.12f
+                                            scaleX = shrink
+                                            scaleY = shrink
+                                            alpha = 1f - collapse * 0.75f
+                                        }
+                                        .clickable(onClick = pickCover)
+                                ) {
+                                    Icon(
+                                        Icons.Rounded.PhotoCamera,
+                                        contentDescription = "Change cover art",
+                                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        modifier = Modifier
+                                            .padding(10.dp)
+                                            .size(20.dp)
+                                    )
                                 }
                             }
                         }
@@ -2565,6 +2747,49 @@ fun PlaylistDetailScreen(
                                     .animateContentSize()
                                     .clickable { descriptionExpanded = !descriptionExpanded }
                             )
+                        }
+
+                        // Keeping a playlist is the whole point of arriving
+                        // here from search, so it sits in the header rather
+                        // than behind the overflow. Play is still the one
+                        // primary action - that is the button at the bottom.
+                        if (canSavePlaylist) {
+                            FilledTonalButton(
+                                onClick = {
+                                    val nowSaved = viewModel.toggleSavedPlaylist(
+                                        resolvedPlaylist,
+                                        isAlbum = isAlbum
+                                    )
+                                    haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                                    scope.launch {
+                                        snackbarHostState.showSnackbar(
+                                            if (nowSaved) "Saved to your library"
+                                            else "Removed from your library"
+                                        )
+                                    }
+                                },
+                                modifier = Modifier.padding(top = 20.dp)
+                            ) {
+                                // Crossfade rather than a spatial spec: the
+                                // button must not resize under the finger that
+                                // is still on it.
+                                AnimatedContent(
+                                    targetState = isSavedPlaylist,
+                                    transitionSpec = { fadeIn() togetherWith fadeOut() },
+                                    label = "savePlaylist"
+                                ) { saved ->
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = if (saved) Icons.Rounded.BookmarkAdded
+                                                else Icons.Rounded.BookmarkAdd,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Spacer(Modifier.width(8.dp))
+                                        Text(if (saved) "Saved" else "Save")
+                                    }
+                                }
+                            }
                         }
                     }
                 }

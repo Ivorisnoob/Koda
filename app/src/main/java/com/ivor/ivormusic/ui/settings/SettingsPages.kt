@@ -30,6 +30,7 @@ import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.Contrast
+import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.Cookie
 import androidx.compose.material.icons.rounded.FilterList
 import androidx.compose.material.icons.rounded.FlashOn
@@ -206,6 +207,8 @@ internal fun AppearanceSettingsPage(
     onAmoledThemeToggle: (Boolean) -> Unit,
     ambientBackground: Boolean,
     onAmbientBackgroundToggle: (Boolean) -> Unit,
+    spotlightHome: Boolean,
+    onSpotlightHomeToggle: (Boolean) -> Unit,
     onBack: () -> Unit
 ) {
     val paletteName = if (colorPalette == ThemePreferences.DEFAULT_COLOR_PALETTE) {
@@ -261,6 +264,24 @@ internal fun AppearanceSettingsPage(
                         },
                         enabled = ambientBackground,
                         onToggle = onAmbientBackgroundToggle
+                    )
+                }
+            }
+        }
+
+        item {
+            SettingsSection(title = "Home") {
+                SettingsCard {
+                    SettingsToggleRow(
+                        icon = Icons.Rounded.Dashboard,
+                        title = "Spotlight Home",
+                        subtitle = if (spotlightHome) {
+                            "Shortcut grid, quick picks and artwork shelves"
+                        } else {
+                            "Classic Home with a hero and carousels"
+                        },
+                        enabled = spotlightHome,
+                        onToggle = onSpotlightHomeToggle
                     )
                 }
             }

@@ -259,6 +259,8 @@ fun SettingsScreen(
     onVideoModeToggle: (Boolean) -> Unit,
     homeModeToggleEnabled: Boolean = true,
     onHomeModeToggleChange: (Boolean) -> Unit = {},
+    spotlightHome: Boolean = false,
+    onSpotlightHomeToggle: (Boolean) -> Unit = {},
     playerStyle: PlayerStyle,
     onPlayerStyleChange: (PlayerStyle) -> Unit,
     saveVideoHistory: Boolean,
@@ -550,6 +552,7 @@ fun SettingsScreen(
                 sessionManager = sessionManager,
                 currentThemeMode = currentThemeMode,
                 colorPalette = colorPalette,
+                spotlightHome = spotlightHome,
                 playerStyle = playerStyle,
                 musicQualityWifi = musicQualityWifi,
                 videoQualityWifi = videoQualityWifi,
@@ -660,6 +663,8 @@ fun SettingsScreen(
                     onAmoledThemeToggle = onAmoledThemeToggle,
                     ambientBackground = ambientBackground,
                     onAmbientBackgroundToggle = onAmbientBackgroundToggle,
+                    spotlightHome = spotlightHome,
+                    onSpotlightHomeToggle = onSpotlightHomeToggle,
                     onBack = { page = SettingsPage.HUB }
                 )
 
@@ -880,6 +885,7 @@ private fun SettingsHub(
     sessionManager: SessionManager,
     currentThemeMode: ThemeMode,
     colorPalette: String,
+    spotlightHome: Boolean,
     playerStyle: PlayerStyle,
     musicQualityWifi: String,
     videoQualityWifi: String,
@@ -1046,7 +1052,11 @@ private fun SettingsHub(
                         SettingsHubRow(
                             icon = Icons.Rounded.Palette,
                             title = "Appearance",
-                            value = "$themeLabel, $paletteName",
+                            value = if (spotlightHome) {
+                                "$themeLabel, $paletteName, Spotlight"
+                            } else {
+                                "$themeLabel, $paletteName"
+                            },
                             onClick = { onOpenPage(SettingsPage.APPEARANCE) }
                         )
                         SettingsDivider()

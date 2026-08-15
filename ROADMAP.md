@@ -59,7 +59,7 @@ These are not goals. They are the walls the roadmap has to fit inside, and any p
 
 Not roadmap items. These are things that are wrong today, recorded here because they were raised alongside the planning and because each has a diagnosed cause rather than a suspicion.
 
-**Shorts and downloads cannot recover from a flagged `visitorData`.** The music and video players both re-mint on a googlevideo 403 (`MusicService.handlePlayerError`, `VideoPlayerViewModel.recoverFromSourceError`); `ShortsPlayerViewModel` registers no `onPlayerError` at all, so a refused Short buffers forever with no error state and no retry, and `DownloadRepository.downloadStream` fails the download outright. Both are survivable in practice only because `visitorData` is process-wide, so playing anything in the other two surfaces repairs them as a side effect. A session that opens straight into Shorts stays broken. See the entry below for what makes a token get refused.
+The entry that stood here, **Shorts and downloads cannot recover from a flagged `visitorData`**, is fixed: `ShortsPlayerViewModel` now registers an `onPlayerError` that splits renderer failures from source failures the way the video player does, and `DownloadRepository` re-mints between attempts when a media fetch came back 403. Two things about it generalise. **A surface that plays googlevideo streams and does not handle player errors has no way out of the bad bucket**, and it will look like a hang rather than a failure, because a fatal error drives the player to `STATE_IDLE` and the buffering flag goes *false* on the way. And **re-resolving under the refused token is not a retry**: the downloader already re-resolved on each of its three attempts and rebuilt an equally dead URL every time, which is why it failed three times in a row and looked like a broken video rather than a flagged session. Anything holding pre-resolved URLs has to drop them at the same moment, which for Shorts meant the five-deep prefetch cache and an epoch counter so a fetch already in flight cannot write its dead URLs back in behind the purge.
 
 The last entry, **vertical videos pillarboxed on the watch page**, is fixed: the video box now takes the source aspect ratio when the source is portrait, capped so the watch page underneath survives. What made that one worth writing down rather than patching blind is worth keeping in mind for the next layout of its kind. The portrait signal was already correct on both parse paths and simply discarded for everything but live streams, so the work was never detection; and the fix is fit rather than zoom, because the box is never narrower than the video and filling it would have cropped the top and bottom, which is exactly where a vertical upload puts faces and captions.
 
@@ -97,43 +97,42 @@ So this item really contains two, and the order matters: **a background upload c
 
 Two Android specifics worth deciding early. `POST_NOTIFICATIONS` is already declared but is a runtime permission from Android 13, and the request should come when the user first enables a bell rather than at startup, so it arrives with a reason attached. And notifications should share one Android notification channel for uploads with grouping, not one Android channel per YouTube channel. The latter looks tempting and becomes unusable at any real subscription count.
 
-#### Saving other people's playlists and albums
+#### Saving playlists to the YouTube account
 
-There is no way to keep a playlist you did not make. You can play someone else's playlist and you can build your own from scratch, but the ordinary move (find a good playlist, save it, come back to it next week), has nowhere to land.
+Keeping a playlist you did not make now works on the device (`data/SavedPlaylistsRepository.kt`), in both modes and into one store, and what is left is the half that syncs. **The signed-in path is close to free**: saving a playlist to your library on YouTube Music is a like on the playlist id, and `postPlaylistApi` with `like/like` and `like/removelike` is already wired for playlists in `YouTubeRepository`. `getUserPlaylists()` reads `FEplaylist_aggregation`, which already returns saved playlists alongside owned ones, so an account-saved playlist appears in Library through the existing read path without a new call.
 
-**The signed-in half is close to free.** Saving a playlist to your library on YouTube Music is a like on the playlist id, and `postPlaylistApi` with `like/like` and `like/removelike` is already wired for playlists in `YouTubeRepository`. `getUserPlaylists()` reads `FEplaylist_aggregation`, which already returns saved playlists alongside owned ones, so a saved playlist would appear in Library through the existing read path without a new call. This is mostly a button and an entry in the long-press sheet.
+Because both modes write into the one store, that question only has to be answered once, but it has to be answered for a playlist saved on either side: the video half is saved through the same reference and the same id, so an account sync that only understands music-mode saves would leave half the library unsynced and invisible on youtube.com.
 
-**The signed-out half is the real work, and the existing model is the wrong shape for it.** `UserPlaylist` embeds its full `Song` list, which is right for a playlist you own and wrong for one you saved: the owner keeps editing theirs, and a copy taken today is stale by next month. A saved playlist should be stored as a *reference* (id, title, author, artwork, saved-at), and re-fetched when opened, so it stays live. The temptation to reuse `UserPlaylist` because it is already there should be resisted; these are different things that happen to render similarly.
+The open question is not how to send it but **what the button means when both stores exist**. Subscriptions already answered the same question and the answer is `data/SubscriptionActions.kt`: one place decides where a save goes, a target preference picks the store, and *un*-saving clears both, because a toggle that turns off in one place and leaves the thing saved in the other is the UI lying. Saving playlists should follow that shape rather than inventing a second one. The signed-out path must keep working untouched, which is why the local store was built first rather than as a fallback.
 
-Offline is the exception that proves it. A reference cannot play without signal, so the answer is the download system that already exists rather than a snapshot baked into the save. Saving and downloading stay separate actions with separate meanings, the way they are everywhere else in the app.
+**Offline is the exception that proves the reference model.** A reference cannot play without signal, so the answer is the download system that already exists rather than a snapshot baked into the save. Saving and downloading stay separate actions with separate meanings, the way they are everywhere else in the app.
 
-**Albums need the same feature and are not the same object.** They browse by their own id rather than as playlists, so the save path has to handle both rather than assuming everything is a playlist with a `list=` in its URL.
+#### Spotlight: finishing the alternative home
 
-In the Library, saved items want to be visibly distinct from owned ones. They cannot be renamed, reordered, or edited, and a user who cannot tell which is which will try. A separate section, or at minimum a clear marker plus a disabled edit affordance, avoids a whole category of confusion.
+Spotlight (`ui/home/SpotlightHomeContent.kt`) is the alternative music Home, off by default and chosen either in onboarding or from Appearance. It replaced a planned entry called *Discover*, which aimed at a different user again: fewer decisions per screen for people who find the current Home busy. Building both would have meant three Homes to keep working.
 
-#### Discover: a simpler home for music mode
+**It took two rejected attempts to land, and why they failed is the useful part.** The first was a dense metadata list; the second added a transport deck, a queue and ranked stats. Both were wrong for the same reason: they were built on a rule that said horizontal shelves are what makes a home feel busy, so they had no shelves at all. Every real music app - Spotify, Apple Music, YouTube Music - is mostly artwork shelves, and a music home without them does not read as a music app. Do not re-derive that rule.
 
-An alternative Home for music mode. Off by default, chosen in Settings, for people who find the current Home busy and want something that gets out of the way. Still unmistakably this app, still Expressive, just fewer decisions per screen.
+**What Spotlight actually is** is the two ideas that make those homes work, in one screen: Spotify's two-column **shortcut grid** at the top, above the fold and needing no scroll, and YouTube Music's **quick picks** as a *paged* block of four song rows. Paging is the one horizontal gesture that earns its place, because it snaps instead of leaving the reader between two positions and never steals a vertical drag. Then artwork shelves.
 
-**The pattern already exists, which makes this cheaper than it sounds.** The video toggle already swaps Home's entire content through `AnimatedContent` while keeping the tab system, the overlays, and the nav bar untouched. A third variant of Home is an established move in this codebase rather than a new kind of thing. The setting itself is the usual five-file thread plus the settings search index, and the index is the one that fails silently if forgotten.
+**The rule that keeps this from rotting: same data, different composition.** Spotlight is an arrangement of flows `HomeViewModel` already exposes (songs, recently played, liked songs, user playlists), not a new ViewModel, not new fetches, not its own network path. The moment it owns data the classic Home does not, there are two Homes to maintain and one quietly falls behind. The filter chips follow from this: they scope what is genuinely on the device rather than imitating YouTube Music's mood chips, which are a browse call this screen deliberately does not make.
 
-**The rule that keeps this from rotting: same data, different composition.** Discover should be a different arrangement of the flows `HomeViewModel` already exposes (recently played, liked songs, quick picks, user playlists, play counts), not a new ViewModel, not new fetches, not its own network path. The moment it owns data the current Home does not, there are two homes to keep working and one of them will quietly fall behind. Everything Discover shows should already be on screen somewhere today.
+**Auto-generated mixes are filtered out** (`isAutoMix`). Nothing on a playlist marks it as machine-made, so the only signal is the name, and the patterns are anchored on the whole title - a user's own "Late night mixtape" must survive. They are dropped at the source rather than per-section, or they reappear one shelf down.
 
-**What "simpler" should mean is worth deciding rather than discovering during implementation.** The strongest candidate is fewer, larger units and one clear thing to do. The current Home's density comes largely from horizontal rails nested inside a vertical scroll, which asks the user to navigate two axes at once. Removing that is most of the perceived simplification on its own. Bigger artwork, fewer rows, and a single obvious entry point ("pick up where you left off") is a different shape from the current screen without being a different design language.
+What is left:
 
-**Simpler is not plainer.** The Expressive shapes, the palette, the springs, and the artwork colors all stay. This is not a "lite mode" or a flat theme, and it must not become the alternate design language `DESIGN.md` rules out. The reduction is in how many choices are presented at once, not in how the app looks.
+- **Sorting and filtering the shelves**, by play count, duration or date added. All of it is already in `Song` and `playCounts`.
+- **Long-press actions on a shortcut tile and a shelf card**, so queueing and adding to a playlist do not require opening the player first.
+- **The shortcut grid is ranked by a fixed interleave** (liked first, then playlists and recents alternating) rather than by what is actually reached for most. Real use data is in `playCounts` and would make the grid earn its position.
+- **Nothing surfaces albums.** Spotlight shows songs, playlists and liked songs; albums are a shape music homes usually carry and Koda has the data for.
 
-Two states deserve more care here than on the main Home, because this screen is meant to be the calm one: signed out, where there is no account feed and the taste profile may be thin, and brand new, where there is no history at all. A simplified home that is mostly empty is worse than the busy one it replaced.
+#### Playlists: creation and editing
 
-#### Playlists: creation, editing, and covers
+Local playlists work, and they are plain. You can create, rename, reorder by drag, delete, and now set your own cover. What is missing is everything else that makes a playlist feel like yours: a real creation flow rather than a name prompt, multi-select in lists so a playlist can be built from a selection in one action, duplicate detection, sort and shuffle-into-order, editable descriptions, and a proper empty state that offers a way to fill the playlist rather than reporting that it is empty.
 
-Local playlists work, and they are plain. You can create, rename, reorder by drag, and delete. What is missing is everything that makes a playlist feel like yours.
+**Two things the cover work settled that the rest of this should not re-derive.** Cover files are written with a timestamp in the name and the previous one deleted, because Coil caches by URL and writing a new image to the path the old one used shows the old artwork until the cache happens to evict it. That applies to any artwork this app generates, not just covers. And **the generator takes its colors as an argument rather than reading them**: `PlaylistRepository` is data layer, the palette lives in `ui/theme`, and the resolution is one function (`playlistCoverSeeds`) that every caller passes down. There are two callers, because a playlist can be created from the Library or from any player style's add-to-playlist sheet, and only one of them being themed is exactly the kind of split that goes unnoticed.
 
-**Custom cover art is closer than it looks.** `UserPlaylist` already carries a `coverUri` field, documented for exactly this (`file://` or `content://`), and `PlaylistRepository.updatePlaylist` already guards it correctly: it only regenerates the auto cover when the stored URI still points at the generated `cover_<id>.png`, so a user-set image would survive edits today. The data model is done. Nothing in the UI ever calls an image picker, so the field is unreachable. This is a picker, a crop, and a copy into app storage away from working, and it is the highest ratio of felt improvement to work anywhere in this list.
-
-**The generated covers themselves deserve a pass.** `generateCoverArt` paints a 1000px linear gradient between two random HSV hues with the playlist's first letter in bold white on top. It is a reasonable Apple Music impression, but it is the one place in the app that hardcodes color and ignores the user's palette entirely. Someone running a deliberate palette, or AMOLED, gets random vivid gradients that belong to no theme. Generated covers should be derived from the active `ColorScheme`, and ideally from the playlist's own contents, so a playlist of one artist picks up that artwork's colors the way the player already does.
-
-Beyond covers, the editing experience is where the bump lands: a real creation flow rather than a name prompt, multi-select in lists so a playlist can be built from a selection in one action, duplicate detection, sort and shuffle-into-order, editable descriptions, and a proper empty state that offers a way to fill the playlist rather than reporting that it is empty.
+Still open on covers: deriving a generated cover from the playlist's *contents* rather than only the palette, so a playlist of one artist picks up that artwork's colors the way the player already does.
 
 **One structural note.** Playlists serialize to SharedPreferences with the full `Song` list embedded in each record, so every add rewrites the whole playlist. That is invisible at forty songs and will not be at four thousand. It does not need solving now, but a playlist feature set that encourages large playlists should not be built without knowing that is the storage underneath.
 
@@ -435,7 +434,8 @@ Realistically it shares the data layer and almost nothing else. That makes it th
 
 The milestones behind us, kept here so the direction of travel is visible.
 
-- Playlist management: create, rename, reorder, and delete, with generated cover art
+- Playlist management: create, rename, reorder, and delete, with cover art you pick or the app generates from your palette
+- Saving other people's playlists and albums to the library in both music and video mode, stored as live references rather than copies
 - Synced lyrics from LRCLIB, scrolling in time with playback
 - In-app video with a personalized feed, chapters, captions, and comments
 - Eight player styles and a 27-palette color system with dynamic color and AMOLED
@@ -445,6 +445,7 @@ The milestones behind us, kept here so the direction of travel is visible.
 - Account-free subscriptions, with import from NewPipe, PipePipe, Tubular, Takeout, and OPML
 - "Don't recommend this" with a local blocklist, account propagation, and app-wide undo
 - Multiple accounts and device-only profiles, switchable without signing in again
+- Spotlight, an alternative music Home with a shortcut grid, paged quick picks and artwork shelves, chosen in onboarding or Appearance
 - Settings split into a searchable hub of eleven pages
 - Tab scroll positions that survive a switch, and a re-tap that returns the list to the top
 - Skeleton placeholders on every feed's first load, replacing the doubled spinners

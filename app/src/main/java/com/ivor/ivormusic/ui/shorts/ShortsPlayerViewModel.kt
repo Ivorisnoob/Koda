@@ -6,10 +6,12 @@ import androidx.lifecycle.viewModelScope
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.ExoPlaybackException
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.MergingMediaSource
@@ -163,6 +165,11 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
     private var isLoadingMore = false
     private var playJob: Job? = null
     private var historyReportJob: Job? = null
+    private var recoveryJob: Job? = null
+
+    // Retry budgets for the current Short, reset by playIndex - see handlePlayerError.
+    private var rendererRetryCount = 0
+    private var sourceRetryCount = 0
 
     // ---------------- Background prefetch ----------------
     // Swiping must not show a loading spinner, so stream URLs for the next
@@ -183,12 +190,24 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
     private val prefetchingIds = java.util.Collections.synchronizedSet(mutableSetOf<String>())
     private val prefetchSemaphore = kotlinx.coroutines.sync.Semaphore(2)
 
+    /**
+     * Bumped whenever the cache is purged because the token that minted its
+     * URLs was refused. A prefetch that was already in flight at that moment
+     * resolved under the dead token, so its result must be dropped rather than
+     * written back over the purge - otherwise recovery fixes the Short on
+     * screen and the next five swipes fail exactly as before.
+     */
+    private var qualitiesEpoch = 0
+
     private fun cachedQualities(videoId: String): List<VideoQuality>? =
         synchronized(qualitiesCache) { qualitiesCache[videoId] }
 
-    private fun cacheQualities(videoId: String, qualities: List<VideoQuality>) {
+    private fun cacheQualities(videoId: String, qualities: List<VideoQuality>, epoch: Int = qualitiesEpoch) {
         if (qualities.isEmpty()) return
-        synchronized(qualitiesCache) { qualitiesCache[videoId] = qualities }
+        synchronized(qualitiesCache) {
+            if (epoch != qualitiesEpoch) return
+            qualitiesCache[videoId] = qualities
+        }
     }
 
     private fun cachedWatchNext(videoId: String): com.ivor.ivormusic.data.WatchNextData? =
@@ -212,13 +231,14 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
         for (item in streamTargets) {
             val id = item.videoId
             if (cachedQualities(id) != null || !prefetchingIds.add("s:$id")) continue
+            val epoch = qualitiesEpoch
             viewModelScope.launch {
                 try {
                     prefetchSemaphore.acquire()
                     try {
                         // Skip if a later prefetch/playback already filled it
                         if (cachedQualities(id) == null) {
-                            cacheQualities(id, youtubeRepository.getVideoStreamQualities(id))
+                            cacheQualities(id, youtubeRepository.getVideoStreamQualities(id), epoch)
                         }
                     } finally {
                         prefetchSemaphore.release()
@@ -359,6 +379,10 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
                     override fun onPlaybackStateChanged(playbackState: Int) {
                         _isBuffering.value = playbackState == Player.STATE_BUFFERING
                     }
+
+                    override fun onPlayerError(error: PlaybackException) {
+                        handlePlayerError(error)
+                    }
                 })
             }
     }
@@ -436,6 +460,7 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
         _isActive.value = false
         playJob?.cancel()
         historyReportJob?.cancel()
+        recoveryJob?.cancel()
         _exoPlayer?.stop()
         _exoPlayer?.clearMediaItems()
         _currentVideo.value = null
@@ -453,13 +478,166 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
 
     /** Re-attempt playback of the current Short after an error. */
     fun retryCurrent() {
+        rendererRetryCount = 0
+        sourceRetryCount = 0
+        // The cached URLs for this Short are what just failed, and a manual
+        // retry is the user telling us the automatic recovery did not work.
+        // playIndex would otherwise replay them straight out of the cache.
+        currentItem()?.let { synchronized(qualitiesCache) { qualitiesCache.remove(it.videoId) } }
         playIndex(_currentIndex.value)
+    }
+
+    private fun currentItem(): ShortsItem? = _shorts.value.getOrNull(_currentIndex.value)
+
+    /**
+     * Recover from a player-level failure, or surface it.
+     *
+     * Without this the Shorts player registered no error listener at all: a
+     * fatal error drives the player to STATE_IDLE, whose handler clears
+     * [_isBuffering], so a refused Short sat on a frozen frame with no spinner,
+     * no error and no way back. That is survivable in the other two surfaces
+     * only because they re-mint and `visitorData` is process-wide - a session
+     * that opens straight into Shorts never gets that repair.
+     *
+     * Mirrors VideoPlayerViewModel: a renderer failure is the codec, not the
+     * stream, so it re-prepares in place; a source failure means the URL is
+     * dead and only re-resolving can help.
+     */
+    private fun handlePlayerError(error: PlaybackException) {
+        if (isTransientRendererError(error) && rendererRetryCount < MAX_RENDERER_RETRIES) {
+            rendererRetryCount++
+            android.util.Log.w(
+                "ShortsPlayerVM",
+                "Transient renderer error (attempt $rendererRetryCount/$MAX_RENDERER_RETRIES); re-preparing",
+                error
+            )
+            _exoPlayer?.prepare()
+            return
+        }
+
+        if (isRecoverableSourceError(error) && sourceRetryCount < MAX_SOURCE_RETRIES) {
+            sourceRetryCount++
+            android.util.Log.w(
+                "ShortsPlayerVM",
+                "Source error (attempt $sourceRetryCount/$MAX_SOURCE_RETRIES); re-resolving stream",
+                error
+            )
+            recoverFromSourceError(error)
+            return
+        }
+
+        _playbackError.value = error
+        _isBuffering.value = false
+    }
+
+    /**
+     * Mint a fresh visitorData when googlevideo refused us outright, then
+     * re-resolve the Short on screen and reload at the position it died on.
+     *
+     * The cache purge is the part that is specific to this surface. Stream URLs
+     * for the next five Shorts are already resolved and sitting in
+     * [qualitiesCache], every one of them minted under the token that just got
+     * refused, so keeping them would hand the same dead URLs to the next five
+     * swipes and make the re-mint look like it did nothing.
+     */
+    private fun recoverFromSourceError(original: PlaybackException) {
+        val item = currentItem()
+        if (item == null) {
+            _playbackError.value = original
+            _isBuffering.value = false
+            return
+        }
+        val index = _currentIndex.value
+        val resumeAt = _exoPlayer?.currentPosition?.coerceAtLeast(0L) ?: 0L
+        _isBuffering.value = true
+        recoveryJob?.cancel()
+        recoveryJob = viewModelScope.launch {
+            try {
+                if (httpResponseCode(original) == 403) {
+                    youtubeRepository.refreshVisitorDataAfterPlaybackFailure()
+                    synchronized(qualitiesCache) {
+                        qualitiesEpoch++
+                        qualitiesCache.clear()
+                    }
+                } else {
+                    synchronized(qualitiesCache) { qualitiesCache.remove(item.videoId) }
+                }
+                val qualities = kotlinx.coroutines.withTimeout(15_000L) {
+                    youtubeRepository.getVideoStreamQualities(item.videoId)
+                }
+                // The user swiped on while we were resolving; that Short owns
+                // the player now and this recovery has nothing left to fix.
+                if (_currentIndex.value != index) return@launch
+                if (qualities.isEmpty()) {
+                    _playbackError.value = original
+                    _isBuffering.value = false
+                    return@launch
+                }
+                cacheQualities(item.videoId, qualities)
+                loadQuality(pickDefaultQuality(qualities), startAtMs = resumeAt)
+                _exoPlayer?.play()
+                _playbackError.value = null
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                android.util.Log.w("ShortsPlayerVM", "Recovery failed for ${item.videoId}", e)
+                if (_currentIndex.value == index) {
+                    _playbackError.value = original
+                    _isBuffering.value = false
+                }
+            }
+        }
+    }
+
+    /**
+     * Source-level failures - dead URL, 403, malformed container - are worth
+     * re-resolving for. Renderer failures are not: [isTransientRendererError]
+     * already re-prepares those in place, and this runs after it.
+     */
+    private fun isRecoverableSourceError(error: PlaybackException): Boolean {
+        if (error is ExoPlaybackException && error.type == ExoPlaybackException.TYPE_SOURCE) {
+            return true
+        }
+        return error.errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS
+    }
+
+    /**
+     * Renderer-level failures (surface torn down, codec reclaimed by another
+     * app, transient decode error) are worth re-preparing for.
+     */
+    private fun isTransientRendererError(error: PlaybackException): Boolean {
+        if (error is ExoPlaybackException && error.type == ExoPlaybackException.TYPE_RENDERER) {
+            return true
+        }
+        return when (error.errorCode) {
+            PlaybackException.ERROR_CODE_DECODER_INIT_FAILED,
+            PlaybackException.ERROR_CODE_DECODER_QUERY_FAILED,
+            PlaybackException.ERROR_CODE_DECODING_FAILED -> true
+            else -> false
+        }
+    }
+
+    /** HTTP status behind a source error, or null when it was not an HTTP failure. */
+    private fun httpResponseCode(error: PlaybackException): Int? {
+        var cause: Throwable? = error.cause
+        while (cause != null) {
+            if (cause is androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException) {
+                return cause.responseCode
+            }
+            cause = cause.cause
+        }
+        return null
     }
 
     private fun playIndex(index: Int) {
         val item = _shorts.value.getOrNull(index) ?: return
         playJob?.cancel()
         historyReportJob?.cancel()
+        recoveryJob?.cancel()
+        // Per Short, so a run of unrelated failures across the feed does not
+        // exhaust the budget for the one the user is actually watching.
+        rendererRetryCount = 0
+        sourceRetryCount = 0
 
         _playbackError.value = null
         _currentVideo.value = item.toVideoItem()
@@ -595,7 +773,12 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
             ?: qualities.first()
     }
 
-    private fun loadQuality(quality: VideoQuality) {
+    /**
+     * @param startAtMs where to resume. Non-zero only on the recovery path,
+     * which reloads a Short that died partway through and should not restart it
+     * from the top.
+     */
+    private fun loadQuality(quality: VideoQuality, startAtMs: Long = 0L) {
         // Adaptive manifests carry no progressive URL to wrap: hand the
         // MediaItem to the player and let its MediaSource factory build the
         // DASH/HLS source. Feeding a manifest to ProgressiveMediaSource (what
@@ -605,7 +788,8 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
                 MediaItem.Builder()
                     .setUri(quality.url)
                     .setMimeType(adaptiveMimeType(quality))
-                    .build()
+                    .build(),
+                startAtMs
             )
             _exoPlayer?.prepare()
             return
@@ -618,11 +802,11 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
                 .createMediaSource(MediaItem.fromUri(quality.url))
             val audioSource = ProgressiveMediaSource.Factory(dataSourceFactory)
                 .createMediaSource(MediaItem.fromUri(audioUrl))
-            _exoPlayer?.setMediaSource(MergingMediaSource(true, videoSource, audioSource))
+            _exoPlayer?.setMediaSource(MergingMediaSource(true, videoSource, audioSource), startAtMs)
         } else {
             val source = ProgressiveMediaSource.Factory(dataSourceFactory)
                 .createMediaSource(MediaItem.fromUri(quality.url))
-            _exoPlayer?.setMediaSource(source)
+            _exoPlayer?.setMediaSource(source, startAtMs)
         }
         _exoPlayer?.prepare()
     }
@@ -861,6 +1045,17 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
 
         /** Watch-next payloads (metadata + engagement) warmed ahead. */
         private const val WATCH_NEXT_PREFETCH_AHEAD = 2
+
+        /** Silent re-prepare attempts before a renderer error reaches the UI. */
+        private const val MAX_RENDERER_RETRIES = 2
+
+        /**
+         * Silent re-resolve attempts before a source error reaches the UI. One
+         * is enough: the first pass already remints a rejected visitorData and
+         * fetches brand-new URLs, so a second failure means the Short really is
+         * unplayable and the user should get the retry button, not a spinner.
+         */
+        private const val MAX_SOURCE_RETRIES = 1
     }
 
     override fun onCleared() {

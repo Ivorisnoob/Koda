@@ -110,6 +110,7 @@ import androidx.graphics.shapes.RoundedPolygon
 import androidx.graphics.shapes.toPath
 import com.ivor.ivormusic.data.PlayerStyle
 import com.ivor.ivormusic.ui.components.rememberPermissionState
+import com.ivor.ivormusic.ui.home.HomeStylePicker
 import com.ivor.ivormusic.ui.player.PlayerStylePicker
 import com.ivor.ivormusic.data.SessionManager
 import com.ivor.ivormusic.ui.auth.YouTubeAuthDialog
@@ -134,6 +135,8 @@ fun OnboardingScreen(
     onHomeModeToggleEnabledChange: (Boolean) -> Unit = {},
     shortsEnabled: Boolean = false,
     onShortsEnabledToggle: (Boolean) -> Unit = {},
+    spotlightHome: Boolean = false,
+    onSpotlightHomeChange: (Boolean) -> Unit = {},
     playerStyle: PlayerStyle,
     onPlayerStyleChange: (PlayerStyle) -> Unit,
     crossfadeEnabled: Boolean,
@@ -285,6 +288,8 @@ fun OnboardingScreen(
                             onThemeModeChange = onThemeModeChange,
                             ambientBackground = ambientBackground,
                             onAmbientBackgroundToggle = onAmbientBackgroundToggle,
+                            spotlightHome = spotlightHome,
+                            onSpotlightHomeChange = onSpotlightHomeChange,
                             playerStyle = playerStyle,
                             onPlayerStyleChange = onPlayerStyleChange
                         )
@@ -653,6 +658,8 @@ private fun LookAndFeelPage(
     onThemeModeChange: (ThemeMode) -> Unit,
     ambientBackground: Boolean,
     onAmbientBackgroundToggle: (Boolean) -> Unit,
+    spotlightHome: Boolean,
+    onSpotlightHomeChange: (Boolean) -> Unit,
     playerStyle: PlayerStyle,
     onPlayerStyleChange: (PlayerStyle) -> Unit
 ) {
@@ -681,6 +688,21 @@ private fun LookAndFeelPage(
             checked = ambientBackground,
             onCheckedChange = onAmbientBackgroundToggle
         )
+
+        ChoiceCard(title = "Home screen") {
+            Text(
+                text = "Classic leads with one big hero. Spotlight opens with a grid " +
+                    "of the things you reach for most, then quick picks and " +
+                    "shelves. Either can be changed later in Settings.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            HomeStylePicker(
+                spotlightHome = spotlightHome,
+                onSpotlightHomeChange = onSpotlightHomeChange
+            )
+        }
 
         ChoiceCard(title = "Player style") {
             Text(

@@ -170,7 +170,9 @@ fun HomeScreen(
     onPlayerStyleChange: (PlayerStyle) -> Unit = {},
     manualScan: Boolean = false,
     localOnly: Boolean = false,
-    hasVideoMiniPlayer: Boolean = false
+    hasVideoMiniPlayer: Boolean = false,
+    /** Spotlight: the alternative music Home. Off by default. */
+    spotlightHome: Boolean = false
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val localSongs by viewModel.songs.collectAsState()
@@ -319,6 +321,12 @@ fun HomeScreen(
     
     // Artist screen state (for navigation from player)
     var viewedArtistFromPlayer by remember { mutableStateOf<String?>(null) }
+    // Set by Spotlight's shortcut grid and shelves; consumed by LibraryContent
+    // as soon as the tab renders, so returning to Library later lands on the
+    // list rather than re-opening the playlist.
+    var viewedPlaylistFromHome by remember {
+        mutableStateOf<com.ivor.ivormusic.data.PlaylistDisplayItem?>(null)
+    }
     
     // Update check state
     val updateRepository = remember { UpdateRepository() }
@@ -443,6 +451,58 @@ fun HomeScreen(
                                     listState = videoHomeScrollState
                                 )
                             }
+                            // Music Mode, Spotlight: the shortcut-grid and
+                            // shelves alternative. Same flows, same overlays,
+                            // same tab system - only the composition of this one
+                            // tab differs, which is the move the video toggle
+                            // already established.
+                            else if (spotlightHome) {
+                                val spotlightPlaylists by viewModel.userPlaylists.collectAsState()
+                                val spotlightLiked by viewModel.likedSongs.collectAsState()
+                                SpotlightHomeContent(
+                                    songs = songs,
+                                    recentlyPlayed = recentlyPlayed,
+                                    likedSongs = spotlightLiked,
+                                    playlists = spotlightPlaylists,
+                                    isInitialLoading = isLoading && songs.isEmpty(),
+                                    onSongClick = { song ->
+                                        playerViewModel.playQueue(songs, song)
+                                        showPlayerSheet = true
+                                    },
+                                    onPlaySongs = { queue, start ->
+                                        playerViewModel.playQueue(queue, start)
+                                        showPlayerSheet = true
+                                    },
+                                    onRecentClick = { song ->
+                                        playerViewModel.playQueue(recentlyPlayed, song)
+                                        showPlayerSheet = true
+                                    },
+                                    // Playlist detail lives in LibraryContent, so
+                                    // Spotlight hands the playlist over and
+                                    // switches tab: the Library opens straight
+                                    // onto it, the same deep-link shape the
+                                    // player already uses for artists.
+                                    onPlaylistClick = { playlist ->
+                                        viewedPlaylistFromHome = playlist
+                                        selectedTab = 2
+                                    },
+                                    onOpenLiked = { selectedTab = 2 },
+                                    onShowAllInLibrary = { selectedTab = 2 },
+                                    onProfileClick = onProfileClick,
+                                    onSettingsClick = onNavigateToSettings,
+                                    onDownloadsClick = onNavigateToDownloads,
+                                    isDarkMode = isDarkMode,
+                                    contentPadding = listBottomPadding,
+                                    viewModel = viewModel,
+                                    excludedFolders = excludedFolders,
+                                    manualScan = manualScan,
+                                    videoMode = videoMode,
+                                    onVideoModeToggle = onVideoModeToggle,
+                                    showModeToggle = showModeToggle,
+                                    modeToggleState = modeToggleState,
+                                    listState = musicHomeScrollState
+                                )
+                            }
                             // Music Mode: Show original content. The first load
                             // renders the real screen with placeholders in the
                             // data-backed sections rather than a full-screen
@@ -559,6 +619,8 @@ fun HomeScreen(
                                 isDarkMode = isDarkMode,
                                 initialArtist = viewedArtistFromPlayer,
                                 onInitialArtistConsumed = { viewedArtistFromPlayer = null },
+                                initialPlaylist = viewedPlaylistFromHome,
+                                onInitialPlaylistConsumed = { viewedPlaylistFromHome = null },
                                 onStatsClick = onNavigateToStats,
                                 allSongsListState = musicLibraryScrollState
                             )
