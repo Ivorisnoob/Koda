@@ -38,6 +38,15 @@ It streams music and video from YouTube, learns what you like, and does it witho
 
 There is one app with two modes. Leave the video toggle off and Koda is a full music player with a queue, downloads, playlists, statistics, and a library. Turn it on and the Home, Search, and Library tabs reshape into a proper video experience with a personalized feed, a real player, chapters, captions, comments, subscriptions, and notifications. No Google API key is ever required, and the whole app works even without signing in, including search, streaming, downloads, and a local taste profile.
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/01-home-music-your-mix.png" width="24%" alt="Music home"/>
+  <img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/03-player-editorial.png" width="24%" alt="Editorial player style"/>
+  <img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/41-home-video-recommended.png" width="24%" alt="Video home"/>
+  <img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/42-video-watch-page.png" width="24%" alt="Video watch page"/>
+</p>
+
+<p align="center"><sub><a href="#screenshots">More screenshots</a> &middot; music mode, all eight player styles, video mode, and every settings page</sub></p>
+
 ## Download
 
 Get the latest APK from **[Releases](https://github.com/Ivorisnoob/Koda/releases/latest)**. Builds are also posted in the [Telegram chat](https://t.me/ivorisnoob_chat) as they are cut.
@@ -214,6 +223,139 @@ Koda's interface is the product, not a wrapper around one. The whole app is cons
 - Cookies are stored with EncryptedSharedPreferences and signed per-origin (SAPISIDHASH).
 - Everything except personalized feeds, watch history, comments, and engagement works fully signed out.
 - Subscriptions and "don't recommend this" both work without an account, stored on the device. Signing in does not replace them, it adds to them: the feeds merge, and dismissals are forwarded to your YouTube account as well.
+
+---
+
+## Screenshots
+
+Captured on a Pixel 8 running Koda 4.4, in light theme with wallpaper-based dynamic color. Every palette, AMOLED, and dark mode change what these look like.
+
+### Music mode
+
+<table>
+  <tr>
+    <td width="33%" align="center"><img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/01-home-music-your-mix.png" alt="Music home"/><br/><sub><b>Home</b><br/>Your Mix hero and carousels</sub></td>
+    <td width="33%" align="center"><img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/05-library-music.png" alt="Library"/><br/><sub><b>Library</b><br/>Playlists, artists, albums</sub></td>
+    <td width="33%" align="center"><img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/19-library-music-with-downloads.png" alt="Library with downloads"/><br/><sub><b>Library</b><br/>With offline downloads</sub></td>
+  </tr>
+  <tr>
+    <td width="33%" align="center"><img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/07-search-music-songs.png" alt="Song search"/><br/><sub><b>Search</b><br/>Songs</sub></td>
+    <td width="33%" align="center"><img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/08-search-music-artists.png" alt="Artist search"/><br/><sub><b>Search</b><br/>Artists</sub></td>
+    <td width="33%" align="center"><img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/18-downloads-music.png" alt="Downloads"/><br/><sub><b>Downloads</b><br/>Music and video tabs</sub></td>
+  </tr>
+  <tr>
+    <td width="33%" align="center"><img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/20-listening-history.png" alt="Listening history"/><br/><sub><b>Listening history</b><br/>Today, this week, all time</sub></td>
+    <td width="33%" align="center"><img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/06-listening-statistics.png" alt="Listening statistics"/><br/><sub><b>Statistics</b><br/>Plays, top artist, streak</sub></td>
+    <td width="33%"></td>
+  </tr>
+</table>
+
+### Player styles
+
+Eight layouts over the same playback engine, switchable from a spinnable wheel by long-pressing the artwork in any of them.
+
+<table>
+  <tr>
+    <td width="33%" align="center"><img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/09-player-style-wheel.png" alt="Player style wheel"/><br/><sub><b>The style wheel</b><br/>Long-press the artwork</sub></td>
+    <td width="33%" align="center"><img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/10-player-classic.png" alt="Classic player style"/><br/><sub><b>Classic</b><br/>Familiar transport</sub></td>
+    <td width="33%" align="center"><img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/11-player-gesture.png" alt="Gesture player style"/><br/><sub><b>Gesture</b><br/>Swipe the carousel</sub></td>
+  </tr>
+  <tr>
+    <td width="33%" align="center"><img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/03-player-editorial.png" alt="Editorial player style"/><br/><sub><b>Editorial</b><br/>Two-tone magazine layout</sub></td>
+    <td width="33%" align="center"><img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/04-player-editorial-lyrics.png" alt="Editorial player with synced lyrics"/><br/><sub><b>Editorial</b><br/>Synced lyrics</sub></td>
+    <td width="33%" align="center"><img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/12-player-canvas.png" alt="Canvas player style"/><br/><sub><b>Canvas</b><br/>Full-bleed album art</sub></td>
+  </tr>
+  <tr>
+    <td width="33%" align="center"><img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/13-player-bento.png" alt="Bento player style"/><br/><sub><b>Bento</b><br/>Squishy grid of tiles</sub></td>
+    <td width="33%" align="center"><img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/14-player-sticker.png" alt="Sticker player style"/><br/><sub><b>Sticker</b><br/>Die-cut art, toy physics</sub></td>
+    <td width="33%" align="center"><img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/17-player-dial.png" alt="Dial player style"/><br/><sub><b>Dial</b><br/>Rotary ring, spin to scrub</sub></td>
+  </tr>
+  <tr>
+    <td width="33%" align="center"><img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/15-player-morph.png" alt="Morph player style"/><br/><sub><b>Morph</b><br/>A living hero shape...</sub></td>
+    <td width="33%" align="center"><img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/16-player-morph-shape-change.png" alt="Morph player style, seconds later"/><br/><sub><b>Morph</b><br/>...two seconds later</sub></td>
+    <td width="33%"></td>
+  </tr>
+</table>
+
+### Video mode
+
+<table>
+  <tr>
+    <td width="33%" align="center"><img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/41-home-video-recommended.png" alt="Video home"/><br/><sub><b>Home</b><br/>Personalized feed</sub></td>
+    <td width="33%" align="center"><img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/42-video-watch-page.png" alt="Video watch page"/><br/><sub><b>Watch page</b><br/>Engagement and up next</sub></td>
+    <td width="33%" align="center"><img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/43-video-playback-settings-sheet.png" alt="Playback settings"/><br/><sub><b>Playback settings</b><br/>Quality up to 2160p, speed</sub></td>
+  </tr>
+  <tr>
+    <td width="33%" align="center"><img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/44-video-comments-sheet.png" alt="Comments"/><br/><sub><b>Comments</b><br/>Read, reply, and post</sub></td>
+    <td width="33%" align="center"><img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/45-video-save-sheet.png" alt="Save video sheet"/><br/><sub><b>Save</b><br/>Playlists, download, dismiss</sub></td>
+    <td width="33%" align="center"><img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/48-library-video.png" alt="Video library"/><br/><sub><b>Library</b><br/>History and video playlists</sub></td>
+  </tr>
+  <tr>
+    <td width="33%" align="center"><img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/36-search-video-videos.png" alt="Video search"/><br/><sub><b>Search</b><br/>Videos, with date and sort</sub></td>
+    <td width="33%" align="center"><img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/37-search-video-playlists.png" alt="Video playlist search"/><br/><sub><b>Search</b><br/>Playlists</sub></td>
+    <td width="33%"></td>
+  </tr>
+</table>
+
+### Subscriptions
+
+<table>
+  <tr>
+    <td width="33%" align="center"><img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/46-subscriptions-feed.png" alt="Subscriptions feed"/><br/><sub><b>Feed</b><br/>Latest from everything you follow</sub></td>
+    <td width="33%" align="center"><img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/47-manage-subscriptions-empty.png" alt="Manage subscriptions"/><br/><sub><b>Manage</b><br/>Import, export, and groups</sub></td>
+    <td width="33%"></td>
+  </tr>
+</table>
+
+### Accounts and profiles
+
+<table>
+  <tr>
+    <td width="33%" align="center"><img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/21-profiles-sheet-signed-out.png" alt="Profiles, no account"/><br/><sub><b>Profiles</b><br/>Signed out is just a profile</sub></td>
+    <td width="33%" align="center"><img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/49-profiles-sheet-signed-in.png" alt="Profiles with an account"/><br/><sub><b>Profiles</b><br/>Switch without re-authenticating</sub></td>
+    <td width="33%" align="center"><img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/38-settings-account-signed-out.png" alt="Account settings, signed out"/><br/><sub><b>Account</b><br/>Signed out</sub></td>
+  </tr>
+  <tr>
+    <td width="33%" align="center"><img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/39-session-cookies-sign-in-sheet.png" alt="Session cookie sign-in"/><br/><sub><b>Session cookies</b><br/>The fallback sign-in path</sub></td>
+    <td width="33%" align="center"><img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/40-settings-account-signed-in.png" alt="Account settings, signed in"/><br/><sub><b>Account</b><br/>Connected</sub></td>
+    <td width="33%"></td>
+  </tr>
+</table>
+
+### Settings
+
+<details>
+<summary>All eleven categories</summary>
+
+<table>
+  <tr>
+    <td width="33%" align="center"><img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/22-settings-hub.png" alt="Settings hub"/><br/><sub><b>Hub</b><br/>Every row shows its live value</sub></td>
+    <td width="33%" align="center"><img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/31-settings-hub-system-and-about.png" alt="Settings hub, system and about"/><br/><sub><b>Hub</b><br/>System and About</sub></td>
+    <td width="33%" align="center"><img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/24-settings-appearance.png" alt="Appearance settings"/><br/><sub><b>Appearance</b><br/>Theme, palette, AMOLED</sub></td>
+  </tr>
+  <tr>
+    <td width="33%" align="center"><img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/23-settings-color-palette.png" alt="Color palette picker"/><br/><sub><b>Color palette</b><br/>Dynamic, or two dozen fixed</sub></td>
+    <td width="33%" align="center"><img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/27-settings-player-styles.png" alt="Player style picker"/><br/><sub><b>Player</b><br/>Style picker with wireframes</sub></td>
+    <td width="33%" align="center"><img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/28-settings-player-styles-scrolled.png" alt="Player style picker, scrolled"/><br/><sub><b>Player</b><br/>The rest, plus artwork colors</sub></td>
+  </tr>
+  <tr>
+    <td width="33%" align="center"><img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/25-settings-playback-and-quality.png" alt="Playback settings"/><br/><sub><b>Playback</b><br/>Crossfade, queue, history</sub></td>
+    <td width="33%" align="center"><img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/26-settings-streaming-quality.png" alt="Streaming quality settings"/><br/><sub><b>Quality</b><br/>Per network, music and video</sub></td>
+    <td width="33%" align="center"><img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/29-settings-content-and-feeds.png" alt="Content and feeds settings"/><br/><sub><b>Content and feeds</b><br/>Mode, Shorts, recommendations</sub></td>
+  </tr>
+  <tr>
+    <td width="33%" align="center"><img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/30-settings-subscriptions.png" alt="Subscription settings"/><br/><sub><b>Subscriptions</b><br/>Where they live, how they refresh</sub></td>
+    <td width="33%" align="center"><img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/32-settings-storage-and-cache.png" alt="Storage and cache settings"/><br/><sub><b>Storage and cache</b><br/>Size limit and one-tap clear</sub></td>
+    <td width="33%" align="center"><img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/33-settings-notifications.png" alt="Notification settings"/><br/><sub><b>Notifications</b><br/>Android 16 Live Updates</sub></td>
+  </tr>
+  <tr>
+    <td width="33%" align="center"><img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/34-settings-local-library.png" alt="Local library settings"/><br/><sub><b>Local library</b><br/>Device music scanning</sub></td>
+    <td width="33%" align="center"><img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/35-settings-advanced.png" alt="Advanced settings"/><br/><sub><b>Advanced</b><br/>OEM and battery fixes</sub></td>
+    <td width="33%"></td>
+  </tr>
+</table>
+
+</details>
 
 ---
 
