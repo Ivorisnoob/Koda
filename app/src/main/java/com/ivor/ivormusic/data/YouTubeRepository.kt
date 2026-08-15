@@ -115,9 +115,19 @@ class YouTubeRepository(private val context: Context) {
         private val LOGGED_IN_TRACKING_PARAM =
             Regex("\"logged_in\"\\s*,\\s*\"value\"\\s*:\\s*\"([01])\"")
 
-        // ANDROID_VR is the recommended client for audio extraction in 2026:
-        //  - Does NOT require a PO Token (unlike WEB / ANDROID / IOS / MWEB).
-        //  - Returns direct, unobfuscated stream URLs (no signatureCipher to decrypt).
+        // ANDROID_VR is the client for audio extraction in 2026: it returns
+        // direct, unobfuscated stream URLs (no signatureCipher to decrypt) and
+        // needs no player JS.
+        //
+        // It no longer escapes GVS PO-Token enforcement, though, and nothing
+        // does. Measured August 2026: googlevideo serves the first ~1.1 MiB of
+        // a stream and answers 403 for every byte past it, on ANDROID_VR and
+        // IOS alike. The verdict is keyed on the visitorData the /player call
+        // carried, not on the video or the client: it is stable for a given
+        // token and roughly half of freshly minted tokens are refused. So a
+        // single unlucky mint breaks every uncached stream for the whole
+        // VISITOR_DATA_TTL_MS, which is what refreshVisitorDataAfterPlaybackFailure
+        // exists to undo. Do not read a 403 here as a UA or client problem.
         private const val ANDROID_VR_VERSION = "1.65.10"
         private const val ANDROID_VR_USER_AGENT =
             "com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip"
@@ -1546,14 +1556,15 @@ class YouTubeRepository(private val context: Context) {
     /**
      * The two-client /player chain.
      *
-     * ANDROID_VR is the primary (and effectively only) client that yields
-     * *fully downloadable* audio URLs without a GVS PO Token: its googlevideo
-     * URLs serve the whole file, where IOS-issued URLs are throttled to the
-     * first ~1 MiB and then return HTTP 403 (GVS PO-Token enforcement).
+     * ANDROID_VR is the primary client: it answers signed out, needs no player
+     * JS, and returns unciphered URLs. It used to be the one client whose URLs
+     * served a whole file without a GVS PO Token; as of August 2026 it is not,
+     * and the ~1 MiB cutoff that used to be IOS-only now applies to both. Which
+     * client resolved the stream no longer decides whether it can be fetched -
+     * the visitorData does (see the ANDROID_VR constants).
      *
      * IOS stays only as a last-ditch fallback for the rare videos ANDROID_VR
-     * can't serve (e.g. "made for kids", which ANDROID_VR omits). Its URL may
-     * be throttled, but a few seconds of audio beats a hard failure.
+     * can't serve (e.g. "made for kids", which ANDROID_VR omits).
      *
      * Each call is hard-capped by streamResolveClient's callTimeout, so the
      * worst case is bounded regardless of coroutine cancellability.

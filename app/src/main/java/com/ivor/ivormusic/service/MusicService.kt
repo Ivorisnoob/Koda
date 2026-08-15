@@ -16,6 +16,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
+import androidx.media3.datasource.HttpDataSource
 import androidx.media3.datasource.TransferListener
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
@@ -139,6 +140,17 @@ class MusicService : MediaLibraryService() {
         // Stream head pre-cached for upcoming songs: ~30s of opus audio, enough
         // to cover the 0.5s start buffer plus the first ranged chunk's RTT.
         private const val WARM_CACHE_BYTES = 512L * 1024
+
+        // Re-resolution attempts before a song is skipped. A dead or expired URL
+        // is fixed by the first retry or not at all, so the general ceiling stays
+        // low. A googlevideo 403 is different in kind: it is a verdict on the
+        // visitorData rather than on the URL, each retry re-rolls that identity,
+        // and roughly half of freshly minted tokens are served (measured August
+        // 2026), so four attempts recover the large majority of songs. Each one
+        // costs a mint plus a /player call, which is cheap next to skipping a
+        // track the user chose.
+        private const val MAX_RETRIES = 2
+        private const val MAX_FORBIDDEN_RETRIES = 4
 
         // --- Sleep timer: the contract with PlayerViewModel ---
 
@@ -809,17 +821,42 @@ class MusicService : MediaLibraryService() {
 
         // 2. Retry Logic (YouTube songs only)
         val retryCount = retryCounts[videoId] ?: 0
+        // A media-layer 403 means the visitorData this stream was resolved under
+        // is in googlevideo's enforced bucket, and re-resolving under the same
+        // token just rebuilds the same dead URL. Each retry mints a fresh
+        // identity with an independent chance of landing in a served bucket, so
+        // these get their own, higher ceiling: the alternative is skipping a
+        // song the very next attempt would have played.
+        val isMediaForbidden = httpResponseCode(error) == 403
+        val maxRetries = if (isMediaForbidden) MAX_FORBIDDEN_RETRIES else MAX_RETRIES
 
-        if (retryCount < 2) {
-            Log.w(TAG, "Error: Retrying ($retryCount/2) for $videoId...")
+        if (retryCount < maxRetries) {
+            Log.w(TAG, "Error: Retrying ($retryCount/$maxRetries) for $videoId...")
             retryCounts[videoId] = retryCount + 1
             uriCache.remove(videoId) // Clear bad cache
-            
+
             serviceScope.launch {
                 delay(1000)
+                // Mint a fresh visitorData before re-resolving. /player answered
+                // 200 and never sees this refusal, so without it the flagged
+                // token stays in prefs and is replayed for its whole 6h TTL -
+                // every uncached song failing until the user clears app data.
+                // Mirrors VideoPlayerViewModel.recoverFromSourceError.
+                if (isMediaForbidden) {
+                    youtubeRepository.refreshVisitorDataAfterPlaybackFailure()
+                    // Everything prefetchUpcomingSongs resolved was signed with
+                    // the token just discarded, so the rest of the queue is
+                    // already dead. Dropping it here turns one recovery into a
+                    // recovery for the whole queue, instead of the same stall
+                    // repeating on every following song.
+                    uriCache.clear()
+                    retryCounts.clear()
+                    retryCounts[videoId] = retryCount + 1
+                    resetUpcomingItemsToPlaceholders()
+                }
                 // FORCE new resolution
-                activeResolutions.remove(videoId) 
-                
+                activeResolutions.remove(videoId)
+
                 val deferred = getOrStartResolution(currentItem)
                 try {
                     val resolved = deferred.await()
@@ -845,6 +882,59 @@ class MusicService : MediaLibraryService() {
                 player.stop()
             }
         }
+    }
+
+    /**
+     * Put every already-resolved YouTube item in the queue back to its
+     * placeholder URI, so the normal prefetch path resolves it again.
+     *
+     * [prefetchUpcomingSongs] only acts on placeholders, so an item it has
+     * already replaced would keep its stream URL forever. After a visitorData
+     * remint those URLs are all signed with the discarded token, and leaving
+     * them in place means the 403, the retry and the stall repeat once per
+     * song for the rest of the queue.
+     *
+     * The playing item is left alone: its own re-resolution is already in
+     * flight, and replacing it here would fight that. Local songs are left
+     * alone because their content:// / file:// URIs never came from YouTube.
+     *
+     * Must run on the application thread; callers are on [serviceScope].
+     */
+    private fun resetUpcomingItemsToPlaceholders() {
+        val playingIndex = player.currentMediaItemIndex
+        var reset = 0
+        for (index in 0 until player.mediaItemCount) {
+            if (index == playingIndex) continue
+            val item = player.getMediaItemAt(index)
+            val uri = item.localConfiguration?.uri ?: continue
+            if (uri.scheme != "http" && uri.scheme != "https") continue
+            if (uri.toString().startsWith(PLACEHOLDER_PREFIX)) continue
+            if (uri.toString().startsWith(CACHED_PREFIX)) continue
+            player.replaceMediaItem(
+                index,
+                item.buildUpon().setUri("$PLACEHOLDER_PREFIX${item.mediaId}").build(),
+            )
+            reset++
+        }
+        // Warming is one-shot per id, so an id warmed under the old token would
+        // never be re-warmed. Forget them and let the fresh prefetch warm again.
+        warmedIds.clear()
+        if (reset > 0) Log.d(TAG, "Recovery: reset $reset queued item(s) for re-resolution")
+    }
+
+    /**
+     * The HTTP status behind a playback failure, or null when the error did not
+     * come from an HTTP response. googlevideo's refusals surface as an
+     * [HttpDataSource.InvalidResponseCodeException] nested some way down the
+     * cause chain, never as the top-level exception.
+     */
+    private fun httpResponseCode(error: PlaybackException): Int? {
+        var cause: Throwable? = error.cause
+        while (cause != null) {
+            if (cause is HttpDataSource.InvalidResponseCodeException) return cause.responseCode
+            cause = cause.cause
+        }
+        return null
     }
 
     // --- Media Library Session Callback ---
