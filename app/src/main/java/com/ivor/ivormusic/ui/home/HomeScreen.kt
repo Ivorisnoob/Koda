@@ -157,6 +157,15 @@ fun HomeScreen(
     onNavigateToSubscriptions: () -> Unit = {},
     onNavigateToUpdate: () -> Unit = {},
     onNavigateToVideoPlayer: (VideoItem) -> Unit = {},
+    /**
+     * Open the video player on a whole playlist rather than one video, so the
+     * rest of it plays after this one and is browsable from the player.
+     *
+     * Nullable rather than defaulting to `{}`: the playlist screens fall back to
+     * [onNavigateToVideoPlayer] when this is absent, and a do-nothing default
+     * would make a tap on a playlist row silently do nothing at all.
+     */
+    onPlayVideoQueue: ((com.ivor.ivormusic.data.VideoQueue) -> Unit)? = null,
     onOpenShorts: (List<com.ivor.ivormusic.data.ShortsItem>, Int) -> Unit = { _, _ -> },
     shortsEnabled: Boolean = false,
     loadLocalSongs: Boolean = true,
@@ -572,6 +581,7 @@ fun HomeScreen(
                             // Navigate to video player screen
                             onNavigateToVideoPlayer(video)
                         },
+                        onPlayVideoQueue = onPlayVideoQueue,
                         onProfileClick = onProfileClick,
                         contentPadding = listBottomPadding,
                         viewModel = viewModel,
@@ -640,6 +650,7 @@ fun HomeScreen(
                                 onVideoClick = { video ->
                                     onNavigateToVideoPlayer(video)
                                 },
+                                onPlayQueue = onPlayVideoQueue,
                                 onLoginClick = { showAuthDialog = true },
                                 contentPadding = listBottomPadding,
                                 rootListState = videoLibraryScrollState
@@ -1697,6 +1708,11 @@ fun SearchContent(
     onPlayQueue: (List<Song>, Song?) -> Unit = { _, song -> song?.let { onSongClick(it) } },
     onPlayRadio: (Song) -> Unit = { song -> onPlayQueue(listOf(song), song) },
     onVideoClick: (VideoItem) -> Unit = {},
+    /**
+     * Play a playlist found through search as a queue. Null falls back to
+     * [onVideoClick], which plays the tapped video alone.
+     */
+    onPlayVideoQueue: ((com.ivor.ivormusic.data.VideoQueue) -> Unit)? = null,
     onProfileClick: () -> Unit = {},
     contentPadding: PaddingValues,
     viewModel: HomeViewModel,
@@ -1828,7 +1844,8 @@ fun SearchContent(
                         onBack = { viewedVideoPlaylist = null },
                         contentPadding = contentPadding,
                         // Search results aren't the user's own playlists
-                        allowRemove = false
+                        allowRemove = false,
+                        onPlayQueue = onPlayVideoQueue
                     )
                 }
             }

@@ -16,7 +16,7 @@ The app is past the point of proving itself. The core loops all work end to end:
 
 **Two modes, one app.** A video toggle reshapes Home, Search, and Library between a full music player and a full video client. Both share the tab system, the overlays, and the theme; neither is a stripped-down version of the other.
 
-**Two playback pipelines.** Music runs through `MusicService`, a Media3 `MediaLibraryService` with background playback, notifications, and a queue. Video owns its own `ExoPlayer` with DASH, PiP, chapters, captions, and hold-to-2x. Both fetch media through bounded ranged requests, because googlevideo throttles open-ended reads to roughly the media bitrate.
+**Two playback pipelines.** Music runs through `MusicService`, a Media3 `MediaLibraryService` with background playback, notifications, and a queue. Video owns its own `ExoPlayer` with DASH, PiP, chapters, captions, hold-to-2x, and a playlist queue when one was opened from a playlist. Both fetch media through bounded ranged requests, because googlevideo throttles open-ended reads to roughly the media bitrate.
 
 **No API keys, and no mandatory account.** Everything comes from NewPipe Extractor and direct InnerTube calls. Search, streaming, downloads, a local taste profile, subscriptions, and the "don't recommend" blocklist all work signed out. Signing in adds the real YouTube feeds on top rather than unlocking the app.
 
@@ -266,7 +266,7 @@ So the honest question is not "how do we avoid a gap", it is **what "moved to mu
 
 **The recommended shape is both, staged.** Disable the video track the instant the toggle is hit, so the audio never breaks. In parallel, have `MusicService` resolve and buffer the same id at the current position, and only when it reports ready, swap: start the music player, stop the video one. Done properly the user hears nothing, because the handoff waits for the second player to be genuinely prepared rather than optimistically seeking. This is the same warm-then-swap idea `prefetchUpcomingSongs` and `warmStreamCache` already apply to queue skips.
 
-**Two things that will bite.** Video has its own `MediaSessionService` now (`VideoPlaybackService`), so during a migration two sessions exist at once, and unless one is torn down as the other comes up the user gets two media notifications and Bluetooth controls pointed at the wrong player. And the queue semantics differ in kind: video autoplays into related videos, music autoplays into radio. A video handed to music mode needs a decided answer for what plays next, and inheriting the related-videos list into a music queue is probably wrong.
+**Two things that will bite.** Video has its own `MediaSessionService` now (`VideoPlaybackService`), so during a migration two sessions exist at once, and unless one is torn down as the other comes up the user gets two media notifications and Bluetooth controls pointed at the wrong player. And the queue semantics differ in kind: video autoplays into the rest of the playlist when it was opened from one and into related videos otherwise, music autoplays into radio. A video handed to music mode needs a decided answer for what plays next. Inheriting the related-videos list into a music queue is probably wrong; inheriting an actual `VideoQueue` is the one case where the answer is obvious, since it is already an explicit ordered list the user chose.
 
 The reverse direction (music to video mode, promoting a song to its music video), is the same machinery with one extra unknown: not every track has a watchable video, so the control has to be conditional or it will fail more often than it works. Worth treating as a follow-up rather than assuming symmetry.
 
@@ -452,3 +452,4 @@ The milestones behind us, kept here so the direction of travel is visible.
 - A listening history for music, grouped by day, searchable, with a pause toggle
 - Vertical videos given a player box their own shape instead of a pillarboxed 16:9 frame
 - Search over the channels you follow, by name or @handle, on every list long enough to need it
+- Playlists that play through in video mode: a real queue with next/previous, a browsable queue sheet, and a "Playing from" card on the watch page

@@ -104,6 +104,7 @@ fun VideoPlayerContent(
     val availableQualities by viewModel.availableQualities.collectAsState()
     val currentQuality by viewModel.currentQuality.collectAsState()
     val relatedVideos by viewModel.relatedVideos.collectAsState()
+    val queue by viewModel.queue.collectAsState()
     val chapters by viewModel.chapters.collectAsState()
     val captionTracks by viewModel.captionTracks.collectAsState()
     val selectedCaption by viewModel.selectedCaption.collectAsState()
@@ -157,6 +158,15 @@ fun VideoPlayerContent(
     var isFullscreen by remember { mutableStateOf(false) }
     var showChaptersSheet by remember { mutableStateOf(false) }
     var showCaptionsSheet by remember { mutableStateOf(false) }
+    // Keyed on the playlist, so the flag cannot outlive the queue it belongs to.
+    // Running off the end of a playlist drops the queue and takes the sheet off
+    // screen without ever calling its onDismiss; left un-keyed, the flag would
+    // still read true and the next playlist would open with the sheet already
+    // up. A `remember` key rather than an effect: this sits above the early
+    // return below, where effects corrupt the slot table.
+    var showQueueSheet by remember(queue?.playlistId, queue?.title) {
+        mutableStateOf(false)
+    }
     var showLiveChat by remember { mutableStateOf(false) }
 
     // A portrait live stream opens full-bleed: the standard layout gives a 9:16
@@ -581,6 +591,12 @@ fun VideoPlayerContent(
                     showCaptionsSheet = true
                 },
                 captionCues = captionCues,
+                showQueueControls = queue != null,
+                hasPreviousInQueue = queue?.hasPrevious == true,
+                hasNextInQueue = queue?.hasNext == true,
+                onPreviousInQueue = { viewModel.playPreviousInQueue() },
+                onNextInQueue = { viewModel.playNextInQueue() },
+                onOpenQueue = { showQueueSheet = true },
                 isLive = isLive,
                 liveChatActive = showLiveChat,
                 onLiveChatToggle = { showLiveChat = !showLiveChat },
@@ -822,6 +838,11 @@ fun VideoPlayerContent(
                             showCaptionsSheet = true
                         },
                         captionCues = captionCues,
+                        showQueueControls = queue != null,
+                        hasPreviousInQueue = queue?.hasPrevious == true,
+                        hasNextInQueue = queue?.hasNext == true,
+                        onPreviousInQueue = { viewModel.playPreviousInQueue() },
+                        onNextInQueue = { viewModel.playNextInQueue() },
                         isLive = isLive,
                         onSeekToLive = { exoPlayer.seekToDefaultPosition() },
                         showVerticalLiveButton = verticalLiveAvailable,
@@ -896,6 +917,8 @@ fun VideoPlayerContent(
                                 saveTargetVideo = related
                             }
                         },
+                        queue = queue,
+                        onOpenQueue = { showQueueSheet = true },
                         isLive = isLive,
                         liveViewerCount = liveViewerCount,
                         onLiveChatClick = { showLiveChat = true }
@@ -1031,6 +1054,23 @@ fun VideoPlayerContent(
             },
             onDismiss = { showChannelSheet = false }
         )
+    }
+
+    // The playlist behind this video. Hosted here rather than inside the info
+    // column so it is reachable from fullscreen too, where that column is not
+    // composed at all.
+    queue?.let { activeQueue ->
+        if (showQueueSheet) {
+            VideoQueueSheet(
+                queue = activeQueue,
+                onSelect = { index ->
+                    viewModel.playQueueIndex(index)
+                    showQueueSheet = false
+                },
+                onDismiss = { showQueueSheet = false },
+                keepSystemBarsHidden = isFullscreen
+            )
+        }
     }
 
     // Chapters list sheet
@@ -1278,7 +1318,7 @@ private fun PlayerSettingsSections(
  * dialog-backed this quietly does nothing.
  */
 @Composable
-private fun KeepSystemBarsHidden(enabled: Boolean) {
+internal fun KeepSystemBarsHidden(enabled: Boolean) {
     if (!enabled) return
     val view = LocalView.current
     DisposableEffect(view) {
