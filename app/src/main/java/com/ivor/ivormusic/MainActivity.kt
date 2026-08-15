@@ -113,6 +113,7 @@ class MainActivity : ComponentActivity() {
             val musicQualityWifi by themeViewModel.musicQualityWifi.collectAsState()
             val musicQualityMobile by themeViewModel.musicQualityMobile.collectAsState()
             val preferHdr by themeViewModel.preferHdr.collectAsState()
+            val spotlightHome by themeViewModel.spotlightHome.collectAsState()
             val subscriptionSource by themeViewModel.subscriptionSource.collectAsState()
             val subscribeTarget by themeViewModel.subscribeTarget.collectAsState()
             val fastSubscriptionFeed by themeViewModel.fastSubscriptionFeed.collectAsState()
@@ -168,6 +169,8 @@ class MainActivity : ComponentActivity() {
                         onVideoModeToggle = { themeViewModel.setVideoMode(it) },
                         homeModeToggleEnabled = homeModeToggleEnabled,
                         onHomeModeToggleEnabledChange = { themeViewModel.setHomeModeToggleEnabled(it) },
+                        spotlightHome = spotlightHome,
+                        onSpotlightHomeToggle = { themeViewModel.setSpotlightHome(it) },
                         playerStyle = playerStyle,
                         onPlayerStyleChange = { themeViewModel.setPlayerStyle(it) },
                         saveVideoHistory = saveVideoHistory,
@@ -299,6 +302,8 @@ fun MusicApp(
     onVideoModeToggle: (Boolean) -> Unit,
     homeModeToggleEnabled: Boolean,
     onHomeModeToggleEnabledChange: (Boolean) -> Unit,
+    spotlightHome: Boolean,
+    onSpotlightHomeToggle: (Boolean) -> Unit,
     playerStyle: PlayerStyle,
     onPlayerStyleChange: (PlayerStyle) -> Unit,
     saveVideoHistory: Boolean,
@@ -500,6 +505,8 @@ fun MusicApp(
                     onHomeModeToggleEnabledChange = onHomeModeToggleEnabledChange,
                     shortsEnabled = shortsEnabled,
                     onShortsEnabledToggle = onShortsEnabledToggle,
+                    spotlightHome = spotlightHome,
+                    onSpotlightHomeChange = onSpotlightHomeToggle,
                     playerStyle = playerStyle,
                     onPlayerStyleChange = onPlayerStyleChange,
                     crossfadeEnabled = crossfadeEnabled,
@@ -551,7 +558,8 @@ fun MusicApp(
                     onPlayerStyleChange = onPlayerStyleChange,
                     manualScan = manualScanEnabled,
                     localOnly = localOnlyMode,
-                    hasVideoMiniPlayer = hasVideoMiniPlayer
+                    hasVideoMiniPlayer = hasVideoMiniPlayer,
+                    spotlightHome = spotlightHome
                 )
             }
             composable(
@@ -580,6 +588,8 @@ fun MusicApp(
                     onVideoModeToggle = onVideoModeToggle,
                     homeModeToggleEnabled = homeModeToggleEnabled,
                     onHomeModeToggleChange = onHomeModeToggleEnabledChange,
+                    spotlightHome = spotlightHome,
+                    onSpotlightHomeToggle = onSpotlightHomeToggle,
                     playerStyle = playerStyle,
                     onPlayerStyleChange = onPlayerStyleChange,
                     saveVideoHistory = saveVideoHistory,

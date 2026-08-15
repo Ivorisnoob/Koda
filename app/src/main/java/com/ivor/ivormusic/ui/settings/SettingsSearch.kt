@@ -28,6 +28,7 @@ import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.Contrast
 import androidx.compose.material.icons.rounded.Cookie
+import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.FilterList
 import androidx.compose.material.icons.rounded.FlashOn
 import androidx.compose.material.icons.rounded.Folder
@@ -192,6 +193,13 @@ internal fun buildSettingsSearchIndex(
     entry(
         "ambient", "Ambient Background", "Appearance", Icons.Rounded.Palette,
         listOf("album art", "artwork", "background", "blur", "glow")
+    ) { onOpenPage(SettingsPage.APPEARANCE) }
+    entry(
+        "spotlight_home", "Spotlight Home", "Appearance", Icons.Rounded.Dashboard,
+        listOf(
+            "home", "home screen", "layout", "shortcuts", "grid", "shelves",
+            "quick picks", "spotify", "feed", "classic home"
+        )
     ) { onOpenPage(SettingsPage.APPEARANCE) }
 
     // Player

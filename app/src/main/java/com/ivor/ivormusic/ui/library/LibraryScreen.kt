@@ -104,6 +104,14 @@ fun LibraryContent(
     onDownloadsClick: () -> Unit = {},
     initialArtist: String? = null,
     onInitialArtistConsumed: () -> Unit = {},
+    /**
+     * Open straight onto a playlist, for callers outside the Library that have
+     * one in hand - Spotlight's shortcut grid and shelves. Same hand-off shape
+     * as [initialArtist]: the caller clears it through the consumed callback so
+     * coming back to the tab later does not re-open the playlist.
+     */
+    initialPlaylist: PlaylistDisplayItem? = null,
+    onInitialPlaylistConsumed: () -> Unit = {},
     onStatsClick: () -> Unit = {},
     /**
      * Hoisted by HomeScreen for the main route's All tab, which is the one the
@@ -128,6 +136,15 @@ fun LibraryContent(
             selectedArtistName = initialArtist
             currentRoute = LibraryRoute.Artist
             onInitialArtistConsumed()
+        }
+    }
+
+    // Handle initial deep link to a playlist
+    LaunchedEffect(initialPlaylist) {
+        if (initialPlaylist != null) {
+            selectedPlaylist = initialPlaylist
+            currentRoute = LibraryRoute.Playlist
+            onInitialPlaylistConsumed()
         }
     }
 

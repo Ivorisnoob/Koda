@@ -37,6 +37,7 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
     val musicQualityWifi: StateFlow<String> = themePreferences.musicQualityWifi
     val musicQualityMobile: StateFlow<String> = themePreferences.musicQualityMobile
     val preferHdr: StateFlow<Boolean> = themePreferences.preferHdr
+    val spotlightHome: StateFlow<Boolean> = themePreferences.spotlightHome
     val subscriptionSource: StateFlow<String> = themePreferences.subscriptionSource
     val subscribeTarget: StateFlow<String> = themePreferences.subscribeTarget
     val fastSubscriptionFeed: StateFlow<Boolean> = themePreferences.fastSubscriptionFeed
@@ -155,6 +156,10 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setPreferHdr(enabled: Boolean) {
         themePreferences.setPreferHdr(enabled)
+    }
+
+    fun setSpotlightHome(enabled: Boolean) {
+        themePreferences.setSpotlightHome(enabled)
     }
 
     fun setSubscriptionSource(source: String) {

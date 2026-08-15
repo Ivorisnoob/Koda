@@ -111,19 +111,24 @@ Offline is the exception that proves it. A reference cannot play without signal,
 
 In the Library, saved items want to be visibly distinct from owned ones. They cannot be renamed, reordered, or edited, and a user who cannot tell which is which will try. A separate section, or at minimum a clear marker plus a disabled edit affordance, avoids a whole category of confusion.
 
-#### Discover: a simpler home for music mode
+#### Spotlight: finishing the alternative home
 
-An alternative Home for music mode. Off by default, chosen in Settings, for people who find the current Home busy and want something that gets out of the way. Still unmistakably this app, still Expressive, just fewer decisions per screen.
+Spotlight (`ui/home/SpotlightHomeContent.kt`) is the alternative music Home, off by default and chosen either in onboarding or from Appearance. It replaced a planned entry called *Discover*, which aimed at a different user again: fewer decisions per screen for people who find the current Home busy. Building both would have meant three Homes to keep working.
 
-**The pattern already exists, which makes this cheaper than it sounds.** The video toggle already swaps Home's entire content through `AnimatedContent` while keeping the tab system, the overlays, and the nav bar untouched. A third variant of Home is an established move in this codebase rather than a new kind of thing. The setting itself is the usual five-file thread plus the settings search index, and the index is the one that fails silently if forgotten.
+**It took two rejected attempts to land, and why they failed is the useful part.** The first was a dense metadata list; the second added a transport deck, a queue and ranked stats. Both were wrong for the same reason: they were built on a rule that said horizontal shelves are what makes a home feel busy, so they had no shelves at all. Every real music app - Spotify, Apple Music, YouTube Music - is mostly artwork shelves, and a music home without them does not read as a music app. Do not re-derive that rule.
 
-**The rule that keeps this from rotting: same data, different composition.** Discover should be a different arrangement of the flows `HomeViewModel` already exposes (recently played, liked songs, quick picks, user playlists, play counts), not a new ViewModel, not new fetches, not its own network path. The moment it owns data the current Home does not, there are two homes to keep working and one of them will quietly fall behind. Everything Discover shows should already be on screen somewhere today.
+**What Spotlight actually is** is the two ideas that make those homes work, in one screen: Spotify's two-column **shortcut grid** at the top, above the fold and needing no scroll, and YouTube Music's **quick picks** as a *paged* block of four song rows. Paging is the one horizontal gesture that earns its place, because it snaps instead of leaving the reader between two positions and never steals a vertical drag. Then artwork shelves.
 
-**What "simpler" should mean is worth deciding rather than discovering during implementation.** The strongest candidate is fewer, larger units and one clear thing to do. The current Home's density comes largely from horizontal rails nested inside a vertical scroll, which asks the user to navigate two axes at once. Removing that is most of the perceived simplification on its own. Bigger artwork, fewer rows, and a single obvious entry point ("pick up where you left off") is a different shape from the current screen without being a different design language.
+**The rule that keeps this from rotting: same data, different composition.** Spotlight is an arrangement of flows `HomeViewModel` already exposes (songs, recently played, liked songs, user playlists), not a new ViewModel, not new fetches, not its own network path. The moment it owns data the classic Home does not, there are two Homes to maintain and one quietly falls behind. The filter chips follow from this: they scope what is genuinely on the device rather than imitating YouTube Music's mood chips, which are a browse call this screen deliberately does not make.
 
-**Simpler is not plainer.** The Expressive shapes, the palette, the springs, and the artwork colors all stay. This is not a "lite mode" or a flat theme, and it must not become the alternate design language `DESIGN.md` rules out. The reduction is in how many choices are presented at once, not in how the app looks.
+**Auto-generated mixes are filtered out** (`isAutoMix`). Nothing on a playlist marks it as machine-made, so the only signal is the name, and the patterns are anchored on the whole title - a user's own "Late night mixtape" must survive. They are dropped at the source rather than per-section, or they reappear one shelf down.
 
-Two states deserve more care here than on the main Home, because this screen is meant to be the calm one: signed out, where there is no account feed and the taste profile may be thin, and brand new, where there is no history at all. A simplified home that is mostly empty is worse than the busy one it replaced.
+What is left:
+
+- **Sorting and filtering the shelves**, by play count, duration or date added. All of it is already in `Song` and `playCounts`.
+- **Long-press actions on a shortcut tile and a shelf card**, so queueing and adding to a playlist do not require opening the player first.
+- **The shortcut grid is ranked by a fixed interleave** (liked first, then playlists and recents alternating) rather than by what is actually reached for most. Real use data is in `playCounts` and would make the grid earn its position.
+- **Nothing surfaces albums.** Spotlight shows songs, playlists and liked songs; albums are a shape music homes usually carry and Koda has the data for.
 
 #### Playlists: creation, editing, and covers
 
@@ -445,6 +450,7 @@ The milestones behind us, kept here so the direction of travel is visible.
 - Account-free subscriptions, with import from NewPipe, PipePipe, Tubular, Takeout, and OPML
 - "Don't recommend this" with a local blocklist, account propagation, and app-wide undo
 - Multiple accounts and device-only profiles, switchable without signing in again
+- Spotlight, an alternative music Home with a shortcut grid, paged quick picks and artwork shelves, chosen in onboarding or Appearance
 - Settings split into a searchable hub of eleven pages
 - Tab scroll positions that survive a switch, and a re-tap that returns the list to the top
 - Skeleton placeholders on every feed's first load, replacing the doubled spinners
