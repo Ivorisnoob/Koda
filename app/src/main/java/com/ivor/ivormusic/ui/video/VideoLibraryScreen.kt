@@ -40,6 +40,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Bookmark
+import androidx.compose.material.icons.rounded.BookmarkAdd
+import androidx.compose.material.icons.rounded.BookmarkAdded
+import androidx.compose.material.icons.rounded.BookmarkRemove
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.History
@@ -77,7 +81,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -90,6 +96,16 @@ import com.ivor.ivormusic.ui.components.PlaylistRowSkeleton
 import com.ivor.ivormusic.ui.components.SkeletonList
 import com.ivor.ivormusic.ui.components.PredictiveBackStack
 import com.ivor.ivormusic.ui.home.HomeViewModel
+
+/**
+ * Feeds with no keepable playlist behind them. Watch Later and Liked videos are
+ * the account's own built-ins, already in the library by definition, and the
+ * music side's synthesized entries ("LM" likes, "RTM" Supermix) are assembled
+ * rather than published. Same list as `LibraryScreen`'s, in the ids video mode
+ * uses them under.
+ */
+private val NON_SAVABLE_VIDEO_PLAYLIST_IDS =
+    setOf("WL", "VLWL", "LL", "VLLL", "LM", "VLLM", "RTM")
 
 /** Internal navigation state of the Library tab. */
 private sealed interface LibraryPage {
@@ -120,6 +136,9 @@ fun VideoLibraryContent(
     val historyVideos by viewModel.historyVideos.collectAsState()
     val playlists by viewModel.videoPlaylists.collectAsState()
     val isPlaylistsLoading by viewModel.isVideoPlaylistsLoading.collectAsState()
+    // Playlists kept as references, from either mode. Device-local, so unlike
+    // the account's own they are there signed out.
+    val savedPlaylists by viewModel.savedVideoPlaylists.collectAsState()
 
     var page by remember { mutableStateOf<LibraryPage>(LibraryPage.Root) }
 
@@ -136,6 +155,7 @@ fun VideoLibraryContent(
                 isLoggedIn = isYouTubeConnected,
                 historyVideos = historyVideos,
                 playlists = playlists,
+                savedPlaylists = savedPlaylists,
                 isPlaylistsLoading = isPlaylistsLoading,
                 onVideoClick = onVideoClick,
                 onLoginClick = onLoginClick,
@@ -146,6 +166,9 @@ fun VideoLibraryContent(
                 },
                 onCreatePlaylist = { name -> viewModel.createVideoPlaylist(name) },
                 onDeletePlaylist = { playlist -> viewModel.deleteVideoPlaylist(playlist.playlistId) },
+                onRemoveSavedPlaylist = { playlist ->
+                    viewModel.removeSavedPlaylist(playlist.playlistId)
+                },
                 listState = rootListState,
                 onRefresh = {
                     viewModel.loadYouTubeHistory()
@@ -212,6 +235,7 @@ private fun LibraryRoot(
     isLoggedIn: Boolean,
     historyVideos: List<VideoItem>,
     playlists: List<VideoPlaylist>,
+    savedPlaylists: List<VideoPlaylist>,
     isPlaylistsLoading: Boolean,
     onVideoClick: (VideoItem) -> Unit,
     onLoginClick: () -> Unit,
@@ -219,6 +243,7 @@ private fun LibraryRoot(
     onOpenPlaylist: (VideoPlaylist) -> Unit,
     onCreatePlaylist: (String) -> Unit,
     onDeletePlaylist: (VideoPlaylist) -> Unit,
+    onRemoveSavedPlaylist: (VideoPlaylist) -> Unit,
     onRefresh: () -> Unit,
     contentPadding: PaddingValues,
     listState: LazyListState = rememberLazyListState()
@@ -340,18 +365,35 @@ private fun LibraryRoot(
                     } else null
                 )
             }
-            if (!isLoggedIn) {
-                item { LibraryLoginCard(onLoginClick = onLoginClick) }
-            } else if (isPlaylistsLoading && playlists.isEmpty()) {
-                item {
+            // Saved ones lead, the way they do in the music Library grid: not
+            // the user's own, but deliberately kept, so they belong above the
+            // account's list rather than lost at the end of it. They are also
+            // the half that survives being signed out.
+            items(savedPlaylists, key = { "saved_${it.playlistId}" }) { playlist ->
+                PlaylistRow(
+                    playlist = playlist,
+                    onClick = { onOpenPlaylist(playlist) },
+                    isSaved = true,
+                    onRemoveSaved = { onRemoveSavedPlaylist(playlist) },
+                    modifier = Modifier.padding(horizontal = 16.dp)
+                )
+            }
+
+            when {
+                // Signed out only the account half is unreachable. The saved
+                // rows above are still there, so the invitation goes underneath
+                // what the user already has instead of replacing it.
+                !isLoggedIn -> item { LibraryLoginCard(onLoginClick = onLoginClick) }
+
+                isPlaylistsLoading && playlists.isEmpty() -> item {
                     SkeletonList(
                         count = 4,
                         modifier = Modifier.padding(horizontal = 16.dp),
                         spacing = 8.dp
                     ) { alpha -> PlaylistRowSkeleton(alpha = alpha) }
                 }
-            } else if (playlists.isEmpty()) {
-                item {
+
+                playlists.isEmpty() && savedPlaylists.isEmpty() -> item {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -364,8 +406,8 @@ private fun LibraryRoot(
                         )
                     }
                 }
-            } else {
-                items(playlists, key = { it.playlistId }) { playlist ->
+
+                else -> items(playlists, key = { it.playlistId }) { playlist ->
                     PlaylistRow(
                         playlist = playlist,
                         onClick = { onOpenPlaylist(playlist) },
@@ -558,7 +600,15 @@ private fun PlaylistRow(
     playlist: VideoPlaylist,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    onDelete: (() -> Unit)? = null
+    onDelete: (() -> Unit)? = null,
+    /**
+     * Kept, not owned. The row looks the same either way, and the actions
+     * behind it are not: deleting somebody else's playlist is a write the
+     * account has no rights to, so a saved row offers removing the reference
+     * instead.
+     */
+    isSaved: Boolean = false,
+    onRemoveSaved: (() -> Unit)? = null
 ) {
     var showMenu by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
@@ -651,7 +701,34 @@ private fun PlaylistRow(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
-                if (playlist.subtitle != null) {
+                // Saved is marked in the subtitle's own tone rather than with a
+                // badge on the artwork: it is a fact about the row, not a
+                // status worth shouting, and the author beside it is what
+                // actually tells a kept playlist from one of your own.
+                if (isSaved) {
+                    Spacer(modifier = Modifier.height(3.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Bookmark,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Text(
+                            text = listOfNotNull(
+                                "Saved",
+                                playlist.subtitle?.takeIf { it.isNotBlank() }
+                            ).joinToString(" • "),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                } else if (playlist.subtitle != null) {
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = playlist.subtitle,
@@ -662,7 +739,35 @@ private fun PlaylistRow(
                     )
                 }
             }
-            if (onDelete != null) {
+            if (isSaved && onRemoveSaved != null) {
+                Box {
+                    IconButton(onClick = { showMenu = true }) {
+                        Icon(
+                            imageVector = Icons.Rounded.MoreVert,
+                            contentDescription = "Playlist options",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = showMenu,
+                        onDismissRequest = { showMenu = false }
+                    ) {
+                        // Removing the reference, not the playlist: no
+                        // confirmation, because nothing is destroyed and saving
+                        // it again is one tap on its page.
+                        DropdownMenuItem(
+                            text = { Text("Remove from library") },
+                            onClick = {
+                                showMenu = false
+                                onRemoveSaved()
+                            },
+                            leadingIcon = {
+                                Icon(Icons.Rounded.BookmarkRemove, contentDescription = null)
+                            }
+                        )
+                    }
+                }
+            } else if (onDelete != null) {
                 Box {
                     IconButton(onClick = { showMenu = true }) {
                         Icon(
@@ -793,6 +898,18 @@ fun VideoPlaylistDetail(
     val videos by viewModel.playlistVideos.collectAsState()
     val isLoading by viewModel.isPlaylistVideosLoading.collectAsState()
 
+    // Keeping the playlist you just found is the whole reason for arriving here
+    // from search, so it sits in the top bar next to Share rather than behind
+    // anything. Offered only on playlists that are not already the user's: the
+    // account's own are in the library by definition, and the pinned feeds have
+    // no published playlist behind them to keep.
+    val savedPlaylistIds by viewModel.savedVideoPlaylistIds.collectAsState()
+    val accountPlaylists by viewModel.videoPlaylists.collectAsState()
+    val isSaved = playlist.playlistId in savedPlaylistIds
+    val canSave = playlist.playlistId !in NON_SAVABLE_VIDEO_PLAYLIST_IDS &&
+        (isSaved || accountPlaylists.none { it.playlistId == playlist.playlistId })
+    val haptics = LocalHapticFeedback.current
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -805,6 +922,31 @@ fun VideoPlaylistDetail(
             title = playlist.title,
             onBack = onBack,
             actions = {
+                if (canSave) {
+                    IconButton(
+                        onClick = {
+                            haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                            viewModel.toggleSavedVideoPlaylist(playlist)
+                        }
+                    ) {
+                        // Crossfade rather than a spatial spec: the icon must
+                        // not move or resize under the finger still on it.
+                        AnimatedContent(
+                            targetState = isSaved,
+                            transitionSpec = { fadeIn() togetherWith fadeOut() },
+                            label = "saveVideoPlaylist"
+                        ) { saved ->
+                            Icon(
+                                imageVector = if (saved) Icons.Rounded.BookmarkAdded
+                                    else Icons.Rounded.BookmarkAdd,
+                                contentDescription = if (saved) "Remove from library"
+                                    else "Save to library",
+                                tint = if (saved) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.onBackground
+                            )
+                        }
+                    }
+                }
                 if (isShareable) {
                     val shareContext = androidx.compose.ui.platform.LocalContext.current
                     IconButton(onClick = {

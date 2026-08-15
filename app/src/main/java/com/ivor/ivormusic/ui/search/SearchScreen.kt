@@ -239,8 +239,10 @@ fun SearchScreen(
     var isSearchFocused by remember { mutableStateOf(false) }
 
     // Playlists and albums already kept, so a result the user saved earlier
-    // comes back marked instead of inviting them to save it twice.
+    // comes back marked instead of inviting them to save it twice. One store
+    // behind both, read through each mode's own shape.
     val savedPlaylistIds by viewModel.savedPlaylistIds.collectAsState()
+    val savedVideoPlaylistIds by viewModel.savedVideoPlaylistIds.collectAsState()
 
     // Save-to-playlist sheet (long-press on a video search result) and the
     // download sheet it hands off to, same wiring as the video home feed
@@ -880,7 +882,9 @@ fun SearchScreen(
                                 },
                                 cardColor = cardColor,
                                 textColor = textColor,
-                                secondaryTextColor = secondaryTextColor
+                                secondaryTextColor = secondaryTextColor,
+                                isSaved = savedVideoPlaylistIds.contains(playlist.playlistId),
+                                onToggleSave = { viewModel.toggleSavedVideoPlaylist(playlist) }
                             )
                         }
                     }
@@ -2568,7 +2572,14 @@ private fun VideoPlaylistRow(
     onClick: () -> Unit,
     cardColor: Color,
     textColor: Color,
-    secondaryTextColor: Color
+    secondaryTextColor: Color,
+    /**
+     * Saved state, or null when this row offers no save action. Visible rather
+     * than behind a long-press, matching the music results: nothing else in
+     * this list hides an action behind a hold.
+     */
+    isSaved: Boolean? = null,
+    onToggleSave: () -> Unit = {}
 ) {
     Surface(
         onClick = onClick,
@@ -2649,6 +2660,28 @@ private fun VideoPlaylistRow(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
+            }
+
+            if (isSaved != null) {
+                val haptics = LocalHapticFeedback.current
+                IconButton(
+                    onClick = {
+                        haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                        onToggleSave()
+                    },
+                    // Centred against a 16:9 thumbnail rather than the top of
+                    // the row, so it does not float beside a one-line title.
+                    modifier = Modifier.align(Alignment.CenterVertically)
+                ) {
+                    Icon(
+                        imageVector = if (isSaved) Icons.Rounded.Bookmark
+                            else Icons.Rounded.BookmarkBorder,
+                        contentDescription = if (isSaved) "Remove from library"
+                            else "Save to library",
+                        tint = if (isSaved) MaterialTheme.colorScheme.primary
+                            else secondaryTextColor
+                    )
+                }
             }
         }
     }

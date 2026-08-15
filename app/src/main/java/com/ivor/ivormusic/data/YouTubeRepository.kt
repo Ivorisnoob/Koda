@@ -3275,6 +3275,10 @@ class YouTubeRepository(private val context: Context) {
      * the Library UI pins both as fixed entries, so they are filtered out.
      */
     suspend fun getVideoPlaylists(): List<VideoPlaylist> = withContext(Dispatchers.IO) {
+        // This one really is account-only: the browse below runs anonymously
+        // now, and signed out it would spend a request to be handed a
+        // signed-out shell with no playlists in it.
+        if (!sessionManager.isLoggedIn()) return@withContext emptyList()
         try {
             val json = fetchYouTubeBrowse("FEplaylist_aggregation")
                 .takeIf { it.isNotEmpty() } ?: return@withContext emptyList()
@@ -3301,7 +3305,7 @@ class YouTubeRepository(private val context: Context) {
         try {
             val browseId = if (playlistId.startsWith("VL")) playlistId else "VL$playlistId"
             val json = fetchYouTubeBrowse(browseId)
-                .takeIf { it.isNotEmpty() } ?: return@withContext emptyList()
+                .takeIf { it.isNotEmpty() } ?: return@withContext getPlaylistVideosAnonymous(playlistId)
             val root = org.json.JSONObject(json)
             val renderers = mutableListOf<org.json.JSONObject>()
             findObjectsByKey(root, "playlistVideoRenderer", renderers)
@@ -3310,12 +3314,53 @@ class YouTubeRepository(private val context: Context) {
             }
             val lockups = mutableListOf<org.json.JSONObject>()
             findObjectsByKey(root, "lockupViewModel", lockups)
+            // Signed out, a playlist's videos arrive as lockups rather than
+            // playlistVideoRenderers (verified August 2026), so this is the
+            // normal path there rather than the fallback it reads as.
             lockups.mapNotNull { parseLockupViewModel(it) }
+                .ifEmpty { getPlaylistVideosAnonymous(playlistId) }
         } catch (e: Exception) {
             android.util.Log.e("YouTubeRepo", "getPlaylistVideos failed for $playlistId", e)
-            emptyList()
+            getPlaylistVideosAnonymous(playlistId)
         }
     }
+
+    /**
+     * A playlist's videos through NewPipe's playlist page, as the last resort
+     * when the browse above parsed to nothing.
+     *
+     * **Not the signed-out path**, which was the first guess and the wrong one:
+     * NewPipe's playlist extractor collects `playlistVideoRenderer`s, and a
+     * signed-out browse returns lockups, so it comes back with zero items and
+     * *no exception* - an empty playlist page with nothing in the log to say
+     * why. It is kept because it reads a genuinely different response shape,
+     * which is exactly what is wanted in a fallback, and because it is what the
+     * music side leads with (`getPlaylistInternal`, which then falls back to an
+     * anonymous browse of its own - the same pairing, in the other order).
+     *
+     * First page only, matching the browse: neither follows continuations, and
+     * the same playlist coming back a different length depending on which path
+     * served it would be worse than both being short.
+     */
+    private suspend fun getPlaylistVideosAnonymous(playlistId: String): List<VideoItem> =
+        withContext(Dispatchers.IO) {
+            val listId = playlistId.removePrefix("VL")
+            // The account's own feeds have no public page to fetch: asking for
+            // one anonymously is a guaranteed miss, so skip the request.
+            if (listId == "WL" || listId == "LL" || listId == "LM") return@withContext emptyList()
+            try {
+                val ytService = ServiceList.all().find { it.serviceInfo.name == "YouTube" }
+                    ?: return@withContext emptyList()
+                val extractor = ytService.getPlaylistExtractor(
+                    "https://www.youtube.com/playlist?list=$listId"
+                )
+                extractor.fetchPage()
+                extractor.initialPage.items.toVideoItems()
+            } catch (e: Exception) {
+                android.util.Log.e("YouTubeRepo", "Anonymous playlist fetch failed for $listId", e)
+                emptyList()
+            }
+        }
 
     /**
      * Playlist lockup (LOCKUP_CONTENT_TYPE_PLAYLIST / PODCAST): contentId is
@@ -3863,12 +3908,29 @@ class YouTubeRepository(private val context: Context) {
      */
 
 
+    /**
+     * WEB `/browse` on www.youtube.com, signed when there is a session and
+     * anonymous when there is not.
+     *
+     * **It used to return an empty string the moment cookies were missing**,
+     * which made every public read built on it look like empty content rather
+     * than a missing session: that is what left video-mode playlists reading
+     * "No videos in this playlist" for signed-out users. Public browse ids
+     * (`VL<playlistId>`, a channel id) answer 200 anonymously - verified
+     * August 2026 - so the account headers are what is conditional, not the
+     * call. Anything account-scoped (`FEplaylist_aggregation`, `FEhistory`)
+     * must gate on [SessionManager.isLoggedIn] at its own call site instead,
+     * because signed out this returns a perfectly valid shell with nothing in
+     * it rather than an error.
+     */
     private fun fetchYouTubeBrowse(browseId: String): String {
-        val cookies = sessionManager.getCookies() ?: return ""
+        val cookies = sessionManager.getCookies()
         val url = "https://www.youtube.com/youtubei/v1/browse?key=$INNER_TUBE_API_KEY"
-        
+
         // Generate SAPISIDHASH for www.youtube.com origin
-        val authHeader = YouTubeAuthUtils.getAuthorizationHeader(cookies, "https://www.youtube.com") ?: ""
+        val authHeader = cookies?.let {
+            YouTubeAuthUtils.getAuthorizationHeader(it, "https://www.youtube.com")
+        }
 
         val jsonBody = """
             {
@@ -3887,11 +3949,18 @@ class YouTubeRepository(private val context: Context) {
         val request = okhttp3.Request.Builder()
             .url(url)
             .post(jsonBody.toRequestBody("application/json".toMediaType()))
-            .addHeader("Cookie", cookies)
-            .addHeader("Authorization", authHeader)
             .addHeader("User-Agent", getRandomUserAgent())
             .addHeader("Origin", "https://www.youtube.com")
-            .addHeader("X-Goog-AuthUser", "0")
+            .apply {
+                // Signed out these are the difference between a public read and
+                // a malformed one: an empty Cookie or Authorization header is
+                // worse than no header at all.
+                if (!cookies.isNullOrBlank()) {
+                    addHeader("Cookie", cookies)
+                    if (!authHeader.isNullOrBlank()) addHeader("Authorization", authHeader)
+                    addHeader("X-Goog-AuthUser", "0")
+                }
+            }
             .build()
 
         return try {

@@ -99,7 +99,9 @@ Two Android specifics worth deciding early. `POST_NOTIFICATIONS` is already decl
 
 #### Saving playlists to the YouTube account
 
-Keeping a playlist you did not make now works on the device (`data/SavedPlaylistsRepository.kt`), and what is left is the half that syncs. **The signed-in path is close to free**: saving a playlist to your library on YouTube Music is a like on the playlist id, and `postPlaylistApi` with `like/like` and `like/removelike` is already wired for playlists in `YouTubeRepository`. `getUserPlaylists()` reads `FEplaylist_aggregation`, which already returns saved playlists alongside owned ones, so an account-saved playlist appears in Library through the existing read path without a new call.
+Keeping a playlist you did not make now works on the device (`data/SavedPlaylistsRepository.kt`), in both modes and into one store, and what is left is the half that syncs. **The signed-in path is close to free**: saving a playlist to your library on YouTube Music is a like on the playlist id, and `postPlaylistApi` with `like/like` and `like/removelike` is already wired for playlists in `YouTubeRepository`. `getUserPlaylists()` reads `FEplaylist_aggregation`, which already returns saved playlists alongside owned ones, so an account-saved playlist appears in Library through the existing read path without a new call.
+
+Because both modes write into the one store, that question only has to be answered once, but it has to be answered for a playlist saved on either side: the video half is saved through the same reference and the same id, so an account sync that only understands music-mode saves would leave half the library unsynced and invisible on youtube.com.
 
 The open question is not how to send it but **what the button means when both stores exist**. Subscriptions already answered the same question and the answer is `data/SubscriptionActions.kt`: one place decides where a save goes, a target preference picks the store, and *un*-saving clears both, because a toggle that turns off in one place and leaves the thing saved in the other is the UI lying. Saving playlists should follow that shape rather than inventing a second one. The signed-out path must keep working untouched, which is why the local store was built first rather than as a fallback.
 
@@ -433,7 +435,7 @@ Realistically it shares the data layer and almost nothing else. That makes it th
 The milestones behind us, kept here so the direction of travel is visible.
 
 - Playlist management: create, rename, reorder, and delete, with cover art you pick or the app generates from your palette
-- Saving other people's playlists and albums to the library, stored as live references rather than copies
+- Saving other people's playlists and albums to the library in both music and video mode, stored as live references rather than copies
 - Synced lyrics from LRCLIB, scrolling in time with playback
 - In-app video with a personalized feed, chapters, captions, and comments
 - Eight player styles and a 27-palette color system with dynamic color and AMOLED

@@ -38,6 +38,58 @@ data class SavedPlaylist(
         itemCount = itemCount,
         thumbnailUrl = thumbnailUrl
     )
+
+    /**
+     * The same reference as video mode's Library and playlist pages take.
+     *
+     * One store serves both modes, because "saved to my library" means one
+     * library: a playlist kept in video mode is in the music Library too, and
+     * the other way around. The two modes only disagree on how a count reads,
+     * so that is the only thing this rebuilds.
+     */
+    fun toVideoPlaylist(): VideoPlaylist = VideoPlaylist(
+        playlistId = id,
+        title = name,
+        thumbnailUrl = thumbnailUrl,
+        videoCountText = when {
+            itemCount == 1 -> "1 video"
+            itemCount > 1 -> "$itemCount videos"
+            // -1 is "not counted yet", not "empty": saying "0 videos" would be
+            // the card claiming something nobody measured.
+            else -> null
+        },
+        subtitle = uploaderName.takeIf { it.isNotBlank() }
+    )
+
+    companion object {
+        /**
+         * Keep a playlist found in video mode. Video mode only ever offers this
+         * on playlists the user does not own, which are search results and
+         * channel pages, and there [VideoPlaylist.subtitle] is the author.
+         */
+        fun from(playlist: VideoPlaylist): SavedPlaylist = SavedPlaylist(
+            id = playlist.playlistId,
+            // Video mode addresses a playlist by id alone; the music side
+            // derives the id back out of the url, so store the canonical form
+            // rather than leaving it to guess.
+            url = "https://www.youtube.com/playlist?list=${playlist.playlistId}",
+            name = playlist.title,
+            uploaderName = playlist.subtitle.orEmpty(),
+            thumbnailUrl = playlist.thumbnailUrl,
+            itemCount = parseVideoCount(playlist.videoCountText)
+        )
+
+        /**
+         * "28 videos" or "1,234 videos" to a number. Anything with no digits in
+         * it ("No videos", or a badge that said something else entirely) is
+         * unknown rather than empty, and reports -1 like every other unknown
+         * count here.
+         */
+        private fun parseVideoCount(text: String?): Int {
+            val digits = text?.filter { it.isDigit() }?.takeIf { it.isNotEmpty() } ?: return -1
+            return digits.toIntOrNull() ?: -1
+        }
+    }
 }
 
 /**
@@ -58,6 +110,12 @@ data class SavedPlaylist(
  *
  * Device-wide rather than per-profile, matching playlists, liked songs and
  * downloads: what you kept is yours, not the Google account's.
+ *
+ * **One store for both modes.** Music mode and video mode save into the same
+ * list and read the same list back, so a playlist kept on the video side turns
+ * up in the music Library and the other way around. A YouTube playlist id is
+ * the same id whichever page found it, and splitting the store per mode would
+ * make "saved" mean two different things and let one id be saved twice.
  */
 class SavedPlaylistsRepository(context: Context) {
 
