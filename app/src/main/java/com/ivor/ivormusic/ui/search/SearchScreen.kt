@@ -58,6 +58,8 @@ import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.TravelExplore
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Album
+import androidx.compose.material.icons.rounded.Bookmark
+import androidx.compose.material.icons.rounded.BookmarkBorder
 import androidx.compose.material.icons.rounded.LiveTv
 import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.Newspaper
@@ -124,6 +126,8 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.graphics.Outline
@@ -233,6 +237,10 @@ fun SearchScreen(
     // Search history and focus state
     val searchHistory by viewModel.searchHistory.collectAsState()
     var isSearchFocused by remember { mutableStateOf(false) }
+
+    // Playlists and albums already kept, so a result the user saved earlier
+    // comes back marked instead of inviting them to save it twice.
+    val savedPlaylistIds by viewModel.savedPlaylistIds.collectAsState()
 
     // Save-to-playlist sheet (long-press on a video search result) and the
     // download sheet it hands off to, same wiring as the video home feed
@@ -996,14 +1004,16 @@ fun SearchScreen(
                     items(albumResults) { album ->
                         PlaylistResultCard(
                             item = album,
-                            onClick = { 
+                            onClick = {
                                 viewModel.addToSearchHistory(query)
-                                onAlbumClick(album) 
+                                onAlbumClick(album)
                             },
                             cardColor = cardColor,
                             textColor = textColor,
                             secondaryTextColor = secondaryTextColor,
-                            isAlbum = true
+                            isAlbum = true,
+                            isSaved = savedPlaylistIds.contains(album.id),
+                            onToggleSave = { viewModel.toggleSavedPlaylist(album, isAlbum = true) }
                         )
                         Spacer(modifier = Modifier.height(12.dp))
                     }
@@ -1024,14 +1034,16 @@ fun SearchScreen(
                     items(playlistResults) { playlist ->
                         PlaylistResultCard(
                             item = playlist,
-                            onClick = { 
+                            onClick = {
                                 viewModel.addToSearchHistory(query)
-                                onPlaylistClick(playlist) 
+                                onPlaylistClick(playlist)
                             },
                             cardColor = cardColor,
                             textColor = textColor,
                             secondaryTextColor = secondaryTextColor,
-                            isAlbum = false
+                            isAlbum = false,
+                            isSaved = savedPlaylistIds.contains(playlist.id),
+                            onToggleSave = { viewModel.toggleSavedPlaylist(playlist) }
                         )
                         Spacer(modifier = Modifier.height(12.dp))
                     }
@@ -1849,7 +1861,14 @@ fun PlaylistResultCard(
     textColor: Color,
     secondaryTextColor: Color,
     isAlbum: Boolean,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /**
+     * Saved state, or null when this card offers no save action. A visible
+     * toggle rather than a long-press: nothing else in these results hides an
+     * action behind a hold, and a gesture nobody knows about is not an action.
+     */
+    isSaved: Boolean? = null,
+    onToggleSave: () -> Unit = {}
 ) {
      Surface(
         modifier = modifier
@@ -1878,8 +1897,8 @@ fun PlaylistResultCard(
                     .background(MaterialTheme.colorScheme.surfaceVariant)
              )
              Spacer(modifier = Modifier.size(16.dp))
-             
-             Column {
+
+             Column(modifier = Modifier.weight(1f)) {
                  Text(
                      text = item.name,
                      style = MaterialTheme.typography.titleMedium,
@@ -1904,6 +1923,25 @@ fun PlaylistResultCard(
                          maxLines = 1,
                          overflow = TextOverflow.Ellipsis
                       )
+                 }
+             }
+
+             if (isSaved != null) {
+                 val haptics = LocalHapticFeedback.current
+                 IconButton(
+                     onClick = {
+                         haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                         onToggleSave()
+                     }
+                 ) {
+                     Icon(
+                         imageVector = if (isSaved) Icons.Rounded.Bookmark
+                             else Icons.Rounded.BookmarkBorder,
+                         contentDescription = if (isSaved) "Remove from library"
+                             else "Save to library",
+                         tint = if (isSaved) MaterialTheme.colorScheme.primary
+                             else secondaryTextColor
+                     )
                  }
              }
         }

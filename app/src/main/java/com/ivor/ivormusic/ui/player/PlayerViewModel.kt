@@ -1188,7 +1188,13 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
 
     fun createPlaylist(name: String, description: String?) {
         viewModelScope.launch {
-            playlistRepository.createPlaylist(name, description)
+            // Same accent colors the Library's create flow uses, so a playlist
+            // made from the player is not the odd one out in the grid.
+            playlistRepository.createPlaylist(
+                name,
+                description,
+                com.ivor.ivormusic.ui.theme.playlistCoverSeeds(context)
+            )
         }
     }
 

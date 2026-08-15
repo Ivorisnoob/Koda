@@ -2,6 +2,7 @@ package com.ivor.ivormusic.ui.home
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
+import com.ivor.ivormusic.ui.theme.playlistCoverSeeds
 import androidx.lifecycle.viewModelScope
 import com.ivor.ivormusic.data.SessionManager
 import com.ivor.ivormusic.data.Song
@@ -78,18 +79,76 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     // YouTube playlists
     private val _youtubePlaylists = MutableStateFlow<List<com.ivor.ivormusic.data.PlaylistDisplayItem>>(emptyList())
     
-    // Merged Playlists (Local + YouTube)
+    // Playlists and albums saved from search or an artist page: references,
+    // fetched live when opened. See SavedPlaylistsRepository.
+    private val savedPlaylistsRepository =
+        com.ivor.ivormusic.data.SavedPlaylistsRepository(application)
+
+    // Merged Playlists (Local + Saved + YouTube)
+    //
+    // Saved sit between the two because that is what they are: not the user's
+    // own, but kept deliberately, so they belong above the account's own list
+    // rather than lost at the end of it.
     val userPlaylists: StateFlow<List<com.ivor.ivormusic.data.PlaylistDisplayItem>> = combine(
         _youtubePlaylists,
-        playlistRepository.userPlaylists
-    ) { ytPlaylists, localPlaylists ->
+        playlistRepository.userPlaylists,
+        savedPlaylistsRepository.savedPlaylists
+    ) { ytPlaylists, localPlaylists, savedPlaylists ->
         val localItems = localPlaylists.map { it.toDisplayItem() }
-        localItems + ytPlaylists
+        // A playlist kept locally that also turns up in the account's own
+        // library would otherwise appear twice in the grid.
+        val accountIds = ytPlaylists.map { it.id }.toSet()
+        val savedItems = savedPlaylists
+            .filterNot { it.id in accountIds }
+            .map { it.toDisplayItem() }
+        localItems + savedItems + ytPlaylists
     }.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000), emptyList())
     
     val localPlaylistIds: StateFlow<Set<String>> = playlistRepository.userPlaylists
         .map { playlists -> playlists.map { it.id }.toSet() }
         .stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000), emptySet())
+
+    /**
+     * Ids of playlists kept as references rather than owned.
+     *
+     * The UI needs this and not just "is it in the library": a saved playlist
+     * is somebody else's, so the rename and delete actions a library playlist
+     * normally offers would be writes against a playlist the user has no rights
+     * to. Anything the account genuinely owns is excluded, so an id here is
+     * always a reference.
+     */
+    val savedPlaylistIds: StateFlow<Set<String>> = combine(
+        savedPlaylistsRepository.savedPlaylists,
+        _youtubePlaylists
+    ) { saved, ytPlaylists ->
+        val accountIds = ytPlaylists.map { it.id }.toSet()
+        saved.map { it.id }.filterNot { it in accountIds }.toSet()
+    }.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000), emptySet())
+
+    fun isPlaylistSaved(playlistId: String?): Boolean = savedPlaylistsRepository.isSaved(playlistId)
+
+    /**
+     * Keep or drop [playlist]. Returns the state after the toggle.
+     *
+     * Synchronous: the store is one preference write, and the button has to
+     * settle in the frame it was tapped in.
+     */
+    fun toggleSavedPlaylist(
+        playlist: com.ivor.ivormusic.data.PlaylistDisplayItem,
+        isAlbum: Boolean = false
+    ): Boolean = savedPlaylistsRepository.toggle(
+        com.ivor.ivormusic.data.SavedPlaylist(
+            id = playlist.id,
+            url = playlist.url,
+            name = playlist.name,
+            uploaderName = playlist.uploaderName,
+            thumbnailUrl = playlist.thumbnailUrl,
+            itemCount = playlist.itemCount,
+            isAlbum = isAlbum
+        )
+    )
+
+    fun removeSavedPlaylist(playlistId: String) = savedPlaylistsRepository.remove(playlistId)
 
     private val _userAvatar = MutableStateFlow<String?>(sessionManager.getUserAvatar())
     val userAvatar: StateFlow<String?> = _userAvatar.asStateFlow()
@@ -1464,11 +1523,29 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     // ============= PLAYLIST MANAGEMENT =============
     
+    /** Accent colors for a generated cover - see [playlistCoverSeeds]. */
+    private fun coverSeedColors(): Pair<Int, Int>? = playlistCoverSeeds(getApplication())
+
     fun createLocalPlaylist(name: String, description: String?) {
         viewModelScope.launch {
-            playlistRepository.createPlaylist(name, description)
+            playlistRepository.createPlaylist(name, description, coverSeedColors())
         }
     }
+
+    /** Replace a local playlist's artwork with an image the user picked. */
+    fun setLocalPlaylistCover(playlistId: String, source: android.net.Uri) {
+        viewModelScope.launch {
+            playlistRepository.setCustomCover(playlistId, source)
+        }
+    }
+
+    /** Drop a chosen cover and go back to the generated one. */
+    fun resetLocalPlaylistCover(playlistId: String) {
+        viewModelScope.launch {
+            playlistRepository.resetCoverToGenerated(playlistId, coverSeedColors())
+        }
+    }
+
 
     fun addSongToLocalPlaylist(playlistId: String, song: Song) {
         viewModelScope.launch {
@@ -1478,7 +1555,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun updateLocalPlaylist(playlistId: String, name: String, description: String?) {
         viewModelScope.launch {
-            playlistRepository.updatePlaylist(playlistId, name, description)
+            playlistRepository.updatePlaylist(playlistId, name, description, coverSeedColors())
         }
     }
 

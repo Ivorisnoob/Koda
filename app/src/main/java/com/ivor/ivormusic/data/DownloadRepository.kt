@@ -584,6 +584,13 @@ class DownloadRepository private constructor(private val context: Context) {
      * Each attempt re-resolves the stream URL rather than reusing the previous
      * one. googlevideo URLs expire, so a retry against a stale URL would fail
      * exactly like the attempt before it.
+     *
+     * Re-resolving is not enough on its own when googlevideo answered 403: the
+     * refusal is keyed on the `visitorData` the /player call carried, so every
+     * attempt would rebuild an equally dead URL under the same flagged token and
+     * the download would fail three times in a row for the whole 6h TTL. The
+     * players re-mint on exactly this signal; without the same call here a
+     * download is only ever repaired as a side effect of playing something else.
      */
     private suspend fun runTask(request: DownloadRequest) {
         var lastError: Throwable? = null
@@ -604,6 +611,10 @@ class DownloadRepository private constructor(private val context: Context) {
             }
 
             if (attempt < MAX_ATTEMPTS) {
+                if (isMediaForbidden(lastError)) {
+                    Log.w(TAG, "googlevideo refused the media; re-minting visitorData before retry")
+                    youtubeRepository.refreshVisitorDataAfterPlaybackFailure()
+                }
                 kotlinx.coroutines.delay(RETRY_BACKOFF_MS * attempt)
             }
         }
@@ -828,7 +839,7 @@ class DownloadRepository private constructor(private val context: Context) {
             val response = call.execute()
             if (!response.isSuccessful) {
                 response.close()
-                throw java.io.IOException("HTTP ${response.code}")
+                throw MediaHttpException(response.code)
             }
             val body = response.body ?: throw java.io.IOException("Empty body")
 
@@ -876,6 +887,27 @@ class DownloadRepository private constructor(private val context: Context) {
         if (totalBytes > 0 && position < totalBytes) {
             throw java.io.IOException("Truncated: $position/$totalBytes")
         }
+    }
+
+    /**
+     * A googlevideo media fetch that came back with a non-2xx status, carrying
+     * the code so [runTask] can tell a refusal apart from an ordinary transport
+     * failure. Plain IOException would flatten that back into a message string.
+     */
+    private class MediaHttpException(val code: Int) : java.io.IOException("HTTP $code")
+
+    /**
+     * Whether [error] is googlevideo refusing to serve the media, which is the
+     * flagged-token signature rather than anything wrong with this download.
+     * Walks the cause chain: the muxing path wraps failures on its way out.
+     */
+    private fun isMediaForbidden(error: Throwable?): Boolean {
+        var cause: Throwable? = error
+        while (cause != null) {
+            if (cause is MediaHttpException && cause.code == 403) return true
+            cause = cause.cause
+        }
+        return false
     }
 
     /** Total size out of a "bytes 0-1023/4096" Content-Range; null when absent. */

@@ -59,7 +59,7 @@ These are not goals. They are the walls the roadmap has to fit inside, and any p
 
 Not roadmap items. These are things that are wrong today, recorded here because they were raised alongside the planning and because each has a diagnosed cause rather than a suspicion.
 
-**Shorts and downloads cannot recover from a flagged `visitorData`.** The music and video players both re-mint on a googlevideo 403 (`MusicService.handlePlayerError`, `VideoPlayerViewModel.recoverFromSourceError`); `ShortsPlayerViewModel` registers no `onPlayerError` at all, so a refused Short buffers forever with no error state and no retry, and `DownloadRepository.downloadStream` fails the download outright. Both are survivable in practice only because `visitorData` is process-wide, so playing anything in the other two surfaces repairs them as a side effect. A session that opens straight into Shorts stays broken. See the entry below for what makes a token get refused.
+The entry that stood here, **Shorts and downloads cannot recover from a flagged `visitorData`**, is fixed: `ShortsPlayerViewModel` now registers an `onPlayerError` that splits renderer failures from source failures the way the video player does, and `DownloadRepository` re-mints between attempts when a media fetch came back 403. Two things about it generalise. **A surface that plays googlevideo streams and does not handle player errors has no way out of the bad bucket**, and it will look like a hang rather than a failure, because a fatal error drives the player to `STATE_IDLE` and the buffering flag goes *false* on the way. And **re-resolving under the refused token is not a retry**: the downloader already re-resolved on each of its three attempts and rebuilt an equally dead URL every time, which is why it failed three times in a row and looked like a broken video rather than a flagged session. Anything holding pre-resolved URLs has to drop them at the same moment, which for Shorts meant the five-deep prefetch cache and an epoch counter so a fetch already in flight cannot write its dead URLs back in behind the purge.
 
 The last entry, **vertical videos pillarboxed on the watch page**, is fixed: the video box now takes the source aspect ratio when the source is portrait, capped so the watch page underneath survives. What made that one worth writing down rather than patching blind is worth keeping in mind for the next layout of its kind. The portrait signal was already correct on both parse paths and simply discarded for everything but live streams, so the work was never detection; and the fix is fit rather than zoom, because the box is never narrower than the video and filling it would have cropped the top and bottom, which is exactly where a vertical upload puts faces and captions.
 
@@ -97,19 +97,13 @@ So this item really contains two, and the order matters: **a background upload c
 
 Two Android specifics worth deciding early. `POST_NOTIFICATIONS` is already declared but is a runtime permission from Android 13, and the request should come when the user first enables a bell rather than at startup, so it arrives with a reason attached. And notifications should share one Android notification channel for uploads with grouping, not one Android channel per YouTube channel. The latter looks tempting and becomes unusable at any real subscription count.
 
-#### Saving other people's playlists and albums
+#### Saving playlists to the YouTube account
 
-There is no way to keep a playlist you did not make. You can play someone else's playlist and you can build your own from scratch, but the ordinary move (find a good playlist, save it, come back to it next week), has nowhere to land.
+Keeping a playlist you did not make now works on the device (`data/SavedPlaylistsRepository.kt`), and what is left is the half that syncs. **The signed-in path is close to free**: saving a playlist to your library on YouTube Music is a like on the playlist id, and `postPlaylistApi` with `like/like` and `like/removelike` is already wired for playlists in `YouTubeRepository`. `getUserPlaylists()` reads `FEplaylist_aggregation`, which already returns saved playlists alongside owned ones, so an account-saved playlist appears in Library through the existing read path without a new call.
 
-**The signed-in half is close to free.** Saving a playlist to your library on YouTube Music is a like on the playlist id, and `postPlaylistApi` with `like/like` and `like/removelike` is already wired for playlists in `YouTubeRepository`. `getUserPlaylists()` reads `FEplaylist_aggregation`, which already returns saved playlists alongside owned ones, so a saved playlist would appear in Library through the existing read path without a new call. This is mostly a button and an entry in the long-press sheet.
+The open question is not how to send it but **what the button means when both stores exist**. Subscriptions already answered the same question and the answer is `data/SubscriptionActions.kt`: one place decides where a save goes, a target preference picks the store, and *un*-saving clears both, because a toggle that turns off in one place and leaves the thing saved in the other is the UI lying. Saving playlists should follow that shape rather than inventing a second one. The signed-out path must keep working untouched, which is why the local store was built first rather than as a fallback.
 
-**The signed-out half is the real work, and the existing model is the wrong shape for it.** `UserPlaylist` embeds its full `Song` list, which is right for a playlist you own and wrong for one you saved: the owner keeps editing theirs, and a copy taken today is stale by next month. A saved playlist should be stored as a *reference* (id, title, author, artwork, saved-at), and re-fetched when opened, so it stays live. The temptation to reuse `UserPlaylist` because it is already there should be resisted; these are different things that happen to render similarly.
-
-Offline is the exception that proves it. A reference cannot play without signal, so the answer is the download system that already exists rather than a snapshot baked into the save. Saving and downloading stay separate actions with separate meanings, the way they are everywhere else in the app.
-
-**Albums need the same feature and are not the same object.** They browse by their own id rather than as playlists, so the save path has to handle both rather than assuming everything is a playlist with a `list=` in its URL.
-
-In the Library, saved items want to be visibly distinct from owned ones. They cannot be renamed, reordered, or edited, and a user who cannot tell which is which will try. A separate section, or at minimum a clear marker plus a disabled edit affordance, avoids a whole category of confusion.
+**Offline is the exception that proves the reference model.** A reference cannot play without signal, so the answer is the download system that already exists rather than a snapshot baked into the save. Saving and downloading stay separate actions with separate meanings, the way they are everywhere else in the app.
 
 #### Spotlight: finishing the alternative home
 
@@ -130,15 +124,13 @@ What is left:
 - **The shortcut grid is ranked by a fixed interleave** (liked first, then playlists and recents alternating) rather than by what is actually reached for most. Real use data is in `playCounts` and would make the grid earn its position.
 - **Nothing surfaces albums.** Spotlight shows songs, playlists and liked songs; albums are a shape music homes usually carry and Koda has the data for.
 
-#### Playlists: creation, editing, and covers
+#### Playlists: creation and editing
 
-Local playlists work, and they are plain. You can create, rename, reorder by drag, and delete. What is missing is everything that makes a playlist feel like yours.
+Local playlists work, and they are plain. You can create, rename, reorder by drag, delete, and now set your own cover. What is missing is everything else that makes a playlist feel like yours: a real creation flow rather than a name prompt, multi-select in lists so a playlist can be built from a selection in one action, duplicate detection, sort and shuffle-into-order, editable descriptions, and a proper empty state that offers a way to fill the playlist rather than reporting that it is empty.
 
-**Custom cover art is closer than it looks.** `UserPlaylist` already carries a `coverUri` field, documented for exactly this (`file://` or `content://`), and `PlaylistRepository.updatePlaylist` already guards it correctly: it only regenerates the auto cover when the stored URI still points at the generated `cover_<id>.png`, so a user-set image would survive edits today. The data model is done. Nothing in the UI ever calls an image picker, so the field is unreachable. This is a picker, a crop, and a copy into app storage away from working, and it is the highest ratio of felt improvement to work anywhere in this list.
+**Two things the cover work settled that the rest of this should not re-derive.** Cover files are written with a timestamp in the name and the previous one deleted, because Coil caches by URL and writing a new image to the path the old one used shows the old artwork until the cache happens to evict it. That applies to any artwork this app generates, not just covers. And **the generator takes its colors as an argument rather than reading them**: `PlaylistRepository` is data layer, the palette lives in `ui/theme`, and the resolution is one function (`playlistCoverSeeds`) that every caller passes down. There are two callers, because a playlist can be created from the Library or from any player style's add-to-playlist sheet, and only one of them being themed is exactly the kind of split that goes unnoticed.
 
-**The generated covers themselves deserve a pass.** `generateCoverArt` paints a 1000px linear gradient between two random HSV hues with the playlist's first letter in bold white on top. It is a reasonable Apple Music impression, but it is the one place in the app that hardcodes color and ignores the user's palette entirely. Someone running a deliberate palette, or AMOLED, gets random vivid gradients that belong to no theme. Generated covers should be derived from the active `ColorScheme`, and ideally from the playlist's own contents, so a playlist of one artist picks up that artwork's colors the way the player already does.
-
-Beyond covers, the editing experience is where the bump lands: a real creation flow rather than a name prompt, multi-select in lists so a playlist can be built from a selection in one action, duplicate detection, sort and shuffle-into-order, editable descriptions, and a proper empty state that offers a way to fill the playlist rather than reporting that it is empty.
+Still open on covers: deriving a generated cover from the playlist's *contents* rather than only the palette, so a playlist of one artist picks up that artwork's colors the way the player already does.
 
 **One structural note.** Playlists serialize to SharedPreferences with the full `Song` list embedded in each record, so every add rewrites the whole playlist. That is invisible at forty songs and will not be at four thousand. It does not need solving now, but a playlist feature set that encourages large playlists should not be built without knowing that is the storage underneath.
 
@@ -440,7 +432,8 @@ Realistically it shares the data layer and almost nothing else. That makes it th
 
 The milestones behind us, kept here so the direction of travel is visible.
 
-- Playlist management: create, rename, reorder, and delete, with generated cover art
+- Playlist management: create, rename, reorder, and delete, with cover art you pick or the app generates from your palette
+- Saving other people's playlists and albums to the library, stored as live references rather than copies
 - Synced lyrics from LRCLIB, scrolling in time with playback
 - In-app video with a personalized feed, chapters, captions, and comments
 - Eight player styles and a 27-palette color system with dynamic color and AMOLED

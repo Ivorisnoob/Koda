@@ -368,6 +368,17 @@ class ThemePreferences(context: Context) {
                 ?: VIDEO_QUALITY_AUTO
 
         /**
+         * Static fresh read of the active palette id, for the playlist cover
+         * generator. It runs when a playlist is created or renamed, long after
+         * the Settings screen changed the palette through its own
+         * ThemePreferences instance, and instance StateFlows do not cross.
+         */
+        fun currentColorPalette(context: Context): String =
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getString(KEY_COLOR_PALETTE, DEFAULT_COLOR_PALETTE)
+                ?: DEFAULT_COLOR_PALETTE
+
+        /**
          * Static fresh read of the HDR opt-in for the quality parser, which
          * runs inside YouTubeRepository off a plain Context. Off by default:
          * HDR streams are only surfaced when the user asked for them.
