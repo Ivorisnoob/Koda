@@ -11,6 +11,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.data.VideoItem
+import com.ivor.ivormusic.data.VideoQueue
 import com.ivor.ivormusic.data.YouTubeLinkParser
 import com.ivor.ivormusic.ui.home.HomeViewModel
 import com.ivor.ivormusic.ui.player.PlayerViewModel
@@ -39,10 +40,13 @@ fun Intent.sharedLinkText(): String? = when (action) {
 /**
  * Opens a YouTube link shared into Koda, choosing the player from where the
  * link points: music.youtube.com goes to the music player, everything else to
- * the video player. Playlist links load the whole playlist; a watch link that
- * also carries a list opens the playlist positioned on that track in music
- * mode, and just the video in video mode (the video player has no queue, so
- * loading the list would only cost a round trip).
+ * the video player. Playlist links load the whole playlist, and a watch link
+ * that also carries a list opens the playlist positioned on that video in both
+ * modes - the video player has a queue now, so the list is worth fetching. In
+ * video mode the video starts first and the playlist is attached behind it, so
+ * the fetch costs nothing the viewer can see. A list that cannot be resolved, or
+ * that turns out not to contain the shared video, leaves the video playing on
+ * its own rather than failing.
  *
  * Video links skip metadata resolution entirely: [VideoPlayerViewModel.playVideo]
  * only needs an id to start streaming, and its second phase fills in the title,
@@ -112,6 +116,35 @@ fun SharedLinkHandler(
                 }
             }
 
+            // A watch link that also names a playlist. The video starts first
+            // and the playlist is attached behind it: resolving the list is a
+            // round trip, and making the shared video wait on it would trade
+            // the thing the user actually tapped for context they did not ask
+            // for. `playQueue` on the video that is already playing attaches
+            // the queue without restarting, which is what makes the two-step
+            // invisible.
+            videoId != null && playlistId != null -> {
+                videoPlayerViewModel.playVideo(placeholderVideo(videoId))
+                val videos = homeViewModel.resolvePlaylistVideosFromLink(playlistId)
+                val startIndex = videos.indexOfFirst { it.videoId == videoId }
+                // The list may not resolve, may not contain the shared video,
+                // and the user may have moved on entirely while it was in
+                // flight. In all three cases the video they opened keeps
+                // playing, unqueued, which is where they already are.
+                if (startIndex >= 0 &&
+                    videoPlayerViewModel.currentVideo.value?.videoId == videoId
+                ) {
+                    videoPlayerViewModel.playQueue(
+                        VideoQueue(
+                            videos = videos,
+                            index = startIndex,
+                            title = "Shared playlist",
+                            playlistId = playlistId
+                        )
+                    )
+                }
+            }
+
             videoId != null -> videoPlayerViewModel.playVideo(placeholderVideo(videoId))
 
             playlistId != null -> {
@@ -119,7 +152,14 @@ fun SharedLinkHandler(
                 if (videos.isEmpty()) {
                     toast("Couldn't open that playlist")
                 } else {
-                    videoPlayerViewModel.playVideo(videos.first())
+                    videoPlayerViewModel.playQueue(
+                        VideoQueue(
+                            videos = videos,
+                            index = 0,
+                            title = "Shared playlist",
+                            playlistId = playlistId
+                        )
+                    )
                 }
             }
         }

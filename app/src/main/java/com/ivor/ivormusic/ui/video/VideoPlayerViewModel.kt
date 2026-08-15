@@ -110,6 +110,16 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     private val notInterestedRepository =
         com.ivor.ivormusic.data.NotInterestedRepository(context)
 
+    /**
+     * The playlist being watched through, or null when this is a one-off video.
+     *
+     * See [com.ivor.ivormusic.data.VideoQueue]. Set only by [playQueue]; every
+     * other entry point into playback clears it, because leaving the playlist
+     * is exactly what tapping a related video or a search result means.
+     */
+    private val _queue = MutableStateFlow<com.ivor.ivormusic.data.VideoQueue?>(null)
+    val queue: StateFlow<com.ivor.ivormusic.data.VideoQueue?> = _queue.asStateFlow()
+
     private val _relatedVideos = MutableStateFlow<List<VideoItem>>(emptyList())
 
     /**
@@ -262,6 +272,13 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     // reaches the error overlay; reset on every successful playback start.
     private var sourceRetryCount = 0
     private var sourceRecoveryJob: kotlinx.coroutines.Job? = null
+
+    // Videos skipped in a row because they would not play at all. Playlists
+    // collect deleted, private and region-blocked entries over time, and one of
+    // those must not end the run - but a network that has gone away fails every
+    // video too, and racing to the end of the playlist on that is worse than
+    // stopping. Bounded, and reset the moment anything actually plays.
+    private var queueErrorSkipCount = 0
 
     // ---------------- Engagement (likes / subscribe / comments) ----------------
 
@@ -533,20 +550,40 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                         // retry budget to be spent again on a later failure.
                         rendererRetryCount = 0
                         sourceRetryCount = 0
+                        queueErrorSkipCount = 0
                     }
                     if (playbackState == Player.STATE_ENDED) {
                         // Repeat and auto-play are mutually exclusive: looping
-                        // repeats the current video, otherwise auto-play moves
-                        // to the next related one. Suppressed during PiP so
-                        // the user returns to the video they put there.
-                        if (!_isLooping.value && !_isInPipMode) {
-                            // The filtered list, not the raw one: auto-playing
-                            // a video the user just said "not interested" to is
-                            // the single most annoying way to get this wrong.
-                            val nextVideo = relatedVideos.value.firstOrNull()
-                            // Guard: ensure ViewModel/player is still valid before launching
-                            if (nextVideo != null && _exoPlayer != null) {
-                                viewModelScope.launch { playVideo(nextVideo) }
+                        // repeats the current video, otherwise playback moves on.
+                        if (!_isLooping.value) {
+                            val activeQueue = _queue.value
+                            when {
+                                // A playlist is the strongest statement of what
+                                // to play next there is, so it beats the
+                                // recommendations outright - and it advances in
+                                // PiP too. The rule below about staying on the
+                                // video the user put in the window is about not
+                                // wandering off into recommendations; a queue
+                                // the user built by opening a playlist is
+                                // exactly where they meant to go.
+                                activeQueue != null && activeQueue.hasNext && _exoPlayer != null ->
+                                    viewModelScope.launch { playQueueIndex(activeQueue.index + 1) }
+
+                                // Off the end of the playlist (or never in one):
+                                // fall back to the related video, suppressed
+                                // during PiP so the user returns to the video
+                                // they put there.
+                                !_isInPipMode -> {
+                                    // The filtered list, not the raw one:
+                                    // auto-playing a video the user just said
+                                    // "not interested" to is the single most
+                                    // annoying way to get this wrong.
+                                    val nextVideo = relatedVideos.value.firstOrNull()
+                                    // Guard: ensure ViewModel/player is still valid before launching
+                                    if (nextVideo != null && _exoPlayer != null) {
+                                        viewModelScope.launch { playVideo(nextVideo) }
+                                    }
+                                }
                             }
                         }
                     }
@@ -579,6 +616,28 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                             error
                         )
                         recoverFromSourceError(error)
+                        return
+                    }
+
+                    // Both retry budgets are spent, so this video is genuinely
+                    // unplayable. Inside a playlist that is almost always one
+                    // deleted or private entry among many, and stopping the run
+                    // on it is not what the user asked for by opening the
+                    // playlist - so step over it, up to the bounded number of
+                    // times above.
+                    val activeQueue = _queue.value
+                    if (activeQueue != null &&
+                        activeQueue.hasNext &&
+                        queueErrorSkipCount < MAX_QUEUE_ERROR_SKIPS
+                    ) {
+                        queueErrorSkipCount++
+                        android.util.Log.w(
+                            "VideoPlayerVM",
+                            "Unplayable video in the queue at ${activeQueue.index} " +
+                                "(skip $queueErrorSkipCount/$MAX_QUEUE_ERROR_SKIPS); moving on",
+                            error
+                        )
+                        viewModelScope.launch { playQueueIndex(activeQueue.index + 1) }
                         return
                     }
 
@@ -680,7 +739,9 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         _playbackError.value = null
         val video = _currentVideo.value ?: return
         if (_exoPlayer == null) {
-            playVideo(video, forceRestart = true)
+            // startVideo, not playVideo: retrying the video that failed is not
+            // leaving the playlist it belongs to.
+            startVideo(video, forceRestart = true)
             return
         }
         // Always re-resolve rather than replaying _currentQuality: its URL is
@@ -831,10 +892,72 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     }
 
     /**
+     * Play a video on its own, leaving whatever playlist was being watched.
+     *
+     * Every entry point that is not the queue itself comes through here - a
+     * related video, a channel row, a search result, a shared link - and each
+     * of them means "I am done with that playlist", so the queue is dropped.
+     * Keeping it would leave the "Playing from" card and the next/previous
+     * buttons pointing at a list the user has walked away from.
+     *
      * @param forceRestart reload even when this video is already current, for
      * the retry path - tapping the same video otherwise only re-expands.
      */
     fun playVideo(video: VideoItem, forceRestart: Boolean = false) {
+        _queue.value = null
+        startVideo(video, forceRestart)
+    }
+
+    /**
+     * Start watching [queue] at the position it carries.
+     *
+     * The one way a queue is established. Opening the video that is already
+     * playing does not restart it - coming to a playlist that contains what is
+     * on screen should attach the playlist, not throw away the position.
+     */
+    fun playQueue(queue: com.ivor.ivormusic.data.VideoQueue) {
+        if (queue.videos.isEmpty()) return
+        val normalized = queue.at(queue.index)
+        _queue.value = normalized
+        // A new playlist gets the full skip budget: whatever was wrong with the
+        // last one has nothing to say about this one.
+        queueErrorSkipCount = 0
+        val target = normalized.current ?: return
+        if (_currentVideo.value?.videoId == target.videoId) {
+            _isExpanded.value = true
+            return
+        }
+        startVideo(target)
+    }
+
+    /**
+     * Jump to a position in the active queue.
+     *
+     * Always a forced restart: a playlist can list the same video twice, the
+     * index is what addresses the queue, and [startVideo]'s id check would
+     * otherwise swallow the jump and leave the queue pointing somewhere the
+     * player is not.
+     */
+    fun playQueueIndex(index: Int) {
+        val active = _queue.value ?: return
+        val target = active.videos.getOrNull(index) ?: return
+        _queue.value = active.copy(index = index)
+        startVideo(target, forceRestart = true)
+    }
+
+    /** Next video in the playlist. No-op at the end of it. */
+    fun playNextInQueue() {
+        val active = _queue.value ?: return
+        if (active.hasNext) playQueueIndex(active.index + 1)
+    }
+
+    /** Previous video in the playlist. No-op at the start of it. */
+    fun playPreviousInQueue() {
+        val active = _queue.value ?: return
+        if (active.hasPrevious) playQueueIndex(active.index - 1)
+    }
+
+    private fun startVideo(video: VideoItem, forceRestart: Boolean = false) {
         if (!forceRestart && _currentVideo.value?.videoId == video.videoId) {
             // Already playing this video, just expand
             _isExpanded.value = true
@@ -1325,6 +1448,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         stopLivePolling()
         liveChatStartedForVideoId = null
         _currentVideo.value = null
+        _queue.value = null
         _isExpanded.value = false
         // Nothing is playing any more, so nothing should be on the lock screen.
         com.ivor.ivormusic.service.VideoPlaybackService.stop(context)
@@ -1977,6 +2101,16 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
          * unplayable and the user should get the overlay instead of a spinner.
          */
         private const val MAX_SOURCE_RETRIES = 1
+
+        /**
+         * Unplayable videos stepped over in a row before the error overlay wins.
+         *
+         * Three, because that is comfortably more than the run of dead entries a
+         * real playlist has in one place and far fewer than it takes to burn
+         * through a playlist when the network is the thing that is broken. The
+         * count resets on the first video that actually reaches STATE_READY.
+         */
+        private const val MAX_QUEUE_ERROR_SKIPS = 3
 
         /**
          * Chat backlog kept in memory. Matches the cap YouTube declares in the

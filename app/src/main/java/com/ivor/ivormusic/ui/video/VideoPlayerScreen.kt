@@ -56,6 +56,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.Chat
 import androidx.compose.material.icons.automirrored.rounded.Comment
+import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material.icons.outlined.ThumbDown
 import androidx.compose.material.icons.outlined.ThumbUp
 import androidx.compose.material.icons.rounded.Autorenew
@@ -78,6 +79,8 @@ import androidx.compose.material.icons.rounded.Replay10
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.StayCurrentPortrait
 import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material.icons.rounded.SkipNext
+import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material.icons.rounded.ThumbDown
 import androidx.compose.material.icons.rounded.ThumbUp
 import androidx.compose.material.icons.rounded.WatchLater
@@ -268,6 +271,17 @@ fun FullscreenPlayerContent(
     captionsActive: Boolean = false,
     onCaptionsClick: () -> Unit = {},
     captionCues: List<VttCue> = emptyList(),
+    /**
+     * Playlist transport and the way into the queue. Fullscreen is where a
+     * playlist is most likely to be watched end to end, and leaving fullscreen
+     * to reach the list would put the video back in a box to do it.
+     */
+    showQueueControls: Boolean = false,
+    hasPreviousInQueue: Boolean = false,
+    hasNextInQueue: Boolean = false,
+    onPreviousInQueue: () -> Unit = {},
+    onNextInQueue: () -> Unit = {},
+    onOpenQueue: () -> Unit = {},
     isLive: Boolean = false,
     liveChatActive: Boolean = false,
     onLiveChatToggle: () -> Unit = {},
@@ -301,6 +315,22 @@ fun FullscreenPlayerContent(
     // does not, and the alternative to hoisting them is the same five buttons
     // written twice.
     val topBarActions: @Composable RowScope.() -> Unit = {
+        if (showQueueControls) {
+            FilledTonalIconButton(
+                onClick = onOpenQueue,
+                colors = IconButtonDefaults.filledTonalIconButtonColors(
+                    containerColor = Color.Black.copy(0.5f),
+                    contentColor = Color.White
+                ),
+                shapes = stableShapes
+            ) {
+                Icon(
+                    Icons.AutoMirrored.Rounded.PlaylistPlay,
+                    contentDescription = "Playlist queue"
+                )
+            }
+        }
+
         // Combined mode toggle: repeat off = auto-play next, repeat on = loop this video
         FilledTonalIconButton(
             onClick = onLoopToggle,
@@ -541,13 +571,35 @@ fun FullscreenPlayerContent(
                 }
                 
                 // Center Play/Pause
-                Box(modifier = Modifier.align(Alignment.Center)) {
+                Row(
+                    modifier = Modifier.align(Alignment.Center),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(32.dp)
+                ) {
+                    if (showQueueControls) {
+                        QueueSkipButton(
+                            icon = Icons.Rounded.SkipPrevious,
+                            contentDescription = "Previous in playlist",
+                            enabled = hasPreviousInQueue,
+                            onClick = onPreviousInQueue,
+                            size = 56.dp
+                        )
+                    }
                     ExpressivePlayPauseButton(
-                        isPlaying = isPlaying, 
-                        isBuffering = isBuffering, 
+                        isPlaying = isPlaying,
+                        isBuffering = isBuffering,
                         onClick = onPlayPause,
                         size = 80.dp
                     )
+                    if (showQueueControls) {
+                        QueueSkipButton(
+                            icon = Icons.Rounded.SkipNext,
+                            contentDescription = "Next in playlist",
+                            enabled = hasNextInQueue,
+                            onClick = onNextInQueue,
+                            size = 56.dp
+                        )
+                    }
                 }
                 
                 // Bottom Bar
@@ -651,6 +703,15 @@ fun PortraitPlayerContent(
      */
     showVerticalLiveButton: Boolean = false,
     onVerticalLiveClick: () -> Unit = {},
+    /**
+     * Playlist transport. Composed only while a queue is running - see
+     * [QueueSkipButton].
+     */
+    showQueueControls: Boolean = false,
+    hasPreviousInQueue: Boolean = false,
+    hasNextInQueue: Boolean = false,
+    onPreviousInQueue: () -> Unit = {},
+    onNextInQueue: () -> Unit = {},
     showPipButton: Boolean = false,
     onPipClick: () -> Unit = {},
     minimizeDragEnabled: Boolean = false,
@@ -851,8 +912,28 @@ fun PortraitPlayerContent(
                 }
                 
                 // Center
-                Box(modifier = Modifier.align(Alignment.Center)) {
+                Row(
+                    modifier = Modifier.align(Alignment.Center),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(24.dp)
+                ) {
+                    if (showQueueControls) {
+                        QueueSkipButton(
+                            icon = Icons.Rounded.SkipPrevious,
+                            contentDescription = "Previous in playlist",
+                            enabled = hasPreviousInQueue,
+                            onClick = onPreviousInQueue
+                        )
+                    }
                     ExpressivePlayPauseButton(isPlaying = isPlaying, isBuffering = isBuffering, onClick = onPlayPause)
+                    if (showQueueControls) {
+                        QueueSkipButton(
+                            icon = Icons.Rounded.SkipNext,
+                            contentDescription = "Next in playlist",
+                            enabled = hasNextInQueue,
+                            onClick = onNextInQueue
+                        )
+                    }
                 }
                 
                 // Bottom
@@ -1736,6 +1817,12 @@ fun VideoInfoSection(
     onSaveClick: () -> Unit = {},
     onChannelClick: () -> Unit = {},
     onRelatedLongPress: ((VideoItem) -> Unit)? = null,
+    /**
+     * The playlist this video is being watched through, when there is one. Null
+     * for a one-off video, which is most of them.
+     */
+    queue: com.ivor.ivormusic.data.VideoQueue? = null,
+    onOpenQueue: () -> Unit = {},
     /** Seek the player, in seconds. Enables timestamp links in the description. */
     onSeekTo: ((seconds: Long) -> Unit)? = null,
     isLive: Boolean = false,
@@ -1777,6 +1864,14 @@ fun VideoInfoSection(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
+        }
+
+        // The playlist this is being watched through. Directly under the title
+        // because it is context for what is on screen rather than a section of
+        // its own, and it is the only thing on the page that says where the
+        // next video is coming from.
+        if (queue != null) {
+            PlayingFromPlaylistCard(queue = queue, onClick = onOpenQueue)
         }
 
         // Like / Dislike + Save + Share Actions (scrolls like YouTube's chip
@@ -2015,7 +2110,11 @@ fun VideoInfoSection(
         if (relatedVideos.isNotEmpty()) {
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Text(
-                    text = "Up Next",
+                    // "Up Next" is a promise about what plays when this ends,
+                    // and inside a playlist that promise belongs to the queue.
+                    // These are then just recommendations, and saying so is the
+                    // difference between the header being true and being wrong.
+                    text = if (queue != null) "Related videos" else "Up Next",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
@@ -2101,6 +2200,99 @@ fun VideoInfoSection(
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * Previous / next within the playlist, flanking play/pause.
+ *
+ * Only composed while a queue is running: on a one-off video both buttons would
+ * be permanently dead, which is the same reason the media session withdraws the
+ * transport commands (see VideoPlaybackService). Disabled rather than hidden at
+ * the ends of the playlist, so the pair does not shuffle sideways under a finger
+ * that is already reaching for it.
+ */
+@Composable
+private fun QueueSkipButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    contentDescription: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    size: Dp = 48.dp
+) {
+    FilledTonalIconButton(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier.size(size),
+        colors = IconButtonDefaults.filledTonalIconButtonColors(
+            containerColor = Color.Black.copy(0.5f),
+            contentColor = Color.White,
+            disabledContainerColor = Color.Black.copy(0.3f),
+            disabledContentColor = Color.White.copy(0.35f)
+        ),
+        // Same "square flash" guard the rest of the control chrome uses.
+        shapes = IconButtonDefaults.shapes()
+    ) {
+        Icon(icon, contentDescription = contentDescription)
+    }
+}
+
+/**
+ * "Playing from <playlist>", with what comes next and the way into the queue.
+ *
+ * The one thing on the watch page that admits a playlist is running. Tapping it
+ * opens [VideoQueueSheet]; the next title is spelled out rather than left to the
+ * sheet because the question this card answers most often is "what am I about to
+ * get", and answering it costs a line rather than a tap.
+ */
+@Composable
+private fun PlayingFromPlaylistCard(
+    queue: com.ivor.ivormusic.data.VideoQueue,
+    onClick: () -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        modifier = Modifier.fillMaxWidth(),
+        onClick = onClick
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Icon(
+                Icons.AutoMirrored.Rounded.PlaylistPlay,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Playing from ${queue.title}",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = queue.videos.getOrNull(queue.index + 1)
+                        ?.let { "${queue.positionLabel} • Next: ${it.title}" }
+                        ?: "${queue.positionLabel} • Last video",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Icon(
+                Icons.Rounded.ExpandMore,
+                contentDescription = "Open the playlist queue",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }

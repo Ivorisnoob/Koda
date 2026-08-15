@@ -8,6 +8,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -37,6 +38,7 @@ fun MiniVideoPlayerContent(
     val currentVideo by viewModel.currentVideo.collectAsState()
     val isPlaying by viewModel.isPlaying.collectAsState()
     val isBuffering by viewModel.isBuffering.collectAsState()
+    val queue by viewModel.queue.collectAsState()
     
     if (currentVideo == null) return
 
@@ -135,6 +137,26 @@ fun MiniVideoPlayerContent(
                 )
             }
             
+            // Skip to the next playlist video. Hidden rather than disabled off
+            // the end of the queue, and absent entirely without one: the mini
+            // bar is a 100dp thumbnail, two lines of text and two buttons
+            // already, and a permanently dead third costs more room than it is
+            // worth. The full player disables its pair instead, where there is
+            // space for both to stay put.
+            if (queue?.hasNext == true) {
+                IconButton(
+                    onClick = { viewModel.playNextInQueue() },
+                    modifier = Modifier.size(44.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.SkipNext,
+                        contentDescription = "Next in playlist",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+            }
+
             IconButton(
                 onClick = onClose,
                 modifier = Modifier.size(40.dp)

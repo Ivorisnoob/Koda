@@ -186,6 +186,16 @@ class VideoPlaybackService : MediaSessionService() {
                 // ever seeks to zero and "next" is permanently dead. Withdrawing
                 // both is what leaves room for the skip pair below, and stops a
                 // car head unit from offering a track-change that does nothing.
+                //
+                // Still true with playlist queues: a VideoQueue lives in the
+                // ViewModel above the player, and each entry is loaded as a
+                // fresh single-item media source, so the *player's* transport
+                // commands really would do nothing. Surfacing queue skips here
+                // means a stable ForwardingPlayer wrapping the ViewModel's
+                // player and reporting has/seekToNext through it - worth doing,
+                // but it changes what the `existing.player === player` identity
+                // check in ensureSession compares, so it is not a two-line
+                // change and is deliberately not done here.
                 .setAvailablePlayerCommands(
                     MediaSession.ConnectionResult.DEFAULT_PLAYER_COMMANDS.buildUpon()
                         .remove(Player.COMMAND_SEEK_TO_PREVIOUS)

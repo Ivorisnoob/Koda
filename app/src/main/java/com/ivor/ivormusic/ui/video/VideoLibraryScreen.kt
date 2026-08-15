@@ -123,6 +123,13 @@ private sealed interface LibraryPage {
 fun VideoLibraryContent(
     viewModel: HomeViewModel,
     onVideoClick: (VideoItem) -> Unit,
+    /**
+     * Play a video *as part of* the playlist it was tapped in, so the rest of it
+     * becomes the queue. Separate from [onVideoClick] because the two mean
+     * different things: everywhere else here (history, the pinned feeds) a tap
+     * really is a one-off video.
+     */
+    onPlayQueue: ((com.ivor.ivormusic.data.VideoQueue) -> Unit)? = null,
     onLoginClick: () -> Unit,
     contentPadding: PaddingValues,
     /**
@@ -221,6 +228,7 @@ fun VideoLibraryContent(
                 playlist = target.playlist,
                 viewModel = viewModel,
                 onVideoClick = onVideoClick,
+                onPlayQueue = onPlayQueue,
                 onBack = { page = LibraryPage.Root },
                 contentPadding = contentPadding
             )
@@ -893,7 +901,13 @@ fun VideoPlaylistDetail(
     onVideoClick: (VideoItem) -> Unit,
     onBack: () -> Unit,
     contentPadding: PaddingValues,
-    allowRemove: Boolean = true
+    allowRemove: Boolean = true,
+    /**
+     * Start the whole playlist at the tapped video. Falls back to [onVideoClick]
+     * when a caller has not wired it up, which plays the one video and drops the
+     * playlist - the behaviour every caller had before there was a queue.
+     */
+    onPlayQueue: ((com.ivor.ivormusic.data.VideoQueue) -> Unit)? = null
 ) {
     val videos by viewModel.playlistVideos.collectAsState()
     val isLoading by viewModel.isPlaylistVideosLoading.collectAsState()
@@ -992,10 +1006,28 @@ fun VideoPlaylistDetail(
             ) {
                 // Index-qualified: YouTube playlists can contain the same video
                 // twice, and duplicate LazyColumn keys crash
-                itemsIndexed(videos, key = { index, video -> "${video.videoId}_$index" }) { _, video ->
+                itemsIndexed(videos, key = { index, video -> "${video.videoId}_$index" }) { index, video ->
                     PlaylistVideoRow(
                         video = video,
-                        onClick = { onVideoClick(video) },
+                        onClick = {
+                            // The list is snapshotted at the tap: `videos` is
+                            // HomeViewModel state that the next playlist the
+                            // user opens overwrites, and a queue reading through
+                            // to it would re-point itself mid-playback.
+                            val play = onPlayQueue
+                            if (play != null) {
+                                play(
+                                    com.ivor.ivormusic.data.VideoQueue(
+                                        videos = videos.toList(),
+                                        index = index,
+                                        title = playlist.title,
+                                        playlistId = playlist.playlistId
+                                    )
+                                )
+                            } else {
+                                onVideoClick(video)
+                            }
+                        },
                         onRemove = if (allowRemove) {
                             { viewModel.removePlaylistVideo(playlist.playlistId, video) }
                         } else null,
