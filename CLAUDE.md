@@ -62,6 +62,14 @@ MVVM with StateFlow, **no DI framework:** ViewModels instantiate repositories di
 
 `MainActivity` hosts a `NavHost` (`onboarding` → `home`, plus `settings`, `downloads`, `stats`, `update`). The `home` route contains its own tab system (`AnimatedContent` + an inline `HorizontalFloatingToolbar` built in `HomeScreen.kt`, not a separate nav-bar component), not nav routes. A global `videoMode` toggle (persisted in `ThemePreferences`) swaps the Home tab between music content and `VideoHomeContent`, and tab 2 between Library and video history. Music player (`ExpandablePlayer`) and video player (`VideoPlayerOverlay`) are overlays living above the NavHost, driven by their ViewModels' `isExpanded` state.
 
+**There are two music Homes, and the second is opt-in.** `spotlight_home` (off by default) swaps tab 0's music content from `YourMixContent` to `SpotlightHomeContent`: a shortcut grid, paged quick picks and artwork shelves, chosen either on onboarding's Look and feel page (`HomeStylePicker`, two wireframe previews) or in Settings → Appearance → Home. It is a third branch in the same `when` the video toggle already uses, so the tab system, the overlays and the nav bar are untouched by it. A boolean rather than a home-style enum on purpose: `PlayerStyle`'s constants are persisted by name and therefore frozen, and no third Home is planned.
+
+**The rule that keeps two Homes from rotting is "same data, different composition."** Everything Spotlight shows comes from flows `HomeViewModel` already exposes. No new ViewModel, no new fetches, no network path of its own. The moment one Home owns data the other does not, there are two to keep working and one falls behind. This is why the filter chips scope what is on the device rather than imitating YouTube Music's mood chips, which are a browse call. **Two earlier versions of this screen were built and thrown away**, both on the premise that horizontal shelves are what make a home feel busy, so neither had any; every real music app is mostly artwork shelves, and a music home without them does not read as a music app. Do not re-derive that rule.
+
+`isAutoMix` (in `SpotlightHomeContent.kt`) drops YouTube's machine-made mixes. Nothing on a playlist marks it as generated, so the only signal is the title, and the patterns are anchored on the whole name so a user's own "Late night mixtape" survives.
+
+**Opening a Library sub-screen from outside the Library is a hand-off, not a navigation.** `LibraryContent` owns playlist and artist detail in its own state, so callers pass `initialArtist` / `initialPlaylist` and clear them through the matching `onInitial…Consumed` callback as the tab renders. Without the clear, coming back to Library later re-opens whatever was last handed over. The player uses the artist half; Spotlight uses the playlist half.
+
 ### Playback: two separate pipelines
 
 - **Music**: `MusicService` (Media3 `MediaLibraryService`) + `PlayerViewModel` talking to it through a `MediaController`. Background playback, notifications, queue.
@@ -230,10 +238,10 @@ Playback deliberately continues across a switch. Streams are already resolved, a
 - **Material 3 Expressive components first** (`LoadingIndicator` with shapes, `FloatingToolbar`, `MaterialShapes`, spring-physics animations), standard M3 second. Do not hand-roll components or animation systems that M3/`androidx.compose.animation` already provide.
 - Compiler-level opt-ins for `ExperimentalMaterial3ExpressiveApi` and `ExperimentalMaterial3Api` are global (`app/build.gradle.kts` freeCompilerArgs).
 - Screens follow a shared look: `Surface` cards with `RoundedCornerShape(16.dp)`, `surfaceContainer` colors, `ExpressivePullToRefresh`, staggered `AnimatedVisibility` entrances. Match neighboring code.
-- Springs for anything touch-driven (`spring()` is used ~97 times; `DampingRatioMediumBouncy` is the house default). Reserve `tween()` for crossfades and time-tracking progress.
+- Springs for anything touch-driven (`spring()` is used ~120 times; `DampingRatioMediumBouncy` is the house default). Reserve `tween()` for crossfades and time-tracking progress.
 - Never hardcode a color: everything routes through `ColorScheme`, or palettes/AMOLED/dynamic color silently break.
 - No emojis in code comments or docs.
-- **The design language is not up for replacement.** M3 Expressive is load-bearing here, not a theme layer: 39 files use Expressive-only APIs and the whole app renders inside one `MaterialExpressiveTheme`. If a user or issue asks for "a different UI", an alternate/classic/flat design language, or a non-Material look, do not start building it. That is a rewrite of ~37.5k lines of UI, and the project has an explicit stated policy against it in `DESIGN.md`. Specific complaints (a radius, a nav-bar dimension, one animation) are fair game and should be treated as normal UI work.
+- **The design language is not up for replacement.** M3 Expressive is load-bearing here, not a theme layer: 47 files use Expressive-only APIs and the whole app renders inside one `MaterialExpressiveTheme`. If a user or issue asks for "a different UI", an alternate/classic/flat design language, or a non-Material look, do not start building it. That is a rewrite of ~54k lines of UI, and the project has an explicit stated policy against it in `DESIGN.md`. Specific complaints (a radius, a nav-bar dimension, one animation) are fair game and should be treated as normal UI work.
 
 ### Player styles (`ui/player/`, 8 styles, ~10.3k lines)
 

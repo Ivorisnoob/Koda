@@ -180,7 +180,7 @@ Plus an **ambient artwork background**, an optional **chromatic-mist** effect, a
 
 ### Interface and theming
 
-Koda's interface is the product, not a wrapper around one. The whole app is constructed from Material 3 Expressive: 39 source files use Expressive-only APIs directly, `MaterialShapes` is referenced 131 times across 14 shapes, and spring physics drives 97 animation specs. There is no alternate design language and no fallback path. Details and rationale are in [DESIGN.md](DESIGN.md).
+Koda's interface is the product, not a wrapper around one. The whole app is constructed from Material 3 Expressive: 47 source files use Expressive-only APIs directly, `MaterialShapes` is referenced 141 times across 14 shapes, and spring physics drives 120 animation specs. There is no alternate design language and no fallback path. Details and rationale are in [DESIGN.md](DESIGN.md).
 
 - Material 3 Expressive design with shape morphing, spring physics, and dynamic color, applied through one root `MaterialExpressiveTheme`.
 - Dynamic theming that pulls its palette from your wallpaper (Android 12+) or from album artwork.
@@ -188,6 +188,7 @@ Koda's interface is the product, not a wrapper around one. The whole app is cons
 - Light, dark, and system themes, plus an AMOLED true-black mode.
 - Gesture-based navigation and physics-based transitions with a floating pill nav bar.
 - A one-tap Home mode toggle to switch between music and video.
+- **Two music home layouts.** The classic Home leads with a hero and carousels; **Spotlight** opens instead with a grid of the things you reach for most, then paged quick picks and artwork shelves. Pick one during onboarding or in Settings, and change it whenever.
 - A rebuilt onboarding flow with a morphing shape hero, wavy progress indicator, and focused first-run steps.
 - A built-in updater that checks GitHub Releases, picks the right APK for your device's ABI, and installs it.
 
@@ -284,7 +285,7 @@ app/src/main/java/com/ivor/ivormusic/
 │   ├── MusicService         # MediaLibraryService with live-progress notification
 │   └── DownloadService      # Keeps downloads running in the background
 └── ui/                      # Presentation layer
-    ├── home/                # Home with recommendations and video feed
+    ├── home/                # Two music homes (classic and Spotlight), video feed
     ├── library/             # Playlists, liked songs, statistics
     ├── player/              # Music player, queue, and the eight player styles
     ├── video/               # Video player, live streams and chat, comments, subscriptions
