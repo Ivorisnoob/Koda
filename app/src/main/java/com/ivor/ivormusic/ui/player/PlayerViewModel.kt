@@ -618,7 +618,11 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         
         // Reset cleared flag - user is actively playing
         isPlayerCleared = false
-        
+
+        // A song removed from the queue that is being replaced is no longer
+        // undoable: putting it back would drop it into a queue it was never in.
+        lastQueueRemoval = null
+
         _currentQueue.value = songs
         val startIndex = (if (startSong != null) songs.indexOfFirst { it.id == startSong.id } else 0).coerceAtLeast(0)
         
@@ -796,11 +800,11 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
 
     fun addToQueue(songs: List<Song>) {
         if (songs.isEmpty()) return
-        
+
         val currentList = _currentQueue.value.toMutableList()
         currentList.addAll(songs)
         _currentQueue.value = currentList
-        
+
         controller?.let { player ->
             val newItems = songs.map { createMediaItem(it) }
             player.addMediaItems(newItems)
@@ -808,29 +812,145 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         savePlaybackSession()
     }
 
-    fun moveQueueItem(fromIndex: Int, toIndex: Int) {
+    /**
+     * Put [songs] straight after whatever is playing.
+     *
+     * The other half of "add to queue", and the one people reach for more: it
+     * is the difference between "I want this next" and "I want this eventually".
+     * With nothing playing there is no "after", so it starts playback instead of
+     * quietly building a queue nobody asked to hear.
+     */
+    fun playNext(songs: List<Song>) {
+        if (songs.isEmpty()) return
+        val currentList = _currentQueue.value
+        if (currentList.isEmpty() || _currentSong.value == null) {
+            playQueue(songs)
+            return
+        }
+
+        val player = controller
+        val insertAt = ((player?.currentMediaItemIndex ?: currentIndexInQueue()) + 1)
+            .coerceIn(0, currentList.size)
+
+        _currentQueue.value = currentList.toMutableList().apply { addAll(insertAt, songs) }
+        // The timeline can be shorter than the UI queue when the two have
+        // drifted, and Media3 throws rather than clamping an out-of-range
+        // insert. Append in that case; the order is wrong either way, and the
+        // next explicit jump rebuilds the timeline from the queue.
+        player?.let {
+            it.addMediaItems(
+                insertAt.coerceAtMost(it.mediaItemCount),
+                songs.map { song -> createMediaItem(song) }
+            )
+        }
+        savePlaybackSession()
+    }
+
+    fun playNext(song: Song) = playNext(listOf(song))
+
+    fun addToQueue(song: Song) = addToQueue(listOf(song))
+
+    /** Where the playing song sits in [_currentQueue], or 0 if it is not in it. */
+    private fun currentIndexInQueue(): Int {
+        val id = _currentSong.value?.id ?: return 0
+        return _currentQueue.value.indexOfFirst { it.id == id }.coerceAtLeast(0)
+    }
+
+    /**
+     * True when the player's timeline still agrees with [_currentQueue] at
+     * [index].
+     *
+     * The two can drift - a failed resolution, a session restored underneath
+     * us - and [skipToQueueItem] has always checked before seeking. A move or a
+     * remove that does not check is worse than a seek that does not: it edits
+     * the wrong song and leaves the queue and the timeline further apart than
+     * it found them.
+     */
+    private fun timelineAgreesAt(index: Int): Boolean {
+        val player = controller ?: return false
+        val song = _currentQueue.value.getOrNull(index) ?: return false
+        return index < player.mediaItemCount && player.getMediaItemAt(index).mediaId == song.id
+    }
+
+    /**
+     * Move a queue item.
+     *
+     * [persist] is false for every step of a drag: a reorder crosses several
+     * positions on the way to where the finger is going, and writing the whole
+     * session to disk on each one turns a smooth gesture into stutter. The
+     * drag calls [commitQueueOrder] once when the finger lifts.
+     */
+    fun moveQueueItem(fromIndex: Int, toIndex: Int, persist: Boolean = true) {
         val currentList = _currentQueue.value
         if (fromIndex !in currentList.indices || toIndex !in currentList.indices || fromIndex == toIndex) return
+
+        val agrees = timelineAgreesAt(fromIndex)
 
         val mutable = currentList.toMutableList()
         val movedSong = mutable.removeAt(fromIndex)
         mutable.add(toIndex, movedSong)
         _currentQueue.value = mutable
 
-        controller?.moveMediaItem(fromIndex, toIndex)
+        // Only touch the timeline when it was in step to begin with. Out of
+        // step, the UI list is the one the user is looking at and the player
+        // will be rebuilt from it on the next explicit jump.
+        if (agrees) controller?.moveMediaItem(fromIndex, toIndex)
+        if (persist) savePlaybackSession()
+    }
+
+    /** Save once, after a drag has settled. */
+    fun commitQueueOrder() {
         savePlaybackSession()
     }
 
+    /**
+     * Take a song out of the queue.
+     *
+     * The last song stays: an empty queue with a song still playing is a state
+     * nothing else in the app knows how to draw. Removing what is currently
+     * playing is allowed, and Media3 advances to the next item on its own,
+     * which is what every other player does.
+     */
     fun removeQueueItem(index: Int) {
         val currentList = _currentQueue.value
         if (index !in currentList.indices) return
         if (currentList.size <= 1) return
 
+        val agrees = timelineAgreesAt(index)
+        lastQueueRemoval = QueueRemoval(currentList[index], index)
+
         val mutable = currentList.toMutableList()
         mutable.removeAt(index)
         _currentQueue.value = mutable
 
-        controller?.removeMediaItem(index)
+        if (agrees) controller?.removeMediaItem(index)
+        savePlaybackSession()
+    }
+
+    /** A song just taken out of the queue, kept so the snackbar can put it back. */
+    data class QueueRemoval(val song: Song, val index: Int)
+
+    private var lastQueueRemoval: QueueRemoval? = null
+
+    /**
+     * Put the last removed song back where it was.
+     *
+     * Restoring at the recorded index rather than appending, because "undo"
+     * that drops the song at the end of the queue has not undone anything the
+     * user can see.
+     */
+    fun undoQueueRemoval() {
+        val removal = lastQueueRemoval ?: return
+        lastQueueRemoval = null
+        val currentList = _currentQueue.value
+        val at = removal.index.coerceIn(0, currentList.size)
+
+        _currentQueue.value = currentList.toMutableList().apply { add(at, removal.song) }
+        controller?.let { player ->
+            if (at <= player.mediaItemCount) {
+                player.addMediaItem(at, createMediaItem(removal.song))
+            }
+        }
         savePlaybackSession()
     }
 
@@ -1075,6 +1195,20 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     }
 
     /**
+     * Toggle the like status of any song, not only the playing one.
+     *
+     * [toggleCurrentSongLike] reads the player; the song options sheet acts on
+     * whatever row was long-pressed, which is usually not what is playing.
+     *
+     * @return true when the song is now liked.
+     */
+    fun toggleLike(song: Song): Boolean {
+        val isNowLiked = likedSongsRepository.toggleLike(song)
+        if (song.id == _currentSong.value?.id) _isCurrentSongLiked.value = isNowLiked
+        return isNowLiked
+    }
+
+    /**
      * Update the liked status for the current song (called when song changes).
      */
     private fun updateCurrentSongLikedStatus() {
@@ -1195,6 +1329,26 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                 description,
                 com.ivor.ivormusic.ui.theme.playlistCoverSeeds(context)
             )
+        }
+    }
+
+    /**
+     * Make a playlist and put [song] straight into it.
+     *
+     * [createPlaylist] only makes an empty one, which is right for the player's
+     * own sheet where the song is added by a second tap on the new row. From
+     * the song options sheet there is no second tap - creating a playlist there
+     * is a way of filing the song you long-pressed, so leaving it empty would
+     * silently drop what the user asked for.
+     */
+    fun createPlaylistWithSong(name: String, description: String?, song: Song) {
+        viewModelScope.launch {
+            val id = playlistRepository.createPlaylist(
+                name,
+                description,
+                com.ivor.ivormusic.ui.theme.playlistCoverSeeds(context)
+            )
+            playlistRepository.addSongToPlaylist(id, song)
         }
     }
 

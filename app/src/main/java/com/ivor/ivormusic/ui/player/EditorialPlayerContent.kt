@@ -65,6 +65,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material.icons.rounded.DragHandle
+import androidx.compose.material3.SnackbarHost
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -182,6 +185,9 @@ fun EditorialPlayerSheetContent(
                     currentSong = currentSong,
                     onSongClick = { song -> viewModel.skipToSong(song) },
                     onRemoveSong = { index -> viewModel.removeQueueItem(index) },
+                    onMoveSong = { from, to -> viewModel.moveQueueItem(from, to, persist = false) },
+                    onCommitOrder = { viewModel.commitQueueOrder() },
+                    onUndoRemove = { viewModel.undoQueueRemoval() },
                     onLoadMore = onLoadMore,
                     isLoadingMore = isLoadingMore,
                     onCollapse = onCollapse,
@@ -833,8 +839,22 @@ internal fun EditorialQueueView(
     onCollapse: () -> Unit,
     onBackToPlayer: () -> Unit,
     field: Color,
-    accent: Color
+    accent: Color,
+    onMoveSong: (from: Int, to: Int) -> Unit = { _, _ -> },
+    onCommitOrder: () -> Unit = {},
+    onUndoRemove: () -> Unit = {}
 ) {
+    val listState = rememberLazyListState()
+    val rowKeys = remember(queue) { queueRowKeys(queue, "editorial_queue") }
+    val reorder = rememberQueueReorderState(
+        listState = listState,
+        keys = rowKeys,
+        onMove = onMoveSong,
+        onSettle = onCommitOrder
+    )
+    val removal = rememberQueueRemoval(onUndo = onUndoRemove)
+
+    Box(modifier = Modifier.fillMaxSize()) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -885,71 +905,105 @@ internal fun EditorialQueueView(
             }
         } else {
             LazyColumn(
+                state = listState,
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                // Index-qualified: the same song can appear in the queue twice
-                // (e.g. duplicated in a playlist) and duplicate keys crash
-                itemsIndexed(queue, key = { index, song -> "editorial_queue_${song.id}_$index" }) { index, song ->
+                // Occurrence-qualified, not index-qualified: the same song can
+                // appear twice and duplicate keys crash, but a key that moves
+                // with the index breaks reordering. See queueRowKeys.
+                itemsIndexed(
+                    queue,
+                    key = { index, _ -> rowKeys.getOrElse(index) { "editorial_queue_$index" } }
+                ) { index, song ->
                     val isCurrent = song.id == currentSong?.id
-                    Surface(
-                        onClick = { onSongClick(song) },
-                        shape = RoundedCornerShape(24.dp),
-                        color = if (isCurrent) accent else Color.Transparent,
-                        contentColor = if (isCurrent) field else accent,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .animateItem()
+                    val key = rowKeys.getOrElse(index) { "editorial_queue_$index" }
+                    val isDragging = reorder.draggingKey == key
+
+                    QueueRowContainer(
+                        isDragging = isDragging,
+                        dragOffset = reorder.offsetFor(key),
+                        removeEnabled = queue.size > 1,
+                        onRemove = {
+                            onRemoveSong(index)
+                            removal.onRemoved(song.title)
+                        },
+                        // animateItem sits on the container rather than the row,
+                        // so the slide-out-of-the-way applies to the whole
+                        // swipeable cell. It is disabled for the row under the
+                        // finger, which is positioned by the drag instead.
+                        modifier = if (isDragging) Modifier else Modifier.animateItem()
                     ) {
-                        Row(
+                        Surface(
+                            onClick = { onSongClick(song) },
+                            shape = RoundedCornerShape(24.dp),
+                            color = if (isCurrent) accent else field,
+                            contentColor = if (isCurrent) field else accent,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                                .queueDragHandle(reorder, key)
                         ) {
-                            Box(modifier = Modifier.width(28.dp), contentAlignment = Alignment.Center) {
-                                if (isCurrent) {
-                                    Icon(
-                                        Icons.Rounded.GraphicEq, "Playing",
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                } else {
-                                    Text(
-                                        text = "${index + 1}",
-                                        style = MaterialTheme.typography.labelLarge.copy(
-                                            fontFamily = FontFamily.Serif,
-                                            fontStyle = FontStyle.Italic
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(modifier = Modifier.width(28.dp), contentAlignment = Alignment.Center) {
+                                    if (isCurrent) {
+                                        Icon(
+                                            Icons.Rounded.GraphicEq, "Playing",
+                                            modifier = Modifier.size(18.dp)
                                         )
+                                    } else {
+                                        Text(
+                                            text = "${index + 1}",
+                                            style = MaterialTheme.typography.labelLarge.copy(
+                                                fontFamily = FontFamily.Serif,
+                                                fontStyle = FontStyle.Italic
+                                            )
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = song.title,
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = song.artist,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.graphicsLayer { alpha = 0.75f }
                                     )
                                 }
-                            }
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = song.title,
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Text(
-                                    text = song.artist,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.graphicsLayer { alpha = 0.75f }
-                                )
-                            }
-                            IconButton(
-                                onClick = { onRemoveSong(index) },
-                                enabled = queue.size > 1,
-                                modifier = Modifier.size(32.dp)
-                            ) {
                                 Icon(
-                                    Icons.Filled.Close, "Remove from queue",
-                                    modifier = Modifier.size(18.dp)
+                                    Icons.Rounded.DragHandle,
+                                    contentDescription = "Hold to reorder",
+                                    modifier = Modifier
+                                        .size(20.dp)
+                                        .graphicsLayer { alpha = 0.45f }
                                 )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                IconButton(
+                                    onClick = {
+                                        onRemoveSong(index)
+                                        removal.onRemoved(song.title)
+                                    },
+                                    enabled = queue.size > 1,
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Filled.Close, "Remove from queue",
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
                             }
                         }
                     }
@@ -999,6 +1053,15 @@ internal fun EditorialQueueView(
                 }
             }
         }
+    }
+
+        SnackbarHost(
+            hostState = removal.hostState,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .padding(16.dp)
+        )
     }
 }
 

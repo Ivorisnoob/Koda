@@ -14,7 +14,13 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.rounded.DragHandle
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.SnackbarHost
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -136,7 +142,11 @@ fun GesturePlayerSheetContent(
                     isLocalOriginal = { song -> viewModel.isLocalOriginal(song) },
                     primaryColor = primaryColor,
                     onSurfaceColor = onSurfaceColor,
-                    onSurfaceVariantColor = onSurfaceVariantColor
+                    onSurfaceVariantColor = onSurfaceVariantColor,
+                    onRemoveSong = { index -> viewModel.removeQueueItem(index) },
+                    onMoveSong = { from, to -> viewModel.moveQueueItem(from, to, persist = false) },
+                    onCommitOrder = { viewModel.commitQueueOrder() },
+                    onUndoRemove = { viewModel.undoQueueRemoval() }
                 )
             } else {
                 GestureNowPlayingView(
@@ -1063,8 +1073,22 @@ private fun GestureQueueView(
     isLocalOriginal: (Song) -> Boolean,
     primaryColor: Color,
     onSurfaceColor: Color,
-    onSurfaceVariantColor: Color
+    onSurfaceVariantColor: Color,
+    onRemoveSong: (index: Int) -> Unit = {},
+    onMoveSong: (from: Int, to: Int) -> Unit = { _, _ -> },
+    onCommitOrder: () -> Unit = {},
+    onUndoRemove: () -> Unit = {}
 ) {
+    val listState = rememberLazyListState()
+    val rowKeys = remember(queue) { queueRowKeys(queue, "gesture_queue") }
+    val reorder = rememberQueueReorderState(
+        listState = listState,
+        keys = rowKeys,
+        onMove = onMoveSong,
+        onSettle = onCommitOrder
+    )
+    val removal = rememberQueueRemoval(onUndo = onUndoRemove)
+
     // Guard against invalid dimensions during transitions
     BoxWithConstraints(
         modifier = Modifier
@@ -1074,7 +1098,7 @@ private fun GestureQueueView(
         if (maxWidth < 100.dp || maxHeight < 100.dp) {
             return@BoxWithConstraints
         }
-        
+
         Column(modifier = Modifier.fillMaxSize()) {
             // Top Bar
             Row(
@@ -1159,6 +1183,7 @@ private fun GestureQueueView(
                 }
             } else {
                 LazyColumn(
+                    state = listState,
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(horizontal = 24.dp),
@@ -1257,12 +1282,30 @@ private fun GestureQueueView(
                         }
                     }
                     
-                    // Queue items
-                    itemsIndexed(queue, key = { index, song -> "gesture_queue_${song.id}_$index" }) { index, song ->
+                    // Queue items. Occurrence-qualified keys, so a reorder moves
+                    // one row rather than re-keying every row it passed.
+                    itemsIndexed(
+                        queue,
+                        key = { index, _ -> rowKeys.getOrElse(index) { "gesture_queue_$index" } }
+                    ) { index, song ->
                         val isCurrent = song.id == currentSong?.id
-                        
+                        val key = rowKeys.getOrElse(index) { "gesture_queue_$index" }
+                        val isDragging = reorder.draggingKey == key
+
+                        QueueRowContainer(
+                            isDragging = isDragging,
+                            dragOffset = reorder.offsetFor(key),
+                            removeEnabled = queue.size > 1,
+                            onRemove = {
+                                onRemoveSong(index)
+                                removal.onRemoved(song.title)
+                            },
+                            modifier = if (isDragging) Modifier else Modifier.animateItem()
+                        ) {
                         Surface(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .queueDragHandle(reorder, key),
                             shape = RoundedCornerShape(20.dp),
                             color = if (isCurrent) primaryColor.copy(alpha = 0.12f) 
                                    else MaterialTheme.colorScheme.surfaceContainerLow,
@@ -1379,10 +1422,33 @@ private fun GestureQueueView(
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
                                 }
+
+                                Icon(
+                                    imageVector = Icons.Rounded.DragHandle,
+                                    contentDescription = "Hold to reorder",
+                                    tint = onSurfaceVariantColor.copy(alpha = 0.5f),
+                                    modifier = Modifier.size(20.dp)
+                                )
+
+                                IconButton(
+                                    onClick = {
+                                        onRemoveSong(index)
+                                        removal.onRemoved(song.title)
+                                    },
+                                    enabled = queue.size > 1,
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Close,
+                                        contentDescription = "Remove from queue",
+                                        tint = onSurfaceVariantColor
+                                    )
+                                }
                             }
                         }
+                        }
                     }
-                    
+
                     // Load More Button with expressive shape morphing
                     item(key = "gesture_queue_load_more") {
                         Box(
@@ -1428,6 +1494,14 @@ private fun GestureQueueView(
                 }
             }
         }
+
+        SnackbarHost(
+            hostState = removal.hostState,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .padding(16.dp)
+        )
     }
 }
 

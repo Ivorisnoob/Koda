@@ -9,7 +9,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material.icons.rounded.DragHandle
+import androidx.compose.material3.SnackbarHost
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -121,7 +125,9 @@ fun PlayerSheetContent(
                     queue = currentQueue,
                     currentSong = currentSong,
                     onSongClick = { song -> viewModel.skipToSong(song) },
-                    onMoveSong = { from, to -> viewModel.moveQueueItem(from, to) },
+                    onMoveSong = { from, to -> viewModel.moveQueueItem(from, to, persist = false) },
+                    onCommitOrder = { viewModel.commitQueueOrder() },
+                    onUndoRemove = { viewModel.undoQueueRemoval() },
                     onRemoveSong = { index -> viewModel.removeQueueItem(index) },
                     onLoadMore = onLoadMore,
                     isLoadingMore = isLoadingMore,
@@ -808,6 +814,8 @@ private fun ExpressiveQueueView(
     currentSong: Song?,
     onSongClick: (Song) -> Unit,
     onMoveSong: (fromIndex: Int, toIndex: Int) -> Unit,
+    onCommitOrder: () -> Unit,
+    onUndoRemove: () -> Unit,
     onRemoveSong: (index: Int) -> Unit,
     onLoadMore: () -> Unit,
     isLoadingMore: Boolean,
@@ -822,11 +830,16 @@ private fun ExpressiveQueueView(
     stableShapes: IconButtonShapes
 ) {
     val primaryContainerColor = MaterialTheme.colorScheme.primaryContainer
-    var draggingIndex by remember { mutableStateOf<Int?>(null) }
-    var dragOffsetY by remember { mutableFloatStateOf(0f) }
-    val density = LocalDensity.current
-    val itemHeightPx = with(density) { 80.dp.toPx() }
-    
+    val listState = rememberLazyListState()
+    val rowKeys = remember(queue) { queueRowKeys(queue, "queue") }
+    val reorder = rememberQueueReorderState(
+        listState = listState,
+        keys = rowKeys,
+        onMove = onMoveSong,
+        onSettle = onCommitOrder
+    )
+    val removal = rememberQueueRemoval(onUndo = onUndoRemove)
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -922,6 +935,7 @@ private fun ExpressiveQueueView(
                 }
             } else {
                 LazyColumn(
+                    state = listState,
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(bottom = 32.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -1046,55 +1060,36 @@ private fun ExpressiveQueueView(
                     }
                     
                     // ========== QUEUE ITEMS ==========
-                    // Index-qualified: the same song can appear in the queue twice
-                    // (e.g. duplicated in a playlist) and duplicate keys crash
-                    itemsIndexed(queue, key = { index, song -> "queue_${song.id}_$index" }) { index, song ->
+                    // Occurrence-qualified, not index-qualified: duplicate keys
+                    // crash, but a key that moves with the index breaks
+                    // reordering outright. See queueRowKeys.
+                    itemsIndexed(
+                        queue,
+                        key = { index, _ -> rowKeys.getOrElse(index) { "queue_$index" } }
+                    ) { index, song ->
                         val isCurrent = song.id == currentSong?.id
-                        val isDragging = draggingIndex == index
-                        
+                        val key = rowKeys.getOrElse(index) { "queue_$index" }
+                        val isDragging = reorder.draggingKey == key
+
+                        QueueRowContainer(
+                            isDragging = isDragging,
+                            dragOffset = reorder.offsetFor(key),
+                            removeEnabled = queue.size > 1,
+                            onRemove = {
+                                onRemoveSong(index)
+                                removal.onRemoved(song.title)
+                            },
+                            modifier = if (isDragging) Modifier else Modifier.animateItem()
+                        ) {
                         Surface(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .animateItem()
-                                .zIndex(if (isDragging) 2f else 0f)
-                                .offset(y = if (isDragging) with(density) { dragOffsetY.toDp() } else 0.dp)
-                                .pointerInput(song.id) {
-                                    detectDragGesturesAfterLongPress(
-                                        onDragStart = {
-                                            val currentIndex = queue.indexOfFirst { it.id == song.id }
-                                            draggingIndex = if (currentIndex >= 0) currentIndex else index
-                                            dragOffsetY = 0f
-                                        },
-                                        onDragEnd = {
-                                            draggingIndex = null
-                                            dragOffsetY = 0f
-                                        },
-                                        onDragCancel = {
-                                            draggingIndex = null
-                                            dragOffsetY = 0f
-                                        },
-                                        onDrag = { change, dragAmount ->
-                                            change.consume()
-                                            if (draggingIndex == null) return@detectDragGesturesAfterLongPress
-                                            dragOffsetY += dragAmount.y
-                                            while (dragOffsetY > itemHeightPx && draggingIndex!! < queue.lastIndex) {
-                                                onMoveSong(draggingIndex!!, draggingIndex!! + 1)
-                                                draggingIndex = draggingIndex!! + 1
-                                                dragOffsetY -= itemHeightPx
-                                            }
-                                            while (dragOffsetY < -itemHeightPx && draggingIndex!! > 0) {
-                                                onMoveSong(draggingIndex!!, draggingIndex!! - 1)
-                                                draggingIndex = draggingIndex!! - 1
-                                                dragOffsetY += itemHeightPx
-                                            }
-                                        }
-                                    )
-                                },
+                                .queueDragHandle(reorder, key),
                             shape = RoundedCornerShape(20.dp),
-                            color = if (isCurrent) primaryColor.copy(alpha = 0.12f) 
+                            color = if (isCurrent) primaryColor.copy(alpha = 0.12f)
                                    else MaterialTheme.colorScheme.surfaceContainerLow,
                             border = if (isCurrent) androidx.compose.foundation.BorderStroke(
-                                1.5.dp, 
+                                1.5.dp,
                                 primaryColor.copy(alpha = 0.3f)
                             ) else null,
                             onClick = { onSongClick(song) }
@@ -1193,8 +1188,18 @@ private fun ExpressiveQueueView(
                                     Spacer(modifier = Modifier.width(8.dp))
                                 }
 
+                                Icon(
+                                    imageVector = Icons.Rounded.DragHandle,
+                                    contentDescription = "Hold to reorder",
+                                    tint = onSurfaceVariantColor.copy(alpha = 0.5f),
+                                    modifier = Modifier.size(20.dp)
+                                )
+
                                 IconButton(
-                                    onClick = { onRemoveSong(index) },
+                                    onClick = {
+                                        onRemoveSong(index)
+                                        removal.onRemoved(song.title)
+                                    },
                                     enabled = queue.size > 1,
                                     modifier = Modifier.size(32.dp)
                                 ) {
@@ -1205,6 +1210,7 @@ private fun ExpressiveQueueView(
                                     )
                                 }
                             }
+                        }
                         }
                     }
 
@@ -1253,6 +1259,14 @@ private fun ExpressiveQueueView(
                 }
             }
         }
+
+        SnackbarHost(
+            hostState = removal.hostState,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .padding(16.dp)
+        )
     }
 }
 

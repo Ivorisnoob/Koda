@@ -110,6 +110,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.material3.TextButton
 import coil.compose.AsyncImage
 import com.ivor.ivormusic.data.Song
+import com.ivor.ivormusic.ui.library.songRowClick
 import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.data.VideoSearchDateFilter
 import com.ivor.ivormusic.data.VideoSearchSort
@@ -186,6 +187,8 @@ fun SearchScreen(
     songs: List<Song>,
     onSongClick: (Song) -> Unit,
     onPlayQueue: (List<Song>, Song) -> Unit = { _, song -> onSongClick(song) },
+    /** Long-press a song result: opens the shared song options sheet. */
+    onSongLongPress: ((Song) -> Unit)? = null,
     /**
      * Play a single YouTube result and continue into its radio. Used instead of
      * [onPlayQueue] for loose result lists, where the neighbouring entries are
@@ -608,6 +611,7 @@ fun SearchScreen(
                                 SearchSongCard(
                                     song = song,
                                     onClick = { onPlayQueue(state.songs, song) },
+                                    onLongClick = onSongLongPress?.let { press -> { press(song) } },
                                     cardColor = cardColor,
                                     textColor = textColor,
                                     secondaryTextColor = secondaryTextColor,
@@ -829,6 +833,7 @@ fun SearchScreen(
                         SearchSongCard(
                             song = song,
                             onClick = { onPlayQueue(songs, song) },
+                            onLongClick = onSongLongPress?.let { press -> { press(song) } },
                             cardColor = cardColor,
                             textColor = textColor,
                             secondaryTextColor = secondaryTextColor,
@@ -1179,6 +1184,7 @@ fun SearchScreen(
                             SearchSongCard(
                                 song = song,
                                 onClick = { onPlayQueue(filteredLocalSongs, song) },
+                                onLongClick = onSongLongPress?.let { press -> { press(song) } },
                                 cardColor = cardColor,
                                 textColor = textColor,
                                 secondaryTextColor = secondaryTextColor,
@@ -1274,6 +1280,7 @@ fun SearchScreen(
                         SearchSongCard(
                             song = song,
                             onClick = { onPlayQueue(filteredLocalSongs, song) },
+                            onLongClick = onSongLongPress?.let { press -> { press(song) } },
                             cardColor = cardColor,
                             textColor = textColor,
                             secondaryTextColor = secondaryTextColor,
@@ -1501,13 +1508,14 @@ private fun SearchSongCard(
     accentColor: Color,
     isYouTube: Boolean = false,
     shape: Shape = RoundedCornerShape(20.dp),
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onLongClick: (() -> Unit)? = null
 ) {
     Surface(
         modifier = modifier
             .fillMaxWidth()
             .clip(shape)
-            .clickable(onClick = onClick),
+            .songRowClick(onClick = onClick, onLongClick = onLongClick),
         shape = shape,
         color = cardColor,
         tonalElevation = 1.dp

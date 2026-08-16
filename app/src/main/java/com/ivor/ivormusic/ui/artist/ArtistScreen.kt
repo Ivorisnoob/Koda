@@ -75,6 +75,7 @@ import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.toShape
 import coil.compose.AsyncImage
 import com.ivor.ivormusic.data.Song
+import com.ivor.ivormusic.ui.library.songRowClick
 import com.ivor.ivormusic.ui.home.HomeViewModel
 import kotlinx.coroutines.launch
 
@@ -103,7 +104,8 @@ fun ArtistScreen(
     onAlbumClick: ((String, List<Song>) -> Unit)? = null,
     onOpenAlbum: ((com.ivor.ivormusic.data.PlaylistDisplayItem) -> Unit)? = null,
     viewModel: HomeViewModel? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onSongLongPress: ((Song) -> Unit)? = null
 ) {
     // Theme colors
     val backgroundColor = MaterialTheme.colorScheme.background
@@ -355,7 +357,8 @@ fun ArtistScreen(
                             } else {
                                 RectangleShape
                             },
-                            modifier = Modifier.padding(horizontal = 20.dp)
+                            modifier = Modifier.padding(horizontal = 20.dp),
+                            onLongClick = onSongLongPress?.let { press -> { press(song) } }
                         )
                         if (index < displayedSongs.size - 1) {
                             HorizontalDivider(
@@ -845,13 +848,14 @@ private fun ArtistSongCard(
     secondaryTextColor: Color,
     primaryColor: Color,
     shape: Shape,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onLongClick: (() -> Unit)? = null
 ) {
     Surface(
         modifier = modifier
             .fillMaxWidth()
             .clip(shape)
-            .clickable(onClick = onClick),
+            .songRowClick(onClick = onClick, onLongClick = onLongClick),
         shape = shape,
         color = cardColor,
         tonalElevation = 1.dp

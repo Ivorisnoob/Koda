@@ -268,6 +268,18 @@ Adding or renaming a style means touching **four** places (an omission compiles 
 
 **Both the settings picker and onboarding show every style.** Onboarding used to offer a curated `CLASSIC`/`GESTURE` pair; that was changed deliberately on request. People pick a look at first run and were not finding the other six. `PlayerStylePicker` is non-lazy for exactly this reason: it renders inside onboarding's `verticalScroll` column and inside the settings page's `LazyColumn` item, and a lazy grid nested in a scrollable parent has unbounded height.
 
+**Eight styles, but only three queue views**, and that is the ratio to keep. `ExpressiveQueueView` (Classic), `GestureQueueView` (Gesture) and `EditorialQueueView` (the other six) draw genuinely different rows - Editorial is serif and italic - so the *behaviour* is shared and the visuals are not. `ui/player/QueueReorder.kt` holds the hold-to-drag state machine and `QueueRowContainer.kt` the lift, the swipe-to-remove and the undo snackbar; a fourth queue view should use both rather than growing a fourth implementation, which is exactly how reordering ended up in one view of three and removal in two.
+
+Three rules that file exists to enforce, all of them things that were wrong before it:
+
+- **Queue row keys are occurrence-qualified, never index-qualified** (`queueRowKeys`). A queue can hold the same song twice so a bare id crashes on duplicate keys, but `"$id_$index"` re-keys every row a moved row passed, and `animateItem` then has nothing to animate.
+- **Drag geometry comes from `LazyListState.layoutInfo`, never from an assumed row height.** The old implementation measured against a hardcoded 80dp and drifted out from under the finger.
+- **A drag calls `moveQueueItem(..., persist = false)` per crossing and `commitQueueOrder()` once on release.** Writing the whole session to disk on every crossing is what turns the gesture into stutter.
+
+`moveQueueItem` and `removeQueueItem` also check `timelineAgreesAt` before touching the player, the way `skipToQueueItem` always has: the UI queue and the ExoPlayer timeline can drift, and editing the wrong index is worse than editing none.
+
+**`addToQueue` had no caller for a long time** except the auto-queue, so adding one track to what was already playing was impossible. `ui/player/SongOptionsSheet.kt` is the entry point now - Play next, Add to queue, Add to playlist, Like, Download - opened by a long press on a song row through `Modifier.songRowClick`, and hosted **once** in `HomeScreen` (`songOptionsTarget`) because it acts on the `PlayerViewModel` that lives at that level. Screens take an `onSongLongPress: ((Song) -> Unit)?` and pass it down rather than hosting their own.
+
 ### Reference docs in-repo
 
 `DESIGN.md` (repo root) is the public design-system doc: the shape/motion/color systems, how `IvorMusicTheme` resolves a `ColorScheme` (dynamic vs the 27 fixed palettes vs AMOLED vs artwork colors), the player-style table, and the stated policy against an alternate design language. It is written for users and contributors, so it carries counts that go stale. If you change the palette list, player styles, or the animation/shape mix, re-derive its numbers rather than trusting them.

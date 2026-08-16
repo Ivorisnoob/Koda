@@ -17,6 +17,7 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.scrollBy
@@ -125,6 +126,13 @@ fun LibraryContent(
     onInitialPlaylistConsumed: () -> Unit = {},
     onStatsClick: () -> Unit = {},
     /**
+     * Long-press on a song row. Hoisted rather than handled here because the
+     * options sheet acts on the player, and HomeScreen is where the
+     * PlayerViewModel lives; hosting one sheet up there also keeps a single
+     * instance alive across the Library's own sub-routes.
+     */
+    onSongLongPress: ((Song) -> Unit)? = null,
+    /**
      * Hoisted by HomeScreen for the main route's All tab, which is the one the
      * tab opens on. The other sub-tabs and the playlist/artist/album routes keep
      * their own states, since each is a different list and sharing one would
@@ -194,6 +202,7 @@ fun LibraryContent(
                 onNavigateToHistory = {
                     currentRoute = LibraryRoute.History
                 },
+                onSongLongPress = onSongLongPress,
                 allSongsListState = allSongsListState
             )
         }
@@ -232,7 +241,8 @@ fun LibraryContent(
                         onBack = { currentRoute = LibraryRoute.Main },
                         onPlayQueue = onPlayQueue,
                         viewModel = viewModel,
-                        isAlbum = false
+                        isAlbum = false,
+                        onSongLongPress = onSongLongPress
                     )
                 }
             }
@@ -252,7 +262,8 @@ fun LibraryContent(
                         onPlayQueue = onPlayQueue,
                         viewModel = viewModel,
                         preloadedSongs = selectedAlbumSongs,
-                        isAlbum = true
+                        isAlbum = true,
+                        onSongLongPress = onSongLongPress
                     )
                 }
             }
@@ -274,7 +285,8 @@ fun LibraryContent(
                             selectedPlaylist = albumItem
                             currentRoute = LibraryRoute.Playlist
                         },
-                        viewModel = viewModel
+                        viewModel = viewModel,
+                        onSongLongPress = onSongLongPress
                     )
                 }
             }
@@ -336,6 +348,7 @@ fun LibraryMainScreen(
     onNavigateToAlbum: (String, List<Song>) -> Unit,
     onNavigateToStats: () -> Unit,
     onNavigateToHistory: () -> Unit,
+    onSongLongPress: ((Song) -> Unit)? = null,
     allSongsListState: LazyListState = rememberLazyListState()
 ) {
     val userPlaylists by viewModel.userPlaylists.collectAsState()
@@ -524,6 +537,7 @@ fun LibraryMainScreen(
                             },
                             onNavigateToHistory = onNavigateToHistory,
                             contentPadding = contentPadding,
+                            onSongLongPress = onSongLongPress,
                             listState = allSongsListState
                         )
                     }
@@ -669,6 +683,7 @@ fun AllSongsList(
     onLikedSongsClick: () -> Unit,
     onNavigateToHistory: () -> Unit,
     contentPadding: PaddingValues,
+    onSongLongPress: ((Song) -> Unit)? = null,
     listState: LazyListState = rememberLazyListState()
 ) {
     val likedIds = remember(likedSongs) { likedSongs.map { it.id }.toSet() }
@@ -871,6 +886,7 @@ fun AllSongsList(
                     isDownloaded = song.id in downloadedIds,
                     showDuration = sortLabel == null,
                     trailingLabel = sortLabel,
+                    onLongClick = onSongLongPress?.let { press -> { press(song) } },
                     onClick = { onPlayQueue(songs, song) }
                 )
             }
@@ -1602,6 +1618,8 @@ fun SongListItem(
     /** Short metric shown where the duration normally sits (e.g. "12 plays"). */
     trailingLabel: String? = null,
     trailingContent: (@Composable () -> Unit)? = null,
+    /** Opens the song options sheet. Null leaves the row tap-only. */
+    onLongClick: (() -> Unit)? = null,
     onClick: () -> Unit
 ) {
     Surface(
@@ -1665,10 +1683,33 @@ fun SongListItem(
                     }
                 }
             } else null,
-            modifier = Modifier.clickable(onClick = onClick),
+            modifier = Modifier.songRowClick(onClick = onClick, onLongClick = onLongClick),
             colors = ListItemDefaults.colors(containerColor = Color.Transparent)
         )
     }
+}
+
+/**
+ * Tap to play, hold for the options sheet.
+ *
+ * Falls back to a plain `clickable` when there is no long-press action, because
+ * `combinedClickable` with a null `onLongClick` still consumes the long press
+ * and swallows it from anything underneath.
+ */
+@Composable
+internal fun Modifier.songRowClick(
+    onClick: () -> Unit,
+    onLongClick: (() -> Unit)?
+): Modifier {
+    if (onLongClick == null) return this.clickable(onClick = onClick)
+    val haptics = LocalHapticFeedback.current
+    return this.combinedClickable(
+        onClick = onClick,
+        onLongClick = {
+            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+            onLongClick()
+        }
+    )
 }
 
 /** Compact "when was this added" label for the Recently added sort. */
@@ -1912,7 +1953,8 @@ private fun PlaylistTrackRow(
     dragHandleModifier: Modifier,
     onClick: () -> Unit,
     onRemove: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onLongClick: (() -> Unit)? = null
 ) {
     val liftSpec = spring<Dp>(
         dampingRatio = Spring.DampingRatioNoBouncy,
@@ -2028,7 +2070,13 @@ private fun PlaylistTrackRow(
                     )
                 }
             },
-            modifier = Modifier.clickable(enabled = !manageEnabled, onClick = onClick),
+            // Manage mode owns the gesture: rows are being dragged and removed
+            // there, so a long press must not open a sheet on top of it.
+            modifier = if (manageEnabled) {
+                Modifier
+            } else {
+                Modifier.songRowClick(onClick = onClick, onLongClick = onLongClick)
+            },
             colors = ListItemDefaults.colors(containerColor = Color.Transparent)
         )
     }
@@ -2060,7 +2108,8 @@ fun PlaylistDetailScreen(
     onPlayQueue: (List<Song>, Song?) -> Unit,
     viewModel: HomeViewModel,
     preloadedSongs: List<Song>? = null,
-    isAlbum: Boolean = false
+    isAlbum: Boolean = false,
+    onSongLongPress: ((Song) -> Unit)? = null
 ) {
     val userPlaylists by viewModel.userPlaylists.collectAsState()
     val localPlaylistIds by viewModel.localPlaylistIds.collectAsState()
@@ -2919,6 +2968,7 @@ fun PlaylistDetailScreen(
                         isDragging = isDragging,
                         dragHandleModifier = handleDrag,
                         onClick = { onPlayQueue(filteredSongs, song) },
+                        onLongClick = onSongLongPress?.let { press -> { press(song) } },
                         onRemove = { removeSong(song) },
                         modifier = Modifier
                             .fillMaxWidth()
