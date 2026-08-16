@@ -325,9 +325,8 @@ fun SubscriptionsContent(
                     state = feedListState,
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(backgroundColor)
-                        .windowInsetsPadding(WindowInsets.statusBars),
-                    contentPadding = PaddingValues(bottom = contentPadding.calculateBottomPadding()),
+                        .background(backgroundColor),
+                    contentPadding = contentPadding,
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     item {
@@ -544,9 +543,8 @@ fun SubscriptionsContent(
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(backgroundColor)
-                    .windowInsetsPadding(WindowInsets.statusBars),
-                contentPadding = PaddingValues(bottom = contentPadding.calculateBottomPadding()),
+                    .background(backgroundColor),
+                contentPadding = contentPadding,
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 item {
@@ -635,9 +633,8 @@ fun SubscriptionsContent(
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(backgroundColor)
-                        .windowInsetsPadding(WindowInsets.statusBars),
-                    contentPadding = PaddingValues(bottom = contentPadding.calculateBottomPadding()),
+                        .background(backgroundColor),
+                    contentPadding = contentPadding,
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     item {

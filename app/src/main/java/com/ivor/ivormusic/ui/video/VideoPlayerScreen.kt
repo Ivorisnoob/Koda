@@ -1835,7 +1835,14 @@ fun VideoInfoSection(
             .fillMaxWidth()
             .verticalScroll(rememberScrollState())
             .padding(24.dp)
-            .padding(bottom = 80.dp), // Bottom padding for navigation bar
+            // Applied inside verticalScroll, so this is scrolling clearance
+            // rather than a viewport inset: the list passes under the
+            // navigation bar and only its last item has to clear it. The
+            // parent no longer takes the bottom inset for the same reason.
+            .padding(
+                bottom = 80.dp +
+                    WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+            ),
         verticalArrangement = Arrangement.spacedBy(24.dp)
     ) {
         // Title & Stats Group

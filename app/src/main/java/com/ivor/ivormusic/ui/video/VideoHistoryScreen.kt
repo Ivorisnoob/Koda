@@ -145,13 +145,16 @@ fun VideoHistoryContent(
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .background(backgroundColor)
-                .then(
-                    // Embedded in the Library tab a SubPageTopBar already
-                    // handles the status bar inset
-                    if (showHero) Modifier.windowInsetsPadding(WindowInsets.statusBars) else Modifier
-                ),
-            contentPadding = PaddingValues(bottom = contentPadding.calculateBottomPadding()),
+                .background(backgroundColor),
+            // Embedded in the Library tab a SubPageTopBar already sits in the
+            // status bar area, so only the standalone screen takes the top
+            // inset - and it takes it as content padding, so the hero scrolls
+            // under the status bar instead of stopping at it.
+            contentPadding = if (showHero) {
+                contentPadding
+            } else {
+                PaddingValues(bottom = contentPadding.calculateBottomPadding())
+            },
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             // Header
