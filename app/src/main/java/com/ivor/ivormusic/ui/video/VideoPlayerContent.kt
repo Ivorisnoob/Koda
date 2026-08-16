@@ -774,7 +774,14 @@ fun VideoPlayerContent(
              Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .windowInsetsPadding(WindowInsets.systemBars)
+                    // Top only. The video stays below the status bar, on black,
+                    // the way YouTube's portrait watch page does - taking it up
+                    // there would crop a 16:9 frame and put the clock over the
+                    // picture. The bottom inset is not applied here because it
+                    // would clip the info list at the navigation bar;
+                    // VideoInfoSection carries it as scrolling padding instead,
+                    // so related videos pass under the bar.
+                    .windowInsetsPadding(WindowInsets.systemBars.only(WindowInsetsSides.Top))
             ) {
                 // Video Area
                 Box(

@@ -279,9 +279,8 @@ private fun LibraryRoot(
             state = listState,
             modifier = Modifier
                 .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background)
-                .windowInsetsPadding(WindowInsets.statusBars),
-            contentPadding = PaddingValues(bottom = contentPadding.calculateBottomPadding()),
+                .background(MaterialTheme.colorScheme.background),
+            contentPadding = contentPadding,
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             item {

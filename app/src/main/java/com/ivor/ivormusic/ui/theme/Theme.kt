@@ -99,6 +99,18 @@ fun IvorMusicTheme(
             val window = (view.context as Activity).window
             window.statusBarColor = Color.Transparent.toArgb()
             window.navigationBarColor = Color.Transparent.toArgb()
+            // enableEdgeToEdge leaves contrast enforcement on for the
+            // navigation bar, which paints a translucent system scrim behind
+            // it on three-button navigation - a visible band under the
+            // floating toolbar and the mini player. Both setters are no-ops
+            // from API 35, where the system owns this; they still matter on
+            // 30-34.
+            window.isStatusBarContrastEnforced = false
+            window.isNavigationBarContrastEnforced = false
+            // Deliberately kept even though enableEdgeToEdge normally handles
+            // icon appearance: it decides from the system uiMode, and Koda's
+            // theme mode is its own setting, so a user forcing dark inside the
+            // app on a light system would otherwise get dark icons on dark.
             WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !darkTheme
             WindowCompat.getInsetsController(window, view).isAppearanceLightNavigationBars = !darkTheme
         }

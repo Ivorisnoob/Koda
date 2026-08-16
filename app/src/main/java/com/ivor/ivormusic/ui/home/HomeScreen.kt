@@ -56,7 +56,6 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.statusBars
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -373,8 +372,16 @@ fun HomeScreen(
         label = "bottomOverlayInset"
     )
     val navBarInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-    // Scroll clearance for the tab lists (they don't apply insets themselves)
-    val listBottomPadding = PaddingValues(bottom = bottomOverlayInset + navBarInset + 16.dp)
+    val statusBarInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    // The one inset every tab list scrolls inside, top and bottom. It belongs
+    // in each list's contentPadding and never on a parent modifier: padding a
+    // scroll container shrinks its viewport, so content is clipped at the
+    // status bar instead of passing under it, and the top of the screen reads
+    // as a system title bar. The bottom already worked this way.
+    val listContentPadding = PaddingValues(
+        top = statusBarInset,
+        bottom = bottomOverlayInset + navBarInset + 16.dp
+    )
 
     // Use Box overlay instead of Scaffold for truly floating navbar
     androidx.compose.runtime.CompositionLocalProvider(
@@ -451,7 +458,7 @@ fun HomeScreen(
                                     onDownloadsClick = onNavigateToDownloads,
                                     onRefresh = { viewModel.refreshVideos() },
                                     isDarkMode = isDarkMode,
-                                    contentPadding = listBottomPadding,
+                                    contentPadding = listContentPadding,
                                     viewModel = viewModel,
                                     videoMode = videoMode,
                                     onVideoModeToggle = onVideoModeToggle,
@@ -501,7 +508,7 @@ fun HomeScreen(
                                     onSettingsClick = onNavigateToSettings,
                                     onDownloadsClick = onNavigateToDownloads,
                                     isDarkMode = isDarkMode,
-                                    contentPadding = listBottomPadding,
+                                    contentPadding = listContentPadding,
                                     viewModel = viewModel,
                                     excludedFolders = excludedFolders,
                                     manualScan = manualScan,
@@ -543,7 +550,7 @@ fun HomeScreen(
                                     onSettingsClick = onNavigateToSettings,
                                     onDownloadsClick = onNavigateToDownloads,
                                     isDarkMode = isDarkMode,
-                                    contentPadding = listBottomPadding,
+                                    contentPadding = listContentPadding,
                                     viewModel = viewModel,
                                     excludedFolders = excludedFolders,
                                     manualScan = manualScan,
@@ -583,7 +590,7 @@ fun HomeScreen(
                         },
                         onPlayVideoQueue = onPlayVideoQueue,
                         onProfileClick = onProfileClick,
-                        contentPadding = listBottomPadding,
+                        contentPadding = listContentPadding,
                         viewModel = viewModel,
                         isDarkMode = isDarkMode,
                         videoMode = videoMode,
@@ -604,7 +611,7 @@ fun HomeScreen(
                                 },
                                 onLoginClick = { showAuthDialog = true },
                                 onManageSubscriptions = onNavigateToSubscriptions,
-                                contentPadding = listBottomPadding,
+                                contentPadding = listContentPadding,
                                 feedListState = subscriptionsScrollState
                             )
                         } else {
@@ -624,7 +631,7 @@ fun HomeScreen(
                                     playerViewModel.playQueue(songs, selectedSong)
                                     showPlayerSheet = true
                                 },
-                                contentPadding = listBottomPadding,
+                                contentPadding = listContentPadding,
                                 viewModel = viewModel,
                                 isDarkMode = isDarkMode,
                                 initialArtist = viewedArtistFromPlayer,
@@ -652,7 +659,7 @@ fun HomeScreen(
                                 },
                                 onPlayQueue = onPlayVideoQueue,
                                 onLoginClick = { showAuthDialog = true },
-                                contentPadding = listBottomPadding,
+                                contentPadding = listContentPadding,
                                 rootListState = videoLibraryScrollState
                             )
                         }
@@ -973,9 +980,8 @@ fun YourMixContent(
             state = listState,
             modifier = Modifier
                 .fillMaxSize()
-                .background(backgroundColor)
-                .windowInsetsPadding(WindowInsets.statusBars),
-            contentPadding = PaddingValues(bottom = contentPadding.calculateBottomPadding())
+                .background(backgroundColor),
+            contentPadding = contentPadding
         ) {
             item { 
                 var visible by remember { mutableStateOf(false) }
