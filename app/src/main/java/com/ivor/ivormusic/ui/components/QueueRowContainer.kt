@@ -1,4 +1,4 @@
-package com.ivor.ivormusic.ui.player
+package com.ivor.ivormusic.ui.components
 
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.DragHandle
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarDuration
@@ -31,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
@@ -104,10 +106,14 @@ fun QueueRowContainer(
                 scaleY = scale
             }
     ) {
+        // The swipe is disarmed while the row is being dragged. Both gestures
+        // start from the same finger, and a reorder that ends in an accidental
+        // removal is the worst outcome either of them can produce.
+        val swipeArmed = removeEnabled && !isDragging
         SwipeToDismissBox(
             state = dismissState,
-            enableDismissFromStartToEnd = removeEnabled,
-            enableDismissFromEndToStart = removeEnabled,
+            enableDismissFromStartToEnd = swipeArmed,
+            enableDismissFromEndToStart = swipeArmed,
             backgroundContent = { RemoveSwipeBackground(dismissState.targetValue) }
         ) {
             Box(
@@ -160,6 +166,36 @@ private fun RemoveSwipeBackground(target: SwipeToDismissBoxValue) {
             modifier = Modifier
                 .size(24.dp)
                 .scale(iconScale)
+        )
+    }
+}
+
+/**
+ * The grab target for reordering a queue row.
+ *
+ * A real 44dp touch target around a 20dp glyph, because this is the only
+ * reliable way to start a drag - see [queueDragHandle] - and a handle people
+ * miss is a feature they do not have. It carries no click of its own, so
+ * nothing competes with the drag for the gesture.
+ */
+@Composable
+fun QueueDragHandle(
+    state: QueueReorderState,
+    rowKey: Any,
+    tint: Color,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .size(44.dp)
+            .queueDragHandle(state, rowKey),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.DragHandle,
+            contentDescription = "Drag to reorder",
+            tint = tint,
+            modifier = Modifier.size(20.dp)
         )
     }
 }

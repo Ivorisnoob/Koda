@@ -58,6 +58,7 @@ import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LinearWavyProgressIndicator
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialShapes
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -105,6 +106,12 @@ import androidx.media3.common.Player
 import com.ivor.ivormusic.data.LyricsResult
 import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.ui.components.LikeBurstIcon
+import com.ivor.ivormusic.ui.components.QueueDragHandle
+import com.ivor.ivormusic.ui.components.QueueRowContainer
+import com.ivor.ivormusic.ui.components.queueDragLongPress
+import com.ivor.ivormusic.ui.components.queueRowKeys
+import com.ivor.ivormusic.ui.components.rememberQueueRemoval
+import com.ivor.ivormusic.ui.components.rememberQueueReorderState
 import com.ivor.ivormusic.ui.components.SongArtwork
 import kotlin.math.abs
 import kotlinx.coroutines.launch
@@ -845,7 +852,7 @@ internal fun EditorialQueueView(
     onUndoRemove: () -> Unit = {}
 ) {
     val listState = rememberLazyListState()
-    val rowKeys = remember(queue) { queueRowKeys(queue, "editorial_queue") }
+    val rowKeys = remember(queue) { queueRowKeys(queue.map { it.id }, "editorial_queue") }
     val reorder = rememberQueueReorderState(
         listState = listState,
         keys = rowKeys,
@@ -942,7 +949,7 @@ internal fun EditorialQueueView(
                             contentColor = if (isCurrent) field else accent,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .queueDragHandle(reorder, key)
+                                .queueDragLongPress(reorder, key)
                         ) {
                             Row(
                                 modifier = Modifier
@@ -983,14 +990,11 @@ internal fun EditorialQueueView(
                                         modifier = Modifier.graphicsLayer { alpha = 0.75f }
                                     )
                                 }
-                                Icon(
-                                    Icons.Rounded.DragHandle,
-                                    contentDescription = "Hold to reorder",
-                                    modifier = Modifier
-                                        .size(20.dp)
-                                        .graphicsLayer { alpha = 0.45f }
+                                QueueDragHandle(
+                                    state = reorder,
+                                    rowKey = key,
+                                    tint = LocalContentColor.current.copy(alpha = 0.7f)
                                 )
-                                Spacer(modifier = Modifier.width(4.dp))
                                 IconButton(
                                     onClick = {
                                         onRemoveSong(index)

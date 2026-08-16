@@ -56,6 +56,12 @@ import androidx.compose.ui.zIndex
 import androidx.media3.common.Player
 import coil.compose.AsyncImage
 import com.ivor.ivormusic.data.Song
+import com.ivor.ivormusic.ui.components.QueueDragHandle
+import com.ivor.ivormusic.ui.components.QueueRowContainer
+import com.ivor.ivormusic.ui.components.queueDragLongPress
+import com.ivor.ivormusic.ui.components.queueRowKeys
+import com.ivor.ivormusic.ui.components.rememberQueueRemoval
+import com.ivor.ivormusic.ui.components.rememberQueueReorderState
 import com.ivor.ivormusic.ui.components.SongArtwork
 import com.ivor.ivormusic.data.LyricsResult
 import java.util.Locale
@@ -1080,7 +1086,7 @@ private fun GestureQueueView(
     onUndoRemove: () -> Unit = {}
 ) {
     val listState = rememberLazyListState()
-    val rowKeys = remember(queue) { queueRowKeys(queue, "gesture_queue") }
+    val rowKeys = remember(queue) { queueRowKeys(queue.map { it.id }, "gesture_queue") }
     val reorder = rememberQueueReorderState(
         listState = listState,
         keys = rowKeys,
@@ -1305,7 +1311,7 @@ private fun GestureQueueView(
                         Surface(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .queueDragHandle(reorder, key),
+                                .queueDragLongPress(reorder, key),
                             shape = RoundedCornerShape(20.dp),
                             color = if (isCurrent) primaryColor.copy(alpha = 0.12f) 
                                    else MaterialTheme.colorScheme.surfaceContainerLow,
@@ -1423,11 +1429,10 @@ private fun GestureQueueView(
                                     Spacer(modifier = Modifier.width(8.dp))
                                 }
 
-                                Icon(
-                                    imageVector = Icons.Rounded.DragHandle,
-                                    contentDescription = "Hold to reorder",
-                                    tint = onSurfaceVariantColor.copy(alpha = 0.5f),
-                                    modifier = Modifier.size(20.dp)
+                                QueueDragHandle(
+                                    state = reorder,
+                                    rowKey = key,
+                                    tint = onSurfaceVariantColor.copy(alpha = 0.7f)
                                 )
 
                                 IconButton(
