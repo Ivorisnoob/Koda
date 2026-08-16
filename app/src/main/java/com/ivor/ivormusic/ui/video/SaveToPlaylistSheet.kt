@@ -31,6 +31,7 @@ import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.NotInterested
+import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.RemoveCircleOutline
 import androidx.compose.material.icons.rounded.WatchLater
 import androidx.compose.material3.AlertDialog
@@ -69,6 +70,14 @@ import kotlinx.coroutines.delay
 
 /** Per-row save progress inside the sheet. */
 private enum class SaveRowState { IDLE, SAVING, SAVED, FAILED }
+
+/**
+ * Row ids for the two queue actions. They share the sheet's save-state machine
+ * so they get the same check-then-dismiss, and they cannot collide with a real
+ * playlist id.
+ */
+private const val ENQUEUE_NEXT_ROW = "__queue_next__"
+private const val ENQUEUE_END_ROW = "__queue_end__"
 
 /**
  * Bottom sheet shown when long-pressing a video card: save the video to
@@ -112,7 +121,17 @@ fun SaveToPlaylistSheet(
      * looking at is exactly the three-taps-deep detour that makes a control
      * feel broken.
      */
-    onCreatePlaylist: ((name: String, onCreated: (String?) -> Unit) -> Unit)? = null
+    onCreatePlaylist: ((name: String, onCreated: (String?) -> Unit) -> Unit)? = null,
+    /**
+     * Queue this video, either straight after what is playing or at the end.
+     * Null where there is no video player to queue into.
+     *
+     * These sit above the save rows because they are the immediate intent -
+     * "watch this next" is a decision about the next ten minutes, while saving
+     * is about some other day - and because until now the only way to line a
+     * video up was to open it, which is the opposite of queueing it.
+     */
+    onEnqueue: ((playNext: Boolean) -> Unit)? = null
 ) {
     // Open fully expanded: in the half-expanded state the inner playlist
     // list and the sheet's drag-to-expand fight over scroll gestures,
@@ -190,6 +209,65 @@ fun SaveToPlaylistSheet(
 
             Spacer(modifier = Modifier.height(16.dp))
 
+            onEnqueue?.let { enqueue ->
+                SaveTargetRow(
+                    title = "Play next",
+                    subtitle = "Right after this video",
+                    // Queueing is synchronous - it edits in-memory state - so
+                    // there is no spinner to show, only the check. It rides the
+                    // same savedId that dismisses the sheet a beat later, which
+                    // is the confirmation this sheet already gives for a save
+                    // and the only one a feed screen could show at all.
+                    state = rowState(ENQUEUE_NEXT_ROW),
+                    hero = true,
+                    onClick = {
+                        if (savedId == null) {
+                            enqueue(true)
+                            savedId = ENQUEUE_NEXT_ROW
+                        }
+                    },
+                    leading = {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Rounded.PlaylistPlay,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                SaveTargetRow(
+                    title = "Add to queue",
+                    subtitle = "At the end",
+                    state = rowState(ENQUEUE_END_ROW),
+                    onClick = {
+                        if (savedId == null) {
+                            enqueue(false)
+                            savedId = ENQUEUE_END_ROW
+                        }
+                    },
+                    leading = {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Rounded.QueueMusic,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                )
+
+                Spacer(modifier = Modifier.height(20.dp))
+
+                Text(
+                    text = "Save to",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+            }
+
             // Watch Later, pinned hero row. Signed out this is the device's own
             // list, not the account's, and the subtitle says so.
             SaveTargetRow(
@@ -197,7 +275,10 @@ fun SaveToPlaylistSheet(
                 subtitle = if (isSignedOut) "Kept on this device"
                     else "Saved for when you have time",
                 state = rowState("WL"),
-                hero = true,
+                // One filled row per sheet. When the queue actions are offered
+                // they are the immediate intent, so they take the emphasis and
+                // Watch Later steps back to a normal row.
+                hero = onEnqueue == null,
                 onClick = { save("WL") },
                 leading = {
                     Icon(

@@ -219,7 +219,13 @@ fun rememberQueueReorderState(
         while (isActive) {
             withFrameNanos { }
             val delta = state.autoScrollDelta(edge, maxStep)
-            if (delta != 0f) listState.scrollBy(delta)
+            // Only scroll when the list can actually take it. A `scrollBy` the
+            // list cannot consume is passed on through nested scroll, and the
+            // video queue lives in a `ModalBottomSheet` - so dragging a row
+            // against the top of an already-scrolled-to-top list would drag the
+            // sheet down and close it mid-reorder.
+            val canScroll = if (delta > 0f) listState.canScrollForward else listState.canScrollBackward
+            if (delta != 0f && canScroll) listState.scrollBy(delta)
             state.settleSwap()
         }
     }

@@ -923,6 +923,9 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      */
     fun playVideo(video: VideoItem, forceRestart: Boolean = false) {
         _queue.value = null
+        // The queue this belonged to is gone, so restoring into the next one
+        // would drop a video into a list it was never part of.
+        lastQueueRemoval = null
         startVideo(video, forceRestart)
     }
 
@@ -937,6 +940,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         if (queue.videos.isEmpty()) return
         val normalized = queue.at(queue.index)
         _queue.value = normalized
+        lastQueueRemoval = null
         // A new playlist gets the full skip budget: whatever was wrong with the
         // last one has nothing to say about this one.
         queueErrorSkipCount = 0
@@ -961,6 +965,73 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         val target = active.videos.getOrNull(index) ?: return
         _queue.value = active.copy(index = index)
         startVideo(target, forceRestart = true)
+    }
+
+    // ---------------- Editing the queue ----------------
+
+    /**
+     * Reorder the queue.
+     *
+     * Nothing is asked of the player: unlike music, video mode holds one media
+     * item at a time and reads the next one out of the queue when the current
+     * one ends, so the order is only ever consulted at that moment. Moving the
+     * playing entry therefore cannot interrupt it.
+     */
+    fun moveQueueItem(from: Int, to: Int) {
+        val active = _queue.value ?: return
+        _queue.value = active.moved(from, to)
+    }
+
+    /**
+     * Drop an entry. Refused for the playing entry and for the last one left;
+     * see [com.ivor.ivormusic.data.VideoQueue.removedAt].
+     */
+    fun removeQueueItem(at: Int) {
+        val active = _queue.value ?: return
+        val video = active.videos.getOrNull(at) ?: return
+        val next = active.removedAt(at) ?: return
+        lastQueueRemoval = QueueRemoval(video, at)
+        _queue.value = next
+    }
+
+    /** A video just taken out of the queue, kept so the snackbar can put it back. */
+    data class QueueRemoval(val video: VideoItem, val at: Int)
+
+    private var lastQueueRemoval: QueueRemoval? = null
+
+    /** Put the last removed video back where it was. */
+    fun undoQueueRemoval() {
+        val removal = lastQueueRemoval ?: return
+        lastQueueRemoval = null
+        val active = _queue.value ?: return
+        _queue.value = active.withInserted(listOf(removal.video), removal.at)
+    }
+
+    /**
+     * Add [video] to the queue, either straight after what is playing or at the
+     * end.
+     *
+     * With no queue yet, one is started from the video already playing so the
+     * addition has something to be *after* - which is what makes this work from
+     * a feed or from search, where there is no playlist in sight. With nothing
+     * playing at all there is no "next", so it just plays.
+     */
+    fun enqueueVideo(video: VideoItem, playNext: Boolean) {
+        val active = _queue.value
+        if (active == null) {
+            val current = _currentVideo.value
+            if (current == null) {
+                playVideo(video)
+                return
+            }
+            _queue.value = com.ivor.ivormusic.data.VideoQueue.adHoc(current, listOf(video))
+            return
+        }
+        _queue.value = if (playNext) {
+            active.withPlayingNext(listOf(video))
+        } else {
+            active.withAppended(listOf(video))
+        }
     }
 
     /** Next video in the playlist. No-op at the end of it. */

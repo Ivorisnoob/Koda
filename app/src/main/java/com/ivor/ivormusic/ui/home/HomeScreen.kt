@@ -165,6 +165,11 @@ fun HomeScreen(
      * [onNavigateToVideoPlayer] when this is absent, and a do-nothing default
      * would make a tap on a playlist row silently do nothing at all.
      */
+    /**
+     * Queue a video from a long press, either next or at the end. Routed to the
+     * video player's ViewModel, which owns the queue.
+     */
+    onEnqueueVideo: ((com.ivor.ivormusic.data.VideoItem, Boolean) -> Unit)? = null,
     onPlayVideoQueue: ((com.ivor.ivormusic.data.VideoQueue) -> Unit)? = null,
     onOpenShorts: (List<com.ivor.ivormusic.data.ShortsItem>, Int) -> Unit = { _, _ -> },
     shortsEnabled: Boolean = false,
@@ -596,6 +601,7 @@ fun HomeScreen(
                             onNavigateToVideoPlayer(video)
                         },
                         onPlayVideoQueue = onPlayVideoQueue,
+                        onEnqueueVideo = onEnqueueVideo,
                         onProfileClick = onProfileClick,
                         onSongLongPress = { song -> songOptionsTarget = song },
                         contentPadding = listContentPadding,
@@ -614,6 +620,7 @@ fun HomeScreen(
                         } else if (videoMode) {
                             com.ivor.ivormusic.ui.video.SubscriptionsContent(
                                 viewModel = viewModel,
+                                onEnqueueVideo = onEnqueueVideo,
                                 onVideoClick = { video ->
                                     onNavigateToVideoPlayer(video)
                                 },
@@ -1754,6 +1761,7 @@ fun SearchContent(
      * [onVideoClick], which plays the tapped video alone.
      */
     onPlayVideoQueue: ((com.ivor.ivormusic.data.VideoQueue) -> Unit)? = null,
+    onEnqueueVideo: ((com.ivor.ivormusic.data.VideoItem, Boolean) -> Unit)? = null,
     onProfileClick: () -> Unit = {},
     contentPadding: PaddingValues,
     viewModel: HomeViewModel,
@@ -1807,6 +1815,7 @@ fun SearchContent(
                     viewedVideoPlaylist = videoPlaylist
                 },
                 onProfileClick = onProfileClick,
+                onEnqueueVideo = onEnqueueVideo,
                 onSongLongPress = onSongLongPress,
                 contentPadding = contentPadding,
                 viewModel = viewModel,

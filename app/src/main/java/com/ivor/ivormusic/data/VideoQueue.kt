@@ -41,4 +41,91 @@ data class VideoQueue(
 
     /** The same queue at another position, clamped to the list. */
     fun at(newIndex: Int): VideoQueue = copy(index = newIndex.coerceIn(0, videos.lastIndex))
+
+    // ---------------- Editing ----------------
+    //
+    // Every edit below keeps [index] pointing at the *same video*, and that is
+    // the whole reason this arithmetic lives on the data class rather than in
+    // the ViewModel: [index] is what the player, the next/previous buttons, the
+    // "Playing from" card and the queue sheet's highlight all read, so an edit
+    // that moves the list without moving the index silently re-points playback
+    // at a different video. There is no id to fall back on either - a playlist
+    // may list the same video twice, which is why this is index-addressed in
+    // the first place.
+
+    /**
+     * Move the entry at [from] to [to].
+     *
+     * Four cases, and the three that are not "the moved row is the current one"
+     * are the ones easy to get wrong: dragging a row from above the current one
+     * to below it shifts the current up by one, and the reverse shifts it down.
+     */
+    fun moved(from: Int, to: Int): VideoQueue {
+        if (from !in videos.indices || to !in videos.indices || from == to) return this
+        val reordered = videos.toMutableList().apply { add(to, removeAt(from)) }
+        val newIndex = when {
+            index == from -> to
+            from < index && to >= index -> index - 1
+            from > index && to <= index -> index + 1
+            else -> index
+        }
+        return copy(videos = reordered, index = newIndex)
+    }
+
+    /**
+     * Drop the entry at [at].
+     *
+     * @return null when the removal is refused, which is the caller's cue to
+     * offer no control at all rather than one that fails. Two cases refuse:
+     * the last remaining entry, because a queue of nothing has no meaning while
+     * a video is still playing; and **the entry that is playing**, because
+     * video mode has no playback service to hand off to - the player would go
+     * on playing a video the queue no longer contains, and every count and
+     * control that reads [index] would be describing something else.
+     */
+    fun removedAt(at: Int): VideoQueue? {
+        if (at !in videos.indices) return null
+        if (videos.size <= 1 || at == index) return null
+        return copy(
+            videos = videos.toMutableList().apply { removeAt(at) },
+            index = if (at < index) index - 1 else index
+        )
+    }
+
+    fun canRemoveAt(at: Int): Boolean = videos.size > 1 && at != index && at in videos.indices
+
+    /** Insert [items] at [at], keeping [index] on the video that is playing. */
+    fun withInserted(items: List<VideoItem>, at: Int): VideoQueue {
+        if (items.isEmpty()) return this
+        val position = at.coerceIn(0, videos.size)
+        return copy(
+            videos = videos.toMutableList().apply { addAll(position, items) },
+            index = if (position <= index) index + items.size else index
+        )
+    }
+
+    /** Straight after what is playing: "play this next". */
+    fun withPlayingNext(items: List<VideoItem>): VideoQueue =
+        withInserted(items, index + 1)
+
+    /** At the end: "play this eventually". */
+    fun withAppended(items: List<VideoItem>): VideoQueue =
+        withInserted(items, videos.size)
+
+    companion object {
+        /**
+         * What a queue is called when the user built it by adding videos rather
+         * than by opening a playlist. [playlistId] stays null, which everything
+         * downstream already tolerates - there is no published playlist behind
+         * it to share or re-open.
+         */
+        const val AD_HOC_TITLE = "Your queue"
+
+        /** The first "add to queue" with nothing but a playing video to build on. */
+        fun adHoc(current: VideoItem, added: List<VideoItem>): VideoQueue = VideoQueue(
+            videos = listOf(current) + added,
+            index = 0,
+            title = AD_HOC_TITLE
+        )
+    }
 }

@@ -88,6 +88,7 @@ fun VideoHomeContent(
     videos: List<VideoItem>,
     isLoading: Boolean,
     onVideoClick: (VideoItem) -> Unit,
+    onEnqueueVideo: ((VideoItem, Boolean) -> Unit)? = null,
     shorts: List<ShortsItem> = emptyList(),
     onShortClick: (Int) -> Unit = {},
     onProfileClick: () -> Unit,
@@ -178,7 +179,8 @@ fun VideoHomeContent(
             isSignedOut = !isYouTubeConnected,
             onCreatePlaylist = { name, onCreated ->
                 viewModel.createLocalVideoPlaylist(name, onCreated)
-            }
+            },
+            onEnqueue = onEnqueueVideo?.let { enqueue -> { next -> enqueue(video, next) } }
         )
     }
 

@@ -1036,7 +1036,13 @@ fun VideoPlayerContent(
             isSignedOut = !isLoggedIn,
             onCreatePlaylist = { name, onCreated ->
                 viewModel.createLocalVideoPlaylist(name, onCreated)
-            }
+            },
+            // Offered on Up Next rows only. Queueing the video that is already
+            // playing has nothing to mean, and "Play next" on it would put it
+            // after itself.
+            onEnqueue = if (target.videoId != currentVideo.videoId) {
+                { playNext -> viewModel.enqueueVideo(target, playNext) }
+            } else null
         )
     }
 
@@ -1078,7 +1084,10 @@ fun VideoPlayerContent(
                     showQueueSheet = false
                 },
                 onDismiss = { showQueueSheet = false },
-                keepSystemBarsHidden = isFullscreen
+                keepSystemBarsHidden = isFullscreen,
+                onMove = { from, to -> viewModel.moveQueueItem(from, to) },
+                onRemove = { index -> viewModel.removeQueueItem(index) },
+                onUndoRemove = { viewModel.undoQueueRemoval() }
             )
         }
     }

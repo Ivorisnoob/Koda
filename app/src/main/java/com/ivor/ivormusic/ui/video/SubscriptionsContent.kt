@@ -106,6 +106,7 @@ import com.ivor.ivormusic.util.fuzzyScore
 fun SubscriptionsContent(
     viewModel: HomeViewModel,
     onVideoClick: (VideoItem) -> Unit,
+    onEnqueueVideo: ((VideoItem, Boolean) -> Unit)? = null,
     onLoginClick: () -> Unit,
     contentPadding: PaddingValues,
     onManageSubscriptions: () -> Unit = {},
@@ -269,7 +270,8 @@ fun SubscriptionsContent(
             isSignedOut = !isYouTubeConnected,
             onCreatePlaylist = { name, onCreated ->
                 viewModel.createLocalVideoPlaylist(name, onCreated)
-            }
+            },
+            onEnqueue = onEnqueueVideo?.let { enqueue -> { next -> enqueue(video, next) } }
         )
     }
 

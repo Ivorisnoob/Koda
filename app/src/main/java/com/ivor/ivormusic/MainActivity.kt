@@ -543,6 +543,9 @@ fun MusicApp(
                     onPlayVideoQueue = { queue ->
                         videoPlayerViewModel.playQueue(queue)
                     },
+                    onEnqueueVideo = { video, playNext ->
+                        videoPlayerViewModel.enqueueVideo(video, playNext)
+                    },
                     onOpenShorts = { shorts, index ->
                         // Shorts take over the screen; pause the video player
                         // so the two ExoPlayers don't fight for audio focus

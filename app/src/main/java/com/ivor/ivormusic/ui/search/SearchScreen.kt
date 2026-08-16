@@ -189,6 +189,8 @@ fun SearchScreen(
     onPlayQueue: (List<Song>, Song) -> Unit = { _, song -> onSongClick(song) },
     /** Long-press a song result: opens the shared song options sheet. */
     onSongLongPress: ((Song) -> Unit)? = null,
+    /** Queue a video result, next or at the end. */
+    onEnqueueVideo: ((VideoItem, Boolean) -> Unit)? = null,
     /**
      * Play a single YouTube result and continue into its radio. Used instead of
      * [onPlayQueue] for loose result lists, where the neighbouring entries are
@@ -428,7 +430,8 @@ fun SearchScreen(
             isSignedOut = !isYouTubeConnected,
             onCreatePlaylist = { name, onCreated ->
                 viewModel.createLocalVideoPlaylist(name, onCreated)
-            }
+            },
+            onEnqueue = onEnqueueVideo?.let { enqueue -> { next -> enqueue(video, next) } }
         )
     }
 
