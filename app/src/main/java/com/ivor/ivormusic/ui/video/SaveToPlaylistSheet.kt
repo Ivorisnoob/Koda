@@ -33,6 +33,8 @@ import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.NotInterested
 import androidx.compose.material.icons.rounded.RemoveCircleOutline
 import androidx.compose.material.icons.rounded.WatchLater
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.ContainedLoadingIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -40,8 +42,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -91,7 +95,24 @@ fun SaveToPlaylistSheet(
     onDownload: () -> Unit,
     onDismiss: () -> Unit,
     onNotInterested: (() -> Unit)? = null,
-    onBlockChannel: (() -> Unit)? = null
+    onBlockChannel: (() -> Unit)? = null,
+    /**
+     * True when there is no YouTube session, which changes what the pinned row
+     * promises: Watch Later is then the device's own list rather than the
+     * account's, and saying so is the difference between a save the user can
+     * find again and one they will go looking for on youtube.com.
+     */
+    isSignedOut: Boolean = false,
+    /**
+     * Make a playlist without leaving the sheet. Null hides the row.
+     *
+     * Worth its place because the empty state is now reachable: signed out
+     * there are no account playlists to list, and sending someone to the
+     * Library tab to create one before they can save the video they are
+     * looking at is exactly the three-taps-deep detour that makes a control
+     * feel broken.
+     */
+    onCreatePlaylist: ((name: String, onCreated: (String?) -> Unit) -> Unit)? = null
 ) {
     // Open fully expanded: in the half-expanded state the inner playlist
     // list and the sheet's drag-to-expand fight over scroll gestures,
@@ -101,6 +122,7 @@ fun SaveToPlaylistSheet(
     var savingId by remember { mutableStateOf<String?>(null) }
     var savedId by remember { mutableStateOf<String?>(null) }
     var failedId by remember { mutableStateOf<String?>(null) }
+    var showCreateDialog by remember { mutableStateOf(false) }
 
     // Let the check linger for a beat, then close on success
     LaunchedEffect(savedId) {
@@ -125,6 +147,20 @@ fun SaveToPlaylistSheet(
             savingId = null
             if (ok) savedId = id else failedId = id
         }
+    }
+
+    if (showCreateDialog && onCreatePlaylist != null) {
+        NewPlaylistDialog(
+            onDismiss = { showCreateDialog = false },
+            onCreate = { name ->
+                showCreateDialog = false
+                // Save straight into it: the only reason to make a playlist
+                // from this sheet is to put this video in it, and leaving the
+                // user to then find the new row would be the sheet ignoring
+                // what it was just asked for.
+                onCreatePlaylist(name) { newId -> if (newId != null) save(newId) }
+            }
+        )
     }
 
     ModalBottomSheet(
@@ -154,10 +190,12 @@ fun SaveToPlaylistSheet(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Watch Later, pinned hero row
+            // Watch Later, pinned hero row. Signed out this is the device's own
+            // list, not the account's, and the subtitle says so.
             SaveTargetRow(
                 title = "Watch Later",
-                subtitle = "Saved for when you have time",
+                subtitle = if (isSignedOut) "Kept on this device"
+                    else "Saved for when you have time",
                 state = rowState("WL"),
                 hero = true,
                 onClick = { save("WL") },
@@ -197,10 +235,14 @@ fun SaveToPlaylistSheet(
                 }
                 playlists.isEmpty() -> {
                     Text(
-                        text = "No playlists yet",
+                        text = if (onCreatePlaylist != null) {
+                            "None yet. Make one and this video goes straight into it."
+                        } else {
+                            "No playlists yet"
+                        },
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(vertical = 16.dp)
+                        modifier = Modifier.padding(vertical = 12.dp)
                     )
                 }
                 else -> {
@@ -244,6 +286,11 @@ fun SaveToPlaylistSheet(
                 }
             }
 
+            if (onCreatePlaylist != null) {
+                Spacer(modifier = Modifier.height(8.dp))
+                NewPlaylistRow(onClick = { showCreateDialog = true })
+            }
+
             if (onNotInterested != null || onBlockChannel != null) {
                 Spacer(modifier = Modifier.height(20.dp))
                 Text(
@@ -279,6 +326,116 @@ fun SaveToPlaylistSheet(
                         }
                     )
                 }
+            }
+        }
+    }
+}
+
+/**
+ * Name-only dialog for a playlist made from the save sheet.
+ *
+ * Deliberately not the Library's create dialog: there is no store to pick here.
+ * A playlist created mid-save is a device one, because the sheet is reachable
+ * signed out and because the video it was opened on is going into it either
+ * way.
+ */
+@Composable
+private fun NewPlaylistDialog(
+    onDismiss: () -> Unit,
+    onCreate: (String) -> Unit
+) {
+    var name by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = RoundedCornerShape(32.dp),
+        title = { Text("New playlist") },
+        text = {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text("Name") },
+                singleLine = true,
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth()
+            )
+        },
+        confirmButton = {
+            Button(onClick = { onCreate(name) }, enabled = name.isNotBlank()) {
+                Text("Create")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
+}
+
+/**
+ * "New playlist", styled as a dashed-quiet peer of the save rows rather than a
+ * filled one: it is a way to get a target, not a target.
+ */
+@Composable
+private fun NewPlaylistRow(onClick: () -> Unit) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.97f else 1f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
+        label = "newPlaylistRowScale"
+    )
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .scale(scale)
+            .clip(RoundedCornerShape(16.dp))
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick
+            ),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Add,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(14.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "New playlist",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = "Kept on this device",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
         }
     }

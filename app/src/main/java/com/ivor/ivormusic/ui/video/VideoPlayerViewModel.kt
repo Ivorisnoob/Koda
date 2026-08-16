@@ -60,6 +60,12 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     private val themePreferences = ThemePreferences(context)
     private val videoHistoryRepository = com.ivor.ivormusic.data.VideoHistoryRepository(context)
 
+    // Device-held video playlists. Its state is process-wide, so a save taken
+    // here shows up in the Library tab's own HomeViewModel without either of
+    // them knowing about the other.
+    private val localVideoPlaylistsRepository =
+        com.ivor.ivormusic.data.LocalVideoPlaylistsRepository(context)
+
     // Player Instance
     private var _exoPlayer: ExoPlayer? = null
     val exoPlayer: ExoPlayer? get() = _exoPlayer
@@ -444,8 +450,20 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
     // ---------------- Save to playlist (Watch Later) ----------------
 
+    // The account's own; the device's are merged in by [videoPlaylists] below.
     private val _videoPlaylists = MutableStateFlow<List<com.ivor.ivormusic.data.VideoPlaylist>>(emptyList())
-    val videoPlaylists: StateFlow<List<com.ivor.ivormusic.data.VideoPlaylist>> = _videoPlaylists.asStateFlow()
+
+    /**
+     * Everything the save sheet can save into, device playlists first. Mirrors
+     * `HomeViewModel.videoPlaylists`, because the sheet is opened from both and
+     * must offer the same targets either way.
+     */
+    val videoPlaylists: StateFlow<List<com.ivor.ivormusic.data.VideoPlaylist>> = combine(
+        localVideoPlaylistsRepository.playlists,
+        _videoPlaylists
+    ) { local, account ->
+        local.map { it.toVideoPlaylist() } + account
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private val _isVideoPlaylistsLoading = MutableStateFlow(false)
     val isVideoPlaylistsLoading: StateFlow<Boolean> = _isVideoPlaylistsLoading.asStateFlow()
@@ -1782,14 +1800,40 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     }
 
     /**
-     * Add a video to a YouTube playlist ("WL" = Watch Later). Reports the
-     * outcome on the main thread so the save sheet can show inline feedback.
-     * Requires login.
+     * Add a video to a playlist. Reports the outcome on the main thread so the
+     * save sheet can show inline feedback.
+     *
+     * Same three-way routing as `HomeViewModel.addVideoToPlaylist`: a device
+     * playlist, the device's Watch Later while signed out, or the account.
+     * Duplicated rather than shared because the two ViewModels have no common
+     * base and no DI to hand one an instance of the other; the store underneath
+     * is process-wide, so both see the same list either way.
      */
     fun addVideoToPlaylist(playlistId: String, video: VideoItem, onResult: (Boolean) -> Unit) {
         viewModelScope.launch {
-            onResult(youtubeRepository.addToYouTubePlaylist(playlistId, video.videoId, music = false))
+            val local = com.ivor.ivormusic.data.LocalVideoPlaylistsRepository
+            onResult(
+                when {
+                    local.isLocal(playlistId) ->
+                        localVideoPlaylistsRepository.addVideo(playlistId, video)
+                    playlistId == "WL" && !_isLoggedIn.value ->
+                        localVideoPlaylistsRepository.addVideo(
+                            localVideoPlaylistsRepository.ensureWatchLater(),
+                            video
+                        )
+                    else -> youtubeRepository.addToYouTubePlaylist(
+                        playlistId,
+                        video.videoId,
+                        music = false
+                    )
+                }
+            )
         }
+    }
+
+    /** Create a playlist on the device, from the save sheet. */
+    fun createLocalVideoPlaylist(name: String, onCreated: (String?) -> Unit) {
+        viewModelScope.launch { onCreated(localVideoPlaylistsRepository.create(name)) }
     }
 
     // ---------------- Channel page ----------------

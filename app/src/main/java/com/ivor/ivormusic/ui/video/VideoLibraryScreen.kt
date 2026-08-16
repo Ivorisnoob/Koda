@@ -46,6 +46,7 @@ import androidx.compose.material.icons.rounded.BookmarkAdded
 import androidx.compose.material.icons.rounded.BookmarkRemove
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Login
 import androidx.compose.material.icons.rounded.MoreVert
@@ -65,6 +66,9 @@ import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -89,6 +93,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.ivor.ivormusic.data.LocalVideoPlaylistsRepository
 import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.data.VideoPlaylist
 import com.ivor.ivormusic.ui.components.ExpressivePullToRefresh
@@ -171,8 +176,13 @@ fun VideoLibraryContent(
                     viewModel.loadPlaylistVideos(playlist.playlistId)
                     page = LibraryPage.Playlist(playlist)
                 },
-                onCreatePlaylist = { name -> viewModel.createVideoPlaylist(name) },
+                onCreatePlaylist = { name, onDevice ->
+                    viewModel.createVideoPlaylist(name, onDevice)
+                },
                 onDeletePlaylist = { playlist -> viewModel.deleteVideoPlaylist(playlist.playlistId) },
+                onRenamePlaylist = { playlist, name ->
+                    viewModel.renameLocalVideoPlaylist(playlist.playlistId, name)
+                },
                 onRemoveSavedPlaylist = { playlist ->
                     viewModel.removeSavedPlaylist(playlist.playlistId)
                 },
@@ -249,8 +259,10 @@ private fun LibraryRoot(
     onLoginClick: () -> Unit,
     onOpenHistory: () -> Unit,
     onOpenPlaylist: (VideoPlaylist) -> Unit,
-    onCreatePlaylist: (String) -> Unit,
+    /** Name, and whether it goes on the device rather than to the account. */
+    onCreatePlaylist: (String, Boolean) -> Unit,
     onDeletePlaylist: (VideoPlaylist) -> Unit,
+    onRenamePlaylist: (VideoPlaylist, String) -> Unit,
     onRemoveSavedPlaylist: (VideoPlaylist) -> Unit,
     onRefresh: () -> Unit,
     contentPadding: PaddingValues,
@@ -260,9 +272,10 @@ private fun LibraryRoot(
 
     if (showCreateDialog) {
         CreateVideoPlaylistDialog(
+            canUseAccount = isLoggedIn,
             onDismiss = { showCreateDialog = false },
-            onCreate = { name ->
-                onCreatePlaylist(name)
+            onCreate = { name, onDevice ->
+                onCreatePlaylist(name, onDevice)
                 showCreateDialog = false
             }
         )
@@ -361,15 +374,14 @@ private fun LibraryRoot(
                 }
             }
 
-            // Playlists
+            // Playlists. Creating one no longer needs a session: signed out it
+            // goes on the device, which is the whole point of the local store.
             item {
                 SectionHeader(
                     title = "Your Playlists",
-                    actionLabel = if (isLoggedIn) "New" else null,
+                    actionLabel = "New",
                     actionIcon = Icons.Rounded.Add,
-                    onAction = if (isLoggedIn) {
-                        { showCreateDialog = true }
-                    } else null
+                    onAction = { showCreateDialog = true }
                 )
             }
             // Saved ones lead, the way they do in the music Library grid: not
@@ -387,12 +399,10 @@ private fun LibraryRoot(
             }
 
             when {
-                // Signed out only the account half is unreachable. The saved
-                // rows above are still there, so the invitation goes underneath
-                // what the user already has instead of replacing it.
-                !isLoggedIn -> item { LibraryLoginCard(onLoginClick = onLoginClick) }
-
-                isPlaylistsLoading && playlists.isEmpty() -> item {
+                // The skeleton stands in for the account fetch only. Signed out
+                // there is nothing in flight, so an empty list is the answer
+                // rather than a wait.
+                isLoggedIn && isPlaylistsLoading && playlists.isEmpty() -> item {
                     SkeletonList(
                         count = 4,
                         modifier = Modifier.padding(horizontal = 16.dp),
@@ -408,20 +418,32 @@ private fun LibraryRoot(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = "No playlists yet",
+                            text = "No playlists yet. Tap New to make one.",
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
 
                 else -> items(playlists, key = { it.playlistId }) { playlist ->
+                    val isLocal = LocalVideoPlaylistsRepository.isLocal(playlist.playlistId)
                     PlaylistRow(
                         playlist = playlist,
                         onClick = { onOpenPlaylist(playlist) },
                         onDelete = { onDeletePlaylist(playlist) },
+                        isLocal = isLocal,
+                        onRename = if (isLocal) {
+                            { name -> onRenamePlaylist(playlist, name) }
+                        } else null,
                         modifier = Modifier.padding(horizontal = 16.dp)
                     )
                 }
+            }
+
+            // Signed out only the account half is unreachable. Device playlists
+            // and saved rows are above, so the invitation goes underneath what
+            // the user already has instead of replacing it.
+            if (!isLoggedIn) {
+                item { LibraryLoginCard(onLoginClick = onLoginClick) }
             }
 
             item { Spacer(modifier = Modifier.height(32.dp)) }
@@ -462,16 +484,97 @@ private fun SectionHeader(
     }
 }
 
+/**
+ * Name a new playlist and choose where it lives.
+ *
+ * The selector only appears when there is an account to choose, because with
+ * one option a segmented control is a label pretending to be a control. Signed
+ * in the default stays YouTube, which is what this button has always made and
+ * what syncs everywhere; signed out the device is the only answer and the
+ * dialog says so in a line of helper text rather than a disabled toggle.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun CreateVideoPlaylistDialog(
+    canUseAccount: Boolean,
     onDismiss: () -> Unit,
-    onCreate: (String) -> Unit
+    onCreate: (name: String, onDevice: Boolean) -> Unit
 ) {
     var name by remember { mutableStateOf("") }
+    var onDevice by remember { mutableStateOf(!canUseAccount) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = RoundedCornerShape(32.dp),
         title = { Text("New playlist") },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Name") },
+                    singleLine = true,
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                if (canUseAccount) {
+                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                        SegmentedButton(
+                            selected = !onDevice,
+                            onClick = { onDevice = false },
+                            shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
+                        ) { Text("YouTube") }
+                        SegmentedButton(
+                            selected = onDevice,
+                            onClick = { onDevice = true },
+                            shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
+                        ) { Text("This device") }
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+                Text(
+                    text = if (onDevice) {
+                        "Stays on this phone. Works signed out, and is not visible on youtube.com."
+                    } else {
+                        "Added to your YouTube account, so it shows up everywhere you are signed in."
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onCreate(name, onDevice) },
+                enabled = name.isNotBlank()
+            ) {
+                Text("Create")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+/** Rename a device playlist. Pre-filled and selected, so it is one keystroke. */
+@Composable
+private fun RenamePlaylistDialog(
+    currentName: String,
+    onDismiss: () -> Unit,
+    onRename: (String) -> Unit
+) {
+    var name by remember { mutableStateOf(currentName) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = RoundedCornerShape(32.dp),
+        title = { Text("Rename playlist") },
         text = {
             OutlinedTextField(
                 value = name,
@@ -484,16 +587,14 @@ private fun CreateVideoPlaylistDialog(
         },
         confirmButton = {
             Button(
-                onClick = { onCreate(name) },
-                enabled = name.isNotBlank()
+                onClick = { onRename(name) },
+                enabled = name.isNotBlank() && name.trim() != currentName
             ) {
-                Text("Create")
+                Text("Rename")
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
-            }
+            TextButton(onClick = onDismiss) { Text("Cancel") }
         }
     )
 }
@@ -615,16 +716,44 @@ private fun PlaylistRow(
      * instead.
      */
     isSaved: Boolean = false,
-    onRemoveSaved: (() -> Unit)? = null
+    onRemoveSaved: (() -> Unit)? = null,
+    /**
+     * Held on this device. Changes what the delete confirmation claims, and
+     * adds Rename: the account's own playlists are renamed through YouTube and
+     * this app has never offered that, but a device playlist has nowhere else
+     * to be renamed from.
+     */
+    isLocal: Boolean = false,
+    onRename: ((String) -> Unit)? = null
 ) {
     var showMenu by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
+    var showRenameDialog by remember { mutableStateOf(false) }
+
+    if (showRenameDialog && onRename != null) {
+        RenamePlaylistDialog(
+            currentName = playlist.title,
+            onDismiss = { showRenameDialog = false },
+            onRename = {
+                showRenameDialog = false
+                onRename(it)
+            }
+        )
+    }
 
     if (showDeleteConfirm) {
         AlertDialog(
             onDismissRequest = { showDeleteConfirm = false },
             title = { Text("Delete playlist?") },
-            text = { Text("This will permanently remove \"${playlist.title}\" from your YouTube account.") },
+            text = {
+                Text(
+                    if (isLocal) {
+                        "This will permanently delete \"${playlist.title}\" from this device."
+                    } else {
+                        "This will permanently remove \"${playlist.title}\" from your YouTube account."
+                    }
+                )
+            },
             confirmButton = {
                 TextButton(onClick = {
                     showDeleteConfirm = false
@@ -787,6 +916,18 @@ private fun PlaylistRow(
                         expanded = showMenu,
                         onDismissRequest = { showMenu = false }
                     ) {
+                        if (onRename != null) {
+                            DropdownMenuItem(
+                                text = { Text("Rename") },
+                                onClick = {
+                                    showMenu = false
+                                    showRenameDialog = true
+                                },
+                                leadingIcon = {
+                                    Icon(Icons.Rounded.Edit, contentDescription = null)
+                                }
+                            )
+                        }
                         DropdownMenuItem(
                             text = { Text("Delete playlist") },
                             onClick = {
@@ -919,7 +1060,11 @@ fun VideoPlaylistDetail(
     val savedPlaylistIds by viewModel.savedVideoPlaylistIds.collectAsState()
     val accountPlaylists by viewModel.videoPlaylists.collectAsState()
     val isSaved = playlist.playlistId in savedPlaylistIds
-    val canSave = playlist.playlistId !in NON_SAVABLE_VIDEO_PLAYLIST_IDS &&
+    // A device playlist is already the user's own and has no published page
+    // behind it, so keeping a reference to it would mean nothing.
+    val isLocal = LocalVideoPlaylistsRepository.isLocal(playlist.playlistId)
+    val canSave = !isLocal &&
+        playlist.playlistId !in NON_SAVABLE_VIDEO_PLAYLIST_IDS &&
         (isSaved || accountPlaylists.none { it.playlistId == playlist.playlistId })
     val haptics = LocalHapticFeedback.current
 
@@ -928,9 +1073,11 @@ fun VideoPlaylistDetail(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
-        // Watch Later ("WL") and Liked ("LL") are private, non-shareable feeds;
-        // only real YouTube playlists have a public URL.
-        val isShareable = playlist.playlistId != "WL" && playlist.playlistId != "LL"
+        // Watch Later ("WL") and Liked ("LL") are private, non-shareable feeds,
+        // and a device playlist was never published at all; only real YouTube
+        // playlists have a public URL.
+        val isShareable = !isLocal &&
+            playlist.playlistId != "WL" && playlist.playlistId != "LL"
         SubPageTopBar(
             title = playlist.title,
             onBack = onBack,

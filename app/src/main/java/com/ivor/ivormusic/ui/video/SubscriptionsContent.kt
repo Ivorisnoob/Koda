@@ -147,13 +147,10 @@ fun SubscriptionsContent(
     val isVideoPlaylistsLoading by viewModel.isVideoPlaylistsLoading.collectAsState()
 
     fun onVideoLongPress(video: VideoItem) {
-        if (isYouTubeConnected) {
-            viewModel.loadVideoPlaylists()
-            saveTargetVideo = video
-        } else {
-            // Saving needs a YouTube session; route to the sign-in flow
-            onLoginClick()
-        }
+        // No sign-in wall: the sheet always has device playlists to offer, and
+        // only the account's half needs a session to fetch.
+        if (isYouTubeConnected) viewModel.loadVideoPlaylists()
+        saveTargetVideo = video
     }
 
     // Internal navigation: feed -> (channel list) -> channel uploads
@@ -268,7 +265,11 @@ fun SubscriptionsContent(
             // deliberately follows, from the feed that exists to show it, is a
             // contradiction. Unfollowing is the tool for that, and it is one
             // tap away in the same tab.
-            onBlockChannel = null
+            onBlockChannel = null,
+            isSignedOut = !isYouTubeConnected,
+            onCreatePlaylist = { name, onCreated ->
+                viewModel.createLocalVideoPlaylist(name, onCreated)
+            }
         )
     }
 

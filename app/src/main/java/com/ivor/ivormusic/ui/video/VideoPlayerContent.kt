@@ -908,10 +908,11 @@ fun VideoPlayerContent(
                             showCommentsSheet = true
                         },
                         onSaveClick = {
-                            requireLogin {
-                                viewModel.loadVideoPlaylists()
-                                saveTargetVideo = currentVideo
-                            }
+                            // No sign-in wall: device playlists are always a
+                            // valid target, so only the account's half waits
+                            // on a session.
+                            if (isLoggedIn) viewModel.loadVideoPlaylists()
+                            saveTargetVideo = currentVideo
                         },
                         onChannelClick = {
                             viewModel.loadChannelVideos()
@@ -919,10 +920,8 @@ fun VideoPlayerContent(
                         },
                         onSeekTo = { seconds -> exoPlayer.seekTo(seconds * 1000L) },
                         onRelatedLongPress = { related ->
-                            requireLogin {
-                                viewModel.loadVideoPlaylists()
-                                saveTargetVideo = related
-                            }
+                            if (isLoggedIn) viewModel.loadVideoPlaylists()
+                            saveTargetVideo = related
                         },
                         queue = queue,
                         onOpenQueue = { showQueueSheet = true },
@@ -1033,7 +1032,11 @@ fun VideoPlayerContent(
             onNotInterested = if (target.videoId != currentVideo.videoId) {
                 { viewModel.markNotInterested(target) }
             } else null,
-            onBlockChannel = { viewModel.blockChannelFor(target) }
+            onBlockChannel = { viewModel.blockChannelFor(target) },
+            isSignedOut = !isLoggedIn,
+            onCreatePlaylist = { name, onCreated ->
+                viewModel.createLocalVideoPlaylist(name, onCreated)
+            }
         )
     }
 

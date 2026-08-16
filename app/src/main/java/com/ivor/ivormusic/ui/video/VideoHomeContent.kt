@@ -123,13 +123,10 @@ fun VideoHomeContent(
     val isVideoPlaylistsLoading by viewModel.isVideoPlaylistsLoading.collectAsState()
 
     fun onVideoLongPress(video: VideoItem) {
-        if (isYouTubeConnected) {
-            viewModel.loadVideoPlaylists()
-            saveTargetVideo = video
-        } else {
-            // Saving needs a YouTube session; route to the sign-in flow
-            onProfileClick()
-        }
+        // No sign-in wall: the sheet always has device playlists to offer, and
+        // only the account's half needs a session to fetch.
+        if (isYouTubeConnected) viewModel.loadVideoPlaylists()
+        saveTargetVideo = video
     }
 
     // Animation state for staggered entry
@@ -177,7 +174,11 @@ fun VideoHomeContent(
             },
             onDismiss = { saveTargetVideo = null },
             onNotInterested = { viewModel.markNotInterested(video) },
-            onBlockChannel = { viewModel.blockChannelFor(video) }
+            onBlockChannel = { viewModel.blockChannelFor(video) },
+            isSignedOut = !isYouTubeConnected,
+            onCreatePlaylist = { name, onCreated ->
+                viewModel.createLocalVideoPlaylist(name, onCreated)
+            }
         )
     }
 
