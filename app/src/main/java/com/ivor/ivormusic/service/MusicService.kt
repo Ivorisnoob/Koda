@@ -62,7 +62,21 @@ class MusicService : MediaLibraryService() {
 
     // --- Components ---
     private var mediaLibrarySession: MediaLibrarySession? = null
-    private lateinit var player: ExoPlayer
+
+    /**
+     * Two engines alternating whole tracks, so a crossfade is a real overlap.
+     * See [CrossfadeEngine]; the rest of this service talks to [player], which
+     * is whichever of the two is currently audible.
+     */
+    private lateinit var engine: CrossfadeEngine
+    private lateinit var audioFocus: AudioFocusController
+
+    /**
+     * The audible engine. Everything outside the transition itself addresses
+     * this, so the two-player split stays invisible to the queue, the session
+     * callbacks, the sleep timer and Android Auto.
+     */
+    private val player: ExoPlayer get() = engine.active
     // Pinned at player creation and broadcast so external equalizer apps can
     // attach to Koda's playback
     private var audioSessionId: Int = C.AUDIO_SESSION_ID_UNSET
@@ -123,6 +137,7 @@ class MusicService : MediaLibraryService() {
     @Volatile private var isCacheEnabled = true
     private var fadeVolumeJob: Job? = null
     private var progressJob: Job? = null
+    private var transitionJob: Job? = null
 
     // Live Update (Android 16+)
     private var musicProgressLiveUpdate: MusicProgressLiveUpdate? = null
@@ -154,6 +169,20 @@ class MusicService : MediaLibraryService() {
         // Stream head pre-cached for upcoming songs: ~30s of opus audio, enough
         // to cover the 0.5s start buffer plus the first ranged chunk's RTT.
         private const val WARM_CACHE_BYTES = 512L * 1024
+
+        /**
+         * The short ramp a manual skip and a non-overlapped advance get.
+         * Long enough not to click, short enough that pressing next still
+         * feels immediate.
+         */
+        private const val SKIP_FADE_MS = 300L
+
+        /**
+         * How often the transition watcher checks whether the outgoing track
+         * has entered its fade window. Fine enough to place the start of a
+         * fade, which the one-second progress tick never was.
+         */
+        private const val TRANSITION_POLL_MS = 200L
 
         // Re-resolution attempts before a song is skipped. A dead or expired URL
         // is fixed by the first retry or not at all, so the general ceiling stays
@@ -317,7 +346,9 @@ class MusicService : MediaLibraryService() {
         Log.i(TAG, "MusicService Destroying...")
         fadeVolumeJob?.cancel()
         progressJob?.cancel()
+        transitionJob?.cancel()
         sleepTimerJob?.cancel()
+        audioFocus.abandon()
         // Cancel the scopes themselves — they host the preference collectors and
         // any in-flight resolutions, which would otherwise outlive the service.
         serviceScope.cancel()
@@ -331,7 +362,7 @@ class MusicService : MediaLibraryService() {
             })
         }
         mediaLibrarySession?.run {
-            player.release()
+            engine.release()
             release()
             mediaLibrarySession = null
         }
@@ -433,28 +464,52 @@ class MusicService : MediaLibraryService() {
             }
         }
 
-        player = ExoPlayer.Builder(this)
-            .setRenderersFactory(renderersFactory)
-            .setMediaSourceFactory(
-                DefaultMediaSourceFactory(this).setDataSourceFactory(smartDataSourceFactory)
-            )
-            .setLoadControl(loadControl)
-            .setAudioAttributes(AudioAttributes.DEFAULT, true)
-            .setHandleAudioBecomingNoisy(true)
-            .build()
+        // Built twice, identically. `handleAudioFocus = false` on both is
+        // load-bearing: two players each managing their own focus are two
+        // clients, and the second one requesting makes the first receive
+        // AUDIOFOCUS_LOSS and pause itself - which during a crossfade is the
+        // outgoing track dying exactly when the incoming one starts. Focus is
+        // owned by [audioFocus] instead.
+        val buildPlayer: () -> ExoPlayer = {
+            ExoPlayer.Builder(this)
+                .setRenderersFactory(renderersFactory)
+                .setMediaSourceFactory(
+                    DefaultMediaSourceFactory(this).setDataSourceFactory(smartDataSourceFactory)
+                )
+                .setLoadControl(loadControl)
+                .setAudioAttributes(AudioAttributes.DEFAULT, false)
+                .setHandleAudioBecomingNoisy(true)
+                .build()
+        }
 
-        player.addListener(PlayerEventListener())
+        engine = CrossfadeEngine(
+            scope = serviceScope,
+            playerFactory = buildPlayer,
+            onActiveChanged = { newActive -> onEngineSwapped(newActive) },
+            gainFor = { p -> gainForPlayer(p) },
+        )
+
+        audioFocus = AudioFocusController(
+            context = this,
+            onPause = { engine.active.pause() },
+            onResume = { engine.active.play() },
+            onDuck = { gain -> engine.duckGain = gain },
+        )
+
+        engine.setActiveListener(PlayerEventListener())
 
         // Pin a known audio session id and announce it to the system, so
         // external equalizer apps (Poweramp Equalizer, Wavelet, the OEM EQ)
         // can attach their effects to Koda's music playback. Generating the
         // id ourselves means it exists before the audio sink initializes on
         // first playback (ExoPlayer's own id stays UNSET until then).
+        // Both engines take the same id, or the equalizer would drop out on
+        // alternate tracks.
         val audioManager = getSystemService(AUDIO_SERVICE) as android.media.AudioManager
         val generatedSessionId = audioManager.generateAudioSessionId()
         if (generatedSessionId != android.media.AudioManager.ERROR) {
             audioSessionId = generatedSessionId
-            player.audioSessionId = generatedSessionId
+            engine.setAudioSessionId(generatedSessionId)
             val intent = Intent(AudioEffect.ACTION_OPEN_AUDIO_EFFECT_CONTROL_SESSION).apply {
                 putExtra(AudioEffect.EXTRA_AUDIO_SESSION, generatedSessionId)
                 putExtra(AudioEffect.EXTRA_PACKAGE_NAME, packageName)
@@ -471,7 +526,7 @@ class MusicService : MediaLibraryService() {
             PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         }
 
-        mediaLibrarySession = MediaLibrarySession.Builder(this, player, LibrarySessionCallback())
+        mediaLibrarySession = MediaLibrarySession.Builder(this, engine.active, LibrarySessionCallback())
             .setSessionActivity(sessionIntent)
             .build()
     }
@@ -524,11 +579,24 @@ class MusicService : MediaLibraryService() {
             // real URI is in place.
             refreshTrackGain(applyNow = false)
 
-            // 2. Crossfade Logic
-            if (isCrossfadeEnabled && reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) {
-                performFadeIn()
+            // 1b. An automatic advance while a fade is running means the
+            // outgoing track ended before the overlap finished - the guard at
+            // the end of the fade window lost a race with a stall or a short
+            // file. Drop the overlap rather than swap onto a player the queue
+            // has already moved past, which would play the same track twice.
+            if (engine.isFading && reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) {
+                Log.w(TAG, "Advance beat the crossfade; dropping the overlap")
+                engine.cancelTransition()
+            }
+
+            // 2. Volume for the new track. An automatic advance that reaches
+            // here is one the engine did *not* overlap - crossfade off, an
+            // unresolved next item, repeat-one - so it gets the same short ramp
+            // a manual skip does rather than a bare cut.
+            if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT) {
+                player.volume = trackGain * engine.duckGain
             } else {
-                player.volume = trackGain
+                performSkipFadeIn()
             }
 
             // 2. Critical: Check validity of CURRENT item
@@ -590,10 +658,22 @@ class MusicService : MediaLibraryService() {
             // resulting in N concurrent loops fighting over crossfade volume and
             // spamming the Live Update notification.
             if (isPlaying) {
+                // Focus is the service's, not the players' - see
+                // AudioFocusController. Requested here rather than on the play
+                // command so it covers every route into playback, including the
+                // session callbacks and Android Auto.
+                audioFocus.request()
                 monitorProgress()
+                monitorTransitions()
             } else {
                 progressJob?.cancel()
                 progressJob = null
+                // A pause mid-overlap would leave the standby running under a
+                // stopped session. Drop the transition and keep the track that
+                // is actually on screen.
+                engine.cancelTransition()
+                transitionJob?.cancel()
+                transitionJob = null
                 musicProgressLiveUpdate?.hide()
             }
         }
@@ -1368,32 +1448,105 @@ class MusicService : MediaLibraryService() {
      *   False while a fade owns the volume, since the ramp reads [trackGain]
      *   on every step and would fight a write landing mid-ramp.
      */
+    /**
+     * The loudness correction for whatever [p] is playing.
+     *
+     * Takes the player rather than reading the active one, because during a
+     * transition the two engines are on different tracks and each needs its
+     * own correction - that is the whole reason the engine asks per player
+     * instead of being handed a single number.
+     */
+    private fun gainForPlayer(p: ExoPlayer): Float {
+        val videoId = p.currentMediaItem?.mediaId ?: return 1f
+        if (!isNormalizeVolumeEnabled) return 1f
+        return TrackLoudnessStore.gainFor(this, videoId)
+    }
+
     private fun refreshTrackGain(applyNow: Boolean) {
-        val videoId = player.currentMediaItem?.mediaId
-        trackGain = if (isNormalizeVolumeEnabled && videoId != null) {
-            TrackLoudnessStore.gainFor(this, videoId)
-        } else {
-            1f
-        }
-        if (applyNow && fadeVolumeJob?.isActive != true) {
-            player.volume = trackGain
+        trackGain = gainForPlayer(player)
+        if (applyNow) engine.applyIdleVolumes()
+    }
+
+    /**
+     * The short ramp a *manual* skip gets.
+     *
+     * Deliberately not the full crossfade: a three second overlap on a skip
+     * makes the app feel unresponsive when the user has just asked for the next
+     * song now. Deliberately not a hard cut either, which is jarring when every
+     * automatic transition is smooth. Equal power like the real thing, so the
+     * two never sound like different effects.
+     */
+    private fun performSkipFadeIn() {
+        fadeVolumeJob?.cancel()
+        val target = player
+        fadeVolumeJob = serviceScope.launch {
+            val gain = gainForPlayer(target)
+            val steps = (SKIP_FADE_MS / 16L).toInt().coerceAtLeast(4)
+            for (i in 1..steps) {
+                val angle = (i.toFloat() / steps) * (Math.PI.toFloat() / 2f)
+                target.volume = gain * kotlin.math.sin(angle) * engine.duckGain
+                delay(SKIP_FADE_MS / steps)
+            }
+            target.volume = gain * engine.duckGain
         }
     }
 
-    private fun performFadeIn() {
-        fadeVolumeJob?.cancel()
-        fadeVolumeJob = serviceScope.launch {
-            player.volume = 0f
-            val steps = 20
-            val stepTime = crossfadeDurationMs / steps
-            for (i in 1..steps) {
-                // Scaled by the correction rather than ramping to 1.0: this
-                // ramp lands exactly where the track should sit for its whole
-                // duration, so it must end at the corrected level.
-                player.volume = trackGain * (i / steps.toFloat())
-                delay(stepTime)
+    /**
+     * A transition finished and the session now points at the other engine.
+     *
+     * The incoming player never emits `onMediaItemTransition` - it was handed
+     * its item directly rather than advancing into it - so the work that
+     * normally hangs off a transition has to be done here instead, or the queue
+     * would stop prefetching the moment the first crossfade completed.
+     */
+    private fun onEngineSwapped(newActive: ExoPlayer) {
+        mediaLibrarySession?.let { session ->
+            runCatching { session.setPlayer(newActive) }
+                .onFailure { Log.e(TAG, "Could not re-point the session", it) }
+        }
+        trackGain = gainForPlayer(newActive)
+        newActive.pauseAtEndOfMediaItems = sleepTimerEndOfTrack
+        prefetchUpcomingSongs()
+    }
+
+    /**
+     * Start the overlap when the outgoing track is within the fade window.
+     *
+     * Runs at [TRANSITION_POLL_MS] rather than off the one-second progress
+     * loop, which is too coarse to place the start of a fade and was what made
+     * the old one step audibly.
+     */
+    private fun monitorTransitions() {
+        transitionJob?.cancel()
+        transitionJob = serviceScope.launch {
+            while (isActive) {
+                delay(TRANSITION_POLL_MS)
+                if (!isCrossfadeEnabled || engine.isFading) continue
+                val current = player
+                if (!current.isPlaying) continue
+                // Repeat-one means the "next" track is this one, and an overlap
+                // of a track with itself is comb filtering, not a crossfade.
+                if (current.repeatMode == Player.REPEAT_MODE_ONE) continue
+                // The sleep timer wants this track to be the last one; starting
+                // the next would be the app arguing with it.
+                if (sleepTimerEndOfTrack) continue
+                if (!current.hasNextMediaItem()) continue
+
+                val duration = current.duration
+                if (duration <= 0) continue
+                val remaining = duration - current.currentPosition
+                if (remaining > crossfadeDurationMs || remaining <= 0) continue
+
+                val nextIndex = current.currentMediaItemIndex + 1
+                if (nextIndex >= current.mediaItemCount) continue
+                val nextItem = current.getMediaItemAt(nextIndex)
+                // An unresolved item has no stream to fade in. Let the normal
+                // advance happen and let validateAndPlayCurrentItem resolve it.
+                if (isPlaceholder(nextItem.localConfiguration?.uri)) continue
+
+                val started = engine.startTransition(nextItem, crossfadeDurationMs)
+                if (started) Log.d(TAG, "Crossfade: overlapping into ${nextItem.mediaId}")
             }
-            player.volume = trackGain
         }
     }
     
@@ -1430,14 +1583,10 @@ class MusicService : MediaLibraryService() {
                          )
                     }
 
-                    // Crossfade Logic (Fade Out)
-                    if (isCrossfadeEnabled && duration > position) {
-                        val remaining = duration - position
-                        if (remaining <= crossfadeDurationMs) {
-                            val curve = (remaining.toFloat() / crossfadeDurationMs).coerceIn(0f, 1f)
-                            player.volume = trackGain * curve
-                        }
-                    }
+                    // The fade-out used to live here, on a one-second tick,
+                    // which gave a three second fade about three volume steps.
+                    // monitorTransitions drives it now, off the real playback
+                    // position, and the outgoing ramp belongs to CrossfadeEngine.
 
                     delay(1000)
                 }
