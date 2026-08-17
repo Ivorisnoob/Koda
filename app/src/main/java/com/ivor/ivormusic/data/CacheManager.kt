@@ -343,4 +343,39 @@ object CacheManager {
         val cache = simpleCache ?: return -1L
         return cache.getContentMetadata(contentKey).get(androidx.media3.datasource.cache.ContentMetadata.KEY_CONTENT_LENGTH, -1L)
     }
+
+    /**
+     * Every content key held in full, and how many bytes each occupies.
+     *
+     * The keys are song ids: playback reads and writes under
+     * `MediaItem`'s custom cache key (see `MusicService.buildMediaItemWithUri`),
+     * which is what makes this list mean anything to the rest of the app rather
+     * than being a set of opaque URLs.
+     *
+     * **Fully cached only, and that is the whole point.**
+     * `MusicService.warmStreamCache` writes the first 512 KB of the next three
+     * queue songs, so a partial entry means "this will start quickly", not
+     * "this plays offline". Listing those as available would promise playback
+     * that stops a few seconds in the moment the network goes.
+     *
+     * Walks the whole key set, so callers should treat it as a snapshot taken
+     * off the main thread rather than something to poll.
+     */
+    fun fullyCachedEntries(): Map<String, Long> {
+        val cache = simpleCache ?: return emptyMap()
+        return runCatching {
+            cache.keys.mapNotNull { key ->
+                val length = cache.getContentMetadata(key)
+                    .get(androidx.media3.datasource.cache.ContentMetadata.KEY_CONTENT_LENGTH, -1L)
+                if (length > 0 && cache.getCachedBytes(key, 0, length) >= length) {
+                    key to length
+                } else {
+                    null
+                }
+            }.toMap()
+        }.getOrElse {
+            Log.w(TAG, "Failed to enumerate cached keys", it)
+            emptyMap()
+        }
+    }
 }

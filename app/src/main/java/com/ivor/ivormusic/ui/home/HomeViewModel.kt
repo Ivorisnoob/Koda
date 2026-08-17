@@ -177,6 +177,31 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val _playCounts = MutableStateFlow<Map<String, Int>>(emptyMap())
     val playCounts: StateFlow<Map<String, Int>> = _playCounts.asStateFlow()
 
+    // Songs sitting in the stream cache in full, so they play with no network.
+    // See ReadyOfflineRepository for why this is a state rather than a playlist.
+    private val readyOfflineRepository =
+        com.ivor.ivormusic.data.ReadyOfflineRepository(application)
+    private val _readyOffline =
+        MutableStateFlow(com.ivor.ivormusic.data.ReadyOfflineRepository.Result())
+    val readyOffline: StateFlow<com.ivor.ivormusic.data.ReadyOfflineRepository.Result> =
+        _readyOffline.asStateFlow()
+
+    /**
+     * Re-read the cache and resolve it against the play history.
+     *
+     * Pulled rather than observed: the cache has no change notification, and
+     * polling it would mean walking every key on a timer for a list nobody is
+     * looking at. The Library refreshes it on open, which is the only place it
+     * is shown.
+     */
+    fun refreshReadyOffline() {
+        viewModelScope.launch {
+            _readyOffline.value = readyOfflineRepository.load(
+                downloadedIds = downloadedSongs.value.map { it.id }.toSet()
+            )
+        }
+    }
+
     fun refreshRecentlyPlayed(limit: Int = 15) {
         viewModelScope.launch {
             val history = statsRepository.loadHistory() // newest first

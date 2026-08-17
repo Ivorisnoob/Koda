@@ -92,7 +92,28 @@ import kotlin.math.roundToInt
  * and "LL" are assembled locally, "RTM" is the generated Supermix, and Watch
  * Later is the account's own list, already in the library by definition.
  */
-private val NON_SAVABLE_PLAYLIST_IDS = setOf("LM", "VLLM", "LL", "VLLL", "RTM", "WL", "VLWL")
+private val NON_SAVABLE_PLAYLIST_IDS =
+    setOf("LM", "VLLM", "LL", "VLLL", "RTM", "WL", "VLWL", READY_OFFLINE_ID)
+
+/**
+ * The synthetic playlist id behind "Ready offline".
+ *
+ * Deliberately not id-shaped: it never reaches YouTube, and the point of a
+ * value nothing upstream could return is that a mistake routing it somewhere
+ * that expects a real playlist id fails loudly instead of quietly fetching
+ * someone else's list.
+ */
+const val READY_OFFLINE_ID = "READY_OFFLINE"
+
+/**
+ * Playlists with no page anywhere to link to.
+ *
+ * A share url is built by pasting the id into a music.youtube.com playlist
+ * link, which for a feed assembled on this device produces a link that opens
+ * nothing. "LM" is absent because Liked Music genuinely is a YouTube playlist
+ * with that id; "RTM" and "Ready offline" are not.
+ */
+private val NON_SHAREABLE_PLAYLIST_IDS = setOf("RTM", READY_OFFLINE_ID)
 
 /**
  * The Main Library Navigation Hub.
@@ -142,7 +163,16 @@ fun LibraryContent(
 ) {
     // Navigation State
     var currentRoute by rememberSaveable { mutableStateOf(LibraryRoute.Main) }
-    
+
+    // Cached-in-full songs. Re-read whenever the tab comes back to its root,
+    // because the cache changes as a side effect of listening: songs arrive by
+    // being played and leave by being evicted, so a value collected once at
+    // first composition would be stale by the time anyone looked at it again.
+    val readyOffline by viewModel.readyOffline.collectAsState()
+    LaunchedEffect(currentRoute) {
+        if (currentRoute == LibraryRoute.Main) viewModel.refreshReadyOffline()
+    }
+
     // Arguments for routes
     var selectedPlaylist by remember { mutableStateOf<PlaylistDisplayItem?>(null) }
     var selectedArtistName by remember { mutableStateOf<String?>(null) }
@@ -201,6 +231,13 @@ fun LibraryContent(
                 },
                 onNavigateToHistory = {
                     currentRoute = LibraryRoute.History
+                },
+                readyOfflineCount = readyOffline.songs.size,
+                readyOfflineBytes = readyOffline.totalBytes,
+                readyOfflineUnnamed = readyOffline.unnamedCount,
+                readyOfflineHistoryDisabled = readyOffline.historyDisabled,
+                onReadyOfflineClick = {
+                    currentRoute = LibraryRoute.ReadyOffline
                 },
                 onSongLongPress = onSongLongPress,
                 allSongsListState = allSongsListState
@@ -305,13 +342,36 @@ fun LibraryContent(
                     contentPadding = contentPadding
                 )
             }
+            LibraryRoute.ReadyOffline -> {
+                // Same shape as the Album route: a synthetic playlist item over
+                // preloaded songs, so play-all, shuffle, search and the
+                // long-press options sheet all come for free. The sheet is what
+                // makes the list actionable - Download on a row promotes a song
+                // out of the evictable cache and into a permanent copy.
+                val readyOfflineItem = PlaylistDisplayItem(
+                    name = "Ready offline",
+                    url = READY_OFFLINE_ID,
+                    uploaderName = "On this device",
+                    itemCount = readyOffline.songs.size,
+                    thumbnailUrl = readyOffline.songs.firstOrNull()?.thumbnailUrl
+                )
+                PlaylistDetailScreen(
+                    playlist = readyOfflineItem,
+                    onBack = { currentRoute = LibraryRoute.Main },
+                    onPlayQueue = onPlayQueue,
+                    viewModel = viewModel,
+                    preloadedSongs = readyOffline.songs,
+                    isAlbum = false,
+                    onSongLongPress = onSongLongPress
+                )
+            }
         }
     }
     }
 }
 
 enum class LibraryRoute {
-    Main, Playlist, Album, Artist, Stats, History
+    Main, Playlist, Album, Artist, Stats, History, ReadyOffline
 }
 
 enum class LibraryTab(val label: String) {
@@ -348,6 +408,12 @@ fun LibraryMainScreen(
     onNavigateToAlbum: (String, List<Song>) -> Unit,
     onNavigateToStats: () -> Unit,
     onNavigateToHistory: () -> Unit,
+    /** Songs cached in full; the entry point hides itself when nothing is. */
+    readyOfflineCount: Int = 0,
+    readyOfflineBytes: Long = 0L,
+    readyOfflineUnnamed: Int = 0,
+    readyOfflineHistoryDisabled: Boolean = false,
+    onReadyOfflineClick: () -> Unit = {},
     onSongLongPress: ((Song) -> Unit)? = null,
     allSongsListState: LazyListState = rememberLazyListState()
 ) {
@@ -536,6 +602,11 @@ fun LibraryMainScreen(
                                 onNavigateToPlaylist(PlaylistDisplayItem("Liked Songs", "LM", "You", likedSongs.size, null))
                             },
                             onNavigateToHistory = onNavigateToHistory,
+                            readyOfflineCount = readyOfflineCount,
+                            readyOfflineBytes = readyOfflineBytes,
+                            readyOfflineUnnamed = readyOfflineUnnamed,
+                            readyOfflineHistoryDisabled = readyOfflineHistoryDisabled,
+                            onReadyOfflineClick = onReadyOfflineClick,
                             contentPadding = contentPadding,
                             onSongLongPress = onSongLongPress,
                             listState = allSongsListState
@@ -682,6 +753,12 @@ fun AllSongsList(
     onDownloadsClick: () -> Unit,
     onLikedSongsClick: () -> Unit,
     onNavigateToHistory: () -> Unit,
+    /** Songs cached in full; the card hides itself when nothing is cached. */
+    readyOfflineCount: Int,
+    readyOfflineBytes: Long,
+    readyOfflineUnnamed: Int,
+    readyOfflineHistoryDisabled: Boolean,
+    onReadyOfflineClick: () -> Unit,
     contentPadding: PaddingValues,
     onSongLongPress: ((Song) -> Unit)? = null,
     listState: LazyListState = rememberLazyListState()
@@ -716,6 +793,17 @@ fun AllSongsList(
                 DownloadsQuickCard(
                     count = downloadedSongs.size,
                     onClick = onDownloadsClick
+                )
+            }
+        }
+
+        if (readyOfflineCount > 0 || (readyOfflineHistoryDisabled && readyOfflineUnnamed > 0)) {
+            item(key = "ready_offline_card") {
+                ReadyOfflineQuickCard(
+                    count = readyOfflineCount,
+                    totalBytes = readyOfflineBytes,
+                    unnamedCount = readyOfflineUnnamed,
+                    onClick = onReadyOfflineClick.takeIf { readyOfflineCount > 0 }
                 )
             }
         }
@@ -945,6 +1033,112 @@ private fun DownloadsQuickCard(count: Int, onClick: () -> Unit) {
             )
         }
     }
+}
+
+/**
+ * The way into "Ready offline".
+ *
+ * Sits below Downloads and reads as its temporary counterpart on purpose: the
+ * two are both "plays without a network", and the only thing separating them is
+ * that one was chosen and kept and the other happened by listening and can be
+ * evicted. Hence the subtitle carrying the size rather than a promise - it is
+ * the honest thing to say about a list the app maintains on the user's behalf,
+ * and it doubles as the answer to "what is my cache actually holding".
+ *
+ * Hidden when nothing is cached. It stays when songs *are* cached but cannot be
+ * named - listening history off, so there is nothing to resolve the ids against
+ * - and then it explains that instead of navigating, because the list behind it
+ * would be an empty screen with no way to say why.
+ */
+@Composable
+private fun ReadyOfflineQuickCard(
+    count: Int,
+    totalBytes: Long,
+    unnamedCount: Int,
+    onClick: (() -> Unit)?
+) {
+    val subtitle = when {
+        count > 0 -> buildString {
+            append(if (count == 1) "1 song" else "$count songs")
+            if (totalBytes > 0) append(" · ${formatCacheSize(totalBytes)}")
+        }
+        // Deliberately names the setting rather than saying "unavailable": the
+        // fix is one toggle and the user is the only one who can make it.
+        unnamedCount == 1 -> "1 cached song. Turn on listening history to list it"
+        else -> "$unnamedCount cached songs. Turn on listening history to list them"
+    }
+
+    Surface(
+        // Not clickable in the explanatory state - there is nothing behind it,
+        // and a card that opens an empty screen is worse than one that does not
+        // move.
+        onClick = onClick ?: {},
+        enabled = onClick != null,
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(76.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 20.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Surface(
+                shape = CircleShape,
+                color = if (onClick != null) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.surfaceContainerHighest
+                },
+                modifier = Modifier.size(44.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        Icons.Rounded.OfflineBolt,
+                        contentDescription = null,
+                        tint = if (onClick != null) {
+                            MaterialTheme.colorScheme.onPrimary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+            }
+            Spacer(Modifier.width(16.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "Ready offline",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            if (onClick != null) {
+                Icon(
+                    Icons.Rounded.ChevronRight,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+/** Bytes as MB or GB, matching how the cache size reads in Settings. */
+private fun formatCacheSize(bytes: Long): String {
+    val mb = bytes / (1024.0 * 1024.0)
+    return if (mb >= 1024) String.format("%.1f GB", mb / 1024) else "${mb.toInt()} MB"
 }
 
 /**
@@ -2447,7 +2641,8 @@ fun PlaylistDetailScreen(
                             // bar keeps to the 1-2 visible actions M3E asks for,
                             // and Delete is not a peer of Rename on the page.
                             val hasRename = isLocalPlaylist || canRenameDeleteYouTube
-                            val hasShare = !isLocalPlaylist
+                            val hasShare = !isLocalPlaylist &&
+                                resolvedPlaylist.id !in NON_SHAREABLE_PLAYLIST_IDS
                             if (hasRename || hasShare) {
                                 Box {
                                     IconButton(onClick = { showOverflow = true }) {
