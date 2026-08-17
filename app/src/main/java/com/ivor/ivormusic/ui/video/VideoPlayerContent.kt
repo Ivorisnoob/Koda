@@ -908,10 +908,11 @@ fun VideoPlayerContent(
                             showCommentsSheet = true
                         },
                         onSaveClick = {
-                            requireLogin {
-                                viewModel.loadVideoPlaylists()
-                                saveTargetVideo = currentVideo
-                            }
+                            // No sign-in wall: device playlists are always a
+                            // valid target, so only the account's half waits
+                            // on a session.
+                            if (isLoggedIn) viewModel.loadVideoPlaylists()
+                            saveTargetVideo = currentVideo
                         },
                         onChannelClick = {
                             viewModel.loadChannelVideos()
@@ -919,10 +920,8 @@ fun VideoPlayerContent(
                         },
                         onSeekTo = { seconds -> exoPlayer.seekTo(seconds * 1000L) },
                         onRelatedLongPress = { related ->
-                            requireLogin {
-                                viewModel.loadVideoPlaylists()
-                                saveTargetVideo = related
-                            }
+                            if (isLoggedIn) viewModel.loadVideoPlaylists()
+                            saveTargetVideo = related
                         },
                         queue = queue,
                         onOpenQueue = { showQueueSheet = true },
@@ -1013,9 +1012,10 @@ fun VideoPlayerContent(
         showLiveChat = false
     }
 
-    // Save to Watch Later / playlist sheet
+    // Long-press options sheet, and the "save" action in the info area
     saveTargetVideo?.let { target ->
-        SaveToPlaylistSheet(
+        val localVideoPlaylists by viewModel.localVideoPlaylists.collectAsState()
+        VideoOptionsSheet(
             video = target,
             playlists = videoPlaylists,
             isLoading = isVideoPlaylistsLoading,
@@ -1033,7 +1033,28 @@ fun VideoPlayerContent(
             onNotInterested = if (target.videoId != currentVideo.videoId) {
                 { viewModel.markNotInterested(target) }
             } else null,
-            onBlockChannel = { viewModel.blockChannelFor(target) }
+            onBlockChannel = { viewModel.blockChannelFor(target) },
+            isSignedOut = !isLoggedIn,
+            onCreatePlaylist = { name, onCreated ->
+                viewModel.createLocalVideoPlaylist(name, onCreated)
+            },
+            // Offered on Up Next rows only. Queueing the video that is already
+            // playing has nothing to mean, and "Play next" on it would put it
+            // after itself.
+            onEnqueue = if (target.videoId != currentVideo.videoId) {
+                { playNext -> viewModel.enqueueVideo(target, playNext) }
+            } else null,
+            alreadyIn = run {
+                val ids = localVideoPlaylists
+                    .filter { list -> list.videos.any { it.videoId == target.videoId } }
+                    .map { it.id }
+                    .toSet()
+                // Signed out the pinned Watch later row saves into the device
+                // list, so that is what says whether it is already there.
+                if (!isLoggedIn &&
+                    com.ivor.ivormusic.data.LocalVideoPlaylistsRepository.WATCH_LATER_ID in ids
+                ) ids + "WL" else ids
+            }
         )
     }
 
@@ -1075,7 +1096,10 @@ fun VideoPlayerContent(
                     showQueueSheet = false
                 },
                 onDismiss = { showQueueSheet = false },
-                keepSystemBarsHidden = isFullscreen
+                keepSystemBarsHidden = isFullscreen,
+                onMove = { from, to -> viewModel.moveQueueItem(from, to) },
+                onRemove = { index -> viewModel.removeQueueItem(index) },
+                onUndoRemove = { viewModel.undoQueueRemoval() }
             )
         }
     }

@@ -110,6 +110,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.material3.TextButton
 import coil.compose.AsyncImage
 import com.ivor.ivormusic.data.Song
+import com.ivor.ivormusic.ui.library.songRowClick
 import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.data.VideoSearchDateFilter
 import com.ivor.ivormusic.data.VideoSearchSort
@@ -139,9 +140,8 @@ import androidx.compose.material.icons.rounded.PlaylistPlay
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
-import com.ivor.ivormusic.ui.video.SaveToPlaylistSheet
 import com.ivor.ivormusic.ui.video.VideoCard
-import com.ivor.ivormusic.ui.video.VideoDownloadSheet
+import com.ivor.ivormusic.ui.video.VideoOptionsSheetHost
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -186,6 +186,10 @@ fun SearchScreen(
     songs: List<Song>,
     onSongClick: (Song) -> Unit,
     onPlayQueue: (List<Song>, Song) -> Unit = { _, song -> onSongClick(song) },
+    /** Long-press a song result: opens the shared song options sheet. */
+    onSongLongPress: ((Song) -> Unit)? = null,
+    /** Queue a video result, next or at the end. */
+    onEnqueueVideo: ((VideoItem, Boolean) -> Unit)? = null,
     /**
      * Play a single YouTube result and continue into its radio. Used instead of
      * [onPlayQueue] for loose result lists, where the neighbouring entries are
@@ -244,22 +248,12 @@ fun SearchScreen(
     val savedPlaylistIds by viewModel.savedPlaylistIds.collectAsState()
     val savedVideoPlaylistIds by viewModel.savedVideoPlaylistIds.collectAsState()
 
-    // Save-to-playlist sheet (long-press on a video search result) and the
-    // download sheet it hands off to, same wiring as the video home feed
+    // Options sheet (long-press on a video search result), same wiring as the
+    // video home feed
     var saveTargetVideo by remember { mutableStateOf<VideoItem?>(null) }
-    var downloadTargetVideo by remember { mutableStateOf<VideoItem?>(null) }
-    val isYouTubeConnected by viewModel.isYouTubeConnected.collectAsState()
-    val videoPlaylists by viewModel.videoPlaylists.collectAsState()
-    val isVideoPlaylistsLoading by viewModel.isVideoPlaylistsLoading.collectAsState()
 
     fun onVideoLongPress(video: VideoItem) {
-        if (isYouTubeConnected) {
-            viewModel.loadVideoPlaylists()
-            saveTargetVideo = video
-        } else {
-            // Saving needs a YouTube session; route to the sign-in flow
-            onProfileClick()
-        }
+        saveTargetVideo = video
     }
 
     // Pasted YouTube link handling: when the query is a URL, resolve it into
@@ -407,34 +401,19 @@ fun SearchScreen(
     }
 
     saveTargetVideo?.let { video ->
-        SaveToPlaylistSheet(
+        VideoOptionsSheetHost(
             video = video,
-            playlists = videoPlaylists,
-            isLoading = isVideoPlaylistsLoading,
-            onSave = { playlistId, onResult ->
-                viewModel.addVideoToPlaylist(playlistId, video, onResult)
-            },
-            onDownload = {
-                saveTargetVideo = null
-                downloadTargetVideo = video
-            },
+            viewModel = viewModel,
             onDismiss = { saveTargetVideo = null },
+            onEnqueue = onEnqueueVideo?.let { enqueue -> { next -> enqueue(video, next) } },
             // Search results are never filtered - searching is explicit
             // intent - so "not interested" would visibly do nothing here and
             // is left out. Blocking the channel still has a real effect on
             // every feed, and the undo snackbar says so.
-            onNotInterested = null,
-            onBlockChannel = { viewModel.blockChannelFor(video) }
+            allowNotInterested = false
         )
     }
 
-    downloadTargetVideo?.let { video ->
-        VideoDownloadSheet(
-            video = video,
-            onDismiss = { downloadTargetVideo = null }
-        )
-    }
-    
     // Reset visible count when query changes
     LaunchedEffect(query) {
         visibleLocalCount = 20
@@ -607,6 +586,7 @@ fun SearchScreen(
                                 SearchSongCard(
                                     song = song,
                                     onClick = { onPlayQueue(state.songs, song) },
+                                    onLongClick = onSongLongPress?.let { press -> { press(song) } },
                                     cardColor = cardColor,
                                     textColor = textColor,
                                     secondaryTextColor = secondaryTextColor,
@@ -828,6 +808,7 @@ fun SearchScreen(
                         SearchSongCard(
                             song = song,
                             onClick = { onPlayQueue(songs, song) },
+                            onLongClick = onSongLongPress?.let { press -> { press(song) } },
                             cardColor = cardColor,
                             textColor = textColor,
                             secondaryTextColor = secondaryTextColor,
@@ -1178,6 +1159,7 @@ fun SearchScreen(
                             SearchSongCard(
                                 song = song,
                                 onClick = { onPlayQueue(filteredLocalSongs, song) },
+                                onLongClick = onSongLongPress?.let { press -> { press(song) } },
                                 cardColor = cardColor,
                                 textColor = textColor,
                                 secondaryTextColor = secondaryTextColor,
@@ -1273,6 +1255,7 @@ fun SearchScreen(
                         SearchSongCard(
                             song = song,
                             onClick = { onPlayQueue(filteredLocalSongs, song) },
+                            onLongClick = onSongLongPress?.let { press -> { press(song) } },
                             cardColor = cardColor,
                             textColor = textColor,
                             secondaryTextColor = secondaryTextColor,
@@ -1500,13 +1483,14 @@ private fun SearchSongCard(
     accentColor: Color,
     isYouTube: Boolean = false,
     shape: Shape = RoundedCornerShape(20.dp),
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onLongClick: (() -> Unit)? = null
 ) {
     Surface(
         modifier = modifier
             .fillMaxWidth()
             .clip(shape)
-            .clickable(onClick = onClick),
+            .songRowClick(onClick = onClick, onLongClick = onLongClick),
         shape = shape,
         color = cardColor,
         tonalElevation = 1.dp

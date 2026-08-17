@@ -113,6 +113,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.ivor.ivormusic.data.Song
+import com.ivor.ivormusic.ui.library.songRowClick
 import com.ivor.ivormusic.data.PlayerStyle
 import com.ivor.ivormusic.ui.components.MusicVideoToggle
 import com.ivor.ivormusic.ui.components.MusicVideoToggleState
@@ -164,6 +165,11 @@ fun HomeScreen(
      * [onNavigateToVideoPlayer] when this is absent, and a do-nothing default
      * would make a tap on a playlist row silently do nothing at all.
      */
+    /**
+     * Queue a video from a long press, either next or at the end. Routed to the
+     * video player's ViewModel, which owns the queue.
+     */
+    onEnqueueVideo: ((com.ivor.ivormusic.data.VideoItem, Boolean) -> Unit)? = null,
     onPlayVideoQueue: ((com.ivor.ivormusic.data.VideoQueue) -> Unit)? = null,
     onOpenShorts: (List<com.ivor.ivormusic.data.ShortsItem>, Int) -> Unit = { _, _ -> },
     shortsEnabled: Boolean = false,
@@ -335,7 +341,11 @@ fun HomeScreen(
     var viewedPlaylistFromHome by remember {
         mutableStateOf<com.ivor.ivormusic.data.PlaylistDisplayItem?>(null)
     }
-    
+    // Long-pressed song, for the options sheet. Hosted here, once, rather than
+    // per screen: the sheet acts on the PlayerViewModel, which lives at this
+    // level, and the Library's sub-routes would each otherwise need their own.
+    var songOptionsTarget by remember { mutableStateOf<Song?>(null) }
+
     // Update check state
     val updateRepository = remember { UpdateRepository() }
     var updateResult by remember { mutableStateOf<UpdateResult?>(null) }
@@ -453,6 +463,10 @@ fun HomeScreen(
                                     },
                                     shorts = if (shortsEnabled) shortsFeed else emptyList(),
                                     onShortClick = { index -> onOpenShorts(shortsFeed, index) },
+                                    // Without this the long-press sheet loses
+                                    // its whole queue section, on the one feed
+                                    // people spend the most time in.
+                                    onEnqueueVideo = onEnqueueVideo,
                                     onProfileClick = onProfileClick,
                                     onSettingsClick = onNavigateToSettings,
                                     onDownloadsClick = onNavigateToDownloads,
@@ -481,6 +495,7 @@ fun HomeScreen(
                                     likedSongs = spotlightLiked,
                                     playlists = spotlightPlaylists,
                                     isInitialLoading = isLoading && songs.isEmpty(),
+                                    onSongLongPress = { song -> songOptionsTarget = song },
                                     onSongClick = { song ->
                                         playerViewModel.playQueue(songs, song)
                                         showPlayerSheet = true
@@ -536,6 +551,7 @@ fun HomeScreen(
                                         showPlayerSheet = true
                                     },
                                     onShowAllInLibrary = { selectedTab = 2 },
+                                    onSongLongPress = { song -> songOptionsTarget = song },
                                     onSongClick = { song ->
                                         playerViewModel.playQueue(songs, song)
                                         showPlayerSheet = true
@@ -589,7 +605,9 @@ fun HomeScreen(
                             onNavigateToVideoPlayer(video)
                         },
                         onPlayVideoQueue = onPlayVideoQueue,
+                        onEnqueueVideo = onEnqueueVideo,
                         onProfileClick = onProfileClick,
+                        onSongLongPress = { song -> songOptionsTarget = song },
                         contentPadding = listContentPadding,
                         viewModel = viewModel,
                         isDarkMode = isDarkMode,
@@ -606,6 +624,7 @@ fun HomeScreen(
                         } else if (videoMode) {
                             com.ivor.ivormusic.ui.video.SubscriptionsContent(
                                 viewModel = viewModel,
+                                onEnqueueVideo = onEnqueueVideo,
                                 onVideoClick = { video ->
                                     onNavigateToVideoPlayer(video)
                                 },
@@ -639,6 +658,7 @@ fun HomeScreen(
                                 initialPlaylist = viewedPlaylistFromHome,
                                 onInitialPlaylistConsumed = { viewedPlaylistFromHome = null },
                                 onStatsClick = onNavigateToStats,
+                                onSongLongPress = { song -> songOptionsTarget = song },
                                 allSongsListState = musicLibraryScrollState
                             )
                         }
@@ -660,6 +680,7 @@ fun HomeScreen(
                                 onPlayQueue = onPlayVideoQueue,
                                 onLoginClick = { showAuthDialog = true },
                                 contentPadding = listContentPadding,
+                                onEnqueueVideo = onEnqueueVideo,
                                 rootListState = videoLibraryScrollState
                             )
                         }
@@ -885,6 +906,16 @@ fun HomeScreen(
     }
 
     // Auth Dialog
+    // Long-press a song anywhere in music mode: play next, add to queue, add to
+    // a playlist, like, download. The only route to addToQueue in the app.
+    songOptionsTarget?.let { song ->
+        com.ivor.ivormusic.ui.player.SongOptionsSheet(
+            song = song,
+            viewModel = playerViewModel,
+            onDismiss = { songOptionsTarget = null }
+        )
+    }
+
     if (showAuthDialog) {
         com.ivor.ivormusic.ui.auth.YouTubeAuthDialog(
             onDismiss = { showAuthDialog = false },
@@ -943,6 +974,7 @@ fun YourMixContent(
      */
     onShowAllInLibrary: () -> Unit = {},
     onSongClick: (Song) -> Unit,
+    onSongLongPress: ((Song) -> Unit)? = null,
     onPlayClick: () -> Unit,
     onProfileClick: () -> Unit,
     onSettingsClick: () -> Unit,
@@ -1022,7 +1054,11 @@ fun YourMixContent(
                         scaleX = if (visible) 1f else 0.9f
                         scaleY = if (visible) 1f else 0.9f
                     }) {
-                        OrganicSongLayout(songs = songs, onSongClick = onSongClick)
+                        OrganicSongLayout(
+                            songs = songs,
+                            onSongClick = onSongClick,
+                            onSongLongPress = onSongLongPress
+                        )
                     }
                 }
             }
@@ -1437,7 +1473,8 @@ private fun HomeCarouselSkeleton(
 @Composable
 fun OrganicSongLayout(
     songs: List<Song>,
-    onSongClick: (Song) -> Unit
+    onSongClick: (Song) -> Unit,
+    onSongLongPress: ((Song) -> Unit)? = null
 ) {
     BoxWithConstraints(
         modifier = Modifier
@@ -1468,7 +1505,10 @@ fun OrganicSongLayout(
                     .graphicsLayer { rotationZ = 30f }
                     .clip(RoundedCornerShape(50))
                     .background(MaterialTheme.colorScheme.secondaryContainer)
-                    .clickable { onSongClick(songs[0]) },
+                    .songRowClick(
+                        onClick = { onSongClick(songs[0]) },
+                        onLongClick = onSongLongPress?.let { press -> { press(songs[0]) } }
+                    ),
                 contentAlignment = Alignment.Center
             ) {
                 val imageUrl = songs[0].highResThumbnailUrl ?: songs[0].thumbnailUrl
@@ -1525,7 +1565,10 @@ fun OrganicSongLayout(
                     .graphicsLayer { rotationZ = -10f }
                     .clip(CircleShape)
                     .background(MaterialTheme.colorScheme.surfaceContainerHighest)
-                    .clickable { onSongClick(songs[1]) },
+                    .songRowClick(
+                        onClick = { onSongClick(songs[1]) },
+                        onLongClick = onSongLongPress?.let { press -> { press(songs[1]) } }
+                    ),
                 contentAlignment = Alignment.Center
             ) {
                 val imageUrl = songs[1].highResThumbnailUrl ?: songs[1].thumbnailUrl
@@ -1582,7 +1625,10 @@ fun OrganicSongLayout(
                     .graphicsLayer { rotationZ = 5f }
                     .clip(CircleShape)
                     .background(MaterialTheme.colorScheme.surfaceContainerHighest)
-                    .clickable { onSongClick(songs[2]) },
+                    .songRowClick(
+                        onClick = { onSongClick(songs[2]) },
+                        onLongClick = onSongLongPress?.let { press -> { press(songs[2]) } }
+                    ),
                 contentAlignment = Alignment.Center
             ) {
                 val imageUrl = songs[2].highResThumbnailUrl ?: songs[2].thumbnailUrl
@@ -1635,13 +1681,14 @@ fun OrganicSongLayout(
 fun SongStripCard(
     song: Song,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onLongClick: (() -> Unit)? = null
 ) {
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(8.dp))
             .background(MaterialTheme.colorScheme.surfaceContainer)
-            .clickable(onClick = onClick),
+            .songRowClick(onClick = onClick, onLongClick = onLongClick),
         contentAlignment = Alignment.Center
     ) {
         val imageUrl = song.highResThumbnailUrl ?: song.thumbnailUrl
@@ -1719,12 +1766,14 @@ fun SearchContent(
      * [onVideoClick], which plays the tapped video alone.
      */
     onPlayVideoQueue: ((com.ivor.ivormusic.data.VideoQueue) -> Unit)? = null,
+    onEnqueueVideo: ((com.ivor.ivormusic.data.VideoItem, Boolean) -> Unit)? = null,
     onProfileClick: () -> Unit = {},
     contentPadding: PaddingValues,
     viewModel: HomeViewModel,
     isDarkMode: Boolean,
     videoMode: Boolean = false,
     localOnly: Boolean = false,
+    onSongLongPress: ((Song) -> Unit)? = null,
     /** Hoisted by HomeScreen: survives tab switches, reachable by the nav bar. */
     listState: LazyListState = rememberLazyListState()
 ) {
@@ -1771,6 +1820,8 @@ fun SearchContent(
                     viewedVideoPlaylist = videoPlaylist
                 },
                 onProfileClick = onProfileClick,
+                onEnqueueVideo = onEnqueueVideo,
+                onSongLongPress = onSongLongPress,
                 contentPadding = contentPadding,
                 viewModel = viewModel,
                 isDarkMode = isDarkMode,
@@ -1825,7 +1876,8 @@ fun SearchContent(
                              onPlayQueue(albumSongs, null)
                         },
                         onOpenAlbum = { albumItem -> viewedPlaylist = albumItem },
-                        viewModel = viewModel
+                        viewModel = viewModel,
+                        onSongLongPress = onSongLongPress
                     )
                 }
             }
@@ -1836,7 +1888,8 @@ fun SearchContent(
                         playlist = playlist,
                         onBack = { viewedPlaylist = null },
                         onPlayQueue = onPlayQueue,
-                        viewModel = viewModel
+                        viewModel = viewModel,
+                        onSongLongPress = onSongLongPress
                     )
                 }
             }
@@ -1851,7 +1904,8 @@ fun SearchContent(
                         contentPadding = contentPadding,
                         // Search results aren't the user's own playlists
                         allowRemove = false,
-                        onPlayQueue = onPlayVideoQueue
+                        onPlayQueue = onPlayVideoQueue,
+                        onEnqueueVideo = onEnqueueVideo
                     )
                 }
             }

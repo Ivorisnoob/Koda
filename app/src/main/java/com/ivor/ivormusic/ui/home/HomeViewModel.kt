@@ -84,6 +84,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val savedPlaylistsRepository =
         com.ivor.ivormusic.data.SavedPlaylistsRepository(application)
 
+    // Video playlists held on the device, with the videos embedded. The video
+    // counterpart of playlistRepository, and the reason video mode can save
+    // anything at all signed out. See LocalVideoPlaylistsRepository.
+    private val localVideoPlaylistsRepository =
+        com.ivor.ivormusic.data.LocalVideoPlaylistsRepository(application)
+
     // Merged Playlists (Local + Saved + YouTube)
     //
     // Saved sit between the two because that is what they are: not the user's
@@ -353,12 +359,41 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val _isNotificationsLoading = MutableStateFlow(false)
     val isNotificationsLoading: StateFlow<Boolean> = _isNotificationsLoading.asStateFlow()
 
-    // Video library tab state
+    // Video library tab state. This half is the signed-in account's own
+    // playlists; the device's are merged in by [videoPlaylists] below.
     private val _videoPlaylists = MutableStateFlow<List<com.ivor.ivormusic.data.VideoPlaylist>>(emptyList())
-    val videoPlaylists: StateFlow<List<com.ivor.ivormusic.data.VideoPlaylist>> = _videoPlaylists.asStateFlow()
+
+    /**
+     * Every playlist a video can be saved into: the device's own first, then
+     * the account's.
+     *
+     * Local ones lead because they are the user's own creations and, signed
+     * out, the only ones there are - the same order the music Library merges
+     * its three kinds in. Consumers tell them apart with
+     * [com.ivor.ivormusic.data.LocalVideoPlaylistsRepository.isLocal]; nothing
+     * here may assume a playlist id addresses YouTube.
+     */
+    val videoPlaylists: StateFlow<List<com.ivor.ivormusic.data.VideoPlaylist>> = combine(
+        localVideoPlaylistsRepository.playlists,
+        _videoPlaylists
+    ) { local, account ->
+        local.map { it.toVideoPlaylist() } + account
+    }.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000), emptyList())
 
     private val _isVideoPlaylistsLoading = MutableStateFlow(false)
     val isVideoPlaylistsLoading: StateFlow<Boolean> = _isVideoPlaylistsLoading.asStateFlow()
+
+    /**
+     * The device's video playlists with their videos still attached, which is
+     * what [videoPlaylists] drops on the way to [com.ivor.ivormusic.data.VideoPlaylist].
+     *
+     * Exposed so the options sheet can mark the playlists a video is already
+     * in. It stops at the device's own on purpose: the account's would need a
+     * playlist browse each, which is one request per row for a checkmark, and
+     * saving twice is a no-op on both sides anyway.
+     */
+    val localVideoPlaylists: StateFlow<List<com.ivor.ivormusic.data.LocalVideoPlaylist>> =
+        localVideoPlaylistsRepository.playlists
 
     /**
      * The saved playlists again, shaped for video mode's Library list and
@@ -885,8 +920,21 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /** Load one playlist's videos (also Watch Later "WL" / Liked videos "LL"). */
+    /**
+     * Load one playlist's videos (also Watch Later "WL" / Liked videos "LL").
+     *
+     * A local playlist is already in memory, so it is served straight from the
+     * store rather than through a fetch that would fail signed out. It still
+     * goes through the same [_playlistVideos] state, which is what lets
+     * `VideoPlaylistDetail` snapshot it into a [com.ivor.ivormusic.data.VideoQueue]
+     * without knowing which kind it opened.
+     */
     fun loadPlaylistVideos(playlistId: String) {
+        if (com.ivor.ivormusic.data.LocalVideoPlaylistsRepository.isLocal(playlistId)) {
+            _isPlaylistVideosLoading.value = false
+            _playlistVideos.value = localVideoPlaylistsRepository.videosOf(playlistId)
+            return
+        }
         viewModelScope.launch {
             _playlistVideos.value = emptyList()
             _isPlaylistVideosLoading.value = true
@@ -898,19 +946,34 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /** Create a new YouTube playlist from the video Library tab. Requires login. */
-    fun createVideoPlaylist(name: String) {
+    /**
+     * Create a playlist from the video Library tab.
+     *
+     * [onDevice] picks the store. It is forced true signed out, because the
+     * YouTube path needs a session and a create that silently does nothing is
+     * exactly the failure this whole change exists to remove.
+     */
+    fun createVideoPlaylist(name: String, onDevice: Boolean = !isYouTubeConnected.value) {
         val trimmed = name.trim()
         if (trimmed.isEmpty()) return
         viewModelScope.launch {
-            if (youtubeRepository.createYouTubePlaylist(trimmed, music = false) != null) {
+            if (onDevice || !isYouTubeConnected.value) {
+                localVideoPlaylistsRepository.create(trimmed)
+            } else if (youtubeRepository.createYouTubePlaylist(trimmed, music = false) != null) {
                 loadVideoPlaylists(force = true)
             }
         }
     }
 
-    /** Delete a YouTube playlist. Optimistic removal, restored on failure. */
+    /**
+     * Delete a playlist. The local store owns its own list, so there is nothing
+     * to roll back there; the account path stays optimistic-and-restore.
+     */
     fun deleteVideoPlaylist(playlistId: String) {
+        if (com.ivor.ivormusic.data.LocalVideoPlaylistsRepository.isLocal(playlistId)) {
+            viewModelScope.launch { localVideoPlaylistsRepository.delete(playlistId) }
+            return
+        }
         val previous = _videoPlaylists.value
         _videoPlaylists.value = previous.filterNot { it.playlistId == playlistId }
         viewModelScope.launch {
@@ -920,6 +983,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /** Rename a playlist held on this device. */
+    fun renameLocalVideoPlaylist(playlistId: String, name: String) {
+        if (!com.ivor.ivormusic.data.LocalVideoPlaylistsRepository.isLocal(playlistId)) return
+        viewModelScope.launch { localVideoPlaylistsRepository.rename(playlistId, name) }
+    }
+
     /**
      * Remove a video from a playlist, Watch Later ("WL") or Liked videos
      * ("LL", removes the like). Optimistic removal, restored on failure.
@@ -927,6 +996,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     fun removePlaylistVideo(playlistId: String, video: VideoItem) {
         val previous = _playlistVideos.value
         _playlistVideos.value = previous.filterNot { it.videoId == video.videoId }
+        if (com.ivor.ivormusic.data.LocalVideoPlaylistsRepository.isLocal(playlistId)) {
+            viewModelScope.launch {
+                localVideoPlaylistsRepository.removeVideo(playlistId, video.videoId)
+            }
+            return
+        }
         viewModelScope.launch {
             if (!youtubeRepository.removeFromYouTubePlaylist(playlistId, video.videoId, music = false)) {
                 _playlistVideos.value = previous
@@ -935,13 +1010,40 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * Add a video to a YouTube playlist ("WL" = Watch Later). Reports the
-     * outcome on the main thread so the save sheet can show inline
-     * feedback. Requires login.
+     * Add a video to a playlist. Reports the outcome on the main thread so the
+     * save sheet can show inline feedback.
+     *
+     * Three targets, decided here rather than at the five call sites that open
+     * the sheet: a local playlist, the account's Watch Later, and any other
+     * account playlist. Signed out "WL" is the device's Watch Later, created on
+     * first use - the pinned hero row used to post to an endpoint that answers
+     * 200 without a session and does nothing, so the sheet reported a save that
+     * had not happened.
      */
     fun addVideoToPlaylist(playlistId: String, video: VideoItem, onResult: (Boolean) -> Unit) {
         viewModelScope.launch {
-            onResult(youtubeRepository.addToYouTubePlaylist(playlistId, video.videoId, music = false))
+            onResult(saveVideoToPlaylist(playlistId, video))
+        }
+    }
+
+    /** Create a playlist on the device, from the save sheet. */
+    fun createLocalVideoPlaylist(name: String, onCreated: (String?) -> Unit) {
+        viewModelScope.launch { onCreated(localVideoPlaylistsRepository.create(name)) }
+    }
+
+    /** Mirrored by `VideoPlayerViewModel.addVideoToPlaylist`; keep them in step. */
+    private suspend fun saveVideoToPlaylist(playlistId: String, video: VideoItem): Boolean {
+        val local = com.ivor.ivormusic.data.LocalVideoPlaylistsRepository
+        return when {
+            local.isLocal(playlistId) ->
+                localVideoPlaylistsRepository.addVideo(playlistId, video)
+            playlistId == "WL" && !isYouTubeConnected.value ->
+                localVideoPlaylistsRepository.addVideo(
+                    localVideoPlaylistsRepository.ensureWatchLater(),
+                    video
+                )
+            else ->
+                youtubeRepository.addToYouTubePlaylist(playlistId, video.videoId, music = false)
         }
     }
 

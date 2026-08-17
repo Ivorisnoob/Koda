@@ -51,6 +51,7 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.ivor.ivormusic.data.PlaylistDisplayItem
 import com.ivor.ivormusic.data.Song
+import com.ivor.ivormusic.ui.library.songRowClick
 import com.ivor.ivormusic.ui.components.ExpressivePullToRefresh
 import com.ivor.ivormusic.ui.components.MusicVideoToggleState
 import com.ivor.ivormusic.ui.components.rememberMusicVideoToggleState
@@ -92,6 +93,7 @@ fun SpotlightHomeContent(
     playlists: List<PlaylistDisplayItem>,
     isInitialLoading: Boolean = false,
     onSongClick: (Song) -> Unit,
+    onSongLongPress: ((Song) -> Unit)? = null,
     onPlaySongs: (List<Song>, Song?) -> Unit,
     onRecentClick: (Song) -> Unit,
     onPlaylistClick: (PlaylistDisplayItem) -> Unit = {},
@@ -198,6 +200,7 @@ fun SpotlightHomeContent(
                     SpotlightQuickPicks(
                         songs = quickPicks,
                         onSongClick = { onPlaySongs(quickPicks, it) },
+                        onSongLongPress = onSongLongPress,
                     )
                 }
             }
@@ -509,6 +512,7 @@ private fun ShortcutImage(model: String?) {
 private fun SpotlightQuickPicks(
     songs: List<Song>,
     onSongClick: (Song) -> Unit,
+    onSongLongPress: ((Song) -> Unit)? = null,
 ) {
     val pages = songs.chunked(QUICK_PICK_ROWS)
     val pagerState = rememberPagerState(pageCount = { pages.size })
@@ -522,7 +526,11 @@ private fun SpotlightQuickPicks(
         ) { page ->
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 pages[page].forEach { song ->
-                    SpotlightQuickPickRow(song = song, onClick = { onSongClick(song) })
+                    SpotlightQuickPickRow(
+                        song = song,
+                        onClick = { onSongClick(song) },
+                        onLongClick = onSongLongPress?.let { press -> { press(song) } }
+                    )
                 }
             }
         }
@@ -556,12 +564,16 @@ private fun SpotlightQuickPicks(
 }
 
 @Composable
-private fun SpotlightQuickPickRow(song: Song, onClick: () -> Unit) {
+private fun SpotlightQuickPickRow(
+    song: Song,
+    onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
-            .clickable(onClick = onClick)
+            .songRowClick(onClick = onClick, onLongClick = onLongClick)
             .padding(6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

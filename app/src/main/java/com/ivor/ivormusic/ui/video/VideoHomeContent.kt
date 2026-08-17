@@ -88,6 +88,7 @@ fun VideoHomeContent(
     videos: List<VideoItem>,
     isLoading: Boolean,
     onVideoClick: (VideoItem) -> Unit,
+    onEnqueueVideo: ((VideoItem, Boolean) -> Unit)? = null,
     shorts: List<ShortsItem> = emptyList(),
     onShortClick: (Int) -> Unit = {},
     onProfileClick: () -> Unit,
@@ -115,21 +116,11 @@ fun VideoHomeContent(
     val notifications by viewModel.notifications.collectAsState()
     val isNotificationsLoading by viewModel.isNotificationsLoading.collectAsState()
 
-    // Save-to-playlist sheet (long-press on a video card) and the download
-    // sheet it hands off to
+    // Options sheet (long-press on a video card)
     var saveTargetVideo by remember { mutableStateOf<VideoItem?>(null) }
-    var downloadTargetVideo by remember { mutableStateOf<VideoItem?>(null) }
-    val videoPlaylists by viewModel.videoPlaylists.collectAsState()
-    val isVideoPlaylistsLoading by viewModel.isVideoPlaylistsLoading.collectAsState()
 
     fun onVideoLongPress(video: VideoItem) {
-        if (isYouTubeConnected) {
-            viewModel.loadVideoPlaylists()
-            saveTargetVideo = video
-        } else {
-            // Saving needs a YouTube session; route to the sign-in flow
-            onProfileClick()
-        }
+        saveTargetVideo = video
     }
 
     // Animation state for staggered entry
@@ -164,27 +155,11 @@ fun VideoHomeContent(
     }
 
     saveTargetVideo?.let { video ->
-        SaveToPlaylistSheet(
+        VideoOptionsSheetHost(
             video = video,
-            playlists = videoPlaylists,
-            isLoading = isVideoPlaylistsLoading,
-            onSave = { playlistId, onResult ->
-                viewModel.addVideoToPlaylist(playlistId, video, onResult)
-            },
-            onDownload = {
-                saveTargetVideo = null
-                downloadTargetVideo = video
-            },
+            viewModel = viewModel,
             onDismiss = { saveTargetVideo = null },
-            onNotInterested = { viewModel.markNotInterested(video) },
-            onBlockChannel = { viewModel.blockChannelFor(video) }
-        )
-    }
-
-    downloadTargetVideo?.let { video ->
-        VideoDownloadSheet(
-            video = video,
-            onDismiss = { downloadTargetVideo = null }
+            onEnqueue = onEnqueueVideo?.let { enqueue -> { next -> enqueue(video, next) } }
         )
     }
 

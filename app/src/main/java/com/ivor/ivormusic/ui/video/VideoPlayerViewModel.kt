@@ -60,6 +60,12 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     private val themePreferences = ThemePreferences(context)
     private val videoHistoryRepository = com.ivor.ivormusic.data.VideoHistoryRepository(context)
 
+    // Device-held video playlists. Its state is process-wide, so a save taken
+    // here shows up in the Library tab's own HomeViewModel without either of
+    // them knowing about the other.
+    private val localVideoPlaylistsRepository =
+        com.ivor.ivormusic.data.LocalVideoPlaylistsRepository(context)
+
     // Player Instance
     private var _exoPlayer: ExoPlayer? = null
     val exoPlayer: ExoPlayer? get() = _exoPlayer
@@ -444,11 +450,31 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
     // ---------------- Save to playlist (Watch Later) ----------------
 
+    // The account's own; the device's are merged in by [videoPlaylists] below.
     private val _videoPlaylists = MutableStateFlow<List<com.ivor.ivormusic.data.VideoPlaylist>>(emptyList())
-    val videoPlaylists: StateFlow<List<com.ivor.ivormusic.data.VideoPlaylist>> = _videoPlaylists.asStateFlow()
+
+    /**
+     * Everything the save sheet can save into, device playlists first. Mirrors
+     * `HomeViewModel.videoPlaylists`, because the sheet is opened from both and
+     * must offer the same targets either way.
+     */
+    val videoPlaylists: StateFlow<List<com.ivor.ivormusic.data.VideoPlaylist>> = combine(
+        localVideoPlaylistsRepository.playlists,
+        _videoPlaylists
+    ) { local, account ->
+        local.map { it.toVideoPlaylist() } + account
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private val _isVideoPlaylistsLoading = MutableStateFlow(false)
     val isVideoPlaylistsLoading: StateFlow<Boolean> = _isVideoPlaylistsLoading.asStateFlow()
+
+    /**
+     * The device's playlists with their videos attached, for marking the ones a
+     * video is already in. Mirrors `HomeViewModel.localVideoPlaylists`; see
+     * there for why the account's are not covered.
+     */
+    val localVideoPlaylists: StateFlow<List<com.ivor.ivormusic.data.LocalVideoPlaylist>> =
+        localVideoPlaylistsRepository.playlists
 
     // ---------------- Channel page (latest uploads) ----------------
 
@@ -905,6 +931,9 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      */
     fun playVideo(video: VideoItem, forceRestart: Boolean = false) {
         _queue.value = null
+        // The queue this belonged to is gone, so restoring into the next one
+        // would drop a video into a list it was never part of.
+        lastQueueRemoval = null
         startVideo(video, forceRestart)
     }
 
@@ -919,6 +948,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         if (queue.videos.isEmpty()) return
         val normalized = queue.at(queue.index)
         _queue.value = normalized
+        lastQueueRemoval = null
         // A new playlist gets the full skip budget: whatever was wrong with the
         // last one has nothing to say about this one.
         queueErrorSkipCount = 0
@@ -943,6 +973,73 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         val target = active.videos.getOrNull(index) ?: return
         _queue.value = active.copy(index = index)
         startVideo(target, forceRestart = true)
+    }
+
+    // ---------------- Editing the queue ----------------
+
+    /**
+     * Reorder the queue.
+     *
+     * Nothing is asked of the player: unlike music, video mode holds one media
+     * item at a time and reads the next one out of the queue when the current
+     * one ends, so the order is only ever consulted at that moment. Moving the
+     * playing entry therefore cannot interrupt it.
+     */
+    fun moveQueueItem(from: Int, to: Int) {
+        val active = _queue.value ?: return
+        _queue.value = active.moved(from, to)
+    }
+
+    /**
+     * Drop an entry. Refused for the playing entry and for the last one left;
+     * see [com.ivor.ivormusic.data.VideoQueue.removedAt].
+     */
+    fun removeQueueItem(at: Int) {
+        val active = _queue.value ?: return
+        val video = active.videos.getOrNull(at) ?: return
+        val next = active.removedAt(at) ?: return
+        lastQueueRemoval = QueueRemoval(video, at)
+        _queue.value = next
+    }
+
+    /** A video just taken out of the queue, kept so the snackbar can put it back. */
+    data class QueueRemoval(val video: VideoItem, val at: Int)
+
+    private var lastQueueRemoval: QueueRemoval? = null
+
+    /** Put the last removed video back where it was. */
+    fun undoQueueRemoval() {
+        val removal = lastQueueRemoval ?: return
+        lastQueueRemoval = null
+        val active = _queue.value ?: return
+        _queue.value = active.withInserted(listOf(removal.video), removal.at)
+    }
+
+    /**
+     * Add [video] to the queue, either straight after what is playing or at the
+     * end.
+     *
+     * With no queue yet, one is started from the video already playing so the
+     * addition has something to be *after* - which is what makes this work from
+     * a feed or from search, where there is no playlist in sight. With nothing
+     * playing at all there is no "next", so it just plays.
+     */
+    fun enqueueVideo(video: VideoItem, playNext: Boolean) {
+        val active = _queue.value
+        if (active == null) {
+            val current = _currentVideo.value
+            if (current == null) {
+                playVideo(video)
+                return
+            }
+            _queue.value = com.ivor.ivormusic.data.VideoQueue.adHoc(current, listOf(video))
+            return
+        }
+        _queue.value = if (playNext) {
+            active.withPlayingNext(listOf(video))
+        } else {
+            active.withAppended(listOf(video))
+        }
     }
 
     /** Next video in the playlist. No-op at the end of it. */
@@ -1782,14 +1879,40 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     }
 
     /**
-     * Add a video to a YouTube playlist ("WL" = Watch Later). Reports the
-     * outcome on the main thread so the save sheet can show inline feedback.
-     * Requires login.
+     * Add a video to a playlist. Reports the outcome on the main thread so the
+     * save sheet can show inline feedback.
+     *
+     * Same three-way routing as `HomeViewModel.addVideoToPlaylist`: a device
+     * playlist, the device's Watch Later while signed out, or the account.
+     * Duplicated rather than shared because the two ViewModels have no common
+     * base and no DI to hand one an instance of the other; the store underneath
+     * is process-wide, so both see the same list either way.
      */
     fun addVideoToPlaylist(playlistId: String, video: VideoItem, onResult: (Boolean) -> Unit) {
         viewModelScope.launch {
-            onResult(youtubeRepository.addToYouTubePlaylist(playlistId, video.videoId, music = false))
+            val local = com.ivor.ivormusic.data.LocalVideoPlaylistsRepository
+            onResult(
+                when {
+                    local.isLocal(playlistId) ->
+                        localVideoPlaylistsRepository.addVideo(playlistId, video)
+                    playlistId == "WL" && !_isLoggedIn.value ->
+                        localVideoPlaylistsRepository.addVideo(
+                            localVideoPlaylistsRepository.ensureWatchLater(),
+                            video
+                        )
+                    else -> youtubeRepository.addToYouTubePlaylist(
+                        playlistId,
+                        video.videoId,
+                        music = false
+                    )
+                }
+            )
         }
+    }
+
+    /** Create a playlist on the device, from the save sheet. */
+    fun createLocalVideoPlaylist(name: String, onCreated: (String?) -> Unit) {
+        viewModelScope.launch { onCreated(localVideoPlaylistsRepository.create(name)) }
     }
 
     // ---------------- Channel page ----------------
