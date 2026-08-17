@@ -20,16 +20,16 @@ These are counts from the current source tree, not aspirations.
 
 | Measure | Value |
 |---|---|
-| UI Kotlin files | 63 |
-| Lines of UI code | ~37,500 |
-| Files importing `androidx.compose.material3` | 53 |
-| Files using Expressive-only APIs | 39 |
-| `MaterialShapes` references | 141, across 14 distinct shapes |
-| `spring()` animation specs | 120, across 42 files |
-| `animate*AsState` call sites | 104 |
+| UI Kotlin files | 95 |
+| Lines of UI code | ~60,400 |
+| Files importing `androidx.compose.material3` | 77 |
+| Files using Expressive-only APIs | 49 |
+| `MaterialShapes` references | 142, across 17 distinct shapes |
+| `spring()` animation specs | 127, across 45 files |
+| `animate*AsState` call sites | 81 |
 | Built-in color palettes | 27, in 6 families |
 | Player styles | 8, each a full independent layout |
-| Material 3 version | `1.5.0-alpha13` (Expressive APIs) |
+| Material 3 version | `1.5.0-alpha24` (Expressive APIs) |
 
 There is no fallback path, no "classic mode", and no abstraction layer between the app and Material 3. `ExperimentalMaterial3ExpressiveApi` is opted into **globally** at the compiler level in `app/build.gradle.kts`, because the Expressive surface is used widely enough that per-file annotations would be noise:
 
@@ -113,7 +113,7 @@ Seven files go further and animate between shapes at runtime using `RoundedPolyg
 
 ## Motion
 
-Expressive motion is spring-physics motion. Koda uses `spring()` 120 times across 42 files, and the distribution of damping ratios is itself a design statement: bouncy is the default, not the exception.
+Expressive motion is spring-physics motion. Koda uses `spring()` 127 times across 45 files, and the distribution of damping ratios is itself a design statement: bouncy is the default, not the exception.
 
 | Spring constant | Uses |
 |---|---|
@@ -126,7 +126,7 @@ Expressive motion is spring-physics motion. Koda uses `spring()` 120 times acros
 
 Duration-based `tween()` still appears 63 times, but it is reserved for things springs genuinely model badly. Crossfades, timed reveals, and progress that must track real elapsed time. Anything responding to a touch is a spring.
 
-Expressive progress and loading indicators are used in place of the standard ones throughout: `LoadingIndicator` in 26 files, `ContainedLoadingIndicator` in 5, `LinearWavyProgressIndicator` in 9, and `CircularWavyProgressIndicator` in 4.
+Expressive progress and loading indicators are used in place of the standard ones throughout: `LoadingIndicator` in 27 files, `ContainedLoadingIndicator` in 7, `LinearWavyProgressIndicator` in 11, and `CircularWavyProgressIndicator` in 4.
 
 Motion is paired with restraint on haptics. `PlayerHaptics` deliberately fires on only two interactions (skip, and play/pause), using semantic feedback types rather than raw vibration:
 
@@ -199,7 +199,7 @@ Two families, each doing a specific job:
 
 ## Eight players, one design language
 
-The player styles are the clearest demonstration that Expressive is a construction material rather than a coat of paint. Each is an independent layout (roughly 10,300 lines across the player package), and none of them re-implements theming, motion, or shape. They all draw from the same system.
+The player styles are the clearest demonstration that Expressive is a construction material rather than a coat of paint. Each is an independent layout (roughly 11,900 lines across the player package), and none of them re-implements theming, motion, or shape. They all draw from the same system.
 
 | Style | Idea |
 |---|---|
@@ -213,6 +213,8 @@ The player styles are the clearest demonstration that Expressive is a constructi
 | Dial | Rotary tick-ring instrument spun to scrub |
 
 Eight visually distinct players share one theme, one motion scheme, and one shape library. That is the point of a design system, and it is why adding a ninth style is a contained piece of work while replacing the design language is not.
+
+**The same reasoning runs the other way, and `ui/channel/CreatorHeader.kt` is where it shows.** A creator's channel page in video mode and their artist page in music mode are two screens over genuinely different content - an upload feed and a discography - so they are two screens. But they are one person, and a viewer arriving from either mode should not feel like they arrived at two different people, so the identity is one shared component: banner, avatar, verified tick, counts, and a slot the two screens fill differently (Subscribe and Share on one side, Play, Shuffle and Radio on the other). **Share the part that must not differ; do not share the part that genuinely does.** Two headers maintained separately drift until the same name has two avatars and two follower counts, and nothing fails when they do.
 
 ---
 
@@ -238,7 +240,7 @@ Between palettes, theme modes, and player styles, that is a very large number of
 
 The reasons are practical, not stubborn:
 
-1. **It is not a theme, it is the app.** 47 files use Expressive-only APIs directly. Replacing the design language means rewriting every screen, both players, all eight player styles, both music homes, onboarding, and settings. Roughly 54,000 lines of UI code.
+1. **It is not a theme, it is the app.** 49 files use Expressive-only APIs directly. Replacing the design language means rewriting every screen, both players, all eight player styles, both music homes, onboarding, and settings. Roughly 60,000 lines of UI code.
 2. **Two design languages means two apps.** Every future feature would need building twice, and every bug would need reproducing twice. In a project this size that is not a sustainable trade.
 3. **The design is the differentiator.** There are many capable NewPipe-based players. What Koda offers on top of the same extraction stack is this interface. Making it generic removes the reason to choose it.
 
