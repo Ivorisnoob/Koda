@@ -463,6 +463,10 @@ fun HomeScreen(
                                     },
                                     shorts = if (shortsEnabled) shortsFeed else emptyList(),
                                     onShortClick = { index -> onOpenShorts(shortsFeed, index) },
+                                    // Without this the long-press sheet loses
+                                    // its whole queue section, on the one feed
+                                    // people spend the most time in.
+                                    onEnqueueVideo = onEnqueueVideo,
                                     onProfileClick = onProfileClick,
                                     onSettingsClick = onNavigateToSettings,
                                     onDownloadsClick = onNavigateToDownloads,
@@ -676,6 +680,7 @@ fun HomeScreen(
                                 onPlayQueue = onPlayVideoQueue,
                                 onLoginClick = { showAuthDialog = true },
                                 contentPadding = listContentPadding,
+                                onEnqueueVideo = onEnqueueVideo,
                                 rootListState = videoLibraryScrollState
                             )
                         }
@@ -1899,7 +1904,8 @@ fun SearchContent(
                         contentPadding = contentPadding,
                         // Search results aren't the user's own playlists
                         allowRemove = false,
-                        onPlayQueue = onPlayVideoQueue
+                        onPlayQueue = onPlayVideoQueue,
+                        onEnqueueVideo = onEnqueueVideo
                     )
                 }
             }

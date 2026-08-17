@@ -468,6 +468,14 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     private val _isVideoPlaylistsLoading = MutableStateFlow(false)
     val isVideoPlaylistsLoading: StateFlow<Boolean> = _isVideoPlaylistsLoading.asStateFlow()
 
+    /**
+     * The device's playlists with their videos attached, for marking the ones a
+     * video is already in. Mirrors `HomeViewModel.localVideoPlaylists`; see
+     * there for why the account's are not covered.
+     */
+    val localVideoPlaylists: StateFlow<List<com.ivor.ivormusic.data.LocalVideoPlaylist>> =
+        localVideoPlaylistsRepository.playlists
+
     // ---------------- Channel page (latest uploads) ----------------
 
     private val _channelVideos = MutableStateFlow<List<VideoItem>>(emptyList())

@@ -140,9 +140,8 @@ import androidx.compose.material.icons.rounded.PlaylistPlay
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
-import com.ivor.ivormusic.ui.video.SaveToPlaylistSheet
 import com.ivor.ivormusic.ui.video.VideoCard
-import com.ivor.ivormusic.ui.video.VideoDownloadSheet
+import com.ivor.ivormusic.ui.video.VideoOptionsSheetHost
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -249,18 +248,11 @@ fun SearchScreen(
     val savedPlaylistIds by viewModel.savedPlaylistIds.collectAsState()
     val savedVideoPlaylistIds by viewModel.savedVideoPlaylistIds.collectAsState()
 
-    // Save-to-playlist sheet (long-press on a video search result) and the
-    // download sheet it hands off to, same wiring as the video home feed
+    // Options sheet (long-press on a video search result), same wiring as the
+    // video home feed
     var saveTargetVideo by remember { mutableStateOf<VideoItem?>(null) }
-    var downloadTargetVideo by remember { mutableStateOf<VideoItem?>(null) }
-    val isYouTubeConnected by viewModel.isYouTubeConnected.collectAsState()
-    val videoPlaylists by viewModel.videoPlaylists.collectAsState()
-    val isVideoPlaylistsLoading by viewModel.isVideoPlaylistsLoading.collectAsState()
 
     fun onVideoLongPress(video: VideoItem) {
-        // No sign-in wall: the sheet always has device playlists to offer, and
-        // only the account's half needs a session to fetch.
-        if (isYouTubeConnected) viewModel.loadVideoPlaylists()
         saveTargetVideo = video
     }
 
@@ -409,39 +401,19 @@ fun SearchScreen(
     }
 
     saveTargetVideo?.let { video ->
-        SaveToPlaylistSheet(
+        VideoOptionsSheetHost(
             video = video,
-            playlists = videoPlaylists,
-            isLoading = isVideoPlaylistsLoading,
-            onSave = { playlistId, onResult ->
-                viewModel.addVideoToPlaylist(playlistId, video, onResult)
-            },
-            onDownload = {
-                saveTargetVideo = null
-                downloadTargetVideo = video
-            },
+            viewModel = viewModel,
             onDismiss = { saveTargetVideo = null },
+            onEnqueue = onEnqueueVideo?.let { enqueue -> { next -> enqueue(video, next) } },
             // Search results are never filtered - searching is explicit
             // intent - so "not interested" would visibly do nothing here and
             // is left out. Blocking the channel still has a real effect on
             // every feed, and the undo snackbar says so.
-            onNotInterested = null,
-            onBlockChannel = { viewModel.blockChannelFor(video) },
-            isSignedOut = !isYouTubeConnected,
-            onCreatePlaylist = { name, onCreated ->
-                viewModel.createLocalVideoPlaylist(name, onCreated)
-            },
-            onEnqueue = onEnqueueVideo?.let { enqueue -> { next -> enqueue(video, next) } }
+            allowNotInterested = false
         )
     }
 
-    downloadTargetVideo?.let { video ->
-        VideoDownloadSheet(
-            video = video,
-            onDismiss = { downloadTargetVideo = null }
-        )
-    }
-    
     // Reset visible count when query changes
     LaunchedEffect(query) {
         visibleLocalCount = 20

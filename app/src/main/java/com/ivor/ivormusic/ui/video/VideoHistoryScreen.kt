@@ -63,13 +63,28 @@ fun VideoHistoryContent(
     onVideoClick: (VideoItem) -> Unit,
     onLoginClick: () -> Unit,
     contentPadding: PaddingValues,
-    showHero: Boolean = true
+    showHero: Boolean = true,
+    /** Queue a video from here. Null where there is no player to queue into. */
+    onEnqueueVideo: ((VideoItem, Boolean) -> Unit)? = null
 ) {
     val historyVideos by viewModel.historyVideos.collectAsState()
     val isHistoryLoading by viewModel.isHistoryLoading.collectAsState()
     val isYouTubeConnected by viewModel.isYouTubeConnected.collectAsState()
     val backgroundColor = MaterialTheme.colorScheme.background
-    
+
+    // A long press means the same thing here as on every other video card.
+    // History is the list people come back to precisely to re-watch or keep
+    // something, so it is the last surface that should have been read-only.
+    var optionsTarget by remember { mutableStateOf<VideoItem?>(null) }
+    optionsTarget?.let { video ->
+        VideoOptionsSheetHost(
+            video = video,
+            viewModel = viewModel,
+            onDismiss = { optionsTarget = null },
+            onEnqueue = onEnqueueVideo?.let { enqueue -> { next -> enqueue(video, next) } }
+        )
+    }
+
     // Initial fetch — works logged out too (locally persisted history)
     LaunchedEffect(Unit) {
         if (historyVideos.isEmpty()) {
@@ -190,6 +205,7 @@ fun VideoHistoryContent(
                     VideoCard(
                         video = video,
                         onClick = { onVideoClick(video) },
+                        onLongClick = { optionsTarget = video },
                         modifier = Modifier.padding(horizontal = 16.dp)
                     )
                 }

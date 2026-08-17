@@ -253,7 +253,7 @@ private fun SongOptionsHeader(song: Song) {
 }
 
 /**
- * One action. Shaped like `SaveToPlaylistSheet`'s rows on the video side, so
+ * One action. Shaped like `VideoOptionsSheet`'s rows on the video side, so
  * the same gesture produces a recognisably similar sheet in both modes.
  */
 @Composable

@@ -139,18 +139,11 @@ fun SubscriptionsContent(
     // scrolling the rail.
     var channelToUnfollow by remember { mutableStateOf<SubscribedChannel?>(null) }
 
-    // Save-to-playlist sheet (long-press on a video card) and the download
-    // sheet it hands off to, mirroring the video home feed so a long-press
-    // means the same thing wherever a video card appears.
+    // Options sheet (long-press on a video card), mirroring the video home feed
+    // so a long-press means the same thing wherever a video card appears.
     var saveTargetVideo by remember { mutableStateOf<VideoItem?>(null) }
-    var downloadTargetVideo by remember { mutableStateOf<VideoItem?>(null) }
-    val videoPlaylists by viewModel.videoPlaylists.collectAsState()
-    val isVideoPlaylistsLoading by viewModel.isVideoPlaylistsLoading.collectAsState()
 
     fun onVideoLongPress(video: VideoItem) {
-        // No sign-in wall: the sheet always has device playlists to offer, and
-        // only the account's half needs a session to fetch.
-        if (isYouTubeConnected) viewModel.loadVideoPlaylists()
         saveTargetVideo = video
     }
 
@@ -249,36 +242,16 @@ fun SubscriptionsContent(
     // Declared outside the `when` below so the sheets survive a drill-in or
     // back-out while one is open.
     saveTargetVideo?.let { video ->
-        SaveToPlaylistSheet(
+        VideoOptionsSheetHost(
             video = video,
-            playlists = videoPlaylists,
-            isLoading = isVideoPlaylistsLoading,
-            onSave = { playlistId, onResult ->
-                viewModel.addVideoToPlaylist(playlistId, video, onResult)
-            },
-            onDownload = {
-                saveTargetVideo = null
-                downloadTargetVideo = video
-            },
+            viewModel = viewModel,
             onDismiss = { saveTargetVideo = null },
-            onNotInterested = { viewModel.markNotInterested(video) },
+            onEnqueue = onEnqueueVideo?.let { enqueue -> { next -> enqueue(video, next) } },
             // No channel block offered here: hiding a channel the user
             // deliberately follows, from the feed that exists to show it, is a
             // contradiction. Unfollowing is the tool for that, and it is one
             // tap away in the same tab.
-            onBlockChannel = null,
-            isSignedOut = !isYouTubeConnected,
-            onCreatePlaylist = { name, onCreated ->
-                viewModel.createLocalVideoPlaylist(name, onCreated)
-            },
-            onEnqueue = onEnqueueVideo?.let { enqueue -> { next -> enqueue(video, next) } }
-        )
-    }
-
-    downloadTargetVideo?.let { video ->
-        VideoDownloadSheet(
-            video = video,
-            onDismiss = { downloadTargetVideo = null }
+            allowBlockChannel = false
         )
     }
 

@@ -384,6 +384,18 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     val isVideoPlaylistsLoading: StateFlow<Boolean> = _isVideoPlaylistsLoading.asStateFlow()
 
     /**
+     * The device's video playlists with their videos still attached, which is
+     * what [videoPlaylists] drops on the way to [com.ivor.ivormusic.data.VideoPlaylist].
+     *
+     * Exposed so the options sheet can mark the playlists a video is already
+     * in. It stops at the device's own on purpose: the account's would need a
+     * playlist browse each, which is one request per row for a checkmark, and
+     * saving twice is a no-op on both sides anyway.
+     */
+    val localVideoPlaylists: StateFlow<List<com.ivor.ivormusic.data.LocalVideoPlaylist>> =
+        localVideoPlaylistsRepository.playlists
+
+    /**
      * The saved playlists again, shaped for video mode's Library list and
      * playlist page. One store feeds both modes, so anything kept in music mode
      * is here too - see [com.ivor.ivormusic.data.SavedPlaylistsRepository].

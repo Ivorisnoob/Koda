@@ -12,6 +12,7 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -137,6 +138,8 @@ fun VideoLibraryContent(
     onPlayQueue: ((com.ivor.ivormusic.data.VideoQueue) -> Unit)? = null,
     onLoginClick: () -> Unit,
     contentPadding: PaddingValues,
+    /** Queue a video from the history or playlist pages. */
+    onEnqueueVideo: ((VideoItem, Boolean) -> Unit)? = null,
     /**
      * Hoisted by HomeScreen for the tab's root page only. History and playlist
      * pages are drill-ins popped with Back, so scrolling the root beneath them
@@ -230,7 +233,8 @@ fun VideoLibraryContent(
                     onVideoClick = onVideoClick,
                     onLoginClick = onLoginClick,
                     contentPadding = contentPadding,
-                    showHero = false
+                    showHero = false,
+                    onEnqueueVideo = onEnqueueVideo
                 )
             }
 
@@ -240,7 +244,8 @@ fun VideoLibraryContent(
                 onVideoClick = onVideoClick,
                 onPlayQueue = onPlayQueue,
                 onBack = { page = LibraryPage.Root },
-                contentPadding = contentPadding
+                contentPadding = contentPadding,
+                onEnqueueVideo = onEnqueueVideo
             )
         }
     }
@@ -1047,10 +1052,29 @@ fun VideoPlaylistDetail(
      * when a caller has not wired it up, which plays the one video and drops the
      * playlist - the behaviour every caller had before there was a queue.
      */
-    onPlayQueue: ((com.ivor.ivormusic.data.VideoQueue) -> Unit)? = null
+    onPlayQueue: ((com.ivor.ivormusic.data.VideoQueue) -> Unit)? = null,
+    /** Queue a video without leaving the playlist. */
+    onEnqueueVideo: ((VideoItem, Boolean) -> Unit)? = null
 ) {
     val videos by viewModel.playlistVideos.collectAsState()
     val isLoading by viewModel.isPlaylistVideosLoading.collectAsState()
+
+    // Long-press options, same as any other video card. This is the page where
+    // "play this next" has the most to say - the whole list is right there -
+    // and until now it was the one place a video card did nothing on hold.
+    var optionsTarget by remember { mutableStateOf<VideoItem?>(null) }
+    optionsTarget?.let { video ->
+        VideoOptionsSheetHost(
+            video = video,
+            viewModel = viewModel,
+            onDismiss = { optionsTarget = null },
+            onEnqueue = onEnqueueVideo?.let { enqueue -> { next -> enqueue(video, next) } },
+            // Hiding a video from your feeds, taken from inside a playlist you
+            // put it in yourself, is the app arguing with the user. Remove is
+            // the tool here, and it is on the row already.
+            allowNotInterested = false
+        )
+    }
 
     // Keeping the playlist you just found is the whole reason for arriving here
     // from search, so it sits in the top bar next to Share rather than behind
@@ -1174,6 +1198,7 @@ fun VideoPlaylistDetail(
                                 onVideoClick(video)
                             }
                         },
+                        onLongClick = { optionsTarget = video },
                         onRemove = if (allowRemove) {
                             { viewModel.removePlaylistVideo(playlist.playlistId, video) }
                         } else null,
@@ -1196,6 +1221,7 @@ private fun PlaylistVideoRow(
     video: VideoItem,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    onLongClick: (() -> Unit)? = null,
     onRemove: (() -> Unit)? = null,
     removeLabel: String = "Remove from playlist"
 ) {
@@ -1206,7 +1232,7 @@ private fun PlaylistVideoRow(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
-            .clickable(onClick = onClick),
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
         shape = RoundedCornerShape(14.dp),
         color = MaterialTheme.colorScheme.surfaceContainer,
         tonalElevation = 1.dp

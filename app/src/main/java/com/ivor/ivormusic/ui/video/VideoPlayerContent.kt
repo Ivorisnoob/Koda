@@ -1012,9 +1012,10 @@ fun VideoPlayerContent(
         showLiveChat = false
     }
 
-    // Save to Watch Later / playlist sheet
+    // Long-press options sheet, and the "save" action in the info area
     saveTargetVideo?.let { target ->
-        SaveToPlaylistSheet(
+        val localVideoPlaylists by viewModel.localVideoPlaylists.collectAsState()
+        VideoOptionsSheet(
             video = target,
             playlists = videoPlaylists,
             isLoading = isVideoPlaylistsLoading,
@@ -1042,7 +1043,18 @@ fun VideoPlayerContent(
             // after itself.
             onEnqueue = if (target.videoId != currentVideo.videoId) {
                 { playNext -> viewModel.enqueueVideo(target, playNext) }
-            } else null
+            } else null,
+            alreadyIn = run {
+                val ids = localVideoPlaylists
+                    .filter { list -> list.videos.any { it.videoId == target.videoId } }
+                    .map { it.id }
+                    .toSet()
+                // Signed out the pinned Watch later row saves into the device
+                // list, so that is what says whether it is already there.
+                if (!isLoggedIn &&
+                    com.ivor.ivormusic.data.LocalVideoPlaylistsRepository.WATCH_LATER_ID in ids
+                ) ids + "WL" else ids
+            }
         )
     }
 
