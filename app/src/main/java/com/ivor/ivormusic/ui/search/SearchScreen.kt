@@ -64,6 +64,8 @@ import androidx.compose.material.icons.rounded.LiveTv
 import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.Newspaper
 import androidx.compose.material.icons.rounded.Podcasts
+import androidx.compose.material.icons.rounded.AccountCircle
+import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.School
 import androidx.compose.material.icons.rounded.Science
@@ -201,6 +203,8 @@ fun SearchScreen(
     onAlbumClick: (PlaylistDisplayItem) -> Unit = {},
     onPlaylistClick: (PlaylistDisplayItem) -> Unit = {},
     onVideoPlaylistClick: (VideoPlaylist) -> Unit = {},
+    /** Open a creator's page, from a Channels result or the long-press sheet. */
+    onOpenChannel: (String) -> Unit = {},
     onProfileClick: () -> Unit = {},
     contentPadding: PaddingValues,
     viewModel: HomeViewModel,
@@ -226,6 +230,9 @@ fun SearchScreen(
     var youtubeResults by remember { mutableStateOf<List<Song>>(emptyList()) }
     var videoResults by remember { mutableStateOf<List<VideoItem>>(emptyList()) }
     var videoPlaylistResults by remember { mutableStateOf<List<VideoPlaylist>>(emptyList()) }
+    var channelResults by remember {
+        mutableStateOf<List<com.ivor.ivormusic.data.SubscribedChannel>>(emptyList())
+    }
     var artistResults by remember { mutableStateOf<List<ArtistItem>>(emptyList()) }
     var albumResults by remember { mutableStateOf<List<PlaylistDisplayItem>>(emptyList()) }
     var playlistResults by remember { mutableStateOf<List<PlaylistDisplayItem>>(emptyList()) }
@@ -311,6 +318,7 @@ fun SearchScreen(
             youtubeResults = emptyList()
             videoResults = emptyList()
             videoPlaylistResults = emptyList()
+            channelResults = emptyList()
             artistResults = emptyList()
             albumResults = emptyList()
             playlistResults = emptyList()
@@ -324,6 +332,7 @@ fun SearchScreen(
             youtubeResults = emptyList()
             videoResults = emptyList()
             videoPlaylistResults = emptyList()
+            channelResults = emptyList()
             artistResults = emptyList()
             albumResults = emptyList()
             playlistResults = emptyList()
@@ -336,6 +345,7 @@ fun SearchScreen(
                 when (selectedVideoCategory) {
                     VideoSearchCategory.VIDEOS -> videoResults = viewModel.searchVideos(query, selectedDateFilter, selectedSort)
                     VideoSearchCategory.PLAYLISTS -> videoPlaylistResults = viewModel.searchVideoPlaylists(query)
+                    VideoSearchCategory.CHANNELS -> channelResults = viewModel.searchChannels(query)
                 }
             } else {
                 when (selectedCategory) {
@@ -350,6 +360,7 @@ fun SearchScreen(
             youtubeResults = emptyList()
             videoResults = emptyList()
             videoPlaylistResults = emptyList()
+            channelResults = emptyList()
             artistResults = emptyList()
             albumResults = emptyList()
             playlistResults = emptyList()
@@ -410,7 +421,8 @@ fun SearchScreen(
             // intent - so "not interested" would visibly do nothing here and
             // is left out. Blocking the channel still has a real effect on
             // every feed, and the undo snackbar says so.
-            allowNotInterested = false
+            allowNotInterested = false,
+            onOpenChannel = onOpenChannel
         )
     }
 
@@ -419,12 +431,22 @@ fun SearchScreen(
         visibleLocalCount = 20
     }
 
-    // Resolve a pasted YouTube link (video or playlist) off the normal search
-    // path. A watch link resolves through one watch-next call; a playlist
+    // Resolve a pasted YouTube link (video, playlist or channel) off the normal
+    // search path. A watch link resolves through one watch-next call; a playlist
     // link loads its items. Retriggered by the retry button via linkRetryToken.
     LaunchedEffect(parsedLink, videoMode, linkRetryToken) {
         if (parsedLink == null) {
             linkState = LinkLookupState.Idle
+            return@LaunchedEffect
+        }
+        // A channel link has nothing to preview - there is no track to play and
+        // no list to show - so it opens the creator's page instead of resolving
+        // into a result card. The query is cleared on the way out so coming back
+        // to search does not immediately reopen it.
+        parsedLink.channelRef?.let { ref ->
+            linkState = LinkLookupState.Idle
+            query = ""
+            onOpenChannel(ref)
             return@LaunchedEffect
         }
         linkState = LinkLookupState.Resolving
@@ -842,7 +864,36 @@ fun SearchScreen(
                 
                 // Video Mode Results: the Videos/Playlists toggle above decides
                 // which search ran, so only one of these lists is ever populated
-                videoMode && (videoResults.isNotEmpty() || videoPlaylistResults.isNotEmpty()) -> {
+                videoMode && (
+                    videoResults.isNotEmpty() ||
+                        videoPlaylistResults.isNotEmpty() ||
+                        channelResults.isNotEmpty()
+                    ) -> {
+                    if (channelResults.isNotEmpty()) {
+                        item {
+                            ResultHeader(
+                                title = "Channels",
+                                count = channelResults.size,
+                                icon = Icons.Rounded.AccountCircle,
+                                color = MaterialTheme.colorScheme.primary,
+                                textColor = textColor,
+                                secondaryTextColor = secondaryTextColor
+                            )
+                        }
+                        items(channelResults, key = { it.channelId }) { channel ->
+                            ChannelResultRow(
+                                channel = channel,
+                                onClick = {
+                                    viewModel.addToSearchHistory(query)
+                                    onOpenChannel(channel.channelId)
+                                },
+                                cardColor = cardColor,
+                                textColor = textColor,
+                                secondaryTextColor = secondaryTextColor
+                            )
+                        }
+                    }
+
                     if (videoPlaylistResults.isNotEmpty()) {
                         item {
                             ResultHeader(
@@ -1574,7 +1625,7 @@ enum class SearchCategory {
 }
 
 enum class VideoSearchCategory {
-    VIDEOS, PLAYLISTS
+    VIDEOS, PLAYLISTS, CHANNELS
 }
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
@@ -2819,6 +2870,72 @@ private fun SearchPagingFooter(
                     color = secondaryTextColor
                 )
             }
+        }
+    }
+}
+
+
+/**
+ * A channel in video-mode search results.
+ *
+ * Deliberately the only video-mode result row with no save or queue action:
+ * a channel is not something to keep or play, it is somewhere to go, so the
+ * whole row is one target and there is nothing else on it to miss.
+ */
+@Composable
+private fun ChannelResultRow(
+    channel: com.ivor.ivormusic.data.SubscribedChannel,
+    onClick: () -> Unit,
+    cardColor: Color,
+    textColor: Color,
+    secondaryTextColor: Color
+) {
+    Surface(
+        onClick = onClick,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 4.dp),
+        shape = RoundedCornerShape(16.dp),
+        color = cardColor
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            com.ivor.ivormusic.ui.channel.CreatorAvatar(
+                avatarUrl = channel.avatarUrl,
+                name = channel.name,
+                modifier = Modifier.size(52.dp)
+            )
+            Spacer(modifier = Modifier.size(14.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = channel.name,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = textColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                val subtitle = listOfNotNull(
+                    channel.handle?.takeIf { it.isNotBlank() },
+                    channel.subscriberCountText?.takeIf { it.isNotBlank() }
+                ).joinToString(" • ")
+                if (subtitle.isNotBlank()) {
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = secondaryTextColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+            Icon(
+                Icons.Rounded.ChevronRight,
+                contentDescription = null,
+                tint = secondaryTextColor
+            )
         }
     }
 }

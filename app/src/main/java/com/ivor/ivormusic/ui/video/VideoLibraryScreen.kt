@@ -128,6 +128,8 @@ private sealed interface LibraryPage {
 @Composable
 fun VideoLibraryContent(
     viewModel: HomeViewModel,
+    /** Open a creator's page, from the long-press sheet on any video row. */
+    onOpenChannel: ((String) -> Unit)? = null,
     onVideoClick: (VideoItem) -> Unit,
     /**
      * Play a video *as part of* the playlist it was tapped in, so the rest of it
@@ -234,7 +236,8 @@ fun VideoLibraryContent(
                     onLoginClick = onLoginClick,
                     contentPadding = contentPadding,
                     showHero = false,
-                    onEnqueueVideo = onEnqueueVideo
+                    onEnqueueVideo = onEnqueueVideo,
+                    onOpenChannel = onOpenChannel
                 )
             }
 
@@ -245,7 +248,8 @@ fun VideoLibraryContent(
                 onPlayQueue = onPlayQueue,
                 onBack = { page = LibraryPage.Root },
                 contentPadding = contentPadding,
-                onEnqueueVideo = onEnqueueVideo
+                onEnqueueVideo = onEnqueueVideo,
+                onOpenChannel = onOpenChannel
             )
         }
     }
@@ -1054,7 +1058,9 @@ fun VideoPlaylistDetail(
      */
     onPlayQueue: ((com.ivor.ivormusic.data.VideoQueue) -> Unit)? = null,
     /** Queue a video without leaving the playlist. */
-    onEnqueueVideo: ((VideoItem, Boolean) -> Unit)? = null
+    onEnqueueVideo: ((VideoItem, Boolean) -> Unit)? = null,
+    /** Open a video's creator, from the long-press sheet. */
+    onOpenChannel: ((String) -> Unit)? = null
 ) {
     val videos by viewModel.playlistVideos.collectAsState()
     val isLoading by viewModel.isPlaylistVideosLoading.collectAsState()
@@ -1069,6 +1075,7 @@ fun VideoPlaylistDetail(
             viewModel = viewModel,
             onDismiss = { optionsTarget = null },
             onEnqueue = onEnqueueVideo?.let { enqueue -> { next -> enqueue(video, next) } },
+            onOpenChannel = onOpenChannel,
             // Hiding a video from your feeds, taken from inside a playlist you
             // put it in yourself, is the app arguing with the user. Remove is
             // the tool here, and it is on the row already.

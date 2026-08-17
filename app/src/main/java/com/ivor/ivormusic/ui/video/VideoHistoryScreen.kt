@@ -65,7 +65,9 @@ fun VideoHistoryContent(
     contentPadding: PaddingValues,
     showHero: Boolean = true,
     /** Queue a video from here. Null where there is no player to queue into. */
-    onEnqueueVideo: ((VideoItem, Boolean) -> Unit)? = null
+    onEnqueueVideo: ((VideoItem, Boolean) -> Unit)? = null,
+    /** Open a creator's page, from the long-press sheet. */
+    onOpenChannel: ((String) -> Unit)? = null
 ) {
     val historyVideos by viewModel.historyVideos.collectAsState()
     val isHistoryLoading by viewModel.isHistoryLoading.collectAsState()
@@ -81,7 +83,8 @@ fun VideoHistoryContent(
             video = video,
             viewModel = viewModel,
             onDismiss = { optionsTarget = null },
-            onEnqueue = onEnqueueVideo?.let { enqueue -> { next -> enqueue(video, next) } }
+            onEnqueue = onEnqueueVideo?.let { enqueue -> { next -> enqueue(video, next) } },
+            onOpenChannel = onOpenChannel
         )
     }
 

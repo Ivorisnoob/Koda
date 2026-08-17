@@ -109,7 +109,14 @@ fun enterPipMode(
 fun VideoPlayerOverlay(
     viewModel: VideoPlayerViewModel,
     timedCommentsEnabled: Boolean = false,
-    miniPlayerExtraBottomPadding: androidx.compose.ui.unit.Dp = 0.dp
+    miniPlayerExtraBottomPadding: androidx.compose.ui.unit.Dp = 0.dp,
+    /**
+     * Open the playing video's creator. Handled by the host rather than here,
+     * because the channel page is a NavHost destination and this overlay is
+     * drawn above the NavHost - the host is the only layer that can both
+     * navigate and drop this player to its mini bar on the way.
+     */
+    onOpenChannel: (String) -> Unit = {}
 ) {
     val isExpanded by viewModel.isExpanded.collectAsState()
     val currentVideo by viewModel.currentVideo.collectAsState()
@@ -302,6 +309,7 @@ fun VideoPlayerOverlay(
                          viewModel.setExpanded(false)
                      },
                      timedCommentsFeatureEnabled = timedCommentsEnabled,
+                     onOpenChannel = onOpenChannel,
                      onMinimizeDragDelta = { dy ->
                          if (!isDragging) {
                              isDragging = true

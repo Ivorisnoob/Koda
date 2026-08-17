@@ -476,16 +476,6 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     val localVideoPlaylists: StateFlow<List<com.ivor.ivormusic.data.LocalVideoPlaylist>> =
         localVideoPlaylistsRepository.playlists
 
-    // ---------------- Channel page (latest uploads) ----------------
-
-    private val _channelVideos = MutableStateFlow<List<VideoItem>>(emptyList())
-    val channelVideos: StateFlow<List<VideoItem>> = _channelVideos.asStateFlow()
-
-    private val _isChannelVideosLoading = MutableStateFlow(false)
-    val isChannelVideosLoading: StateFlow<Boolean> = _isChannelVideosLoading.asStateFlow()
-
-    private var channelVideosLoadedForChannelId: String? = null
-
     /**
      * Stream data source factory: ChunkedStreamDataSource fetches googlevideo
      * media in bounded ranged chunks (open-ended requests are server-paced to
@@ -1091,12 +1081,6 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         commentsLoadedForVideoId = null
         _createCommentParams.value = null
         _isLoggedIn.value = youtubeRepository.isLoggedIn()
-
-        // Channel sheet content is per-channel; the next video may belong to
-        // a different one, so force a re-fetch on the next open
-        _channelVideos.value = emptyList()
-        _isChannelVideosLoading.value = false
-        channelVideosLoadedForChannelId = null
 
         // Live state belongs to the previous video; the polls must stop before
         // their next tick can write into the new video's chat.
@@ -1916,35 +1900,6 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     }
 
     // ---------------- Channel page ----------------
-
-    /**
-     * Load the current video's channel uploads for the channel sheet, once
-     * per channel. Uses the canonical UC... id from engagement (falls back to
-     * the id parsed with the video item).
-     */
-    fun loadChannelVideos() {
-        val video = _currentVideo.value ?: return
-        val channelId = _engagement.value?.channelId ?: video.channelId ?: return
-        if (channelVideosLoadedForChannelId == channelId) return
-        channelVideosLoadedForChannelId = channelId
-        _channelVideos.value = emptyList()
-        _isChannelVideosLoading.value = true
-        viewModelScope.launch {
-            try {
-                val channel = com.ivor.ivormusic.data.SubscribedChannel(
-                    channelId = channelId,
-                    name = video.channelName,
-                    avatarUrl = video.channelIconUrl,
-                    subscriberCountText = _engagement.value?.subscriberCountText
-                )
-                _channelVideos.value = youtubeRepository.getChannelVideos(channel)
-            } catch (e: Exception) {
-                android.util.Log.w("VideoPlayerVM", "Failed to load channel videos", e)
-            } finally {
-                _isChannelVideosLoading.value = false
-            }
-        }
-    }
 
     // ---------------- Engagement actions ----------------
 

@@ -89,6 +89,8 @@ fun VideoHomeContent(
     isLoading: Boolean,
     onVideoClick: (VideoItem) -> Unit,
     onEnqueueVideo: ((VideoItem, Boolean) -> Unit)? = null,
+    /** Open a video's creator, from the long-press sheet. */
+    onOpenChannel: ((String) -> Unit)? = null,
     shorts: List<ShortsItem> = emptyList(),
     onShortClick: (Int) -> Unit = {},
     onProfileClick: () -> Unit,
@@ -159,7 +161,8 @@ fun VideoHomeContent(
             video = video,
             viewModel = viewModel,
             onDismiss = { saveTargetVideo = null },
-            onEnqueue = onEnqueueVideo?.let { enqueue -> { next -> enqueue(video, next) } }
+            onEnqueue = onEnqueueVideo?.let { enqueue -> { next -> enqueue(video, next) } },
+            onOpenChannel = onOpenChannel
         )
     }
 
