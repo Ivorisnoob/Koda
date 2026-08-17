@@ -172,6 +172,11 @@ fun HomeScreen(
     onEnqueueVideo: ((com.ivor.ivormusic.data.VideoItem, Boolean) -> Unit)? = null,
     onPlayVideoQueue: ((com.ivor.ivormusic.data.VideoQueue) -> Unit)? = null,
     onOpenShorts: (List<com.ivor.ivormusic.data.ShortsItem>, Int) -> Unit = { _, _ -> },
+    /**
+     * Open a creator's channel page. Threaded down to every surface that shows
+     * a channel name, so tapping one means the same thing everywhere.
+     */
+    onOpenChannel: (String) -> Unit = {},
     shortsEnabled: Boolean = false,
     loadLocalSongs: Boolean = true,
     excludedFolders: Set<String> = emptySet(),
@@ -264,7 +269,14 @@ fun HomeScreen(
         }
     }
 
-    var selectedTab by remember { mutableIntStateOf(0) }
+    // Saveable, not just remembered. Opening a channel page is a real
+    // navigation, so this composable is disposed and restored on the way back,
+    // and a plainly-remembered tab index would drop the user on Home every time
+    // they looked at a creator from the Subscriptions feed. The scroll states
+    // below already survive it, because rememberLazyListState is saveable.
+    var selectedTab by androidx.compose.runtime.saveable.rememberSaveable {
+        mutableIntStateOf(0)
+    }
 
     // Every tab's scroll position, remembered HERE rather than inside the tab
     // content, for two reasons.
@@ -335,6 +347,24 @@ fun HomeScreen(
     
     // Artist screen state (for navigation from player)
     var viewedArtistFromPlayer by remember { mutableStateOf<String?>(null) }
+
+    // The same hand-off, asked for from outside this screen entirely: the
+    // "Open music artist page" cross-link on a creator's channel page pops back
+    // to home and leaves the request on the ViewModel, because a NavHost
+    // destination cannot reach the tab state that lives in here.
+    val pendingArtistPage by viewModel.pendingArtistPage.collectAsState()
+    LaunchedEffect(pendingArtistPage) {
+        pendingArtistPage?.let { artist ->
+            // The artist page is the music-mode view of this creator, and tab 2
+            // is video history while the video toggle is on. Asking for it is
+            // therefore asking to be in music mode; leaving the toggle alone
+            // would land on the wrong tab and look like the link did nothing.
+            if (videoMode) onVideoModeToggle(false)
+            viewedArtistFromPlayer = artist
+            selectedTab = 2
+            viewModel.consumeArtistPageRequest()
+        }
+    }
     // Set by Spotlight's shortcut grid and shelves; consumed by LibraryContent
     // as soon as the tab renders, so returning to Library later lands on the
     // list rather than re-opening the playlist.
@@ -467,6 +497,7 @@ fun HomeScreen(
                                     // its whole queue section, on the one feed
                                     // people spend the most time in.
                                     onEnqueueVideo = onEnqueueVideo,
+                                    onOpenChannel = onOpenChannel,
                                     onProfileClick = onProfileClick,
                                     onSettingsClick = onNavigateToSettings,
                                     onDownloadsClick = onNavigateToDownloads,
@@ -629,6 +660,7 @@ fun HomeScreen(
                                     onNavigateToVideoPlayer(video)
                                 },
                                 onLoginClick = { showAuthDialog = true },
+                                onOpenChannel = onOpenChannel,
                                 onManageSubscriptions = onNavigateToSubscriptions,
                                 contentPadding = listContentPadding,
                                 feedListState = subscriptionsScrollState
@@ -658,6 +690,7 @@ fun HomeScreen(
                                 initialPlaylist = viewedPlaylistFromHome,
                                 onInitialPlaylistConsumed = { viewedPlaylistFromHome = null },
                                 onStatsClick = onNavigateToStats,
+                                onOpenChannel = onOpenChannel,
                                 onSongLongPress = { song -> songOptionsTarget = song },
                                 allSongsListState = musicLibraryScrollState
                             )
@@ -674,6 +707,7 @@ fun HomeScreen(
                         } else if (videoMode) {
                             com.ivor.ivormusic.ui.video.VideoLibraryContent(
                                 viewModel = viewModel,
+                                onOpenChannel = onOpenChannel,
                                 onVideoClick = { video ->
                                     onNavigateToVideoPlayer(video)
                                 },
@@ -1821,6 +1855,7 @@ fun SearchContent(
                 },
                 onProfileClick = onProfileClick,
                 onEnqueueVideo = onEnqueueVideo,
+                onOpenChannel = onOpenChannel,
                 onSongLongPress = onSongLongPress,
                 contentPadding = contentPadding,
                 viewModel = viewModel,
@@ -1877,7 +1912,8 @@ fun SearchContent(
                         },
                         onOpenAlbum = { albumItem -> viewedPlaylist = albumItem },
                         viewModel = viewModel,
-                        onSongLongPress = onSongLongPress
+                        onSongLongPress = onSongLongPress,
+                        onOpenChannel = onOpenChannel
                     )
                 }
             }

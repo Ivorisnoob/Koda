@@ -35,6 +35,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
+import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ChevronRight
@@ -167,7 +168,13 @@ fun VideoOptionsSheet(
     /** Queue this video, either straight after what is playing or at the end. */
     onEnqueue: ((playNext: Boolean) -> Unit)? = null,
     /** Playlist ids that already contain this video; device playlists only. */
-    alreadyIn: Set<String> = emptySet()
+    alreadyIn: Set<String> = emptySet(),
+    /**
+     * Open this video's creator. Null hides the row, which is right where the
+     * item carried no channel id, and where the channel is the page the sheet
+     * was opened from.
+     */
+    onOpenChannel: (() -> Unit)? = null
 ) {
     // Open fully expanded: in the half-expanded state the picker's list and the
     // sheet's drag-to-expand fight over scroll gestures, which reads as janky
@@ -299,6 +306,15 @@ fun VideoOptionsSheet(
                             action()
                             onDismiss()
                         }
+                    },
+                    // Terminal: the sheet is over a screen the channel page is
+                    // about to replace, and leaving it open would put it on top
+                    // of the destination.
+                    onOpenChannel = onOpenChannel?.let { action ->
+                        {
+                            onDismiss()
+                            action()
+                        }
                     }
                 )
 
@@ -338,7 +354,8 @@ private fun ActionsPane(
     onOpenPlaylists: () -> Unit,
     onDownload: () -> Unit,
     onNotInterested: (() -> Unit)?,
-    onBlockChannel: (() -> Unit)?
+    onBlockChannel: (() -> Unit)?,
+    onOpenChannel: (() -> Unit)?
 ) {
     val context = LocalContext.current
 
@@ -404,6 +421,24 @@ private fun ActionsPane(
                 trailing = OptionRowTrailing.CHEVRON,
                 onClick = onDownload
             )
+            // The universal way into a creator's page. Every video-mode surface
+            // opens this sheet, so putting it here is what makes "tap a
+            // channel" mean the same thing in the feed, in search, in history
+            // and in a playlist - rather than being a thing only the player
+            // could do. Absent when the card never carried a channel id (RSS
+            // and some legacy renderers), which is honest: there is nothing to
+            // open.
+            onOpenChannel?.let { action ->
+                OptionRowDivider()
+                OptionRow(
+                    icon = Icons.Rounded.AccountCircle,
+                    title = video.channelName.takeIf { it.isNotBlank() }
+                        ?.let { "Go to $it" }
+                        ?: "Go to channel",
+                    trailing = OptionRowTrailing.CHEVRON,
+                    onClick = action
+                )
+            }
             OptionRowDivider()
             OptionRow(
                 icon = Icons.Rounded.Share,
@@ -973,7 +1008,13 @@ fun VideoOptionsSheetHost(
      * False in the Subscriptions feed: blocking a channel you deliberately
      * follow, from the feed that exists to show it, is a contradiction.
      */
-    allowBlockChannel: Boolean = true
+    allowBlockChannel: Boolean = true,
+    /**
+     * Open this video's creator. Threaded from the screen because it is a
+     * navigation, which no sheet can perform on its own; a call site that
+     * leaves it null simply has no channel row.
+     */
+    onOpenChannel: ((channelId: String) -> Unit)? = null
 ) {
     val playlists by viewModel.videoPlaylists.collectAsState()
     val isLoading by viewModel.isVideoPlaylistsLoading.collectAsState()
@@ -1032,6 +1073,9 @@ fun VideoOptionsSheetHost(
             viewModel.createLocalVideoPlaylist(name, onCreated)
         },
         onEnqueue = onEnqueue,
-        alreadyIn = alreadyIn
+        alreadyIn = alreadyIn,
+        onOpenChannel = onOpenChannel?.let { open ->
+            video.channelId?.takeIf { it.startsWith("UC") }?.let { id -> { open(id) } }
+        }
     )
 }

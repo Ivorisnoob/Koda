@@ -129,6 +129,8 @@ fun LibraryContent(
     songs: List<Song>,
     onSongClick: (Song) -> Unit,
     onPlaylistClick: (PlaylistDisplayItem) -> Unit = {},
+    /** Open a musician's video-mode channel page, from the artist screen. */
+    onOpenChannel: ((String) -> Unit)? = null,
     onPlayQueue: (List<Song>, Song?) -> Unit,
     contentPadding: PaddingValues,
     viewModel: HomeViewModel,
@@ -323,7 +325,8 @@ fun LibraryContent(
                             currentRoute = LibraryRoute.Playlist
                         },
                         viewModel = viewModel,
-                        onSongLongPress = onSongLongPress
+                        onSongLongPress = onSongLongPress,
+                        onOpenChannel = onOpenChannel
                     )
                 }
             }

@@ -10,7 +10,7 @@ For how the app is built, see [`CLAUDE.md`](CLAUDE.md). For the design system an
 
 ## Where Koda is today
 
-Version **4.3** (`versionCode` 21), targeting Android 16 (API 36) with a floor at Android 11 (API 30). Roughly **71,000 lines** of Kotlin across **139 files**, all of it Compose, all of it rendered inside a single `MaterialExpressiveTheme`.
+Version **4.3** (`versionCode` 21), targeting Android 16 (API 36) with a floor at Android 11 (API 30). Roughly **82,000 lines** of Kotlin across **155 files**, all of it Compose, all of it rendered inside a single `MaterialExpressiveTheme`.
 
 The app is past the point of proving itself. The core loops all work end to end:
 
@@ -28,12 +28,13 @@ Where the weight sits today:
 
 | Area | Lines | What lives there |
 | --- | --- | --- |
-| `ui/video` | 15,300 | Video player, live streams, live chat, subscriptions |
-| `ui/player` | 11,200 | Eight music player styles |
-| `data/YouTubeRepository.kt` | 6,500 | The InnerTube and NewPipe layer, single file |
-| `ui/settings` | 5,800 | Hub, eleven pages, search index |
-| `ui/library` | 4,700 | Playlists, liked songs, local audio, listening history |
-| `ui/home` | 3,600 | Both modes' feeds |
+| `ui/video` | 16,700 | Video player, live streams, live chat, subscriptions |
+| `ui/player` | 11,900 | Eight music player styles |
+| `data/YouTubeRepository.kt` | 7,500 | The InnerTube and NewPipe layer, single file |
+| `ui/settings` | 6,000 | Hub, eleven pages, search index |
+| `ui/library` | 5,200 | Playlists, liked songs, local audio, listening history |
+| `ui/home` | 5,100 | Both modes' feeds |
+| `ui/channel` | 2,700 | Creator pages, shared with the music artist screen |
 
 That table is also a map of the risk. `YouTubeRepository.kt` is the single point of failure for every network path in the app, and the two largest UI areas are the two youngest.
 
@@ -47,7 +48,7 @@ These are not goals. They are the walls the roadmap has to fit inside, and any p
 
 **The signed-out path is a first-class path, not a degraded one.** Roughly half the userbase never signs in. A feature that only works with an account needs a device-local answer as well, or it needs to be honest that it is account-only in the same breath it is offered.
 
-**Material 3 Expressive is structural.** 39 files use Expressive-only APIs. An alternate or "classic" design language is a rewrite of 37,500 lines of UI, and the project has a stated policy against it. Specific complaints (a radius, a nav-bar dimension, one animation), are ordinary work and always welcome.
+**Material 3 Expressive is structural.** 49 files use Expressive-only APIs. An alternate or "classic" design language is a rewrite of the entire UI, and the project has a stated policy against it. Specific complaints (a radius, a nav-bar dimension, one animation), are ordinary work and always welcome.
 
 **Minimum SDK 30, and desugaring is load-bearing.** NewPipe calls Java 10/11 APIs that only landed in the platform at API 33. Anything gated above 30 needs a `Build.VERSION.SDK_INT` guard and a working fallback, not a graceful degradation to nothing.
 
@@ -69,23 +70,9 @@ The last entry, **vertical videos pillarboxed on the watch page**, is fixed: the
 
 ### Interface
 
-#### Proper channel screens
-
-A channel in Koda today is a bottom sheet. `ChannelSheet.kt` is 245 lines, and the model behind it, `ChannelProfile`, holds five fields: an id, a name, an avatar, a handle, and a subscriber count as pre-formatted text. Tapping a creator's name gets you their avatar and a Subscribe button, and `getChannelVideos` returns one flat list of uploads with no tabs, no sorting, and no sense of the channel as a place.
-
-That is a gap you feel most at the moment of deciding whether to follow someone. The question "is this channel worth subscribing to" is answered by a banner, a description, an upload cadence, and what else they make. None of which the sheet can show. Everything about the current surface says "here is a name", when what is wanted is "here is a creator".
-
-The target is the full page: banner art, the about text with links and join date, and real tabs (Videos, Shorts, Live, Playlists, Community, About), each with its own sort order and its own continuation paging, so a channel with two thousand uploads scrolls properly instead of ending after one page. Rendered in Koda's own language rather than YouTube's: Expressive shapes, the app's palette, spring physics on the tab switch, and the staggered entrance every other screen already uses.
-
-**Much of this is already paid for.** The Subscribe button routes through `SubscriptionActions`, which means account subscriptions, device-local subscriptions, and the auto target all work on the new screen for free, signed in or out. "Don't recommend this channel" is already wired through `NotInterestedActions`. Sharing, the video grid components, and the long-press save sheet all exist. The work is genuinely the screen and the data behind it, not a new subsystem.
-
-**Two things make it more than a layout job.** The first is that every tab is a different InnerTube browse `params` value, and those must be probed live rather than written from memory. This is exactly the case the probe-first workflow in `CLAUDE.md` exists for, and the Community tab in particular is a renderer family the app has never parsed. `ChannelProfile` will need to grow considerably; today it cannot even express a banner.
-
-The second is a design question worth settling before any code: **`ArtistScreen.kt` already exists, at 1,458 lines, and it is good.** It is the music-mode view of what is often the same entity. A musician's YouTube channel and their YouTube Music artist page are one creator with two faces. Building a channel screen without deciding how it relates to the artist screen means two large screens that drift apart, each missing half of what the other knows. The likely answer is that they stay separate surfaces because their content genuinely differs, but share a header, a subscribe path, and a navigation entry, so that arriving at a musician from video mode and from music mode does not feel like arriving at two different people.
-
 #### Per-channel notification settings
 
-The bell, as YouTube has it: for each channel you follow, choose whether new uploads notify you for everything, only occasionally, or not at all. Today there is no bell anywhere, and no per-channel state to put behind one.
+The bell, as YouTube has it: for each channel you follow, choose whether new uploads notify you for everything, only occasionally, or not at all. There is now a channel page for one to live on, but no bell on it, and no per-channel state to put behind one.
 
 **The uncomfortable part is that the bell is an output control for something that does not run.** `getNotifications()` exists and reads YouTube's own inbox through `notification/get_notification_menu`, but it is a pull that only happens when the notifications sheet is opened, and it needs an account. Nothing in Koda checks for new uploads in the background, and nothing ever posts an Android notification. Adding a per-channel preference without that is building a volume knob with no speaker attached. The setting would be recorded and never consulted.
 
@@ -176,7 +163,7 @@ Two things worth deciding rather than assuming: transitions that carry meaning (
 
 The manifest sets `android:enableOnBackInvokedCallback="true"`, so Koda has opted into the modern back API and then spent a long time suppressing the result everywhere. **19 `BackHandler`s against zero `PredictiveBackHandler`s** was the worst of both arrangements: the opt-in is declared, so the platform stops applying its own compatibility behaviour, and nothing replaced it.
 
-It now stands at **six against eight**, and the eight are every screen stack and every overlay: settings, Library, the video library, Home's search drill-ins, the Subscriptions channel list, the expanded music player, the video player and the Shorts overlay.
+It now stands at **six against eight**, and the eight are every screen stack and every overlay: settings, Library, the video library, Home's search drill-ins, the Subscriptions channel list, the channel page's playlist child, the expanded music player, the video player and the Shorts overlay.
 
 **A note for the next inventory of this.** The Shorts overlay was missed by the first sweep because it was written `BackHandler { ... }` with no argument list, and a grep for `BackHandler(` does not find it. Count both forms.
 
@@ -192,11 +179,11 @@ The second is that **the commit has to continue the gesture rather than restart 
 
 The third is the trap in the cancel path, below.
 
-**The in-screen stacks were the settings problem four more times, so that shape is a component now.** Library's route, the video library's page, the Subscriptions channel list and drill-in, and Home's search drill-ins were each one `AnimatedContent` over a route enum, which composes one state at a time and therefore had nothing behind the child to reveal. `ui/components/PredictiveBackStack.kt` owns the answer: parent in `background`, child in `foreground`, the peel, the cancel spring, and the modifier that makes the covered parent stop taking taps and stop talking to TalkBack. Each call site is now the lift plus three lines.
+**The in-screen stacks were the settings problem four more times, so that shape is a component now.** Library's route, the video library's page, the Subscriptions channel list, and Home's search drill-ins were each one `AnimatedContent` over a route enum, which composes one state at a time and therefore had nothing behind the child to reveal. `ui/components/PredictiveBackStack.kt` owns the answer: parent in `background`, child in `foreground`, the peel, the cancel spring, and the modifier that makes the covered parent stop taking taps and stop talking to TalkBack. Each call site is now the lift plus three lines.
 
 Two details it carries that are easy to get wrong alone. The child's own exit has to be suppressed when a gesture committed, or it snaps back to full size to replay the move the finger just made. And the parent state of the child layer must stay full size (an empty `Spacer`, not nothing), because the default `SizeTransform` will otherwise animate the container between nothing and full screen and clip the child to it, which reads as a page unfolding out of a growing rectangle.
 
-**A step that does not close the child must not be previewed**, which is what `previewable` is for. Clearing the Subscriptions channel filter widens the list in place, and popping an album back to the artist page reveals another child rather than the screen underneath. Previewing either animates a departure that is not happening.
+**A step that does not close the child must not be previewed**, which is what `previewable` is for. Clearing the Subscriptions channel filter widens the list in place, closing the channel page's own search does the same, and popping an album back to the artist page reveals another child rather than the screen underneath. Previewing any of them animates a departure that is not happening.
 
 **The Shorts overlay is the odd one out among the overlays**, and worth knowing before the next one like it. The two players collapse into a mini pill and already own a value describing that journey, so their preview is a scrub of it. Shorts has no smaller resting state - it closes, and what is behind it is the app it was opened from - so its peel is its own value shrinking the whole overlay inward, which is the shape the system uses for leaving with no parent to reveal.
 
@@ -217,16 +204,6 @@ For an app built this heavily on touch (roughly 97 springs, gesture-driven playe
 **The existing use already demonstrates the right instinct, and it should be written down as a rule rather than repeated by memory.** The fullscreen swipes tick because they commit while the finger is still down with no dragged preview behind them, so the tick is the only confirmation the gesture took. Generalised: haptics belong on **commits the user cannot yet see** and on **detents and thresholds:** the wheel clicking to the next style, a reorder locking in, a drag passing the point where releasing will do something. They do not belong on every tap, which is how apps end up buzzing constantly and getting the feature switched off.
 
 Worth routing through one small helper rather than calling `performHapticFeedback` ad hoc, so the vocabulary stays consistent and there is a single place to respect the system haptic setting.
-
-#### Channel links should open in the app
-
-`YouTubeLinkParser` handles `youtu.be`, watch links across the www, m and music subdomains, and `shorts`, `live`, `embed`, `v` and playlist forms. It does not handle channels, not `/@handle`, not `/channel/UC...`, and not the legacy `/c/` or `/user/` paths.
-
-**This is worse than simply not supporting them, because the manifest already claims them.** The intent filters match every `youtube.com` host, so Koda appears in the share sheet and as a link handler for a channel URL, accepts the tap, and then does nothing with it. Offering to handle something and then dropping it is a worse experience than not being offered.
-
-**The expensive half is already built.** `resolveChannelId` turns handles, vanity URLs and legacy user paths into canonical `UC` ids through `navigation/resolve_url`, works signed out, and exists today because the subscription importer needed it. The parser only has to recognise the channel shapes and hand them over.
-
-Naturally this lands on the proper channel screen once that exists; until then the existing channel sheet is a reasonable destination, and shipping it early means the share path is fixed rather than waiting on a larger piece of work.
 
 #### One heading system, applied everywhere
 
@@ -488,6 +465,20 @@ The milestones behind us, kept here so the direction of travel is visible.
 - A queue you can actually edit, in both modes: drag-to-reorder, swipe-to-remove with undo, and Play next / Add to queue from a long press
 - The video long-press sheet rebuilt as two panes, a playlist picker that saves to several playlists at once, and the same long press on the History and playlist pages
 - "Ready offline" in the Library: the songs already cached in full, listed and playable with no network
+- Real channel pages: banner, about, and every tab a creator actually has, reachable from anywhere a channel name appears - including shared channel links, which the manifest had been claiming and dropping
+
+The channel screen is worth recording for what turned out **not** to be the work. The plan called for probing the browse `params` of six tabs and writing them down, and the probe found something better: **a channel page describes itself.** The first browse returns the tab list with each tab's own `params`, every sort order with its own continuation token, and every next page as another token, all of it signed out. So there is exactly one hardcoded browse parameter left in the file, kept as a fallback, and the tab row is built from the response rather than from an enum.
+
+That is not tidiness, it is coverage. **Tab sets genuinely differ per channel**: a musician has "Releases" where a teacher has "Courses" and a large tech channel has "Podcasts" and "Store", and the six tabs the plan named would have drawn empty tabs on channels lacking them while hiding real ones on channels with more. Both failures are silent. `ChannelTabKind` classifies a tab by its `params` prefix, never by its title, because the title is localized and an English match would fall back to a generic layout for most of the world; anything unrecognised stays as `OTHER` and renders as a grid of whatever it holds, which is how "Store" and "Courses" work without code.
+
+**Community posts were the one renderer family flagged as unknown, and they parsed cleanly** - `backstagePostRenderer` with a single attachment that is an image, a multi-image carousel, a shared video or a poll - so the tab shipped rather than being deferred. The About panel is the opposite kind of surprise: it is not in the channel response at all, but behind a continuation token the header carries, so it costs a request and only when opened.
+
+Two decisions about the screen itself. **It is one scroller, not a fixed header over a scrolling well**: header, tab row and content share a single `LazyVerticalGrid` on a six-column base, so a video spans six, a playlist three and a Short two, and the header scrolls away under the tabs. That grid's content padding is the page's only gutter, which meant the banner and the tab strip - the two things that must ignore it - needed `bleedHorizontally`, since Compose has no negative padding. And **opening a playlist is an in-screen child through `PredictiveBackStack`, while opening another channel is a real navigation**: a playlist belongs to the creator you are looking at, another creator belongs in the back stack.
+
+**The player collapses rather than being drawn over.** The channel page is a NavHost destination and both players live above the NavHost, so an expanded video player would simply cover it. Dropping to the mini bar is also the better behaviour on its own merits - the video keeps playing while its creator's page is read - and Shorts close outright, having no minimised form to fall back to. Every surface routes through one `openChannel` lambda in `MainActivity` for exactly that reason.
+
+The relationship with `ArtistScreen` was settled before any of it: **they stay two screens and share one header.** A discography and an upload feed are genuinely different content, but the person is not, so `CreatorHeader` is shared and takes the difference in an actions slot - Subscribe and Share on one side, Play, Shuffle and Radio on the other - with a cross-link each way. The artist page gained a banner, a verified tick and a subscriber count it never had, for one browse call, and that call is the only reason it makes one.
+
 
 The music queue is the other kind of gap worth recording: **the model was finished and the UI was not.** `addToQueue`, `moveQueueItem` and `removeQueueItem` had all existed on `PlayerViewModel` for a long time. `addToQueue` was reachable from nothing at all - only the auto-queue called it - so adding one track to what was already playing was impossible without restarting playback from a new list. `moveQueueItem` was wired into one of the three queue views, and `removeQueueItem` into two. **A ViewModel method with no caller is not a feature, and nothing in the type system says so**, which is why this survived so long. The reorder that did exist measured the drag against a hardcoded 80dp while its rows were a different height, so a long drag walked out from under the finger, and it committed every crossing to both the player and the session file.
 

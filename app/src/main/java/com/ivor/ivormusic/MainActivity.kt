@@ -383,6 +383,30 @@ fun MusicApp(
         }
     }
 
+    /**
+     * Opens a creator's page from anywhere: a feed card, a search result, the
+     * player's channel row, the Subscriptions tab, or a shared link.
+     *
+     * **The two overlays step out of the way rather than being drawn over.**
+     * The channel screen is a NavHost destination, and both players live above
+     * the NavHost, so an expanded video player would simply cover it. Dropping
+     * the video to its mini bar is also the behaviour worth having on its own
+     * merits: the video keeps playing while its creator's page is read, which
+     * is exactly what someone tapping a channel name mid-video wants. Shorts
+     * close outright, because that overlay is full-bleed with no minimised form
+     * to fall back to.
+     *
+     * `launchSingleTop` is deliberately absent: opening channel B from channel
+     * A's "Featured channels" shelf has to push a second entry, or back from B
+     * would leave the app rather than return to A.
+     */
+    val openChannel: (String) -> Unit = openChannel@{ channelId ->
+        if (channelId.isBlank()) return@openChannel
+        videoPlayerViewModel.setExpanded(false)
+        shortsPlayerViewModel.close()
+        navController.navigate("channel/${android.net.Uri.encode(channelId)}")
+    }
+
     // Surface music playback failures. Before this, a song that could not be
     // resolved failed silently and the player looked stuck on loading forever.
     val playbackError by playerViewModel.playbackError.collectAsState()
@@ -464,7 +488,8 @@ fun MusicApp(
                 popUpTo("home") { inclusive = false }
                 launchSingleTop = true
             }
-        }
+        },
+        onOpenChannel = openChannel
     )
 
     // Drives the PiP window's shape and its transport controls. Composed above
@@ -552,6 +577,7 @@ fun MusicApp(
                         videoPlayerViewModel.exoPlayer?.pause()
                         shortsPlayerViewModel.open(shorts, index)
                     },
+                    onOpenChannel = openChannel,
                     shortsEnabled = shortsEnabled,
                     loadLocalSongs = loadLocalSongs,
                     excludedFolders = excludedFolders,
@@ -699,6 +725,53 @@ fun MusicApp(
                     onBack = { navController.popBackStack() }
                 )
             }
+            // A creator's page. The argument is a UC id from in-app callers and
+            // may be an @handle or a full URL when it arrived from a shared
+            // link; the screen resolves whichever it was given.
+            composable(
+                route = "channel/{channelId}",
+                arguments = listOf(
+                    androidx.navigation.navArgument("channelId") {
+                        type = androidx.navigation.NavType.StringType
+                    }
+                ),
+                enterTransition = { slideInHorizontally(initialOffsetX = { it }) + fadeIn() },
+                exitTransition = { slideOutHorizontally(targetOffsetX = { -it / 3 }) + fadeOut() },
+                popEnterTransition = { slideInHorizontally(initialOffsetX = { -it / 3 }) + fadeIn() },
+                popExitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut() }
+            ) { entry ->
+                val channelArg = entry.arguments?.getString("channelId").orEmpty()
+                com.ivor.ivormusic.ui.channel.ChannelScreen(
+                    channelId = channelArg,
+                    homeViewModel = homeViewModel,
+                    onBack = { navController.popBackStack() },
+                    onPlayVideo = { video -> videoPlayerViewModel.playVideo(video) },
+                    onPlayQueue = { queue -> videoPlayerViewModel.playQueue(queue) },
+                    onOpenShorts = { shorts, index ->
+                        videoPlayerViewModel.exoPlayer?.pause()
+                        shortsPlayerViewModel.open(shorts, index)
+                    },
+                    // A channel opened from inside a channel is a new entry, so
+                    // back walks the trail of creators the user actually followed.
+                    onOpenChannel = openChannel,
+                    onEnqueueVideo = { video, playNext ->
+                        videoPlayerViewModel.enqueueVideo(video, playNext)
+                    },
+                    // The sign-in dialog lives on the home screen, so a login ask
+                    // from here goes back for it rather than opening a second
+                    // WebView on top of a detail screen - same rule as the
+                    // subscriptions manager above.
+                    onLoginClick = { navController.popBackStack("home", inclusive = false) },
+                    // The music artist page lives inside the Library tab rather
+                    // than on a route of its own, so the cross-link goes home
+                    // and asks for it; HomeScreen routes to the tab and clears
+                    // the request as it renders.
+                    onOpenMusicArtist = { _, name ->
+                        homeViewModel.requestArtistPage(name)
+                        navController.popBackStack("home", inclusive = false)
+                    }
+                )
+            }
             composable(
                 route = "downloads",
                 enterTransition = { slideInHorizontally(initialOffsetX = { it }) + fadeIn() },
@@ -803,6 +876,7 @@ fun MusicApp(
         com.ivor.ivormusic.ui.video.VideoPlayerOverlay(
             viewModel = videoPlayerViewModel,
             timedCommentsEnabled = timedCommentsEnabled,
+            onOpenChannel = openChannel,
             // Stack the minimized video player above the music pill instead of
             // on top of it when both are alive at once
             miniPlayerExtraBottomPadding = if (musicPillVisible) 88.dp else 0.dp
@@ -811,7 +885,8 @@ fun MusicApp(
         // Shorts sit above everything, including the video player overlay
         com.ivor.ivormusic.ui.shorts.ShortsPlayerOverlay(
             viewModel = shortsPlayerViewModel,
-            hiddenActions = shortsHiddenActions
+            hiddenActions = shortsHiddenActions,
+            onOpenChannel = openChannel
         )
 
         // Undo for "don't recommend", app-wide and last in the stack.

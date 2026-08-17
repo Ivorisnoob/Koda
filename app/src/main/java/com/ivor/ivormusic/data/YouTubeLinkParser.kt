@@ -3,21 +3,38 @@ package com.ivor.ivormusic.data
 import android.net.Uri
 
 /**
- * A YouTube URL pasted into the search bar, reduced to the ids the app can
- * act on. At least one of [videoId] or [playlistId] is always non-null.
+ * A YouTube URL pasted into the search bar or shared into the app, reduced to
+ * something the app can act on. Exactly one of [videoId], [playlistId] or
+ * [channelRef] is always present.
  */
 data class ParsedYouTubeLink(
     val videoId: String? = null,
     val playlistId: String? = null,
+    /**
+     * A channel, as whatever the link named it: a canonical `UC…` id, an
+     * `@handle`, or a legacy `/c/` or `/user/` vanity name.
+     *
+     * Deliberately not resolved here. `resolveChannelId` is a network call and
+     * this parser is called on every keystroke in the search field, so
+     * resolution belongs to whoever actually opens the channel.
+     */
+    val channelRef: String? = null,
     /** True for music.youtube.com links. */
     val isMusicLink: Boolean = false
 )
 
 /**
- * Detects YouTube URLs pasted into the search bar and extracts video or
- * playlist ids from them. Supported forms: youtu.be short links, watch links
- * (www / m / music subdomains), shorts, live, embed and playlist links, with
- * or without an explicit scheme.
+ * Detects YouTube URLs pasted into the search bar and extracts video, playlist
+ * or channel references from them. Supported forms: youtu.be short links, watch
+ * links (www / m / music subdomains), shorts, live, embed and playlist links,
+ * and every channel form - `/channel/UC…`, `/@handle`, and the legacy `/c/` and
+ * `/user/` paths - with or without an explicit scheme.
+ *
+ * Channels matter more than they look. The manifest already claims every
+ * `youtube.com` host, so Koda appears in the share sheet for a channel link
+ * whether or not it can do anything with one; before these forms were parsed it
+ * accepted the tap and then silently did nothing, which is worse than not being
+ * offered at all.
  */
 object YouTubeLinkParser {
 
@@ -26,6 +43,26 @@ object YouTubeLinkParser {
 
     /** Path roots whose second segment is the video id. */
     private val VIDEO_PATH_ROOTS = setOf("shorts", "live", "embed", "v")
+
+    /** Path roots whose second segment names a channel. */
+    private val CHANNEL_PATH_ROOTS = setOf("channel", "c", "user")
+
+    /**
+     * The channel a path names, in whatever form it used.
+     *
+     * Trailing segments are ignored on purpose: `/@handle/videos` and
+     * `/channel/UC…/playlists` are links to a channel, and dropping the tab is
+     * the right reading - the screen opens on the channel's own default tab,
+     * which is where the sender's link would have landed anyway.
+     */
+    private fun parseChannelRef(segments: List<String>): String? {
+        val first = segments.firstOrNull()?.takeIf { it.isNotBlank() } ?: return null
+        if (first.startsWith("@") && first.length > 1) return first
+        if (first.lowercase() in CHANNEL_PATH_ROOTS) {
+            return segments.getOrNull(1)?.takeIf { it.isNotBlank() }
+        }
+        return null
+    }
 
     /**
      * Parse the first YouTube link found anywhere in [text].
@@ -90,10 +127,20 @@ object YouTubeLinkParser {
             null
         }
 
-        if (videoId == null && playlistId == null) return null
+        // A channel link never carries a video or a list, so it is only
+        // considered once those have come back empty - a watch link that
+        // happens to sit under /c/ is still a watch link.
+        val channelRef = if (videoId == null && playlistId == null) {
+            parseChannelRef(segments)
+        } else {
+            null
+        }
+
+        if (videoId == null && playlistId == null && channelRef == null) return null
         return ParsedYouTubeLink(
             videoId = videoId,
             playlistId = playlistId,
+            channelRef = channelRef,
             isMusicLink = host == "music.youtube.com"
         )
     }

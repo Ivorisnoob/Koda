@@ -88,6 +88,13 @@ fun VideoPlayerContent(
     onBackClick: () -> Unit,
     modifier: Modifier = Modifier,
     timedCommentsFeatureEnabled: Boolean = false,
+    /**
+     * Open the playing video's creator. Routed out to the host: the channel
+     * page is a NavHost destination and this player is drawn above the NavHost,
+     * so the host is the layer that both navigates and minimises this player on
+     * the way there.
+     */
+    onOpenChannel: (String) -> Unit = {},
     // Swipe-down-to-minimize: raw drag deltas / release velocity from the
     // portrait video surface, driving the overlay's expand progress
     onMinimizeDragDelta: (Float) -> Unit = {},
@@ -139,8 +146,6 @@ fun VideoPlayerContent(
     val isPostingComment by viewModel.isPostingComment.collectAsState()
     val videoPlaylists by viewModel.videoPlaylists.collectAsState()
     val isVideoPlaylistsLoading by viewModel.isVideoPlaylistsLoading.collectAsState()
-    val channelVideos by viewModel.channelVideos.collectAsState()
-    val isChannelVideosLoading by viewModel.isChannelVideosLoading.collectAsState()
     val isLive by viewModel.isLive.collectAsState()
     val isPortraitVideo by viewModel.isPortraitVideo.collectAsState()
     val liveViewerCount by viewModel.liveViewerCount.collectAsState()
@@ -450,7 +455,6 @@ fun VideoPlayerContent(
     // the channel row)
     var saveTargetVideo by remember { mutableStateOf<VideoItem?>(null) }
     var downloadTargetVideo by remember { mutableStateOf<VideoItem?>(null) }
-    var showChannelSheet by remember { mutableStateOf(false) }
 
     // Gate authenticated actions behind login
     fun requireLogin(action: () -> Unit) {
@@ -915,8 +919,8 @@ fun VideoPlayerContent(
                             saveTargetVideo = currentVideo
                         },
                         onChannelClick = {
-                            viewModel.loadChannelVideos()
-                            showChannelSheet = true
+                            val channelId = engagement?.channelId ?: currentVideo.channelId
+                            if (channelId != null) onOpenChannel(channelId)
                         },
                         onSeekTo = { seconds -> exoPlayer.seekTo(seconds * 1000L) },
                         onRelatedLongPress = { related ->
@@ -1044,6 +1048,9 @@ fun VideoPlayerContent(
             onEnqueue = if (target.videoId != currentVideo.videoId) {
                 { playNext -> viewModel.enqueueVideo(target, playNext) }
             } else null,
+            onOpenChannel = target.channelId
+                ?.takeIf { it.startsWith("UC") }
+                ?.let { id -> { onOpenChannel(id) } },
             alreadyIn = run {
                 val ids = localVideoPlaylists
                     .filter { list -> list.videos.any { it.videoId == target.videoId } }
@@ -1062,25 +1069,6 @@ fun VideoPlayerContent(
         VideoDownloadSheet(
             video = target,
             onDismiss = { downloadTargetVideo = null }
-        )
-    }
-
-    // Channel page sheet (latest uploads + subscribe)
-    if (showChannelSheet) {
-        ChannelSheet(
-            channelName = currentVideo.channelName,
-            channelIconUrl = currentVideo.channelIconUrl,
-            subscriberCountText = engagement?.subscriberCountText ?: currentVideo.subscriberCount,
-            isSubscribed = isSubscribedToChannel,
-            canSubscribe = engagement?.channelId != null,
-            videos = channelVideos,
-            isLoading = isChannelVideosLoading,
-            onSubscribeClick = { requireSubscribeLogin { viewModel.toggleSubscribe() } },
-            onVideoClick = { video ->
-                showChannelSheet = false
-                viewModel.playVideo(video)
-            },
-            onDismiss = { showChannelSheet = false }
         )
     }
 
