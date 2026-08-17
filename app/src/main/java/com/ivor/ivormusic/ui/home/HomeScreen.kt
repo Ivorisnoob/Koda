@@ -638,6 +638,7 @@ fun HomeScreen(
                         onPlayVideoQueue = onPlayVideoQueue,
                         onEnqueueVideo = onEnqueueVideo,
                         onProfileClick = onProfileClick,
+                        onOpenChannel = onOpenChannel,
                         onSongLongPress = { song -> songOptionsTarget = song },
                         contentPadding = listContentPadding,
                         viewModel = viewModel,
@@ -1802,6 +1803,8 @@ fun SearchContent(
     onPlayVideoQueue: ((com.ivor.ivormusic.data.VideoQueue) -> Unit)? = null,
     onEnqueueVideo: ((com.ivor.ivormusic.data.VideoItem, Boolean) -> Unit)? = null,
     onProfileClick: () -> Unit = {},
+    /** Open a creator's page, from a Channels result or the long-press sheet. */
+    onOpenChannel: (String) -> Unit = {},
     contentPadding: PaddingValues,
     viewModel: HomeViewModel,
     isDarkMode: Boolean,

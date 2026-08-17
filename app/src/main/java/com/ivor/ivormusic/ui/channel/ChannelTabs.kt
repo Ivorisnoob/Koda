@@ -28,7 +28,8 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Article
+import androidx.compose.material.icons.automirrored.rounded.Article
+import androidx.compose.material.icons.automirrored.rounded.Sort
 import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Link
@@ -36,7 +37,6 @@ import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.Search
-import androidx.compose.material.icons.rounded.Sort
 import androidx.compose.material.icons.rounded.ThumbUp
 import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.material.icons.rounded.Visibility
@@ -164,11 +164,7 @@ internal fun LazyGridScope.channelTabContent(
         }
     }
 
-    items(
-        items = page.videos,
-        key = { "video_${it.videoId}" },
-        span = { GridItemSpan(maxLineSpan) }
-    ) { video ->
+    spanItems(page.videos, key = { "video_${it.videoId}" }) { video ->
         VideoCard(
             video = video,
             onClick = { onPlayVideo(video) },
@@ -176,48 +172,65 @@ internal fun LazyGridScope.channelTabContent(
         )
     }
 
-    if (page.shorts.isNotEmpty()) {
-        itemsIndexedSpan(
-            items = page.shorts,
-            span = SHORT_SPAN,
-            key = { _, short -> "short_${short.videoId}" }
-        ) { index, short ->
-            ShortCard(
-                short = short,
-                onClick = { onOpenShorts(page.shorts, index) }
-            )
-        }
+    spanItemsIndexed(
+        items = page.shorts,
+        span = SHORT_SPAN,
+        key = { _, short -> "short_${short.videoId}" }
+    ) { index, short ->
+        ShortCard(short = short, onClick = { onOpenShorts(page.shorts, index) })
     }
 
-    items(
+    spanItems(
         items = page.playlists,
-        key = { "playlist_${it.playlistId}" },
-        span = { GridItemSpan(PLAYLIST_SPAN) }
+        span = PLAYLIST_SPAN,
+        key = { "playlist_${it.playlistId}" }
     ) { playlist ->
         ChannelPlaylistCard(playlist = playlist, onClick = { onOpenPlaylist(playlist) })
     }
 
-    items(
-        items = page.posts,
-        key = { "post_${it.postId}" },
-        span = { GridItemSpan(maxLineSpan) }
-    ) { post ->
+    spanItems(page.posts, key = { "post_${it.postId}" }) { post ->
         ChannelPostCard(post = post, onPlayVideo = onPlayVideo)
     }
 }
 
 /**
- * `items` with an index, which `LazyGridScope` does not offer with a span in a
- * form that keeps the index. Shorts need it: tapping the fourth Short has to
+ * A list of items at a fixed span, or full width when [span] is null.
+ *
+ * These two helpers exist because `LazyGridScope` carries a `count`-based
+ * `items` **member**, and a member shadows the list-taking extension of the
+ * same name: calling `items(items = …, span = …)` resolves to the member and
+ * fails on the argument names. Routing every list through the member once, here,
+ * is less surprising than importing the extension and hoping resolution goes the
+ * other way.
+ */
+private fun <T> LazyGridScope.spanItems(
+    items: List<T>,
+    span: Int? = null,
+    key: (T) -> Any,
+    itemContent: @Composable (T) -> Unit
+) {
+    if (items.isEmpty()) return
+    items(
+        count = items.size,
+        key = { index -> key(items[index]) },
+        span = { GridItemSpan(span ?: maxLineSpan) }
+    ) { index ->
+        itemContent(items[index])
+    }
+}
+
+/**
+ * The same, keeping the index. Shorts need it: tapping the fourth Short has to
  * open the reel at position four, not search the list for it by id, because a
  * channel can list the same Short twice.
  */
-private fun <T> LazyGridScope.itemsIndexedSpan(
+private fun <T> LazyGridScope.spanItemsIndexed(
     items: List<T>,
     span: Int,
     key: (Int, T) -> Any,
     itemContent: @Composable (Int, T) -> Unit
 ) {
+    if (items.isEmpty()) return
     items(
         count = items.size,
         key = { index -> key(index, items[index]) },
@@ -259,7 +272,7 @@ private fun ChannelSortRow(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Icon(Icons.Rounded.Sort, contentDescription = null, modifier = Modifier.size(18.dp))
+                Icon(Icons.AutoMirrored.Rounded.Sort, contentDescription = null, modifier = Modifier.size(18.dp))
                 Text(
                     text = current.label,
                     style = MaterialTheme.typography.labelLarge,
@@ -701,7 +714,7 @@ private fun ChannelEmptyState(tabKind: ChannelTabKind) {
         ChannelTabKind.SHORTS -> Icons.Rounded.PlayArrow to "This channel hasn't posted any Shorts"
         ChannelTabKind.LIVE -> Icons.Rounded.Visibility to "No past or upcoming live streams"
         ChannelTabKind.PLAYLISTS -> Icons.Rounded.VideoLibrary to "No public playlists"
-        ChannelTabKind.POSTS -> Icons.Rounded.Article to "No community posts yet"
+        ChannelTabKind.POSTS -> Icons.AutoMirrored.Rounded.Article to "No community posts yet"
         ChannelTabKind.VIDEOS -> Icons.Rounded.VideoLibrary to "No videos here yet"
         else -> Icons.Rounded.VideoLibrary to "Nothing to show in this tab"
     }
