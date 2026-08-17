@@ -300,7 +300,37 @@ So the real work: two players (or one player with a mixing `AudioProcessor`) so 
 
 **One piece is already built.** `prefetchUpcomingSongs` pre-caches the first 512 KB of the next three songs through `warmStreamCache`, so the incoming track's audio is normally on disk before it is needed. That is exactly the prerequisite an overlapping crossfade depends on, and it is the difference between this being feasible and it stuttering on every transition.
 
-**One thing to check early:** loudness. Crossfading two tracks mastered at different levels lurches, and no curve fixes that. If this is going to stand next to Apple Music, track loudness normalisation probably has to come with it rather than after it.
+**The hardest part is not the fade, it is the `Player` facade.** `MediaSession` wraps exactly one `Player`, and everything downstream reads through it: the notification, Bluetooth and Android Auto, `PlayerViewModel`'s `MediaController`, the Live Update, the sleep timer. Two engines therefore cannot be two players as far as anything outside the service is concerned. They have to be presented as one logical `Player` with one timeline and one current-item index, alternating internally which engine renders. That is a `SimpleBasePlayer` subclass, and it is where the risk in this whole item lives: get it wrong and the notification names the wrong track mid-transition, or the queue in the UI drifts from what is playing. The volume ramp itself is fifty lines.
+
+Three service-specific traps follow from it. **The pinned audio session id has to be shared:** `initializePlayer` generates one and broadcasts `ACTION_OPEN_AUDIO_EFFECT_CONTROL_SESSION` so external equalizers attach, and two players not on that same id would mean the EQ dropping out on alternate tracks. **Only one engine may hold audio focus** (`setAudioAttributes(attrs, handleAudioFocus = true)` on the primary, `false` on the other), or the two duck each other. And **items are placeholders until resolved**, so the incoming track has to be resolved, warmed and profiled before the transition window opens; every one of those can fail, and the engine needs a defined degraded path (no profile means a plain equal-power fade, unresolved means the hard cut it does today).
+
+### Loudness is free metadata, not a DSP job (verified August 2026)
+
+`/player` already carries YouTube's own loudness measurement, and nothing in the app reads it. Probed signed out against ANDROID_VR with a freshly minted `visitorData`, `playerConfig.audioConfig` came back populated on 8 of 8 tracks:
+
+| track | `loudnessDb` | `trackAbsoluteLoudnessLkfs` | `loudnessTargetLkfs` |
+| --- | --- | --- | --- |
+| Sweet Child O' Mine | -3.44 | -17.44 | -14 |
+| Never Gonna Give You Up | +0.99 | -13.01 | -14 |
+| Bohemian Rhapsody | +2.29 | -11.71 | -14 |
+| Blinding Lights | +3.41 | -10.59 | -14 |
+| Despacito | +5.71 | -8.29 | -14 |
+
+`trackAbsoluteLoudnessLkfs` is a real integrated LUFS figure per track, delivered with the stream resolution the app already performs: no decoding, no analysis, no extra request. **`loudnessDb` equals `measured - target` exactly in all eight**, so the correction is derivable rather than magic - apply a gain of `-loudnessDb` dB, which is a linear factor of `10^(-loudnessDb/20)` straight onto `player.volume`. `enablePerFormatLoudness` is true and the per-itag values across 139/140/249/251 differ by at most 0.01 dB, so one value per track is enough and it need not be keyed by format.
+
+**The spread across that small sample is 9.15 LU.** That is the lurch, quantified, and it is why this cannot be a follow-up: crossfading Sweet Child O' Mine into Despacito uncorrected is a 9 dB jump *during the overlap*, and no curve helps. It also means normalisation is worth shipping on its own merits, since a queue that jumps in volume between tracks is a complaint independent of any transition effect.
+
+One trap: a negative `loudnessDb` is a **boost**, and boosting a stream already scaled to 1.0 clips. Attenuate-only (clamp the gain at 1.0, accept that quiet masters stay quiet) is the safe choice; a limiter is a separate thing to get right and should not be smuggled in here.
+
+### The smart layer, and why it beats a plain crossfade
+
+Everything past normalisation comes from one component: an audio profile per song id, decoded from the disk cache and reduced to an RMS envelope in roughly 20ms windows, computed ahead on the next track or two and cached permanently. One envelope buys four behaviours. **Do not fire on segues** - a tail still at significant energy in its final 100ms is a hard cut into the next track, and crossfading a live record or a DJ mix is destruction. **Do not stack a fade on a fade**, because a track that already decays to silence over a second sounds limp with another laid over it. **Anchor the transition** where the outro actually starts, rather than blindly taking the last N seconds and cutting into a final chorus, and symmetrically skip lead-in silence so the fade does not land in nothing.
+
+Worth noting against issue #151's suggested heuristic: **`Song` carries `album` as a string but no track number**, so "same album, consecutive track" is not available as data. It could only be inferred from queue adjacency plus an identical album string, which is weak. The audio signal is the more reliable one, and that is a real argument for building the analyser early rather than treating it as polish.
+
+The AutoMix tier is closer than it looks, because two things do most of the perceptual work and neither needs a hand-written PCM mixer. **Tempo nudge**: Media3's `SonicAudioProcessor` already time-stretches without pitch shift through `setPlaybackParameters`, so detecting BPM off the same envelope and nudging the incoming track by a few percent during the overlap locks the two grids together - the difference between two songs overlapping and two songs mixing. **Filter sweep**: a biquad high-pass as a custom `AudioProcessor` on the outgoing chain, opening across the transition, is what makes a transition sound deliberate rather than like a volume knob. Key detection and harmonic mixing are deliberately out: chroma analysis is a large step for a payoff most listeners will not attribute to anything.
+
+**Settled before building rather than discovered later.** A manual skip gets a short fade of roughly 300ms, not the full crossfade and not a hard cut: a full three seconds makes a skip feel unresponsive when the user asked for the next song *now*, and a hard cut is jarring when every automatic transition is smooth. The analyser gets a full prefetch of the next track rather than the 512 KB head, **gated to unmetered networks** the way the per-network quality settings already gate on `isActiveNetworkMetered`, falling back to the warm head and the plain fade on mobile data - a whole extra song per transition, including ones the user skips past, is a visible data-usage complaint on a sideloaded app. And the settings surface stays one control (Off / Auto / a manual duration, where Auto lets the profile choose per transition) plus a separate normalisation toggle, because Apple ships one control and five sliders is how this becomes unusable.
 
 ### Foundations
 
