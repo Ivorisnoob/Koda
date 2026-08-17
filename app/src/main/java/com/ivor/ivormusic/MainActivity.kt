@@ -129,6 +129,7 @@ class MainActivity : ComponentActivity() {
             val autoLoadQueue by themeViewModel.autoLoadQueue.collectAsState()
             val crossfadeEnabled by themeViewModel.crossfadeEnabled.collectAsState()
             val crossfadeDurationMs by themeViewModel.crossfadeDurationMs.collectAsState()
+            val normalizeVolume by themeViewModel.normalizeVolume.collectAsState()
             
             val isSystemDark = isSystemInDarkTheme()
             val isDarkTheme = remember(themeMode, isSystemDark) {
@@ -222,6 +223,8 @@ class MainActivity : ComponentActivity() {
                         onCrossfadeEnabledToggle = { themeViewModel.toggleCrossfadeEnabled() },
                         crossfadeDurationMs = crossfadeDurationMs,
                         onCrossfadeDurationChange = { themeViewModel.setCrossfadeDuration(it) },
+                        normalizeVolume = normalizeVolume,
+                        onNormalizeVolumeToggle = { themeViewModel.setNormalizeVolume(it) },
                         onboardingCompleted = onboardingCompleted,
                         onOnboardingCompleted = { themeViewModel.setOnboardingCompleted(it) },
                         localOnlyMode = localOnlyMode,
@@ -351,6 +354,8 @@ fun MusicApp(
     onCrossfadeEnabledToggle: (Boolean) -> Unit,
     crossfadeDurationMs: Int,
     onCrossfadeDurationChange: (Int) -> Unit,
+    normalizeVolume: Boolean,
+    onNormalizeVolumeToggle: (Boolean) -> Unit,
     oemFixEnabled: Boolean,
     onOemFixEnabledToggle: (Boolean) -> Unit,
     manualScanEnabled: Boolean,
@@ -648,6 +653,8 @@ fun MusicApp(
                     onCrossfadeEnabledToggle = onCrossfadeEnabledToggle,
                     crossfadeDurationMs = crossfadeDurationMs,
                     onCrossfadeDurationChange = onCrossfadeDurationChange,
+                    normalizeVolume = normalizeVolume,
+                    onNormalizeVolumeToggle = onNormalizeVolumeToggle,
                     oemFixEnabled = oemFixEnabled,
                     onOemFixEnabledToggle = onOemFixEnabledToggle,
                     manualScanEnabled = manualScanEnabled,

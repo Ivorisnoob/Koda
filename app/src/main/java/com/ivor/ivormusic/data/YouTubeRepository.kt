@@ -1529,6 +1529,14 @@ class YouTubeRepository(private val context: Context) {
         val streamingData: org.json.JSONObject?,
         val visitorDataSuspect: Boolean,
         val captionTracks: List<CaptionTrack> = emptyList(),
+        /**
+         * `playerConfig.audioConfig.loudnessDb`: how far this track's master
+         * sits above YouTube's -14 LKFS target, so the playback correction is a
+         * gain of the negation. See [TrackLoudnessStore]. Null when the
+         * response carried no audioConfig, which is every response that failed
+         * playability.
+         */
+        val loudnessDb: Float? = null,
     )
 
     /**
@@ -1597,6 +1605,7 @@ class YouTubeRepository(private val context: Context) {
         // The /player response carries the caption tracklist alongside the
         // streams, so harvesting it here makes a later CC tap free.
         cacheCaptionTracks(videoId, vr.captionTracks)
+        cacheTrackLoudness(videoId, vr.loudnessDb)
         vr.streamingData?.let { return vr }
 
         val ios = fetchPlayerResponse(
@@ -1609,10 +1618,14 @@ class YouTubeRepository(private val context: Context) {
             extraClientFields = iosClientFields(),
         )
         cacheCaptionTracks(videoId, ios.captionTracks)
+        cacheTrackLoudness(videoId, ios.loudnessDb)
         return PlayerResponse(
             streamingData = ios.streamingData,
             visitorDataSuspect = vr.visitorDataSuspect || ios.visitorDataSuspect,
             captionTracks = vr.captionTracks.ifEmpty { ios.captionTracks },
+            // The measurement is the track's, not the client's, so whichever
+            // response carried one is as good as the other.
+            loudnessDb = vr.loudnessDb ?: ios.loudnessDb,
         )
     }
 
@@ -1776,6 +1789,15 @@ class YouTubeRepository(private val context: Context) {
             }
 
             val captionTracks = parseCaptionTracks(root)
+            val loudnessDb = root.optJSONObject("playerConfig")
+                ?.optJSONObject("audioConfig")
+                ?.let { audio ->
+                    // Present on every OK response probed (August 2026), but a
+                    // missing key must read as "unknown" rather than 0.0, which
+                    // is a real measurement meaning "already at target".
+                    if (audio.has("loudnessDb")) audio.optDouble("loudnessDb").toFloat() else null
+                }
+                ?.takeIf { it.isFinite() }
 
             val streamingData = root.optJSONObject("streamingData")
             if (streamingData == null) {
@@ -1785,9 +1807,9 @@ class YouTubeRepository(private val context: Context) {
                 )
                 // Status OK with no streamingData is the other known signature
                 // of a stale/missing visitorData.
-                return@withContext PlayerResponse(null, true, captionTracks)
+                return@withContext PlayerResponse(null, true, captionTracks, loudnessDb)
             }
-            PlayerResponse(streamingData, false, captionTracks)
+            PlayerResponse(streamingData, false, captionTracks, loudnessDb)
         } catch (e: Exception) {
             android.util.Log.e(
                 "YouTubeRepository",
@@ -5172,6 +5194,19 @@ class YouTubeRepository(private val context: Context) {
     private fun cacheCaptionTracks(videoId: String, tracks: List<CaptionTrack>) {
         if (tracks.isEmpty()) return
         captionCache[videoId] = CachedCaptions(tracks, System.currentTimeMillis())
+    }
+
+    /**
+     * Persist the track's loudness alongside the captions harvested from the
+     * same response.
+     *
+     * Written here rather than at the caller because this is the one place
+     * every `/player` response passes through, and because a song that is
+     * already fully cached never comes back this way - see
+     * [TrackLoudnessStore] for why that makes persistence the point.
+     */
+    private fun cacheTrackLoudness(videoId: String, loudnessDb: Float?) {
+        TrackLoudnessStore.put(context, videoId, loudnessDb ?: return)
     }
 
     /**

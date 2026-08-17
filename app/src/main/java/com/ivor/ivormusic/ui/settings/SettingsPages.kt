@@ -37,6 +37,7 @@ import androidx.compose.material.icons.rounded.FlashOn
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.FolderOff
 import androidx.compose.material.icons.rounded.GraphicEq
+import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.HdrOn
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.HighQuality
@@ -358,6 +359,8 @@ internal fun PlaybackSettingsPage(
     onCrossfadeEnabledToggle: (Boolean) -> Unit,
     crossfadeDurationMs: Int,
     onCrossfadeDurationChange: (Int) -> Unit,
+    normalizeVolume: Boolean,
+    onNormalizeVolumeToggle: (Boolean) -> Unit,
     autoLoadQueue: Boolean,
     onAutoLoadQueueToggle: (Boolean) -> Unit,
     saveMusicHistory: Boolean,
@@ -419,6 +422,20 @@ internal fun PlaybackSettingsPage(
                             )
                         }
                     }
+
+                    SettingsDivider()
+
+                    SettingsToggleRow(
+                        icon = Icons.Rounded.VolumeUp,
+                        title = "Normalise volume",
+                        // Says what it does to the sound rather than naming the
+                        // mechanism: nobody is looking for "loudness
+                        // normalisation to -14 LKFS", they are looking for the
+                        // reason one song is twice as loud as the last.
+                        subtitle = "Even out loud and quiet tracks",
+                        enabled = normalizeVolume,
+                        onToggle = onNormalizeVolumeToggle
+                    )
 
                     SettingsDivider()
 

@@ -34,6 +34,7 @@ import androidx.compose.material.icons.rounded.FlashOn
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.FolderOff
 import androidx.compose.material.icons.rounded.GraphicEq
+import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.HdrOn
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Info
@@ -219,6 +220,16 @@ internal fun buildSettingsSearchIndex(
     entry(
         "crossfade", "Crossfade", "Playback and quality", Icons.Rounded.GraphicEq,
         listOf("fade", "blend", "transition", "overlap", "gapless")
+    ) { onOpenPage(SettingsPage.PLAYBACK) }
+    entry(
+        "normalizevolume", "Normalise volume", "Playback and quality",
+        Icons.Rounded.VolumeUp,
+        // Both spellings, and the words people actually type when one song is
+        // twice as loud as the last.
+        listOf(
+            "normalise", "normalize", "loudness", "volume", "levelling", "leveling",
+            "replaygain", "gain", "too loud", "quiet", "even out"
+        )
     ) { onOpenPage(SettingsPage.PLAYBACK) }
     entry(
         "autoqueue", "Auto-load Queue", "Playback and quality",

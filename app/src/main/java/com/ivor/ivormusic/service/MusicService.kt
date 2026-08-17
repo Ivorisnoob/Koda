@@ -35,6 +35,7 @@ import android.media.audiofx.AudioEffect
 import com.ivor.ivormusic.data.CacheManager
 import com.ivor.ivormusic.data.DownloadRepository
 import com.ivor.ivormusic.data.NotificationArtworkLoader
+import com.ivor.ivormusic.data.TrackLoudnessStore
 import com.ivor.ivormusic.data.PlaylistDisplayItem
 import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.data.ThemePreferences
@@ -104,6 +105,19 @@ class MusicService : MediaLibraryService() {
     // --- Configuration ---
     private var isCrossfadeEnabled = true
     private var crossfadeDurationMs = 3000L
+    private var isNormalizeVolumeEnabled = true
+
+    /**
+     * The current track's loudness correction, as a linear volume scalar.
+     *
+     * **Every volume the service sets is this times a curve, never a bare
+     * 1.0.** `player.volume` has one field and two jobs - the correction, which
+     * holds for a whole track, and the fades, which move within it - so the
+     * moment normalisation exists, "full volume" stops meaning 1.0 and starts
+     * meaning this. A ramp that ends at 1.0 would undo the correction at the
+     * exact moment the next track starts, which is the one moment it is for.
+     */
+    @Volatile private var trackGain = 1f
     // Read on the playback data-source hot path (every open()), so it's a
     // volatile field fed by the preference flow instead of a prefs read.
     @Volatile private var isCacheEnabled = true
@@ -470,6 +484,15 @@ class MusicService : MediaLibraryService() {
         serviceScope.launch { themePreferences.crossfadeDurationMs.collect { crossfadeDurationMs = it.toLong() } }
         serviceScope.launch { themePreferences.cacheEnabled.collect { isCacheEnabled = it } }
         serviceScope.launch {
+            themePreferences.normalizeVolume.collect { enabled ->
+                isNormalizeVolumeEnabled = enabled
+                // Apply to what is already playing rather than waiting for the
+                // next track: the setting is judged by ear, and a toggle that
+                // does nothing until the song changes reads as broken.
+                refreshTrackGain(applyNow = true)
+            }
+        }
+        serviceScope.launch {
             themePreferences.maxCacheSizeMb.collect { sizeMb ->
                 CacheManager.setMaxCacheSize(this@MusicService, sizeMb)
             }
@@ -495,11 +518,17 @@ class MusicService : MediaLibraryService() {
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             super.onMediaItemTransition(mediaItem, reason)
 
-            // 1. Crossfade Logic
+            // 1. Loudness correction for the new track, before anything sets a
+            // volume. It may still be unknown here - an unresolved song has not
+            // called /player yet - so STATE_READY refreshes it again once the
+            // real URI is in place.
+            refreshTrackGain(applyNow = false)
+
+            // 2. Crossfade Logic
             if (isCrossfadeEnabled && reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) {
                 performFadeIn()
             } else {
-                player.volume = 1.0f
+                player.volume = trackGain
             }
 
             // 2. Critical: Check validity of CURRENT item
@@ -520,6 +549,11 @@ class MusicService : MediaLibraryService() {
                 // so one bad stretch (expired URL, network blip) months of
                 // uptime ago can't permanently blacklist it.
                 player.currentMediaItem?.mediaId?.let { retryCounts.remove(it) }
+                // Resolution happens after the transition, so this is the first
+                // point at which a first-play song's loudness is known. Applied
+                // only when no fade is running, so a crossfade-in keeps the
+                // volume it is ramping.
+                refreshTrackGain(applyNow = true)
                 prefetchUpcomingSongs()
             }
 
@@ -1286,12 +1320,13 @@ class MusicService : MediaLibraryService() {
         fadeVolumeJob = serviceScope.launch {
             val steps = 20
             for (i in steps - 1 downTo 0) {
-                player.volume = i / steps.toFloat()
+                player.volume = trackGain * (i / steps.toFloat())
                 delay(SLEEP_TIMER_FADE_MS / steps)
             }
             player.pause()
             // Back to full straight away, or pressing play would be silent.
-            player.volume = 1f
+            // Full is the corrected level, not 1.0.
+            player.volume = trackGain
         }
     }
 
@@ -1326,6 +1361,25 @@ class MusicService : MediaLibraryService() {
         }
     }
 
+    /**
+     * Recompute [trackGain] for whatever is playing now.
+     *
+     * @param applyNow whether to push the new gain to the player immediately.
+     *   False while a fade owns the volume, since the ramp reads [trackGain]
+     *   on every step and would fight a write landing mid-ramp.
+     */
+    private fun refreshTrackGain(applyNow: Boolean) {
+        val videoId = player.currentMediaItem?.mediaId
+        trackGain = if (isNormalizeVolumeEnabled && videoId != null) {
+            TrackLoudnessStore.gainFor(this, videoId)
+        } else {
+            1f
+        }
+        if (applyNow && fadeVolumeJob?.isActive != true) {
+            player.volume = trackGain
+        }
+    }
+
     private fun performFadeIn() {
         fadeVolumeJob?.cancel()
         fadeVolumeJob = serviceScope.launch {
@@ -1333,10 +1387,13 @@ class MusicService : MediaLibraryService() {
             val steps = 20
             val stepTime = crossfadeDurationMs / steps
             for (i in 1..steps) {
-                player.volume = i / steps.toFloat()
+                // Scaled by the correction rather than ramping to 1.0: this
+                // ramp lands exactly where the track should sit for its whole
+                // duration, so it must end at the corrected level.
+                player.volume = trackGain * (i / steps.toFloat())
                 delay(stepTime)
             }
-            player.volume = 1f
+            player.volume = trackGain
         }
     }
     
@@ -1377,8 +1434,8 @@ class MusicService : MediaLibraryService() {
                     if (isCrossfadeEnabled && duration > position) {
                         val remaining = duration - position
                         if (remaining <= crossfadeDurationMs) {
-                            val volume = (remaining.toFloat() / crossfadeDurationMs).coerceIn(0f, 1f)
-                            player.volume = volume
+                            val curve = (remaining.toFloat() / crossfadeDurationMs).coerceIn(0f, 1f)
+                            player.volume = trackGain * curve
                         }
                     }
 

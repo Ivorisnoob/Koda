@@ -304,7 +304,7 @@ So the real work: two players (or one player with a mixing `AudioProcessor`) so 
 
 Three service-specific traps follow from it. **The pinned audio session id has to be shared:** `initializePlayer` generates one and broadcasts `ACTION_OPEN_AUDIO_EFFECT_CONTROL_SESSION` so external equalizers attach, and two players not on that same id would mean the EQ dropping out on alternate tracks. **Only one engine may hold audio focus** (`setAudioAttributes(attrs, handleAudioFocus = true)` on the primary, `false` on the other), or the two duck each other. And **items are placeholders until resolved**, so the incoming track has to be resolved, warmed and profiled before the transition window opens; every one of those can fail, and the engine needs a defined degraded path (no profile means a plain equal-power fade, unresolved means the hard cut it does today).
 
-### Loudness is free metadata, not a DSP job (verified August 2026)
+### Loudness is free metadata, not a DSP job (verified August 2026, shipped)
 
 `/player` already carries YouTube's own loudness measurement, and nothing in the app reads it. Probed signed out against ANDROID_VR with a freshly minted `visitorData`, `playerConfig.audioConfig` came back populated on 8 of 8 tracks:
 
@@ -321,6 +321,8 @@ Three service-specific traps follow from it. **The pinned audio session id has t
 **The spread across that small sample is 9.15 LU.** That is the lurch, quantified, and it is why this cannot be a follow-up: crossfading Sweet Child O' Mine into Despacito uncorrected is a 9 dB jump *during the overlap*, and no curve helps. It also means normalisation is worth shipping on its own merits, since a queue that jumps in volume between tracks is a complaint independent of any transition effect.
 
 One trap: a negative `loudnessDb` is a **boost**, and boosting a stream already scaled to 1.0 clips. Attenuate-only (clamp the gain at 1.0, accept that quiet masters stay quiet) is the safe choice; a limiter is a separate thing to get right and should not be smuggled in here.
+
+**This half is built** (`data/TrackLoudnessStore.kt`, "Normalise volume" on the Playback page, on by default). Two things it settled that the rest of the epic inherits. **The value has to persist, and that is why it is a store rather than a field**: a fully cached song never calls `/player` again, because `getOrStartResolution` short-circuits to a `cached://` URI, so a correction held only in memory would apply on a song's first play and never again - the worst possible pattern for a volume adjustment. And **`player.volume` now has one field with two jobs**, the per-track correction and the fades that move within it, so *every* write in `MusicService` is `trackGain` times a curve and none is a bare `1.0`. A ramp ending at 1.0 would undo the correction at exactly the moment the next track starts, which is the moment it exists for. The overlap work has to keep that invariant rather than rediscover it. Local files and songs restored from a download carry no measurement and play at unity, which is correct rather than a gap: nothing measured them, and inventing a number would be worse than leaving them alone.
 
 ### The smart layer, and why it beats a plain crossfade
 
