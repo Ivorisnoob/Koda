@@ -224,11 +224,52 @@ data class VideoQuality(
      * covers 9:16, 4:5 and 1:1, and a box sized for one of those is wrong for
      * the other two.
      */
-    val sourceAspectRatio: Float? = null
+    val sourceAspectRatio: Float? = null,
+    /**
+     * Everything needed to play this entry over SABR instead of by ranged GET,
+     * or null when the response carried no `serverAbrStreamingUrl` (live
+     * streams, and the NewPipe fallback path).
+     *
+     * [url] and [audioUrl] stay populated alongside it. They still work for
+     * anything under googlevideo's ~16 MiB progressive cap, so they remain the
+     * fallback whenever a PO token cannot be minted.
+     */
+    val sabr: SabrInfo? = null
 ) {
     /** Taller than it is wide. Unknown dimensions read as landscape. */
     val isPortrait: Boolean get() = sourceAspectRatio?.let { it > 0f && it < 1f } ?: false
 }
+
+/**
+ * The parameters of a SABR playback session for one quality.
+ *
+ * SABR addresses tracks by format id - itag plus `lastModified` - rather than
+ * by URL, and every request has to carry the opaque `ustreamerConfig` from the
+ * same `/player` response that produced [serverAbrStreamingUrl]. Mixing pieces
+ * from two responses does not work, which is why these travel together.
+ */
+data class SabrInfo(
+    val serverAbrStreamingUrl: String,
+    /** Base64 as it arrives in `playerConfig`; decoded at request time. */
+    val ustreamerConfig: String,
+    val videoItag: Int,
+    val videoLastModified: Long,
+    val audioItag: Int,
+    val audioLastModified: Long,
+    /** Height requested from the server's own adaptive selection. */
+    val height: Int,
+    /**
+     * Codec strings and dimensions, carried because the synthesised DASH
+     * manifest has to declare them - there is no manifest to read them from.
+     */
+    val videoCodec: String? = null,
+    val audioCodec: String? = null,
+    val width: Int = 0,
+    val videoBitrate: Int = 0,
+    val audioBitrate: Int = 0,
+    /** Client playback nonce this session was resolved under, sent on every request. */
+    val cpn: String? = null,
+)
 
 /**
  * Complete video details including qualities and related videos.

@@ -359,7 +359,12 @@ fun VideoPlayerOverlay(
         )
         val cornerRadius = lerp(28.dp, 0.dp, p)
 
-        Surface(
+        // Offset and fade live on a wrapper rather than on the Surface itself.
+        // A graphicsLayer on an elevated Surface makes its shadow render
+        // against the layer's rectangular bounds instead of the rounded
+        // outline, which draws as a hard slab behind the bar - the thing this
+        // player is not supposed to look like.
+        Box(
             modifier = Modifier
                 .padding(bottom = bottomPadding.coerceAtLeast(0.dp))
                 .padding(horizontal = widthPadding.coerceAtLeast(0.dp))
@@ -367,6 +372,16 @@ fun VideoPlayerOverlay(
                 .graphicsLayer { alpha = miniAlpha }
                 .fillMaxWidth()
                 .height(height.coerceAtLeast(0.dp))
+        ) {
+        Surface(
+            // Surface's own onClick rather than a .clickable in the chain
+            // outside it: the ripple is clipped by the component's shape, so
+            // it follows the 28dp rounding instead of spilling into the square
+            // corners the modifier version rippled into.
+            onClick = { viewModel.setExpanded(true) },
+            enabled = !isExpanded,
+            modifier = Modifier
+                .fillMaxSize()
                 .pointerInput(isExpanded) {
                     if (isExpanded) return@pointerInput
                     detectVerticalDragGestures(
@@ -388,8 +403,7 @@ fun VideoPlayerOverlay(
                                 .coerceAtLeast(-miniLiftLimitPx)
                         }
                     )
-                }
-                .clickable(enabled = !isExpanded) { viewModel.setExpanded(true) },
+                },
             shape = RoundedCornerShape(cornerRadius.coerceAtLeast(0.dp)),
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
             tonalElevation = lerp(4.dp, 0.dp, p),
@@ -459,6 +473,7 @@ fun VideoPlayerOverlay(
                  // two controls.
                  MiniVideoPlayerContent(viewModel = viewModel)
              }
+        }
         }
     }
 }

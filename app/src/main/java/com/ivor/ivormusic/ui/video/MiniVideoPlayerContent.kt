@@ -1,5 +1,6 @@
 package com.ivor.ivormusic.ui.video
 
+import android.view.LayoutInflater
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -43,6 +44,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
+import com.ivor.ivormusic.R
 import com.ivor.ivormusic.ui.player.rememberPlayerHaptics
 
 /** Height of the collapsed bar. Shared with the overlay that sizes it. */
@@ -53,6 +55,13 @@ val MINI_VIDEO_HEIGHT = 88.dp
  * navigation inset, or the host's own bottom chrome when it has any.
  */
 val MINI_VIDEO_MARGIN = 16.dp
+
+/**
+ * Width of the video preview. Sized so a 16:9 frame is 52dp tall inside an
+ * 88dp bar - enough that the picture reads as picture - while leaving the
+ * title room to say something on a narrow screen.
+ */
+private val MINI_VIDEO_THUMB_WIDTH = 92.dp
 
 /**
  * The video player's collapsed bar: the video still playing, what it is, and
@@ -84,114 +93,186 @@ fun MiniVideoPlayerContent(viewModel: VideoPlayerViewModel) {
     val video = currentVideo ?: return
     val haptics = rememberPlayerHaptics()
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        Row(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
+    Row(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        MiniVideoSurface(
+            viewModel = viewModel,
+            isBuffering = isBuffering,
+            isPortrait = isPortrait,
+            isLive = isLive,
+            progress = progress
+        )
+
+        Spacer(modifier = Modifier.width(12.dp))
+
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.Center
         ) {
-            MiniVideoSurface(
-                viewModel = viewModel,
-                isBuffering = isBuffering,
-                isPortrait = isPortrait
+            Text(
+                text = video.title,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
+            Text(
+                // A live broadcast has no position to report, so the line
+                // that would carry one says what it is instead, in the
+                // accent rather than the red every other app uses: a
+                // hardcoded red is what the palette system exists to
+                // prevent, and the word already reads as live on its own.
+                text = if (isLive) {
+                    listOf("LIVE", video.channelName)
+                        .filter { it.isNotBlank() }
+                        .joinToString("  •  ")
+                } else {
+                    video.channelName
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = if (isLive) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
 
-            Spacer(modifier = Modifier.width(10.dp))
+        Spacer(modifier = Modifier.width(6.dp))
 
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.Center
-            ) {
-                Text(
-                    text = video.title,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    // A live broadcast has no position to report, so the line
-                    // that would carry one says what it is instead, in the
-                    // accent rather than the red every other app uses: a
-                    // hardcoded red is what the palette system exists to
-                    // prevent, and the word already reads as live on its own.
-                    text = if (isLive) {
-                        listOf("LIVE", video.channelName)
-                            .filter { it.isNotBlank() }
-                            .joinToString("  •  ")
-                    } else {
-                        video.channelName
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (isLive) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
+        // Play/pause stays live while buffering rather than being
+        // replaced by a spinner the way the music pill's is. Buffering is
+        // already reported on the video itself a few dp to the left, and
+        // two indicators for one state read as two problems; pausing a
+        // video that is still loading is also a thing people do on purpose.
+        FilledIconButton(
+            onClick = {
+                haptics.playPause(!isPlaying)
+                viewModel.togglePlayPause()
+            },
+            modifier = Modifier.size(44.dp),
+            shapes = IconButtonDefaults.shapes(),
+            colors = IconButtonDefaults.filledIconButtonColors(
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+        ) {
+            Icon(
+                imageVector = if (isPlaying) Icons.Rounded.Pause
+                    else Icons.Rounded.PlayArrow,
+                contentDescription = if (isPlaying) "Pause" else "Play",
+                modifier = Modifier.size(24.dp)
+            )
+        }
 
+        // Next is hidden rather than disabled off the end of a queue, and
+        // absent entirely without one: a permanently dead target costs
+        // more room here than it is worth. The expanded player disables
+        // its pair instead, where there is space for both to stay put.
+        if (queue?.hasNext == true) {
             Spacer(modifier = Modifier.width(6.dp))
-
-            // Play/pause stays live while buffering rather than being
-            // replaced by a spinner the way the music pill's is. Buffering is
-            // already reported on the video itself a few dp to the left, and
-            // two indicators for one state read as two problems; pausing a
-            // video that is still loading is also a thing people do on purpose.
             FilledIconButton(
                 onClick = {
-                    haptics.playPause(!isPlaying)
-                    viewModel.togglePlayPause()
+                    haptics.skip()
+                    viewModel.playNextInQueue()
                 },
                 modifier = Modifier.size(44.dp),
                 shapes = IconButtonDefaults.shapes(),
                 colors = IconButtonDefaults.filledIconButtonColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             ) {
                 Icon(
-                    imageVector = if (isPlaying) Icons.Rounded.Pause
-                        else Icons.Rounded.PlayArrow,
-                    contentDescription = if (isPlaying) "Pause" else "Play",
+                    imageVector = Icons.Rounded.SkipNext,
+                    contentDescription = "Next in playlist",
                     modifier = Modifier.size(24.dp)
                 )
             }
+        }
+    }
+}
 
-            // Next is hidden rather than disabled off the end of a queue, and
-            // absent entirely without one: a permanently dead target costs
-            // more room here than it is worth. The expanded player disables
-            // its pair instead, where there is space for both to stay put.
-            if (queue?.hasNext == true) {
-                Spacer(modifier = Modifier.width(6.dp))
-                FilledIconButton(
-                    onClick = {
-                        haptics.skip()
-                        viewModel.playNextInQueue()
-                    },
-                    modifier = Modifier.size(44.dp),
-                    shapes = IconButtonDefaults.shapes(),
-                    colors = IconButtonDefaults.filledIconButtonColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.SkipNext,
-                        contentDescription = "Next in playlist",
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
-            }
+/**
+ * The playing video itself, at bar size, with its position along the bottom.
+ *
+ * **A TextureView, not the SurfaceView `PlayerView` builds by default.** A
+ * SurfaceView is composited in its own layer behind the app window, so it
+ * cannot be clipped by the card around it: its opaque background slab bled out
+ * below the mini bar as a hard dark rectangle, and what looked like a rounded
+ * video was the card showing through a square hole. `surface_type` is only
+ * settable in the constructor, which is the whole reason `mini_video_surface`
+ * is a layout file. The full-screen player keeps its SurfaceView, where the
+ * bounds match the window and there is nothing to clip against.
+ *
+ * **Fit, not zoom, for a portrait source.** The frame is 16:9 and a vertical
+ * video cropped to it loses its top and bottom, which is exactly where a
+ * vertical upload puts faces and captions - the same reason the watch page
+ * letterboxes past its crop limit rather than filling. A landscape video still
+ * fills, since cropping a 16:9 source into a 16:9 frame removes nothing.
+ */
+@OptIn(UnstableApi::class, ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun MiniVideoSurface(
+    viewModel: VideoPlayerViewModel,
+    isBuffering: Boolean,
+    isPortrait: Boolean,
+    isLive: Boolean,
+    progress: Float
+) {
+    val resizeMode = remember(isPortrait) {
+        if (isPortrait) AspectRatioFrameLayout.RESIZE_MODE_FIT
+        else AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+    }
+
+    Box(
+        modifier = Modifier
+            .width(MINI_VIDEO_THUMB_WIDTH)
+            .aspectRatio(16f / 9f)
+            .clip(RoundedCornerShape(12.dp))
+            // Letterbox bars are the absence of picture, not a themed surface,
+            // so they stay black in either theme. The documented exception to
+            // the palette rule, same as the watch page's own video box.
+            .background(Color.Black),
+        contentAlignment = Alignment.Center
+    ) {
+        AndroidView(
+            factory = { ctx ->
+                LayoutInflater.from(ctx)
+                    .inflate(R.layout.mini_video_surface, null) as PlayerView
+            },
+            update = { pv ->
+                // Re-attached rather than only bound at construction: error
+                // recovery can hand the ViewModel a new ExoPlayer, and a view
+                // still holding the old one shows a frozen last frame.
+                if (pv.player !== viewModel.exoPlayer) pv.player = viewModel.exoPlayer
+                pv.resizeMode = resizeMode
+            },
+            // Release the shared player before this view's surface goes away,
+            // so expanding and collapsing hand it over cleanly instead of
+            // racing the full player's own view for it.
+            onRelease = { pv -> pv.player = null },
+            modifier = Modifier.fillMaxSize()
+        )
+
+        if (isBuffering) {
+            // The watch page's own choice over video: it draws its own
+            // container, so it reads over any frame without a colour picked
+            // against the picture.
+            ContainedLoadingIndicator(modifier = Modifier.size(28.dp))
         }
 
-        // A hairline rather than a LinearProgressIndicator: M3's now draws a
-        // stop indicator and a gap at the active end, which at 3dp inside a
-        // rounded bar reads as a rendering fault rather than as progress.
-        // Hidden on live, where there is no end to be a fraction of.
+        // Position rides the bottom edge of the picture, the way it does on a
+        // thumbnail everywhere else in the app, rather than floating as a
+        // hairline across the card. On a 28dp-rounded card a full-bleed line
+        // gets visibly cut at both ends, and an inset one reads as unattached
+        // to anything. Live has no end to be a fraction of, so it shows none.
         if (!isLive) {
             val shownProgress by animateFloatAsState(
                 targetValue = progress.coerceIn(0f, 1f),
@@ -203,84 +284,18 @@ fun MiniVideoPlayerContent(viewModel: VideoPlayerViewModel) {
             )
             Box(
                 modifier = Modifier
-                    .align(Alignment.BottomCenter)
+                    .align(Alignment.BottomStart)
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp)
-                    .padding(bottom = 6.dp)
                     .height(3.dp)
-                    .clip(RoundedCornerShape(50))
-                    .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.16f))
+                    .background(Color.White.copy(alpha = 0.28f))
             ) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth(shownProgress)
                         .fillMaxHeight()
-                        .clip(RoundedCornerShape(50))
                         .background(MaterialTheme.colorScheme.primary)
                 )
             }
-        }
-    }
-}
-
-/**
- * The playing video itself, at bar size.
- *
- * **Fit, not zoom, for a portrait source.** The frame is 16:9 and a vertical
- * video cropped to it loses its top and bottom, which is exactly where a
- * vertical upload puts faces and captions - the same reason the watch page
- * letterboxes past its crop limit rather than filling. A landscape video still
- * fills, since cropping a 16:9 source into a 16:9 frame removes nothing.
- */
-@OptIn(UnstableApi::class)
-@Composable
-private fun MiniVideoSurface(
-    viewModel: VideoPlayerViewModel,
-    isBuffering: Boolean,
-    isPortrait: Boolean
-) {
-    val resizeMode = remember(isPortrait) {
-        if (isPortrait) AspectRatioFrameLayout.RESIZE_MODE_FIT
-        else AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-    }
-
-    Box(
-        modifier = Modifier
-            .width(80.dp)
-            .aspectRatio(16f / 9f)
-            .clip(RoundedCornerShape(14.dp))
-            // Letterbox bars are the absence of picture, not a themed surface,
-            // so they stay black in either theme. The documented exception to
-            // the palette rule, same as the watch page's own video box.
-            .background(Color.Black),
-        contentAlignment = Alignment.Center
-    ) {
-        AndroidView(
-            factory = { ctx ->
-                PlayerView(ctx).apply {
-                    player = viewModel.exoPlayer
-                    useController = false
-                }
-            },
-            update = { pv ->
-                // Re-attached rather than only bound at construction: error
-                // recovery can hand the ViewModel a new ExoPlayer, and a view
-                // still holding the old one shows a frozen last frame.
-                if (pv.player !== viewModel.exoPlayer) pv.player = viewModel.exoPlayer
-                pv.resizeMode = resizeMode
-            },
-            // Release the shared player before this view's Surface is
-            // destroyed, so expanding/collapsing hands the surface over
-            // cleanly instead of racing the full player's PlayerView.
-            onRelease = { pv -> pv.player = null },
-            modifier = Modifier.fillMaxSize()
-        )
-
-        if (isBuffering) {
-            // The watch page's own choice over video: it draws its own
-            // container, so it reads over any frame without a colour picked
-            // against the picture.
-            ContainedLoadingIndicator(modifier = Modifier.size(32.dp))
         }
     }
 }

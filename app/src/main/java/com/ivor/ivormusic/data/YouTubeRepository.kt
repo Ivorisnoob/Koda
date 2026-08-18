@@ -8,6 +8,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.withLock
 import org.schabi.newpipe.extractor.NewPipe
 import org.schabi.newpipe.extractor.ServiceList
+import org.schabi.newpipe.extractor.services.youtube.YoutubeJavaScriptPlayerManager
 import org.schabi.newpipe.extractor.stream.StreamInfo
 import org.schabi.newpipe.extractor.stream.AudioStream
 import org.schabi.newpipe.extractor.search.SearchInfo
@@ -82,8 +83,19 @@ class YouTubeRepository(private val context: Context) {
 
         // Current InnerTube client versions (kept in sync with yt-dlp upstream).
         // YouTube rejects clients older than a few months; bump these together when refreshing.
-        private const val WEB_REMIX_VERSION = "1.20260114.03.00"
-        private const val WEB_VERSION = "2.20260114.08.00"
+        // Re-derive them by scraping INNERTUBE_CLIENT_VERSION out of the
+        // youtube.com and music.youtube.com bootstrap HTML - that is where these
+        // came from (August 2026).
+        private const val WEB_REMIX_VERSION = "1.20260816.07.00"
+        private const val WEB_VERSION = "2.20260817.01.00"
+
+        /**
+         * The pinned WEB client version, for callers outside this file that have
+         * to present themselves as the same client - [PoTokenProvider]'s
+         * BotGuard challenge in particular, which is refused if the client
+         * version does not look current.
+         */
+        fun webClientVersion(): String = WEB_VERSION
 
         // browse params selecting a channel's Videos tab (protobuf: "videos")
         private const val CHANNEL_VIDEOS_TAB_PARAMS = "EgZ2aWRlb3PyBgQKAjoA"
@@ -130,9 +142,28 @@ class YouTubeRepository(private val context: Context) {
         // VISITOR_DATA_TTL_MS, which is what refreshVisitorDataAfterPlaybackFailure
         // exists to undo. Do not read a 403 here as a UA or client problem.
         private const val ANDROID_VR_VERSION = "1.65.10"
-        private const val ANDROID_VR_USER_AGENT =
+        const val ANDROID_VR_USER_AGENT =
             "com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip"
         private const val ANDROID_VR_CLIENT_ID = 28
+
+        /**
+         * MWEB is the client SABR is driven from, and it is deliberately not the
+         * one the stream ladder comes from.
+         *
+         * ANDROID_VR gives unciphered progressive URLs and the full quality
+         * list, which is why it stays the primary. But its
+         * `serverAbrStreamingUrl` stops serving after roughly a minute of media
+         * whatever the client does with it - measured against two entirely
+         * different client implementations, both of which walled at the same
+         * segment. The reference client resolves SABR from a separate MWEB
+         * `/player` call and declares MWEB in the SABR request, so that is what
+         * this pair is for.
+         */
+        const val MWEB_CLIENT_ID = 2
+        const val MWEB_USER_AGENT =
+            "Mozilla/5.0 (iPad; CPU OS 16_7_10 like Mac OS X) AppleWebKit/605.1.15 " +
+                "(KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1,gzip(gfe)"
+
 
         // IOS used as a secondary fallback when ANDROID_VR is rejected (rare).
         private const val IOS_VERSION = "21.02.3"
@@ -177,6 +208,12 @@ class YouTubeRepository(private val context: Context) {
         @Volatile private var cachedVisitorData: String? = null
         @Volatile private var visitorDataFetchedAt: Long = 0L
         private val visitorDataMutex = kotlinx.coroutines.sync.Mutex()
+        /**
+         * NewPipe's player-JavaScript manager owns process-wide mutable caches.
+         * Keep each MWEB `sts` lookup, `/player` call and `n` transformation in
+         * one critical section so concurrent refreshes cannot mix revisions.
+         */
+        private val playerJavaScriptMutex = kotlinx.coroutines.sync.Mutex()
         private const val VISITOR_DATA_TTL_MS = 6 * 60 * 60 * 1000L // 6 hours
 
         private class CachedCaptions(val tracks: List<CaptionTrack>, val fetchedAt: Long)
@@ -217,6 +254,11 @@ class YouTubeRepository(private val context: Context) {
             context.applicationContext
                 .getSharedPreferences("ivor_visitor_data", Context.MODE_PRIVATE)
                 .edit().remove("visitor_data").remove("visitor_data_at").apply()
+            // The PO token is bound to the visitorData just dropped, so it dies
+            // with it. Replaying one under a new session does not fail loudly -
+            // SABR simply refuses to hand over media - so this must not be left
+            // to expire on its own.
+            PoTokenProvider.invalidate()
         }
     }
 
@@ -660,7 +702,8 @@ class YouTubeRepository(private val context: Context) {
         // fallback — see runPlayerClientChain), with a one-shot visitorData
         // remint + retry when YouTube's bot check flags the current token
         // (see resolvePlayerStreamingData).
-        val innerTubeUrl = resolvePlayerStreamingData(videoId)?.let { pickAudioStreamUrl(videoId, it) }
+        val innerTubeUrl = resolvePlayerStreamingData(videoId)?.streamingData
+            ?.let { pickAudioStreamUrl(videoId, it) }
         if (!innerTubeUrl.isNullOrEmpty()) {
             android.util.Log.i(
                 "YouTubeRepository",
@@ -813,6 +856,10 @@ class YouTubeRepository(private val context: Context) {
             cachedVisitorData = null
             visitorDataFetchedAt = 0L
             clearPersistedVisitorData(flagged)
+            // Bound to the token being discarded, so it goes with it. A stale
+            // PO token does not error - SABR just stops handing over media -
+            // which would read as a hang rather than a session problem.
+            PoTokenProvider.invalidate()
             val fresh = fetchVisitorData()
             if (!fresh.isNullOrEmpty()) {
                 cachedVisitorData = fresh
@@ -1530,6 +1577,13 @@ class YouTubeRepository(private val context: Context) {
         val streamingData: org.json.JSONObject?,
         val visitorDataSuspect: Boolean,
         val captionTracks: List<CaptionTrack> = emptyList(),
+        /**
+         * `playerConfig.mediaCommonConfig.mediaUstreamerRequestConfig
+         * .videoPlaybackUstreamerConfig`, required by every SABR request and
+         * only valid together with the `serverAbrStreamingUrl` from the same
+         * response.
+         */
+        val ustreamerConfig: String? = null,
     )
 
     /**
@@ -1539,10 +1593,17 @@ class YouTubeRepository(private val context: Context) {
      * mid-TTL poisons every resolution until it expires — the "music played
      * fine, then nothing plays anymore" failure mode.
      */
-    private suspend fun resolvePlayerStreamingData(videoId: String): org.json.JSONObject? {
+    private suspend fun resolvePlayerStreamingData(videoId: String): PlayerResponse? {
         val visitorData = getVisitorData()
-        val first = runPlayerClientChain(videoId, visitorData)
-        first.streamingData?.let { return it }
+        // The PO token is bound to the visitorData in force, so it must be
+        // minted for this exact value and re-minted alongside it below. Only a
+        // cached one is used here: minting is a WebView round trip, far too
+        // slow to sit in front of the first frame. The first video after a cold
+        // start therefore resolves without one and plays progressively, and
+        // warmPoToken() is what stops that being the common case.
+        val poToken = PoTokenProvider.peek(visitorData)
+        val first = runPlayerClientChain(videoId, visitorData, poToken)
+        first.streamingData?.let { return first }
         if (!first.visitorDataSuspect) return null
 
         android.util.Log.w(
@@ -1551,7 +1612,54 @@ class YouTubeRepository(private val context: Context) {
         )
         val fresh = remintVisitorData(flagged = visitorData) ?: return null
         if (fresh == visitorData) return null
-        return runPlayerClientChain(videoId, fresh).streamingData
+        // The old token belonged to the flagged session; it cannot be replayed.
+        PoTokenProvider.invalidate()
+        val retry = runPlayerClientChain(videoId, fresh, PoTokenProvider.peek(fresh))
+        return retry.takeIf { it.streamingData != null }
+    }
+
+    /**
+     * Mint a PO token ahead of time so the next resolution can attach one.
+     *
+     * Minting runs a WebView through Google's BotGuard challenge and takes
+     * seconds, which is why [resolvePlayerStreamingData] will only ever use a
+     * cached token. Call this off the critical path - app start, or as soon as
+     * the video player exists - so the token is already there when a video is
+     * actually opened. Safe to call repeatedly; it no-ops while one is valid.
+     */
+    /**
+     * The PO token already cached for the current session, or null.
+     *
+     * No network and no suspension, so the player can decide between the SABR
+     * and progressive paths while building a media source. Null means "play it
+     * the old way", which is correct for anything under the progressive cap.
+     */
+    fun cachedPoToken(): String? {
+        val visitorData = cachedVisitorData ?: return null
+        return PoTokenProvider.peek(visitorData)
+    }
+
+    /**
+     * Drop NewPipe's cached base.js, signature timestamp and n-transform.
+     * Used only after googlevideo rejects a SABR URL, which can mean YouTube
+     * rotated the player while this process was alive.
+     */
+    suspend fun invalidatePlayerJavaScript() {
+        playerJavaScriptMutex.withLock {
+            withContext(Dispatchers.IO) {
+                YoutubeJavaScriptPlayerManager.clearAllCaches()
+            }
+        }
+    }
+
+    suspend fun warmPoToken() {
+        try {
+            val visitorData = getVisitorData()
+            if (visitorData.isBlank()) return
+            PoTokenProvider.getPoToken(context, visitorData)
+        } catch (e: Exception) {
+            android.util.Log.w("YouTubeRepository", "PO token warm-up failed: ${e.message}")
+        }
     }
 
     /**
@@ -1585,7 +1693,11 @@ class YouTubeRepository(private val context: Context) {
         put("osVersion", "18.1.0.22B83")
     }
 
-    private suspend fun runPlayerClientChain(videoId: String, visitorData: String): PlayerResponse {
+    private suspend fun runPlayerClientChain(
+        videoId: String,
+        visitorData: String,
+        poToken: String? = null,
+    ): PlayerResponse {
         val vr = fetchPlayerResponse(
             videoId = videoId,
             clientName = "ANDROID_VR",
@@ -1594,6 +1706,7 @@ class YouTubeRepository(private val context: Context) {
             userAgent = ANDROID_VR_USER_AGENT,
             visitorData = visitorData,
             extraClientFields = androidVrClientFields(),
+            poToken = poToken,
         )
         // The /player response carries the caption tracklist alongside the
         // streams, so harvesting it here makes a later CC tap free.
@@ -1608,12 +1721,14 @@ class YouTubeRepository(private val context: Context) {
             userAgent = IOS_USER_AGENT,
             visitorData = visitorData,
             extraClientFields = iosClientFields(),
+            poToken = poToken,
         )
         cacheCaptionTracks(videoId, ios.captionTracks)
         return PlayerResponse(
             streamingData = ios.streamingData,
             visitorDataSuspect = vr.visitorDataSuspect || ios.visitorDataSuspect,
             captionTracks = vr.captionTracks.ifEmpty { ios.captionTracks },
+            ustreamerConfig = vr.ustreamerConfig ?: ios.ustreamerConfig,
         )
     }
 
@@ -1699,6 +1814,9 @@ class YouTubeRepository(private val context: Context) {
         userAgent: String,
         visitorData: String,
         extraClientFields: org.json.JSONObject = org.json.JSONObject(),
+        poToken: String? = null,
+        cpn: String? = null,
+        signatureTimestamp: Int? = null,
     ): PlayerResponse = withContext(Dispatchers.IO) {
         try {
             val clientObj = org.json.JSONObject().apply {
@@ -1715,15 +1833,38 @@ class YouTubeRepository(private val context: Context) {
                 }
             }
             val contextObj = org.json.JSONObject().put("client", clientObj)
-            // No playbackContext.signatureTimestamp: that field is the player-JS
-            // "sts" value, which only matters for ciphered WEB streams. The
-            // native clients used here (ANDROID_VR / IOS) return unciphered
-            // URLs and don't need it.
             val jsonBody = org.json.JSONObject().apply {
                 put("videoId", videoId)
                 put("context", contextObj)
                 put("contentCheckOk", true)
                 put("racyCheckOk", true)
+                // The client playback nonce ties this player response to the
+                // SABR session that will be opened against it.
+                if (!cpn.isNullOrBlank()) put("cpn", cpn)
+                // HTML5 clients need the `sts` from the exact base.js revision
+                // whose n-transform will be applied to the returned URL.
+                // Native ANDROID_VR / IOS calls leave this absent.
+                if (signatureTimestamp != null) {
+                    put(
+                        "playbackContext",
+                        org.json.JSONObject().put(
+                            "contentPlaybackContext",
+                            org.json.JSONObject()
+                                .put("html5Preference", "HTML5_PREF_WANTS")
+                                .put("signatureTimestamp", signatureTimestamp),
+                        ),
+                    )
+                }
+                // Declaring the PO token here is what makes the response's
+                // serverAbrStreamingUrl usable. It does not lift the cap on the
+                // progressive URLs in the same response - that was measured and
+                // is not what this is for (see SabrSession).
+                if (!poToken.isNullOrBlank()) {
+                    put(
+                        "serviceIntegrityDimensions",
+                        org.json.JSONObject().put("poToken", poToken),
+                    )
+                }
             }.toString()
 
             val url = "https://youtubei.googleapis.com/youtubei/v1/player?key=$INNER_TUBE_API_KEY&prettyPrint=false"
@@ -1737,6 +1878,9 @@ class YouTubeRepository(private val context: Context) {
                 .addHeader("X-YouTube-Client-Version", clientVersion)
                 .addHeader("Origin", "https://www.youtube.com")
                 .addHeader("Accept", "application/json")
+            if (clientName == "MWEB") {
+                requestBuilder.addHeader("Referer", "https://m.youtube.com/watch?v=$videoId")
+            }
             if (visitorData.isNotBlank()) {
                 requestBuilder.addHeader("X-Goog-Visitor-Id", visitorData)
             }
@@ -1788,7 +1932,12 @@ class YouTubeRepository(private val context: Context) {
                 // of a stale/missing visitorData.
                 return@withContext PlayerResponse(null, true, captionTracks)
             }
-            PlayerResponse(streamingData, false, captionTracks)
+            val ustreamerConfig = root.optJSONObject("playerConfig")
+                ?.optJSONObject("mediaCommonConfig")
+                ?.optJSONObject("mediaUstreamerRequestConfig")
+                ?.optString("videoPlaybackUstreamerConfig")
+                ?.takeIf { it.isNotBlank() }
+            PlayerResponse(streamingData, false, captionTracks, ustreamerConfig)
         } catch (e: Exception) {
             android.util.Log.e(
                 "YouTubeRepository",
@@ -4201,6 +4350,161 @@ class YouTubeRepository(private val context: Context) {
      * Does NOT fetch channel avatar, related videos, or extra metadata.
      * Use this to start playback ASAP, then call getVideoDetails() for the rest.
      */
+    /**
+     * Resolve SABR parameters from an MWEB `/player` response.
+     *
+     * Separate from the ANDROID_VR call that produces the quality ladder, and
+     * one extra request per video, taken only when a PO token is already cached
+     * - see [MWEB_CLIENT_ID] for why it cannot simply reuse the ANDROID_VR
+     * response. Returns null whenever anything is missing, which leaves the
+     * quality on the progressive path rather than failing playback.
+     */
+    suspend fun resolveSabrInfo(
+        videoId: String,
+        requestedQualityLabel: String? = null,
+        refreshPlayerJavaScript: Boolean = false,
+    ): SabrInfo? = playerJavaScriptMutex.withLock {
+        withContext(Dispatchers.IO) {
+            try {
+                if (refreshPlayerJavaScript) {
+                    YoutubeJavaScriptPlayerManager.clearAllCaches()
+                }
+                val visitorData = getVisitorData()
+                val poToken = PoTokenProvider.peek(visitorData)
+                if (poToken == null) {
+                    android.util.Log.w("YouTubeRepo", "SABR/MWEB: no PO token for this visitorData")
+                    return@withContext null
+                }
+                val cpn = SabrSession.generateCpn()
+                val signatureTimestamp = try {
+                    YoutubeJavaScriptPlayerManager.getSignatureTimestamp(videoId)
+                } catch (first: Exception) {
+                    // Extraction failures are cached by NewPipe. Clear once so
+                    // a player revision changed during this process can recover.
+                    YoutubeJavaScriptPlayerManager.clearAllCaches()
+                    YoutubeJavaScriptPlayerManager.getSignatureTimestamp(videoId)
+                }
+                val response = fetchPlayerResponse(
+                    videoId = videoId,
+                    clientName = "MWEB",
+                    clientVersion = WEB_VERSION,
+                    clientNameId = MWEB_CLIENT_ID,
+                    userAgent = MWEB_USER_AGENT,
+                    visitorData = visitorData,
+                    extraClientFields = org.json.JSONObject()
+                        .put("timeZone", "UTC")
+                        .put("userAgent", MWEB_USER_AGENT),
+                    poToken = poToken,
+                    cpn = cpn,
+                    signatureTimestamp = signatureTimestamp,
+                )
+                val streamingData = response.streamingData
+                if (streamingData == null) {
+                    android.util.Log.w("YouTubeRepo", "SABR/MWEB: no streamingData")
+                    return@withContext null
+                }
+                val unresolvedServerAbrUrl = streamingData.optString("serverAbrStreamingUrl")
+                    .takeIf { it.isNotBlank() }
+                if (unresolvedServerAbrUrl == null) {
+                    android.util.Log.w("YouTubeRepo", "SABR/MWEB: no serverAbrStreamingUrl")
+                    return@withContext null
+                }
+                val originalN = runCatching {
+                    Uri.parse(unresolvedServerAbrUrl).getQueryParameter("n")
+                }.getOrNull()
+                val serverAbrUrl = YoutubeJavaScriptPlayerManager
+                    .getUrlWithThrottlingParameterDeobfuscated(videoId, unresolvedServerAbrUrl)
+                val resolvedN = runCatching {
+                    Uri.parse(serverAbrUrl).getQueryParameter("n")
+                }.getOrNull()
+                if (originalN != null && resolvedN == originalN) {
+                    android.util.Log.w("YouTubeRepo", "SABR/MWEB: player JS left n unchanged")
+                    return@withContext null
+                }
+                val ustreamerConfig = response.ustreamerConfig?.takeIf { it.isNotBlank() }
+                if (ustreamerConfig == null) {
+                    android.util.Log.w("YouTubeRepo", "SABR/MWEB: no ustreamerConfig")
+                    return@withContext null
+                }
+
+                val adaptive = streamingData.optJSONArray("adaptiveFormats")
+                if (adaptive == null) {
+                    android.util.Log.w("YouTubeRepo", "SABR/MWEB: no adaptiveFormats")
+                    return@withContext null
+                }
+                val videoFormats = mutableListOf<org.json.JSONObject>()
+                var bestAudio: org.json.JSONObject? = null
+                for (i in 0 until adaptive.length()) {
+                    val format = adaptive.optJSONObject(i) ?: continue
+                    val mime = format.optString("mimeType")
+                    when {
+                        mime.startsWith("video/mp4") -> videoFormats.add(format)
+                        mime.startsWith("audio/mp4") ->
+                            if (format.optInt("bitrate") > (bestAudio?.optInt("bitrate") ?: 0)) {
+                                bestAudio = format
+                            }
+                    }
+                }
+                fun labelHeight(label: String): Int =
+                    label.takeWhile { it.isDigit() }.toIntOrNull() ?: 0
+                fun labelFps(label: String): Int =
+                    label.substringAfter("p", "").takeWhile { it.isDigit() }.toIntOrNull() ?: 30
+
+                val requestedHeight = requestedQualityLabel?.let(::labelHeight) ?: 0
+                val exact = requestedQualityLabel?.let { requested ->
+                    videoFormats.filter { it.optString("qualityLabel") == requested }
+                }.orEmpty()
+                val withinHeight = if (requestedHeight > 0) {
+                    videoFormats.filter { it.optInt("height") in 1..requestedHeight }
+                } else {
+                    videoFormats
+                }
+                val candidates = exact.ifEmpty { withinHeight.ifEmpty { videoFormats } }
+                val video = candidates.maxWithOrNull(
+                    compareBy<org.json.JSONObject>(
+                        { it.optInt("height") },
+                        { labelFps(it.optString("qualityLabel")) },
+                        { it.optInt("bitrate") },
+                    ),
+                )
+                val audio = bestAudio
+                if (video == null || audio == null) {
+                    android.util.Log.w(
+                        "YouTubeRepo",
+                        "SABR/MWEB: no mp4 pair " +
+                            "(video=${videoFormats.isNotEmpty()} audio=${bestAudio != null})",
+                    )
+                    return@withContext null
+                }
+                android.util.Log.i(
+                    "YouTubeRepo",
+                    "SABR/MWEB resolved: requested=$requestedQualityLabel " +
+                        "video=${video.optInt("itag")} ${video.optString("qualityLabel")} " +
+                        "audio=${audio.optInt("itag")}",
+                )
+
+                SabrInfo(
+                    serverAbrStreamingUrl = serverAbrUrl,
+                    ustreamerConfig = ustreamerConfig,
+                    videoItag = video.optInt("itag"),
+                    videoLastModified = video.optString("lastModified").toLongOrNull() ?: 0L,
+                    audioItag = audio.optInt("itag"),
+                    audioLastModified = audio.optString("lastModified").toLongOrNull() ?: 0L,
+                    height = video.optInt("height"),
+                    videoCodec = codecsFromMimeType(video.optString("mimeType")),
+                    audioCodec = codecsFromMimeType(audio.optString("mimeType")),
+                    width = video.optInt("width"),
+                    videoBitrate = video.optInt("bitrate"),
+                    audioBitrate = audio.optInt("bitrate"),
+                    cpn = cpn,
+                )
+            } catch (e: Exception) {
+                android.util.Log.w("YouTubeRepo", "MWEB SABR resolve failed: ${e.message}")
+                null
+            }
+        }
+    }
+
     suspend fun getVideoStreamQualities(videoId: String): List<VideoQuality> = withContext(Dispatchers.IO) {
         // Primary: direct InnerTube /player with the ANDROID_VR client. It returns
         // the full adaptive ladder (up to 2160p60) with direct, unciphered URLs,
@@ -4306,11 +4610,33 @@ class YouTubeRepository(private val context: Context) {
      * an empty list when neither client yields usable streamingData.
      */
     private suspend fun getVideoQualitiesFromInnerTube(videoId: String): List<VideoQuality> {
-        val streamingData = resolvePlayerStreamingData(videoId) ?: return emptyList()
-        return parseQualitiesFromStreamingData(streamingData)
+        val response = resolvePlayerStreamingData(videoId) ?: return emptyList()
+        val streamingData = response.streamingData ?: return emptyList()
+        return parseQualitiesFromStreamingData(streamingData, response.ustreamerConfig)
     }
 
-    private fun parseQualitiesFromStreamingData(streamingData: org.json.JSONObject): List<VideoQuality> {
+    /**
+     * Pull the `codecs="..."` parameter out of a `mimeType`.
+     *
+     * InnerTube reports `video/mp4; codecs="avc1.640028"`, and the DASH manifest
+     * this feeds needs the codec on its own. Without it Media3 has to sniff the
+     * container, which it can do, but declaring it avoids a needless probe and
+     * keeps track selection honest about what it is choosing between.
+     */
+    private fun codecsFromMimeType(mimeType: String?): String? {
+        if (mimeType.isNullOrBlank()) return null
+        val marker = mimeType.indexOf("codecs=")
+        if (marker < 0) return null
+        return mimeType.substring(marker + "codecs=".length)
+            .trim()
+            .trim('"')
+            .takeIf { it.isNotBlank() }
+    }
+
+    private fun parseQualitiesFromStreamingData(
+        streamingData: org.json.JSONObject,
+        ustreamerConfig: String? = null,
+    ): List<VideoQuality> {
         fun org.json.JSONArray.objects(): List<org.json.JSONObject> =
             (0 until length()).mapNotNull { optJSONObject(it) }
 
@@ -4394,7 +4720,7 @@ class YouTubeRepository(private val context: Context) {
 
         // Best separate audio track; prefer AAC (mp4a) for broad hardware support,
         // then highest bitrate.
-        val bestAudioUrl = adaptive
+        val bestAudio = adaptive
             .filter { it.optString("mimeType").startsWith("audio/") && it.optString("url").isNotEmpty() }
             .maxWithOrNull(
                 compareBy(
@@ -4402,7 +4728,36 @@ class YouTubeRepository(private val context: Context) {
                     { it.optInt("bitrate") }
                 )
             )
-            ?.optString("url")?.takeIf { it.isNotEmpty() }
+        val bestAudioUrl = bestAudio?.optString("url")?.takeIf { it.isNotEmpty() }
+
+        // SABR session parameters, present on every non-live response. Both
+        // halves have to come from this same response - the streaming URL is
+        // signed against the ustreamerConfig - so if either is missing the
+        // entries carry no SabrInfo and playback stays on the progressive path.
+        val serverAbrUrl = streamingData.optString("serverAbrStreamingUrl")
+            .takeIf { it.isNotBlank() }
+        val sabrReady = serverAbrUrl != null && !ustreamerConfig.isNullOrBlank() && bestAudio != null
+
+        fun sabrFor(videoFormat: org.json.JSONObject): SabrInfo? {
+            if (!sabrReady) return null
+            val itag = videoFormat.optInt("itag")
+            val audioItag = bestAudio!!.optInt("itag")
+            if (itag == 0 || audioItag == 0) return null
+            return SabrInfo(
+                serverAbrStreamingUrl = serverAbrUrl!!,
+                ustreamerConfig = ustreamerConfig!!,
+                videoItag = itag,
+                videoLastModified = videoFormat.optString("lastModified").toLongOrNull() ?: 0L,
+                audioItag = audioItag,
+                audioLastModified = bestAudio.optString("lastModified").toLongOrNull() ?: 0L,
+                height = videoFormat.optInt("height"),
+                videoCodec = codecsFromMimeType(videoFormat.optString("mimeType")),
+                audioCodec = codecsFromMimeType(bestAudio.optString("mimeType")),
+                width = videoFormat.optInt("width"),
+                videoBitrate = videoFormat.optInt("bitrate"),
+                audioBitrate = bestAudio.optInt("bitrate"),
+            )
+        }
 
         // Codec preference for the video track: H.264 decodes everywhere,
         // VP9 is widely supported, AV1 only on recent chipsets.
@@ -4439,7 +4794,8 @@ class YouTubeRepository(private val context: Context) {
                             format = container(best.optString("mimeType")),
                             isDASH = false,
                             audioUrl = bestAudioUrl,
-                            sourceAspectRatio = sourceAspect
+                            sourceAspectRatio = sourceAspect,
+                            sabr = sabrFor(best)
                         )
                     )
                 }
