@@ -130,7 +130,6 @@ class MainActivity : ComponentActivity() {
             val videoQualityMobile by themeViewModel.videoQualityMobile.collectAsState()
             val musicQualityWifi by themeViewModel.musicQualityWifi.collectAsState()
             val musicQualityMobile by themeViewModel.musicQualityMobile.collectAsState()
-            val preferHdr by themeViewModel.preferHdr.collectAsState()
             val spotlightHome by themeViewModel.spotlightHome.collectAsState()
             val nonExpressiveNavigationBar by
                 themeViewModel.nonExpressiveNavigationBar.collectAsState()
@@ -219,8 +218,6 @@ class MainActivity : ComponentActivity() {
                         onMusicQualityWifiChange = { themeViewModel.setMusicQualityWifi(it) },
                         musicQualityMobile = musicQualityMobile,
                         onMusicQualityMobileChange = { themeViewModel.setMusicQualityMobile(it) },
-                        preferHdr = preferHdr,
-                        onPreferHdrToggle = { themeViewModel.setPreferHdr(it) },
                         subscriptionSource = subscriptionSource,
                         onSubscriptionSourceChange = { themeViewModel.setSubscriptionSource(it) },
                         subscribeTarget = subscribeTarget,
@@ -354,8 +351,6 @@ fun MusicApp(
     onMusicQualityWifiChange: (String) -> Unit,
     musicQualityMobile: String,
     onMusicQualityMobileChange: (String) -> Unit,
-    preferHdr: Boolean,
-    onPreferHdrToggle: (Boolean) -> Unit,
     subscriptionSource: String,
     onSubscriptionSourceChange: (String) -> Unit,
     subscribeTarget: String,
@@ -698,8 +693,6 @@ fun MusicApp(
                     onMusicQualityWifiChange = onMusicQualityWifiChange,
                     musicQualityMobile = musicQualityMobile,
                     onMusicQualityMobileChange = onMusicQualityMobileChange,
-                    preferHdr = preferHdr,
-                    onPreferHdrToggle = onPreferHdrToggle,
                     subscriptionSource = subscriptionSource,
                     onSubscriptionSourceChange = onSubscriptionSourceChange,
                     subscribeTarget = subscribeTarget,

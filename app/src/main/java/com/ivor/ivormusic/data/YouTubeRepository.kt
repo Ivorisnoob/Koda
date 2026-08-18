@@ -4269,36 +4269,6 @@ class YouTubeRepository(private val context: Context) {
      * Use this to start playback ASAP, then call getVideoDetails() for the rest.
      */
     suspend fun getVideoStreamQualities(videoId: String): List<VideoQuality> = withContext(Dispatchers.IO) {
-        val preferHdr = ThemePreferences.isPreferHdrEnabled(context)
-        var innerTubeQualities: List<VideoQuality>? = null
-
-        // NewPipe 0.26.5 deliberately exposes a compact, stable VideoStream
-        // model, but it does not carry YouTube's colorInfo and its supported
-        // itag table does not include the dedicated HDR variants. Consequently
-        // it cannot tell an SDR stream from PQ/HLG here. When the user opts in,
-        // probe our direct parser first: it reads qualityLabel + colorInfo and
-        // returns only when the response actually contains an HDR rendition.
-        // SDR/default playback stays on NewPipe's maintained client chain.
-        if (preferHdr) {
-            try {
-                val resolved = getVideoQualitiesFromInnerTube(videoId)
-                innerTubeQualities = resolved
-                if (resolved.any { it.resolution.contains("HDR", ignoreCase = true) }) {
-                    android.util.Log.i(
-                        "YouTubeRepo",
-                        "HDR qualities via direct InnerTube for $videoId"
-                    )
-                    return@withContext resolved
-                }
-            } catch (e: Exception) {
-                android.util.Log.w(
-                    "YouTubeRepo",
-                    "HDR probe failed, retaining NewPipe quality resolution",
-                    e,
-                )
-            }
-        }
-
         // NewPipe 0.26.3+ deliberately resolves VOD streams through Android's
         // reel endpoint and a visionOS fallback, both of which avoid the WEB
         // client's SABR-only response. Keep that maintained client selection in
@@ -4325,9 +4295,6 @@ class YouTubeRepository(private val context: Context) {
 
         // Last-resort fallback. It is still useful for a client-specific edge
         // case, but it must not be the normal VOD path for the reason above.
-        innerTubeQualities?.takeIf { it.isNotEmpty() }?.let {
-            return@withContext it
-        }
         try {
             getVideoQualitiesFromInnerTube(videoId)
         } catch (e: Exception) {
@@ -4499,12 +4466,10 @@ class YouTubeRepository(private val context: Context) {
             .maxByOrNull { it.optInt("height") }
             ?.let { it.optInt("width").toFloat() / it.optInt("height").toFloat() }
 
-        // HDR variants ride separate adaptiveFormats entries whose qualityLabel
-        // carries " HDR" and whose colorInfo declares a PQ or HLG transfer
-        // (shape per yt-dlp/NewPipe; a live re-probe was bot-checked July 2026,
-        // so re-verify on device if this stops matching). Behind the
-        // "Prefer HDR" opt-in: off drops HDR entries entirely, on lists them
-        // alongside SDR and prefers them at equal height via the sort below.
+        // The direct InnerTube resolver is only a last-resort fallback and its
+        // HDR URLs currently fail during playback. Keep those variants out so
+        // a fallback can never reintroduce the source-error path removed from
+        // the primary NewPipe flow.
         fun isHdrFormat(f: org.json.JSONObject): Boolean {
             if (f.optString("qualityLabel").contains("HDR", ignoreCase = true)) return true
             val transfer = f.optJSONObject("colorInfo")
@@ -4512,8 +4477,6 @@ class YouTubeRepository(private val context: Context) {
             return transfer == "COLOR_TRANSFER_CHARACTERISTICS_SMPTE2084" ||
                 transfer == "COLOR_TRANSFER_CHARACTERISTICS_ARIB_STD_B67"
         }
-        val preferHdr = ThemePreferences.isPreferHdrEnabled(context)
-
         fun labelHeight(label: String): Int = label.takeWhile { it.isDigit() }.toIntOrNull() ?: 0
         fun labelFps(label: String): Int =
             label.substringAfter("p", "").takeWhile { it.isDigit() }.toIntOrNull() ?: 30
@@ -4547,23 +4510,12 @@ class YouTubeRepository(private val context: Context) {
             val ladder = adaptive
                 .filter {
                     it.optString("mimeType").startsWith("video/") &&
-                        (preferHdr || !isHdrFormat(it))
+                        !isHdrFormat(it)
                 }
-                .mapNotNull { format ->
-                    format.optString("qualityLabel")
-                        .takeIf { it.isNotEmpty() }
-                        ?.let { label ->
-                            if (isHdrFormat(format) && !label.contains("HDR", true)) {
-                                "$label HDR"
-                            } else {
-                                label
-                            }
-                        }
-                }
+                .mapNotNull { it.optString("qualityLabel").takeIf { label -> label.isNotEmpty() } }
                 .distinct()
                 .sortedWith(
                     compareByDescending<String> { labelHeight(it) }
-                        .thenByDescending { if (it.contains("HDR", true)) 1 else 0 }
                         .thenByDescending { labelFps(it) }
                 )
 
@@ -4615,16 +4567,9 @@ class YouTubeRepository(private val context: Context) {
                     it.optString("mimeType").startsWith("video/") &&
                         it.optString("url").isNotEmpty() &&
                         it.optString("qualityLabel").isNotEmpty() &&
-                        (preferHdr || !isHdrFormat(it))
+                        !isHdrFormat(it)
                 }
-                .groupBy { format ->
-                    val label = format.optString("qualityLabel")
-                    if (isHdrFormat(format) && !label.contains("HDR", true)) {
-                        "$label HDR"
-                    } else {
-                        label
-                    }
-                }
+                .groupBy { it.optString("qualityLabel") }
                 .forEach { (label, formats) ->
                     val best = formats.maxWithOrNull(
                         compareBy({ codecRank(it.optString("mimeType")) }, { it.optInt("bitrate") })
@@ -4663,13 +4608,9 @@ class YouTubeRepository(private val context: Context) {
             }
         }
 
-        // Highest resolution first; at equal height an HDR variant (only
-        // present when opted in) outranks SDR so the default pick lands on
-        // it, then 60fps variants before 30fps.
-        fun hdr(label: String): Int = if (label.contains("HDR", ignoreCase = true)) 1 else 0
+        // Highest resolution first, then 60fps variants before 30fps.
         return qualities.sortedWith(
             compareByDescending<VideoQuality> { labelHeight(it.resolution) }
-                .thenByDescending { hdr(it.resolution) }
                 .thenByDescending { labelFps(it.resolution) }
         )
     }

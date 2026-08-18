@@ -37,7 +37,6 @@ import androidx.compose.material.icons.rounded.FlashOn
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.FolderOff
 import androidx.compose.material.icons.rounded.GraphicEq
-import androidx.compose.material.icons.rounded.HdrOn
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.HighQuality
 import androidx.compose.material.icons.rounded.Info
@@ -386,8 +385,6 @@ internal fun PlaybackSettingsPage(
     musicQualityMobile: String,
     videoQualityWifi: String,
     videoQualityMobile: String,
-    preferHdr: Boolean,
-    onPreferHdrToggle: (Boolean) -> Unit,
     onOpenQualityPicker: (QualityDialogTarget) -> Unit,
     onBack: () -> Unit
 ) {
@@ -579,16 +576,6 @@ internal fun PlaybackSettingsPage(
                             )
                         },
                         showChevron = true
-                    )
-
-                    SettingsDivider()
-
-                    SettingsToggleRow(
-                        icon = Icons.Rounded.HdrOn,
-                        title = "Prefer HDR Videos",
-                        subtitle = "Fetch HDR streams when a video has them",
-                        enabled = preferHdr,
-                        onToggle = onPreferHdrToggle
                     )
                 }
             }

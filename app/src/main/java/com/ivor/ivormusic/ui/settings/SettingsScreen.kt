@@ -75,7 +75,6 @@ import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.FolderOff
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.GridView
-import androidx.compose.material.icons.rounded.HdrOn
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Interests
 import androidx.compose.material.icons.rounded.LightMode
@@ -287,8 +286,6 @@ fun SettingsScreen(
     onMusicQualityWifiChange: (String) -> Unit,
     musicQualityMobile: String,
     onMusicQualityMobileChange: (String) -> Unit,
-    preferHdr: Boolean,
-    onPreferHdrToggle: (Boolean) -> Unit,
     subscriptionSource: String = ThemePreferences.SUBSCRIPTIONS_AUTO,
     onSubscriptionSourceChange: (String) -> Unit = {},
     subscribeTarget: String = ThemePreferences.SUBSCRIPTIONS_AUTO,
@@ -694,8 +691,6 @@ fun SettingsScreen(
                     musicQualityMobile = musicQualityMobile,
                     videoQualityWifi = videoQualityWifi,
                     videoQualityMobile = videoQualityMobile,
-                    preferHdr = preferHdr,
-                    onPreferHdrToggle = onPreferHdrToggle,
                     onOpenQualityPicker = { qualityDialogTarget = it },
                     onBack = { page = SettingsPage.HUB }
                 )
