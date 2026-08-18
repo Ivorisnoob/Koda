@@ -20,12 +20,6 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.MergingMediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import com.ivor.ivormusic.data.CaptionTrack
-import com.ivor.ivormusic.data.SabrDataSource
-import com.ivor.ivormusic.data.SabrProtocol
-import com.ivor.ivormusic.data.SabrDashSource
-import com.ivor.ivormusic.data.SabrMediaBridge
-import com.ivor.ivormusic.data.SabrSession
-import com.ivor.ivormusic.data.SabrInfo
 import com.ivor.ivormusic.data.CommentItem
 import com.ivor.ivormusic.data.LikeStatus
 import com.ivor.ivormusic.data.LocalSubscription
@@ -56,10 +50,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
 
 @UnstableApi
 class VideoPlayerViewModel(application: android.app.Application) : AndroidViewModel(application) {
@@ -68,26 +59,6 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     private val youtubeRepository = YouTubeRepository(context)
     private val themePreferences = ThemePreferences(context)
     private val videoHistoryRepository = com.ivor.ivormusic.data.VideoHistoryRepository(context)
-
-    /**
-     * The SABR download driving playback, when this video is on that path.
-     *
-     * One per playing video: the session owns spool files and a request loop
-     * keyed to a single `serverAbrStreamingUrl`, so a new video or a quality
-     * change has to release it rather than reuse it.
-     */
-    private var sabrBridge: SabrMediaBridge? = null
-
-    /**
-     * The video whose SABR attempt already failed, so the retry goes
-     * progressive instead of rebuilding an identical session. Without this a
-     * A non-403 SABR failure and source-error recovery otherwise form a loop:
-     * the recovery rebuilds the same deterministic session. A 403 gets one
-     * stronger recovery first because it can mean either the PO token or the
-     * cached player-JavaScript revision went stale.
-     */
-    private var sabrFailedForVideoId: String? = null
-    private var sabr403RecoveredForVideoId: String? = null
 
     // Device-held video playlists. Its state is process-wide, so a save taken
     // here shows up in the Library tab's own HomeViewModel without either of
@@ -520,10 +491,6 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
     init {
         observeProfileSwitches()
-        // Off the critical path on purpose: minting runs a WebView through
-        // BotGuard and takes seconds, so it happens here rather than in front
-        // of the first frame. See buildSabrSource.
-        warmSabrToken()
 
         // Near-instant first frame (~1s buffered) plus an aggressive
         // read-ahead: up to 5 minutes (min == max: continuous top-up),
@@ -827,35 +794,10 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         // spinner. Nothing else writes _isLoading, and "resolving a stream" is
         // exactly what it already means during the initial load.
         _isLoading.value = true
-        val responseCode = httpResponseCode(original)
-        if (isSabrFailure(original)) {
-            if (responseCode == 403 && sabr403RecoveredForVideoId != video.videoId) {
-                sabr403RecoveredForVideoId = video.videoId
-                android.util.Log.w(TAG, "SABR 403 for ${video.videoId}; refreshing its session")
-            } else {
-                android.util.Log.w(TAG, "SABR failed for ${video.videoId}; retrying progressively")
-                sabrFailedForVideoId = video.videoId
-            }
-            releaseSabrSession()
-        }
         sourceRecoveryJob?.cancel()
         sourceRecoveryJob = viewModelScope.launch {
-            if (responseCode == 403) {
-                youtubeRepository.invalidatePlayerJavaScript()
+            if (httpResponseCode(original) == 403) {
                 youtubeRepository.refreshVisitorDataAfterPlaybackFailure()
-            }
-            // **The retry is where waiting for a PO token is affordable.** The
-            // mint is a WebView round trip and must never sit in front of a
-            // first frame, so the initial attempt takes whatever is cached and
-            // plays progressively when that is nothing. But progressive dies at
-            // googlevideo's ~16 MiB ceiling, which is exactly the error being
-            // recovered from here, and falling back to it a second time just
-            // reproduces the failure - the shape of the "open the app, tap a
-            // video, watch it die at 30 seconds" report. By now the warm-up
-            // started at init is usually a second from done, and the player is
-            // already showing a spinner.
-            if (youtubeRepository.cachedPoToken() == null) {
-                withTimeoutOrNull(POTOKEN_RECOVERY_WAIT_MS) { youtubeRepository.warmPoToken() }
             }
             if (!reresolveAndReload(video)) {
                 _playbackError.value = original
@@ -926,8 +868,6 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         var cause: Throwable? = error.cause
         while (cause != null) {
             if (cause is HttpDataSource.InvalidResponseCodeException) return cause.responseCode
-            Regex("""SABR HTTP (\d{3})""").find(cause.message.orEmpty())
-                ?.groupValues?.getOrNull(1)?.toIntOrNull()?.let { return it }
             cause = cause.cause
         }
         return null
@@ -1110,17 +1050,6 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             _isExpanded.value = true
             return
         }
-
-        // The previous video's SABR session owns spool files and a request
-        // loop bound to that video's streaming URL; nothing about it carries
-        // over, so it goes before the new video is set rather than being left
-        // for whichever path happens to replace it.
-        releaseSabrSession()
-        // Cleared per video, not per session: the ban exists to stop one
-        // video's failed session being rebuilt on its own retry, and carrying
-        // it further would quietly put every later video on the capped path.
-        if (sabrFailedForVideoId != video.videoId) sabrFailedForVideoId = null
-        if (sabr403RecoveredForVideoId != video.videoId) sabr403RecoveredForVideoId = null
 
         _currentVideo.value = video
         _isExpanded.value = true
@@ -1355,7 +1284,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      * subtitle. Koda renders cues itself instead - see [setCaptionTrack] - so
      * this only ever deals with video and audio.
      */
-    private suspend fun loadQuality(quality: VideoQuality) {
+    private fun loadQuality(quality: VideoQuality) {
         _currentQuality.value = quality
 
         if (quality.isLive) {
@@ -1374,8 +1303,6 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                     .setMimeType(adaptiveMimeType(quality))
                     .build()
             )
-        } else if (buildSabrSource(quality)) {
-            // Handled: SABR owns the media source for this quality.
         } else {
             val dataSourceFactory = streamDataSourceFactory
             val audioUrl = quality.audioUrl
@@ -1398,168 +1325,6 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             _exoPlayer?.setMediaSource(primarySource)
         }
         _exoPlayer?.prepare()
-    }
-
-    /**
-     * Try to play [quality] over SABR, returning false to fall back to the
-     * progressive path.
-     *
-     * SABR is the only way to read a stream longer than googlevideo's ~16 MiB
-     * progressive cap, but it needs a PO token, and minting one is a WebView
-     * round trip far too slow to sit in front of the first frame. So this uses
-     * only an already-cached token and quietly declines otherwise: the
-     * progressive path still plays anything short, and [warmSabrToken] is what
-     * makes a token normally be there by the time a video is opened.
-     */
-    private suspend fun buildSabrSource(quality: VideoQuality): Boolean {
-        val videoId = _currentVideo.value?.videoId ?: return false
-        if (sabrFailedForVideoId == videoId) {
-            android.util.Log.i(TAG, "SABR already failed for $videoId; using progressive")
-            return false
-        }
-        if (youtubeRepository.cachedPoToken() == null) {
-            android.util.Log.i(TAG, "No PO token cached yet; using progressive")
-            return false
-        }
-        // Resolved from its own MWEB `/player` call rather than taken off the
-        // quality: the ANDROID_VR response that produces the ladder also
-        // produces a serverAbrStreamingUrl, and that one stops serving about a
-        // minute in. See YouTubeRepository.MWEB_CLIENT_ID.
-        var refreshPlayerJavaScript = false
-        repeat(2) { attempt ->
-            val sabr = withContext(Dispatchers.IO) {
-                youtubeRepository.resolveSabrInfo(
-                    videoId = videoId,
-                    requestedQualityLabel = quality.resolution,
-                    refreshPlayerJavaScript = refreshPlayerJavaScript,
-                )
-            }
-            if (sabr == null) {
-                android.util.Log.i(TAG, "No SABR info for $videoId; using progressive")
-                return false
-            }
-
-            try {
-                installSabrSource(videoId, quality, sabr)
-                return true
-            } catch (e: Exception) {
-                releaseSabrSession()
-                if (attempt == 0 && isSabrHttpForbidden(e)) {
-                    // A cached base.js can outlive the URL revision YouTube is
-                    // issuing. Re-fetch sts + n-transform once before giving up.
-                    android.util.Log.w(TAG, "SABR HTTP 403; refreshing player JavaScript", e)
-                    refreshPlayerJavaScript = true
-                } else {
-                    android.util.Log.w(TAG, "SABR setup failed, falling back to progressive", e)
-                    sabrFailedForVideoId = videoId
-                    return false
-                }
-            }
-        }
-        return false
-    }
-
-    private suspend fun installSabrSource(
-        videoId: String,
-        quality: VideoQuality,
-        sabr: SabrInfo,
-    ) {
-        val poToken = youtubeRepository.cachedPoToken()
-            ?: throw java.io.IOException("SABR: PO token expired during setup")
-        val videoFormat = SabrProtocol.FormatId(sabr.videoItag, sabr.videoLastModified)
-        val audioFormat = SabrProtocol.FormatId(sabr.audioItag, sabr.audioLastModified)
-        val session = SabrSession(
-            videoId = videoId,
-            streamingUrl = sabr.serverAbrStreamingUrl,
-            ustreamerConfig = SabrProtocol.decodeBase64(sabr.ustreamerConfig),
-            poToken = SabrProtocol.decodeBase64(poToken),
-            clientInfo = SabrProtocol.ClientInfo(
-                clientNameId = YouTubeRepository.MWEB_CLIENT_ID,
-                clientVersion = YouTubeRepository.webClientVersion(),
-            ),
-            userAgent = YouTubeRepository.MWEB_USER_AGENT,
-            cpn = sabr.cpn ?: SabrSession.generateCpn(),
-            // A reload is the server saying this video's `/player` response
-            // has aged out, not that playback failed. Re-resolving keeps the
-            // cached segments and timeline, so it is invisible.
-            reloadProvider = {
-                youtubeRepository.resolveSabrInfo(videoId, quality.resolution)?.let {
-                    SabrSession.Reload(
-                        streamingUrl = it.serverAbrStreamingUrl,
-                        ustreamerConfig = SabrProtocol.decodeBase64(it.ustreamerConfig),
-                    )
-                }
-            },
-        )
-        val bridge = SabrMediaBridge(session, videoFormat, audioFormat)
-
-        val source = try {
-            // Media3 needs the manifest before it can ask for anything, and the
-            // manifest needs the timelines, so preparation runs off main.
-            withContext(Dispatchers.IO) {
-                SabrDashSource.create(
-                    mediaItem = nowPlayingMediaItem(SabrDataSource.baseUrlFor(sabr.videoItag)),
-                    bridge = bridge,
-                    videoItag = sabr.videoItag,
-                    audioItag = sabr.audioItag,
-                    videoCodec = sabr.videoCodec,
-                    audioCodec = sabr.audioCodec,
-                    width = sabr.width,
-                    height = sabr.height,
-                    videoBitrate = sabr.videoBitrate,
-                    audioBitrate = sabr.audioBitrate,
-                    initialPositionMs = _positionMs.value,
-                )
-            }
-        } catch (e: Exception) {
-            bridge.release()
-            throw e
-        }
-
-        releaseSabrSession()
-        sabrBridge = bridge
-        _exoPlayer?.setMediaSource(source)
-        android.util.Log.i(
-            TAG,
-            "Playing $videoId over SABR (${quality.resolution} -> ${sabr.height}p)",
-        )
-    }
-
-    private fun isSabrHttpForbidden(error: Throwable?): Boolean {
-        var cause = error
-        var depth = 0
-        while (cause != null && depth < 8) {
-            if (cause.message?.contains("SABR HTTP 403") == true) return true
-            cause = cause.cause
-            depth++
-        }
-        return false
-    }
-
-    /** True when [error] came up out of the SABR session rather than the network. */
-    private fun isSabrFailure(error: Throwable?): Boolean {
-        var cause = error
-        var depth = 0
-        while (cause != null && depth < 8) {
-            if (cause.message?.startsWith("SABR") == true) return true
-            cause = cause.cause
-            depth++
-        }
-        return false
-    }
-
-    private fun releaseSabrSession() {
-        sabrBridge?.release()
-        sabrBridge = null
-    }
-
-    /**
-     * Mint a PO token in the background so SABR is available for the *next*
-     * video. Called at init and after a profile switch, never on the path to a
-     * first frame.
-     */
-    private fun warmSabrToken() {
-        viewModelScope.launch { youtubeRepository.warmPoToken() }
     }
 
     /**
@@ -1677,9 +1442,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         // Remove any existing quality change listener to prevent leaks
         qualityChangeListener?.let { player.removeListener(it) }
 
-        viewModelScope.launch {
-            loadQuality(quality)
-        }
+        loadQuality(quality)
 
         // Wait for player to be ready before seeking to preserved position
         val listener = object : Player.Listener {
@@ -2395,24 +2158,6 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     }
 
     companion object {
-        private const val TAG = "VideoPlayerVM"
-
-        /**
-         * The client SABR requests identify themselves as. Must match the
-         * client that resolved the stream (ANDROID_VR), or the server rejects
-         * the session.
-         */
-        /**
-         * How long the source-error recovery will wait for a PO token before
-         * giving up and retrying progressively anyway. Long enough for a mint
-         * already under way, short enough that a broken WebView does not turn
-         * one failed video into a ten-second freeze.
-         */
-        private const val POTOKEN_RECOVERY_WAIT_MS = 6_000L
-
-        private const val ANDROID_VR_CLIENT_NAME_ID = 28
-        private const val ANDROID_VR_CLIENT_VERSION = "1.65.10"
-
         private val TIMESTAMP_REGEX = Regex("""(?<!\d)(?:(\d{1,2}):)?(\d{1,2}):(\d{2})(?!\d)""")
 
         /** Speeds offered in the player's speed menu. */
@@ -2502,7 +2247,6 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         progressJob?.cancel()
         progressJob = null
         stopLivePolling()
-        releaseSabrSession()
         // Before the release below, not after: stop() drops the MediaSession
         // synchronously on this thread, and a session outliving the player it
         // wraps crashes the next time Media3 reads state off it.
