@@ -60,6 +60,18 @@ data class VideoItem(
     val dismissal: DismissalTokens? = null
 ) {
     /**
+     * Destination understood by the channel screen.
+     *
+     * Modern feed lockups sometimes omit their creator browse endpoint even
+     * though they still include an avatar. In that case the video id lets the
+     * channel screen resolve the owner from watch metadata without starting or
+     * changing playback.
+     */
+    val channelNavigationReference: String
+        get() = channelId?.takeIf { it.isNotBlank() }
+            ?: "$CHANNEL_REFERENCE_VIDEO_PREFIX$videoId"
+
+    /**
      * High-resolution thumbnail URL.
      */
     val highResThumbnailUrl: String?
@@ -98,6 +110,8 @@ data class VideoItem(
         }
 
     companion object {
+        const val CHANNEL_REFERENCE_VIDEO_PREFIX = "video:"
+
         /**
          * Creates a VideoItem from NewPipe StreamInfoItem data.
          */

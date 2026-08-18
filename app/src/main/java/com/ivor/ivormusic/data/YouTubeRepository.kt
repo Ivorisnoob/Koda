@@ -3724,12 +3724,23 @@ class YouTubeRepository(private val context: Context) {
                      val textObj = firstRowParts.optJSONObject(0)?.optJSONObject("text")
                      channelName = textObj?.optString("content") ?: channelName
                      
-                     // Extract channel ID directly from runs if available
-                     if (textObj?.has("runs") == true) {
+                     // Modern lockups use attributed text: the creator link is
+                     // an innertubeCommand in commandRuns. Older responses use
+                     // the legacy runs/navigationEndpoint shape below.
+                     channelId = textObj?.optJSONArray("commandRuns")
+                         ?.optJSONObject(0)
+                         ?.optJSONObject("onTap")
+                         ?.optJSONObject("innertubeCommand")
+                         ?.optJSONObject("browseEndpoint")
+                         ?.optString("browseId")
+                         ?.takeIf { it.isNotBlank() }
+
+                     if (channelId == null && textObj?.has("runs") == true) {
                          val runs = textObj.optJSONArray("runs")
                          if (runs != null && runs.length() > 0) {
                              val browseEndpoint = runs.optJSONObject(0)?.optJSONObject("navigationEndpoint")?.optJSONObject("browseEndpoint")
                              channelId = browseEndpoint?.optString("browseId")
+                                 ?.takeIf { it.isNotBlank() }
                          }
                      }
                  }
@@ -4258,6 +4269,36 @@ class YouTubeRepository(private val context: Context) {
      * Use this to start playback ASAP, then call getVideoDetails() for the rest.
      */
     suspend fun getVideoStreamQualities(videoId: String): List<VideoQuality> = withContext(Dispatchers.IO) {
+        val preferHdr = ThemePreferences.isPreferHdrEnabled(context)
+        var innerTubeQualities: List<VideoQuality>? = null
+
+        // NewPipe 0.26.5 deliberately exposes a compact, stable VideoStream
+        // model, but it does not carry YouTube's colorInfo and its supported
+        // itag table does not include the dedicated HDR variants. Consequently
+        // it cannot tell an SDR stream from PQ/HLG here. When the user opts in,
+        // probe our direct parser first: it reads qualityLabel + colorInfo and
+        // returns only when the response actually contains an HDR rendition.
+        // SDR/default playback stays on NewPipe's maintained client chain.
+        if (preferHdr) {
+            try {
+                val resolved = getVideoQualitiesFromInnerTube(videoId)
+                innerTubeQualities = resolved
+                if (resolved.any { it.resolution.contains("HDR", ignoreCase = true) }) {
+                    android.util.Log.i(
+                        "YouTubeRepo",
+                        "HDR qualities via direct InnerTube for $videoId"
+                    )
+                    return@withContext resolved
+                }
+            } catch (e: Exception) {
+                android.util.Log.w(
+                    "YouTubeRepo",
+                    "HDR probe failed, retaining NewPipe quality resolution",
+                    e,
+                )
+            }
+        }
+
         // NewPipe 0.26.3+ deliberately resolves VOD streams through Android's
         // reel endpoint and a visionOS fallback, both of which avoid the WEB
         // client's SABR-only response. Keep that maintained client selection in
@@ -4284,6 +4325,9 @@ class YouTubeRepository(private val context: Context) {
 
         // Last-resort fallback. It is still useful for a client-specific edge
         // case, but it must not be the normal VOD path for the reason above.
+        innerTubeQualities?.takeIf { it.isNotEmpty() }?.let {
+            return@withContext it
+        }
         try {
             getVideoQualitiesFromInnerTube(videoId)
         } catch (e: Exception) {
@@ -4480,7 +4524,17 @@ class YouTubeRepository(private val context: Context) {
                     it.optString("mimeType").startsWith("video/") &&
                         (preferHdr || !isHdrFormat(it))
                 }
-                .mapNotNull { it.optString("qualityLabel").takeIf { label -> label.isNotEmpty() } }
+                .mapNotNull { format ->
+                    format.optString("qualityLabel")
+                        .takeIf { it.isNotEmpty() }
+                        ?.let { label ->
+                            if (isHdrFormat(format) && !label.contains("HDR", true)) {
+                                "$label HDR"
+                            } else {
+                                label
+                            }
+                        }
+                }
                 .distinct()
                 .sortedWith(
                     compareByDescending<String> { labelHeight(it) }
@@ -4533,7 +4587,14 @@ class YouTubeRepository(private val context: Context) {
                         it.optString("qualityLabel").isNotEmpty() &&
                         (preferHdr || !isHdrFormat(it))
                 }
-                .groupBy { it.optString("qualityLabel") }
+                .groupBy { format ->
+                    val label = format.optString("qualityLabel")
+                    if (isHdrFormat(format) && !label.contains("HDR", true)) {
+                        "$label HDR"
+                    } else {
+                        label
+                    }
+                }
                 .forEach { (label, formats) ->
                     val best = formats.maxWithOrNull(
                         compareBy({ codecRank(it.optString("mimeType")) }, { it.optInt("bitrate") })
@@ -4777,6 +4838,24 @@ class YouTubeRepository(private val context: Context) {
             parseEngagementFromWatchNext(videoId, root)
         } catch (e: Exception) {
             android.util.Log.e("YouTubeRepo", "getVideoEngagement failed", e)
+            null
+        }
+    }
+
+    /**
+     * Resolve the creator of a feed video without resolving streams or touching
+     * either player. Used only when a feed lockup supplied an avatar/name but
+     * omitted its channel browse endpoint.
+     */
+    suspend fun getVideoChannelId(videoId: String): String? = withContext(Dispatchers.IO) {
+        if (videoId.length != 11) return@withContext null
+        try {
+            val root = fetchWatchNextRoot(videoId) ?: return@withContext null
+            runCatching { parseEngagementFromWatchNext(videoId, root).channelId }
+                .getOrNull()
+                ?: parseVideoMetadataFromWatchNext(videoId, root, null)?.channelId
+        } catch (e: Exception) {
+            android.util.Log.w("YouTubeRepo", "Channel lookup failed for $videoId", e)
             null
         }
     }

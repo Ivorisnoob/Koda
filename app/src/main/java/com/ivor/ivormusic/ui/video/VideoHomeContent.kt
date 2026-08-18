@@ -588,15 +588,15 @@ fun VideoCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     onLongClick: (() -> Unit)? = null,
-    /** Opens the creator when the avatar is tapped; absent IDs stay inert. */
+    /** Opens the creator when the avatar is tapped, without invoking [onClick]. */
     onOpenChannel: ((String) -> Unit)? = null
 ) {
     val textColor = MaterialTheme.colorScheme.onBackground
     val secondaryTextColor = MaterialTheme.colorScheme.onSurfaceVariant
     val cardShape = RoundedCornerShape(16.dp)
-    val openChannel = video.channelId
-        ?.takeIf { it.isNotBlank() }
-        ?.let { channelId -> onOpenChannel?.let { open -> { open(channelId) } } }
+    val openChannel = onOpenChannel?.let { open ->
+        { open(video.channelNavigationReference) }
+    }
 
     Surface(
         // Clip before the click handler - Surface applies its own clip downstream of

@@ -777,9 +777,10 @@ fun MusicApp(
                     onBack = { navController.popBackStack() }
                 )
             }
-            // A creator's page. The argument is a UC id from in-app callers and
-            // may be an @handle or a full URL when it arrived from a shared
-            // link; the screen resolves whichever it was given.
+            // A creator's page. The argument is normally a UC id, may be an
+            // @handle/full URL from a shared link, or a video:<id> fallback
+            // when a modern feed card omitted its creator endpoint. The screen
+            // resolves whichever it was given without starting that video.
             composable(
                 route = "channel/{channelId}",
                 arguments = listOf(

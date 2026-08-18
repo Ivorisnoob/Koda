@@ -149,10 +149,10 @@ class ChannelViewModel(application: Application) : AndroidViewModel(application)
     /**
      * Loads the channel, once per id.
      *
-     * [idOrHandleOrUrl] may be a canonical `UC…` id, an `@handle` or a full
-     * channel URL, because the callers genuinely differ: a video card knows the
-     * id, a shared link knows neither. Resolution is one extra call and only
-     * for the forms that need it.
+     * [idOrHandleOrUrl] may be a canonical `UC…` id, an `@handle`, a full
+     * channel URL, or a `video:<id>` fallback from a feed card whose modern
+     * lockup omitted the creator endpoint. The last form resolves the owner
+     * from watch metadata and never starts or mutates playback.
      */
     fun load(idOrHandleOrUrl: String, force: Boolean = false) {
         if (!force && loadedChannelId == idOrHandleOrUrl) return
@@ -160,10 +160,16 @@ class ChannelViewModel(application: Application) : AndroidViewModel(application)
         _isLoadingPage.value = true
         _loadFailed.value = false
         viewModelScope.launch {
-            val channelId = if (idOrHandleOrUrl.startsWith("UC") && idOrHandleOrUrl.length >= 24) {
-                idOrHandleOrUrl
-            } else {
-                youtubeRepository.resolveChannelId(idOrHandleOrUrl)
+            val channelId = when {
+                idOrHandleOrUrl.startsWith(VideoItem.CHANNEL_REFERENCE_VIDEO_PREFIX) -> {
+                    val videoId = idOrHandleOrUrl
+                        .removePrefix(VideoItem.CHANNEL_REFERENCE_VIDEO_PREFIX)
+                    youtubeRepository.getVideoChannelId(videoId)
+                }
+                idOrHandleOrUrl.startsWith("UC") && idOrHandleOrUrl.length >= 24 -> {
+                    idOrHandleOrUrl
+                }
+                else -> youtubeRepository.resolveChannelId(idOrHandleOrUrl)
             }
             if (channelId == null) {
                 _isLoadingPage.value = false
