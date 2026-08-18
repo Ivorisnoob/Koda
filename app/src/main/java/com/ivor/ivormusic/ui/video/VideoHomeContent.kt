@@ -260,6 +260,7 @@ fun VideoHomeContent(
                         video = video,
                         onClick = { onVideoClick(video) },
                         onLongClick = { onVideoLongPress(video) },
+                        onOpenChannel = onOpenChannel,
                         modifier = Modifier.padding(horizontal = 16.dp)
                     )
                 }
@@ -278,6 +279,7 @@ fun VideoHomeContent(
                         video = video,
                         onClick = { onVideoClick(video) },
                         onLongClick = { onVideoLongPress(video) },
+                        onOpenChannel = onOpenChannel,
                         modifier = Modifier.padding(horizontal = 16.dp)
                     )
                 }
@@ -585,11 +587,16 @@ fun VideoCard(
     video: VideoItem,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    onLongClick: (() -> Unit)? = null
+    onLongClick: (() -> Unit)? = null,
+    /** Opens the creator when the avatar is tapped; absent IDs stay inert. */
+    onOpenChannel: ((String) -> Unit)? = null
 ) {
     val textColor = MaterialTheme.colorScheme.onBackground
     val secondaryTextColor = MaterialTheme.colorScheme.onSurfaceVariant
     val cardShape = RoundedCornerShape(16.dp)
+    val openChannel = video.channelId
+        ?.takeIf { it.isNotBlank() }
+        ?.let { channelId -> onOpenChannel?.let { open -> { open(channelId) } } }
 
     Surface(
         // Clip before the click handler - Surface applies its own clip downstream of
@@ -678,25 +685,42 @@ fun VideoCard(
                 // Channel avatar
                 Box(
                     modifier = Modifier
-                        .size(40.dp)
+                        .size(48.dp)
                         .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+                        .then(
+                            if (openChannel != null) {
+                                Modifier.clickable(
+                                    onClickLabel = "Open ${video.channelName} channel",
+                                    onClick = openChannel
+                                )
+                            } else {
+                                Modifier
+                            }
+                        ),
                     contentAlignment = Alignment.Center
                 ) {
-                    if (!video.channelIconUrl.isNullOrBlank()) {
-                        AsyncImage(
-                            model = video.channelIconUrl,
-                            contentDescription = null,
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop
-                        )
-                    } else {
-                        Text(
-                            text = video.channelName.take(1).uppercase(),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (!video.channelIconUrl.isNullOrBlank()) {
+                            AsyncImage(
+                                model = video.channelIconUrl,
+                                contentDescription = "${video.channelName} channel",
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop
+                            )
+                        } else {
+                            Text(
+                                text = video.channelName.take(1).uppercase(),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
                 

@@ -10,6 +10,8 @@ import org.schabi.newpipe.extractor.NewPipe
 import org.schabi.newpipe.extractor.ServiceList
 import org.schabi.newpipe.extractor.stream.StreamInfo
 import org.schabi.newpipe.extractor.stream.AudioStream
+import org.schabi.newpipe.extractor.stream.AudioTrackType
+import org.schabi.newpipe.extractor.services.youtube.YoutubeParsingHelper
 import org.schabi.newpipe.extractor.search.SearchInfo
 import org.schabi.newpipe.extractor.stream.StreamInfoItem
 import org.schabi.newpipe.extractor.playlist.PlaylistInfo
@@ -724,7 +726,7 @@ class YouTubeRepository(private val context: Context) {
             val streamExtractor = ytService.getStreamExtractor(streamUrl)
             streamExtractor.fetchPage()
 
-            val audioStreams = streamExtractor.audioStreams
+            val audioStreams = originalTrackAudioStreams(streamExtractor.audioStreams)
             when (ThemePreferences.currentMusicQuality(context)) {
                 ThemePreferences.MUSIC_QUALITY_LOW ->
                     audioStreams.minByOrNull { it.averageBitrate }
@@ -747,6 +749,37 @@ class YouTubeRepository(private val context: Context) {
             )
             null
         }
+    }
+
+    /**
+     * Keep YouTube's original soundtrack when it exposes alternate dubbed,
+     * descriptive, or secondary audio tracks.
+     *
+     * Older/single-track responses do not carry `audioTrackType`; those
+     * untyped streams are safe as the compatibility fallback. If YouTube
+     * explicitly labels every stream as non-original, return no audio-only
+     * stream and let the caller use its muxed fallback instead of knowingly
+     * selecting a dub.
+     */
+    private fun originalTrackAudioStreams(streams: List<AudioStream>): List<AudioStream> {
+        val originals = streams.filter { it.audioTrackType == AudioTrackType.ORIGINAL }
+        if (originals.isNotEmpty()) return originals
+        return streams.filter { it.audioTrackType == null }
+    }
+
+    /** The direct InnerTube equivalent of [originalTrackAudioStreams]. */
+    private fun originalTrackAudioFormats(
+        formats: List<org.json.JSONObject>
+    ): List<org.json.JSONObject> {
+        val typed = formats.map { it to audioTrackType(it) }
+        val originals = typed.filter { it.second == AudioTrackType.ORIGINAL }.map { it.first }
+        if (originals.isNotEmpty()) return originals
+        return typed.filter { it.second == null }.map { it.first }
+    }
+
+    private fun audioTrackType(format: org.json.JSONObject): AudioTrackType? {
+        val xtags = format.optString("xtags").takeIf { it.isNotBlank() } ?: return null
+        return runCatching { YoutubeParsingHelper.extractAudioTrackType(xtags) }.getOrNull()
     }
 
     // --- Fresh visitorData (anti-bot) ---------------------------------------
@@ -1650,9 +1683,11 @@ class YouTubeRepository(private val context: Context) {
 
         fun hasPlayableUrl(f: org.json.JSONObject): Boolean = !f.optString("url").isNullOrEmpty()
 
-        val audioFormats = formats.filter {
-            it.optString("mimeType").contains("audio") && hasPlayableUrl(it)
-        }
+        val audioFormats = originalTrackAudioFormats(
+            formats.filter {
+                it.optString("mimeType").contains("audio") && hasPlayableUrl(it)
+            }
+        )
         android.util.Log.d(
             "YouTubeRepository",
             "Resolve[InnerTube] formats=${formats.size} audioOnly=${audioFormats.size} videoId=$videoId",
@@ -4087,6 +4122,16 @@ class YouTubeRepository(private val context: Context) {
                 ?: return@withContext null
             val streamExtractor = ytService.getStreamExtractor(streamUrl)
             streamExtractor.fetchPage()
+
+            // A muxed URL does not expose which language YouTube selected.
+            // Do not use this last-resort path for multi-audio videos; the
+            // quality resolver's separate original audio stream is the only
+            // deterministic source for them.
+            if (streamExtractor.audioStreams.any {
+                    it.audioTrackType != null &&
+                        it.audioTrackType != AudioTrackType.ORIGINAL
+                }
+            ) return@withContext null
             
             // Get video streams (with audio)
             val videoStreams = streamExtractor.videoStreams
@@ -4270,6 +4315,10 @@ class YouTubeRepository(private val context: Context) {
             .maxByOrNull { it.height }
             ?.let { it.width.toFloat() / it.height.toFloat() }
 
+        val extractedAudioStreams = extractor.audioStreams
+        val hasAlternateAudioTracks = extractedAudioStreams.any {
+            it.audioTrackType != null && it.audioTrackType != AudioTrackType.ORIGINAL
+        }
         val qualities = mutableListOf<VideoQuality>()
         extractor.dashMpdUrl?.takeIf { it.isNotBlank() }?.let { url ->
             qualities.add(
@@ -4290,10 +4339,18 @@ class YouTubeRepository(private val context: Context) {
         // Progressive live entries are segment endpoints, not complete files.
         if (isLiveStream) return qualities
 
-        val bestAudio = extractor.audioStreams
+        val bestAudio = originalTrackAudioStreams(extractedAudioStreams)
             .asSequence()
             .filter { it.isUrl }
             .maxByOrNull { it.averageBitrate }
+        val hasOriginalAdaptivePair = bestAudio != null && videoOnlyStreams.any { it.isUrl }
+        if (hasAlternateAudioTracks && hasOriginalAdaptivePair) {
+            // A manifest or muxed stream lets its issuing YouTube client pick
+            // the default language again. When alternate tracks exist and we
+            // have a known-original separate stream, expose only that
+            // deterministic path—even for the "Auto" quality choice.
+            qualities.removeAll { it.isDASH }
+        }
         if (bestAudio != null) {
             videoOnlyStreams.asSequence()
                 .filter { it.isUrl }
@@ -4312,20 +4369,22 @@ class YouTubeRepository(private val context: Context) {
                 .forEach(qualities::add)
         }
 
-        muxedStreams.asSequence()
-            .filter { it.isUrl }
-            .mapNotNull { stream ->
-                stream.resolution?.takeIf { it.isNotBlank() }?.let { resolution ->
-                    VideoQuality(
-                        resolution = resolution,
-                        url = stream.content,
-                        format = stream.format?.name,
-                        isDASH = false,
-                        sourceAspectRatio = sourceAspect,
-                    )
+        if (!hasAlternateAudioTracks || !hasOriginalAdaptivePair) {
+            muxedStreams.asSequence()
+                .filter { it.isUrl }
+                .mapNotNull { stream ->
+                    stream.resolution?.takeIf { it.isNotBlank() }?.let { resolution ->
+                        VideoQuality(
+                            resolution = resolution,
+                            url = stream.content,
+                            format = stream.format?.name,
+                            isDASH = false,
+                            sourceAspectRatio = sourceAspect,
+                        )
+                    }
                 }
-            }
-            .forEach(qualities::add)
+                .forEach(qualities::add)
+        }
 
         fun height(label: String): Int = label.takeWhile(Char::isDigit).toIntOrNull() ?: 0
         fun fps(label: String): Int =
@@ -4434,8 +4493,15 @@ class YouTubeRepository(private val context: Context) {
 
         // Best separate audio track; prefer AAC (mp4a) for broad hardware support,
         // then highest bitrate.
-        val bestAudioUrl = adaptive
-            .filter { it.optString("mimeType").startsWith("audio/") && it.optString("url").isNotEmpty() }
+        val directAudioFormats = adaptive.filter {
+            it.optString("mimeType").startsWith("audio/") &&
+                it.optString("url").isNotEmpty()
+        }
+        val hasAlternateAudioTracks = directAudioFormats.any {
+            val type = audioTrackType(it)
+            type != null && type != AudioTrackType.ORIGINAL
+        }
+        val bestAudioUrl = originalTrackAudioFormats(directAudioFormats)
             .maxWithOrNull(
                 compareBy(
                     { if (it.optString("mimeType").contains("mp4a")) 1 else 0 },
@@ -4487,16 +4553,20 @@ class YouTubeRepository(private val context: Context) {
 
         // Muxed formats (itag 18 etc.) fill in labels not already covered and
         // keep playback possible when no audio-only track exists.
-        muxed.forEach { f ->
-            val label = f.optString("qualityLabel")
-            val url = f.optString("url")
-            if (label.isNotEmpty() && url.isNotEmpty() && qualities.none { it.resolution == label }) {
-                qualities.add(
-                    VideoQuality(
-                        label, url, container(f.optString("mimeType")), false,
-                        sourceAspectRatio = sourceAspect
+        if (!hasAlternateAudioTracks || bestAudioUrl == null) {
+            muxed.forEach { f ->
+                val label = f.optString("qualityLabel")
+                val url = f.optString("url")
+                if (label.isNotEmpty() && url.isNotEmpty() &&
+                    qualities.none { it.resolution == label }
+                ) {
+                    qualities.add(
+                        VideoQuality(
+                            label, url, container(f.optString("mimeType")), false,
+                            sourceAspectRatio = sourceAspect
+                        )
                     )
-                )
+                }
             }
         }
 
@@ -4533,7 +4603,7 @@ class YouTubeRepository(private val context: Context) {
             
             // 2. Adaptive Streams
             val videoOnlyStreams = streamExtractor.videoOnlyStreams
-            val audioStreams = streamExtractor.audioStreams
+            val audioStreams = originalTrackAudioStreams(streamExtractor.audioStreams)
             val bestAudio = audioStreams.maxByOrNull { it.averageBitrate }
             
             if (bestAudio != null) {

@@ -209,6 +209,7 @@ fun VideoHistoryContent(
                         video = video,
                         onClick = { onVideoClick(video) },
                         onLongClick = { optionsTarget = video },
+                        onOpenChannel = onOpenChannel,
                         modifier = Modifier.padding(horizontal = 16.dp)
                     )
                 }
