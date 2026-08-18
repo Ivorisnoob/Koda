@@ -261,6 +261,8 @@ fun SettingsScreen(
     onHomeModeToggleChange: (Boolean) -> Unit = {},
     spotlightHome: Boolean = false,
     onSpotlightHomeToggle: (Boolean) -> Unit = {},
+    nonExpressiveNavigationBar: Boolean = false,
+    onNonExpressiveNavigationBarToggle: (Boolean) -> Unit = {},
     playerStyle: PlayerStyle,
     onPlayerStyleChange: (PlayerStyle) -> Unit,
     saveVideoHistory: Boolean,
@@ -665,6 +667,9 @@ fun SettingsScreen(
                     onAmbientBackgroundToggle = onAmbientBackgroundToggle,
                     spotlightHome = spotlightHome,
                     onSpotlightHomeToggle = onSpotlightHomeToggle,
+                    nonExpressiveNavigationBar = nonExpressiveNavigationBar,
+                    onNonExpressiveNavigationBarToggle =
+                        onNonExpressiveNavigationBarToggle,
                     onBack = { page = SettingsPage.HUB }
                 )
 

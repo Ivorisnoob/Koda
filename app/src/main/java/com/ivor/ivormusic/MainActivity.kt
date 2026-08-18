@@ -63,7 +63,10 @@ import com.ivor.ivormusic.ui.share.sharedLinkText
  * video overlay, which is drawn above the NavHost and cannot see inside the
  * screen that draws the bar.
  */
-private val NAV_BAR_RESERVE = 84.dp
+private val EXPRESSIVE_NAV_BAR_RESERVE = 84.dp
+
+/** Material 3's short navigation container height, excluding system insets. */
+private val SHORT_NAV_BAR_RESERVE = 64.dp
 
 /** Height the collapsed music player occupies above the navigation bar. */
 private val MUSIC_PILL_RESERVE = 88.dp
@@ -129,6 +132,8 @@ class MainActivity : ComponentActivity() {
             val musicQualityMobile by themeViewModel.musicQualityMobile.collectAsState()
             val preferHdr by themeViewModel.preferHdr.collectAsState()
             val spotlightHome by themeViewModel.spotlightHome.collectAsState()
+            val nonExpressiveNavigationBar by
+                themeViewModel.nonExpressiveNavigationBar.collectAsState()
             val subscriptionSource by themeViewModel.subscriptionSource.collectAsState()
             val subscribeTarget by themeViewModel.subscribeTarget.collectAsState()
             val fastSubscriptionFeed by themeViewModel.fastSubscriptionFeed.collectAsState()
@@ -186,6 +191,10 @@ class MainActivity : ComponentActivity() {
                         onHomeModeToggleEnabledChange = { themeViewModel.setHomeModeToggleEnabled(it) },
                         spotlightHome = spotlightHome,
                         onSpotlightHomeToggle = { themeViewModel.setSpotlightHome(it) },
+                        nonExpressiveNavigationBar = nonExpressiveNavigationBar,
+                        onNonExpressiveNavigationBarToggle = {
+                            themeViewModel.setNonExpressiveNavigationBar(it)
+                        },
                         playerStyle = playerStyle,
                         onPlayerStyleChange = { themeViewModel.setPlayerStyle(it) },
                         saveVideoHistory = saveVideoHistory,
@@ -319,6 +328,8 @@ fun MusicApp(
     onHomeModeToggleEnabledChange: (Boolean) -> Unit,
     spotlightHome: Boolean,
     onSpotlightHomeToggle: (Boolean) -> Unit,
+    nonExpressiveNavigationBar: Boolean,
+    onNonExpressiveNavigationBarToggle: (Boolean) -> Unit,
     playerStyle: PlayerStyle,
     onPlayerStyleChange: (PlayerStyle) -> Unit,
     saveVideoHistory: Boolean,
@@ -475,12 +486,17 @@ fun MusicApp(
     val currentRoute = navController.currentBackStackEntryAsState()
         .value?.destination?.route
     val onHomeRoute = currentRoute == "home"
+    val navBarReserve = if (nonExpressiveNavigationBar) {
+        SHORT_NAV_BAR_RESERVE
+    } else {
+        EXPRESSIVE_NAV_BAR_RESERVE
+    }
     val videoMiniBottomChrome = when {
         !onHomeRoute -> 0.dp
         // Stacked above the music pill rather than on top of it, when both
         // players are alive at once.
-        musicPillVisible -> NAV_BAR_RESERVE + MUSIC_PILL_RESERVE
-        else -> NAV_BAR_RESERVE
+        musicPillVisible -> navBarReserve + MUSIC_PILL_RESERVE
+        else -> navBarReserve
     }
 
     // Keep the Activity's PiP inputs current. It needs them outside the
@@ -623,7 +639,8 @@ fun MusicApp(
                     manualScan = manualScanEnabled,
                     localOnly = localOnlyMode,
                     hasVideoMiniPlayer = hasVideoMiniPlayer,
-                    spotlightHome = spotlightHome
+                    spotlightHome = spotlightHome,
+                    nonExpressiveNavigationBar = nonExpressiveNavigationBar
                 )
             }
             composable(
@@ -654,6 +671,9 @@ fun MusicApp(
                     onHomeModeToggleChange = onHomeModeToggleEnabledChange,
                     spotlightHome = spotlightHome,
                     onSpotlightHomeToggle = onSpotlightHomeToggle,
+                    nonExpressiveNavigationBar = nonExpressiveNavigationBar,
+                    onNonExpressiveNavigationBarToggle =
+                        onNonExpressiveNavigationBarToggle,
                     playerStyle = playerStyle,
                     onPlayerStyleChange = onPlayerStyleChange,
                     saveVideoHistory = saveVideoHistory,
@@ -990,4 +1010,3 @@ private fun NotInterestedUndoHost(modifier: Modifier = Modifier) {
 
     SnackbarHost(hostState = snackbarHostState, modifier = modifier)
 }
-

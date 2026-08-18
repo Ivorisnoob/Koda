@@ -209,6 +209,8 @@ internal fun AppearanceSettingsPage(
     onAmbientBackgroundToggle: (Boolean) -> Unit,
     spotlightHome: Boolean,
     onSpotlightHomeToggle: (Boolean) -> Unit,
+    nonExpressiveNavigationBar: Boolean,
+    onNonExpressiveNavigationBarToggle: (Boolean) -> Unit,
     onBack: () -> Unit
 ) {
     val paletteName = if (colorPalette == ThemePreferences.DEFAULT_COLOR_PALETTE) {
@@ -264,6 +266,24 @@ internal fun AppearanceSettingsPage(
                         },
                         enabled = ambientBackground,
                         onToggle = onAmbientBackgroundToggle
+                    )
+                }
+            }
+        }
+
+        item {
+            SettingsSection(title = "Navigation") {
+                SettingsCard {
+                    SettingsToggleRow(
+                        icon = Icons.Rounded.Dashboard,
+                        title = "Non-expressive navigation bar",
+                        subtitle = if (nonExpressiveNavigationBar) {
+                            "Compact Material 3 bar with fixed labels"
+                        } else {
+                            "Expressive floating navigation"
+                        },
+                        enabled = nonExpressiveNavigationBar,
+                        onToggle = onNonExpressiveNavigationBarToggle
                     )
                 }
             }

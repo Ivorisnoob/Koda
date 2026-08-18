@@ -15,10 +15,14 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
@@ -143,6 +147,7 @@ fun VideoPlayerOverlay(
     // Context and Activity
     val context = LocalContext.current
     val activity = context as? androidx.activity.ComponentActivity
+    val haptics = LocalHapticFeedback.current
 
     if (currentVideo == null) return
 
@@ -301,11 +306,7 @@ fun VideoPlayerOverlay(
 
         // Collapsed-bar gestures: up expands, down dismisses.
         //
-        // Deliberately the same machinery as the music pill's pair - a plain
-        // snapshot float accumulated per delta, the threshold tested on
-        // release, and a slide-out whose finishedListener performs the actual
-        // dismiss - because two mini players that answer a swipe differently
-        // is worse than either answer on its own. The axis differs on purpose:
+        // The axis differs from the music pill on purpose:
         // this bar sits directly above the music pill when both are alive, and
         // a sideways throw there would be ambiguous about which it meant.
         //
@@ -316,6 +317,7 @@ fun VideoPlayerOverlay(
         var isDismissingMini by remember { mutableStateOf(false) }
         val miniExpandThresholdPx = with(density) { 48.dp.toPx() }
         val miniDismissThresholdPx = with(density) { 56.dp.toPx() }
+        val miniFlingVelocityPx = with(density) { 700.dp.toPx() }
         // Upward travel is a preview, not a drag: the expand it commits to is
         // a different animation entirely, so letting the bar follow the finger
         // up the screen would promise a movement that never continues.
@@ -382,25 +384,78 @@ fun VideoPlayerOverlay(
             enabled = !isExpanded,
             modifier = Modifier
                 .fillMaxSize()
-                .pointerInput(isExpanded) {
+                .pointerInput(
+                    isExpanded,
+                    miniExpandThresholdPx,
+                    miniDismissThresholdPx,
+                    miniFlingVelocityPx
+                ) {
                     if (isExpanded) return@pointerInput
+                    var gestureTravelY = 0f
+                    var thresholdFeedbackSent = false
+                    val velocityTracker = VelocityTracker()
                     detectVerticalDragGestures(
-                        onDragStart = { miniDragY = 0f },
+                        onDragStart = {
+                            gestureTravelY = 0f
+                            thresholdFeedbackSent = false
+                            velocityTracker.resetTracking()
+                            miniDragY = 0f
+                        },
                         onDragEnd = {
+                            val velocityY = velocityTracker.calculateVelocity().y
+                            val expand = gestureTravelY < -miniExpandThresholdPx ||
+                                (gestureTravelY < 0f && velocityY < -miniFlingVelocityPx)
+                            val dismiss = gestureTravelY > miniDismissThresholdPx ||
+                                (gestureTravelY > 0f && velocityY > miniFlingVelocityPx)
                             when {
-                                miniDragY > miniDismissThresholdPx -> isDismissingMini = true
-                                miniDragY < -miniExpandThresholdPx -> {
+                                expand -> {
+                                    if (!thresholdFeedbackSent) {
+                                        haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                                    }
                                     miniDragY = 0f
                                     viewModel.setExpanded(true)
+                                }
+                                dismiss -> {
+                                    if (!thresholdFeedbackSent) {
+                                        haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                                    }
+                                    isDismissingMini = true
                                 }
                                 else -> miniDragY = 0f
                             }
                         },
                         onDragCancel = { miniDragY = 0f },
                         onVerticalDrag = { change, dragAmount ->
+                            gestureTravelY += dragAmount
+                            // Track a synthetic position made from the deltas.
+                            // The bar itself follows downward pulls, so pointer
+                            // coordinates relative to it under-report velocity.
+                            velocityTracker.addPosition(
+                                change.uptimeMillis,
+                                Offset(0f, gestureTravelY)
+                            )
+
+                            val crossedThreshold =
+                                gestureTravelY <= -miniExpandThresholdPx ||
+                                    gestureTravelY >= miniDismissThresholdPx
+                            if (crossedThreshold && !thresholdFeedbackSent) {
+                                thresholdFeedbackSent = true
+                                haptics.performHapticFeedback(
+                                    HapticFeedbackType.GestureThresholdActivate
+                                )
+                            } else if (!crossedThreshold) {
+                                // Re-arm after the finger returns inside the
+                                // commit zone, matching the visual snap-back.
+                                thresholdFeedbackSent = false
+                            }
+
                             change.consume()
-                            miniDragY = (miniDragY + dragAmount)
-                                .coerceAtLeast(-miniLiftLimitPx)
+                            // Keep the full travel for deciding the gesture,
+                            // while limiting only the visual upward preview.
+                            // Previously the same value was clamped to 24dp
+                            // and then compared with a 48dp expand threshold,
+                            // making distance-based swipe-up impossible.
+                            miniDragY = gestureTravelY.coerceAtLeast(-miniLiftLimitPx)
                         }
                     )
                 },

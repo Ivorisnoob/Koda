@@ -84,6 +84,11 @@ class ThemePreferences(context: Context) {
     private val _spotlightHome = MutableStateFlow(getSpotlightHomePreference())
     val spotlightHome: StateFlow<Boolean> = _spotlightHome.asStateFlow()
 
+    private val _nonExpressiveNavigationBar =
+        MutableStateFlow(getNonExpressiveNavigationBarPreference())
+    val nonExpressiveNavigationBar: StateFlow<Boolean> =
+        _nonExpressiveNavigationBar.asStateFlow()
+
 
     private val _subscriptionSource = MutableStateFlow(getSubscriptionSourcePreference())
     val subscriptionSource: StateFlow<String> = _subscriptionSource.asStateFlow()
@@ -159,6 +164,8 @@ class ThemePreferences(context: Context) {
             KEY_MUSIC_QUALITY_MOBILE -> _musicQualityMobile.value = getMusicQualityMobilePreference()
             KEY_PREFER_HDR -> _preferHdr.value = getPreferHdrPreference()
             KEY_SPOTLIGHT_HOME -> _spotlightHome.value = getSpotlightHomePreference()
+            KEY_NON_EXPRESSIVE_NAVIGATION_BAR ->
+                _nonExpressiveNavigationBar.value = getNonExpressiveNavigationBarPreference()
             KEY_SUBSCRIPTION_SOURCE -> _subscriptionSource.value = getSubscriptionSourcePreference()
             KEY_SUBSCRIBE_TARGET -> _subscribeTarget.value = getSubscribeTargetPreference()
             KEY_FAST_SUBSCRIPTION_FEED -> _fastSubscriptionFeed.value = getFastSubscriptionFeedPreference()
@@ -347,6 +354,8 @@ class ThemePreferences(context: Context) {
          * therefore frozen forever, and there is no third Home planned.
          */
         private const val KEY_SPOTLIGHT_HOME = "spotlight_home"
+        private const val KEY_NON_EXPRESSIVE_NAVIGATION_BAR =
+            "non_expressive_navigation_bar"
 
         /**
          * Default quality for video downloads, one of [VIDEO_QUALITY_OPTIONS].
@@ -937,6 +946,20 @@ class ThemePreferences(context: Context) {
     fun setSpotlightHome(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_SPOTLIGHT_HOME, enabled).apply()
         _spotlightHome.value = enabled
+    }
+
+    private fun getNonExpressiveNavigationBarPreference(): Boolean {
+        return prefs.getBoolean(KEY_NON_EXPRESSIVE_NAVIGATION_BAR, false)
+    }
+
+    /**
+     * Opt into Material 3's compact short navigation bar. The existing
+     * expressive floating toolbar remains the default for new and upgrading
+     * users, and this preference intentionally is not part of onboarding.
+     */
+    fun setNonExpressiveNavigationBar(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_NON_EXPRESSIVE_NAVIGATION_BAR, enabled).apply()
+        _nonExpressiveNavigationBar.value = enabled
     }
 
     /**

@@ -201,6 +201,16 @@ internal fun buildSettingsSearchIndex(
             "quick picks", "spotify", "feed", "classic home"
         )
     ) { onOpenPage(SettingsPage.APPEARANCE) }
+    entry(
+        "non_expressive_navigation_bar",
+        "Non-expressive navigation bar",
+        "Appearance",
+        Icons.Rounded.Dashboard,
+        listOf(
+            "navigation", "navbar", "nav bar", "short navigation bar", "compact",
+            "classic", "floating", "expressive"
+        )
+    ) { onOpenPage(SettingsPage.APPEARANCE) }
 
     // Player
     entry(
