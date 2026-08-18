@@ -428,16 +428,6 @@ fun MusicApp(
         navController.navigate("channel/${android.net.Uri.encode(channelId)}")
     }
 
-    // Surface music playback failures. Before this, a song that could not be
-    // resolved failed silently and the player looked stuck on loading forever.
-    val playbackError by playerViewModel.playbackError.collectAsState()
-    androidx.compose.runtime.LaunchedEffect(playbackError) {
-        playbackError?.let { message ->
-            android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show()
-            playerViewModel.clearPlaybackError()
-        }
-    }
-
     // Music, video and Shorts are mutually exclusive: whichever pipeline
     // starts playing pauses the other two. System audio focus alone is not
     // reliable between players inside the same app, so this is enforced

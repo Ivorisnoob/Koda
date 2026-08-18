@@ -658,65 +658,52 @@ class YouTubeRepository(private val context: Context) {
      * Get the best audio stream URL for a video.
      * Note: These URLs expire, so call this right before playback.
      * @param videoId The YouTube video ID
-     * @return The stream URL or null if not found
-     */
-    /**
-     * Get the best audio stream URL for a video.
-     * Note: These URLs expire, so call this right before playback.
-     * @param videoId The YouTube video ID
      * @return Result containing stream URL or error
      */
     suspend fun getStreamUrl(videoId: String): Result<String> = withContext(Dispatchers.IO) {
         val startMs = System.currentTimeMillis()
 
-        // Primary: direct InnerTube /player calls (ANDROID_VR primary, IOS
-        // fallback — see runPlayerClientChain), with a one-shot visitorData
-        // remint + retry when YouTube's bot check flags the current token
-        // (see resolvePlayerStreamingData).
-        val innerTubeUrl = resolvePlayerStreamingData(videoId)?.let { pickAudioStreamUrl(videoId, it) }
-        if (!innerTubeUrl.isNullOrEmpty()) {
-            android.util.Log.i(
-                "YouTubeRepository",
-                "Resolve[InnerTube] OK videoId=$videoId dt=${System.currentTimeMillis() - startMs}ms",
-            )
-            return@withContext Result.success(innerTubeUrl)
-        }
-
-        // Fallback: NewPipe extractor. The InnerTube /player path degrades over a
-        // session — YouTube's bot check eventually flags this install's visitorData
-        // (LOGIN_REQUIRED / empty streamingData) and even the remint bootstrap can
-        // get flagged, leaving InnerTube resolution dead for hours. NewPipe uses a
-        // different (WEB-based, cookie-signed) extraction that keeps working when
-        // InnerTube doesn't. Video playback already leans on this exact fallback
-        // (getVideoStreamQualities), which is why videos keep playing while music
-        // — previously InnerTube-only — died. A throttled NewPipe stream beats a
-        // hard "Check your connection" failure. See CLAUDE.md InnerTube notes.
+        // Primary: NewPipe's maintained Android/visionOS client chain. Direct
+        // ANDROID_VR URLs can start successfully and then hit GVS's progressive
+        // byte ceiling on long media, which is the same failure that moved video
+        // playback to NewPipe first. Audio must use the maintained path too or a
+        // long song can fail only after it has already been playing for a while.
         val newPipeUrl = resolveAudioUrlViaNewPipe(videoId)
-        val dt = System.currentTimeMillis() - startMs
         if (!newPipeUrl.isNullOrEmpty()) {
             android.util.Log.i(
                 "YouTubeRepository",
-                "Resolve[NewPipe fallback] OK videoId=$videoId dt=${dt}ms",
+                "Resolve[NewPipe] OK videoId=$videoId dt=${System.currentTimeMillis() - startMs}ms",
             )
-            Result.success(newPipeUrl)
+            return@withContext Result.success(newPipeUrl)
+        }
+
+        // Last-resort fallback: the older direct /player chain. It can still
+        // cover a client-specific NewPipe extraction failure, but its progressive
+        // URLs must not be the normal path for the reason above.
+        val innerTubeUrl = resolvePlayerStreamingData(videoId)?.let { pickAudioStreamUrl(videoId, it) }
+        val dt = System.currentTimeMillis() - startMs
+        if (!innerTubeUrl.isNullOrEmpty()) {
+            android.util.Log.i(
+                "YouTubeRepository",
+                "Resolve[InnerTube fallback] OK videoId=$videoId dt=${dt}ms",
+            )
+            Result.success(innerTubeUrl)
         } else {
             android.util.Log.e(
                 "YouTubeRepository",
-                "Resolve FAIL videoId=$videoId all clients exhausted (InnerTube + NewPipe) dt=${dt}ms",
+                "Resolve FAIL videoId=$videoId all clients exhausted (NewPipe + InnerTube) dt=${dt}ms",
             )
             Result.failure(Exception("No audio stream found for $videoId"))
         }
     }
 
     /**
-     * Resolve an audio stream URL through the NewPipe extractor. Used as the
-     * fallback for [getStreamUrl] when the InnerTube /player chain yields no
-     * usable stream (bot-check-flagged visitorData, etc.). Applies the same
-     * per-network music quality policy as [pickAudioStreamUrl] (NewPipe's
-     * averageBitrate is in kbps); falls back to a muxed video+audio stream
-     * (ExoPlayer plays just the audio track) when no audio-only stream is
-     * available. The resulting googlevideo URL is tagged with NewPipe's issuing
-     * client, so playback picks the matching UA via uaForPlaybackUri().
+     * Resolve an audio stream URL through NewPipe's maintained client chain.
+     * Applies the same per-network music quality policy as [pickAudioStreamUrl]
+     * (NewPipe's averageBitrate is in kbps), and falls back to a muxed
+     * video+audio URL when no audio-only URL exists. The resulting googlevideo
+     * URL is tagged with its issuing client, so playback selects the matching
+     * user agent through [uaForPlaybackUri].
      */
     private suspend fun resolveAudioUrlViaNewPipe(videoId: String): String? = withContext(Dispatchers.IO) {
         try {
@@ -726,7 +713,11 @@ class YouTubeRepository(private val context: Context) {
             val streamExtractor = ytService.getStreamExtractor(streamUrl)
             streamExtractor.fetchPage()
 
-            val audioStreams = originalTrackAudioStreams(streamExtractor.audioStreams)
+            // Generated manifest content shares the Stream model with direct
+            // URLs. Only the latter can be handed to Media3 as a URI.
+            val audioStreams = originalTrackAudioStreams(
+                streamExtractor.audioStreams.filter { it.isUrl },
+            )
             when (ThemePreferences.currentMusicQuality(context)) {
                 ThemePreferences.MUSIC_QUALITY_LOW ->
                     audioStreams.minByOrNull { it.averageBitrate }
@@ -740,12 +731,14 @@ class YouTubeRepository(private val context: Context) {
 
             // No audio-only stream — a muxed stream still carries an audio track.
             streamExtractor.videoStreams
-                .mapNotNull { it.content?.takeIf { c -> c.isNotBlank() } }
+                .asSequence()
+                .filter { it.isUrl }
+                .mapNotNull { it.content?.takeIf(String::isNotBlank) }
                 .firstOrNull()
         } catch (e: Exception) {
             android.util.Log.w(
                 "YouTubeRepository",
-                "Resolve[NewPipe fallback] failed videoId=$videoId: ${e.message}",
+                "Resolve[NewPipe] failed videoId=$videoId: ${e.message}",
             )
             null
         }
