@@ -278,7 +278,7 @@ internal fun AppearanceSettingsPage(
                         icon = Icons.Rounded.Dashboard,
                         title = "Non-expressive navigation bar",
                         subtitle = if (nonExpressiveNavigationBar) {
-                            "Compact Material 3 bar with fixed labels"
+                            "Standard Material 3 bar with fixed labels"
                         } else {
                             "Expressive floating navigation"
                         },

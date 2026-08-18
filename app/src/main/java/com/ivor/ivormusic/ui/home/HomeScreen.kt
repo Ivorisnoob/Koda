@@ -70,7 +70,8 @@ import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.NavigationItemIconPosition
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.carousel.HorizontalMultiBrowseCarousel
@@ -83,8 +84,6 @@ import com.ivor.ivormusic.ui.components.ExpressivePullToRefresh
 import androidx.activity.compose.BackHandler
 import androidx.compose.material3.carousel.CarouselDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
-import androidx.compose.material3.ShortNavigationBar
-import androidx.compose.material3.ShortNavigationBarItem
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -433,11 +432,11 @@ fun HomeScreen(
     // 188dp, stacked to 284dp when the music pill is also alive). Animated so
     // FABs glide instead of jumping when a mini player appears.
     val musicPillVisible = currentSong != null
-    // ShortNavigationBar is 64dp tall. The expressive toolbar occupies 84dp
-    // including its bottom breathing room. Keep the same 16-20dp separation
-    // above either variant instead of leaving the compact option floating in
-    // an oversized empty strip.
-    val navigationOverlayInset = if (nonExpressiveNavigationBar) 68.dp else 88.dp
+    // The standard non-expressive NavigationBar is 80dp tall. The expressive
+    // toolbar occupies 84dp including its bottom breathing room. Keep the same
+    // clearance above either variant so overlaid controls do not jump or
+    // collide when this preference changes.
+    val navigationOverlayInset = if (nonExpressiveNavigationBar) 84.dp else 88.dp
     val bottomOverlayInset by androidx.compose.animation.core.animateDpAsState(
         targetValue = when {
             musicPillVisible && hasVideoMiniPlayer -> navigationOverlayInset + 196.dp
@@ -818,7 +817,7 @@ fun HomeScreen(
         }
 
         if (nonExpressiveNavigationBar) {
-            ShortNavigationBar(
+            NavigationBar(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
@@ -826,7 +825,8 @@ fun HomeScreen(
                 navTabs.forEach { (index, label, icons) ->
                     val selected = selectedTab == index
                     val (filledIcon, outlinedIcon) = icons
-                    ShortNavigationBarItem(
+                    NavigationBarItem(
+                        modifier = Modifier.weight(1f),
                         selected = selected,
                         onClick = { selectNavTab(index) },
                         icon = {
@@ -936,7 +936,7 @@ fun HomeScreen(
             artworkColors = playerArtworkColors,
             playerStyle = playerStyle,
             onPlayerStyleChange = onPlayerStyleChange,
-            collapsedBottomSpacing = if (nonExpressiveNavigationBar) 80.dp else 100.dp,
+            collapsedBottomSpacing = if (nonExpressiveNavigationBar) 96.dp else 100.dp,
             onArtistClick = { artistName ->
                 // Collapse player and navigate to Library tab to show artist
                 showPlayerSheet = false

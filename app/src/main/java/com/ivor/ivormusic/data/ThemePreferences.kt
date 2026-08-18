@@ -953,7 +953,7 @@ class ThemePreferences(context: Context) {
     }
 
     /**
-     * Opt into Material 3's compact short navigation bar. The existing
+     * Opt into Material 3's standard non-expressive navigation bar. The existing
      * expressive floating toolbar remains the default for new and upgrading
      * users, and this preference intentionally is not part of onboarding.
      */

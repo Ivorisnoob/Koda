@@ -65,8 +65,8 @@ import com.ivor.ivormusic.ui.share.sharedLinkText
  */
 private val EXPRESSIVE_NAV_BAR_RESERVE = 84.dp
 
-/** Material 3's short navigation container height, excluding system insets. */
-private val SHORT_NAV_BAR_RESERVE = 64.dp
+/** Material 3's standard navigation container height, excluding system insets. */
+private val NON_EXPRESSIVE_NAV_BAR_RESERVE = 80.dp
 
 /** Height the collapsed music player occupies above the navigation bar. */
 private val MUSIC_PILL_RESERVE = 88.dp
@@ -487,7 +487,7 @@ fun MusicApp(
         .value?.destination?.route
     val onHomeRoute = currentRoute == "home"
     val navBarReserve = if (nonExpressiveNavigationBar) {
-        SHORT_NAV_BAR_RESERVE
+        NON_EXPRESSIVE_NAV_BAR_RESERVE
     } else {
         EXPRESSIVE_NAV_BAR_RESERVE
     }
