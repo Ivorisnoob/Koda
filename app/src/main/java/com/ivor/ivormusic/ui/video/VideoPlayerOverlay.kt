@@ -4,7 +4,6 @@ import android.app.PictureInPictureParams
 import android.os.Build
 import android.util.Rational
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -23,13 +22,11 @@ import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
 import androidx.activity.compose.PredictiveBackHandler
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
-import kotlin.math.roundToInt
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.media3.common.util.UnstableApi
@@ -314,7 +311,9 @@ fun VideoPlayerOverlay(
         // dismiss it. It is the same downward pull that already dismisses the
         // expanded player, one size down.
         var miniDragY by remember { mutableFloatStateOf(0f) }
+        var isMiniDragging by remember { mutableStateOf(false) }
         var isDismissingMini by remember { mutableStateOf(false) }
+        val miniSettleOffset = remember { Animatable(0f) }
         val miniExpandThresholdPx = with(density) { 48.dp.toPx() }
         val miniDismissThresholdPx = with(density) { 56.dp.toPx() }
         val miniFlingVelocityPx = with(density) { 700.dp.toPx() }
@@ -322,31 +321,7 @@ fun VideoPlayerOverlay(
         // a different animation entirely, so letting the bar follow the finger
         // up the screen would promise a movement that never continues.
         val miniLiftLimitPx = with(density) { 24.dp.toPx() }
-
-        val miniOffsetY by animateFloatAsState(
-            targetValue = when {
-                isExpanded -> 0f
-                isDismissingMini -> fullHeightPx
-                else -> miniDragY
-            },
-            animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
-            finishedListener = {
-                if (isDismissingMini) {
-                    viewModel.closePlayer()
-                    isDismissingMini = false
-                    miniDragY = 0f
-                }
-            },
-            label = "miniVideoOffset"
-        )
-        // Fades as it is pushed down, so the dismiss is legible before it
-        // commits. Capped at half so a bar dragged and released still reads as
-        // present on the way back.
-        val miniAlpha = if (isDismissingMini) {
-            0f
-        } else {
-            1f - (miniOffsetY.coerceAtLeast(0f) / (miniDismissThresholdPx * 2f)).coerceIn(0f, 0.5f)
-        }
+        val miniOffsetAnimationSpec = MaterialTheme.motionScheme.fastSpatialSpec<Float>()
 
         // Minimized resting position clears the system navigation inset plus
         // whatever bottom chrome the host says it is drawing, which is nothing
@@ -365,13 +340,32 @@ fun VideoPlayerOverlay(
         // A graphicsLayer on an elevated Surface makes its shadow render
         // against the layer's rectangular bounds instead of the rounded
         // outline, which draws as a hard slab behind the bar - the thing this
-        // player is not supposed to look like.
+        // player is not supposed to look like. Read the live drag state inside
+        // this layer block as well: Compose can then update only the layer for
+        // each pointer event instead of recomposing and remeasuring the player,
+        // including its Android video view. The Animatable is reserved for the
+        // release settle; retargeting it for every drag delta made the bar lag
+        // behind the finger on slower devices.
         Box(
             modifier = Modifier
                 .padding(bottom = bottomPadding.coerceAtLeast(0.dp))
                 .padding(horizontal = widthPadding.coerceAtLeast(0.dp))
-                .offset { IntOffset(0, miniOffsetY.roundToInt()) }
-                .graphicsLayer { alpha = miniAlpha }
+                .graphicsLayer {
+                    val offsetY = if (isMiniDragging) {
+                        miniDragY
+                    } else {
+                        miniSettleOffset.value
+                    }
+                    translationY = offsetY
+
+                    // Fades as it is pushed down, so dismiss remains legible.
+                    // An uncommitted drag keeps at least half of the bar visible;
+                    // once committed it fades all the way out during the settle.
+                    val fadeLimit = if (isDismissingMini) 1f else 0.5f
+                    alpha = 1f - (
+                        offsetY.coerceAtLeast(0f) / (miniDismissThresholdPx * 2f)
+                    ).coerceIn(0f, fadeLimit)
+                }
                 .fillMaxWidth()
                 .height(height.coerceAtLeast(0.dp))
         ) {
@@ -392,14 +386,18 @@ fun VideoPlayerOverlay(
                 ) {
                     if (isExpanded) return@pointerInput
                     var gestureTravelY = 0f
+                    var dragStartOffsetY = 0f
                     var thresholdFeedbackSent = false
                     val velocityTracker = VelocityTracker()
                     detectVerticalDragGestures(
                         onDragStart = {
                             gestureTravelY = 0f
+                            dragStartOffsetY = miniSettleOffset.value
                             thresholdFeedbackSent = false
                             velocityTracker.resetTracking()
-                            miniDragY = 0f
+                            miniDragY = dragStartOffsetY
+                            isMiniDragging = true
+                            scope.launch { miniSettleOffset.stop() }
                         },
                         onDragEnd = {
                             val velocityY = velocityTracker.calculateVelocity().y
@@ -412,7 +410,15 @@ fun VideoPlayerOverlay(
                                     if (!thresholdFeedbackSent) {
                                         haptics.performHapticFeedback(HapticFeedbackType.Confirm)
                                     }
-                                    miniDragY = 0f
+                                    val releasedOffset = miniDragY
+                                    scope.launch {
+                                        miniSettleOffset.snapTo(releasedOffset)
+                                        isMiniDragging = false
+                                        miniSettleOffset.animateTo(
+                                            0f,
+                                            miniOffsetAnimationSpec
+                                        )
+                                    }
                                     viewModel.setExpanded(true)
                                 }
                                 dismiss -> {
@@ -420,11 +426,44 @@ fun VideoPlayerOverlay(
                                         haptics.performHapticFeedback(HapticFeedbackType.Confirm)
                                     }
                                     isDismissingMini = true
+                                    val releasedOffset = miniDragY
+                                    scope.launch {
+                                        miniSettleOffset.snapTo(releasedOffset)
+                                        isMiniDragging = false
+                                        miniSettleOffset.animateTo(
+                                            fullHeightPx,
+                                            miniOffsetAnimationSpec
+                                        )
+                                        viewModel.closePlayer()
+                                        isDismissingMini = false
+                                        miniDragY = 0f
+                                        miniSettleOffset.snapTo(0f)
+                                    }
                                 }
-                                else -> miniDragY = 0f
+                                else -> {
+                                    val releasedOffset = miniDragY
+                                    scope.launch {
+                                        miniSettleOffset.snapTo(releasedOffset)
+                                        isMiniDragging = false
+                                        miniSettleOffset.animateTo(
+                                            0f,
+                                            miniOffsetAnimationSpec
+                                        )
+                                    }
+                                }
                             }
                         },
-                        onDragCancel = { miniDragY = 0f },
+                        onDragCancel = {
+                            val releasedOffset = miniDragY
+                            scope.launch {
+                                miniSettleOffset.snapTo(releasedOffset)
+                                isMiniDragging = false
+                                miniSettleOffset.animateTo(
+                                    0f,
+                                    miniOffsetAnimationSpec
+                                )
+                            }
+                        },
                         onVerticalDrag = { change, dragAmount ->
                             gestureTravelY += dragAmount
                             // Track a synthetic position made from the deltas.
@@ -455,7 +494,8 @@ fun VideoPlayerOverlay(
                             // Previously the same value was clamped to 24dp
                             // and then compared with a 48dp expand threshold,
                             // making distance-based swipe-up impossible.
-                            miniDragY = gestureTravelY.coerceAtLeast(-miniLiftLimitPx)
+                            miniDragY = (dragStartOffsetY + gestureTravelY)
+                                .coerceAtLeast(-miniLiftLimitPx)
                         }
                     )
                 },
