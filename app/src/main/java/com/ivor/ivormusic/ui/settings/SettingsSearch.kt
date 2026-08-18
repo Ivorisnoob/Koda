@@ -34,7 +34,6 @@ import androidx.compose.material.icons.rounded.FlashOn
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.FolderOff
 import androidx.compose.material.icons.rounded.GraphicEq
-import androidx.compose.material.icons.rounded.HdrOn
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.MusicNote
@@ -201,6 +200,16 @@ internal fun buildSettingsSearchIndex(
             "quick picks", "spotify", "feed", "classic home"
         )
     ) { onOpenPage(SettingsPage.APPEARANCE) }
+    entry(
+        "non_expressive_navigation_bar",
+        "Non-expressive navigation bar",
+        "Appearance",
+        Icons.Rounded.Dashboard,
+        listOf(
+            "navigation", "navbar", "nav bar", "short navigation bar", "compact",
+            "classic", "floating", "expressive"
+        )
+    ) { onOpenPage(SettingsPage.APPEARANCE) }
 
     // Player
     entry(
@@ -253,11 +262,6 @@ internal fun buildSettingsSearchIndex(
         Icons.Rounded.SignalCellularAlt,
         listOf("resolution", "cellular", "data", "1080p", "720p", "roaming")
     ) { onOpenQualityPicker(QualityDialogTarget.VIDEO_MOBILE) }
-    entry(
-        "hdr", "Prefer HDR Videos", "Playback and quality", Icons.Rounded.HdrOn,
-        listOf("hdr", "high dynamic range", "hlg", "dolby", "colour depth")
-    ) { onOpenPage(SettingsPage.PLAYBACK) }
-
     // Content and feeds
     entry(
         "local_only", "Local Only", "Content and feeds", Icons.Rounded.CloudOff,

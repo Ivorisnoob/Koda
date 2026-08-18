@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The mini player's video, as a TextureView rather than the SurfaceView
+  PlayerView uses by default.
+
+  `surface_type` is read in PlayerView's constructor and has no setter, so this
+  layout exists purely to set it. A SurfaceView is composited by SurfaceFlinger
+  in its own layer behind the app window (verified on device: z=-2, with an
+  opaque "Background for SurfaceView" layer beneath it), which means it cannot
+  be clipped by the Compose card that contains it - its background slab bled out
+  below the mini bar as a hard dark rectangle, and the video's rounded corners
+  were the card's background showing through rather than the video being
+  rounded at all.
+
+  A TextureView draws in-window like any other view, so it clips, rounds and
+  animates with the card. It costs an extra copy per frame, which is nothing for
+  a preview this size. The full-screen player deliberately keeps its SurfaceView,
+  where the bounds match the window and the compositor path is the cheaper one.
+-->
+<androidx.media3.ui.PlayerView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@android:color/transparent"
+    app:surface_type="texture_view"
+    app:use_controller="false"
+    app:hide_on_touch="false"
+    app:resize_mode="zoom" />

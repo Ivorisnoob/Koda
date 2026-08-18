@@ -70,7 +70,8 @@ import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.NavigationItemIconPosition
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.carousel.HorizontalMultiBrowseCarousel
@@ -83,8 +84,6 @@ import com.ivor.ivormusic.ui.components.ExpressivePullToRefresh
 import androidx.activity.compose.BackHandler
 import androidx.compose.material3.carousel.CarouselDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
-import androidx.compose.material3.ShortNavigationBar
-import androidx.compose.material3.ShortNavigationBarItem
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -191,7 +190,9 @@ fun HomeScreen(
     localOnly: Boolean = false,
     hasVideoMiniPlayer: Boolean = false,
     /** Spotlight: the alternative music Home. Off by default. */
-    spotlightHome: Boolean = false
+    spotlightHome: Boolean = false,
+    /** Use Material 3's compact bar instead of the default floating toolbar. */
+    nonExpressiveNavigationBar: Boolean = false
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val localSongs by viewModel.songs.collectAsState()
@@ -371,6 +372,36 @@ fun HomeScreen(
     var viewedPlaylistFromHome by remember {
         mutableStateOf<com.ivor.ivormusic.data.PlaylistDisplayItem?>(null)
     }
+    // The video-mode counterpart, handed to VideoLibraryContent the same way.
+    var viewedVideoPlaylistFromHome by remember {
+        mutableStateOf<com.ivor.ivormusic.data.VideoPlaylist?>(null)
+    }
+
+    // A playlist link shared or opened into the app, which lands at
+    // MainActivity and cannot reach the tab state from there. Same hand-off as
+    // pendingArtistPage, and it sets the mode for the same reason: the Library
+    // that can show this playlist only exists on one side of the video toggle,
+    // so leaving the toggle alone would land on the wrong tab and read as the
+    // share having done nothing.
+    val pendingPlaylistPage by viewModel.pendingPlaylistPage.collectAsState()
+    LaunchedEffect(pendingPlaylistPage) {
+        pendingPlaylistPage?.let { playlist ->
+            if (videoMode) onVideoModeToggle(false)
+            viewedPlaylistFromHome = playlist
+            selectedTab = 2
+            viewModel.consumePlaylistPageRequest()
+        }
+    }
+    val pendingVideoPlaylistPage by viewModel.pendingVideoPlaylistPage.collectAsState()
+    LaunchedEffect(pendingVideoPlaylistPage) {
+        pendingVideoPlaylistPage?.let { playlist ->
+            if (!videoMode) onVideoModeToggle(true)
+            viewedVideoPlaylistFromHome = playlist
+            // Video mode's Library is tab 3; music's is tab 2.
+            selectedTab = 3
+            viewModel.consumeVideoPlaylistPageRequest()
+        }
+    }
     // Long-pressed song, for the options sheet. Hosted here, once, rather than
     // per screen: the sheet acts on the PlayerViewModel, which lives at this
     // level, and the Library's sub-routes would each otherwise need their own.
@@ -401,12 +432,17 @@ fun HomeScreen(
     // 188dp, stacked to 284dp when the music pill is also alive). Animated so
     // FABs glide instead of jumping when a mini player appears.
     val musicPillVisible = currentSong != null
+    // The standard non-expressive NavigationBar is 80dp tall. The expressive
+    // toolbar occupies 84dp including its bottom breathing room. Keep the same
+    // clearance above either variant so overlaid controls do not jump or
+    // collide when this preference changes.
+    val navigationOverlayInset = if (nonExpressiveNavigationBar) 84.dp else 88.dp
     val bottomOverlayInset by androidx.compose.animation.core.animateDpAsState(
         targetValue = when {
-            musicPillVisible && hasVideoMiniPlayer -> 284.dp
-            hasVideoMiniPlayer -> 196.dp
-            musicPillVisible -> 188.dp
-            else -> 88.dp
+            musicPillVisible && hasVideoMiniPlayer -> navigationOverlayInset + 196.dp
+            hasVideoMiniPlayer -> navigationOverlayInset + 108.dp
+            musicPillVisible -> navigationOverlayInset + 100.dp
+            else -> navigationOverlayInset
         },
         animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec(),
         label = "bottomOverlayInset"
@@ -716,6 +752,8 @@ fun HomeScreen(
                                 onLoginClick = { showAuthDialog = true },
                                 contentPadding = listContentPadding,
                                 onEnqueueVideo = onEnqueueVideo,
+                                initialPlaylist = viewedVideoPlaylistFromHome,
+                                onInitialPlaylistConsumed = { viewedVideoPlaylistFromHome = null },
                                 rootListState = videoLibraryScrollState
                             )
                         }
@@ -753,117 +791,133 @@ fun HomeScreen(
             }
         }
         
-        // Floating Navigation bar - truly floating overlay using Material 3 Expressive HorizontalFloatingToolbar
+        // Both navigation variants use the same destinations and interaction
+        // contract. Only their Material container and item presentation differ.
         val navBarHaptics = LocalHapticFeedback.current
-        HorizontalFloatingToolbar(
-            expanded = true,
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .navigationBarsPadding()
-                .padding(bottom = 20.dp),
-            content = {
-                val tabs = if (videoMode) listOf(
-                    Triple(0, "Home", Pair(Icons.Rounded.Home, Icons.Outlined.Home)),
-                    Triple(1, "Search", Pair(Icons.Filled.Search, Icons.Outlined.Search)),
-                    Triple(2, "Subs", Pair(Icons.Filled.Subscriptions, Icons.Outlined.Subscriptions)),
-                    Triple(3, "Library", Pair(Icons.Filled.VideoLibrary, Icons.Outlined.VideoLibrary))
-                ) else listOf(
-                    Triple(0, "Home", Pair(Icons.Rounded.Home, Icons.Outlined.Home)),
-                    Triple(1, "Search", Pair(Icons.Filled.Search, Icons.Outlined.Search)),
-                    Triple(2, "Library", Pair(Icons.Filled.LibraryMusic, Icons.Outlined.LibraryMusic))
-                )
+        val navTabs = if (videoMode) listOf(
+            Triple(0, "Home", Pair(Icons.Rounded.Home, Icons.Outlined.Home)),
+            Triple(1, "Search", Pair(Icons.Filled.Search, Icons.Outlined.Search)),
+            Triple(2, "Subs", Pair(Icons.Filled.Subscriptions, Icons.Outlined.Subscriptions)),
+            Triple(3, "Library", Pair(Icons.Filled.VideoLibrary, Icons.Outlined.VideoLibrary))
+        ) else listOf(
+            Triple(0, "Home", Pair(Icons.Rounded.Home, Icons.Outlined.Home)),
+            Triple(1, "Search", Pair(Icons.Filled.Search, Icons.Outlined.Search)),
+            Triple(2, "Library", Pair(Icons.Filled.LibraryMusic, Icons.Outlined.LibraryMusic))
+        )
+        val selectNavTab: (Int) -> Unit = { index ->
+            if (selectedTab == index) {
+                if (currentTabScrollState.canScrollBackward) {
+                    navBarHaptics.performHapticFeedback(HapticFeedbackType.ContextClick)
+                    scope.launch { currentTabScrollState.scrollToTop() }
+                }
+            } else {
+                navBarHaptics.performHapticFeedback(HapticFeedbackType.ContextClick)
+                selectedTab = index
+            }
+        }
 
-                tabs.forEach { (index, label, icons) ->
+        if (nonExpressiveNavigationBar) {
+            NavigationBar(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+            ) {
+                navTabs.forEach { (index, label, icons) ->
                     val selected = selectedTab == index
                     val (filledIcon, outlinedIcon) = icons
-                    
-                    // fastSpatialSpec: snappy expressive motion — StiffnessLow
-                    // springs took ~1s to settle and felt sluggish here.
-                    val animatedPadding by androidx.compose.animation.core.animateDpAsState(
-                        targetValue = if (selected) 20.dp else 12.dp,
-                        animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
-                        label = "padding"
-                    )
-                    
-                    val animatedContainerColor by androidx.compose.animation.animateColorAsState(
-                        targetValue = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
-                        animationSpec = androidx.compose.animation.core.tween(durationMillis = 200),
-                        label = "containerColor"
-                    )
-                    
-                    val animatedContentColor by androidx.compose.animation.animateColorAsState(
-                        targetValue = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-                        animationSpec = androidx.compose.animation.core.tween(durationMillis = 200),
-                        label = "contentColor"
-                    )
-                    
-                    Surface(
+                    NavigationBarItem(
+                        modifier = Modifier.weight(1f),
                         selected = selected,
-                        onClick = {
-                            // A re-tap is a different gesture from a switch, and
-                            // the two are told apart here.
-                            if (selected) {
-                                // Re-tap: back to the top, the thing every tab
-                                // bar people use daily does. Only worth a tick
-                                // when there is somewhere to go, otherwise
-                                // tapping an already-topped tab buzzes for
-                                // nothing.
-                                if (currentTabScrollState.canScrollBackward) {
-                                    navBarHaptics.performHapticFeedback(
-                                        HapticFeedbackType.ContextClick
-                                    )
-                                    scope.launch { currentTabScrollState.scrollToTop() }
-                                }
-                            } else {
-                                // Switching commits something the finger has no
-                                // preview of, so the tick is the confirmation.
-                                navBarHaptics.performHapticFeedback(HapticFeedbackType.ContextClick)
-                                selectedTab = index
-                            }
-                        },
-                        shape = CircleShape,
-                        color = animatedContainerColor,
-                        contentColor = animatedContentColor,
-                        modifier = Modifier.height(48.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .padding(horizontal = animatedPadding)
-                                .animateContentSize(
-                                    animationSpec = MaterialTheme.motionScheme.fastSpatialSpec()
-                                ),
-                            horizontalArrangement = Arrangement.Center,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
+                        onClick = { selectNavTab(index) },
+                        icon = {
                             Icon(
                                 imageVector = if (selected) filledIcon else outlinedIcon,
-                                contentDescription = label,
-                                modifier = Modifier.size(24.dp)
+                                contentDescription = label
                             )
-                            androidx.compose.animation.AnimatedVisibility(
-                                visible = selected,
-                                enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.expandHorizontally(
-                                    animationSpec = MaterialTheme.motionScheme.fastSpatialSpec()
-                                ),
-                                exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.shrinkHorizontally(
-                                    animationSpec = MaterialTheme.motionScheme.fastSpatialSpec()
-                                )
+                        },
+                        label = { Text(label) }
+                    )
+                }
+            }
+        } else {
+            HorizontalFloatingToolbar(
+                expanded = true,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
+                    .padding(bottom = 20.dp),
+                content = {
+                    navTabs.forEach { (index, label, icons) ->
+                        val selected = selectedTab == index
+                        val (filledIcon, outlinedIcon) = icons
+
+                        // fastSpatialSpec: snappy expressive motion — StiffnessLow
+                        // springs took ~1s to settle and felt sluggish here.
+                        val animatedPadding by androidx.compose.animation.core.animateDpAsState(
+                            targetValue = if (selected) 20.dp else 12.dp,
+                            animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
+                            label = "padding"
+                        )
+
+                        val animatedContainerColor by androidx.compose.animation.animateColorAsState(
+                            targetValue = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+                            animationSpec = androidx.compose.animation.core.tween(durationMillis = 200),
+                            label = "containerColor"
+                        )
+
+                        val animatedContentColor by androidx.compose.animation.animateColorAsState(
+                            targetValue = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                            animationSpec = androidx.compose.animation.core.tween(durationMillis = 200),
+                            label = "contentColor"
+                        )
+
+                        Surface(
+                            selected = selected,
+                            onClick = { selectNavTab(index) },
+                            shape = CircleShape,
+                            color = animatedContainerColor,
+                            contentColor = animatedContentColor,
+                            modifier = Modifier.height(48.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .padding(horizontal = animatedPadding)
+                                    .animateContentSize(
+                                        animationSpec = MaterialTheme.motionScheme.fastSpatialSpec()
+                                    ),
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(
-                                        text = label,
-                                        style = MaterialTheme.typography.labelLarge,
-                                        fontWeight = FontWeight.Bold,
-                                        maxLines = 1
+                                Icon(
+                                    imageVector = if (selected) filledIcon else outlinedIcon,
+                                    contentDescription = label,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                                androidx.compose.animation.AnimatedVisibility(
+                                    visible = selected,
+                                    enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.expandHorizontally(
+                                        animationSpec = MaterialTheme.motionScheme.fastSpatialSpec()
+                                    ),
+                                    exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.shrinkHorizontally(
+                                        animationSpec = MaterialTheme.motionScheme.fastSpatialSpec()
                                     )
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = label,
+                                            style = MaterialTheme.typography.labelLarge,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1
+                                        )
+                                    }
                                 }
                             }
                         }
                     }
                 }
-            }
-        )
+            )
+        }
 
         // Expandable Player (Mini <-> Full Screen)
         ExpandablePlayer(
@@ -882,6 +936,7 @@ fun HomeScreen(
             artworkColors = playerArtworkColors,
             playerStyle = playerStyle,
             onPlayerStyleChange = onPlayerStyleChange,
+            collapsedBottomSpacing = if (nonExpressiveNavigationBar) 96.dp else 100.dp,
             onArtistClick = { artistName ->
                 // Collapse player and navigate to Library tab to show artist
                 showPlayerSheet = false
@@ -2153,6 +2208,3 @@ fun JumpBackInSection(
         }
     }
 }
-
-
-

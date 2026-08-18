@@ -40,13 +40,22 @@ fun Intent.sharedLinkText(): String? = when (action) {
 /**
  * Opens a YouTube link shared into Koda, choosing the player from where the
  * link points: music.youtube.com goes to the music player, everything else to
- * the video player. Playlist links load the whole playlist, and a watch link
- * that also carries a list opens the playlist positioned on that video in both
- * modes - the video player has a queue now, so the list is worth fetching. In
- * video mode the video starts first and the playlist is attached behind it, so
- * the fetch costs nothing the viewer can see. A list that cannot be resolved, or
- * that turns out not to contain the shared video, leaves the video playing on
- * its own rather than failing.
+ * the video player.
+ *
+ * **A link that names a video plays it; a link that names only a playlist opens
+ * that playlist's page.** Both kinds used to play, which meant the one route
+ * into a playlist that never passes through its page was also the only one with
+ * no way to keep it - the Save button lives on the page. So a bare playlist link
+ * resolves its header and hands the page to the Home screen's tab system, and a
+ * watch link carrying a list still plays, because naming a video is asking for
+ * that video. In video mode it starts first and the playlist is attached behind
+ * it, so the fetch costs nothing the viewer can see; a list that cannot be
+ * resolved, or that turns out not to contain the shared video, leaves the video
+ * playing on its own rather than failing.
+ *
+ * A playlist with no page behind it - a generated mix, a private or deleted
+ * list - falls back to playing, which is both what happened before and the right
+ * answer for a mix, since there is no page to open.
  *
  * Video links skip metadata resolution entirely: [VideoPlayerViewModel.playVideo]
  * only needs an id to start streaming, and its second phase fills in the title,
@@ -109,7 +118,27 @@ fun SharedLinkHandler(
             // on, Koda accepted the tap and did nothing with it.
             channelRef != null -> onOpenChannel(channelRef)
 
-            // Music playlist, opening on the shared track when the link names one
+            // A music playlist with no track named: open the playlist's page.
+            // Playing it straight off was the whole list arriving with nowhere
+            // to keep it - the Save button lives on that page, and a link is
+            // the one way into a playlist that never passed through it.
+            link.isMusicLink && playlistId != null && videoId == null -> {
+                val page = homeViewModel.resolvePlaylistPageFromLink(playlistId)
+                if (page != null) {
+                    homeViewModel.requestPlaylistPage(page)
+                } else {
+                    // No page behind the id - a mix, a private list, or a
+                    // failed lookup. Playing it is both the old behaviour and
+                    // the right answer for a mix, which has no page to open.
+                    val songs = homeViewModel.resolvePlaylistSongsFromLink(playlistId)
+                    if (songs.isEmpty()) toast("Couldn't open that playlist")
+                    else playerViewModel.playQueue(songs, songs.first())
+                }
+            }
+
+            // Music playlist opening on the track the link named. A link that
+            // names a track is a link to that track, so it plays; only the
+            // playlist itself opens a page.
             link.isMusicLink && playlistId != null -> {
                 val songs = homeViewModel.resolvePlaylistSongsFromLink(playlistId)
                 if (songs.isEmpty()) {
@@ -160,19 +189,27 @@ fun SharedLinkHandler(
 
             videoId != null -> videoPlayerViewModel.playVideo(placeholderVideo(videoId))
 
+            // A video playlist on its own, same as the music side: the page
+            // rather than immediate playback, because the page is where it can
+            // be kept, played in order, or looked at before either.
             playlistId != null -> {
-                val videos = homeViewModel.resolvePlaylistVideosFromLink(playlistId)
-                if (videos.isEmpty()) {
-                    toast("Couldn't open that playlist")
+                val page = homeViewModel.resolvePlaylistPageFromLink(playlistId)
+                if (page != null) {
+                    homeViewModel.requestVideoPlaylistPage(page)
                 } else {
-                    videoPlayerViewModel.playQueue(
-                        VideoQueue(
-                            videos = videos,
-                            index = 0,
-                            title = "Shared playlist",
-                            playlistId = playlistId
+                    val videos = homeViewModel.resolvePlaylistVideosFromLink(playlistId)
+                    if (videos.isEmpty()) {
+                        toast("Couldn't open that playlist")
+                    } else {
+                        videoPlayerViewModel.playQueue(
+                            VideoQueue(
+                                videos = videos,
+                                index = 0,
+                                title = "Shared playlist",
+                                playlistId = playlistId
+                            )
                         )
-                    )
+                    }
                 }
             }
         }

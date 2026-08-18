@@ -11,6 +11,8 @@ import com.ivor.ivormusic.data.FolderInfo
 import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.data.ArtistItem
 import com.ivor.ivormusic.data.PlaylistDisplayItem
+import com.ivor.ivormusic.data.PlaylistPageInfo
+import com.ivor.ivormusic.data.VideoPlaylist
 import com.ivor.ivormusic.data.YouTubeRepository
 import com.ivor.ivormusic.data.LikedSongsRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -57,6 +59,52 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun consumeArtistPageRequest() {
         _pendingArtistPage.value = null
+    }
+
+    /**
+     * A playlist page asked for from outside the Home screen - today, a
+     * playlist link shared or opened into the app.
+     *
+     * The same hand-off as [pendingArtistPage] and for the same reason: both
+     * playlist pages live inside the tab system, which a share intent arriving
+     * at `MainActivity` cannot reach. Two flows rather than one tagged value
+     * because the two modes land on different tabs and hold different types,
+     * and a share names which mode it wants by the link it carries.
+     */
+    private val _pendingPlaylistPage = MutableStateFlow<PlaylistDisplayItem?>(null)
+    val pendingPlaylistPage: StateFlow<PlaylistDisplayItem?> = _pendingPlaylistPage.asStateFlow()
+
+    private val _pendingVideoPlaylistPage = MutableStateFlow<VideoPlaylist?>(null)
+    val pendingVideoPlaylistPage: StateFlow<VideoPlaylist?> = _pendingVideoPlaylistPage.asStateFlow()
+
+    fun requestPlaylistPage(info: PlaylistPageInfo) {
+        _pendingPlaylistPage.value = info.toDisplayItem()
+    }
+
+    fun consumePlaylistPageRequest() {
+        _pendingPlaylistPage.value = null
+    }
+
+    fun requestVideoPlaylistPage(info: PlaylistPageInfo) {
+        _pendingVideoPlaylistPage.value = info.toVideoPlaylist()
+    }
+
+    fun consumeVideoPlaylistPageRequest() {
+        _pendingVideoPlaylistPage.value = null
+    }
+
+    /**
+     * What a shared playlist link points at, as the page that opens it needs to
+     * describe itself. Null when the id has no page behind it - a generated
+     * mix, a private or deleted list - which is the caller's cue to fall back
+     * to playing rather than opening.
+     */
+    suspend fun resolvePlaylistPageFromLink(playlistId: String): PlaylistPageInfo? {
+        return try {
+            youtubeRepository.getPlaylistHeader(playlistId)
+        } catch (e: Exception) {
+            null
+        }
     }
 
     private val _searchHistory = MutableStateFlow(searchHistoryRepository.getHistory())

@@ -168,7 +168,8 @@ internal fun LazyGridScope.channelTabContent(
         VideoCard(
             video = video,
             onClick = { onPlayVideo(video) },
-            onLongClick = { onVideoLongPress(video) }
+            onLongClick = { onVideoLongPress(video) },
+            onOpenChannel = onOpenChannel
         )
     }
 
@@ -1070,6 +1071,7 @@ internal fun ChannelSearchPane(
     onQueryChange: (String) -> Unit,
     onVideoClick: (VideoItem) -> Unit,
     onVideoLongPress: (VideoItem) -> Unit,
+    onOpenChannel: (String) -> Unit,
     onClose: () -> Unit,
     contentPadding: PaddingValues
 ) {
@@ -1170,7 +1172,8 @@ internal fun ChannelSearchPane(
                     VideoCard(
                         video = video,
                         onClick = { onVideoClick(video) },
-                        onLongClick = { onVideoLongPress(video) }
+                        onLongClick = { onVideoLongPress(video) },
+                        onOpenChannel = onOpenChannel
                     )
                 }
             }

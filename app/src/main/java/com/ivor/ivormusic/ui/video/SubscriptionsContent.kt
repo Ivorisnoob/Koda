@@ -490,6 +490,7 @@ fun SubscriptionsContent(
                                 video = video,
                                 onClick = { onVideoClick(video) },
                                 onLongClick = { onVideoLongPress(video) },
+                                onOpenChannel = onOpenChannel,
                                 modifier = Modifier.padding(horizontal = 16.dp)
                             )
                         }

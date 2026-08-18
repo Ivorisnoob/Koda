@@ -73,6 +73,7 @@ fun ExpandablePlayer(
     artworkColors: Boolean = false,
     playerStyle: PlayerStyle = PlayerStyle.CLASSIC,
     onPlayerStyleChange: (PlayerStyle) -> Unit = {},
+    collapsedBottomSpacing: androidx.compose.ui.unit.Dp = 100.dp,
     onArtistClick: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -146,7 +147,7 @@ fun ExpandablePlayer(
     // Derive all properties from the single progress value
     val collapsedHeight = 80.dp
     val collapsedWidthPadding = 16.dp
-    val collapsedBottomPadding = 100.dp + bottomInset
+    val collapsedBottomPadding = collapsedBottomSpacing + bottomInset
     // Exactly half the collapsed height: a radius larger than that (the old
     // 50.dp) is illegal for the shape and rendered visibly distorted corners.
     // It also now matches MiniPlayerContent's inner 50% pill, so the ripple

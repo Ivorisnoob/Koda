@@ -396,6 +396,7 @@ private fun ChannelRoot(
                         onQueryChange = viewModel::setSearchQuery,
                         onVideoClick = onPlayVideo,
                         onVideoLongPress = { optionsTarget = it },
+                        onOpenChannel = onOpenChannel,
                         onClose = {
                             searchMode = false
                             viewModel.clearSearch()
