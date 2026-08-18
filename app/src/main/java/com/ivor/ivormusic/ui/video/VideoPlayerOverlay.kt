@@ -4,8 +4,10 @@ import android.app.PictureInPictureParams
 import android.os.Build
 import android.util.Rational
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -13,13 +15,17 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
 import androidx.activity.compose.PredictiveBackHandler
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.media3.common.util.UnstableApi
@@ -109,7 +115,19 @@ fun enterPipMode(
 fun VideoPlayerOverlay(
     viewModel: VideoPlayerViewModel,
     timedCommentsEnabled: Boolean = false,
-    miniPlayerExtraBottomPadding: androidx.compose.ui.unit.Dp = 0.dp,
+    /**
+     * How much bottom chrome the host is drawing under this player right now -
+     * the floating nav bar, and the music pill above it when both are alive.
+     *
+     * Passed in rather than assumed, because this overlay is drawn above the
+     * NavHost and therefore renders on every route, while the nav bar and the
+     * music pill are both inside `HomeScreen` and exist on one. Reserving a
+     * fixed height for them left the bar hovering in empty space over Settings,
+     * Downloads, a channel page and anywhere else, which is what "the mini
+     * player floats in a weird place" was. The system navigation inset is not
+     * included here; this player adds that itself.
+     */
+    hostBottomChrome: androidx.compose.ui.unit.Dp = 0.dp,
     /**
      * Open the playing video's creator. Handled by the host rather than here,
      * because the channel page is a NavHost destination and this overlay is
@@ -281,20 +299,96 @@ fun VideoPlayerOverlay(
             }
         }
 
-        // Minimized resting position sits above the nav bar, and above the
-        // music mini player too when both players are alive at the same time
+        // Collapsed-bar gestures: up expands, down dismisses.
+        //
+        // Deliberately the same machinery as the music pill's pair - a plain
+        // snapshot float accumulated per delta, the threshold tested on
+        // release, and a slide-out whose finishedListener performs the actual
+        // dismiss - because two mini players that answer a swipe differently
+        // is worse than either answer on its own. The axis differs on purpose:
+        // this bar sits directly above the music pill when both are alive, and
+        // a sideways throw there would be ambiguous about which it meant.
+        //
+        // The bar carries no close button, so this gesture is the only way to
+        // dismiss it. It is the same downward pull that already dismisses the
+        // expanded player, one size down.
+        var miniDragY by remember { mutableFloatStateOf(0f) }
+        var isDismissingMini by remember { mutableStateOf(false) }
+        val miniExpandThresholdPx = with(density) { 48.dp.toPx() }
+        val miniDismissThresholdPx = with(density) { 56.dp.toPx() }
+        // Upward travel is a preview, not a drag: the expand it commits to is
+        // a different animation entirely, so letting the bar follow the finger
+        // up the screen would promise a movement that never continues.
+        val miniLiftLimitPx = with(density) { 24.dp.toPx() }
+
+        val miniOffsetY by animateFloatAsState(
+            targetValue = when {
+                isExpanded -> 0f
+                isDismissingMini -> fullHeightPx
+                else -> miniDragY
+            },
+            animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
+            finishedListener = {
+                if (isDismissingMini) {
+                    viewModel.closePlayer()
+                    isDismissingMini = false
+                    miniDragY = 0f
+                }
+            },
+            label = "miniVideoOffset"
+        )
+        // Fades as it is pushed down, so the dismiss is legible before it
+        // commits. Capped at half so a bar dragged and released still reads as
+        // present on the way back.
+        val miniAlpha = if (isDismissingMini) {
+            0f
+        } else {
+            1f - (miniOffsetY.coerceAtLeast(0f) / (miniDismissThresholdPx * 2f)).coerceIn(0f, 0.5f)
+        }
+
+        // Minimized resting position clears the system navigation inset plus
+        // whatever bottom chrome the host says it is drawing, which is nothing
+        // on most routes.
         val p = if (isDragging) dragProgress else expandProgress.value
-        val height = lerp(88.dp, fullHeight, p)
+        val height = lerp(MINI_VIDEO_HEIGHT, fullHeight, p)
         val widthPadding = lerp(16.dp, 0.dp, p)
-        val bottomPadding = lerp(100.dp + bottomInset + miniPlayerExtraBottomPadding, 0.dp, p)
+        val bottomPadding = lerp(
+            MINI_VIDEO_MARGIN + bottomInset + hostBottomChrome,
+            0.dp,
+            p
+        )
         val cornerRadius = lerp(28.dp, 0.dp, p)
 
         Surface(
             modifier = Modifier
                 .padding(bottom = bottomPadding.coerceAtLeast(0.dp))
                 .padding(horizontal = widthPadding.coerceAtLeast(0.dp))
+                .offset { IntOffset(0, miniOffsetY.roundToInt()) }
+                .graphicsLayer { alpha = miniAlpha }
                 .fillMaxWidth()
                 .height(height.coerceAtLeast(0.dp))
+                .pointerInput(isExpanded) {
+                    if (isExpanded) return@pointerInput
+                    detectVerticalDragGestures(
+                        onDragStart = { miniDragY = 0f },
+                        onDragEnd = {
+                            when {
+                                miniDragY > miniDismissThresholdPx -> isDismissingMini = true
+                                miniDragY < -miniExpandThresholdPx -> {
+                                    miniDragY = 0f
+                                    viewModel.setExpanded(true)
+                                }
+                                else -> miniDragY = 0f
+                            }
+                        },
+                        onDragCancel = { miniDragY = 0f },
+                        onVerticalDrag = { change, dragAmount ->
+                            change.consume()
+                            miniDragY = (miniDragY + dragAmount)
+                                .coerceAtLeast(-miniLiftLimitPx)
+                        }
+                    )
+                }
                 .clickable(enabled = !isExpanded) { viewModel.setExpanded(true) },
             shape = RoundedCornerShape(cornerRadius.coerceAtLeast(0.dp)),
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -360,12 +454,10 @@ fun VideoPlayerOverlay(
                      }
                  )
              } else {
-                 // Mini Player Content
-                 MiniVideoPlayerContent(
-                     viewModel = viewModel,
-                     onExpand = { viewModel.setExpanded(true) },
-                     onClose = { viewModel.closePlayer() }
-                 )
+                 // Mini Player Content. Tap and both drags are handled by the
+                 // Surface above, so the bar itself only draws and offers its
+                 // two controls.
+                 MiniVideoPlayerContent(viewModel = viewModel)
              }
         }
     }

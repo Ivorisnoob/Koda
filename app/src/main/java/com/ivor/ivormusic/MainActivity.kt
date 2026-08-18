@@ -25,6 +25,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.compose.foundation.layout.Box
@@ -52,6 +53,20 @@ import com.ivor.ivormusic.ui.video.enterPipMode
 import com.ivor.ivormusic.ui.share.PendingSharedLink
 import com.ivor.ivormusic.ui.share.SharedLinkHandler
 import com.ivor.ivormusic.ui.share.sharedLinkText
+
+/**
+ * Height the floating navigation bar occupies at the bottom of the Home
+ * screen, above the system navigation inset: the toolbar itself plus the 20dp
+ * it is padded away from the inset.
+ *
+ * Here rather than in `HomeScreen` because the thing that needs it is the
+ * video overlay, which is drawn above the NavHost and cannot see inside the
+ * screen that draws the bar.
+ */
+private val NAV_BAR_RESERVE = 84.dp
+
+/** Height the collapsed music player occupies above the navigation bar. */
+private val MUSIC_PILL_RESERVE = 88.dp
 
 class MainActivity : ComponentActivity() {
 
@@ -450,6 +465,23 @@ fun MusicApp(
     val isVideoOverlayExpanded by videoPlayerViewModel.isExpanded.collectAsState()
     val hasVideoMiniPlayer = overlayVideo != null && !isVideoOverlayExpanded
     val musicPillVisible = playerViewModel.currentSong.collectAsState().value != null
+
+    // The floating nav bar and the music pill both live inside HomeScreen, so
+    // they exist on the "home" route and nowhere else. The video overlay is
+    // drawn above the NavHost and therefore renders on every route, so it has
+    // to be told what is actually underneath it rather than assuming: reserving
+    // their height unconditionally is what left the video mini bar hovering in
+    // empty space over Settings, Downloads, Stats and channel pages.
+    val currentRoute = navController.currentBackStackEntryAsState()
+        .value?.destination?.route
+    val onHomeRoute = currentRoute == "home"
+    val videoMiniBottomChrome = when {
+        !onHomeRoute -> 0.dp
+        // Stacked above the music pill rather than on top of it, when both
+        // players are alive at once.
+        musicPillVisible -> NAV_BAR_RESERVE + MUSIC_PILL_RESERVE
+        else -> NAV_BAR_RESERVE
+    }
 
     // Keep the Activity's PiP inputs current. It needs them outside the
     // composition, in onUserLeaveHint, where there is no way to read state.
@@ -877,9 +909,7 @@ fun MusicApp(
             viewModel = videoPlayerViewModel,
             timedCommentsEnabled = timedCommentsEnabled,
             onOpenChannel = openChannel,
-            // Stack the minimized video player above the music pill instead of
-            // on top of it when both are alive at once
-            miniPlayerExtraBottomPadding = if (musicPillVisible) 88.dp else 0.dp
+            hostBottomChrome = videoMiniBottomChrome
         )
 
         // Shorts sit above everything, including the video player overlay
