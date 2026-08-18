@@ -4386,7 +4386,19 @@ class YouTubeRepository(private val context: Context) {
         val bestAudio = originalTrackAudioStreams(extractedAudioStreams)
             .asSequence()
             .filter { it.isUrl }
-            .maxByOrNull { it.averageBitrate }
+            // MP4 downloads are remuxed on-device. Prefer AAC/M4A over the
+            // usually-higher-bitrate Opus stream, which MediaMuxer cannot put
+            // into an MP4 container reliably.
+            .maxWithOrNull(
+                compareBy<AudioStream>(
+                    {
+                        if (it.format?.suffix.equals("m4a", ignoreCase = true) ||
+                            it.codec?.contains("mp4a", ignoreCase = true) == true
+                        ) 1 else 0
+                    },
+                    { it.averageBitrate },
+                )
+            )
         val hasOriginalAdaptivePair = bestAudio != null && videoOnlyStreams.any { it.isUrl }
         if (hasAlternateAudioTracks && hasOriginalAdaptivePair) {
             // A manifest or muxed stream lets its issuing YouTube client pick
@@ -4403,10 +4415,11 @@ class YouTubeRepository(private val context: Context) {
                         VideoQuality(
                             resolution = resolution,
                             url = stream.content,
-                            format = stream.format?.name,
+                            format = stream.format?.suffix,
                             isDASH = false,
                             audioUrl = bestAudio.content,
                             sourceAspectRatio = sourceAspect,
+                            codec = stream.codec,
                         )
                     }
                 }
@@ -4421,9 +4434,10 @@ class YouTubeRepository(private val context: Context) {
                         VideoQuality(
                             resolution = resolution,
                             url = stream.content,
-                            format = stream.format?.name,
+                            format = stream.format?.suffix,
                             isDASH = false,
                             sourceAspectRatio = sourceAspect,
+                            codec = stream.codec,
                         )
                     }
                 }
@@ -4434,8 +4448,19 @@ class YouTubeRepository(private val context: Context) {
         fun fps(label: String): Int =
             label.substringAfter('p', "").takeWhile(Char::isDigit).toIntOrNull() ?: 30
 
+        // NewPipe exposes several codecs for the same label. Retain the AVC
+        // MP4 variant when one exists so the download worker is not left with
+        // only a VP9/WebM entry after de-duplication.
         return qualities
-            .distinctBy { it.resolution }
+            .groupBy { it.resolution }
+            .mapNotNull { (_, variants) ->
+                variants.maxWithOrNull(
+                    compareBy<VideoQuality>(
+                        { if (it.isMp4DownloadCompatible) 2 else if (it.isMp4Container) 1 else 0 },
+                        { if (it.codec?.contains("avc1", ignoreCase = true) == true) 1 else 0 },
+                    )
+                )
+            }
             .sortedWith(
                 compareByDescending<VideoQuality> { height(it.resolution) }
                     .thenByDescending { fps(it.resolution) }
@@ -4575,6 +4600,11 @@ class YouTubeRepository(private val context: Context) {
         fun container(mimeType: String): String =
             mimeType.substringAfter("video/").substringBefore(";").ifEmpty { "mp4" }
 
+        fun codec(mimeType: String): String? =
+            mimeType.substringAfter("codecs=\"", "")
+                .substringBefore('"')
+                .takeIf { it.isNotBlank() }
+
         val qualities = mutableListOf<VideoQuality>()
 
         // Video-only adaptive formats, one entry per quality label, merged with
@@ -4606,7 +4636,8 @@ class YouTubeRepository(private val context: Context) {
                             format = container(best.optString("mimeType")),
                             isDASH = false,
                             audioUrl = bestAudioUrl,
-                            sourceAspectRatio = sourceAspect
+                            sourceAspectRatio = sourceAspect,
+                            codec = codec(best.optString("mimeType")),
                         )
                     )
                 }
@@ -4624,7 +4655,8 @@ class YouTubeRepository(private val context: Context) {
                     qualities.add(
                         VideoQuality(
                             label, url, container(f.optString("mimeType")), false,
-                            sourceAspectRatio = sourceAspect
+                            sourceAspectRatio = sourceAspect,
+                            codec = codec(f.optString("mimeType")),
                         )
                     )
                 }
