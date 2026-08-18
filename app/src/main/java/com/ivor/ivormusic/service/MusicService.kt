@@ -127,8 +127,8 @@ class MusicService : MediaLibraryService() {
     companion object {
         private const val TAG = "MusicService"
         private const val PREFETCH_AHEAD_COUNT = 3
-        // Resolution is two InnerTube /player calls at most, each hard-capped at
-        // 8s by OkHttp's callTimeout in YouTubeRepository.
+        // Covers the maintained NewPipe extraction and the direct InnerTube
+        // fallback; their individual requests are also bounded by OkHttp.
         private const val RESOLVE_TIMEOUT_MS = 20_000L
         private const val PLACEHOLDER_PREFIX = "https://placeholder.ivormusic/"
         private const val CACHED_PREFIX = "https://cached.ivormusic/"
@@ -142,13 +142,11 @@ class MusicService : MediaLibraryService() {
         private const val WARM_CACHE_BYTES = 512L * 1024
 
         // Re-resolution attempts before a song is skipped. A dead or expired URL
-        // is fixed by the first retry or not at all, so the general ceiling stays
-        // low. A googlevideo 403 is different in kind: it is a verdict on the
-        // visitorData rather than on the URL, each retry re-rolls that identity,
-        // and roughly half of freshly minted tokens are served (measured August
-        // 2026), so four attempts recover the large majority of songs. Each one
-        // costs a mint plus a /player call, which is cheap next to skipping a
-        // track the user chose.
+        // is fixed by a fresh extraction or not at all, so the general ceiling
+        // stays low. A 403 on the direct InnerTube fallback is different: it is
+        // a verdict on visitorData, so each retry re-rolls that identity. Four
+        // attempts recover the large majority of those fallbacks (measured
+        // August 2026) without applying that expensive recovery to NewPipe URLs.
         private const val MAX_RETRIES = 2
         private const val MAX_FORBIDDEN_RETRIES = 4
 
@@ -740,8 +738,8 @@ class MusicService : MediaLibraryService() {
         }
 
         // 4. Network with Retry
-        // YouTubeRepository retry logic handles NewPipe flakiness. 
-        // We just handle timeout here.
+        // YouTubeRepository owns the NewPipe-first client fallback. This layer
+        // bounds the whole resolution and handles playback-time re-resolution.
         return try {
             val result = withTimeoutOrNull(RESOLVE_TIMEOUT_MS) {
                 youtubeRepository.getStreamUrl(videoId)
@@ -821,14 +819,17 @@ class MusicService : MediaLibraryService() {
 
         // 2. Retry Logic (YouTube songs only)
         val retryCount = retryCounts[videoId] ?: 0
-        // A media-layer 403 means the visitorData this stream was resolved under
-        // is in googlevideo's enforced bucket, and re-resolving under the same
-        // token just rebuilds the same dead URL. Each retry mints a fresh
-        // identity with an independent chance of landing in a served bucket, so
-        // these get their own, higher ceiling: the alternative is skipping a
-        // song the very next attempt would have played.
-        val isMediaForbidden = httpResponseCode(error) == 403
-        val maxRetries = if (isMediaForbidden) MAX_FORBIDDEN_RETRIES else MAX_RETRIES
+        // Only direct InnerTube streams are tied to Koda's visitorData. The
+        // NewPipe-first path uses maintained Android/visionOS clients; a 403
+        // there needs a fresh extraction, not an unrelated identity remint.
+        val issuingClient = try {
+            uri?.getQueryParameter("c")?.uppercase()
+        } catch (_: Exception) {
+            null
+        }
+        val isVisitorDataForbidden = httpResponseCode(error) == 403 &&
+            (issuingClient == "ANDROID_VR" || issuingClient == "IOS")
+        val maxRetries = if (isVisitorDataForbidden) MAX_FORBIDDEN_RETRIES else MAX_RETRIES
 
         if (retryCount < maxRetries) {
             Log.w(TAG, "Error: Retrying ($retryCount/$maxRetries) for $videoId...")
@@ -842,7 +843,7 @@ class MusicService : MediaLibraryService() {
                 // token stays in prefs and is replayed for its whole 6h TTL -
                 // every uncached song failing until the user clears app data.
                 // Mirrors VideoPlayerViewModel.recoverFromSourceError.
-                if (isMediaForbidden) {
+                if (isVisitorDataForbidden) {
                     youtubeRepository.refreshVisitorDataAfterPlaybackFailure()
                     // Everything prefetchUpcomingSongs resolved was signed with
                     // the token just discarded, so the rest of the queue is
