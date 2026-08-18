@@ -3405,6 +3405,154 @@ class YouTubeRepository(private val context: Context) {
         }
 
     /**
+     * What a playlist says it is - title, author, cover, length - without its
+     * contents.
+     *
+     * Exists for links. Everywhere else a playlist arrives already described,
+     * from a search result or a lockup or the account's own list, but a shared
+     * URL is an id and nothing more, and a page opened on an id alone has an
+     * empty header. [getPlaylistVideos] answers the other half of the same
+     * response and throws this half away, so the two are deliberately separate
+     * calls: the pages fetch their own items, and asking for both here would
+     * fetch every item twice.
+     *
+     * Anonymous when there is no session - `fetchYouTubeBrowse` only signs when
+     * one exists, and a public playlist answers without it (verified August
+     * 2026) - which is what a shared link needs, since most arrive with the app
+     * signed out.
+     *
+     * Null means "no page behind this id": a generated mix answers "This
+     * playlist type is unviewable", and private or deleted lists answer with an
+     * alert and no header at all. That is the caller's signal to fall back to
+     * playing the id rather than to open a blank page.
+     */
+    suspend fun getPlaylistHeader(playlistId: String): PlaylistPageInfo? =
+        withContext(Dispatchers.IO) {
+            val listId = playlistId.removePrefix("VL").takeIf { it.isNotBlank() }
+                ?: return@withContext null
+            try {
+                val json = fetchYouTubeBrowse("VL$listId").takeIf { it.isNotEmpty() }
+                    ?: return@withContext null
+                val root = org.json.JSONObject(json)
+                parseModernPlaylistHeader(root, listId)
+                    ?: parseLegacyPlaylistHeader(root, listId)
+            } catch (e: Exception) {
+                android.util.Log.e("YouTubeRepo", "getPlaylistHeader failed for $playlistId", e)
+                null
+            }
+        }
+
+    /**
+     * `pageHeaderViewModel`, which is what an ordinary `PL…` playlist returns
+     * (verified August 2026, both signed in and signed out).
+     *
+     * The header's metadata is positional prose - "by the bootleg boy",
+     * "Playlist", "960 videos", "26,738,861 views" - so nothing here reads a
+     * row by index. The author comes off the avatar stack, which is a
+     * structurally distinct part rather than a position, and the count is
+     * whichever part talks about videos. That word is localized, so a miss
+     * reports -1 ("the page did not say") rather than a number invented from
+     * the wrong row.
+     */
+    private fun parseModernPlaylistHeader(
+        root: org.json.JSONObject,
+        listId: String
+    ): PlaylistPageInfo? {
+        val headers = mutableListOf<org.json.JSONObject>()
+        findObjectsByKey(root, "pageHeaderViewModel", headers)
+        val header = headers.firstOrNull() ?: return null
+
+        val title = header.optJSONObject("title")
+            ?.optJSONObject("dynamicTextViewModel")
+            ?.optJSONObject("text")
+            ?.optString("content")
+            ?.takeIf { it.isNotBlank() }
+            ?: return null
+
+        val rows = header.optJSONObject("metadata")
+            ?.optJSONObject("contentMetadataViewModel")
+            ?.optJSONArray("metadataRows")
+
+        var author = ""
+        var itemCount = -1
+        if (rows != null) {
+            for (rowIndex in 0 until rows.length()) {
+                val parts = rows.optJSONObject(rowIndex)?.optJSONArray("metadataParts") ?: continue
+                for (partIndex in 0 until parts.length()) {
+                    val part = parts.optJSONObject(partIndex) ?: continue
+                    val avatarText = part.optJSONObject("avatarStack")
+                        ?.optJSONObject("avatarStackViewModel")
+                        ?.optJSONObject("text")
+                        ?.optString("content")
+                        ?.takeIf { it.isNotBlank() }
+                    if (avatarText != null && author.isBlank()) {
+                        author = avatarText.removePrefix("by ").trim()
+                        continue
+                    }
+                    val text = part.optJSONObject("text")?.optString("content").orEmpty()
+                    if (itemCount < 0 && text.contains("video", ignoreCase = true)) {
+                        itemCount = countFromText(text)
+                    }
+                }
+            }
+        }
+
+        return PlaylistPageInfo(
+            playlistId = listId,
+            title = title,
+            author = author,
+            thumbnailUrl = header.optJSONObject("heroImage")
+                ?.optJSONObject("contentPreviewImageViewModel")
+                ?.optJSONObject("image")
+                ?.let { bestImageSource(it.optJSONArray("sources")) },
+            itemCount = itemCount
+        )
+    }
+
+    /**
+     * `playlistHeaderRenderer`, the legacy shape, still what an album playlist
+     * (`OLAK5uy_…`) returns (verified August 2026).
+     *
+     * Its subtitle is "Daft Punk • Album", so the author is the part before the
+     * separator; the type half is dropped rather than shown, because the page
+     * this feeds already says what it is.
+     */
+    private fun parseLegacyPlaylistHeader(
+        root: org.json.JSONObject,
+        listId: String
+    ): PlaylistPageInfo? {
+        val headers = mutableListOf<org.json.JSONObject>()
+        findObjectsByKey(root, "playlistHeaderRenderer", headers)
+        val header = headers.firstOrNull() ?: return null
+
+        val title = getRunText(header.optJSONObject("title"))?.takeIf { it.isNotBlank() }
+            ?: return null
+        val author = getRunText(header.optJSONObject("ownerText"))
+            ?.takeIf { it.isNotBlank() }
+            ?: getRunText(header.optJSONObject("subtitle"))
+                ?.substringBefore("•")
+                ?.trim()
+                .orEmpty()
+
+        return PlaylistPageInfo(
+            playlistId = listId,
+            title = title,
+            author = author,
+            thumbnailUrl = header.optJSONObject("playlistHeaderBanner")
+                ?.optJSONObject("heroPlaylistThumbnailRenderer")
+                ?.optJSONObject("thumbnail")
+                ?.let { bestThumbnail(it.optJSONArray("thumbnails")) },
+            itemCount = countFromText(getRunText(header.optJSONObject("numVideosText")))
+        )
+    }
+
+    /** "1,234 videos" to a number; -1 for anything with no digits in it. */
+    private fun countFromText(text: String?): Int {
+        val digits = text?.filter { it.isDigit() }?.takeIf { it.isNotEmpty() } ?: return -1
+        return digits.toIntOrNull() ?: -1
+    }
+
+    /**
      * Playlist lockup (LOCKUP_CONTENT_TYPE_PLAYLIST / PODCAST): contentId is
      * the playlist id, title lives in lockupMetadataViewModel, the video count
      * is a thumbnailBadgeViewModel text ("28 videos") and the first metadata

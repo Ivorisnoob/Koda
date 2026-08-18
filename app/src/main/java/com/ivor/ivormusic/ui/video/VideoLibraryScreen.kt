@@ -113,6 +113,12 @@ import com.ivor.ivormusic.ui.home.HomeViewModel
 private val NON_SAVABLE_VIDEO_PLAYLIST_IDS =
     setOf("WL", "VLWL", "LL", "VLLL", "LM", "VLLM", "RTM")
 
+/**
+ * The account's feeds that take a removal but never appear in the playlist
+ * list, since `getVideoPlaylists` filters both of them out of it.
+ */
+private val WRITABLE_PINNED_PLAYLIST_IDS = setOf("WL", "VLWL", "LL", "VLLL")
+
 /** Internal navigation state of the Library tab. */
 private sealed interface LibraryPage {
     data object Root : LibraryPage
@@ -143,6 +149,15 @@ fun VideoLibraryContent(
     /** Queue a video from the history or playlist pages. */
     onEnqueueVideo: ((VideoItem, Boolean) -> Unit)? = null,
     /**
+     * Open straight onto a playlist, for callers outside the Library that have
+     * one in hand - a playlist link shared into the app. Same hand-off shape as
+     * the music Library's `initialPlaylist`: the caller clears it through the
+     * consumed callback, so coming back to the tab later lands on the list
+     * rather than re-opening the playlist.
+     */
+    initialPlaylist: VideoPlaylist? = null,
+    onInitialPlaylistConsumed: () -> Unit = {},
+    /**
      * Hoisted by HomeScreen for the tab's root page only. History and playlist
      * pages are drill-ins popped with Back, so scrolling the root beneath them
      * would act on a list the user cannot see.
@@ -162,6 +177,16 @@ fun VideoLibraryContent(
     LaunchedEffect(isYouTubeConnected) {
         if (historyVideos.isEmpty()) viewModel.loadYouTubeHistory()
         if (isYouTubeConnected) viewModel.loadVideoPlaylists()
+    }
+
+    // Handed a playlist from outside the tab. Loads its videos the same way
+    // opening one from the root does, since the page reads them off the
+    // ViewModel rather than fetching its own.
+    LaunchedEffect(initialPlaylist) {
+        val playlist = initialPlaylist ?: return@LaunchedEffect
+        viewModel.loadPlaylistVideos(playlist.playlistId)
+        page = LibraryPage.Playlist(playlist)
+        onInitialPlaylistConsumed()
     }
 
     PredictiveBackStack(
@@ -248,6 +273,15 @@ fun VideoLibraryContent(
                 onPlayQueue = onPlayQueue,
                 onBack = { page = LibraryPage.Root },
                 contentPadding = contentPadding,
+                // Removing a row is a write, so it is offered only on the
+                // playlists the user can actually write to: the pinned feeds,
+                // the account's own and the device's. Derived rather than
+                // passed in, because this tab opens playlists that are not the
+                // user's - saved ones from the root, shared ones handed in
+                // through initialPlaylist - and on those the write fails, which
+                // showed as the row disappearing and coming back.
+                allowRemove = target.playlist.playlistId in WRITABLE_PINNED_PLAYLIST_IDS ||
+                    playlists.any { it.playlistId == target.playlist.playlistId },
                 onEnqueueVideo = onEnqueueVideo,
                 onOpenChannel = onOpenChannel
             )

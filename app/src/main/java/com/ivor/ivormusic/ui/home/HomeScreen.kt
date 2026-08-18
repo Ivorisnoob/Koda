@@ -371,6 +371,36 @@ fun HomeScreen(
     var viewedPlaylistFromHome by remember {
         mutableStateOf<com.ivor.ivormusic.data.PlaylistDisplayItem?>(null)
     }
+    // The video-mode counterpart, handed to VideoLibraryContent the same way.
+    var viewedVideoPlaylistFromHome by remember {
+        mutableStateOf<com.ivor.ivormusic.data.VideoPlaylist?>(null)
+    }
+
+    // A playlist link shared or opened into the app, which lands at
+    // MainActivity and cannot reach the tab state from there. Same hand-off as
+    // pendingArtistPage, and it sets the mode for the same reason: the Library
+    // that can show this playlist only exists on one side of the video toggle,
+    // so leaving the toggle alone would land on the wrong tab and read as the
+    // share having done nothing.
+    val pendingPlaylistPage by viewModel.pendingPlaylistPage.collectAsState()
+    LaunchedEffect(pendingPlaylistPage) {
+        pendingPlaylistPage?.let { playlist ->
+            if (videoMode) onVideoModeToggle(false)
+            viewedPlaylistFromHome = playlist
+            selectedTab = 2
+            viewModel.consumePlaylistPageRequest()
+        }
+    }
+    val pendingVideoPlaylistPage by viewModel.pendingVideoPlaylistPage.collectAsState()
+    LaunchedEffect(pendingVideoPlaylistPage) {
+        pendingVideoPlaylistPage?.let { playlist ->
+            if (!videoMode) onVideoModeToggle(true)
+            viewedVideoPlaylistFromHome = playlist
+            // Video mode's Library is tab 3; music's is tab 2.
+            selectedTab = 3
+            viewModel.consumeVideoPlaylistPageRequest()
+        }
+    }
     // Long-pressed song, for the options sheet. Hosted here, once, rather than
     // per screen: the sheet acts on the PlayerViewModel, which lives at this
     // level, and the Library's sub-routes would each otherwise need their own.
@@ -716,6 +746,8 @@ fun HomeScreen(
                                 onLoginClick = { showAuthDialog = true },
                                 contentPadding = listContentPadding,
                                 onEnqueueVideo = onEnqueueVideo,
+                                initialPlaylist = viewedVideoPlaylistFromHome,
+                                onInitialPlaylistConsumed = { viewedVideoPlaylistFromHome = null },
                                 rootListState = videoLibraryScrollState
                             )
                         }

@@ -450,6 +450,31 @@ fun SearchScreen(
             return@LaunchedEffect
         }
         linkState = LinkLookupState.Resolving
+        // A playlist link points at something with a page of its own, exactly
+        // like the channel link above, so it opens that page instead of
+        // resolving into a result card. The page is where the title, the
+        // author, the artwork and - the reason this matters - the Save button
+        // are; the card had none of them, so a playlist arriving by link was
+        // the one that could not be kept.
+        //
+        // A link that also names a video still resolves to that video: naming
+        // one is asking for it. And a list with no page behind it - a generated
+        // mix answers "This playlist type is unviewable" - falls through to the
+        // preview below, which for a mix is the whole of what there is to show.
+        val linkPlaylistId = parsedLink.playlistId
+        if (linkPlaylistId != null && parsedLink.videoId == null) {
+            val page = viewModel.resolvePlaylistPageFromLink(linkPlaylistId)
+            if (page != null) {
+                linkState = LinkLookupState.Idle
+                // Cleared for the same reason the channel branch clears it:
+                // coming back from the page must land on search, not reopen
+                // what was just backed out of.
+                query = ""
+                if (videoMode) onVideoPlaylistClick(page.toVideoPlaylist())
+                else onPlaylistClick(page.toDisplayItem())
+                return@LaunchedEffect
+            }
+        }
         linkState = when {
             parsedLink.videoId != null -> {
                 val video = viewModel.resolveVideoFromLink(parsedLink.videoId)
