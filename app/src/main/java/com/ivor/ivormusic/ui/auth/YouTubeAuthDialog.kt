@@ -27,6 +27,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.DialogProperties
+import com.ivor.ivormusic.data.AccountSwitcher
 import com.ivor.ivormusic.data.SessionManager
 import com.ivor.ivormusic.data.YouTubeAuthUtils
 
@@ -34,10 +35,12 @@ import com.ivor.ivormusic.data.YouTubeAuthUtils
 @Composable
 fun YouTubeAuthDialog(
     onDismiss: () -> Unit,
-    onAuthSuccess: () -> Unit
+    onAuthSuccess: () -> Unit,
+    addAsNewProfile: Boolean = false
 ) {
     val context = LocalContext.current
     val sessionManager = SessionManager(context)
+    val accountSwitcher = AccountSwitcher(context)
     
     BasicAlertDialog(
         onDismissRequest = onDismiss,
@@ -105,7 +108,16 @@ fun YouTubeAuthDialog(
                                             YouTubeAuthUtils.missingRequiredCookies(cookies).isEmpty()
                                         ) {
                                             completed = true
-                                            sessionManager.startSession(cookies)
+                                            // A regular sign-in connects or repairs the active
+                                            // profile. "Add account" must instead preserve that
+                                            // profile and put the captured session in a new one.
+                                            // Sending both paths through startSession used to
+                                            // overwrite the active account's stored cookies.
+                                            if (addAsNewProfile) {
+                                                accountSwitcher.addYouTubeProfileAndSwitch(cookies)
+                                            } else {
+                                                sessionManager.startSession(cookies)
+                                            }
                                             // Without this the jar only reaches disk on
                                             // WebView's own schedule, so a process death
                                             // right after signing in left nothing to
