@@ -745,13 +745,14 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
 
         // Update UI state immediately for responsiveness (same as playQueue)
         _currentSong.value = song
-        _isBuffering.value = true
+        // The outgoing track remains audible while the target prepares, so
+        // this is not a buffering state and must not show a spinner.
+        _isBuffering.value = false
         _duration.value = 0L
         updateCurrentSongLikedStatus()
         fetchLyrics(song)
 
-        player.seekTo(index, 0)
-        player.play()
+        sendSkipCommand(MusicService.CMD_SKIP_TO_INDEX, index)
     }
 
     /**
@@ -1080,84 +1081,37 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
 
     fun skipToNext() {
         controller?.let { player ->
-            // Check if there is physically a next item in the implementation list
-            val hasGenuineNextItem = player.currentMediaItemIndex < player.mediaItemCount - 1
-            
-            // Fix: Override 'Repeat One' behavior which normally prevents skipping to next track
-            if (player.repeatMode == Player.REPEAT_MODE_ONE && hasGenuineNextItem) {
-                // Force skip to next index
-                player.seekTo(player.currentMediaItemIndex + 1, 0)
-                player.play()
-                _isBuffering.value = true
-                return
-            }
-
-            if (player.hasNextMediaItem()) {
-                player.seekToNextMediaItem()
-                player.play()
-                _isBuffering.value = true // Expect buffering on skip
-            } else {
+            if (!player.hasNextMediaItem()) {
                 // FALLBACK: The player might not have the full queue loaded yet.
                 // Check if our local queue has more items.
                 val currentIndex = player.currentMediaItemIndex
                 val queue = _currentQueue.value
-                
                 if (currentIndex < queue.lastIndex) {
                     // We have a next song in our list, but Player doesn't know it yet.
-                    // Manually add it and skip.
+                    // Add it before asking the service to overlap into it.
                     val nextSong = queue[currentIndex + 1]
                     val nextItem = createMediaItem(nextSong)
-                    
-                    viewModelScope.launch {
-                        player.addMediaItem(currentIndex + 1, nextItem)
-                        player.seekTo(currentIndex + 1, 0)
-                        player.play()
-                    }
-                    _isBuffering.value = true
-                } else {
-                    // Genuine end of playlist
-                    if (player.repeatMode == Player.REPEAT_MODE_ONE) {
-                        // Loop to start if desired, or just do nothing (standard behavior is loop for Repeat One)
-                        if (player.mediaItemCount > 0) {
-                            player.seekTo(0, 0)
-                            player.play()
-                            _isBuffering.value = true
-                        }
-                    } else {
-                        player.seekToNext()
-                        player.play()
-                    }
+                    player.addMediaItem(currentIndex + 1, nextItem)
                 }
             }
+            sendSkipCommand(MusicService.CMD_SKIP_NEXT)
         }
     }
 
     fun skipToPrevious() {
-        controller?.let { player ->
-            // Fix for Repeat One: Previous button should go to previous song (if < 3s played), not restart current
-            if (player.repeatMode == Player.REPEAT_MODE_ONE) {
-                // If we are well into the song, restart it (standard behavior)
-                if (player.currentPosition > 3000) {
-                    player.seekTo(0)
-                    player.play()
-                } else {
-                    // If at start of song, go to previous track
-                    val prevIndex = player.currentMediaItemIndex - 1
-                    if (prevIndex >= 0) {
-                        player.seekTo(prevIndex, 0)
-                        player.play()
-                    } else {
-                        // Start of list. Loop to end.
-                        if (player.mediaItemCount > 0) {
-                            player.seekTo(player.mediaItemCount - 1, 0)
-                            player.play()
-                        }
-                    }
-                }
-            } else {
-                player.seekToPrevious()
-            }
+        if (controller == null) return
+        sendSkipCommand(MusicService.CMD_SKIP_PREVIOUS)
+    }
+
+    private fun sendSkipCommand(action: String, index: Int? = null) {
+        val ctrl = controller ?: return
+        val args = android.os.Bundle().apply {
+            index?.let { putInt(MusicService.ARG_SKIP_INDEX, it) }
         }
+        ctrl.sendCustomCommand(
+            androidx.media3.session.SessionCommand(action, android.os.Bundle.EMPTY),
+            args,
+        )
     }
 
     /**

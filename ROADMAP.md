@@ -237,28 +237,6 @@ So the honest question is not "how do we avoid a gap", it is **what "moved to mu
 
 The reverse direction (music to video mode, promoting a song to its music video), is the same machinery with one extra unknown: not every track has a watchable video, so the control has to be conditional or it will fail more often than it works. Worth treating as a follow-up rather than assuming symmetry.
 
-#### A crossfade worth the name
-
-There is a crossfade setting today, with a duration preference defaulting to three seconds, and it does not do what it says. It is worth stating plainly, because the setting existing makes this look like a tuning job when it is a rebuild.
-
-`MusicService` runs **one** ExoPlayer, and one player renders one item at a time. So the current implementation fades the outgoing track to silence, lets it end, then fades the incoming one up from zero in `performFadeIn`. The two never overlap. What the listener hears is a dip to silence in the middle. A fade-out followed by a fade-in, which is the one thing a crossfade is defined by not being.
-
-Three further problems, each audible on its own:
-
-**The fade-out is driven by the progress loop, which ticks on `delay(1000)`.** A three-second fade therefore gets about three volume updates. That is not a ramp, it is a staircase, and it is clearly audible as stepping. The fade-in is smoother at 20 steps but is still a coroutine ramp rather than anything tied to the audio clock.
-
-**Both ramps are linear on `player.volume`,** which is a linear amplitude scalar. Hearing is roughly logarithmic, so a linear ramp sounds like it collapses early and then crawls. Even if the two tracks did overlap, summing two linear ramps dips about 6 dB at the midpoint. The hole in the middle that makes amateur crossfades recognisable. Apple Music and every other implementation people rate use an equal-power curve, sine and cosine against each other, so the summed energy stays constant across the transition.
-
-**Nothing distinguishes tracks that must not be crossfaded.** Album transitions that are continuous by design (a live record, a DJ mix, anything that segues), get three seconds of destruction where they need sample-accurate gapless. Apple Music's crossfade is good partly because it knows when not to fire.
-
-So the real work: two players (or one player with a mixing `AudioProcessor`) so the tails genuinely overlap; an equal-power curve; a ramp resolution fine enough to be inaudible, driven off something better than a one-second UI tick; gapless detection so continuous albums are left alone; and a decision about whether a manual skip crossfades or cuts, which are both defensible and should be deliberate.
-
-**One piece is already built.** `prefetchUpcomingSongs` pre-caches the first 512 KB of the next three songs through `warmStreamCache`, so the incoming track's audio is normally on disk before it is needed. That is exactly the prerequisite an overlapping crossfade depends on, and it is the difference between this being feasible and it stuttering on every transition.
-
-**The hardest part is not the fade, it is the `Player` facade.** `MediaSession` wraps exactly one `Player`, and everything downstream reads through it: the notification, Bluetooth and Android Auto, `PlayerViewModel`'s `MediaController`, the Live Update, the sleep timer. Two engines therefore cannot be two players as far as anything outside the service is concerned. They have to be presented as one logical `Player` with one timeline and one current-item index, alternating internally which engine renders. That is a `SimpleBasePlayer` subclass, and it is where the risk in this whole item lives: get it wrong and the notification names the wrong track mid-transition, or the queue in the UI drifts from what is playing. The volume ramp itself is fifty lines.
-
-Three service-specific traps follow from it. **The pinned audio session id has to be shared:** `initializePlayer` generates one and broadcasts `ACTION_OPEN_AUDIO_EFFECT_CONTROL_SESSION` so external equalizers attach, and two players not on that same id would mean the EQ dropping out on alternate tracks. **Only one engine may hold audio focus** (`setAudioAttributes(attrs, handleAudioFocus = true)` on the primary, `false` on the other), or the two duck each other. And **items are placeholders until resolved**, so the incoming track has to be resolved, warmed and profiled before the transition window opens; every one of those can fail, and the engine needs a defined degraded path (no profile means a plain equal-power fade, unresolved means the hard cut it does today).
-
 ### Loudness is free metadata, not a DSP job (verified August 2026, shipped)
 
 `/player` already carries YouTube's own loudness measurement, and nothing in the app reads it. Probed signed out against ANDROID_VR with a freshly minted `visitorData`, `playerConfig.audioConfig` came back populated on 8 of 8 tracks:
@@ -484,6 +462,9 @@ The milestones behind us, kept here so the direction of travel is visible.
 - The video mini bar rebuilt: swipe up to expand and down to dismiss instead of a close button, a progress line that moves with playback rather than once a second, and a resting position that follows what is actually on screen under it
 - A persistent Appearance choice between the expressive floating navigation pill and a standard short bottom navigation bar, shared by music and video mode
 - Swipe on the song title and artist to change tracks, in every player style, on one shared gesture contract that the album-cover swipe now also runs on
+- Genuine two-player crossfade: configurable equal-power overlap on natural changes and a short 500ms overlap on manual skips, shared by app controls, queue taps, Bluetooth and Android Auto
+
+Crossfade alternates two fully configured ExoPlayers while keeping one logical queue visible through the media session. The standby must reach `STATE_READY` before either volume moves; a failed resolution or buffer deadline keeps the outgoing track alive and falls back to a short ramp only when overlap is impossible. Both players share audio focus, the pinned audio-session id, loudness correction and ducking. Cancellation is an abort, never a swap, and shuffled playback asks the player for its real next index instead of assuming timeline order.
 
 The song-information swipe is worth recording for what the work actually turned out to be. The request read as "add the gesture to one more area", and the survey found something else: **the swipe had been hand-rolled per style, and three of the eight had never got one.** Classic, Bento and Dial had prev/next buttons and nothing else, Morph had drifted to a 100dp threshold against everyone else's 90dp, and there was no single place that would have made any of that visible. So the fix was a shared contract (`ui/player/SwipeToSkip.kt`: one `rememberSwipeToSkip`, `Modifier.swipeToSkip`, `Modifier.swipeToSkipFollow`) that the artwork gestures were migrated onto, rather than a ninth copy of the same twenty lines. **A rule that lives only in prose is a rule that will be missed by whoever adds the next style**; this one is now a function it is easier to call than to reimplement.
 

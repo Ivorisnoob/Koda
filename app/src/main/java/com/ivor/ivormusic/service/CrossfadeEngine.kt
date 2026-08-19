@@ -6,10 +6,14 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.cos
 import kotlin.math.sin
 
@@ -101,6 +105,10 @@ class CrossfadeEngine(
      */
     private var fadingIntoId: String? = null
 
+    /** Queue index that will become current if the in-flight swap completes. */
+    var pendingTargetIndex: Int? = null
+        private set
+
     private var movedListener: Player.Listener? = null
 
     /**
@@ -143,11 +151,17 @@ class CrossfadeEngine(
      * @return false when the transition could not be started, in which case the
      *   caller should let the active player advance on its own.
      */
-    fun startTransition(nextItem: MediaItem, durationMs: Long): Boolean {
+    fun startTransition(
+        nextItem: MediaItem,
+        durationMs: Long,
+        targetIndex: Int = active.getNextMediaItemIndex(),
+    ): Boolean {
         if (isFading) return false
         val outgoing = active
         val incoming = standby
 
+        if (targetIndex !in 0 until outgoing.mediaItemCount) return false
+        if (outgoing.getMediaItemAt(targetIndex).mediaId != nextItem.mediaId) return false
         val remaining = outgoing.duration - outgoing.currentPosition
         if (outgoing.duration <= 0 || remaining <= 0) return false
         // Leave a beat at the end: ending the fade exactly on the track
@@ -157,30 +171,68 @@ class CrossfadeEngine(
 
         return try {
             fadingIntoId = nextItem.mediaId
+            pendingTargetIndex = targetIndex
             // One item only. The rest of the queue is spliced around it at swap
             // time, from the live timeline rather than a stale snapshot.
             incoming.setMediaItem(nextItem)
             incoming.volume = 0f
             incoming.prepare()
-            incoming.playWhenReady = true
+            incoming.playWhenReady = false
 
-            fadeJob = scope.launch { runFade(outgoing, incoming, fadeMs) }
+            fadeJob = scope.launch {
+                runFade(outgoing, incoming, fadeMs, targetIndex)
+            }.also { job ->
+                job.invokeOnCompletion {
+                    if (fadeJob === job) fadeJob = null
+                }
+            }
             true
         } catch (e: Exception) {
             Log.e(TAG, "Could not start transition", e)
             fadingIntoId = null
+            pendingTargetIndex = null
             runCatching { incoming.stop() }
             false
         }
     }
 
-    private suspend fun runFade(outgoing: ExoPlayer, incoming: ExoPlayer, fadeMs: Long) {
-        val startPosition = outgoing.currentPosition
-        val outGain = gainFor(outgoing)
-        val inGain = gainFor(incoming)
-
+    private suspend fun runFade(
+        outgoing: ExoPlayer,
+        incoming: ExoPlayer,
+        requestedFadeMs: Long,
+        targetIndex: Int,
+    ) {
         try {
+            val ready = withTimeoutOrNull(STANDBY_READY_TIMEOUT_MS) {
+                while (incoming.playbackState != Player.STATE_READY) {
+                    currentCoroutineContext().ensureActive()
+                    if (incoming.playerError != null || incoming.playbackState == Player.STATE_ENDED) {
+                        return@withTimeoutOrNull false
+                    }
+                    delay(RAMP_INTERVAL_MS)
+                }
+                true
+            } == true
+            if (!ready) {
+                Log.w(TAG, "Standby was not ready in time; abandoning the overlap")
+                abortInto(outgoing, incoming)
+                return
+            }
+
+            val remaining = outgoing.duration - outgoing.currentPosition
+            val fadeMs = requestedFadeMs.coerceAtMost(remaining - END_GUARD_MS)
+            if (fadeMs < MIN_FADE_MS) {
+                abortInto(outgoing, incoming)
+                return
+            }
+
+            val startPosition = outgoing.currentPosition
+            val outGain = gainFor(outgoing)
+            val inGain = gainFor(incoming)
+            incoming.playWhenReady = true
+
             while (scope.isActive) {
+                currentCoroutineContext().ensureActive()
                 // Read the curve off real playback position, so a stall moves
                 // both halves together instead of sliding them apart.
                 val elapsed = outgoing.currentPosition - startPosition
@@ -207,8 +259,14 @@ class CrossfadeEngine(
                 }
                 delay(RAMP_INTERVAL_MS)
             }
-        } finally {
-            completeSwap(outgoing, incoming, inGain)
+            currentCoroutineContext().ensureActive()
+            completeSwap(outgoing, incoming, gainFor(incoming), targetIndex)
+        } catch (e: CancellationException) {
+            abortInto(outgoing, incoming)
+            throw e
+        } catch (e: Exception) {
+            Log.e(TAG, "Transition failed; keeping the outgoing player", e)
+            abortInto(outgoing, incoming)
         }
     }
 
@@ -221,15 +279,26 @@ class CrossfadeEngine(
      * the fade - a reorder, a removal, or one of the prefetcher's
      * `replaceMediaItem` calls.
      */
-    private fun completeSwap(outgoing: ExoPlayer, incoming: ExoPlayer, inGain: Float) {
+    private fun completeSwap(
+        outgoing: ExoPlayer,
+        incoming: ExoPlayer,
+        inGain: Float,
+        targetIndex: Int,
+    ) {
         try {
-            val nextIndex = outgoing.currentMediaItemIndex + 1
-            val before = ArrayList<MediaItem>(nextIndex.coerceAtLeast(0))
-            for (i in 0 until nextIndex.coerceAtMost(outgoing.mediaItemCount)) {
+            if (targetIndex !in 0 until outgoing.mediaItemCount ||
+                outgoing.getMediaItemAt(targetIndex).mediaId != incoming.currentMediaItem?.mediaId
+            ) {
+                abortInto(outgoing, incoming)
+                return
+            }
+
+            val before = ArrayList<MediaItem>(targetIndex.coerceAtLeast(0))
+            for (i in 0 until targetIndex.coerceAtMost(outgoing.mediaItemCount)) {
                 before.add(outgoing.getMediaItemAt(i))
             }
             val after = ArrayList<MediaItem>()
-            for (i in (nextIndex + 1) until outgoing.mediaItemCount) {
+            for (i in (targetIndex + 1) until outgoing.mediaItemCount) {
                 after.add(outgoing.getMediaItemAt(i))
             }
 
@@ -263,6 +332,7 @@ class CrossfadeEngine(
             }
         } finally {
             fadingIntoId = null
+            pendingTargetIndex = null
         }
     }
 
@@ -274,6 +344,7 @@ class CrossfadeEngine(
      */
     private fun abortInto(outgoing: ExoPlayer, incoming: ExoPlayer) {
         fadingIntoId = null
+        pendingTargetIndex = null
         runCatching {
             incoming.stop()
             incoming.clearMediaItems()
@@ -294,6 +365,7 @@ class CrossfadeEngine(
         job.cancel()
         fadeJob = null
         fadingIntoId = null
+        pendingTargetIndex = null
         runCatching {
             standby.stop()
             standby.clearMediaItems()
@@ -329,5 +401,8 @@ class CrossfadeEngine(
 
         /** Never let the fade run into the track's own end. */
         private const val END_GUARD_MS = 250L
+
+        /** A prepared, warmed next item should become ready almost instantly. */
+        private const val STANDBY_READY_TIMEOUT_MS = 1_500L
     }
 }

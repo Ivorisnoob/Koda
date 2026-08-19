@@ -138,6 +138,7 @@ class MusicService : MediaLibraryService() {
     private var fadeVolumeJob: Job? = null
     private var progressJob: Job? = null
     private var transitionJob: Job? = null
+    private var manualTransitionJob: Job? = null
 
     // Live Update (Android 16+)
     private var musicProgressLiveUpdate: MusicProgressLiveUpdate? = null
@@ -177,6 +178,11 @@ class MusicService : MediaLibraryService() {
          */
         private const val SKIP_FADE_MS = 300L
 
+        /** Manual track changes overlap briefly without making Next feel slow. */
+        private const val MANUAL_CROSSFADE_MS = 500L
+        private const val MANUAL_RESOLVE_WAIT_MS = 1_500L
+        private const val PREVIOUS_RESTART_MS = 3_000L
+
         /**
          * How often the transition watcher checks whether the outgoing track
          * has entered its fade window. Fine enough to place the start of a
@@ -199,6 +205,11 @@ class MusicService : MediaLibraryService() {
         const val CMD_SLEEP_TIMER_SET = "com.ivor.ivormusic.SLEEP_TIMER_SET"
         const val CMD_SLEEP_TIMER_CANCEL = "com.ivor.ivormusic.SLEEP_TIMER_CANCEL"
         const val ARG_SLEEP_TIMER_MINUTES = "sleep_timer_minutes"
+
+        const val CMD_SKIP_NEXT = "com.ivor.ivormusic.SKIP_NEXT"
+        const val CMD_SKIP_PREVIOUS = "com.ivor.ivormusic.SKIP_PREVIOUS"
+        const val CMD_SKIP_TO_INDEX = "com.ivor.ivormusic.SKIP_TO_INDEX"
+        const val ARG_SKIP_INDEX = "skip_index"
 
         /** Session-extras keys the timer state is published under. */
         const val EXTRA_SLEEP_TIMER_ENDS_AT = "sleep_timer_ends_at"
@@ -345,6 +356,7 @@ class MusicService : MediaLibraryService() {
         fadeVolumeJob?.cancel()
         progressJob?.cancel()
         transitionJob?.cancel()
+        manualTransitionJob?.cancel()
         sleepTimerJob?.cancel()
         audioFocus.abandon()
         // Cancel the scopes themselves — they host the preference collectors and
@@ -390,15 +402,20 @@ class MusicService : MediaLibraryService() {
         // disk shortly after they start playing. Audio bitrates keep 5 minutes
         // of samples at a few MB of RAM, so time thresholds can safely win
         // over size ones.
-        val loadControl = DefaultLoadControl.Builder()
-            .setBufferDurationsMs(
-                300_000, // Min buffer 5min (== max: continuous top-up)
-                300_000, // Max buffer 5min
-                500,     // Buffer for Playback: 0.5s (near-instant start)
-                3000     // Buffer for Rebuffer: 3s
-            )
-            .setPrioritizeTimeOverSizeThresholds(true)
-            .build()
+        // A LoadControl is stateful and may belong to only one playback
+        // thread. Crossfade owns two ExoPlayers, so the factory must build one
+        // per player rather than sharing a single instance between them.
+        val buildLoadControl = {
+            DefaultLoadControl.Builder()
+                .setBufferDurationsMs(
+                    300_000, // Min buffer 5min (== max: continuous top-up)
+                    300_000, // Max buffer 5min
+                    500,     // Buffer for Playback: 0.5s (near-instant start)
+                    3000     // Buffer for Rebuffer: 3s
+                )
+                .setPrioritizeTimeOverSizeThresholds(true)
+                .build()
+        }
 
         val renderersFactory = DefaultRenderersFactory(this)
             .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF)
@@ -474,7 +491,7 @@ class MusicService : MediaLibraryService() {
                 .setMediaSourceFactory(
                     DefaultMediaSourceFactory(this).setDataSourceFactory(smartDataSourceFactory)
                 )
-                .setLoadControl(loadControl)
+                .setLoadControl(buildLoadControl())
                 .setAudioAttributes(AudioAttributes.DEFAULT, false)
                 .setHandleAudioBecomingNoisy(true)
                 .build()
@@ -1066,6 +1083,9 @@ class MusicService : MediaLibraryService() {
                 MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS.buildUpon()
                     .add(SessionCommand(CMD_SLEEP_TIMER_SET, Bundle.EMPTY))
                     .add(SessionCommand(CMD_SLEEP_TIMER_CANCEL, Bundle.EMPTY))
+                    .add(SessionCommand(CMD_SKIP_NEXT, Bundle.EMPTY))
+                    .add(SessionCommand(CMD_SKIP_PREVIOUS, Bundle.EMPTY))
+                    .add(SessionCommand(CMD_SKIP_TO_INDEX, Bundle.EMPTY))
                     .build()
 
             return MediaSession.ConnectionResult.accept(
@@ -1098,7 +1118,38 @@ class MusicService : MediaLibraryService() {
                 clearSleepTimer()
                 Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
             }
+            CMD_SKIP_NEXT -> {
+                requestManualSkip(forward = true)
+                Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+            }
+            CMD_SKIP_PREVIOUS -> {
+                requestManualSkip(forward = false)
+                Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+            }
+            CMD_SKIP_TO_INDEX -> {
+                requestManualTransition(args.getInt(ARG_SKIP_INDEX, C.INDEX_UNSET))
+                Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+            }
             else -> super.onCustomCommand(session, controller, customCommand, args)
+        }
+
+        /** Route Bluetooth and Android Auto skips through the same short overlap. */
+        override fun onPlayerCommandRequest(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            playerCommand: Int,
+        ): Int = when (playerCommand) {
+            Player.COMMAND_SEEK_TO_NEXT,
+            Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM -> {
+                requestManualSkip(forward = true)
+                SessionResult.RESULT_ERROR_NOT_SUPPORTED
+            }
+            Player.COMMAND_SEEK_TO_PREVIOUS,
+            Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM -> {
+                requestManualSkip(forward = false)
+                SessionResult.RESULT_ERROR_NOT_SUPPORTED
+            }
+            else -> super.onPlayerCommandRequest(session, controller, playerCommand)
         }
 
         override fun onAddMediaItems(
@@ -1492,6 +1543,89 @@ class MusicService : MediaLibraryService() {
         }
     }
 
+    /** Resolve Previous/Next against the audible queue, including rapid taps. */
+    private fun requestManualSkip(forward: Boolean) {
+        val current = player
+        val pendingIndex = engine.pendingTargetIndex
+        val baseIndex = pendingIndex ?: current.currentMediaItemIndex
+
+        if (!forward && pendingIndex == null && current.currentPosition > PREVIOUS_RESTART_MS) {
+            engine.cancelTransition()
+            current.seekTo(0L)
+            current.play()
+            return
+        }
+
+        val targetIndex = when {
+            pendingIndex != null -> if (forward) baseIndex + 1 else baseIndex - 1
+            current.repeatMode == Player.REPEAT_MODE_ONE -> {
+                if (forward) baseIndex + 1 else baseIndex - 1
+            }
+            forward -> current.getNextMediaItemIndex()
+            else -> current.getPreviousMediaItemIndex()
+        }
+        requestManualTransition(targetIndex)
+    }
+
+    /**
+     * Briefly overlap the currently audible track with a user-requested queue
+     * item. The normal crossfade preference deliberately does not gate this:
+     * even with automatic crossfade off, a manual track change should avoid a
+     * click without making the control feel delayed.
+     */
+    private fun requestManualTransition(targetIndex: Int) {
+        val current = player
+        if (targetIndex !in 0 until current.mediaItemCount) return
+        if (targetIndex == current.currentMediaItemIndex) {
+            current.seekTo(0L)
+            current.play()
+            return
+        }
+
+        manualTransitionJob?.cancel()
+        engine.cancelTransition()
+        manualTransitionJob = serviceScope.launch {
+            val outgoing = player
+            if (targetIndex !in 0 until outgoing.mediaItemCount) return@launch
+            val original = outgoing.getMediaItemAt(targetIndex)
+
+            val target = if (isPlaceholder(original.localConfiguration?.uri)) {
+                withTimeoutOrNull(MANUAL_RESOLVE_WAIT_MS) {
+                    getOrStartResolution(original).await()
+                }
+            } else {
+                original
+            }
+
+            if (target == null ||
+                player !== outgoing ||
+                targetIndex !in 0 until outgoing.mediaItemCount ||
+                outgoing.getMediaItemAt(targetIndex).mediaId != original.mediaId
+            ) {
+                fallbackManualJump(targetIndex)
+                return@launch
+            }
+
+            if (target !== original) outgoing.replaceMediaItem(targetIndex, target)
+            val canOverlap = outgoing.isPlaying && engine.startTransition(
+                nextItem = target,
+                durationMs = MANUAL_CROSSFADE_MS,
+                targetIndex = targetIndex,
+            )
+            if (!canOverlap) fallbackManualJump(targetIndex)
+        }
+    }
+
+    /** Defined degraded path for an unresolved, paused, or unready target. */
+    private fun fallbackManualJump(targetIndex: Int) {
+        val current = player
+        if (targetIndex !in 0 until current.mediaItemCount) return
+        engine.cancelTransition()
+        current.volume = 0f
+        current.seekTo(targetIndex, 0L)
+        current.play()
+    }
+
     /**
      * A transition finished and the session now points at the other engine.
      *
@@ -1538,8 +1672,8 @@ class MusicService : MediaLibraryService() {
                 val remaining = duration - current.currentPosition
                 if (remaining > crossfadeDurationMs || remaining <= 0) continue
 
-                val nextIndex = current.currentMediaItemIndex + 1
-                if (nextIndex >= current.mediaItemCount) continue
+                val nextIndex = current.getNextMediaItemIndex()
+                if (nextIndex !in 0 until current.mediaItemCount) continue
                 val nextItem = current.getMediaItemAt(nextIndex)
                 // An unresolved item has no stream to fade in. Let the normal
                 // advance happen and let validateAndPlayCurrentItem resolve it.
