@@ -37,6 +37,8 @@ import androidx.compose.material.icons.rounded.FlashOn
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.FolderOff
 import androidx.compose.material.icons.rounded.GraphicEq
+import androidx.compose.material.icons.rounded.VolumeUp
+import androidx.compose.material.icons.rounded.HdrOn
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.HighQuality
 import androidx.compose.material.icons.rounded.Info
@@ -375,8 +377,12 @@ internal fun PlayerSettingsPage(
 internal fun PlaybackSettingsPage(
     crossfadeEnabled: Boolean,
     onCrossfadeEnabledToggle: (Boolean) -> Unit,
+    crossfadeAuto: Boolean,
+    onCrossfadeAutoChange: (Boolean) -> Unit,
     crossfadeDurationMs: Int,
     onCrossfadeDurationChange: (Int) -> Unit,
+    normalizeVolume: Boolean,
+    onNormalizeVolumeToggle: (Boolean) -> Unit,
     autoLoadQueue: Boolean,
     onAutoLoadQueueToggle: (Boolean) -> Unit,
     saveMusicHistory: Boolean,
@@ -397,45 +403,107 @@ internal fun PlaybackSettingsPage(
         item {
             SettingsSection(title = "Playback") {
                 SettingsCard {
-                    SettingsToggleRow(
+                    SettingsRow(
                         icon = Icons.Rounded.GraphicEq,
-                        title = "Crossfade",
-                        subtitle = "Smoothly fade between songs",
-                        enabled = crossfadeEnabled,
-                        onToggle = onCrossfadeEnabledToggle
+                        title = "Song transitions",
+                        subtitle = when {
+                            !crossfadeEnabled -> "Songs change without an overlap"
+                            crossfadeAuto -> "AutoMix adapts to each song, up to 15s"
+                            else -> "Always overlap by ${crossfadeDurationMs / 1000}s"
+                        },
+                        onClick = {
+                            if (crossfadeEnabled) {
+                                onCrossfadeEnabledToggle(false)
+                            } else {
+                                onCrossfadeAutoChange(true)
+                                onCrossfadeEnabledToggle(true)
+                            }
+                        },
                     )
 
-                    AnimatedVisibility(
-                        visible = crossfadeEnabled,
-                        enter = fadeIn(tween(200)) + slideInVertically(
-                            initialOffsetY = { -it / 4 },
-                            animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy)
-                        ),
-                        exit = fadeOut(tween(150))
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
                     ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 8.dp)
+                        val selectedIndex = when {
+                            !crossfadeEnabled -> 0
+                            crossfadeAuto -> 1
+                            else -> 2
+                        }
+                        val labels = listOf("Off", "AutoMix", "Manual")
+                        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                            labels.forEachIndexed { index, label ->
+                                SegmentedButton(
+                                    selected = selectedIndex == index,
+                                    onClick = {
+                                        when (index) {
+                                            0 -> onCrossfadeEnabledToggle(false)
+                                            1 -> {
+                                                onCrossfadeAutoChange(true)
+                                                onCrossfadeEnabledToggle(true)
+                                            }
+                                            2 -> {
+                                                onCrossfadeAutoChange(false)
+                                                onCrossfadeEnabledToggle(true)
+                                            }
+                                        }
+                                    },
+                                    shape = SegmentedButtonDefaults.itemShape(
+                                        index = index,
+                                        count = labels.size,
+                                    ),
+                                    icon = {
+                                        SegmentedButtonDefaults.Icon(active = selectedIndex == index) {}
+                                    },
+                                ) {
+                                    Text(label)
+                                }
+                            }
+                        }
+
+                        AnimatedVisibility(
+                            visible = crossfadeEnabled && !crossfadeAuto,
+                            enter = fadeIn(tween(200)) + slideInVertically(
+                                initialOffsetY = { -it / 4 },
+                                animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy)
+                            ),
+                            exit = fadeOut(tween(150))
                         ) {
-                            Text(
-                                text = "Duration: ${crossfadeDurationMs / 1000}s",
-                                color = MaterialTheme.colorScheme.onBackground,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Medium
-                            )
-                            Slider(
-                                value = crossfadeDurationMs.toFloat(),
-                                onValueChange = { onCrossfadeDurationChange(it.toInt()) },
-                                valueRange = 1000f..12000f,
-                                steps = 10,
-                                colors = SliderDefaults.colors(
-                                    thumbColor = MaterialTheme.colorScheme.primary,
-                                    activeTrackColor = MaterialTheme.colorScheme.primary
+                            Column(modifier = Modifier.padding(top = 12.dp)) {
+                                Text(
+                                    text = "Duration: ${crossfadeDurationMs / 1000}s",
+                                    color = MaterialTheme.colorScheme.onBackground,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Medium
                                 )
-                            )
+                                Slider(
+                                    value = crossfadeDurationMs.toFloat(),
+                                    onValueChange = { onCrossfadeDurationChange(it.toInt()) },
+                                    valueRange = 1000f..15000f,
+                                    steps = 13,
+                                    colors = SliderDefaults.colors(
+                                        thumbColor = MaterialTheme.colorScheme.primary,
+                                        activeTrackColor = MaterialTheme.colorScheme.primary
+                                    )
+                                )
+                            }
                         }
                     }
+
+                    SettingsDivider()
+
+                    SettingsToggleRow(
+                        icon = Icons.Rounded.VolumeUp,
+                        title = "Normalise volume",
+                        // Says what it does to the sound rather than naming the
+                        // mechanism: nobody is looking for "loudness
+                        // normalisation to -14 LKFS", they are looking for the
+                        // reason one song is twice as loud as the last.
+                        subtitle = "Even out loud and quiet tracks",
+                        enabled = normalizeVolume,
+                        onToggle = onNormalizeVolumeToggle
+                    )
 
                     SettingsDivider()
 

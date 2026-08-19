@@ -147,7 +147,9 @@ class MainActivity : ComponentActivity() {
             val currentCacheSize by themeViewModel.currentCacheSizeBytes.collectAsState()
             val autoLoadQueue by themeViewModel.autoLoadQueue.collectAsState()
             val crossfadeEnabled by themeViewModel.crossfadeEnabled.collectAsState()
+            val crossfadeAuto by themeViewModel.crossfadeAuto.collectAsState()
             val crossfadeDurationMs by themeViewModel.crossfadeDurationMs.collectAsState()
+            val normalizeVolume by themeViewModel.normalizeVolume.collectAsState()
             
             val isSystemDark = isSystemInDarkTheme()
             val isDarkTheme = remember(themeMode, isSystemDark) {
@@ -240,9 +242,13 @@ class MainActivity : ComponentActivity() {
                         autoLoadQueue = autoLoadQueue,
                         onAutoLoadQueueToggle = { themeViewModel.setAutoLoadQueue(it) },
                         crossfadeEnabled = crossfadeEnabled,
-                        onCrossfadeEnabledToggle = { themeViewModel.toggleCrossfadeEnabled() },
+                        onCrossfadeEnabledToggle = { themeViewModel.setCrossfadeEnabled(it) },
+                        crossfadeAuto = crossfadeAuto,
+                        onCrossfadeAutoChange = { themeViewModel.setCrossfadeAuto(it) },
                         crossfadeDurationMs = crossfadeDurationMs,
                         onCrossfadeDurationChange = { themeViewModel.setCrossfadeDuration(it) },
+                        normalizeVolume = normalizeVolume,
+                        onNormalizeVolumeToggle = { themeViewModel.setNormalizeVolume(it) },
                         onboardingCompleted = onboardingCompleted,
                         onOnboardingCompleted = { themeViewModel.setOnboardingCompleted(it) },
                         localOnlyMode = localOnlyMode,
@@ -370,8 +376,12 @@ fun MusicApp(
     onAutoLoadQueueToggle: (Boolean) -> Unit,
     crossfadeEnabled: Boolean,
     onCrossfadeEnabledToggle: (Boolean) -> Unit,
+    crossfadeAuto: Boolean,
+    onCrossfadeAutoChange: (Boolean) -> Unit,
     crossfadeDurationMs: Int,
     onCrossfadeDurationChange: (Int) -> Unit,
+    normalizeVolume: Boolean,
+    onNormalizeVolumeToggle: (Boolean) -> Unit,
     oemFixEnabled: Boolean,
     onOemFixEnabledToggle: (Boolean) -> Unit,
     manualScanEnabled: Boolean,
@@ -707,8 +717,12 @@ fun MusicApp(
                     onAutoLoadQueueToggle = onAutoLoadQueueToggle,
                     crossfadeEnabled = crossfadeEnabled,
                     onCrossfadeEnabledToggle = onCrossfadeEnabledToggle,
+                    crossfadeAuto = crossfadeAuto,
+                    onCrossfadeAutoChange = onCrossfadeAutoChange,
                     crossfadeDurationMs = crossfadeDurationMs,
                     onCrossfadeDurationChange = onCrossfadeDurationChange,
+                    normalizeVolume = normalizeVolume,
+                    onNormalizeVolumeToggle = onNormalizeVolumeToggle,
                     oemFixEnabled = oemFixEnabled,
                     onOemFixEnabledToggle = onOemFixEnabledToggle,
                     manualScanEnabled = manualScanEnabled,

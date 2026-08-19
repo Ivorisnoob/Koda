@@ -113,9 +113,15 @@ class ThemePreferences(context: Context) {
     // Crossfade Settings
     private val _crossfadeEnabled = MutableStateFlow(getCrossfadeEnabledPreference())
     val crossfadeEnabled: StateFlow<Boolean> = _crossfadeEnabled.asStateFlow()
+
+    private val _crossfadeAuto = MutableStateFlow(getCrossfadeAutoPreference())
+    val crossfadeAuto: StateFlow<Boolean> = _crossfadeAuto.asStateFlow()
     
     private val _crossfadeDurationMs = MutableStateFlow(getCrossfadeDurationPreference())
     val crossfadeDurationMs: StateFlow<Int> = _crossfadeDurationMs.asStateFlow()
+
+    private val _normalizeVolume = MutableStateFlow(getNormalizeVolumePreference())
+    val normalizeVolume: StateFlow<Boolean> = _normalizeVolume.asStateFlow()
 
     private val _oemFixEnabled = MutableStateFlow(getOemFixEnabledPreference())
     val oemFixEnabled: StateFlow<Boolean> = _oemFixEnabled.asStateFlow()
@@ -170,7 +176,9 @@ class ThemePreferences(context: Context) {
             KEY_MAX_CACHE_SIZE_MB -> _maxCacheSizeMb.value = getMaxCacheSizeMbPreference()
             KEY_AUTO_LOAD_QUEUE -> _autoLoadQueue.value = getAutoLoadQueuePreference()
             KEY_CROSSFADE_ENABLED -> _crossfadeEnabled.value = getCrossfadeEnabledPreference()
+            KEY_CROSSFADE_AUTO -> _crossfadeAuto.value = getCrossfadeAutoPreference()
             KEY_CROSSFADE_DURATION -> _crossfadeDurationMs.value = getCrossfadeDurationPreference()
+            KEY_NORMALIZE_VOLUME -> _normalizeVolume.value = getNormalizeVolumePreference()
             KEY_OEM_FIX_ENABLED -> _oemFixEnabled.value = getOemFixEnabledPreference()
             KEY_MANUAL_SCAN_ENABLED -> _manualScanEnabled.value = getManualScanEnabledPreference()
             KEY_ONBOARDING_COMPLETED -> _onboardingCompleted.value = getOnboardingCompletedPreference()
@@ -398,7 +406,11 @@ class ThemePreferences(context: Context) {
         private const val KEY_MAX_CACHE_SIZE_MB = "max_cache_size_mb"
         private const val KEY_AUTO_LOAD_QUEUE = "auto_load_queue"
         private const val KEY_CROSSFADE_ENABLED = "crossfade_enabled"
+        private const val KEY_CROSSFADE_AUTO = "crossfade_auto"
         private const val KEY_CROSSFADE_DURATION = "crossfade_duration"
+        private const val MIN_CROSSFADE_DURATION_MS = 1_000
+        private const val MAX_CROSSFADE_DURATION_MS = 15_000
+        private const val KEY_NORMALIZE_VOLUME = "normalize_volume"
         private const val KEY_OEM_FIX_ENABLED = "oem_fix_enabled"
         private const val KEY_MANUAL_SCAN_ENABLED = "manual_scan_enabled"
         private const val KEY_ONBOARDING_COMPLETED = "onboarding_completed"
@@ -1053,14 +1065,43 @@ class ThemePreferences(context: Context) {
     fun toggleCrossfadeEnabled() {
         setCrossfadeEnabled(!_crossfadeEnabled.value)
     }
+
+    private fun getCrossfadeAutoPreference(): Boolean {
+        return prefs.getBoolean(KEY_CROSSFADE_AUTO, true)
+    }
+
+    fun setCrossfadeAuto(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_CROSSFADE_AUTO, enabled).apply()
+        _crossfadeAuto.value = enabled
+    }
     
     private fun getCrossfadeDurationPreference(): Int {
-        return prefs.getInt(KEY_CROSSFADE_DURATION, 3000) // Default 3000ms
+        return prefs.getInt(KEY_CROSSFADE_DURATION, 3000)
+            .coerceIn(MIN_CROSSFADE_DURATION_MS, MAX_CROSSFADE_DURATION_MS)
     }
     
     fun setCrossfadeDuration(durationMs: Int) {
-        prefs.edit().putInt(KEY_CROSSFADE_DURATION, durationMs).apply()
-        _crossfadeDurationMs.value = durationMs
+        val bounded = durationMs.coerceIn(MIN_CROSSFADE_DURATION_MS, MAX_CROSSFADE_DURATION_MS)
+        prefs.edit().putInt(KEY_CROSSFADE_DURATION, bounded).apply()
+        _crossfadeDurationMs.value = bounded
+    }
+
+    /**
+     * Even out the volume between tracks, using the loudness YouTube already
+     * measured for each one (see `TrackLoudnessStore`).
+     *
+     * On by default, as it is in every player that offers it. The correction
+     * only ever attenuates, so the effect on an existing install is that the
+     * loudest masters stop jumping out - not that anything gets louder than it
+     * was.
+     */
+    private fun getNormalizeVolumePreference(): Boolean {
+        return prefs.getBoolean(KEY_NORMALIZE_VOLUME, true)
+    }
+
+    fun setNormalizeVolume(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_NORMALIZE_VOLUME, enabled).apply()
+        _normalizeVolume.value = enabled
     }
 
     private fun getOemFixEnabledPreference(): Boolean {
