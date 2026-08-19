@@ -42,7 +42,7 @@ object AudioProfiler {
     private const val TAG = "AudioProfiler"
 
     /** How much of each end to decode. */
-    private const val HEAD_WINDOW_US = 8_000_000L
+    private const val HEAD_WINDOW_US = 15_000_000L
     private const val TAIL_WINDOW_US = 20_000_000L
 
     /** Envelope resolution. Fine enough to see a fade, coarse enough to be cheap. */
@@ -374,7 +374,11 @@ object AudioProfiler {
         val imag = DoubleArray(FFT_SIZE)
         var frameCount = 0
         var offset = 0
-        while (offset + FFT_SIZE <= samples.size) {
+        // The longer head window is for silence/rhythm coverage. Eight seconds
+        // already gives chroma hundreds of spectra and avoids nearly doubling
+        // the most expensive part of profiling just to support a 15s intro.
+        val keySampleLimit = minOf(samples.size, sampleRate * KEY_WINDOW_SECONDS)
+        while (offset + FFT_SIZE <= keySampleLimit) {
             var energy = 0.0
             for (i in 0 until FFT_SIZE) {
                 val window = 0.5 - 0.5 * cos(2.0 * PI * i / (FFT_SIZE - 1))
@@ -479,6 +483,7 @@ object AudioProfiler {
     private val MINOR_KEY = doubleArrayOf(6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17)
     private const val FFT_SIZE = 4096
     private const val FFT_HOP = 2048
+    private const val KEY_WINDOW_SECONDS = 8
     private const val MIN_BPM = 70f
     private const val MAX_BPM = 180f
     private const val MIN_TEMPO_CONFIDENCE_TO_STORE = 0.12f

@@ -195,7 +195,7 @@ class MusicService : MediaLibraryService() {
         private const val MANUAL_RESOLVE_WAIT_MS = 1_500L
         private const val PREVIOUS_RESTART_MS = 3_000L
         private const val AUTO_MIX_FALLBACK_OVERLAP_MS = 3_000L
-        private const val AUTO_MIX_MAX_OVERLAP_MS = 6_000L
+        private const val AUTO_MIX_MAX_OVERLAP_MS = 15_000L
 
         /**
          * How often the transition watcher checks whether the outgoing track
@@ -1716,7 +1716,7 @@ class MusicService : MediaLibraryService() {
             val incomingStartMs = audioProfileStore.peek(target.mediaId)
                 ?.leadInSilenceMs
                 ?.minus(60L)
-                ?.coerceIn(0L, 7_500L)
+                ?.coerceIn(0L, 15_000L)
                 ?: 0L
             val canOverlap = outgoing.isPlaying && engine.startTransition(
                 nextItem = target,

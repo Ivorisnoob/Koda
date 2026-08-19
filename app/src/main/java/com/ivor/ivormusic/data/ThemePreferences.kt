@@ -408,6 +408,8 @@ class ThemePreferences(context: Context) {
         private const val KEY_CROSSFADE_ENABLED = "crossfade_enabled"
         private const val KEY_CROSSFADE_AUTO = "crossfade_auto"
         private const val KEY_CROSSFADE_DURATION = "crossfade_duration"
+        private const val MIN_CROSSFADE_DURATION_MS = 1_000
+        private const val MAX_CROSSFADE_DURATION_MS = 15_000
         private const val KEY_NORMALIZE_VOLUME = "normalize_volume"
         private const val KEY_OEM_FIX_ENABLED = "oem_fix_enabled"
         private const val KEY_MANUAL_SCAN_ENABLED = "manual_scan_enabled"
@@ -1074,12 +1076,14 @@ class ThemePreferences(context: Context) {
     }
     
     private fun getCrossfadeDurationPreference(): Int {
-        return prefs.getInt(KEY_CROSSFADE_DURATION, 3000) // Default 3000ms
+        return prefs.getInt(KEY_CROSSFADE_DURATION, 3000)
+            .coerceIn(MIN_CROSSFADE_DURATION_MS, MAX_CROSSFADE_DURATION_MS)
     }
     
     fun setCrossfadeDuration(durationMs: Int) {
-        prefs.edit().putInt(KEY_CROSSFADE_DURATION, durationMs).apply()
-        _crossfadeDurationMs.value = durationMs
+        val bounded = durationMs.coerceIn(MIN_CROSSFADE_DURATION_MS, MAX_CROSSFADE_DURATION_MS)
+        prefs.edit().putInt(KEY_CROSSFADE_DURATION, bounded).apply()
+        _crossfadeDurationMs.value = bounded
     }
 
     /**

@@ -92,8 +92,8 @@ data class AudioProfile(
     val version: Int = CURRENT_VERSION
 ) {
     companion object {
-        // Version 3 adds beat-grid, phrase and harmonic measurements. Older
-        // profiles do not contain enough evidence for advanced decisions.
-        const val CURRENT_VERSION = 3
+        // Version 4 extends incoming analysis through the first fifteen
+        // seconds, so older profiles cannot safely drive the longer window.
+        const val CURRENT_VERSION = 4
     }
 }

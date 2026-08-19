@@ -408,7 +408,7 @@ internal fun PlaybackSettingsPage(
                         title = "Song transitions",
                         subtitle = when {
                             !crossfadeEnabled -> "Songs change without an overlap"
-                            crossfadeAuto -> "AutoMix adapts to each song"
+                            crossfadeAuto -> "AutoMix adapts to each song, up to 15s"
                             else -> "Always overlap by ${crossfadeDurationMs / 1000}s"
                         },
                         onClick = {
@@ -480,8 +480,8 @@ internal fun PlaybackSettingsPage(
                                 Slider(
                                     value = crossfadeDurationMs.toFloat(),
                                     onValueChange = { onCrossfadeDurationChange(it.toInt()) },
-                                    valueRange = 1000f..12000f,
-                                    steps = 10,
+                                    valueRange = 1000f..15000f,
+                                    steps = 13,
                                     colors = SliderDefaults.colors(
                                         thumbColor = MaterialTheme.colorScheme.primary,
                                         activeTrackColor = MaterialTheme.colorScheme.primary

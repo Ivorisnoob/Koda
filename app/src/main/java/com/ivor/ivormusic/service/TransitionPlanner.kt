@@ -183,12 +183,12 @@ object TransitionPlanner {
     }
 
     private const val MIN_OVERLAP_MS = 750L
-    private const val MAX_OVERLAP_MS = 12_000L
+    private const val MAX_OVERLAP_MS = 15_000L
     private const val MIN_OUTRO_BOUNDARY_MS = 750L
-    private const val MAX_OUTRO_BOUNDARY_MS = 12_000L
+    private const val MAX_OUTRO_BOUNDARY_MS = 15_000L
     private const val NATURAL_FADE_THRESHOLD_MS = 900L
     private const val NATURAL_FADE_OVERLAP_MS = 1_000L
-    private const val MAX_LEAD_IN_SKIP_MS = 7_500L
+    private const val MAX_LEAD_IN_SKIP_MS = 15_000L
     private const val ATTACK_GUARD_MS = 60L
     private const val MIN_TEMPO_CONFIDENCE = 0.35f
     private const val MIN_GRID_CONFIDENCE = 0.4f
