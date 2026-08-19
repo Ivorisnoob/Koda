@@ -39,6 +39,7 @@ import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Radio
 import androidx.compose.material.icons.rounded.Shuffle
+import androidx.compose.material.icons.rounded.SmartDisplay
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledIconButton
@@ -76,6 +77,8 @@ import androidx.compose.material3.toShape
 import coil.compose.AsyncImage
 import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.ui.library.songRowClick
+import com.ivor.ivormusic.ui.channel.CreatorHeader
+import com.ivor.ivormusic.ui.channel.creatorMetadata
 import com.ivor.ivormusic.ui.home.HomeViewModel
 import kotlinx.coroutines.launch
 
@@ -105,7 +108,17 @@ fun ArtistScreen(
     onOpenAlbum: ((com.ivor.ivormusic.data.PlaylistDisplayItem) -> Unit)? = null,
     viewModel: HomeViewModel? = null,
     modifier: Modifier = Modifier,
-    onSongLongPress: ((Song) -> Unit)? = null
+    onSongLongPress: ((Song) -> Unit)? = null,
+    /**
+     * Open this creator's video-mode channel page.
+     *
+     * The other half of the cross-link on the channel screen. The two stay
+     * separate surfaces because a discography and an upload feed are genuinely
+     * different content, but they share [CreatorHeader] and this link, so
+     * arriving at a musician from either mode does not feel like arriving at
+     * two different people.
+     */
+    onOpenChannel: ((channelId: String) -> Unit)? = null
 ) {
     // Theme colors
     val backgroundColor = MaterialTheme.colorScheme.background
@@ -125,6 +138,13 @@ fun ArtistScreen(
     var canLoadMoreRemote by remember { mutableStateOf(true) }
     var visibleSongCount by remember { mutableIntStateOf(20) }
     var hasLocalSongs by remember { mutableStateOf(false) }
+    // The canonical UC id behind this artist, once something has resolved one.
+    // Local-only artists never get one, which is why every use of it is guarded
+    // rather than assumed.
+    var resolvedChannelId by remember { mutableStateOf<String?>(null) }
+    var channelHeader by remember {
+        mutableStateOf<com.ivor.ivormusic.data.ChannelHeader?>(null)
+    }
     val scope = rememberCoroutineScope()
     
     // Fetch songs - first check local files, then fetch from internet
@@ -138,6 +158,9 @@ fun ArtistScreen(
             it.artist.equals(artistName, ignoreCase = true) &&
                     it.source == com.ivor.ivormusic.data.SongSource.LOCAL
         }
+
+        channelHeader = null
+        resolvedChannelId = null
 
         if (localArtistSongs.isNotEmpty()) {
             // Use local songs if available
@@ -154,6 +177,7 @@ fun ArtistScreen(
                         ?: results.firstOrNull())?.id
                 }
 
+            resolvedChannelId = resolvedId
             if (resolvedId != null) {
                 val (fetchedSongs, fetchedAlbumsList) = viewModel.getArtistDetails(resolvedId)
                 artistSongs = fetchedSongs
@@ -172,6 +196,15 @@ fun ArtistScreen(
         }
     }
     
+    // The identity half of the header, from the same channel browse the video
+    // mode page uses. One request, and the only reason this screen makes it:
+    // without it a musician has a banner and a verified tick on one side of the
+    // app and neither on the other.
+    LaunchedEffect(resolvedChannelId) {
+        val id = resolvedChannelId ?: return@LaunchedEffect
+        channelHeader = viewModel?.getChannelHeader(id)
+    }
+
     // Get unique albums (Local + Fetched)
     val albums = remember(artistSongs, hasLocalSongs, fetchedAlbums) {
         if (hasLocalSongs) {
@@ -217,42 +250,110 @@ fun ArtistScreen(
                 contentPadding = PaddingValues(bottom = 220.dp)
             ) {
                 // ========== HERO HEADER ==========
+                // The same CreatorHeader the channel page uses. What differs is
+                // the actions slot: a discography has Play, Shuffle and Radio to
+                // offer, which an upload feed does not, and the header is built
+                // to take exactly that difference.
                 item {
                     val radioSeed = artistSongs.firstOrNull {
                         it.source == com.ivor.ivormusic.data.SongSource.YOUTUBE
                     }
-                    ArtistHeroHeader(
-                        artistName = artistName,
-                        songCount = artistSongs.size,
-                        albumCount = albums.size,
-                        thumbnails = sampleThumbnails,
-                        primaryColor = primaryColor,
-                        primaryContainerColor = primaryContainerColor,
-                        tertiaryContainerColor = tertiaryContainerColor,
-                        textColor = textColor,
-                        secondaryTextColor = secondaryTextColor,
-                        onBack = onBack,
-                        onPlayAll = {
-                            if (artistSongs.isNotEmpty()) {
-                                onPlayQueue(artistSongs, null)
-                            }
-                        },
-                        onShuffle = {
-                            if (artistSongs.isNotEmpty()) {
-                                onPlayQueue(artistSongs.shuffled(), null)
-                            }
-                        },
-                        onStartRadio = if (radioSeed != null && viewModel != null) {
-                            {
-                                scope.launch {
-                                    val radio = viewModel.getRadioSongs(radioSeed.id)
-                                    if (radio.isNotEmpty()) {
-                                        onPlayQueue(listOf(radioSeed) + radio, radioSeed)
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        CreatorHeader(
+                            name = artistName.takeIf { !it.startsWith("Unknown") }
+                                ?: "Unknown Artist",
+                            // The channel avatar when there is one, and the
+                            // artwork of what they made when there is not -
+                            // which is every local-library artist.
+                            avatarUrl = channelHeader?.avatarUrl
+                                ?: sampleThumbnails.firstOrNull(),
+                            bannerUrl = channelHeader?.bannerUrl,
+                            isVerified = channelHeader?.isVerified == true,
+                            metadata = creatorMetadata(
+                                channelHeader?.subscriberCountText,
+                                "${artistSongs.size} songs",
+                                albums.size.takeIf { it > 0 }?.let { "$it albums" }
+                            ),
+                            actions = {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    PlaySplitButton(
+                                        onPlay = {
+                                            if (artistSongs.isNotEmpty()) {
+                                                onPlayQueue(artistSongs, null)
+                                            }
+                                        },
+                                        onShuffle = {
+                                            if (artistSongs.isNotEmpty()) {
+                                                onPlayQueue(artistSongs.shuffled(), null)
+                                            }
+                                        },
+                                        onStartRadio = if (radioSeed != null && viewModel != null) {
+                                            {
+                                                scope.launch {
+                                                    val radio = viewModel.getRadioSongs(radioSeed.id)
+                                                    if (radio.isNotEmpty()) {
+                                                        onPlayQueue(listOf(radioSeed) + radio, radioSeed)
+                                                    }
+                                                }
+                                            }
+                                        } else null
+                                    )
+                                    Spacer(Modifier.weight(1f))
+                                    // Only offered once a real channel id has
+                                    // resolved. A local-library artist is a tag
+                                    // on a file and has no channel to open.
+                                    val channelId = resolvedChannelId
+                                    if (onOpenChannel != null && channelId != null) {
+                                        FilledIconButton(
+                                            onClick = { onOpenChannel(channelId) },
+                                            modifier = Modifier.size(48.dp),
+                                            shape = CircleShape,
+                                            colors = IconButtonDefaults.filledIconButtonColors(
+                                                containerColor = MaterialTheme.colorScheme
+                                                    .surfaceContainerHighest,
+                                                contentColor = MaterialTheme.colorScheme
+                                                    .onSurfaceVariant
+                                            )
+                                        ) {
+                                            Icon(
+                                                Icons.Rounded.SmartDisplay,
+                                                contentDescription = "Open YouTube channel",
+                                                modifier = Modifier.size(22.dp)
+                                            )
+                                        }
                                     }
                                 }
                             }
-                        } else null
-                    )
+                        )
+
+                        // Over the banner rather than above it, so the artwork
+                        // starts at the top of the screen the way it does on
+                        // the channel page.
+                        FilledIconButton(
+                            onClick = onBack,
+                            shape = CircleShape,
+                            colors = IconButtonDefaults.filledIconButtonColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+                                    .copy(alpha = 0.85f),
+                                contentColor = MaterialTheme.colorScheme.onSurface
+                            ),
+                            modifier = Modifier
+                                .align(Alignment.TopStart)
+                                .windowInsetsPadding(WindowInsets.statusBars)
+                                .padding(start = 12.dp, top = 8.dp)
+                                .size(44.dp)
+                        ) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Back",
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                    }
                 }
                 
                 // ========== ALBUMS SECTION (Local songs only) ==========
@@ -447,231 +548,6 @@ fun ArtistScreen(
             }
         }
         
-    }
-}
-
-/**
- * 🌟 Expressive Artist Hero Header
- * 
- * Features:
- * - Dynamic gradient background
- * - Floating album art with organic shapes
- * - Large artist name with proper typography
- * - Big centered 8-sided play button
- */
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
-@Composable
-private fun ArtistHeroHeader(
-    artistName: String,
-    songCount: Int,
-    albumCount: Int,
-    thumbnails: List<String>,
-    primaryColor: Color,
-    primaryContainerColor: Color,
-    tertiaryContainerColor: Color,
-    textColor: Color,
-    secondaryTextColor: Color,
-    onBack: () -> Unit,
-    onPlayAll: () -> Unit,
-    onShuffle: () -> Unit = {},
-    onStartRadio: (() -> Unit)? = null
-) {
-    BoxWithConstraints(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(440.dp)
-    ) {
-        // Guard against invalid dimensions during transitions
-        if (maxWidth <= 0.dp || maxHeight <= 0.dp) {
-            return@BoxWithConstraints
-        }
-        
-        // Main content
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .windowInsetsPadding(WindowInsets.statusBars)
-                .padding(horizontal = 20.dp)
-        ) {
-            // Back button
-            FilledIconButton(
-                onClick = onBack,
-                shape = CircleShape,
-                colors = IconButtonDefaults.filledIconButtonColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.9f),
-                    contentColor = MaterialTheme.colorScheme.onSurface
-                ),
-                modifier = Modifier
-                    .padding(top = 8.dp)
-                    .size(48.dp)
-            ) {
-                Icon(
-                    Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Back",
-                    modifier = Modifier.size(24.dp)
-                )
-            }
-            
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            // Artist avatar area with floating thumbnails
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(140.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                // Main artist circle (or music note if no thumbnails)
-                Surface(
-                    modifier = Modifier.size(120.dp),
-                    shape = CircleShape,
-                    color = primaryContainerColor,
-                    shadowElevation = 16.dp
-                ) {
-                    Box(
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (thumbnails.isNotEmpty()) {
-                            AsyncImage(
-                                model = thumbnails.first(),
-                                contentDescription = artistName,
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .clip(CircleShape),
-                                contentScale = ContentScale.Crop
-                            )
-                        } else {
-                            Icon(
-                                Icons.Rounded.Person,
-                                contentDescription = null,
-                                modifier = Modifier.size(56.dp),
-                                tint = primaryColor
-                            )
-                        }
-                    }
-                }
-                
-                // Floating album thumbnails around the main circle
-                if (thumbnails.size > 1) {
-                    Surface(
-                        modifier = Modifier
-                            .size(44.dp)
-                            .offset(x = (-65).dp, y = (-15).dp)
-                            .graphicsLayer { rotationZ = -10f },
-                        shape = CircleShape,
-                        color = tertiaryContainerColor,
-                        shadowElevation = 8.dp
-                    ) {
-                        AsyncImage(
-                            model = thumbnails.getOrNull(1) ?: thumbnails.first(),
-                            contentDescription = null,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .clip(CircleShape),
-                            contentScale = ContentScale.Crop
-                        )
-                    }
-                }
-                
-                if (thumbnails.size > 2) {
-                    Surface(
-                        modifier = Modifier
-                            .size(38.dp)
-                            .offset(x = 70.dp, y = (-25).dp)
-                            .graphicsLayer { rotationZ = 8f },
-                        shape = CircleShape,
-                        color = primaryContainerColor,
-                        shadowElevation = 6.dp
-                    ) {
-                        AsyncImage(
-                            model = thumbnails.getOrNull(2) ?: thumbnails.first(),
-                            contentDescription = null,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .clip(CircleShape),
-                            contentScale = ContentScale.Crop
-                        )
-                    }
-                }
-                
-                if (thumbnails.size > 3) {
-                    Surface(
-                        modifier = Modifier
-                            .size(32.dp)
-                            .offset(x = 75.dp, y = 45.dp)
-                            .graphicsLayer { rotationZ = 5f },
-                        shape = RoundedCornerShape(10.dp),
-                        color = tertiaryContainerColor,
-                        shadowElevation = 4.dp
-                    ) {
-                        AsyncImage(
-                            model = thumbnails.getOrNull(3) ?: thumbnails.first(),
-                            contentDescription = null,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .clip(RoundedCornerShape(10.dp)),
-                            contentScale = ContentScale.Crop
-                        )
-                    }
-                }
-            }
-            
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            // Artist name
-            Text(
-                text = artistName.takeIf { !it.startsWith("Unknown") } ?: "Unknown Artist",
-                style = MaterialTheme.typography.headlineLarge,
-                fontWeight = FontWeight.Bold,
-                color = textColor,
-                textAlign = TextAlign.Center,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.fillMaxWidth()
-            )
-            
-            Spacer(modifier = Modifier.height(6.dp))
-            
-            // Stats row
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    "$songCount songs",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = secondaryTextColor
-                )
-                if (albumCount > 0) {
-                    Text(
-                        " • ",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = secondaryTextColor.copy(alpha = 0.5f)
-                    )
-                    Text(
-                        "$albumCount albums",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = secondaryTextColor
-                    )
-                }
-            }
-            
-            Spacer(modifier = Modifier.height(32.dp))
-        }
-        
-        // Seated Floating Split Button: Play + more play options (M3E split button)
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .offset(y = 28.dp) // Seat it on the edge of the header (half overlap)
-        ) {
-            PlaySplitButton(
-                onPlay = onPlayAll,
-                onShuffle = onShuffle,
-                onStartRadio = onStartRadio
-            )
-        }
     }
 }
 

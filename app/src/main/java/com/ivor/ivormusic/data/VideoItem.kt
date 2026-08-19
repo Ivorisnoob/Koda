@@ -60,6 +60,18 @@ data class VideoItem(
     val dismissal: DismissalTokens? = null
 ) {
     /**
+     * Destination understood by the channel screen.
+     *
+     * Modern feed lockups sometimes omit their creator browse endpoint even
+     * though they still include an avatar. In that case the video id lets the
+     * channel screen resolve the owner from watch metadata without starting or
+     * changing playback.
+     */
+    val channelNavigationReference: String
+        get() = channelId?.takeIf { it.isNotBlank() }
+            ?: "$CHANNEL_REFERENCE_VIDEO_PREFIX$videoId"
+
+    /**
      * High-resolution thumbnail URL.
      */
     val highResThumbnailUrl: String?
@@ -98,6 +110,8 @@ data class VideoItem(
         }
 
     companion object {
+        const val CHANNEL_REFERENCE_VIDEO_PREFIX = "video:"
+
         /**
          * Creates a VideoItem from NewPipe StreamInfoItem data.
          */
@@ -224,10 +238,40 @@ data class VideoQuality(
      * covers 9:16, 4:5 and 1:1, and a box sized for one of those is wrong for
      * the other two.
      */
-    val sourceAspectRatio: Float? = null
+    val sourceAspectRatio: Float? = null,
+    /** Codec reported by the stream provider, for example avc1, vp9 or av01. */
+    val codec: String? = null,
 ) {
     /** Taller than it is wide. Unknown dimensions read as landscape. */
     val isPortrait: Boolean get() = sourceAspectRatio?.let { it > 0f && it < 1f } ?: false
+
+    /** NewPipe calls this container MPEG_4 while InnerTube calls it mp4. */
+    val isMp4Container: Boolean
+        get() = format?.let {
+            it.equals("mp4", ignoreCase = true) ||
+                it.equals("mpeg_4", ignoreCase = true) ||
+                it.equals("video/mp4", ignoreCase = true)
+        } == true
+
+    /**
+     * Android's MP4 muxer accepts AVC and HEVC video, but not the VP9/AV1
+     * variants YouTube may also place in an MP4 container.
+     *
+     * A missing codec remains eligible for older providers that never exposed
+     * it; all current NewPipe and direct InnerTube entries populate it.
+     */
+    val isMp4DownloadCompatible: Boolean
+        get() {
+            if (!isMp4Container) return false
+            val normalizedCodec = codec?.lowercase().orEmpty()
+            return normalizedCodec.isBlank() ||
+                normalizedCodec.contains("avc1") ||
+                normalizedCodec.contains("avc3") ||
+                normalizedCodec.contains("h264") ||
+                normalizedCodec.contains("hev1") ||
+                normalizedCodec.contains("hvc1") ||
+                normalizedCodec.contains("hevc")
+        }
 }
 
 /**

@@ -10,6 +10,8 @@ import org.schabi.newpipe.extractor.NewPipe
 import org.schabi.newpipe.extractor.ServiceList
 import org.schabi.newpipe.extractor.stream.StreamInfo
 import org.schabi.newpipe.extractor.stream.AudioStream
+import org.schabi.newpipe.extractor.stream.AudioTrackType
+import org.schabi.newpipe.extractor.services.youtube.YoutubeParsingHelper
 import org.schabi.newpipe.extractor.search.SearchInfo
 import org.schabi.newpipe.extractor.stream.StreamInfoItem
 import org.schabi.newpipe.extractor.playlist.PlaylistInfo
@@ -50,6 +52,7 @@ class YouTubeRepository(private val context: Context) {
         // Regular YouTube filters
         const val FILTER_YOUTUBE_VIDEOS = "videos"
         const val FILTER_YOUTUBE_PLAYLISTS = "playlists"
+        const val FILTER_YOUTUBE_CHANNELS = "channels"
         
         /**
          * Public InnerTube API Key for WEB client.
@@ -81,8 +84,9 @@ class YouTubeRepository(private val context: Context) {
 
         // Current InnerTube client versions (kept in sync with yt-dlp upstream).
         // YouTube rejects clients older than a few months; bump these together when refreshing.
-        private const val WEB_REMIX_VERSION = "1.20260114.03.00"
-        private const val WEB_VERSION = "2.20260114.08.00"
+        // Re-derived from the YouTube bootstrap HTML in August 2026.
+        private const val WEB_REMIX_VERSION = "1.20260816.07.00"
+        private const val WEB_VERSION = "2.20260817.01.00"
 
         // browse params selecting a channel's Videos tab (protobuf: "videos")
         private const val CHANNEL_VIDEOS_TAB_PARAMS = "EgZ2aWRlb3PyBgQKAjoA"
@@ -144,6 +148,15 @@ class YouTubeRepository(private val context: Context) {
         // matching the URL's issuing client so YouTube doesn't 403 on UA mismatch.
         const val PLAYBACK_USER_AGENT = IOS_USER_AGENT
 
+        // These match the clients used by NewPipe Extractor v0.26.5. Stream
+        // URLs carry the client name in `c=` and GVS can reject a request whose
+        // User-Agent belongs to a different client family.
+        private const val NEWPIPE_ANDROID_USER_AGENT =
+            "com.google.android.youtube/21.03.36 (Linux; U; Android 15; GB) gzip"
+        private const val NEWPIPE_VISIONOS_USER_AGENT =
+            "com.google.visionos.youtube/1.02(RealityDevice14,1; U; CPU visionOS " +
+                "25_6_0 like Mac OS X; GB)"
+
         /**
          * Returns the User-Agent ExoPlayer must use when fetching a googlevideo
          * URL. YouTube binds resolved stream URLs to the client tagged in the
@@ -156,7 +169,8 @@ class YouTubeRepository(private val context: Context) {
                 "IOS" -> IOS_USER_AGENT
                 "ANDROID_VR" -> ANDROID_VR_USER_AGENT
                 "ANDROID", "ANDROID_TESTSUITE", "ANDROID_MUSIC" ->
-                    "com.google.android.youtube/19.09.37 (Linux; U; Android 14) gzip"
+                    NEWPIPE_ANDROID_USER_AGENT
+                "VISIONOS" -> NEWPIPE_VISIONOS_USER_AGENT
                 "TVHTML5_SIMPLY_EMBEDDED_PLAYER", "TVHTML5_SIMPLY_EMBEDDED", "TVHTML5" ->
                     TV_EMBED_USER_AGENT
                 "WEB_EMBEDDED_PLAYER", "WEB", "WEB_REMIX" -> BROWSER_USER_AGENT
@@ -644,65 +658,52 @@ class YouTubeRepository(private val context: Context) {
      * Get the best audio stream URL for a video.
      * Note: These URLs expire, so call this right before playback.
      * @param videoId The YouTube video ID
-     * @return The stream URL or null if not found
-     */
-    /**
-     * Get the best audio stream URL for a video.
-     * Note: These URLs expire, so call this right before playback.
-     * @param videoId The YouTube video ID
      * @return Result containing stream URL or error
      */
     suspend fun getStreamUrl(videoId: String): Result<String> = withContext(Dispatchers.IO) {
         val startMs = System.currentTimeMillis()
 
-        // Primary: direct InnerTube /player calls (ANDROID_VR primary, IOS
-        // fallback — see runPlayerClientChain), with a one-shot visitorData
-        // remint + retry when YouTube's bot check flags the current token
-        // (see resolvePlayerStreamingData).
-        val innerTubeUrl = resolvePlayerStreamingData(videoId)?.let { pickAudioStreamUrl(videoId, it) }
-        if (!innerTubeUrl.isNullOrEmpty()) {
-            android.util.Log.i(
-                "YouTubeRepository",
-                "Resolve[InnerTube] OK videoId=$videoId dt=${System.currentTimeMillis() - startMs}ms",
-            )
-            return@withContext Result.success(innerTubeUrl)
-        }
-
-        // Fallback: NewPipe extractor. The InnerTube /player path degrades over a
-        // session — YouTube's bot check eventually flags this install's visitorData
-        // (LOGIN_REQUIRED / empty streamingData) and even the remint bootstrap can
-        // get flagged, leaving InnerTube resolution dead for hours. NewPipe uses a
-        // different (WEB-based, cookie-signed) extraction that keeps working when
-        // InnerTube doesn't. Video playback already leans on this exact fallback
-        // (getVideoStreamQualities), which is why videos keep playing while music
-        // — previously InnerTube-only — died. A throttled NewPipe stream beats a
-        // hard "Check your connection" failure. See CLAUDE.md InnerTube notes.
+        // Primary: NewPipe's maintained Android/visionOS client chain. Direct
+        // ANDROID_VR URLs can start successfully and then hit GVS's progressive
+        // byte ceiling on long media, which is the same failure that moved video
+        // playback to NewPipe first. Audio must use the maintained path too or a
+        // long song can fail only after it has already been playing for a while.
         val newPipeUrl = resolveAudioUrlViaNewPipe(videoId)
-        val dt = System.currentTimeMillis() - startMs
         if (!newPipeUrl.isNullOrEmpty()) {
             android.util.Log.i(
                 "YouTubeRepository",
-                "Resolve[NewPipe fallback] OK videoId=$videoId dt=${dt}ms",
+                "Resolve[NewPipe] OK videoId=$videoId dt=${System.currentTimeMillis() - startMs}ms",
             )
-            Result.success(newPipeUrl)
+            return@withContext Result.success(newPipeUrl)
+        }
+
+        // Last-resort fallback: the older direct /player chain. It can still
+        // cover a client-specific NewPipe extraction failure, but its progressive
+        // URLs must not be the normal path for the reason above.
+        val innerTubeUrl = resolvePlayerStreamingData(videoId)?.let { pickAudioStreamUrl(videoId, it) }
+        val dt = System.currentTimeMillis() - startMs
+        if (!innerTubeUrl.isNullOrEmpty()) {
+            android.util.Log.i(
+                "YouTubeRepository",
+                "Resolve[InnerTube fallback] OK videoId=$videoId dt=${dt}ms",
+            )
+            Result.success(innerTubeUrl)
         } else {
             android.util.Log.e(
                 "YouTubeRepository",
-                "Resolve FAIL videoId=$videoId all clients exhausted (InnerTube + NewPipe) dt=${dt}ms",
+                "Resolve FAIL videoId=$videoId all clients exhausted (NewPipe + InnerTube) dt=${dt}ms",
             )
             Result.failure(Exception("No audio stream found for $videoId"))
         }
     }
 
     /**
-     * Resolve an audio stream URL through the NewPipe extractor. Used as the
-     * fallback for [getStreamUrl] when the InnerTube /player chain yields no
-     * usable stream (bot-check-flagged visitorData, etc.). Applies the same
-     * per-network music quality policy as [pickAudioStreamUrl] (NewPipe's
-     * averageBitrate is in kbps); falls back to a muxed video+audio stream
-     * (ExoPlayer plays just the audio track) when no audio-only stream is
-     * available. The resulting googlevideo URL is tagged with NewPipe's issuing
-     * client, so playback picks the matching UA via uaForPlaybackUri().
+     * Resolve an audio stream URL through NewPipe's maintained client chain.
+     * Applies the same per-network music quality policy as [pickAudioStreamUrl]
+     * (NewPipe's averageBitrate is in kbps), and falls back to a muxed
+     * video+audio URL when no audio-only URL exists. The resulting googlevideo
+     * URL is tagged with its issuing client, so playback selects the matching
+     * user agent through [uaForPlaybackUri].
      */
     private suspend fun resolveAudioUrlViaNewPipe(videoId: String): String? = withContext(Dispatchers.IO) {
         try {
@@ -712,7 +713,11 @@ class YouTubeRepository(private val context: Context) {
             val streamExtractor = ytService.getStreamExtractor(streamUrl)
             streamExtractor.fetchPage()
 
-            val audioStreams = streamExtractor.audioStreams
+            // Generated manifest content shares the Stream model with direct
+            // URLs. Only the latter can be handed to Media3 as a URI.
+            val audioStreams = originalTrackAudioStreams(
+                streamExtractor.audioStreams.filter { it.isUrl },
+            )
             when (ThemePreferences.currentMusicQuality(context)) {
                 ThemePreferences.MUSIC_QUALITY_LOW ->
                     audioStreams.minByOrNull { it.averageBitrate }
@@ -726,15 +731,48 @@ class YouTubeRepository(private val context: Context) {
 
             // No audio-only stream — a muxed stream still carries an audio track.
             streamExtractor.videoStreams
-                .mapNotNull { it.content?.takeIf { c -> c.isNotBlank() } }
+                .asSequence()
+                .filter { it.isUrl }
+                .mapNotNull { it.content?.takeIf(String::isNotBlank) }
                 .firstOrNull()
         } catch (e: Exception) {
             android.util.Log.w(
                 "YouTubeRepository",
-                "Resolve[NewPipe fallback] failed videoId=$videoId: ${e.message}",
+                "Resolve[NewPipe] failed videoId=$videoId: ${e.message}",
             )
             null
         }
+    }
+
+    /**
+     * Keep YouTube's original soundtrack when it exposes alternate dubbed,
+     * descriptive, or secondary audio tracks.
+     *
+     * Older/single-track responses do not carry `audioTrackType`; those
+     * untyped streams are safe as the compatibility fallback. If YouTube
+     * explicitly labels every stream as non-original, return no audio-only
+     * stream and let the caller use its muxed fallback instead of knowingly
+     * selecting a dub.
+     */
+    private fun originalTrackAudioStreams(streams: List<AudioStream>): List<AudioStream> {
+        val originals = streams.filter { it.audioTrackType == AudioTrackType.ORIGINAL }
+        if (originals.isNotEmpty()) return originals
+        return streams.filter { it.audioTrackType == null }
+    }
+
+    /** The direct InnerTube equivalent of [originalTrackAudioStreams]. */
+    private fun originalTrackAudioFormats(
+        formats: List<org.json.JSONObject>
+    ): List<org.json.JSONObject> {
+        val typed = formats.map { it to audioTrackType(it) }
+        val originals = typed.filter { it.second == AudioTrackType.ORIGINAL }.map { it.first }
+        if (originals.isNotEmpty()) return originals
+        return typed.filter { it.second == null }.map { it.first }
+    }
+
+    private fun audioTrackType(format: org.json.JSONObject): AudioTrackType? {
+        val xtags = format.optString("xtags").takeIf { it.isNotBlank() } ?: return null
+        return runCatching { YoutubeParsingHelper.extractAudioTrackType(xtags) }.getOrNull()
     }
 
     // --- Fresh visitorData (anti-bot) ---------------------------------------
@@ -1651,9 +1689,11 @@ class YouTubeRepository(private val context: Context) {
 
         fun hasPlayableUrl(f: org.json.JSONObject): Boolean = !f.optString("url").isNullOrEmpty()
 
-        val audioFormats = formats.filter {
-            it.optString("mimeType").contains("audio") && hasPlayableUrl(it)
-        }
+        val audioFormats = originalTrackAudioFormats(
+            formats.filter {
+                it.optString("mimeType").contains("audio") && hasPlayableUrl(it)
+            }
+        )
         android.util.Log.d(
             "YouTubeRepository",
             "Resolve[InnerTube] formats=${formats.size} audioOnly=${audioFormats.size} videoId=$videoId",
@@ -2640,6 +2680,47 @@ class YouTubeRepository(private val context: Context) {
     }
 
     /**
+     * Channels matching [query], for video mode's Channels search filter.
+     *
+     * NewPipe's channel filter rather than an InnerTube search: it already
+     * returns the canonical UC id, the avatar, the subscriber count and the
+     * verified flag in one shape, and the channel page this feeds only needs
+     * the id. Mirrors [searchArtists], which does the same on the music side.
+     */
+    suspend fun searchChannels(query: String): List<SubscribedChannel> =
+        withContext(Dispatchers.IO) {
+            try {
+                val ytService = ServiceList.all().find { it.serviceInfo.name == "YouTube" }
+                    ?: return@withContext emptyList()
+                val searchExtractor =
+                    ytService.getSearchExtractor(query, listOf(FILTER_YOUTUBE_CHANNELS), "")
+                searchExtractor.fetchPage()
+
+                searchExtractor.initialPage.items
+                    .filterIsInstance<ChannelInfoItem>()
+                    .mapNotNull { item ->
+                        // Every other call in the app keys off the canonical id,
+                        // so a result whose URL is a handle rather than /channel/
+                        // is dropped here instead of failing later on the page.
+                        val channelId = item.url?.substringAfterLast('/')
+                            ?.takeIf { it.startsWith("UC") } ?: return@mapNotNull null
+                        SubscribedChannel(
+                            channelId = channelId,
+                            name = item.name?.takeIf { it.isNotBlank() } ?: return@mapNotNull null,
+                            avatarUrl = item.thumbnails?.maxByOrNull { it.width }?.url
+                                ?: item.thumbnails?.firstOrNull()?.url,
+                            subscriberCountText = item.subscriberCount.takeIf { it >= 0 }
+                                ?.let { "${VideoItem.formatViewCount(it)} subscribers" }
+                        )
+                    }
+                    .distinctBy { it.channelId }
+            } catch (e: Exception) {
+                android.util.Log.e("YouTubeRepo", "Error searching channels", e)
+                emptyList()
+            }
+        }
+
+    /**
      * Base64url protobuf for the /search `params` field: sort order (field 1)
      * plus a filter block (field 2) pinning the result type to videos, the same
      * values the youtube.com filter sheet puts in the `sp` URL param.
@@ -3385,6 +3466,154 @@ class YouTubeRepository(private val context: Context) {
         }
 
     /**
+     * What a playlist says it is - title, author, cover, length - without its
+     * contents.
+     *
+     * Exists for links. Everywhere else a playlist arrives already described,
+     * from a search result or a lockup or the account's own list, but a shared
+     * URL is an id and nothing more, and a page opened on an id alone has an
+     * empty header. [getPlaylistVideos] answers the other half of the same
+     * response and throws this half away, so the two are deliberately separate
+     * calls: the pages fetch their own items, and asking for both here would
+     * fetch every item twice.
+     *
+     * Anonymous when there is no session - `fetchYouTubeBrowse` only signs when
+     * one exists, and a public playlist answers without it (verified August
+     * 2026) - which is what a shared link needs, since most arrive with the app
+     * signed out.
+     *
+     * Null means "no page behind this id": a generated mix answers "This
+     * playlist type is unviewable", and private or deleted lists answer with an
+     * alert and no header at all. That is the caller's signal to fall back to
+     * playing the id rather than to open a blank page.
+     */
+    suspend fun getPlaylistHeader(playlistId: String): PlaylistPageInfo? =
+        withContext(Dispatchers.IO) {
+            val listId = playlistId.removePrefix("VL").takeIf { it.isNotBlank() }
+                ?: return@withContext null
+            try {
+                val json = fetchYouTubeBrowse("VL$listId").takeIf { it.isNotEmpty() }
+                    ?: return@withContext null
+                val root = org.json.JSONObject(json)
+                parseModernPlaylistHeader(root, listId)
+                    ?: parseLegacyPlaylistHeader(root, listId)
+            } catch (e: Exception) {
+                android.util.Log.e("YouTubeRepo", "getPlaylistHeader failed for $playlistId", e)
+                null
+            }
+        }
+
+    /**
+     * `pageHeaderViewModel`, which is what an ordinary `PL…` playlist returns
+     * (verified August 2026, both signed in and signed out).
+     *
+     * The header's metadata is positional prose - "by the bootleg boy",
+     * "Playlist", "960 videos", "26,738,861 views" - so nothing here reads a
+     * row by index. The author comes off the avatar stack, which is a
+     * structurally distinct part rather than a position, and the count is
+     * whichever part talks about videos. That word is localized, so a miss
+     * reports -1 ("the page did not say") rather than a number invented from
+     * the wrong row.
+     */
+    private fun parseModernPlaylistHeader(
+        root: org.json.JSONObject,
+        listId: String
+    ): PlaylistPageInfo? {
+        val headers = mutableListOf<org.json.JSONObject>()
+        findObjectsByKey(root, "pageHeaderViewModel", headers)
+        val header = headers.firstOrNull() ?: return null
+
+        val title = header.optJSONObject("title")
+            ?.optJSONObject("dynamicTextViewModel")
+            ?.optJSONObject("text")
+            ?.optString("content")
+            ?.takeIf { it.isNotBlank() }
+            ?: return null
+
+        val rows = header.optJSONObject("metadata")
+            ?.optJSONObject("contentMetadataViewModel")
+            ?.optJSONArray("metadataRows")
+
+        var author = ""
+        var itemCount = -1
+        if (rows != null) {
+            for (rowIndex in 0 until rows.length()) {
+                val parts = rows.optJSONObject(rowIndex)?.optJSONArray("metadataParts") ?: continue
+                for (partIndex in 0 until parts.length()) {
+                    val part = parts.optJSONObject(partIndex) ?: continue
+                    val avatarText = part.optJSONObject("avatarStack")
+                        ?.optJSONObject("avatarStackViewModel")
+                        ?.optJSONObject("text")
+                        ?.optString("content")
+                        ?.takeIf { it.isNotBlank() }
+                    if (avatarText != null && author.isBlank()) {
+                        author = avatarText.removePrefix("by ").trim()
+                        continue
+                    }
+                    val text = part.optJSONObject("text")?.optString("content").orEmpty()
+                    if (itemCount < 0 && text.contains("video", ignoreCase = true)) {
+                        itemCount = countFromText(text)
+                    }
+                }
+            }
+        }
+
+        return PlaylistPageInfo(
+            playlistId = listId,
+            title = title,
+            author = author,
+            thumbnailUrl = header.optJSONObject("heroImage")
+                ?.optJSONObject("contentPreviewImageViewModel")
+                ?.optJSONObject("image")
+                ?.let { bestImageSource(it.optJSONArray("sources")) },
+            itemCount = itemCount
+        )
+    }
+
+    /**
+     * `playlistHeaderRenderer`, the legacy shape, still what an album playlist
+     * (`OLAK5uy_…`) returns (verified August 2026).
+     *
+     * Its subtitle is "Daft Punk • Album", so the author is the part before the
+     * separator; the type half is dropped rather than shown, because the page
+     * this feeds already says what it is.
+     */
+    private fun parseLegacyPlaylistHeader(
+        root: org.json.JSONObject,
+        listId: String
+    ): PlaylistPageInfo? {
+        val headers = mutableListOf<org.json.JSONObject>()
+        findObjectsByKey(root, "playlistHeaderRenderer", headers)
+        val header = headers.firstOrNull() ?: return null
+
+        val title = getRunText(header.optJSONObject("title"))?.takeIf { it.isNotBlank() }
+            ?: return null
+        val author = getRunText(header.optJSONObject("ownerText"))
+            ?.takeIf { it.isNotBlank() }
+            ?: getRunText(header.optJSONObject("subtitle"))
+                ?.substringBefore("•")
+                ?.trim()
+                .orEmpty()
+
+        return PlaylistPageInfo(
+            playlistId = listId,
+            title = title,
+            author = author,
+            thumbnailUrl = header.optJSONObject("playlistHeaderBanner")
+                ?.optJSONObject("heroPlaylistThumbnailRenderer")
+                ?.optJSONObject("thumbnail")
+                ?.let { bestThumbnail(it.optJSONArray("thumbnails")) },
+            itemCount = countFromText(getRunText(header.optJSONObject("numVideosText")))
+        )
+    }
+
+    /** "1,234 videos" to a number; -1 for anything with no digits in it. */
+    private fun countFromText(text: String?): Int {
+        val digits = text?.filter { it.isDigit() }?.takeIf { it.isNotEmpty() } ?: return -1
+        return digits.toIntOrNull() ?: -1
+    }
+
+    /**
      * Playlist lockup (LOCKUP_CONTENT_TYPE_PLAYLIST / PODCAST): contentId is
      * the playlist id, title lives in lockupMetadataViewModel, the video count
      * is a thumbnailBadgeViewModel text ("28 videos") and the first metadata
@@ -3510,12 +3739,23 @@ class YouTubeRepository(private val context: Context) {
                      val textObj = firstRowParts.optJSONObject(0)?.optJSONObject("text")
                      channelName = textObj?.optString("content") ?: channelName
                      
-                     // Extract channel ID directly from runs if available
-                     if (textObj?.has("runs") == true) {
+                     // Modern lockups use attributed text: the creator link is
+                     // an innertubeCommand in commandRuns. Older responses use
+                     // the legacy runs/navigationEndpoint shape below.
+                     channelId = textObj?.optJSONArray("commandRuns")
+                         ?.optJSONObject(0)
+                         ?.optJSONObject("onTap")
+                         ?.optJSONObject("innertubeCommand")
+                         ?.optJSONObject("browseEndpoint")
+                         ?.optString("browseId")
+                         ?.takeIf { it.isNotBlank() }
+
+                     if (channelId == null && textObj?.has("runs") == true) {
                          val runs = textObj.optJSONArray("runs")
                          if (runs != null && runs.length() > 0) {
                              val browseEndpoint = runs.optJSONObject(0)?.optJSONObject("navigationEndpoint")?.optJSONObject("browseEndpoint")
                              channelId = browseEndpoint?.optString("browseId")
+                                 ?.takeIf { it.isNotBlank() }
                          }
                      }
                  }
@@ -3908,6 +4148,16 @@ class YouTubeRepository(private val context: Context) {
                 ?: return@withContext null
             val streamExtractor = ytService.getStreamExtractor(streamUrl)
             streamExtractor.fetchPage()
+
+            // A muxed URL does not expose which language YouTube selected.
+            // Do not use this last-resort path for multi-audio videos; the
+            // quality resolver's separate original audio stream is the only
+            // deterministic source for them.
+            if (streamExtractor.audioStreams.any {
+                    it.audioTrackType != null &&
+                        it.audioTrackType != AudioTrackType.ORIGINAL
+                }
+            ) return@withContext null
             
             // Get video streams (with audio)
             val videoStreams = streamExtractor.videoStreams
@@ -4034,101 +4284,169 @@ class YouTubeRepository(private val context: Context) {
      * Use this to start playback ASAP, then call getVideoDetails() for the rest.
      */
     suspend fun getVideoStreamQualities(videoId: String): List<VideoQuality> = withContext(Dispatchers.IO) {
-        // Primary: direct InnerTube /player with the ANDROID_VR client. It returns
-        // the full adaptive ladder (up to 2160p60) with direct, unciphered URLs,
-        // where NewPipe's WEB-based extraction often degrades to the muxed 360p
-        // format 18 (PO-Token enforcement).
+        // NewPipe 0.26.3+ deliberately resolves VOD streams through Android's
+        // reel endpoint and a visionOS fallback, both of which avoid the WEB
+        // client's SABR-only response. Keep that maintained client selection in
+        // front of our older ANDROID_VR resolver: ANDROID_VR URLs now hit GVS's
+        // progressive byte ceiling on long videos even though /player itself
+        // succeeds, so accepting that ladder first creates a source that starts
+        // normally and then dies part-way through playback.
         try {
-            val innerTubeQualities = getVideoQualitiesFromInnerTube(videoId)
-            if (innerTubeQualities.isNotEmpty()) {
+            val extractedQualities = getVideoQualitiesFromNewPipe(videoId)
+            if (extractedQualities.isNotEmpty()) {
                 android.util.Log.i(
                     "YouTubeRepo",
-                    "Video qualities via InnerTube: ${innerTubeQualities.size} for $videoId"
+                    "Video qualities via NewPipe: ${extractedQualities.size} for $videoId"
                 )
-                return@withContext innerTubeQualities
+                return@withContext extractedQualities
             }
         } catch (e: Exception) {
-            android.util.Log.w("YouTubeRepo", "InnerTube quality resolution failed, falling back to NewPipe", e)
+            android.util.Log.w(
+                "YouTubeRepo",
+                "NewPipe quality resolution failed, falling back to direct InnerTube",
+                e,
+            )
         }
 
-        // Fallback: NewPipe extractor.
+        // Last-resort fallback. It is still useful for a client-specific edge
+        // case, but it must not be the normal VOD path for the reason above.
         try {
-            val streamUrl = "https://www.youtube.com/watch?v=$videoId"
-            val ytService = ServiceList.all().find { it.serviceInfo.name == "YouTube" } 
-                ?: return@withContext emptyList()
-            val streamExtractor = ytService.getStreamExtractor(streamUrl)
-            streamExtractor.fetchPage()
-            
-            val qualities = mutableListOf<VideoQuality>()
-            val isLiveStream = streamExtractor.streamType == StreamType.LIVE_STREAM ||
-                streamExtractor.streamType == StreamType.AUDIO_LIVE_STREAM
-
-            // Same shape read as parseQualitiesFromStreamingData, off the
-            // extractor's declared dimensions. A live broadcast returns before
-            // the stream lists below are touched, so this has to look at them
-            // up front or the vertical live layout gets nothing on this path.
-            val sourceAspect = (streamExtractor.videoOnlyStreams + streamExtractor.videoStreams)
-                .filter { it.width > 0 && it.height > 0 }
-                .maxByOrNull { it.height }
-                ?.let { it.width.toFloat() / it.height.toFloat() }
-
-            // 1. DASH/HLS (best quality, adaptive)
-            streamExtractor.dashMpdUrl?.takeIf { it.isNotBlank() }?.let { url ->
-                qualities.add(
-                    VideoQuality(
-                        "Auto (Best)", url, "DASH", true,
-                        isLive = isLiveStream, sourceAspectRatio = sourceAspect
-                    )
-                )
-            } ?: streamExtractor.hlsUrl?.takeIf { it.isNotBlank() }?.let { url ->
-                qualities.add(
-                    VideoQuality(
-                        "Auto (HLS)", url, "HLS", true,
-                        isLive = isLiveStream, sourceAspectRatio = sourceAspect
-                    )
-                )
-            }
-
-            // A live broadcast's progressive URLs are segment endpoints that
-            // stall a progressive reader, so the adaptive manifest above is the
-            // only usable entry - see parseQualitiesFromStreamingData.
-            if (isLiveStream) return@withContext qualities
-
-            // 2. Adaptive Streams (video + separate audio)
-            val videoOnlyStreams = streamExtractor.videoOnlyStreams
-            val audioStreams = streamExtractor.audioStreams
-            val bestAudio = audioStreams.maxByOrNull { it.averageBitrate }
-            
-            if (bestAudio != null) {
-                qualities.addAll(videoOnlyStreams
-                    .mapNotNull { stream ->
-                        val res = stream.resolution ?: return@mapNotNull null
-                        val url = stream.content ?: return@mapNotNull null
-                        VideoQuality(
-                            res, url, stream.format?.name, false, bestAudio.content,
-                            sourceAspectRatio = sourceAspect
-                        )
-                    }
-                )
-            }
-
-            // 3. Muxed Streams (video + audio combined)
-            qualities.addAll(streamExtractor.videoStreams
-                .mapNotNull { stream ->
-                    val res = stream.resolution ?: return@mapNotNull null
-                    val url = stream.content ?: return@mapNotNull null
-                    VideoQuality(
-                        res, url, stream.format?.name, false,
-                        sourceAspectRatio = sourceAspect
-                    )
-                }
-            )
-            
-            qualities.distinctBy { it.resolution }
+            getVideoQualitiesFromInnerTube(videoId)
         } catch (e: Exception) {
             android.util.Log.e("YouTubeRepo", "Error getting video stream qualities", e)
             emptyList()
         }
+    }
+
+    /**
+     * Resolve playable URLs through the maintained NewPipe client chain.
+     *
+     * Only actual URL streams are admitted. NewPipe can also expose generated
+     * DASH manifest text through the same Stream model (`isUrl == false`); that
+     * content is not a URI and handing it to Media3's progressive source fails
+     * before the first frame.
+     */
+    private fun getVideoQualitiesFromNewPipe(videoId: String): List<VideoQuality> {
+        val ytService = ServiceList.all().find { it.serviceInfo.name == "YouTube" }
+            ?: return emptyList()
+        val extractor = ytService.getStreamExtractor("https://www.youtube.com/watch?v=$videoId")
+        extractor.fetchPage()
+
+        val videoOnlyStreams = extractor.videoOnlyStreams
+        val muxedStreams = extractor.videoStreams
+        val isLiveStream = extractor.streamType == StreamType.LIVE_STREAM ||
+            extractor.streamType == StreamType.AUDIO_LIVE_STREAM
+        val sourceAspect = (videoOnlyStreams + muxedStreams)
+            .filter { it.width > 0 && it.height > 0 }
+            .maxByOrNull { it.height }
+            ?.let { it.width.toFloat() / it.height.toFloat() }
+
+        val extractedAudioStreams = extractor.audioStreams
+        val hasAlternateAudioTracks = extractedAudioStreams.any {
+            it.audioTrackType != null && it.audioTrackType != AudioTrackType.ORIGINAL
+        }
+        val qualities = mutableListOf<VideoQuality>()
+        extractor.dashMpdUrl?.takeIf { it.isNotBlank() }?.let { url ->
+            qualities.add(
+                VideoQuality(
+                    "Auto (Best)", url, "DASH", true,
+                    isLive = isLiveStream, sourceAspectRatio = sourceAspect,
+                )
+            )
+        } ?: extractor.hlsUrl?.takeIf { it.isNotBlank() }?.let { url ->
+            qualities.add(
+                VideoQuality(
+                    "Auto (HLS)", url, "HLS", true,
+                    isLive = isLiveStream, sourceAspectRatio = sourceAspect,
+                )
+            )
+        }
+
+        // Progressive live entries are segment endpoints, not complete files.
+        if (isLiveStream) return qualities
+
+        val bestAudio = originalTrackAudioStreams(extractedAudioStreams)
+            .asSequence()
+            .filter { it.isUrl }
+            // MP4 downloads are remuxed on-device. Prefer AAC/M4A over the
+            // usually-higher-bitrate Opus stream, which MediaMuxer cannot put
+            // into an MP4 container reliably.
+            .maxWithOrNull(
+                compareBy<AudioStream>(
+                    {
+                        if (it.format?.suffix.equals("m4a", ignoreCase = true) ||
+                            it.codec?.contains("mp4a", ignoreCase = true) == true
+                        ) 1 else 0
+                    },
+                    { it.averageBitrate },
+                )
+            )
+        val hasOriginalAdaptivePair = bestAudio != null && videoOnlyStreams.any { it.isUrl }
+        if (hasAlternateAudioTracks && hasOriginalAdaptivePair) {
+            // A manifest or muxed stream lets its issuing YouTube client pick
+            // the default language again. When alternate tracks exist and we
+            // have a known-original separate stream, expose only that
+            // deterministic path—even for the "Auto" quality choice.
+            qualities.removeAll { it.isDASH }
+        }
+        if (bestAudio != null) {
+            videoOnlyStreams.asSequence()
+                .filter { it.isUrl }
+                .mapNotNull { stream ->
+                    stream.resolution?.takeIf { it.isNotBlank() }?.let { resolution ->
+                        VideoQuality(
+                            resolution = resolution,
+                            url = stream.content,
+                            format = stream.format?.suffix,
+                            isDASH = false,
+                            audioUrl = bestAudio.content,
+                            sourceAspectRatio = sourceAspect,
+                            codec = stream.codec,
+                        )
+                    }
+                }
+                .forEach(qualities::add)
+        }
+
+        if (!hasAlternateAudioTracks || !hasOriginalAdaptivePair) {
+            muxedStreams.asSequence()
+                .filter { it.isUrl }
+                .mapNotNull { stream ->
+                    stream.resolution?.takeIf { it.isNotBlank() }?.let { resolution ->
+                        VideoQuality(
+                            resolution = resolution,
+                            url = stream.content,
+                            format = stream.format?.suffix,
+                            isDASH = false,
+                            sourceAspectRatio = sourceAspect,
+                            codec = stream.codec,
+                        )
+                    }
+                }
+                .forEach(qualities::add)
+        }
+
+        fun height(label: String): Int = label.takeWhile(Char::isDigit).toIntOrNull() ?: 0
+        fun fps(label: String): Int =
+            label.substringAfter('p', "").takeWhile(Char::isDigit).toIntOrNull() ?: 30
+
+        // NewPipe exposes several codecs for the same label. Retain the AVC
+        // MP4 variant when one exists so the download worker is not left with
+        // only a VP9/WebM entry after de-duplication.
+        return qualities
+            .groupBy { it.resolution }
+            .mapNotNull { (_, variants) ->
+                variants.maxWithOrNull(
+                    compareBy<VideoQuality>(
+                        { if (it.isMp4DownloadCompatible) 2 else if (it.isMp4Container) 1 else 0 },
+                        { if (it.codec?.contains("avc1", ignoreCase = true) == true) 1 else 0 },
+                    )
+                )
+            }
+            .sortedWith(
+                compareByDescending<VideoQuality> { height(it.resolution) }
+                    .thenByDescending { fps(it.resolution) }
+            )
     }
 
     /**
@@ -4163,12 +4481,10 @@ class YouTubeRepository(private val context: Context) {
             .maxByOrNull { it.optInt("height") }
             ?.let { it.optInt("width").toFloat() / it.optInt("height").toFloat() }
 
-        // HDR variants ride separate adaptiveFormats entries whose qualityLabel
-        // carries " HDR" and whose colorInfo declares a PQ or HLG transfer
-        // (shape per yt-dlp/NewPipe; a live re-probe was bot-checked July 2026,
-        // so re-verify on device if this stops matching). Behind the
-        // "Prefer HDR" opt-in: off drops HDR entries entirely, on lists them
-        // alongside SDR and prefers them at equal height via the sort below.
+        // The direct InnerTube resolver is only a last-resort fallback and its
+        // HDR URLs currently fail during playback. Keep those variants out so
+        // a fallback can never reintroduce the source-error path removed from
+        // the primary NewPipe flow.
         fun isHdrFormat(f: org.json.JSONObject): Boolean {
             if (f.optString("qualityLabel").contains("HDR", ignoreCase = true)) return true
             val transfer = f.optJSONObject("colorInfo")
@@ -4176,8 +4492,6 @@ class YouTubeRepository(private val context: Context) {
             return transfer == "COLOR_TRANSFER_CHARACTERISTICS_SMPTE2084" ||
                 transfer == "COLOR_TRANSFER_CHARACTERISTICS_ARIB_STD_B67"
         }
-        val preferHdr = ThemePreferences.isPreferHdrEnabled(context)
-
         fun labelHeight(label: String): Int = label.takeWhile { it.isDigit() }.toIntOrNull() ?: 0
         fun labelFps(label: String): Int =
             label.substringAfter("p", "").takeWhile { it.isDigit() }.toIntOrNull() ?: 30
@@ -4211,13 +4525,12 @@ class YouTubeRepository(private val context: Context) {
             val ladder = adaptive
                 .filter {
                     it.optString("mimeType").startsWith("video/") &&
-                        (preferHdr || !isHdrFormat(it))
+                        !isHdrFormat(it)
                 }
                 .mapNotNull { it.optString("qualityLabel").takeIf { label -> label.isNotEmpty() } }
                 .distinct()
                 .sortedWith(
                     compareByDescending<String> { labelHeight(it) }
-                        .thenByDescending { if (it.contains("HDR", true)) 1 else 0 }
                         .thenByDescending { labelFps(it) }
                 )
 
@@ -4226,8 +4539,15 @@ class YouTubeRepository(private val context: Context) {
 
         // Best separate audio track; prefer AAC (mp4a) for broad hardware support,
         // then highest bitrate.
-        val bestAudioUrl = adaptive
-            .filter { it.optString("mimeType").startsWith("audio/") && it.optString("url").isNotEmpty() }
+        val directAudioFormats = adaptive.filter {
+            it.optString("mimeType").startsWith("audio/") &&
+                it.optString("url").isNotEmpty()
+        }
+        val hasAlternateAudioTracks = directAudioFormats.any {
+            val type = audioTrackType(it)
+            type != null && type != AudioTrackType.ORIGINAL
+        }
+        val bestAudioUrl = originalTrackAudioFormats(directAudioFormats)
             .maxWithOrNull(
                 compareBy(
                     { if (it.optString("mimeType").contains("mp4a")) 1 else 0 },
@@ -4247,6 +4567,11 @@ class YouTubeRepository(private val context: Context) {
         fun container(mimeType: String): String =
             mimeType.substringAfter("video/").substringBefore(";").ifEmpty { "mp4" }
 
+        fun codec(mimeType: String): String? =
+            mimeType.substringAfter("codecs=\"", "")
+                .substringBefore('"')
+                .takeIf { it.isNotBlank() }
+
         val qualities = mutableListOf<VideoQuality>()
 
         // Video-only adaptive formats, one entry per quality label, merged with
@@ -4257,7 +4582,7 @@ class YouTubeRepository(private val context: Context) {
                     it.optString("mimeType").startsWith("video/") &&
                         it.optString("url").isNotEmpty() &&
                         it.optString("qualityLabel").isNotEmpty() &&
-                        (preferHdr || !isHdrFormat(it))
+                        !isHdrFormat(it)
                 }
                 .groupBy { it.optString("qualityLabel") }
                 .forEach { (label, formats) ->
@@ -4271,7 +4596,8 @@ class YouTubeRepository(private val context: Context) {
                             format = container(best.optString("mimeType")),
                             isDASH = false,
                             audioUrl = bestAudioUrl,
-                            sourceAspectRatio = sourceAspect
+                            sourceAspectRatio = sourceAspect,
+                            codec = codec(best.optString("mimeType")),
                         )
                     )
                 }
@@ -4279,26 +4605,27 @@ class YouTubeRepository(private val context: Context) {
 
         // Muxed formats (itag 18 etc.) fill in labels not already covered and
         // keep playback possible when no audio-only track exists.
-        muxed.forEach { f ->
-            val label = f.optString("qualityLabel")
-            val url = f.optString("url")
-            if (label.isNotEmpty() && url.isNotEmpty() && qualities.none { it.resolution == label }) {
-                qualities.add(
-                    VideoQuality(
-                        label, url, container(f.optString("mimeType")), false,
-                        sourceAspectRatio = sourceAspect
+        if (!hasAlternateAudioTracks || bestAudioUrl == null) {
+            muxed.forEach { f ->
+                val label = f.optString("qualityLabel")
+                val url = f.optString("url")
+                if (label.isNotEmpty() && url.isNotEmpty() &&
+                    qualities.none { it.resolution == label }
+                ) {
+                    qualities.add(
+                        VideoQuality(
+                            label, url, container(f.optString("mimeType")), false,
+                            sourceAspectRatio = sourceAspect,
+                            codec = codec(f.optString("mimeType")),
+                        )
                     )
-                )
+                }
             }
         }
 
-        // Highest resolution first; at equal height an HDR variant (only
-        // present when opted in) outranks SDR so the default pick lands on
-        // it, then 60fps variants before 30fps.
-        fun hdr(label: String): Int = if (label.contains("HDR", ignoreCase = true)) 1 else 0
+        // Highest resolution first, then 60fps variants before 30fps.
         return qualities.sortedWith(
             compareByDescending<VideoQuality> { labelHeight(it.resolution) }
-                .thenByDescending { hdr(it.resolution) }
                 .thenByDescending { labelFps(it.resolution) }
         )
     }
@@ -4325,7 +4652,7 @@ class YouTubeRepository(private val context: Context) {
             
             // 2. Adaptive Streams
             val videoOnlyStreams = streamExtractor.videoOnlyStreams
-            val audioStreams = streamExtractor.audioStreams
+            val audioStreams = originalTrackAudioStreams(streamExtractor.audioStreams)
             val bestAudio = audioStreams.maxByOrNull { it.averageBitrate }
             
             if (bestAudio != null) {
@@ -4499,6 +4826,24 @@ class YouTubeRepository(private val context: Context) {
             parseEngagementFromWatchNext(videoId, root)
         } catch (e: Exception) {
             android.util.Log.e("YouTubeRepo", "getVideoEngagement failed", e)
+            null
+        }
+    }
+
+    /**
+     * Resolve the creator of a feed video without resolving streams or touching
+     * either player. Used only when a feed lockup supplied an avatar/name but
+     * omitted its channel browse endpoint.
+     */
+    suspend fun getVideoChannelId(videoId: String): String? = withContext(Dispatchers.IO) {
+        if (videoId.length != 11) return@withContext null
+        try {
+            val root = fetchWatchNextRoot(videoId) ?: return@withContext null
+            runCatching { parseEngagementFromWatchNext(videoId, root).channelId }
+                .getOrNull()
+                ?: parseVideoMetadataFromWatchNext(videoId, root, null)?.channelId
+        } catch (e: Exception) {
+            android.util.Log.w("YouTubeRepo", "Channel lookup failed for $videoId", e)
             null
         }
     }
@@ -6141,6 +6486,893 @@ class YouTubeRepository(private val context: Context) {
         } catch (e: Exception) {
             android.util.Log.e("YouTubeRepo", "getChannelVideos failed", e)
             emptyList()
+        }
+    }
+
+    // ============================================================
+    // The channel page. Verified against live responses, signed out,
+    // August 2026.
+    //
+    // **A channel page describes itself, and this section is written to let it.**
+    // The first browse returns the tab list with each tab's own `params`, every
+    // sort order with its own continuation token, and every next page as
+    // another token. So there is exactly one hardcoded browse parameter in here
+    // (CHANNEL_VIDEOS_TAB_PARAMS, kept only as the fallback for a response whose
+    // tab list failed to parse), and no fixed set of tabs.
+    //
+    // That matters beyond tidiness. Tab sets genuinely differ per channel:
+    // a musician has "Releases" where a teacher has "Courses" and a big tech
+    // channel has "Podcasts" and "Store". Hardcoding the six tabs YouTube shows
+    // one channel would have meant drawing empty tabs on channels that lack
+    // them and hiding real ones on channels that have more - and both failures
+    // are silent, which is the worst kind.
+    //
+    // Everything here works signed out, which is the whole point: deciding
+    // whether a creator is worth following is exactly the thing a signed-out
+    // user does most.
+    // ============================================================
+
+    /**
+     * Identity, tab list, and the contents of whichever tab YouTube had already
+     * selected - all from one browse.
+     *
+     * The selected tab's items ride along rather than being fetched again,
+     * because they arrived in this same response. Asking for them a second time
+     * would be a request for bytes already in hand.
+     *
+     * Returns null only when the channel could not be identified at all, which
+     * for the caller means "this is not a channel" rather than "try again".
+     */
+    suspend fun getChannelPage(channelId: String): ChannelPage? = withContext(Dispatchers.IO) {
+        try {
+            val raw = postWatchApi(
+                "browse",
+                org.json.JSONObject().put("context", webContext()).put("browseId", channelId)
+            ) ?: return@withContext null
+            val root = org.json.JSONObject(raw)
+            val header = parseChannelHeader(root, channelId) ?: return@withContext null
+            val tabs = parseChannelTabs(root)
+            val selected = parseSelectedTab(root)
+            val selectedKind = selected?.first ?: ChannelTabKind.HOME
+            val content = selected?.second?.let { parseChannelTabPage(it, header) }
+                ?: ChannelTabPage()
+            ChannelPage(
+                header = header,
+                tabs = tabs,
+                selectedTab = selectedKind,
+                selectedContent = content
+            )
+        } catch (e: Exception) {
+            android.util.Log.e("YouTubeRepo", "getChannelPage failed for $channelId", e)
+            null
+        }
+    }
+
+    /** One tab's first page, by the `params` the page handed out for it. */
+    suspend fun getChannelTab(
+        channelId: String,
+        params: String,
+        header: ChannelHeader? = null
+    ): ChannelTabPage = withContext(Dispatchers.IO) {
+        try {
+            val raw = postWatchApi(
+                "browse",
+                org.json.JSONObject()
+                    .put("context", webContext())
+                    .put("browseId", channelId)
+                    .put("params", params)
+            ) ?: return@withContext ChannelTabPage()
+            val root = org.json.JSONObject(raw)
+            val scope = parseSelectedTab(root)?.second ?: root
+            parseChannelTabPage(scope, header)
+        } catch (e: Exception) {
+            android.util.Log.e("YouTubeRepo", "getChannelTab failed for $channelId", e)
+            ChannelTabPage()
+        }
+    }
+
+    /**
+     * The next page of a tab, or the same tab re-sorted - the two are the same
+     * call, because YouTube expresses both as a browse continuation. The
+     * response differs only in whether it says append or reload, and since the
+     * caller already knows which it asked for, that distinction stays with the
+     * caller rather than being guessed here.
+     */
+    suspend fun getChannelContinuation(
+        token: String,
+        header: ChannelHeader? = null
+    ): ChannelTabPage = withContext(Dispatchers.IO) {
+        try {
+            val raw = postWatchApi(
+                "browse",
+                org.json.JSONObject().put("context", webContext()).put("continuation", token)
+            ) ?: return@withContext ChannelTabPage()
+            parseChannelTabPage(org.json.JSONObject(raw), header)
+        } catch (e: Exception) {
+            android.util.Log.e("YouTubeRepo", "getChannelContinuation failed", e)
+            ChannelTabPage()
+        }
+    }
+
+    /**
+     * Search a single channel's back catalogue.
+     *
+     * The one tab whose results come back as legacy `videoRenderer`s rather
+     * than lockups (verified August 2026), which the generic page parser
+     * already handles, so this is a browse with a query bolted on and nothing
+     * more.
+     */
+    suspend fun searchWithinChannel(
+        channelId: String,
+        params: String,
+        query: String,
+        header: ChannelHeader? = null
+    ): ChannelTabPage = withContext(Dispatchers.IO) {
+        if (query.isBlank()) return@withContext ChannelTabPage()
+        try {
+            val raw = postWatchApi(
+                "browse",
+                org.json.JSONObject()
+                    .put("context", webContext())
+                    .put("browseId", channelId)
+                    .put("params", params)
+                    .put("query", query)
+            ) ?: return@withContext ChannelTabPage()
+            val root = org.json.JSONObject(raw)
+            parseChannelTabPage(parseSelectedTab(root)?.second ?: root, header)
+        } catch (e: Exception) {
+            android.util.Log.e("YouTubeRepo", "searchWithinChannel failed for $channelId", e)
+            ChannelTabPage()
+        }
+    }
+
+    /**
+     * The About panel, behind the token the header carried.
+     *
+     * YouTube does not put the full description, the links, the join date or
+     * the lifetime view count in the channel response at all - they live in an
+     * engagement panel fetched by continuation - so About costs one request and
+     * only when someone opens it.
+     */
+    suspend fun getChannelAbout(token: String): ChannelAbout? = withContext(Dispatchers.IO) {
+        try {
+            val raw = postWatchApi(
+                "browse",
+                org.json.JSONObject().put("context", webContext()).put("continuation", token)
+            ) ?: return@withContext null
+            val root = org.json.JSONObject(raw)
+            val about = mutableListOf<org.json.JSONObject>()
+            findObjectsByKey(root, "aboutChannelViewModel", about)
+            val view = about.firstOrNull() ?: return@withContext null
+
+            val links = mutableListOf<org.json.JSONObject>()
+            findObjectsByKey(view, "channelExternalLinkViewModel", links)
+
+            ChannelAbout(
+                description = view.optString("description").takeIf { it.isNotBlank() },
+                links = links.mapNotNull { parseChannelExternalLink(it) },
+                joinedDateText = view.optJSONObject("joinedDateText")
+                    ?.optString("content")?.takeIf { it.isNotBlank() },
+                viewCountText = view.optString("viewCountText").takeIf { it.isNotBlank() },
+                subscriberCountText = view.optString("subscriberCountText")
+                    .takeIf { it.isNotBlank() },
+                videoCountText = view.optString("videoCountText").takeIf { it.isNotBlank() },
+                country = view.optString("country").takeIf { it.isNotBlank() },
+                canonicalUrl = view.optString("canonicalChannelUrl").takeIf { it.isNotBlank() }
+            )
+        } catch (e: Exception) {
+            android.util.Log.e("YouTubeRepo", "getChannelAbout failed", e)
+            null
+        }
+    }
+
+    /**
+     * Channel identity out of `pageHeaderViewModel`, with the metadata block as
+     * the backstop.
+     *
+     * Two sources on purpose. The header is the visible one and carries the
+     * banner, the verified tick and the subscriber count, but it is also the
+     * half that gets redesigned - `c4TabbedHeaderRenderer` was replaced
+     * wholesale, and some channels still answer with it. The metadata block has
+     * outlived every one of those redesigns, so the name, id, avatar and handle
+     * are taken from whichever of the two has them and the page survives a
+     * header that parses to nothing.
+     */
+    private fun parseChannelHeader(
+        root: org.json.JSONObject,
+        fallbackChannelId: String
+    ): ChannelHeader? {
+        val metadata = root.optJSONObject("metadata")?.optJSONObject("channelMetadataRenderer")
+        val view = root.optJSONObject("header")
+            ?.optJSONObject("pageHeaderRenderer")
+            ?.optJSONObject("content")
+            ?.optJSONObject("pageHeaderViewModel")
+
+        val channelId = metadata?.optString("externalId")?.takeIf { it.isNotBlank() }
+            ?: fallbackChannelId
+        val name = view?.optJSONObject("title")
+            ?.optJSONObject("dynamicTextViewModel")
+            ?.optJSONObject("text")
+            ?.optString("content")?.takeIf { it.isNotBlank() }
+            ?: metadata?.optString("title")?.takeIf { it.isNotBlank() }
+            ?: run {
+                // Legacy header, still served by a minority of channels
+                val legacy = root.optJSONObject("header")
+                    ?.optJSONObject("c4TabbedHeaderRenderer")
+                getRunText(legacy?.optJSONObject("title"))?.takeIf { it.isNotBlank() }
+            }
+            ?: return null
+
+        // The metadata rows are "@handle" then "N subscribers" + "N videos",
+        // but a channel with no handle simply omits the first row, so the parts
+        // are classified by what they say rather than by where they sit.
+        var handle: String? = null
+        var subscriberCountText: String? = null
+        var videoCountText: String? = null
+        val rows = view?.optJSONObject("metadata")
+            ?.optJSONObject("contentMetadataViewModel")
+            ?.optJSONArray("metadataRows")
+        if (rows != null) {
+            for (r in 0 until rows.length()) {
+                val parts = rows.optJSONObject(r)?.optJSONArray("metadataParts") ?: continue
+                for (p in 0 until parts.length()) {
+                    val text = parts.optJSONObject(p)?.optJSONObject("text")
+                        ?.optString("content")?.takeIf { it.isNotBlank() } ?: continue
+                    when {
+                        text.startsWith("@") -> handle = text
+                        text.contains("subscriber", ignoreCase = true) ->
+                            subscriberCountText = text
+                        text.contains("video", ignoreCase = true) -> videoCountText = text
+                    }
+                }
+            }
+        }
+        if (handle == null) {
+            handle = metadata?.optString("vanityChannelUrl")
+                ?.substringAfterLast('/')
+                ?.takeIf { it.startsWith("@") }
+        }
+
+        val avatarUrl = view?.optJSONObject("image")
+            ?.optJSONObject("decoratedAvatarViewModel")
+            ?.optJSONObject("avatar")
+            ?.optJSONObject("avatarViewModel")
+            ?.optJSONObject("image")
+            ?.let { bestImageSource(it.optJSONArray("sources")) }
+            ?: metadata?.optJSONObject("avatar")?.optJSONArray("thumbnails")
+                ?.let { bestThumbnail(it) }
+
+        // Absent on plenty of channels; the screen draws its own backdrop
+        // rather than treating a missing banner as a load that never finished.
+        val bannerUrl = view?.optJSONObject("banner")
+            ?.optJSONObject("imageBannerViewModel")
+            ?.optJSONObject("image")
+            ?.let { bestImageSource(it.optJSONArray("sources")) }
+
+        // The tick arrives as an attachment run on the title text, identified
+        // by a client resource name rather than by any visible label.
+        val isVerified = runCatching {
+            val attachments = view?.optJSONObject("title")
+                ?.optJSONObject("dynamicTextViewModel")
+                ?.optJSONObject("text")
+                ?.optJSONArray("attachmentRuns") ?: return@runCatching false
+            val names = mutableListOf<org.json.JSONObject>()
+            findObjectsByKey(attachments, "clientResource", names)
+            names.any { it.optString("imageName").startsWith("CHECK_CIRCLE") }
+        }.getOrDefault(false)
+
+        val attribution = view?.optJSONObject("attribution")
+            ?.optJSONObject("attributionViewModel")
+            ?.optJSONObject("text")
+        val attributionText = attribution?.optString("content")?.trim()
+            ?.takeIf { it.isNotBlank() }
+        val attributionUrl = attribution
+            ?.optJSONArray("commandRuns")?.optJSONObject(0)
+            ?.optJSONObject("onTap")?.optJSONObject("innertubeCommand")
+            ?.optJSONObject("urlEndpoint")?.optString("url")
+            ?.takeIf { it.isNotBlank() }
+            ?.let { unwrapYouTubeRedirect(it) }
+
+        val descriptionPreview = view?.optJSONObject("description")
+            ?.optJSONObject("descriptionPreviewViewModel")
+            ?.optJSONObject("description")
+            ?.optString("content")?.takeIf { it.isNotBlank() }
+            ?: metadata?.optString("description")?.takeIf { it.isNotBlank() }
+
+        val aboutToken = view?.optJSONObject("description")
+            ?.optJSONObject("descriptionPreviewViewModel")
+            ?.optJSONObject("rendererContext")
+            ?.optJSONObject("commandContext")
+            ?.optJSONObject("onTap")
+            ?.optJSONObject("innertubeCommand")
+            ?.let { command ->
+                val tokens = mutableListOf<String>()
+                findContinuationTokens(command, tokens)
+                tokens.firstOrNull()
+            }
+
+        return ChannelHeader(
+            channelId = channelId,
+            name = name,
+            handle = handle,
+            avatarUrl = avatarUrl,
+            bannerUrl = bannerUrl,
+            subscriberCountText = subscriberCountText,
+            videoCountText = videoCountText,
+            descriptionPreview = descriptionPreview,
+            isVerified = isVerified,
+            attributionText = attributionText,
+            attributionUrl = attributionUrl,
+            aboutToken = aboutToken,
+            accountSubscribed = parseChannelSubscribedState(root)
+        )
+    }
+
+    /**
+     * Whether the signed-in account follows this channel, if the response says.
+     *
+     * The channel browse already carries this - the header's Subscribe button
+     * has to be drawn in the right state - so reading it here means the channel
+     * screen costs no extra request to know. Two shapes are checked because
+     * both are live: the modern subscribe button keeps its state in a framework
+     * entity mutation, and the legacy `subscribeButtonRenderer` keeps a plain
+     * boolean.
+     *
+     * Returns null rather than false when neither is present, so a shape change
+     * reads as "unknown" and the caller falls back to asking, instead of
+     * quietly showing "Subscribe" for a channel the user follows.
+     */
+    private fun parseChannelSubscribedState(root: org.json.JSONObject): Boolean? {
+        val entities = mutableListOf<org.json.JSONObject>()
+        findObjectsByKey(root, "subscriptionStateEntity", entities)
+        entities.firstOrNull { it.has("subscribed") }
+            ?.let { return it.optBoolean("subscribed") }
+
+        val legacy = mutableListOf<org.json.JSONObject>()
+        findObjectsByKey(root, "subscribeButtonRenderer", legacy)
+        legacy.firstOrNull { it.has("subscribed") }
+            ?.let { return it.optBoolean("subscribed") }
+
+        return null
+    }
+
+    /**
+     * The tab list, each with the `params` that fetches it.
+     *
+     * Tabs are classified by their `params` prefix, never by their title: the
+     * title is localized, so a screen that matched on the English word would
+     * fall back to a generic layout for most of the world. Unrecognised tabs
+     * are kept as [ChannelTabKind.OTHER] rather than dropped, which is what
+     * lets "Store", "Courses" and "Podcasts" render without code of their own.
+     */
+    private fun parseChannelTabs(root: org.json.JSONObject): List<ChannelTab> {
+        val renderers = mutableListOf<org.json.JSONObject>()
+        findObjectsByKey(root, "tabRenderer", renderers)
+        findObjectsByKey(root, "expandableTabRenderer", renderers)
+        return renderers.mapNotNull { tab ->
+            val title = tab.optString("title").takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            val params = tab.optJSONObject("endpoint")
+                ?.optJSONObject("browseEndpoint")
+                ?.optString("params")
+                ?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            ChannelTab(channelTabKind(params), title, params)
+        }.distinctBy { it.params }
+    }
+
+    /**
+     * Which tab a `params` value addresses.
+     *
+     * The values are stable base64 of a short protobuf whose first field is the
+     * tab name in plain ASCII ("videos", "shorts", "streams", ...), which is
+     * why a prefix match on the encoded string is reliable and why sort
+     * variants of the same tab (which append fields) still match.
+     */
+    private fun channelTabKind(params: String): ChannelTabKind = when {
+        params.startsWith("EghmZWF0dXJlZ") -> ChannelTabKind.HOME
+        params.startsWith("EgZ2aWRlb3") -> ChannelTabKind.VIDEOS
+        params.startsWith("EgZzaG9ydH") -> ChannelTabKind.SHORTS
+        params.startsWith("EgdzdHJlYW1z") -> ChannelTabKind.LIVE
+        params.startsWith("EglwbGF5bGlzdH") -> ChannelTabKind.PLAYLISTS
+        params.startsWith("EgVwb3N0c") -> ChannelTabKind.POSTS
+        params.startsWith("EghyZWxlYXNlc") -> ChannelTabKind.RELEASES
+        params.startsWith("EgZzZWFyY2") -> ChannelTabKind.SEARCH
+        else -> ChannelTabKind.OTHER
+    }
+
+    /**
+     * The selected tab's content subtree, so the item search below is scoped to
+     * it instead of to the whole document.
+     *
+     * Scoping matters on the Home tab, where the response also carries the
+     * header's own thumbnails and several dialogs; a document-wide search picks
+     * items out of surfaces the user is not looking at.
+     */
+    private fun parseSelectedTab(
+        root: org.json.JSONObject
+    ): Pair<ChannelTabKind, org.json.JSONObject>? {
+        val tabs = root.optJSONObject("contents")
+            ?.optJSONObject("twoColumnBrowseResultsRenderer")
+            ?.optJSONArray("tabs") ?: return null
+        for (i in 0 until tabs.length()) {
+            val tab = tabs.optJSONObject(i)?.optJSONObject("tabRenderer")
+                ?: tabs.optJSONObject(i)?.optJSONObject("expandableTabRenderer")
+                ?: continue
+            if (!tab.optBoolean("selected", false)) continue
+            val content = tab.optJSONObject("content") ?: continue
+            val params = tab.optJSONObject("endpoint")?.optJSONObject("browseEndpoint")
+                ?.optString("params").orEmpty()
+            return channelTabKind(params) to content
+        }
+        return null
+    }
+
+    /**
+     * Items, shelves, sort options and the next-page token out of one tab
+     * response (or one continuation response - both shapes land here).
+     *
+     * Deliberately not switched on the tab kind. Every tab is parsed for every
+     * item type it might hold and the empty lists cost nothing, which is what
+     * makes an unrecognised tab like "Courses" render correctly without anyone
+     * having taught this function about it.
+     */
+    private fun parseChannelTabPage(
+        scope: org.json.JSONObject,
+        header: ChannelHeader?
+    ): ChannelTabPage {
+        val shelves = parseChannelShelves(scope, header)
+
+        // Shelved items are already accounted for above, so the flat lists are
+        // built from what is left. Without this the Home tab would show every
+        // video twice - once in its shelf and once in a flat grid below it.
+        val shelvedVideoIds = shelves.flatMap { it.videos }.map { it.videoId }.toSet()
+        val shelvedShortIds = shelves.flatMap { it.shorts }.map { it.videoId }.toSet()
+        val shelvedPlaylistIds = shelves.flatMap { it.playlists }.map { it.playlistId }.toSet()
+        val shelvedPostIds = shelves.flatMap { it.posts }.map { it.postId }.toSet()
+
+        val lockups = mutableListOf<org.json.JSONObject>()
+        findObjectsByKey(scope, "lockupViewModel", lockups)
+        val legacyVideos = mutableListOf<org.json.JSONObject>()
+        findObjectsByKey(scope, "videoRenderer", legacyVideos)
+        val shortLockups = mutableListOf<org.json.JSONObject>()
+        findObjectsByKey(scope, "shortsLockupViewModel", shortLockups)
+        val postRenderers = mutableListOf<org.json.JSONObject>()
+        findObjectsByKey(scope, "backstagePostRenderer", postRenderers)
+
+        val videos = (
+            lockups.mapNotNull { parseLockupViewModel(it) } +
+                legacyVideos.mapNotNull { parseVideoRenderer(it) }
+            )
+            .map { stitchChannelIdentity(it, header) }
+            .distinctBy { it.videoId }
+            .filterNot { it.videoId in shelvedVideoIds }
+
+        val shorts = shortLockups.mapNotNull { parseShortsLockup(it) }
+            .distinctBy { it.videoId }
+            .filterNot { it.videoId in shelvedShortIds }
+
+        val playlists = lockups.mapNotNull { parsePlaylistLockup(it) }
+            .distinctBy { it.playlistId }
+            .filterNot { it.playlistId in shelvedPlaylistIds }
+
+        val posts = postRenderers.mapNotNull { parseBackstagePost(it) }
+            .distinctBy { it.postId }
+            .filterNot { it.postId in shelvedPostIds }
+
+        val featured = scope.optJSONObject("channelVideoPlayerRenderer")
+            ?.let { parseChannelFeaturedVideo(it, header) }
+            ?: run {
+                val players = mutableListOf<org.json.JSONObject>()
+                findObjectsByKey(scope, "channelVideoPlayerRenderer", players)
+                players.firstOrNull()?.let { parseChannelFeaturedVideo(it, header) }
+            }
+
+        return ChannelTabPage(
+            videos = videos,
+            shorts = shorts,
+            playlists = playlists,
+            posts = posts,
+            shelves = shelves,
+            featured = featured,
+            sortOptions = parseChannelSortOptions(scope),
+            continuation = parseChannelNextPageToken(scope)
+        )
+    }
+
+    /**
+     * Channel-page cards omit the channel row, because on YouTube's own layout
+     * the channel is the page you are standing on. Every consumer downstream
+     * (the queue, the options sheet, "don't recommend this channel") expects an
+     * item to know whose it is, so the caller's identity is stitched back in.
+     *
+     * **An item that already carries a channel id keeps it.** A card that names
+     * its channel is a card from somewhere else - the "Collaborations" and
+     * "Featured channels" shelves are full of them - and overwriting that would
+     * file another creator's video under this one, which then follows the item
+     * into the queue and into a "don't recommend this channel" tap on the wrong
+     * channel.
+     */
+    private fun stitchChannelIdentity(item: VideoItem, header: ChannelHeader?): VideoItem {
+        if (header == null || item.channelId != null) return item
+        // With no channel row present, the generic parser has read the first
+        // metadata row as the channel name, and on a channel page that row is
+        // "N views - date" instead.
+        val misreadAsChannel = item.channelName.contains("view", ignoreCase = true) ||
+            item.channelName.contains("watching", ignoreCase = true)
+        return item.copy(
+            channelName = header.name,
+            channelId = header.channelId,
+            channelIconUrl = item.channelIconUrl ?: header.avatarUrl,
+            viewCount = if (item.viewCount.isBlank() && misreadAsChannel) {
+                item.channelName
+            } else {
+                item.viewCount
+            }
+        )
+    }
+
+    /** The video a channel pins to the top of its Home tab. */
+    private fun parseChannelFeaturedVideo(
+        renderer: org.json.JSONObject,
+        header: ChannelHeader?
+    ): VideoItem? {
+        val videoId = renderer.optString("videoId").takeIf { it.length == 11 } ?: return null
+        val title = getRunText(renderer.optJSONObject("title"))?.takeIf { it.isNotBlank() }
+            ?: return null
+        val viewCount = getRunText(renderer.optJSONObject("viewCountText")).orEmpty()
+        return VideoItem(
+            videoId = videoId,
+            title = title,
+            channelName = header?.name.orEmpty(),
+            channelId = header?.channelId,
+            channelIconUrl = header?.avatarUrl,
+            thumbnailUrl = "https://i.ytimg.com/vi/$videoId/hqdefault.jpg",
+            duration = 0L,
+            viewCount = viewCount,
+            description = getRunText(renderer.optJSONObject("description"))
+        )
+    }
+
+    /**
+     * Home-tab shelves, in the order the channel arranged them.
+     *
+     * Read out of the section list rather than by a document-wide key search,
+     * because order is the whole point of this tab - a channel decides what
+     * sits at the top - and a key search returns whatever traversal order
+     * happens to be.
+     */
+    private fun parseChannelShelves(
+        scope: org.json.JSONObject,
+        header: ChannelHeader?
+    ): List<ChannelShelf> {
+        val sections = scope.optJSONObject("sectionListRenderer")?.optJSONArray("contents")
+            ?: return emptyList()
+        val shelves = mutableListOf<ChannelShelf>()
+        for (s in 0 until sections.length()) {
+            val contents = sections.optJSONObject(s)
+                ?.optJSONObject("itemSectionRenderer")
+                ?.optJSONArray("contents") ?: continue
+            for (c in 0 until contents.length()) {
+                val entry = contents.optJSONObject(c) ?: continue
+                val shelf = entry.optJSONObject("shelfRenderer")
+                    ?: entry.optJSONObject("reelShelfRenderer")
+                    ?: continue
+                val title = getRunText(shelf.optJSONObject("title"))
+                    ?: shelf.optJSONObject("title")?.optString("simpleText")
+                    ?: continue
+
+                val items = mutableListOf<org.json.JSONObject>()
+                findObjectsByKey(shelf, "lockupViewModel", items)
+                val shortItems = mutableListOf<org.json.JSONObject>()
+                findObjectsByKey(shelf, "shortsLockupViewModel", shortItems)
+                val postItems = mutableListOf<org.json.JSONObject>()
+                findObjectsByKey(shelf, "backstagePostRenderer", postItems)
+                val channelItems = mutableListOf<org.json.JSONObject>()
+                findObjectsByKey(shelf, "gridChannelRenderer", channelItems)
+
+                val built = ChannelShelf(
+                    title = title,
+                    videos = items.mapNotNull { parseLockupViewModel(it) }
+                        .map { stitchChannelIdentity(it, header) }
+                        .distinctBy { it.videoId },
+                    shorts = shortItems.mapNotNull { parseShortsLockup(it) }
+                        .distinctBy { it.videoId },
+                    playlists = items.mapNotNull { parsePlaylistLockup(it) }
+                        .distinctBy { it.playlistId },
+                    posts = postItems.mapNotNull { parseBackstagePost(it) }
+                        .distinctBy { it.postId },
+                    channels = channelItems.mapNotNull { parseGridChannel(it) }
+                        .distinctBy { it.channelId }
+                )
+                if (!built.isEmpty) shelves.add(built)
+            }
+        }
+        return shelves
+    }
+
+    /** A channel card in a "Featured channels" shelf. */
+    private fun parseGridChannel(renderer: org.json.JSONObject): SubscribedChannel? {
+        val channelId = renderer.optString("channelId").takeIf { it.isNotBlank() } ?: return null
+        val name = getRunText(renderer.optJSONObject("title"))
+            ?: renderer.optJSONObject("title")?.optString("simpleText")
+            ?: return null
+        val avatarUrl = bestThumbnail(
+            renderer.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
+        )
+        return SubscribedChannel(
+            channelId = channelId,
+            name = name,
+            avatarUrl = avatarUrl,
+            subscriberCountText = getRunText(renderer.optJSONObject("subscriberCountText"))
+        )
+    }
+
+    /**
+     * A community post, with whichever single attachment it carried.
+     *
+     * `contentText` is a legacy run list rather than the attributed-text shape
+     * [parseRichText] takes, so the runs are folded into the same [RichText]
+     * here - a post is full of links to videos and channels, and flattening it
+     * to a String would throw all of them away.
+     */
+    private fun parseBackstagePost(renderer: org.json.JSONObject): ChannelPost? {
+        val postId = renderer.optString("postId").takeIf { it.isNotBlank() } ?: return null
+        val authorName = getRunText(renderer.optJSONObject("authorText")).orEmpty()
+        val authorAvatarUrl = bestThumbnail(
+            renderer.optJSONObject("authorThumbnail")?.optJSONArray("thumbnails")
+        )
+
+        val text = parseRunListAsRichText(renderer.optJSONObject("contentText"))
+
+        val attachment = renderer.optJSONObject("backstageAttachment")
+        val images = mutableListOf<String>()
+        attachment?.optJSONObject("backstageImageRenderer")
+            ?.optJSONObject("image")?.optJSONArray("thumbnails")
+            ?.let { bestThumbnail(it) }
+            ?.let { images.add(it) }
+        attachment?.optJSONObject("postMultiImageRenderer")?.optJSONArray("images")
+            ?.let { array ->
+                for (i in 0 until array.length()) {
+                    array.optJSONObject(i)?.optJSONObject("backstageImageRenderer")
+                        ?.optJSONObject("image")?.optJSONArray("thumbnails")
+                        ?.let { bestThumbnail(it) }
+                        ?.let { images.add(it) }
+                }
+            }
+
+        val video = attachment?.optJSONObject("videoRenderer")?.let { parseVideoRenderer(it) }
+
+        val poll = attachment?.optJSONObject("pollRenderer")
+        val pollChoices = poll?.optJSONArray("choices")?.let { array ->
+            (0 until array.length()).mapNotNull { i ->
+                val choice = array.optJSONObject(i) ?: return@mapNotNull null
+                val label = getRunText(choice.optJSONObject("text"))
+                    ?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                ChannelPollChoice(
+                    text = label,
+                    imageUrl = bestThumbnail(
+                        choice.optJSONObject("image")?.optJSONArray("thumbnails")
+                    )
+                )
+            }
+        }.orEmpty()
+
+        return ChannelPost(
+            postId = postId,
+            authorName = authorName,
+            authorAvatarUrl = authorAvatarUrl,
+            text = text,
+            publishedText = getRunText(renderer.optJSONObject("publishedTimeText")),
+            voteCountText = renderer.optJSONObject("voteCount")?.optString("simpleText")
+                ?.takeIf { it.isNotBlank() },
+            replyCountText = renderer.optJSONObject("actionButtons")
+                ?.optJSONObject("commentActionButtonsRenderer")
+                ?.optJSONObject("replyButton")
+                ?.optJSONObject("buttonRenderer")
+                ?.let { getRunText(it.optJSONObject("text")) },
+            images = images,
+            video = video,
+            pollChoices = pollChoices,
+            pollTotalText = getRunText(poll?.optJSONObject("totalVotes"))
+        )
+    }
+
+    /**
+     * A legacy `{runs: [...]}` text object as [RichText], keeping the links.
+     *
+     * Offsets are accumulated as the runs are concatenated, which is the same
+     * UTF-16 indexing [parseRichText] documents - Kotlin's String indices are
+     * UTF-16 code units, so an emoji in a post does not shift the spans.
+     */
+    private fun parseRunListAsRichText(node: org.json.JSONObject?): RichText {
+        val runs = node?.optJSONArray("runs")
+            ?: return RichText(node?.optString("simpleText").orEmpty())
+        val builder = StringBuilder()
+        val links = mutableListOf<RichLink>()
+        for (i in 0 until runs.length()) {
+            val run = runs.optJSONObject(i) ?: continue
+            val text = run.optString("text")
+            if (text.isEmpty()) continue
+            val start = builder.length
+            builder.append(text)
+            val command = run.optJSONObject("navigationEndpoint") ?: continue
+            val target = parseRunLinkTarget(command) ?: continue
+            var end = builder.length
+            while (end > start && builder[end - 1].isWhitespace()) end--
+            if (end > start) links.add(RichLink(start, end, target))
+        }
+        return RichText(builder.toString(), links)
+    }
+
+    private fun parseRunLinkTarget(command: org.json.JSONObject): RichLinkTarget? {
+        command.optJSONObject("watchEndpoint")?.optString("videoId")
+            ?.takeIf { it.isNotBlank() }
+            ?.let { return RichLinkTarget.Url("https://www.youtube.com/watch?v=$it") }
+        command.optJSONObject("urlEndpoint")?.optString("url")
+            ?.takeIf { it.isNotBlank() }
+            ?.let { return RichLinkTarget.Url(unwrapYouTubeRedirect(it)) }
+        command.optJSONObject("browseEndpoint")?.optString("browseId")
+            ?.takeIf { it.isNotBlank() }
+            ?.let { return RichLinkTarget.Browse(it) }
+        return null
+    }
+
+    /** One About-panel link, unwrapped out of YouTube's redirect. */
+    private fun parseChannelExternalLink(view: org.json.JSONObject): ChannelLink? {
+        val title = view.optJSONObject("title")?.optString("content")
+            ?.takeIf { it.isNotBlank() }
+        val link = view.optJSONObject("link")
+        val display = link?.optString("content")?.takeIf { it.isNotBlank() }
+        val url = link?.optJSONArray("commandRuns")?.optJSONObject(0)
+            ?.optJSONObject("onTap")?.optJSONObject("innertubeCommand")
+            ?.optJSONObject("urlEndpoint")?.optString("url")
+            ?.takeIf { it.isNotBlank() }
+            ?.let { unwrapYouTubeRedirect(it) }
+            ?: return null
+        return ChannelLink(
+            title = title ?: display ?: url,
+            url = url,
+            faviconUrl = bestImageSource(
+                view.optJSONObject("favicon")?.optJSONArray("sources")
+            )
+        )
+    }
+
+    /**
+     * The sort orders a tab offers, from either of the two mechanisms YouTube
+     * uses for them - see [ChannelSortOption] for why both are kept.
+     */
+    private fun parseChannelSortOptions(scope: org.json.JSONObject): List<ChannelSortOption> {
+        val options = mutableListOf<ChannelSortOption>()
+
+        // Videos / Shorts / Live: a chip that opens a sheet of continuations.
+        val chips = mutableListOf<org.json.JSONObject>()
+        findObjectsByKey(scope, "chipViewModel", chips)
+        for (chip in chips) {
+            val listItems = chip.optJSONObject("tapCommand")
+                ?.optJSONObject("innertubeCommand")
+                ?.optJSONObject("showSheetCommand")
+                ?.optJSONObject("panelLoadingStrategy")
+                ?.optJSONObject("inlineContent")
+                ?.optJSONObject("sheetViewModel")
+                ?.optJSONObject("content")
+                ?.optJSONObject("listViewModel")
+                ?.optJSONArray("listItems") ?: continue
+            for (i in 0 until listItems.length()) {
+                val item = listItems.optJSONObject(i)?.optJSONObject("listItemViewModel") ?: continue
+                val label = item.optJSONObject("title")?.optString("content")
+                    ?.takeIf { it.isNotBlank() } ?: continue
+                val command = item.optJSONObject("rendererContext")
+                    ?.optJSONObject("commandContext")
+                    ?.optJSONObject("onTap")
+                    ?.optJSONObject("innertubeCommand") ?: continue
+                val tokens = mutableListOf<String>()
+                findContinuationTokens(command, tokens)
+                val token = tokens.firstOrNull() ?: continue
+                options.add(
+                    ChannelSortOption(
+                        label = label,
+                        selected = item.optBoolean("isSelected", false),
+                        token = token
+                    )
+                )
+            }
+        }
+        if (options.isNotEmpty()) return options.distinctBy { it.label }
+
+        // Playlists: a sub-menu of browse params, re-browsing the tab.
+        val subMenus = mutableListOf<org.json.JSONObject>()
+        findObjectsByKey(scope, "sortFilterSubMenuRenderer", subMenus)
+        for (menu in subMenus) {
+            val items = menu.optJSONArray("subMenuItems") ?: continue
+            for (i in 0 until items.length()) {
+                val item = items.optJSONObject(i) ?: continue
+                val label = item.optString("title").takeIf { it.isNotBlank() } ?: continue
+                val params = item.optJSONObject("navigationEndpoint")
+                    ?.optJSONObject("browseEndpoint")
+                    ?.optString("params")?.takeIf { it.isNotBlank() } ?: continue
+                options.add(
+                    ChannelSortOption(
+                        label = label,
+                        selected = item.optBoolean("selected", false),
+                        params = params
+                    )
+                )
+            }
+        }
+        return options.distinctBy { it.label }
+    }
+
+    /**
+     * The token for the next page, from the `continuationItemRenderer` YouTube
+     * puts at the end of a grid.
+     *
+     * Taken from the *last* continuation in the response rather than the first:
+     * a Home tab carries one per shelf, and the page-level one that actually
+     * scrolls the grid is the trailing one.
+     */
+    private fun parseChannelNextPageToken(scope: org.json.JSONObject): String? {
+        val renderers = mutableListOf<org.json.JSONObject>()
+        findObjectsByKey(scope, "continuationItemRenderer", renderers)
+        return renderers.lastNotNullOfOrNull { renderer ->
+            renderer.optJSONObject("continuationEndpoint")
+                ?.optJSONObject("continuationCommand")
+                ?.optString("token")
+                ?.takeIf { it.isNotBlank() }
+        }
+    }
+
+    private inline fun <T, R : Any> List<T>.lastNotNullOfOrNull(transform: (T) -> R?): R? {
+        for (i in indices.reversed()) {
+            transform(this[i])?.let { return it }
+        }
+        return null
+    }
+
+    /** Widest entry of a modern `image.sources` array. */
+    private fun bestImageSource(sources: org.json.JSONArray?): String? {
+        if (sources == null) return null
+        var best: String? = null
+        var maxWidth = -1
+        for (i in 0 until sources.length()) {
+            val source = sources.optJSONObject(i) ?: continue
+            val width = source.optInt("width", 0)
+            val url = source.optString("url").takeIf { it.isNotBlank() } ?: continue
+            if (width >= maxWidth) {
+                maxWidth = width
+                best = url
+            }
+        }
+        return best?.let { if (it.startsWith("//")) "https:$it" else it }
+    }
+
+    /** Widest entry of a legacy `thumbnails` array. */
+    private fun bestThumbnail(thumbnails: org.json.JSONArray?): String? {
+        if (thumbnails == null) return null
+        var best: String? = null
+        var maxWidth = -1
+        for (i in 0 until thumbnails.length()) {
+            val thumb = thumbnails.optJSONObject(i) ?: continue
+            val width = thumb.optInt("width", 0)
+            val url = thumb.optString("url").takeIf { it.isNotBlank() } ?: continue
+            if (width >= maxWidth) {
+                maxWidth = width
+                best = url
+            }
+        }
+        return best?.let { if (it.startsWith("//")) "https:$it" else it }
+    }
+
+    /**
+     * Unwraps `youtube.com/redirect?...&q=<target>` to the real destination, so
+     * a link does not bounce through YouTube and still works once the redirect
+     * token expires. Same rule [RichText] applies to descriptions.
+     */
+    private fun unwrapYouTubeRedirect(url: String): String {
+        if (!url.contains("/redirect?")) return url
+        return try {
+            android.net.Uri.parse(url).getQueryParameter("q")?.takeIf { it.isNotBlank() } ?: url
+        } catch (e: Exception) {
+            url
         }
     }
 

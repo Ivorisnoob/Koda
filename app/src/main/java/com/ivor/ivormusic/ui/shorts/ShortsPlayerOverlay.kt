@@ -122,7 +122,13 @@ import kotlinx.coroutines.isActive as coroutineIsActive
 @Composable
 fun ShortsPlayerOverlay(
     viewModel: ShortsPlayerViewModel,
-    hiddenActions: Set<String> = emptySet()
+    hiddenActions: Set<String> = emptySet(),
+    /**
+     * Open the current Short's creator. Routed to the host, which closes this
+     * overlay on the way: it is full-bleed with no minimised form, so unlike the
+     * video player there is nothing to leave running behind the channel page.
+     */
+    onOpenChannel: (String) -> Unit = {}
 ) {
     val isActive by viewModel.isActive.collectAsState()
     if (!isActive) return
@@ -477,7 +483,19 @@ fun ShortsPlayerOverlay(
             Column(modifier = Modifier.weight(1f)) {
                 val video = currentVideo
                 if (video != null && video.channelName.isNotBlank()) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    // The avatar and name are one target, the way they are on
+                    // the watch page. Offered only when the Short carried a
+                    // channel id - sequence entries often do not, and a row that
+                    // silently does nothing is worse than one that is inert.
+                    val channelId = video.channelId?.takeIf { it.startsWith("UC") }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = if (channelId != null) {
+                            Modifier.clickable { onOpenChannel(channelId) }
+                        } else {
+                            Modifier
+                        }
+                    ) {
                         // Expressive avatar, cookie-clipped like the design
                         // guide's shaped avatars
                         Box(

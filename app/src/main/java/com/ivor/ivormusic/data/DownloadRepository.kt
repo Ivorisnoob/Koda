@@ -708,7 +708,7 @@ class DownloadRepository private constructor(private val context: Context) {
                 // MP4-container entries only: the muxer will not accept VP9 or
                 // Opus, which is what the webm ladder carries.
                 val mp4Candidates = qualities.filter {
-                    !it.isDASH && it.audioUrl != null && it.format?.contains("mp4") == true
+                    !it.isDASH && it.audioUrl != null && it.isMp4DownloadCompatible
                 }
                 // The list is sorted highest-first, so "auto" is the head and a
                 // requested label resolves to the best entry at or below its
@@ -725,7 +725,9 @@ class DownloadRepository private constructor(private val context: Context) {
                         ?: mp4Candidates.lastOrNull { height(it.resolution) > 0 }
                         ?: mp4Candidates.firstOrNull()
                 }
-                val progressive = qualities.firstOrNull { !it.isDASH && it.audioUrl == null }
+                val progressive = qualities.firstOrNull {
+                    !it.isDASH && it.audioUrl == null && it.isMp4Container
+                }
 
                 val chosen = adaptive ?: progressive
                     ?: throw java.io.IOException("No downloadable stream for ${request.id}")

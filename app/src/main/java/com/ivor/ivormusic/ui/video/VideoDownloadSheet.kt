@@ -111,10 +111,10 @@ fun VideoDownloadSheet(
             // Same eligibility rules as the download worker: MP4 adaptive
             // pairs first, else the muxed progressive stream (typically 360p).
             val mp4Adaptive = qualities.filter {
-                !it.isDASH && it.audioUrl != null && it.format?.contains("mp4") == true
+                !it.isDASH && it.audioUrl != null && it.isMp4DownloadCompatible
             }
             val downloadable = mp4Adaptive.ifEmpty {
-                qualities.filter { !it.isDASH && it.audioUrl == null }
+                qualities.filter { !it.isDASH && it.audioUrl == null && it.isMp4Container }
             }.distinctBy { it.resolution }
             options = downloadable
             loadFailed = downloadable.isEmpty() && qualities.isEmpty()

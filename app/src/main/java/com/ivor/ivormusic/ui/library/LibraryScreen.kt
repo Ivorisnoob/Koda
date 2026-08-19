@@ -129,6 +129,8 @@ fun LibraryContent(
     songs: List<Song>,
     onSongClick: (Song) -> Unit,
     onPlaylistClick: (PlaylistDisplayItem) -> Unit = {},
+    /** Open a musician's video-mode channel page, from the artist screen. */
+    onOpenChannel: ((String) -> Unit)? = null,
     onPlayQueue: (List<Song>, Song?) -> Unit,
     contentPadding: PaddingValues,
     viewModel: HomeViewModel,
@@ -323,7 +325,8 @@ fun LibraryContent(
                             currentRoute = LibraryRoute.Playlist
                         },
                         viewModel = viewModel,
-                        onSongLongPress = onSongLongPress
+                        onSongLongPress = onSongLongPress,
+                        onOpenChannel = onOpenChannel
                     )
                 }
             }
@@ -2332,15 +2335,25 @@ fun PlaylistDetailScreen(
     // supports song removal (= removing the like), not rename/delete, and the
     // synthesized Supermix ("RTM") and radio mixes are not editable at all.
     val isYouTubePlaylist = !isAlbum && !isLocalPlaylist
+    // Whether the library actually holds this playlist. A "PL" prefix says an
+    // id is a real YouTube playlist, not that it is yours: every editing
+    // affordance below is a write, and this page is reached from search and
+    // from a shared link as well as from the Library, so without this a
+    // playlist somebody else owns offered rename, delete and track editing -
+    // all of which fail at the endpoint, after the UI has already moved. Being
+    // absent from the library is only ever grounds for offering less, so the
+    // moment before the list loads costs a hidden button, not a failed write.
+    val isInLibrary = userPlaylists.any { it.id == playlist.id }
     val canEditYouTubeSongs = isYouTubePlaylist && !isSavedPlaylist &&
-        (playlist.id.startsWith("PL") || playlist.id == "LM")
+        (playlist.id == "LM" || (isInLibrary && playlist.id.startsWith("PL")))
     // A saved playlist starts with "PL" like any other, but it belongs to
     // whoever made it: rename and delete would be writes the account has no
     // rights to, and offering them is the UI promising something it cannot do.
-    val canRenameDeleteYouTube = isYouTubePlaylist && playlist.id.startsWith("PL") && !isSavedPlaylist
+    val canRenameDeleteYouTube = isYouTubePlaylist && isInLibrary &&
+        playlist.id.startsWith("PL") && !isSavedPlaylist
     // Real "PL" playlists can be reordered remotely via edit_playlist moves;
     // "LM" (Your Likes) only supports removal.
-    val canReorderRemote = isYouTubePlaylist && playlist.id.startsWith("PL")
+    val canReorderRemote = isYouTubePlaylist && isInLibrary && playlist.id.startsWith("PL")
     val canEditSongs = isLocalPlaylist || canEditYouTubeSongs
 
     var songs by remember { mutableStateOf(preloadedSongs ?: emptyList()) }

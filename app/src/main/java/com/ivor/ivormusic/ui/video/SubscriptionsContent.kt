@@ -47,7 +47,6 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearWavyProgressIndicator
-import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -89,7 +88,7 @@ import com.ivor.ivormusic.util.fuzzyScore
  * Subscriptions tab for Video Mode. Default view is the subscriptions feed
  * (latest uploads across all subscribed channels) topped by a horizontal
  * rail of channel avatars; an "All channels" entry opens the full channel
- * list, and tapping any channel drills into its latest uploads.
+ * list, and tapping any channel opens its full page on its own route.
  *
  * The feed no longer implies a Google account. Channels followed on this
  * device sit in the same list as the account's, so the sign-in wall only
@@ -108,13 +107,15 @@ fun SubscriptionsContent(
     onVideoClick: (VideoItem) -> Unit,
     onEnqueueVideo: ((VideoItem, Boolean) -> Unit)? = null,
     onLoginClick: () -> Unit,
+    /** Open a creator's page: from a channel row, or from the long-press sheet. */
+    onOpenChannel: ((String) -> Unit)? = null,
     contentPadding: PaddingValues,
     onManageSubscriptions: () -> Unit = {},
     /**
-     * Hoisted by HomeScreen for the tab's root feed only. The channel list and
-     * the channel drill-in below keep their own states: they are reached
-     * deliberately and popped with Back, so the tab button scrolling the feed
-     * underneath them would act on a list the user cannot see.
+     * Hoisted by HomeScreen for the tab's root feed only. The channel list
+     * keeps its own state: it is reached deliberately and popped with Back, so
+     * the tab button scrolling the feed underneath it would act on a list the
+     * user cannot see.
      */
     feedListState: LazyListState = rememberLazyListState()
 ) {
@@ -147,19 +148,26 @@ fun SubscriptionsContent(
         saveTargetVideo = video
     }
 
-    // Internal navigation: feed -> (channel list) -> channel uploads
-    var showChannelList by remember { mutableStateOf(false) }
-    var selectedChannel by remember { mutableStateOf<SubscribedChannel?>(null) }
-    var channelVideos by remember { mutableStateOf<List<VideoItem>>(emptyList()) }
-    var isChannelLoading by remember { mutableStateOf(false) }
+    // Internal navigation: feed -> channel list. A channel itself is no longer
+    // a drill-in here: it is the full channel screen, on its own route, which
+    // is what makes tapping an avatar in this rail land in the same place as
+    // tapping a creator's name in the player or in search.
+    // Saveable for the same reason the tab index is: opening a channel from
+    // this list navigates away, and coming back to the feed instead of to the
+    // list you were reading is a step the user did not ask for.
+    var showChannelList by androidx.compose.runtime.saveable.rememberSaveable {
+        mutableStateOf(false)
+    }
 
     /**
-     * Filter over the channel list. Held out here rather than inside the branch
-     * so it survives a drill-in: going into a channel and coming back to a list
-     * that had silently reset itself is the worse of the two behaviours, and
-     * comparing two channels is exactly what the search was opened for.
+     * Filter over the channel list. Held out here rather than inside the branch,
+     * and saveable, so it survives opening a channel: coming back to a list that
+     * had silently reset itself is the worse of the two behaviours, and
+     * comparing two channels is exactly what the filter was opened for.
      */
-    var channelQuery by remember { mutableStateOf("") }
+    var channelQuery by androidx.compose.runtime.saveable.rememberSaveable {
+        mutableStateOf("")
+    }
     val focusManager = LocalFocusManager.current
 
     // Name first, @handle second - both sources carry a handle, so typing one
@@ -190,35 +198,17 @@ fun SubscriptionsContent(
         viewModel.loadSubscriptions()
     }
 
-    val currentChannel = selectedChannel
-    LaunchedEffect(currentChannel) {
-        if (currentChannel != null) {
-            isChannelLoading = true
-            channelVideos = viewModel.getChannelVideos(currentChannel)
-            isChannelLoading = false
-        } else {
-            channelVideos = emptyList()
-        }
-    }
-
-    // Back unwinds: drill-in, then a running query, then the channel list.
-    // The query step is deliberately not previewed - nothing leaves the screen
-    // for it, the list simply widens again - and neither is popping a drill-in
-    // that was opened from the channel list, because what that reveals is the
-    // list rather than the feed underneath.
+    // Back unwinds: a running query, then the channel list. The query step is
+    // deliberately not previewed - nothing leaves the screen for it, the list
+    // simply widens again.
     val subscriptionsBack = {
         when {
-            selectedChannel != null -> selectedChannel = null
             channelQuery.isNotBlank() -> channelQuery = ""
             else -> showChannelList = false
         }
     }
-    val subscriptionsChildOpen = selectedChannel != null || showChannelList
-    val subscriptionsPreviewable = when {
-        selectedChannel != null -> !showChannelList
-        showChannelList -> channelQuery.isBlank()
-        else -> false
-    }
+    val subscriptionsChildOpen = showChannelList
+    val subscriptionsPreviewable = showChannelList && channelQuery.isBlank()
 
     // Animation state
     var isVisible by remember { mutableStateOf(false) }
@@ -251,7 +241,8 @@ fun SubscriptionsContent(
             // deliberately follows, from the feed that exists to show it, is a
             // contradiction. Unfollowing is the tool for that, and it is one
             // tap away in the same tab.
-            allowBlockChannel = false
+            allowBlockChannel = false,
+            onOpenChannel = onOpenChannel
         )
     }
 
@@ -269,10 +260,6 @@ fun SubscriptionsContent(
             confirmButton = {
                 TextButton(onClick = {
                     viewModel.unsubscribeLocally(channel.channelId)
-                    // Back out of the drill-in if it was the channel being viewed,
-                    // which would otherwise sit there showing a channel that is no
-                    // longer followed.
-                    if (selectedChannel?.channelId == channel.channelId) selectedChannel = null
                     channelToUnfollow = null
                 }) { Text("Unfollow") }
             },
@@ -420,7 +407,7 @@ fun SubscriptionsContent(
                                         modifier = Modifier
                                             .clip(RoundedCornerShape(12.dp))
                                             .combinedClickable(
-                                                onClick = { selectedChannel = channel },
+                                                onClick = { onOpenChannel?.invoke(channel.channelId) },
                                                 // Only device-followed channels can be
                                                 // dropped from here; unfollowing an
                                                 // account subscription is a write to
@@ -503,6 +490,7 @@ fun SubscriptionsContent(
                                 video = video,
                                 onClick = { onVideoClick(video) },
                                 onLongClick = { onVideoLongPress(video) },
+                                onOpenChannel = onOpenChannel,
                                 modifier = Modifier.padding(horizontal = 16.dp)
                             )
                         }
@@ -514,88 +502,6 @@ fun SubscriptionsContent(
         }
     ) { _ ->
     when {
-        // Channel drill-in: latest uploads of the selected channel
-        currentChannel != null -> {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(backgroundColor),
-                contentPadding = contentPadding,
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                item {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 8.dp)
-                            .padding(top = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        IconButton(onClick = { selectedChannel = null }) {
-                            Icon(
-                                Icons.AutoMirrored.Rounded.ArrowBack,
-                                contentDescription = "Back",
-                                tint = MaterialTheme.colorScheme.onBackground
-                            )
-                        }
-                        ChannelAvatar(channel = currentChannel, size = 40.dp)
-                        Spacer(Modifier.width(12.dp))
-                        Column {
-                            Text(
-                                text = currentChannel.name,
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onBackground,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            if (currentChannel.subscriberCountText != null) {
-                                Text(
-                                    text = currentChannel.subscriberCountText,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    }
-                }
-
-                if (isChannelLoading) {
-                    item {
-                        Box(
-                            Modifier.fillMaxWidth().height(200.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            LoadingIndicator(
-                                modifier = Modifier.size(48.dp),
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    }
-                } else if (channelVideos.isEmpty()) {
-                    item {
-                        Box(
-                            modifier = Modifier.fillMaxWidth().padding(32.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text("No videos found", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                } else {
-                    items(channelVideos) { video ->
-                        VideoCard(
-                            video = video,
-                            onClick = { onVideoClick(video) },
-                            onLongClick = { onVideoLongPress(video) },
-                            modifier = Modifier.padding(horizontal = 16.dp)
-                        )
-                    }
-                }
-
-                item { Spacer(modifier = Modifier.height(32.dp)) }
-            }
-        }
-
         // Full channel list
         showChannelList -> {
             ExpressivePullToRefresh(
@@ -709,10 +615,10 @@ fun SubscriptionsContent(
                                 isLocal = channel.channelId in locallyFollowedIds,
                                 onClick = {
                                     // The keyboard outlives the field it was
-                                    // opened from, and a drill-in behind an open
-                                    // keyboard is half a screen of video list.
+                                    // opened from, and it would sit over the
+                                    // channel page this is about to open.
                                     focusManager.clearFocus()
-                                    selectedChannel = channel
+                                    onOpenChannel?.invoke(channel.channelId)
                                 },
                                 onUnfollow = { channelToUnfollow = channel },
                                 modifier = Modifier.padding(horizontal = 16.dp)

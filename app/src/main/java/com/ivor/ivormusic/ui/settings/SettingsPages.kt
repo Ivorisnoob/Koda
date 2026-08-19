@@ -210,6 +210,8 @@ internal fun AppearanceSettingsPage(
     onAmbientBackgroundToggle: (Boolean) -> Unit,
     spotlightHome: Boolean,
     onSpotlightHomeToggle: (Boolean) -> Unit,
+    nonExpressiveNavigationBar: Boolean,
+    onNonExpressiveNavigationBarToggle: (Boolean) -> Unit,
     onBack: () -> Unit
 ) {
     val paletteName = if (colorPalette == ThemePreferences.DEFAULT_COLOR_PALETTE) {
@@ -265,6 +267,24 @@ internal fun AppearanceSettingsPage(
                         },
                         enabled = ambientBackground,
                         onToggle = onAmbientBackgroundToggle
+                    )
+                }
+            }
+        }
+
+        item {
+            SettingsSection(title = "Navigation") {
+                SettingsCard {
+                    SettingsToggleRow(
+                        icon = Icons.Rounded.Dashboard,
+                        title = "Non-expressive navigation bar",
+                        subtitle = if (nonExpressiveNavigationBar) {
+                            "Standard Material 3 bar with fixed labels"
+                        } else {
+                            "Expressive floating navigation"
+                        },
+                        enabled = nonExpressiveNavigationBar,
+                        onToggle = onNonExpressiveNavigationBarToggle
                     )
                 }
             }
@@ -369,8 +389,6 @@ internal fun PlaybackSettingsPage(
     musicQualityMobile: String,
     videoQualityWifi: String,
     videoQualityMobile: String,
-    preferHdr: Boolean,
-    onPreferHdrToggle: (Boolean) -> Unit,
     onOpenQualityPicker: (QualityDialogTarget) -> Unit,
     onBack: () -> Unit
 ) {
@@ -576,16 +594,6 @@ internal fun PlaybackSettingsPage(
                             )
                         },
                         showChevron = true
-                    )
-
-                    SettingsDivider()
-
-                    SettingsToggleRow(
-                        icon = Icons.Rounded.HdrOn,
-                        title = "Prefer HDR Videos",
-                        subtitle = "Fetch HDR streams when a video has them",
-                        enabled = preferHdr,
-                        onToggle = onPreferHdrToggle
                     )
                 }
             }

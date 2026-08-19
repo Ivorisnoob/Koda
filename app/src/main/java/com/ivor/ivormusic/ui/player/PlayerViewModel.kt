@@ -55,16 +55,6 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     private val _isBuffering = MutableStateFlow(false)
     val isBuffering: StateFlow<Boolean> = _isBuffering.asStateFlow()
 
-    // One-shot user-facing playback error message. The UI shows it (toast) and
-    // calls clearPlaybackError(). Without this, resolution/network failures
-    // were completely silent and the player sat on the buffering spinner.
-    private val _playbackError = MutableStateFlow<String?>(null)
-    val playbackError: StateFlow<String?> = _playbackError.asStateFlow()
-
-    fun clearPlaybackError() {
-        _playbackError.value = null
-    }
-
     /**
      * Snapshot the current queue, index, and position for resume-on-reopen.
      * Controller state is read on the caller (main) thread; the file write
@@ -377,12 +367,6 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                     // Clearing here guarantees the spinner can't outlive a
                     // playback that is never going to start.
                     _isBuffering.value = false
-                    val title = _currentSong.value?.title
-                    _playbackError.value = if (title != null) {
-                        "Couldn't play \"$title\". Check your connection and try again."
-                    } else {
-                        "Playback failed. Check your connection and try again."
-                    }
                 }
 
                 override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {

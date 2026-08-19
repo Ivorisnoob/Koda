@@ -11,6 +11,8 @@ import com.ivor.ivormusic.data.FolderInfo
 import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.data.ArtistItem
 import com.ivor.ivormusic.data.PlaylistDisplayItem
+import com.ivor.ivormusic.data.PlaylistPageInfo
+import com.ivor.ivormusic.data.VideoPlaylist
 import com.ivor.ivormusic.data.YouTubeRepository
 import com.ivor.ivormusic.data.LikedSongsRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -36,6 +38,74 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _songs = MutableStateFlow<List<Song>>(emptyList())
     val songs: StateFlow<List<Song>> = _songs.asStateFlow()
+
+    /**
+     * An artist page asked for from outside the Home screen - today, the
+     * "Open music artist page" cross-link on a creator's channel page.
+     *
+     * The Library owns artist detail and is handed one through `initialArtist`,
+     * which is state inside `HomeScreen` and therefore unreachable from a
+     * NavHost destination sitting beside it. This is the same hand-off, one
+     * level up: set from anywhere, consumed by `HomeScreen` the moment it
+     * routes to the Library tab, and cleared so returning to Library later
+     * lands on the list rather than re-opening the artist.
+     */
+    private val _pendingArtistPage = MutableStateFlow<String?>(null)
+    val pendingArtistPage: StateFlow<String?> = _pendingArtistPage.asStateFlow()
+
+    fun requestArtistPage(artistName: String) {
+        _pendingArtistPage.value = artistName.takeIf { it.isNotBlank() }
+    }
+
+    fun consumeArtistPageRequest() {
+        _pendingArtistPage.value = null
+    }
+
+    /**
+     * A playlist page asked for from outside the Home screen - today, a
+     * playlist link shared or opened into the app.
+     *
+     * The same hand-off as [pendingArtistPage] and for the same reason: both
+     * playlist pages live inside the tab system, which a share intent arriving
+     * at `MainActivity` cannot reach. Two flows rather than one tagged value
+     * because the two modes land on different tabs and hold different types,
+     * and a share names which mode it wants by the link it carries.
+     */
+    private val _pendingPlaylistPage = MutableStateFlow<PlaylistDisplayItem?>(null)
+    val pendingPlaylistPage: StateFlow<PlaylistDisplayItem?> = _pendingPlaylistPage.asStateFlow()
+
+    private val _pendingVideoPlaylistPage = MutableStateFlow<VideoPlaylist?>(null)
+    val pendingVideoPlaylistPage: StateFlow<VideoPlaylist?> = _pendingVideoPlaylistPage.asStateFlow()
+
+    fun requestPlaylistPage(info: PlaylistPageInfo) {
+        _pendingPlaylistPage.value = info.toDisplayItem()
+    }
+
+    fun consumePlaylistPageRequest() {
+        _pendingPlaylistPage.value = null
+    }
+
+    fun requestVideoPlaylistPage(info: PlaylistPageInfo) {
+        _pendingVideoPlaylistPage.value = info.toVideoPlaylist()
+    }
+
+    fun consumeVideoPlaylistPageRequest() {
+        _pendingVideoPlaylistPage.value = null
+    }
+
+    /**
+     * What a shared playlist link points at, as the page that opens it needs to
+     * describe itself. Null when the id has no page behind it - a generated
+     * mix, a private or deleted list - which is the caller's cue to fall back
+     * to playing rather than opening.
+     */
+    suspend fun resolvePlaylistPageFromLink(playlistId: String): PlaylistPageInfo? {
+        return try {
+            youtubeRepository.getPlaylistHeader(playlistId)
+        } catch (e: Exception) {
+            null
+        }
+    }
 
     private val _searchHistory = MutableStateFlow(searchHistoryRepository.getHistory())
     val searchHistory: StateFlow<List<String>> = _searchHistory.asStateFlow()
@@ -697,11 +767,6 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun isLocallySubscribed(channelId: String?): Boolean =
         localSubscriptionsRepository.isSubscribed(channelId)
-
-    /** Latest uploads of one subscribed channel (for the channel drill-in view). */
-    suspend fun getChannelVideos(channel: com.ivor.ivormusic.data.SubscribedChannel): List<VideoItem> {
-        return youtubeRepository.getChannelVideos(channel)
-    }
 
     // ---------------- Subscription import / export ----------------
 
@@ -1568,6 +1633,36 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         if (query.isBlank()) return emptyList()
         return try {
             youtubeRepository.searchVideoPlaylists(query)
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    /**
+     * A creator's channel identity - banner, avatar, verified tick, subscriber
+     * count - for the music artist page.
+     *
+     * One browse, and the artist page's only reason to make it: it is what lets
+     * the same musician look like the same person whichever mode you arrive
+     * from. Returns null for anything that is not a channel id, which is the
+     * common case in a local library where the "artist" is a tag on a file.
+     */
+    suspend fun getChannelHeader(
+        channelId: String
+    ): com.ivor.ivormusic.data.ChannelHeader? {
+        if (!channelId.startsWith("UC")) return null
+        return try {
+            youtubeRepository.getChannelPage(channelId)?.header
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /** Search for channels (video mode's Channels filter). */
+    suspend fun searchChannels(query: String): List<com.ivor.ivormusic.data.SubscribedChannel> {
+        if (query.isBlank()) return emptyList()
+        return try {
+            youtubeRepository.searchChannels(query)
         } catch (e: Exception) {
             emptyList()
         }

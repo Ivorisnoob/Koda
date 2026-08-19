@@ -15,7 +15,7 @@ navigationCompose = "2.8.5"
 lifecycleViewModelCompose = "2.8.7"
 graphicsShapes = "1.0.1"
 splashScreen = "1.0.1"
-newpipeExtractor = "v0.26.2"
+newpipeExtractor = "v0.26.5"
 okhttp = "4.12.0"
 securityCrypto = "1.1.0-alpha06"
 palette = "1.0.0"
@@ -72,4 +72,3 @@ android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
-

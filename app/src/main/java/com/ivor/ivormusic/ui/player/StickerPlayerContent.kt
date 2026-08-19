@@ -136,6 +136,15 @@ fun StickerPlayerSheetContent(
 
     var showQueue by remember { mutableStateOf(false) }
     var showLyrics by remember { mutableStateOf(false) }
+
+    // Swipe-to-skip on the song information. The sticker itself keeps its own
+    // peel: that gesture throws the art off the canvas and slaps the next one
+    // on, which is this style's whole identity and is not a spring-back. Same
+    // direction and the same commit, a different animation, on purpose.
+    val swipeToSkip = rememberSwipeToSkip(
+        onNext = { playerHaptics.skip(); viewModel.skipToNext() },
+        onPrevious = { playerHaptics.skip(); viewModel.skipToPrevious() }
+    )
     var showAddToPlaylist by remember { mutableStateOf(false) }
 
     // Color-block board: two flat tonal fields meeting on a hard edge.
@@ -292,34 +301,43 @@ fun StickerPlayerSheetContent(
                     }
 
                     // ========== TITLE / ARTIST ==========
-                    Text(
-                        text = currentSong?.title?.takeIf { !it.startsWith("Unknown") } ?: "Untitled",
-                        style = MaterialTheme.typography.headlineLarge.copy(fontWeight = FontWeight.Black),
-                        color = ink,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        textAlign = TextAlign.Center,
+                    // Wrapped so the song information is one swipe target the
+                    // full width of the player, not two text-shaped ones.
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 24.dp)
-                    )
-                    val artistName = currentSong?.artist?.takeIf { !it.startsWith("Unknown") }
-                        ?: "Unknown Artist"
-                    Text(
-                        text = artistName.uppercase(),
-                        style = MaterialTheme.typography.labelLarge.copy(letterSpacing = 2.sp),
-                        color = inkVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier
-                            .align(Alignment.CenterHorizontally)
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable(enabled = artistName != "Unknown Artist") {
-                                onArtistClick(artistName)
-                            }
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
-                    )
+                            .swipeToSkip(swipeToSkip)
+                            .swipeToSkipFollow(swipeToSkip)
+                    ) {
+                        Text(
+                            text = currentSong?.title?.takeIf { !it.startsWith("Unknown") } ?: "Untitled",
+                            style = MaterialTheme.typography.headlineLarge.copy(fontWeight = FontWeight.Black),
+                            color = ink,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 24.dp)
+                        )
+                        val artistName = currentSong?.artist?.takeIf { !it.startsWith("Unknown") }
+                            ?: "Unknown Artist"
+                        Text(
+                            text = artistName.uppercase(),
+                            style = MaterialTheme.typography.labelLarge.copy(letterSpacing = 2.sp),
+                            color = inkVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier
+                                .align(Alignment.CenterHorizontally)
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable(enabled = artistName != "Unknown Artist") {
+                                    onArtistClick(artistName)
+                                }
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    }
 
                     Spacer(modifier = Modifier.height(8.dp))
 

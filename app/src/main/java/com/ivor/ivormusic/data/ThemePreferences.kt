@@ -78,11 +78,13 @@ class ThemePreferences(context: Context) {
     private val _musicQualityMobile = MutableStateFlow(getMusicQualityMobilePreference())
     val musicQualityMobile: StateFlow<String> = _musicQualityMobile.asStateFlow()
 
-    private val _preferHdr = MutableStateFlow(getPreferHdrPreference())
-    val preferHdr: StateFlow<Boolean> = _preferHdr.asStateFlow()
-
     private val _spotlightHome = MutableStateFlow(getSpotlightHomePreference())
     val spotlightHome: StateFlow<Boolean> = _spotlightHome.asStateFlow()
+
+    private val _nonExpressiveNavigationBar =
+        MutableStateFlow(getNonExpressiveNavigationBarPreference())
+    val nonExpressiveNavigationBar: StateFlow<Boolean> =
+        _nonExpressiveNavigationBar.asStateFlow()
 
 
     private val _subscriptionSource = MutableStateFlow(getSubscriptionSourcePreference())
@@ -160,8 +162,9 @@ class ThemePreferences(context: Context) {
             KEY_VIDEO_QUALITY_MOBILE -> _videoQualityMobile.value = getVideoQualityMobilePreference()
             KEY_MUSIC_QUALITY_WIFI -> _musicQualityWifi.value = getMusicQualityWifiPreference()
             KEY_MUSIC_QUALITY_MOBILE -> _musicQualityMobile.value = getMusicQualityMobilePreference()
-            KEY_PREFER_HDR -> _preferHdr.value = getPreferHdrPreference()
             KEY_SPOTLIGHT_HOME -> _spotlightHome.value = getSpotlightHomePreference()
+            KEY_NON_EXPRESSIVE_NAVIGATION_BAR ->
+                _nonExpressiveNavigationBar.value = getNonExpressiveNavigationBarPreference()
             KEY_SUBSCRIPTION_SOURCE -> _subscriptionSource.value = getSubscriptionSourcePreference()
             KEY_SUBSCRIBE_TARGET -> _subscribeTarget.value = getSubscribeTargetPreference()
             KEY_FAST_SUBSCRIPTION_FEED -> _fastSubscriptionFeed.value = getFastSubscriptionFeedPreference()
@@ -341,8 +344,6 @@ class ThemePreferences(context: Context) {
             return prefs.getString(key, DEFAULT_MUSIC_QUALITY) ?: DEFAULT_MUSIC_QUALITY
         }
 
-        private const val KEY_PREFER_HDR = "prefer_hdr_video"
-
         /**
          * Spotlight: the alternative music Home, built from a shortcut grid,
          * paged quick picks and artwork shelves (see
@@ -351,6 +352,8 @@ class ThemePreferences(context: Context) {
          * therefore frozen forever, and there is no third Home planned.
          */
         private const val KEY_SPOTLIGHT_HOME = "spotlight_home"
+        private const val KEY_NON_EXPRESSIVE_NAVIGATION_BAR =
+            "non_expressive_navigation_bar"
 
         /**
          * Default quality for video downloads, one of [VIDEO_QUALITY_OPTIONS].
@@ -381,15 +384,6 @@ class ThemePreferences(context: Context) {
             context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                 .getString(KEY_COLOR_PALETTE, DEFAULT_COLOR_PALETTE)
                 ?: DEFAULT_COLOR_PALETTE
-
-        /**
-         * Static fresh read of the HDR opt-in for the quality parser, which
-         * runs inside YouTubeRepository off a plain Context. Off by default:
-         * HDR streams are only surfaced when the user asked for them.
-         */
-        fun isPreferHdrEnabled(context: Context): Boolean =
-            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                .getBoolean(KEY_PREFER_HDR, false)
 
         /**
          * Video player session state that outlives a single video. Unlike the
@@ -919,18 +913,6 @@ class ThemePreferences(context: Context) {
         _musicQualityMobile.value = quality
     }
 
-    private fun getPreferHdrPreference(): Boolean {
-        return prefs.getBoolean(KEY_PREFER_HDR, false)
-    }
-
-    /**
-     * Save the HDR opt-in and update the flow.
-     */
-    fun setPreferHdr(enabled: Boolean) {
-        prefs.edit().putBoolean(KEY_PREFER_HDR, enabled).apply()
-        _preferHdr.value = enabled
-    }
-
     private fun getSpotlightHomePreference(): Boolean {
         return prefs.getBoolean(KEY_SPOTLIGHT_HOME, false)
     }
@@ -942,6 +924,20 @@ class ThemePreferences(context: Context) {
     fun setSpotlightHome(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_SPOTLIGHT_HOME, enabled).apply()
         _spotlightHome.value = enabled
+    }
+
+    private fun getNonExpressiveNavigationBarPreference(): Boolean {
+        return prefs.getBoolean(KEY_NON_EXPRESSIVE_NAVIGATION_BAR, false)
+    }
+
+    /**
+     * Opt into Material 3's standard non-expressive navigation bar. The existing
+     * expressive floating toolbar remains the default for new and upgrading
+     * users, and this preference intentionally is not part of onboarding.
+     */
+    fun setNonExpressiveNavigationBar(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_NON_EXPRESSIVE_NAVIGATION_BAR, enabled).apply()
+        _nonExpressiveNavigationBar.value = enabled
     }
 
     /**

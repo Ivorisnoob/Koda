@@ -113,6 +113,12 @@ import com.ivor.ivormusic.ui.home.HomeViewModel
 private val NON_SAVABLE_VIDEO_PLAYLIST_IDS =
     setOf("WL", "VLWL", "LL", "VLLL", "LM", "VLLM", "RTM")
 
+/**
+ * The account's feeds that take a removal but never appear in the playlist
+ * list, since `getVideoPlaylists` filters both of them out of it.
+ */
+private val WRITABLE_PINNED_PLAYLIST_IDS = setOf("WL", "VLWL", "LL", "VLLL")
+
 /** Internal navigation state of the Library tab. */
 private sealed interface LibraryPage {
     data object Root : LibraryPage
@@ -128,6 +134,8 @@ private sealed interface LibraryPage {
 @Composable
 fun VideoLibraryContent(
     viewModel: HomeViewModel,
+    /** Open a creator's page, from the long-press sheet on any video row. */
+    onOpenChannel: ((String) -> Unit)? = null,
     onVideoClick: (VideoItem) -> Unit,
     /**
      * Play a video *as part of* the playlist it was tapped in, so the rest of it
@@ -140,6 +148,15 @@ fun VideoLibraryContent(
     contentPadding: PaddingValues,
     /** Queue a video from the history or playlist pages. */
     onEnqueueVideo: ((VideoItem, Boolean) -> Unit)? = null,
+    /**
+     * Open straight onto a playlist, for callers outside the Library that have
+     * one in hand - a playlist link shared into the app. Same hand-off shape as
+     * the music Library's `initialPlaylist`: the caller clears it through the
+     * consumed callback, so coming back to the tab later lands on the list
+     * rather than re-opening the playlist.
+     */
+    initialPlaylist: VideoPlaylist? = null,
+    onInitialPlaylistConsumed: () -> Unit = {},
     /**
      * Hoisted by HomeScreen for the tab's root page only. History and playlist
      * pages are drill-ins popped with Back, so scrolling the root beneath them
@@ -160,6 +177,16 @@ fun VideoLibraryContent(
     LaunchedEffect(isYouTubeConnected) {
         if (historyVideos.isEmpty()) viewModel.loadYouTubeHistory()
         if (isYouTubeConnected) viewModel.loadVideoPlaylists()
+    }
+
+    // Handed a playlist from outside the tab. Loads its videos the same way
+    // opening one from the root does, since the page reads them off the
+    // ViewModel rather than fetching its own.
+    LaunchedEffect(initialPlaylist) {
+        val playlist = initialPlaylist ?: return@LaunchedEffect
+        viewModel.loadPlaylistVideos(playlist.playlistId)
+        page = LibraryPage.Playlist(playlist)
+        onInitialPlaylistConsumed()
     }
 
     PredictiveBackStack(
@@ -234,7 +261,8 @@ fun VideoLibraryContent(
                     onLoginClick = onLoginClick,
                     contentPadding = contentPadding,
                     showHero = false,
-                    onEnqueueVideo = onEnqueueVideo
+                    onEnqueueVideo = onEnqueueVideo,
+                    onOpenChannel = onOpenChannel
                 )
             }
 
@@ -245,7 +273,17 @@ fun VideoLibraryContent(
                 onPlayQueue = onPlayQueue,
                 onBack = { page = LibraryPage.Root },
                 contentPadding = contentPadding,
-                onEnqueueVideo = onEnqueueVideo
+                // Removing a row is a write, so it is offered only on the
+                // playlists the user can actually write to: the pinned feeds,
+                // the account's own and the device's. Derived rather than
+                // passed in, because this tab opens playlists that are not the
+                // user's - saved ones from the root, shared ones handed in
+                // through initialPlaylist - and on those the write fails, which
+                // showed as the row disappearing and coming back.
+                allowRemove = target.playlist.playlistId in WRITABLE_PINNED_PLAYLIST_IDS ||
+                    playlists.any { it.playlistId == target.playlist.playlistId },
+                onEnqueueVideo = onEnqueueVideo,
+                onOpenChannel = onOpenChannel
             )
         }
     }
@@ -1054,7 +1092,9 @@ fun VideoPlaylistDetail(
      */
     onPlayQueue: ((com.ivor.ivormusic.data.VideoQueue) -> Unit)? = null,
     /** Queue a video without leaving the playlist. */
-    onEnqueueVideo: ((VideoItem, Boolean) -> Unit)? = null
+    onEnqueueVideo: ((VideoItem, Boolean) -> Unit)? = null,
+    /** Open a video's creator, from the long-press sheet. */
+    onOpenChannel: ((String) -> Unit)? = null
 ) {
     val videos by viewModel.playlistVideos.collectAsState()
     val isLoading by viewModel.isPlaylistVideosLoading.collectAsState()
@@ -1069,6 +1109,7 @@ fun VideoPlaylistDetail(
             viewModel = viewModel,
             onDismiss = { optionsTarget = null },
             onEnqueue = onEnqueueVideo?.let { enqueue -> { next -> enqueue(video, next) } },
+            onOpenChannel = onOpenChannel,
             // Hiding a video from your feeds, taken from inside a playlist you
             // put it in yourself, is the app arguing with the user. Remove is
             // the tool here, and it is on the row already.

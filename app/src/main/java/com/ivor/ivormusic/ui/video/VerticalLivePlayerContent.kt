@@ -115,7 +115,7 @@ private const val MAX_ACCEPTABLE_CROP = 0.25f
  * ColorScheme surface, the same bargain [com.ivor.ivormusic.ui.shorts]'s
  * overlay makes, so this screen actually changes with the user's palette,
  * AMOLED and dynamic color. It previously painted itself in black scrims and
- * white icons throughout, which rendered identically under all 27 palettes and
+ * white icons throughout, which rendered identically under all 29 palettes and
  * was the whole reason it did not look like the rest of the app. What stays
  * white is only what sits directly on the frame with no surface under it: the
  * title, the channel name, the chat ticker text and the captions. Those are

@@ -64,6 +64,8 @@ import androidx.compose.material.icons.rounded.LiveTv
 import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.Newspaper
 import androidx.compose.material.icons.rounded.Podcasts
+import androidx.compose.material.icons.rounded.AccountCircle
+import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.School
 import androidx.compose.material.icons.rounded.Science
@@ -92,6 +94,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -201,6 +204,8 @@ fun SearchScreen(
     onAlbumClick: (PlaylistDisplayItem) -> Unit = {},
     onPlaylistClick: (PlaylistDisplayItem) -> Unit = {},
     onVideoPlaylistClick: (VideoPlaylist) -> Unit = {},
+    /** Open a creator's page, from a Channels result or the long-press sheet. */
+    onOpenChannel: (String) -> Unit = {},
     onProfileClick: () -> Unit = {},
     contentPadding: PaddingValues,
     viewModel: HomeViewModel,
@@ -216,7 +221,15 @@ fun SearchScreen(
     listState: androidx.compose.foundation.lazy.LazyListState =
         androidx.compose.foundation.lazy.rememberLazyListState()
 ) {
-    var query by remember { mutableStateOf("") }
+    // Saveable, not just remembered: this composable is disposed and rebuilt
+    // both on a tab switch (AnimatedContent in HomeScreen only keeps the
+    // target tab's subtree composed) and on process death, and a plainly-
+    // remembered query silently threw away what was typed either way - see
+    // ROADMAP.md, Surviving process death. Only the query and the filters
+    // that shape it are saved; the result lists stay plain remember and are
+    // re-fetched by the LaunchedEffect below once query is restored, which
+    // avoids needing a Parcelable/serializer story for every result type.
+    var query by rememberSaveable { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
     var isLoadingMore by remember { mutableStateOf(false) }
     // Set once a "load more" comes back empty, so scrolling at the bottom of
@@ -226,13 +239,16 @@ fun SearchScreen(
     var youtubeResults by remember { mutableStateOf<List<Song>>(emptyList()) }
     var videoResults by remember { mutableStateOf<List<VideoItem>>(emptyList()) }
     var videoPlaylistResults by remember { mutableStateOf<List<VideoPlaylist>>(emptyList()) }
+    var channelResults by remember {
+        mutableStateOf<List<com.ivor.ivormusic.data.SubscribedChannel>>(emptyList())
+    }
     var artistResults by remember { mutableStateOf<List<ArtistItem>>(emptyList()) }
     var albumResults by remember { mutableStateOf<List<PlaylistDisplayItem>>(emptyList()) }
     var playlistResults by remember { mutableStateOf<List<PlaylistDisplayItem>>(emptyList()) }
-    var selectedCategory by remember { mutableStateOf(SearchCategory.SONGS) }
-    var selectedVideoCategory by remember { mutableStateOf(VideoSearchCategory.VIDEOS) }
-    var selectedDateFilter by remember { mutableStateOf(VideoSearchDateFilter.ANY) }
-    var selectedSort by remember { mutableStateOf(VideoSearchSort.RELEVANCE) }
+    var selectedCategory by rememberSaveable { mutableStateOf(SearchCategory.SONGS) }
+    var selectedVideoCategory by rememberSaveable { mutableStateOf(VideoSearchCategory.VIDEOS) }
+    var selectedDateFilter by rememberSaveable { mutableStateOf(VideoSearchDateFilter.ANY) }
+    var selectedSort by rememberSaveable { mutableStateOf(VideoSearchSort.RELEVANCE) }
     
     var visibleLocalCount by remember { mutableIntStateOf(20) }
     val scope = rememberCoroutineScope()
@@ -311,6 +327,7 @@ fun SearchScreen(
             youtubeResults = emptyList()
             videoResults = emptyList()
             videoPlaylistResults = emptyList()
+            channelResults = emptyList()
             artistResults = emptyList()
             albumResults = emptyList()
             playlistResults = emptyList()
@@ -324,6 +341,7 @@ fun SearchScreen(
             youtubeResults = emptyList()
             videoResults = emptyList()
             videoPlaylistResults = emptyList()
+            channelResults = emptyList()
             artistResults = emptyList()
             albumResults = emptyList()
             playlistResults = emptyList()
@@ -336,6 +354,7 @@ fun SearchScreen(
                 when (selectedVideoCategory) {
                     VideoSearchCategory.VIDEOS -> videoResults = viewModel.searchVideos(query, selectedDateFilter, selectedSort)
                     VideoSearchCategory.PLAYLISTS -> videoPlaylistResults = viewModel.searchVideoPlaylists(query)
+                    VideoSearchCategory.CHANNELS -> channelResults = viewModel.searchChannels(query)
                 }
             } else {
                 when (selectedCategory) {
@@ -350,6 +369,7 @@ fun SearchScreen(
             youtubeResults = emptyList()
             videoResults = emptyList()
             videoPlaylistResults = emptyList()
+            channelResults = emptyList()
             artistResults = emptyList()
             albumResults = emptyList()
             playlistResults = emptyList()
@@ -410,7 +430,8 @@ fun SearchScreen(
             // intent - so "not interested" would visibly do nothing here and
             // is left out. Blocking the channel still has a real effect on
             // every feed, and the undo snackbar says so.
-            allowNotInterested = false
+            allowNotInterested = false,
+            onOpenChannel = onOpenChannel
         )
     }
 
@@ -419,15 +440,50 @@ fun SearchScreen(
         visibleLocalCount = 20
     }
 
-    // Resolve a pasted YouTube link (video or playlist) off the normal search
-    // path. A watch link resolves through one watch-next call; a playlist
+    // Resolve a pasted YouTube link (video, playlist or channel) off the normal
+    // search path. A watch link resolves through one watch-next call; a playlist
     // link loads its items. Retriggered by the retry button via linkRetryToken.
     LaunchedEffect(parsedLink, videoMode, linkRetryToken) {
         if (parsedLink == null) {
             linkState = LinkLookupState.Idle
             return@LaunchedEffect
         }
+        // A channel link has nothing to preview - there is no track to play and
+        // no list to show - so it opens the creator's page instead of resolving
+        // into a result card. The query is cleared on the way out so coming back
+        // to search does not immediately reopen it.
+        parsedLink.channelRef?.let { ref ->
+            linkState = LinkLookupState.Idle
+            query = ""
+            onOpenChannel(ref)
+            return@LaunchedEffect
+        }
         linkState = LinkLookupState.Resolving
+        // A playlist link points at something with a page of its own, exactly
+        // like the channel link above, so it opens that page instead of
+        // resolving into a result card. The page is where the title, the
+        // author, the artwork and - the reason this matters - the Save button
+        // are; the card had none of them, so a playlist arriving by link was
+        // the one that could not be kept.
+        //
+        // A link that also names a video still resolves to that video: naming
+        // one is asking for it. And a list with no page behind it - a generated
+        // mix answers "This playlist type is unviewable" - falls through to the
+        // preview below, which for a mix is the whole of what there is to show.
+        val linkPlaylistId = parsedLink.playlistId
+        if (linkPlaylistId != null && parsedLink.videoId == null) {
+            val page = viewModel.resolvePlaylistPageFromLink(linkPlaylistId)
+            if (page != null) {
+                linkState = LinkLookupState.Idle
+                // Cleared for the same reason the channel branch clears it:
+                // coming back from the page must land on search, not reopen
+                // what was just backed out of.
+                query = ""
+                if (videoMode) onVideoPlaylistClick(page.toVideoPlaylist())
+                else onPlaylistClick(page.toDisplayItem())
+                return@LaunchedEffect
+            }
+        }
         linkState = when {
             parsedLink.videoId != null -> {
                 val video = viewModel.resolveVideoFromLink(parsedLink.videoId)
@@ -842,7 +898,36 @@ fun SearchScreen(
                 
                 // Video Mode Results: the Videos/Playlists toggle above decides
                 // which search ran, so only one of these lists is ever populated
-                videoMode && (videoResults.isNotEmpty() || videoPlaylistResults.isNotEmpty()) -> {
+                videoMode && (
+                    videoResults.isNotEmpty() ||
+                        videoPlaylistResults.isNotEmpty() ||
+                        channelResults.isNotEmpty()
+                    ) -> {
+                    if (channelResults.isNotEmpty()) {
+                        item {
+                            ResultHeader(
+                                title = "Channels",
+                                count = channelResults.size,
+                                icon = Icons.Rounded.AccountCircle,
+                                color = MaterialTheme.colorScheme.primary,
+                                textColor = textColor,
+                                secondaryTextColor = secondaryTextColor
+                            )
+                        }
+                        items(channelResults, key = { it.channelId }) { channel ->
+                            ChannelResultRow(
+                                channel = channel,
+                                onClick = {
+                                    viewModel.addToSearchHistory(query)
+                                    onOpenChannel(channel.channelId)
+                                },
+                                cardColor = cardColor,
+                                textColor = textColor,
+                                secondaryTextColor = secondaryTextColor
+                            )
+                        }
+                    }
+
                     if (videoPlaylistResults.isNotEmpty()) {
                         item {
                             ResultHeader(
@@ -916,6 +1001,7 @@ fun SearchScreen(
                                 video = video,
                                 onClick = { onVideoClick(video) },
                                 onLongClick = { onVideoLongPress(video) },
+                                onOpenChannel = onOpenChannel,
                                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                             )
                         }
@@ -1574,7 +1660,7 @@ enum class SearchCategory {
 }
 
 enum class VideoSearchCategory {
-    VIDEOS, PLAYLISTS
+    VIDEOS, PLAYLISTS, CHANNELS
 }
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
@@ -2819,6 +2905,72 @@ private fun SearchPagingFooter(
                     color = secondaryTextColor
                 )
             }
+        }
+    }
+}
+
+
+/**
+ * A channel in video-mode search results.
+ *
+ * Deliberately the only video-mode result row with no save or queue action:
+ * a channel is not something to keep or play, it is somewhere to go, so the
+ * whole row is one target and there is nothing else on it to miss.
+ */
+@Composable
+private fun ChannelResultRow(
+    channel: com.ivor.ivormusic.data.SubscribedChannel,
+    onClick: () -> Unit,
+    cardColor: Color,
+    textColor: Color,
+    secondaryTextColor: Color
+) {
+    Surface(
+        onClick = onClick,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 4.dp),
+        shape = RoundedCornerShape(16.dp),
+        color = cardColor
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            com.ivor.ivormusic.ui.channel.CreatorAvatar(
+                avatarUrl = channel.avatarUrl,
+                name = channel.name,
+                modifier = Modifier.size(52.dp)
+            )
+            Spacer(modifier = Modifier.size(14.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = channel.name,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = textColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                val subtitle = listOfNotNull(
+                    channel.handle?.takeIf { it.isNotBlank() },
+                    channel.subscriberCountText?.takeIf { it.isNotBlank() }
+                ).joinToString(" • ")
+                if (subtitle.isNotBlank()) {
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = secondaryTextColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+            Icon(
+                Icons.Rounded.ChevronRight,
+                contentDescription = null,
+                tint = secondaryTextColor
+            )
         }
     }
 }

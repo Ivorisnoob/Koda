@@ -36,7 +36,7 @@ object DownloadMuxer {
     /**
      * Remux [videoFile] and, when present, [audioFile] into [output].
      *
-     * @return true when the output holds at least a video track.
+     * @return true when the output holds the requested video and audio tracks.
      */
     fun mux(videoFile: File, audioFile: File?, output: FileDescriptor): Boolean {
         var muxer: MediaMuxer? = null
@@ -64,9 +64,11 @@ object DownloadMuxer {
                     audioFormat = audioExtractor.getTrackFormat(audioTrack)
                     outputAudioTrack = muxer.addTrack(audioFormat)
                 } else {
-                    Log.w(TAG, "No audio track in ${audioFile.name}, writing video only")
-                    audioExtractor.release()
-                    audioExtractor = null
+                    // Publishing this as a successful silent download hides a
+                    // broken audio response. Let the worker discard the partial
+                    // mux and use its progressive fallback instead.
+                    Log.e(TAG, "No audio track in ${audioFile.name}")
+                    return false
                 }
             }
 

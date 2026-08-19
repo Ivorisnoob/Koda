@@ -126,11 +126,12 @@ Plus an **ambient artwork background**, an optional **chromatic-mist** effect, a
 - **Drag the left and right edges for brightness and volume**, with a ladder of slats that lights from the bottom, one slat per real system volume notch, so the haptic tick and the light are the same event. It takes its colors from your palette.
 - **Picture-in-Picture** that captures just the video, not the whole app, with play, pause and 10-second skip controls in the window.
 - **Video appears in the system media controls** too: the lock screen, the shade's media area, the output switcher, and headset and Bluetooth buttons.
-- **Open YouTube links in Koda.** Share a link to it, or open one with it, and it plays: watch, `youtu.be`, shorts, live, embed and playlist URLs. Music links open in the music player, everything else in the video player.
+- **Open YouTube links in Koda.** Share a link to it, or open one with it, and it opens: watch, `youtu.be`, shorts, live, embed and playlist URLs, plus channel links in every form (`/@handle`, `/channel/...`, and the older `/c/` and `/user/` paths), which land on the creator's page. Music links open in the music player, everything else in the video player.
 - **Links in descriptions and comments are tappable**, including timestamps, which seek the player and close the panel.
 - **Optional timed comments** that fade in over the video as playback reaches the moment they mention.
 - **Share** a video, playlist, or album out to any app.
-- **A Subscriptions tab** with the latest uploads from channels you follow, a channel-avatar rail, a full channel list, and drill-in to any channel's uploads.
+- **Full channel pages.** Banner, about text with links and join date, and every tab the creator actually has - Videos, Shorts, Live, Playlists, Posts, and whatever else they publish, because the tabs come from the channel rather than from a fixed list. Sort their uploads by latest, popular or oldest, page through thousands of them, and search a creator's whole back catalogue from their own page. Reachable from anywhere a channel name appears: the player, Shorts, any video's long-press menu, search, the Subscriptions tab, and a shared channel link.
+- **A Subscriptions tab** with the latest uploads from channels you follow, a channel-avatar rail, and a full channel list.
 - **Follow channels without a Google account.** Subscriptions can be saved to the device instead of (or as well as) your YouTube account, and the feed merges both. A **Subscribe saves to** setting picks which.
 - **Import your subscriptions** from NewPipe, PipePipe or Tubular (either their subscriptions file or their whole backup zip), or from a Google Takeout CSV or OPML. The file type is detected for you, and channels Koda cannot play are reported rather than dropped silently. A backup also brings across channel pictures and your feed groups. Export writes the NewPipe-compatible format so it round-trips back.
 - **Channel groups** to filter the subscriptions feed.
@@ -207,7 +208,6 @@ Koda's interface is the product, not a wrapper around one. The whole app is cons
 - **Settings search.** There are around fifty settings, and people know what they want rather than what it is called, so the index carries synonyms and tolerates typos. "offline" finds Local Only, "battery" finds the OEM fix, "bitrate" finds music quality, "songs not showing" finds compatibility scanning, and "amol" and "crossfde" both land where you meant.
 - **Quality is per-network.** Separate Wi-Fi and mobile-data settings for video and for music, applied automatically based on what you are connected to.
 - **Music streaming quality** of its own: High, Normal, or Data Saver.
-- **Prefer HDR Videos**, off by default. Turned on, HDR variants are listed alongside SDR and preferred at equal resolution, with a clean fallback for videos that have none.
 - **Destructive actions use the theme's error color**, so they read correctly across all palettes and AMOLED rather than being a hardcoded red.
 
 ### Authentication
@@ -365,7 +365,7 @@ Where Koda is going lives in **[`ROADMAP.md`](ROADMAP.md)**. It is not a checkli
 
 The current tracks:
 
-- **Interface:** proper channel screens, per-channel notification settings, saving other people's playlists and albums, a simpler "Discover" home for music mode, a playlist upgrade with custom cover art, predictive back, haptics, and one consistent heading system.
+- **Interface:** per-channel notification settings, saving other people's playlists and albums, a simpler "Discover" home for music mode, a playlist upgrade with custom cover art, predictive back, haptics, and one consistent heading system.
 - **Playback:** carrying audio across a mode switch without a gap, and a crossfade that genuinely overlaps.
 - **Foundations:** backup and restore, playlist import and export, surviving process death, and a dependency audit.
 - **Reach:** Android Auto done properly, voice search, a home screen widget and Quick Settings tile, tablet layouts on every screen, Wear OS, and Android TV.
@@ -410,6 +410,7 @@ app/src/main/java/com/ivor/ivormusic/
 │   ├── PlaylistRepository   # Local user playlists
 │   ├── LikedSongsRepository # Local liked songs
 │   ├── LocalSubscriptions.. # Device-only channel subscriptions
+│   ├── ChannelPage          # Channel header, tabs, posts, about, paging
 │   ├── SubscriptionActions  # Decides whether Subscribe writes to device or account
 │   ├── SubscriptionTransfer # Import/export: NewPipe json/backup, CSV, OPML
 │   ├── NotInterested..      # Hidden videos and blocked channels
@@ -431,6 +432,7 @@ app/src/main/java/com/ivor/ivormusic/
     ├── library/             # Playlists, liked songs, statistics
     ├── player/              # Music player, queue, and the eight player styles
     ├── video/               # Video player, live streams and chat, comments, subscriptions
+    ├── channel/             # Creator pages, and the header shared with the artist page
     ├── shorts/              # Opt-in Shorts player
     ├── search/              # Search and video explore
     ├── artist/              # Artist and album pages

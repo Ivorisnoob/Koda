@@ -75,7 +75,6 @@ import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.FolderOff
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.GridView
-import androidx.compose.material.icons.rounded.HdrOn
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Interests
 import androidx.compose.material.icons.rounded.LightMode
@@ -261,6 +260,8 @@ fun SettingsScreen(
     onHomeModeToggleChange: (Boolean) -> Unit = {},
     spotlightHome: Boolean = false,
     onSpotlightHomeToggle: (Boolean) -> Unit = {},
+    nonExpressiveNavigationBar: Boolean = false,
+    onNonExpressiveNavigationBarToggle: (Boolean) -> Unit = {},
     playerStyle: PlayerStyle,
     onPlayerStyleChange: (PlayerStyle) -> Unit,
     saveVideoHistory: Boolean,
@@ -285,8 +286,6 @@ fun SettingsScreen(
     onMusicQualityWifiChange: (String) -> Unit,
     musicQualityMobile: String,
     onMusicQualityMobileChange: (String) -> Unit,
-    preferHdr: Boolean,
-    onPreferHdrToggle: (Boolean) -> Unit,
     subscriptionSource: String = ThemePreferences.SUBSCRIPTIONS_AUTO,
     onSubscriptionSourceChange: (String) -> Unit = {},
     subscribeTarget: String = ThemePreferences.SUBSCRIPTIONS_AUTO,
@@ -667,6 +666,9 @@ fun SettingsScreen(
                     onAmbientBackgroundToggle = onAmbientBackgroundToggle,
                     spotlightHome = spotlightHome,
                     onSpotlightHomeToggle = onSpotlightHomeToggle,
+                    nonExpressiveNavigationBar = nonExpressiveNavigationBar,
+                    onNonExpressiveNavigationBarToggle =
+                        onNonExpressiveNavigationBarToggle,
                     onBack = { page = SettingsPage.HUB }
                 )
 
@@ -693,8 +695,6 @@ fun SettingsScreen(
                     musicQualityMobile = musicQualityMobile,
                     videoQualityWifi = videoQualityWifi,
                     videoQualityMobile = videoQualityMobile,
-                    preferHdr = preferHdr,
-                    onPreferHdrToggle = onPreferHdrToggle,
                     onOpenQualityPicker = { qualityDialogTarget = it },
                     onBack = { page = SettingsPage.HUB }
                 )

@@ -6,6 +6,7 @@ import android.util.Rational
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -13,8 +14,14 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
 import androidx.activity.compose.PredictiveBackHandler
@@ -109,7 +116,26 @@ fun enterPipMode(
 fun VideoPlayerOverlay(
     viewModel: VideoPlayerViewModel,
     timedCommentsEnabled: Boolean = false,
-    miniPlayerExtraBottomPadding: androidx.compose.ui.unit.Dp = 0.dp
+    /**
+     * How much bottom chrome the host is drawing under this player right now -
+     * the floating nav bar, and the music pill above it when both are alive.
+     *
+     * Passed in rather than assumed, because this overlay is drawn above the
+     * NavHost and therefore renders on every route, while the nav bar and the
+     * music pill are both inside `HomeScreen` and exist on one. Reserving a
+     * fixed height for them left the bar hovering in empty space over Settings,
+     * Downloads, a channel page and anywhere else, which is what "the mini
+     * player floats in a weird place" was. The system navigation inset is not
+     * included here; this player adds that itself.
+     */
+    hostBottomChrome: androidx.compose.ui.unit.Dp = 0.dp,
+    /**
+     * Open the playing video's creator. Handled by the host rather than here,
+     * because the channel page is a NavHost destination and this overlay is
+     * drawn above the NavHost - the host is the only layer that can both
+     * navigate and drop this player to its mini bar on the way.
+     */
+    onOpenChannel: (String) -> Unit = {}
 ) {
     val isExpanded by viewModel.isExpanded.collectAsState()
     val currentVideo by viewModel.currentVideo.collectAsState()
@@ -118,6 +144,7 @@ fun VideoPlayerOverlay(
     // Context and Activity
     val context = LocalContext.current
     val activity = context as? androidx.activity.ComponentActivity
+    val haptics = LocalHapticFeedback.current
 
     if (currentVideo == null) return
 
@@ -274,21 +301,204 @@ fun VideoPlayerOverlay(
             }
         }
 
-        // Minimized resting position sits above the nav bar, and above the
-        // music mini player too when both players are alive at the same time
+        // Collapsed-bar gestures: up expands, down dismisses.
+        //
+        // The axis differs from the music pill on purpose:
+        // this bar sits directly above the music pill when both are alive, and
+        // a sideways throw there would be ambiguous about which it meant.
+        //
+        // The bar carries no close button, so this gesture is the only way to
+        // dismiss it. It is the same downward pull that already dismisses the
+        // expanded player, one size down.
+        var miniDragY by remember { mutableFloatStateOf(0f) }
+        var isMiniDragging by remember { mutableStateOf(false) }
+        var isDismissingMini by remember { mutableStateOf(false) }
+        val miniSettleOffset = remember { Animatable(0f) }
+        val miniExpandThresholdPx = with(density) { 48.dp.toPx() }
+        val miniDismissThresholdPx = with(density) { 56.dp.toPx() }
+        val miniFlingVelocityPx = with(density) { 700.dp.toPx() }
+        // Upward travel is a preview, not a drag: the expand it commits to is
+        // a different animation entirely, so letting the bar follow the finger
+        // up the screen would promise a movement that never continues.
+        val miniLiftLimitPx = with(density) { 24.dp.toPx() }
+        val miniOffsetAnimationSpec = MaterialTheme.motionScheme.fastSpatialSpec<Float>()
+
+        // Minimized resting position clears the system navigation inset plus
+        // whatever bottom chrome the host says it is drawing, which is nothing
+        // on most routes.
         val p = if (isDragging) dragProgress else expandProgress.value
-        val height = lerp(88.dp, fullHeight, p)
+        val height = lerp(MINI_VIDEO_HEIGHT, fullHeight, p)
         val widthPadding = lerp(16.dp, 0.dp, p)
-        val bottomPadding = lerp(100.dp + bottomInset + miniPlayerExtraBottomPadding, 0.dp, p)
+        val bottomPadding = lerp(
+            MINI_VIDEO_MARGIN + bottomInset + hostBottomChrome,
+            0.dp,
+            p
+        )
         val cornerRadius = lerp(28.dp, 0.dp, p)
 
-        Surface(
+        // Offset and fade live on a wrapper rather than on the Surface itself.
+        // A graphicsLayer on an elevated Surface makes its shadow render
+        // against the layer's rectangular bounds instead of the rounded
+        // outline, which draws as a hard slab behind the bar - the thing this
+        // player is not supposed to look like. Read the live drag state inside
+        // this layer block as well: Compose can then update only the layer for
+        // each pointer event instead of recomposing and remeasuring the player,
+        // including its Android video view. The Animatable is reserved for the
+        // release settle; retargeting it for every drag delta made the bar lag
+        // behind the finger on slower devices.
+        Box(
             modifier = Modifier
                 .padding(bottom = bottomPadding.coerceAtLeast(0.dp))
                 .padding(horizontal = widthPadding.coerceAtLeast(0.dp))
+                .graphicsLayer {
+                    val offsetY = if (isMiniDragging) {
+                        miniDragY
+                    } else {
+                        miniSettleOffset.value
+                    }
+                    translationY = offsetY
+
+                    // Fades as it is pushed down, so dismiss remains legible.
+                    // An uncommitted drag keeps at least half of the bar visible;
+                    // once committed it fades all the way out during the settle.
+                    val fadeLimit = if (isDismissingMini) 1f else 0.5f
+                    alpha = 1f - (
+                        offsetY.coerceAtLeast(0f) / (miniDismissThresholdPx * 2f)
+                    ).coerceIn(0f, fadeLimit)
+                }
                 .fillMaxWidth()
                 .height(height.coerceAtLeast(0.dp))
-                .clickable(enabled = !isExpanded) { viewModel.setExpanded(true) },
+        ) {
+        Surface(
+            // Surface's own onClick rather than a .clickable in the chain
+            // outside it: the ripple is clipped by the component's shape, so
+            // it follows the 28dp rounding instead of spilling into the square
+            // corners the modifier version rippled into.
+            onClick = { viewModel.setExpanded(true) },
+            enabled = !isExpanded,
+            modifier = Modifier
+                .fillMaxSize()
+                .pointerInput(
+                    isExpanded,
+                    miniExpandThresholdPx,
+                    miniDismissThresholdPx,
+                    miniFlingVelocityPx
+                ) {
+                    if (isExpanded) return@pointerInput
+                    var gestureTravelY = 0f
+                    var dragStartOffsetY = 0f
+                    var thresholdFeedbackSent = false
+                    val velocityTracker = VelocityTracker()
+                    detectVerticalDragGestures(
+                        onDragStart = {
+                            gestureTravelY = 0f
+                            dragStartOffsetY = miniSettleOffset.value
+                            thresholdFeedbackSent = false
+                            velocityTracker.resetTracking()
+                            miniDragY = dragStartOffsetY
+                            isMiniDragging = true
+                            scope.launch { miniSettleOffset.stop() }
+                        },
+                        onDragEnd = {
+                            val velocityY = velocityTracker.calculateVelocity().y
+                            val expand = gestureTravelY < -miniExpandThresholdPx ||
+                                (gestureTravelY < 0f && velocityY < -miniFlingVelocityPx)
+                            val dismiss = gestureTravelY > miniDismissThresholdPx ||
+                                (gestureTravelY > 0f && velocityY > miniFlingVelocityPx)
+                            when {
+                                expand -> {
+                                    if (!thresholdFeedbackSent) {
+                                        haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                                    }
+                                    val releasedOffset = miniDragY
+                                    scope.launch {
+                                        miniSettleOffset.snapTo(releasedOffset)
+                                        isMiniDragging = false
+                                        miniSettleOffset.animateTo(
+                                            0f,
+                                            miniOffsetAnimationSpec
+                                        )
+                                    }
+                                    viewModel.setExpanded(true)
+                                }
+                                dismiss -> {
+                                    if (!thresholdFeedbackSent) {
+                                        haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                                    }
+                                    isDismissingMini = true
+                                    val releasedOffset = miniDragY
+                                    scope.launch {
+                                        miniSettleOffset.snapTo(releasedOffset)
+                                        isMiniDragging = false
+                                        miniSettleOffset.animateTo(
+                                            fullHeightPx,
+                                            miniOffsetAnimationSpec
+                                        )
+                                        viewModel.closePlayer()
+                                        isDismissingMini = false
+                                        miniDragY = 0f
+                                        miniSettleOffset.snapTo(0f)
+                                    }
+                                }
+                                else -> {
+                                    val releasedOffset = miniDragY
+                                    scope.launch {
+                                        miniSettleOffset.snapTo(releasedOffset)
+                                        isMiniDragging = false
+                                        miniSettleOffset.animateTo(
+                                            0f,
+                                            miniOffsetAnimationSpec
+                                        )
+                                    }
+                                }
+                            }
+                        },
+                        onDragCancel = {
+                            val releasedOffset = miniDragY
+                            scope.launch {
+                                miniSettleOffset.snapTo(releasedOffset)
+                                isMiniDragging = false
+                                miniSettleOffset.animateTo(
+                                    0f,
+                                    miniOffsetAnimationSpec
+                                )
+                            }
+                        },
+                        onVerticalDrag = { change, dragAmount ->
+                            gestureTravelY += dragAmount
+                            // Track a synthetic position made from the deltas.
+                            // The bar itself follows downward pulls, so pointer
+                            // coordinates relative to it under-report velocity.
+                            velocityTracker.addPosition(
+                                change.uptimeMillis,
+                                Offset(0f, gestureTravelY)
+                            )
+
+                            val crossedThreshold =
+                                gestureTravelY <= -miniExpandThresholdPx ||
+                                    gestureTravelY >= miniDismissThresholdPx
+                            if (crossedThreshold && !thresholdFeedbackSent) {
+                                thresholdFeedbackSent = true
+                                haptics.performHapticFeedback(
+                                    HapticFeedbackType.GestureThresholdActivate
+                                )
+                            } else if (!crossedThreshold) {
+                                // Re-arm after the finger returns inside the
+                                // commit zone, matching the visual snap-back.
+                                thresholdFeedbackSent = false
+                            }
+
+                            change.consume()
+                            // Keep the full travel for deciding the gesture,
+                            // while limiting only the visual upward preview.
+                            // Previously the same value was clamped to 24dp
+                            // and then compared with a 48dp expand threshold,
+                            // making distance-based swipe-up impossible.
+                            miniDragY = (dragStartOffsetY + gestureTravelY)
+                                .coerceAtLeast(-miniLiftLimitPx)
+                        }
+                    )
+                },
             shape = RoundedCornerShape(cornerRadius.coerceAtLeast(0.dp)),
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
             tonalElevation = lerp(4.dp, 0.dp, p),
@@ -302,6 +512,7 @@ fun VideoPlayerOverlay(
                          viewModel.setExpanded(false)
                      },
                      timedCommentsFeatureEnabled = timedCommentsEnabled,
+                     onOpenChannel = onOpenChannel,
                      onMinimizeDragDelta = { dy ->
                          if (!isDragging) {
                              isDragging = true
@@ -352,13 +563,12 @@ fun VideoPlayerOverlay(
                      }
                  )
              } else {
-                 // Mini Player Content
-                 MiniVideoPlayerContent(
-                     viewModel = viewModel,
-                     onExpand = { viewModel.setExpanded(true) },
-                     onClose = { viewModel.closePlayer() }
-                 )
+                 // Mini Player Content. Tap and both drags are handled by the
+                 // Surface above, so the bar itself only draws and offers its
+                 // two controls.
+                 MiniVideoPlayerContent(viewModel = viewModel)
              }
+        }
         }
     }
 }

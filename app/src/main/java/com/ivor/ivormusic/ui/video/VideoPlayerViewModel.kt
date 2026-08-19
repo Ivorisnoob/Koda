@@ -66,6 +66,14 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     private val localVideoPlaylistsRepository =
         com.ivor.ivormusic.data.LocalVideoPlaylistsRepository(context)
 
+    // Playback session snapshots for resume-on-reopen, the video-mode
+    // counterpart of PlayerViewModel's playbackSessionRepository. See
+    // restoreVideoSession() / saveVideoPlaybackSession() below.
+    private val videoPlaybackSessionRepository =
+        com.ivor.ivormusic.data.VideoPlaybackSessionRepository(context)
+    private var lastSessionSaveAt = 0L
+    private var sessionPersistenceJob: kotlinx.coroutines.Job? = null
+
     // Player Instance
     private var _exoPlayer: ExoPlayer? = null
     val exoPlayer: ExoPlayer? get() = _exoPlayer
@@ -476,16 +484,6 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     val localVideoPlaylists: StateFlow<List<com.ivor.ivormusic.data.LocalVideoPlaylist>> =
         localVideoPlaylistsRepository.playlists
 
-    // ---------------- Channel page (latest uploads) ----------------
-
-    private val _channelVideos = MutableStateFlow<List<VideoItem>>(emptyList())
-    val channelVideos: StateFlow<List<VideoItem>> = _channelVideos.asStateFlow()
-
-    private val _isChannelVideosLoading = MutableStateFlow(false)
-    val isChannelVideosLoading: StateFlow<Boolean> = _isChannelVideosLoading.asStateFlow()
-
-    private var channelVideosLoadedForChannelId: String? = null
-
     /**
      * Stream data source factory: ChunkedStreamDataSource fetches googlevideo
      * media in bounded ranged chunks (open-ended requests are server-paced to
@@ -680,6 +678,135 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         // Warm the visitorData cache so the first playback doesn't pay for
         // the youtube.com bootstrap download on its critical path.
         viewModelScope.launch { youtubeRepository.prefetchVisitorData() }
+
+        // Only meaningful the moment this ViewModel is freshly (re)created,
+        // which is exactly the guard below - restoreVideoSession() itself
+        // does nothing once something is already playing.
+        restoreVideoSession()
+    }
+
+    /**
+     * Restore the video (or playlist) that was open when the process died,
+     * paused at the position it was left at - the user decides when to jump
+     * back in, same as PlayerViewModel.restoreLastSession() does for music.
+     *
+     * Never fires on a genuinely fresh app open: this only runs from init(),
+     * and a ViewModel this early already has nothing playing, so the sole
+     * purpose of the guard is protecting against playback starting while the
+     * file read below is in flight.
+     */
+    private fun restoreVideoSession() {
+        if (_currentVideo.value != null) return
+        viewModelScope.launch {
+            val session = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                videoPlaybackSessionRepository.load()
+            }
+            if (session == null) return@launch
+            if (_currentVideo.value != null) return@launch
+
+            val videos = session.videos.map { it.toVideoItem() }
+            val target = videos.getOrNull(session.currentIndex) ?: return@launch
+
+            if (videos.size > 1) {
+                _queue.value = com.ivor.ivormusic.data.VideoQueue(
+                    videos = videos,
+                    index = session.currentIndex,
+                    title = session.queueTitle
+                        ?: com.ivor.ivormusic.data.VideoQueue.AD_HOC_TITLE,
+                    playlistId = session.queuePlaylistId
+                )
+            }
+
+            android.util.Log.d(
+                "VideoPlayerVM",
+                "Restoring video session: ${videos.size} videos, " +
+                    "index=${session.currentIndex}, pos=${session.positionMs}"
+            )
+
+            // Collapsed rather than expanded: the user is arriving fresh at
+            // whatever screen they left, and popping straight into a
+            // fullscreen player would be a jump-scare, not a convenience. The
+            // mini player is enough of a "you left this running" cue, and it
+            // is paused, so nothing streams until they tap it.
+            startVideo(target, resumePositionMs = session.positionMs, expand = false)
+        }
+    }
+
+    private fun VideoItem.toSnapshot() = com.ivor.ivormusic.data.PersistedVideoSnapshot(
+        videoId = videoId,
+        title = title,
+        channelName = channelName,
+        channelId = channelId,
+        channelIconUrl = channelIconUrl,
+        thumbnailUrl = thumbnailUrl,
+        duration = duration,
+        viewCount = viewCount
+    )
+
+    private fun com.ivor.ivormusic.data.PersistedVideoSnapshot.toVideoItem() = VideoItem(
+        videoId = videoId,
+        title = title,
+        channelName = channelName,
+        channelId = channelId,
+        channelIconUrl = channelIconUrl,
+        thumbnailUrl = thumbnailUrl,
+        duration = duration,
+        viewCount = viewCount
+    )
+
+    /**
+     * Snapshot the current video (or queue), and position, for resume-on-
+     * reopen. Skipped for a live broadcast: there is no "position" to return
+     * to, and the manifest a resume would reopen has likely rolled off its
+     * DVR window by the time the app is next opened.
+     */
+    private fun saveVideoPlaybackSession() {
+        val video = _currentVideo.value ?: return
+        // Feed/search items often already know they are live before Phase 1
+        // resolves the stream qualities. Checking both signals prevents the
+        // progress poll from briefly persisting a broadcast as a resumable
+        // VOD. startVideo() clears the prior snapshot once per broadcast.
+        if (_isLive.value || video.isLive) return
+        val position = _exoPlayer?.currentPosition?.coerceAtLeast(0L) ?: return
+        val activeQueue = _queue.value
+
+        val videos: List<com.ivor.ivormusic.data.PersistedVideoSnapshot>
+        val index: Int
+        val title: String?
+        val playlistId: String?
+        if (activeQueue != null) {
+            videos = activeQueue.videos.map { it.toSnapshot() }
+            index = activeQueue.index
+            title = activeQueue.title
+            playlistId = activeQueue.playlistId
+        } else {
+            videos = listOf(video.toSnapshot())
+            index = 0
+            title = null
+            playlistId = null
+        }
+
+        enqueueSessionPersistence {
+            videoPlaybackSessionRepository.save(videos, index, title, playlistId, position)
+        }
+    }
+
+    /**
+     * Keep snapshot writes and clears ordered. A progress checkpoint can still
+     * be writing when the user closes the player or opens a live broadcast;
+     * independent IO launches let that older save finish after the clear and
+     * bring the supposedly removed session back.
+     */
+    private fun enqueueSessionPersistence(action: () -> Unit) {
+        val previous = sessionPersistenceJob
+        sessionPersistenceJob = viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            previous?.join()
+            action()
+        }
+    }
+
+    private fun clearVideoPlaybackSession() {
+        enqueueSessionPersistence { videoPlaybackSessionRepository.clear() }
     }
 
     /**
@@ -699,6 +826,11 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      */
     fun onEnterBackground() {
         val player = _exoPlayer ?: return
+        // Backgrounding is the natural checkpoint for a resume snapshot: it is
+        // exactly the moment process death becomes possible, and it fires
+        // whether or not the track was already suspended, so it belongs above
+        // that guard rather than inside it.
+        saveVideoPlaybackSession()
         if (isVideoSuspended || _currentVideo.value == null) return
         isVideoSuspended = true
         player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
@@ -739,6 +871,18 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                         _progress.value = (position.toFloat() / duration).coerceIn(0f, 1f)
                         _bufferedProgress.value =
                             (player.bufferedPosition.toFloat() / duration).coerceIn(0f, 1f)
+
+                        // Backstop for the case that never backgrounds: a
+                        // process kill while the app is in the foreground
+                        // (OOM, a crash elsewhere in the system) still gets a
+                        // recent checkpoint rather than relying solely on
+                        // onEnterBackground(). Throttled well below the poll
+                        // rate - this is a disk write, the seek bar tick is not.
+                        val now = SystemClock.elapsedRealtime()
+                        if (now - lastSessionSaveAt >= SESSION_SAVE_INTERVAL_MS) {
+                            lastSessionSaveAt = now
+                            saveVideoPlaybackSession()
+                        }
                     }
                 }
                 delay(PROGRESS_POLL_MS)
@@ -1054,7 +1198,20 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         if (active.hasPrevious) playQueueIndex(active.index - 1)
     }
 
-    private fun startVideo(video: VideoItem, forceRestart: Boolean = false) {
+    /**
+     * @param resumePositionMs set only by [restoreVideoSession]: seek here and
+     * stay paused once the stream is ready, instead of starting from zero and
+     * playing immediately.
+     * @param expand false only for a cold-process restore, where popping
+     * straight into a fullscreen player would be a jump-scare rather than the
+     * "you left this running" cue a mini player gives.
+     */
+    private fun startVideo(
+        video: VideoItem,
+        forceRestart: Boolean = false,
+        resumePositionMs: Long? = null,
+        expand: Boolean = true
+    ) {
         if (!forceRestart && _currentVideo.value?.videoId == video.videoId) {
             // Already playing this video, just expand
             _isExpanded.value = true
@@ -1062,7 +1219,13 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         }
 
         _currentVideo.value = video
-        _isExpanded.value = true
+        if (video.isLive) {
+            // Live broadcasts have no stable resume position. Clear the VOD
+            // watched before this one so it is not resurrected if the process
+            // dies while the broadcast is open.
+            clearVideoPlaybackSession()
+        }
+        _isExpanded.value = expand
         _isLoading.value = true
         // Zero the progress for the new video rather than letting the previous
         // one's position sit in the seek bar until the first poll lands.
@@ -1091,12 +1254,6 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         commentsLoadedForVideoId = null
         _createCommentParams.value = null
         _isLoggedIn.value = youtubeRepository.isLoggedIn()
-
-        // Channel sheet content is per-channel; the next video may belong to
-        // a different one, so force a re-fetch on the next open
-        _channelVideos.value = emptyList()
-        _isChannelVideosLoading.value = false
-        channelVideosLoadedForChannelId = null
 
         // Live state belongs to the previous video; the polls must stop before
         // their next tick can write into the new video's chat.
@@ -1153,6 +1310,12 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                     val qualities = youtubeRepository.getVideoStreamQualities(video.videoId)
                     _availableQualities.value = qualities
                     _isLive.value = qualities.any { it.isLive }
+                    if (_isLive.value) {
+                        // Some entry points do not know a broadcast is live
+                        // until its stream qualities arrive. Remove any prior
+                        // snapshot once that verdict is definitive.
+                        clearVideoPlaybackSession()
+                    }
                     // Before the first frame: the stream dimensions are the only
                     // shape signal there is, and both the vertical live layout
                     // and the watch page's video box are sized from it.
@@ -1164,8 +1327,13 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
                     if (qualities.isNotEmpty()) {
                         loadQuality(pickDefaultQuality(qualities))
-                        // FORCE PLAY: Ensure we override any previous paused state
-                        _exoPlayer?.play() 
+                        if (resumePositionMs != null) {
+                            if (resumePositionMs > 0) _exoPlayer?.seekTo(resumePositionMs)
+                            _exoPlayer?.pause()
+                        } else {
+                            // FORCE PLAY: Ensure we override any previous paused state
+                            _exoPlayer?.play()
+                        }
                         _isLoading.value = false // ✅ Playback starting NOW!
                     } else {
                         // Fallback to legacy stream URL
@@ -1181,7 +1349,12 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                                 .createMediaSource(nowPlayingMediaItem(streamUrl))
                             _exoPlayer?.setMediaSource(source)
                             _exoPlayer?.prepare()
-                            _exoPlayer?.play() // FORCE PLAY
+                            if (resumePositionMs != null) {
+                                if (resumePositionMs > 0) _exoPlayer?.seekTo(resumePositionMs)
+                                _exoPlayer?.pause()
+                            } else {
+                                _exoPlayer?.play() // FORCE PLAY
+                            }
                             _isLoading.value = false
                         } else {
                             _playbackError.value = Exception("Unable to load video stream")
@@ -1549,6 +1722,10 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         _isExpanded.value = false
         // Nothing is playing any more, so nothing should be on the lock screen.
         com.ivor.ivormusic.service.VideoPlaybackService.stop(context)
+        // An explicit close means "I'm done with this video" - the opposite
+        // of what the resume snapshot is for, so it must not reappear next
+        // launch.
+        clearVideoPlaybackSession()
     }
 
     fun togglePlayPause() {
@@ -1917,35 +2094,6 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
     // ---------------- Channel page ----------------
 
-    /**
-     * Load the current video's channel uploads for the channel sheet, once
-     * per channel. Uses the canonical UC... id from engagement (falls back to
-     * the id parsed with the video item).
-     */
-    fun loadChannelVideos() {
-        val video = _currentVideo.value ?: return
-        val channelId = _engagement.value?.channelId ?: video.channelId ?: return
-        if (channelVideosLoadedForChannelId == channelId) return
-        channelVideosLoadedForChannelId = channelId
-        _channelVideos.value = emptyList()
-        _isChannelVideosLoading.value = true
-        viewModelScope.launch {
-            try {
-                val channel = com.ivor.ivormusic.data.SubscribedChannel(
-                    channelId = channelId,
-                    name = video.channelName,
-                    avatarUrl = video.channelIconUrl,
-                    subscriberCountText = _engagement.value?.subscriberCountText
-                )
-                _channelVideos.value = youtubeRepository.getChannelVideos(channel)
-            } catch (e: Exception) {
-                android.util.Log.w("VideoPlayerVM", "Failed to load channel videos", e)
-            } finally {
-                _isChannelVideosLoading.value = false
-            }
-        }
-    }
-
     // ---------------- Engagement actions ----------------
 
     /** Re-check login state and refresh engagement (call after a successful sign-in). */
@@ -2280,6 +2428,14 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
          * timestamp rather than a scrub bar being watched.
          */
         private const val PROGRESS_POLL_MS = 500L
+
+        /**
+         * Floor between two resume-snapshot writes from the progress poll.
+         * onEnterBackground() saves immediately on its own; this only guards
+         * the foreground-kill backstop above, where every-500ms would be a
+         * disk write nobody asked for.
+         */
+        private const val SESSION_SAVE_INTERVAL_MS = 10_000L
     }
 
     override fun onCleared() {

@@ -25,6 +25,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.compose.foundation.layout.Box
@@ -52,6 +53,23 @@ import com.ivor.ivormusic.ui.video.enterPipMode
 import com.ivor.ivormusic.ui.share.PendingSharedLink
 import com.ivor.ivormusic.ui.share.SharedLinkHandler
 import com.ivor.ivormusic.ui.share.sharedLinkText
+
+/**
+ * Height the floating navigation bar occupies at the bottom of the Home
+ * screen, above the system navigation inset: the toolbar itself plus the 20dp
+ * it is padded away from the inset.
+ *
+ * Here rather than in `HomeScreen` because the thing that needs it is the
+ * video overlay, which is drawn above the NavHost and cannot see inside the
+ * screen that draws the bar.
+ */
+private val EXPRESSIVE_NAV_BAR_RESERVE = 84.dp
+
+/** Material 3's standard navigation container height, excluding system insets. */
+private val NON_EXPRESSIVE_NAV_BAR_RESERVE = 80.dp
+
+/** Height the collapsed music player occupies above the navigation bar. */
+private val MUSIC_PILL_RESERVE = 88.dp
 
 class MainActivity : ComponentActivity() {
 
@@ -112,8 +130,9 @@ class MainActivity : ComponentActivity() {
             val videoQualityMobile by themeViewModel.videoQualityMobile.collectAsState()
             val musicQualityWifi by themeViewModel.musicQualityWifi.collectAsState()
             val musicQualityMobile by themeViewModel.musicQualityMobile.collectAsState()
-            val preferHdr by themeViewModel.preferHdr.collectAsState()
             val spotlightHome by themeViewModel.spotlightHome.collectAsState()
+            val nonExpressiveNavigationBar by
+                themeViewModel.nonExpressiveNavigationBar.collectAsState()
             val subscriptionSource by themeViewModel.subscriptionSource.collectAsState()
             val subscribeTarget by themeViewModel.subscribeTarget.collectAsState()
             val fastSubscriptionFeed by themeViewModel.fastSubscriptionFeed.collectAsState()
@@ -172,6 +191,10 @@ class MainActivity : ComponentActivity() {
                         onHomeModeToggleEnabledChange = { themeViewModel.setHomeModeToggleEnabled(it) },
                         spotlightHome = spotlightHome,
                         onSpotlightHomeToggle = { themeViewModel.setSpotlightHome(it) },
+                        nonExpressiveNavigationBar = nonExpressiveNavigationBar,
+                        onNonExpressiveNavigationBarToggle = {
+                            themeViewModel.setNonExpressiveNavigationBar(it)
+                        },
                         playerStyle = playerStyle,
                         onPlayerStyleChange = { themeViewModel.setPlayerStyle(it) },
                         saveVideoHistory = saveVideoHistory,
@@ -196,8 +219,6 @@ class MainActivity : ComponentActivity() {
                         onMusicQualityWifiChange = { themeViewModel.setMusicQualityWifi(it) },
                         musicQualityMobile = musicQualityMobile,
                         onMusicQualityMobileChange = { themeViewModel.setMusicQualityMobile(it) },
-                        preferHdr = preferHdr,
-                        onPreferHdrToggle = { themeViewModel.setPreferHdr(it) },
                         subscriptionSource = subscriptionSource,
                         onSubscriptionSourceChange = { themeViewModel.setSubscriptionSource(it) },
                         subscribeTarget = subscribeTarget,
@@ -307,6 +328,8 @@ fun MusicApp(
     onHomeModeToggleEnabledChange: (Boolean) -> Unit,
     spotlightHome: Boolean,
     onSpotlightHomeToggle: (Boolean) -> Unit,
+    nonExpressiveNavigationBar: Boolean,
+    onNonExpressiveNavigationBarToggle: (Boolean) -> Unit,
     playerStyle: PlayerStyle,
     onPlayerStyleChange: (PlayerStyle) -> Unit,
     saveVideoHistory: Boolean,
@@ -331,8 +354,6 @@ fun MusicApp(
     onMusicQualityWifiChange: (String) -> Unit,
     musicQualityMobile: String,
     onMusicQualityMobileChange: (String) -> Unit,
-    preferHdr: Boolean,
-    onPreferHdrToggle: (Boolean) -> Unit,
     subscriptionSource: String,
     onSubscriptionSourceChange: (String) -> Unit,
     subscribeTarget: String,
@@ -388,14 +409,28 @@ fun MusicApp(
         }
     }
 
-    // Surface music playback failures. Before this, a song that could not be
-    // resolved failed silently and the player looked stuck on loading forever.
-    val playbackError by playerViewModel.playbackError.collectAsState()
-    androidx.compose.runtime.LaunchedEffect(playbackError) {
-        playbackError?.let { message ->
-            android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show()
-            playerViewModel.clearPlaybackError()
-        }
+    /**
+     * Opens a creator's page from anywhere: a feed card, a search result, the
+     * player's channel row, the Subscriptions tab, or a shared link.
+     *
+     * **The two overlays step out of the way rather than being drawn over.**
+     * The channel screen is a NavHost destination, and both players live above
+     * the NavHost, so an expanded video player would simply cover it. Dropping
+     * the video to its mini bar is also the behaviour worth having on its own
+     * merits: the video keeps playing while its creator's page is read, which
+     * is exactly what someone tapping a channel name mid-video wants. Shorts
+     * close outright, because that overlay is full-bleed with no minimised form
+     * to fall back to.
+     *
+     * `launchSingleTop` is deliberately absent: opening channel B from channel
+     * A's "Featured channels" shelf has to push a second entry, or back from B
+     * would leave the app rather than return to A.
+     */
+    val openChannel: (String) -> Unit = openChannel@{ channelId ->
+        if (channelId.isBlank()) return@openChannel
+        videoPlayerViewModel.setExpanded(false)
+        shortsPlayerViewModel.close()
+        navController.navigate("channel/${android.net.Uri.encode(channelId)}")
     }
 
     // Music, video and Shorts are mutually exclusive: whichever pipeline
@@ -431,6 +466,28 @@ fun MusicApp(
     val isVideoOverlayExpanded by videoPlayerViewModel.isExpanded.collectAsState()
     val hasVideoMiniPlayer = overlayVideo != null && !isVideoOverlayExpanded
     val musicPillVisible = playerViewModel.currentSong.collectAsState().value != null
+
+    // The floating nav bar and the music pill both live inside HomeScreen, so
+    // they exist on the "home" route and nowhere else. The video overlay is
+    // drawn above the NavHost and therefore renders on every route, so it has
+    // to be told what is actually underneath it rather than assuming: reserving
+    // their height unconditionally is what left the video mini bar hovering in
+    // empty space over Settings, Downloads, Stats and channel pages.
+    val currentRoute = navController.currentBackStackEntryAsState()
+        .value?.destination?.route
+    val onHomeRoute = currentRoute == "home"
+    val navBarReserve = if (nonExpressiveNavigationBar) {
+        NON_EXPRESSIVE_NAV_BAR_RESERVE
+    } else {
+        EXPRESSIVE_NAV_BAR_RESERVE
+    }
+    val videoMiniBottomChrome = when {
+        !onHomeRoute -> 0.dp
+        // Stacked above the music pill rather than on top of it, when both
+        // players are alive at once.
+        musicPillVisible -> navBarReserve + MUSIC_PILL_RESERVE
+        else -> navBarReserve
+    }
 
     // Keep the Activity's PiP inputs current. It needs them outside the
     // composition, in onUserLeaveHint, where there is no way to read state.
@@ -469,7 +526,8 @@ fun MusicApp(
                 popUpTo("home") { inclusive = false }
                 launchSingleTop = true
             }
-        }
+        },
+        onOpenChannel = openChannel
     )
 
     // Drives the PiP window's shape and its transport controls. Composed above
@@ -557,6 +615,7 @@ fun MusicApp(
                         videoPlayerViewModel.exoPlayer?.pause()
                         shortsPlayerViewModel.open(shorts, index)
                     },
+                    onOpenChannel = openChannel,
                     shortsEnabled = shortsEnabled,
                     loadLocalSongs = loadLocalSongs,
                     excludedFolders = excludedFolders,
@@ -570,7 +629,8 @@ fun MusicApp(
                     manualScan = manualScanEnabled,
                     localOnly = localOnlyMode,
                     hasVideoMiniPlayer = hasVideoMiniPlayer,
-                    spotlightHome = spotlightHome
+                    spotlightHome = spotlightHome,
+                    nonExpressiveNavigationBar = nonExpressiveNavigationBar
                 )
             }
             composable(
@@ -601,6 +661,9 @@ fun MusicApp(
                     onHomeModeToggleChange = onHomeModeToggleEnabledChange,
                     spotlightHome = spotlightHome,
                     onSpotlightHomeToggle = onSpotlightHomeToggle,
+                    nonExpressiveNavigationBar = nonExpressiveNavigationBar,
+                    onNonExpressiveNavigationBarToggle =
+                        onNonExpressiveNavigationBarToggle,
                     playerStyle = playerStyle,
                     onPlayerStyleChange = onPlayerStyleChange,
                     saveVideoHistory = saveVideoHistory,
@@ -625,8 +688,6 @@ fun MusicApp(
                     onMusicQualityWifiChange = onMusicQualityWifiChange,
                     musicQualityMobile = musicQualityMobile,
                     onMusicQualityMobileChange = onMusicQualityMobileChange,
-                    preferHdr = preferHdr,
-                    onPreferHdrToggle = onPreferHdrToggle,
                     subscriptionSource = subscriptionSource,
                     onSubscriptionSourceChange = onSubscriptionSourceChange,
                     subscribeTarget = subscribeTarget,
@@ -704,6 +765,54 @@ fun MusicApp(
                 com.ivor.ivormusic.ui.video.NotInterestedScreen(
                     viewModel = homeViewModel,
                     onBack = { navController.popBackStack() }
+                )
+            }
+            // A creator's page. The argument is normally a UC id, may be an
+            // @handle/full URL from a shared link, or a video:<id> fallback
+            // when a modern feed card omitted its creator endpoint. The screen
+            // resolves whichever it was given without starting that video.
+            composable(
+                route = "channel/{channelId}",
+                arguments = listOf(
+                    androidx.navigation.navArgument("channelId") {
+                        type = androidx.navigation.NavType.StringType
+                    }
+                ),
+                enterTransition = { slideInHorizontally(initialOffsetX = { it }) + fadeIn() },
+                exitTransition = { slideOutHorizontally(targetOffsetX = { -it / 3 }) + fadeOut() },
+                popEnterTransition = { slideInHorizontally(initialOffsetX = { -it / 3 }) + fadeIn() },
+                popExitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut() }
+            ) { entry ->
+                val channelArg = entry.arguments?.getString("channelId").orEmpty()
+                com.ivor.ivormusic.ui.channel.ChannelScreen(
+                    channelId = channelArg,
+                    homeViewModel = homeViewModel,
+                    onBack = { navController.popBackStack() },
+                    onPlayVideo = { video -> videoPlayerViewModel.playVideo(video) },
+                    onPlayQueue = { queue -> videoPlayerViewModel.playQueue(queue) },
+                    onOpenShorts = { shorts, index ->
+                        videoPlayerViewModel.exoPlayer?.pause()
+                        shortsPlayerViewModel.open(shorts, index)
+                    },
+                    // A channel opened from inside a channel is a new entry, so
+                    // back walks the trail of creators the user actually followed.
+                    onOpenChannel = openChannel,
+                    onEnqueueVideo = { video, playNext ->
+                        videoPlayerViewModel.enqueueVideo(video, playNext)
+                    },
+                    // The sign-in dialog lives on the home screen, so a login ask
+                    // from here goes back for it rather than opening a second
+                    // WebView on top of a detail screen - same rule as the
+                    // subscriptions manager above.
+                    onLoginClick = { navController.popBackStack("home", inclusive = false) },
+                    // The music artist page lives inside the Library tab rather
+                    // than on a route of its own, so the cross-link goes home
+                    // and asks for it; HomeScreen routes to the tab and clears
+                    // the request as it renders.
+                    onOpenMusicArtist = { _, name ->
+                        homeViewModel.requestArtistPage(name)
+                        navController.popBackStack("home", inclusive = false)
+                    }
                 )
             }
             composable(
@@ -810,15 +919,15 @@ fun MusicApp(
         com.ivor.ivormusic.ui.video.VideoPlayerOverlay(
             viewModel = videoPlayerViewModel,
             timedCommentsEnabled = timedCommentsEnabled,
-            // Stack the minimized video player above the music pill instead of
-            // on top of it when both are alive at once
-            miniPlayerExtraBottomPadding = if (musicPillVisible) 88.dp else 0.dp
+            onOpenChannel = openChannel,
+            hostBottomChrome = videoMiniBottomChrome
         )
 
         // Shorts sit above everything, including the video player overlay
         com.ivor.ivormusic.ui.shorts.ShortsPlayerOverlay(
             viewModel = shortsPlayerViewModel,
-            hiddenActions = shortsHiddenActions
+            hiddenActions = shortsHiddenActions,
+            onOpenChannel = openChannel
         )
 
         // Undo for "don't recommend", app-wide and last in the stack.
@@ -892,4 +1001,3 @@ private fun NotInterestedUndoHost(modifier: Modifier = Modifier) {
 
     SnackbarHost(hostState = snackbarHostState, modifier = modifier)
 }
-
