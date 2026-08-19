@@ -8,7 +8,6 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -73,8 +72,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -114,7 +111,6 @@ import com.ivor.ivormusic.ui.components.rememberQueueRemoval
 import com.ivor.ivormusic.ui.components.rememberQueueReorderState
 import com.ivor.ivormusic.ui.components.SongArtwork
 import kotlin.math.abs
-import kotlinx.coroutines.launch
 
 /**
  * Editorial Player - the two-tone magazine style.
@@ -346,43 +342,14 @@ private fun EditorialNowPlayingView(
         // ========== DIE-CUT ART / LYRICS ==========
         // Swipe-to-skip: the die-cut art follows the finger and springs
         // back if the drag is abandoned; past the threshold it commits a
-        // previous/next skip. Inactive while lyrics are shown.
-        val scope = rememberCoroutineScope()
-        val swipeDragX = remember { Animatable(0f) }
-        val skipThresholdPx = with(LocalDensity.current) { 90.dp.toPx() }
-        val currentOnNext by rememberUpdatedState(onNext)
-        val currentOnPrevious by rememberUpdatedState(onPrevious)
+        // previous/next skip. Inactive while lyrics are shown. The headline
+        // below shares this state, so both read as one gesture.
+        val swipeToSkip = rememberSwipeToSkip(onNext = onNext, onPrevious = onPrevious)
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
-                .pointerInput(showLyrics) {
-                    if (showLyrics) return@pointerInput
-                    detectHorizontalDragGestures(
-                        onHorizontalDrag = { change, dragAmount ->
-                            change.consume()
-                            scope.launch { swipeDragX.snapTo(swipeDragX.value + dragAmount) }
-                        },
-                        onDragEnd = {
-                            val dx = swipeDragX.value
-                            scope.launch {
-                                if (abs(dx) > skipThresholdPx) {
-                                    if (dx < 0) currentOnNext() else currentOnPrevious()
-                                }
-                                swipeDragX.animateTo(
-                                    0f,
-                                    spring(
-                                        dampingRatio = Spring.DampingRatioMediumBouncy,
-                                        stiffness = Spring.StiffnessLow
-                                    )
-                                )
-                            }
-                        },
-                        onDragCancel = {
-                            scope.launch { swipeDragX.animateTo(0f, spring()) }
-                        }
-                    )
-                },
+                .swipeToSkip(swipeToSkip, enabled = !showLyrics),
             contentAlignment = Alignment.Center
         ) {
             Crossfade(targetState = showLyrics, label = "EditorialArtLyrics") { lyricsVisible ->
@@ -400,8 +367,8 @@ private fun EditorialNowPlayingView(
                 } else {
                     Box(
                         modifier = Modifier.graphicsLayer {
-                            translationX = swipeDragX.value * 0.5f
-                            rotationZ = swipeDragX.value / 80f
+                            translationX = swipeToSkip.offset * SwipeToSkipDefaults.ArtFollow
+                            rotationZ = swipeToSkip.offset / 80f
                         }
                     ) {
                         EditorialDieCutArt(
@@ -417,40 +384,49 @@ private fun EditorialNowPlayingView(
         }
 
         // ========== HEADLINE ==========
+        // Wrapped so the song information is one swipe target the full width
+        // of the player, not two text-shaped ones.
         val title = currentSong?.title?.takeIf { !it.startsWith("Unknown") } ?: "Untitled"
         val headlineBase = when {
             title.length <= 12 -> MaterialTheme.typography.displayLarge
             title.length <= 24 -> MaterialTheme.typography.displayMedium
             else -> MaterialTheme.typography.displaySmall
         }
-        Text(
-            text = title,
-            style = headlineBase.copy(
-                fontFamily = FontFamily.Serif,
-                fontStyle = FontStyle.Italic,
-                fontWeight = FontWeight.Bold
-            ),
-            color = accent,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 24.dp)
-        )
+                .swipeToSkip(swipeToSkip)
+                .swipeToSkipFollow(swipeToSkip)
+        ) {
+            Text(
+                text = title,
+                style = headlineBase.copy(
+                    fontFamily = FontFamily.Serif,
+                    fontStyle = FontStyle.Italic,
+                    fontWeight = FontWeight.Bold
+                ),
+                color = accent,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp)
+            )
 
-        val artistName = currentSong?.artist?.takeIf { !it.startsWith("Unknown") } ?: "Unknown Artist"
-        Text(
-            text = artistName.uppercase(),
-            style = MaterialTheme.typography.labelLarge.copy(letterSpacing = 2.sp),
-            color = accent.copy(alpha = 0.8f),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier
-                .padding(horizontal = 20.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .clickable(enabled = artistName != "Unknown Artist") { onArtistClick(artistName) }
-                .padding(horizontal = 4.dp, vertical = 4.dp)
-        )
+            val artistName = currentSong?.artist?.takeIf { !it.startsWith("Unknown") } ?: "Unknown Artist"
+            Text(
+                text = artistName.uppercase(),
+                style = MaterialTheme.typography.labelLarge.copy(letterSpacing = 2.sp),
+                color = accent.copy(alpha = 0.8f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .padding(horizontal = 20.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(enabled = artistName != "Unknown Artist") { onArtistClick(artistName) }
+                    .padding(horizontal = 4.dp, vertical = 4.dp)
+            )
+        }
 
         Spacer(modifier = Modifier.height(16.dp))
 

@@ -3,7 +3,6 @@ package com.ivor.ivormusic.ui.player
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
-import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -16,7 +15,6 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -62,7 +60,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -71,18 +68,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.Player
 import com.ivor.ivormusic.ui.components.LikeBurstIcon
 import com.ivor.ivormusic.ui.components.SongArtwork
-import kotlin.math.abs
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 
 /**
  * Canvas Player - the full-bleed artwork style (replaces the old kinetic
@@ -137,11 +130,14 @@ fun PosterPlayerSheetContent(
 
     // Swipe-to-skip: the artwork follows the finger, springs back if the
     // drag is abandoned, and the incoming cover slides in from the swipe
-    // direction.
-    val scope = rememberCoroutineScope()
-    val swipeDragX = remember { Animatable(0f) }
+    // direction. Canvas is full-bleed, so the gesture sits on the whole
+    // screen and the song information is already inside it — the title block
+    // only has to be told to move with it.
     var skipDirection by remember { mutableIntStateOf(1) }
-    val skipThresholdPx = with(LocalDensity.current) { 90.dp.toPx() }
+    val swipeToSkip = rememberSwipeToSkip(
+        onNext = { skipDirection = 1; playerHaptics.skip(); viewModel.skipToNext() },
+        onPrevious = { skipDirection = -1; playerHaptics.skip(); viewModel.skipToPrevious() }
+    )
 
     // The chrome slips away on its own while music plays; any tap on the
     // canvas summons it back.
@@ -198,36 +194,8 @@ fun PosterPlayerSheetContent(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null
                         ) { controlsVisible = true }
-                        .pointerInput(showLyrics) {
-                            if (showLyrics) return@pointerInput
-                            detectHorizontalDragGestures(
-                                onHorizontalDrag = { change, dragAmount ->
-                                    change.consume()
-                                    scope.launch { swipeDragX.snapTo(swipeDragX.value + dragAmount) }
-                                },
-                                onDragEnd = {
-                                    val dx = swipeDragX.value
-                                    scope.launch {
-                                        if (abs(dx) > skipThresholdPx) {
-                                            skipDirection = if (dx < 0) 1 else -1
-                                            playerHaptics.skip()
-                                            if (dx < 0) viewModel.skipToNext()
-                                            else viewModel.skipToPrevious()
-                                        }
-                                        swipeDragX.animateTo(
-                                            0f,
-                                            spring(
-                                                dampingRatio = Spring.DampingRatioMediumBouncy,
-                                                stiffness = Spring.StiffnessLow
-                                            )
-                                        )
-                                    }
-                                },
-                                onDragCancel = {
-                                    scope.launch { swipeDragX.animateTo(0f, spring()) }
-                                }
-                            )
-                        }
+                        // Off while lyrics are up: that view scrolls and seeks.
+                        .swipeToSkip(swipeToSkip, enabled = !showLyrics)
                         // Last in the chain: consumes the post-long-press
                         // hold stream before the tap and swipe detectors.
                         .styleWheelHold(styleWheel)
@@ -252,7 +220,9 @@ fun PosterPlayerSheetContent(
                         },
                         modifier = Modifier
                             .fillMaxSize()
-                            .graphicsLayer { translationX = swipeDragX.value * 0.35f },
+                            // Full-bleed art moves less than a framed cover
+                            // would: at 0.5x the crop edges show.
+                            .graphicsLayer { translationX = swipeToSkip.offset * 0.35f },
                         label = "CanvasSongSwitch"
                     ) { song ->
                         if (song != null && (song.thumbnailUrl != null || song.albumArtUri != null)) {
@@ -406,7 +376,11 @@ fun PosterPlayerSheetContent(
                         ) {
                             // Title + like/lyrics chips
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Column(modifier = Modifier.weight(1f)) {
+                                Column(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .swipeToSkipFollow(swipeToSkip)
+                                ) {
                                     Text(
                                         text = currentSong?.title
                                             ?.takeIf { !it.startsWith("Unknown") } ?: "Untitled",

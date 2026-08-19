@@ -126,6 +126,13 @@ fun BentoPlayerSheetContent(
     var showLyrics by remember { mutableStateOf(false) }
     var showAddToPlaylist by remember { mutableStateOf(false) }
 
+    // Swipe-to-skip, shared by the art tile and the title tile so both
+    // commit at the same threshold with the same spring home.
+    val swipeToSkip = rememberSwipeToSkip(
+        onNext = { playerHaptics.skip(); viewModel.skipToNext() },
+        onPrevious = { playerHaptics.skip(); viewModel.skipToPrevious() }
+    )
+
     val boardColor = MaterialTheme.colorScheme.surfaceContainerLowest
     val tileColor = MaterialTheme.colorScheme.surfaceContainerHigh
     val onTile = MaterialTheme.colorScheme.onSurface
@@ -264,6 +271,9 @@ fun BentoPlayerSheetContent(
                         modifier = Modifier
                             .fillMaxWidth()
                             .weight(1f)
+                            // Outside the clip, so the whole tile slides with
+                            // the finger instead of the art sliding inside it.
+                            .swipeToSkipFollow(swipeToSkip, SwipeToSkipDefaults.ArtFollow)
                             .clip(RoundedCornerShape(artCorner.dp))
                             .background(tileColor)
                             .pointerInput(Unit) {
@@ -272,6 +282,8 @@ fun BentoPlayerSheetContent(
                                     viewModel.togglePlayPause()
                                 })
                             }
+                            // Off while lyrics are up: that view scrolls and seeks.
+                            .swipeToSkip(swipeToSkip, enabled = !showLyrics)
                             .styleWheelHold(styleWheel)
                     ) {
                         Crossfade(targetState = showLyrics, label = "BentoArtLyrics") { lyricsVisible ->
@@ -314,7 +326,10 @@ fun BentoPlayerSheetContent(
 
                     // ========== TITLE TILE ==========
                     Surface(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .swipeToSkipFollow(swipeToSkip)
+                            .swipeToSkip(swipeToSkip),
                         shape = RoundedCornerShape(20.dp),
                         color = tileColor
                     ) {

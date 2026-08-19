@@ -261,6 +261,17 @@ private fun GestureNowPlayingView(
         if (queue.isEmpty()) 0
         else queue.indexOfFirst { it.id == currentSong?.id }.coerceIn(0, queue.lastIndex.coerceAtLeast(0))
     }
+
+    // Swipe-to-skip on the song information. It steps the queue rather than
+    // calling the ViewModel's skip, because that is what the carousel above
+    // does — and the carousel follows currentIndex, so it slides across to
+    // meet the new song instead of the two disagreeing. Both ends clamp: this
+    // style has no prev/next buttons, so running off the queue must be a
+    // no-op, not a wrap.
+    val swipeToSkip = rememberSwipeToSkip(
+        onNext = { queue.getOrNull(currentIndex + 1)?.let(onSongChange) },
+        onPrevious = { queue.getOrNull(currentIndex - 1)?.let(onSongChange) }
+    )
     
     // Get album info
     val albumName = currentSong?.album?.takeIf { it.isNotEmpty() && !it.startsWith("Unknown") } ?: "Unknown Album"
@@ -462,6 +473,8 @@ private fun GestureNowPlayingView(
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .swipeToSkip(swipeToSkip)
+                                .swipeToSkipFollow(swipeToSkip)
                                 .padding(horizontal = 24.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {

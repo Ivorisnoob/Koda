@@ -18,7 +18,6 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -70,7 +69,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -96,7 +94,6 @@ import com.ivor.ivormusic.ui.components.SongArtwork
 import kotlin.math.abs
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
 
 /**
  * Morph Player - one living shape.
@@ -142,6 +139,13 @@ fun MorphPlayerSheetContent(
 
     var showQueue by remember { mutableStateOf(false) }
     var showLyrics by remember { mutableStateOf(false) }
+
+    // Swipe-to-skip, shared by the morphing hero and the title/artist block
+    // so both commit at the same threshold with the same spring home.
+    val swipeToSkip = rememberSwipeToSkip(
+        onNext = { playerHaptics.skip(); viewModel.skipToNext() },
+        onPrevious = { playerHaptics.skip(); viewModel.skipToPrevious() }
+    )
     var showAddToPlaylist by remember { mutableStateOf(false) }
 
     // Morph runs on the theme's own roles, so the picker needs no overrides.
@@ -280,8 +284,7 @@ fun MorphPlayerSheetContent(
                                         playerHaptics.playPause(!viewModel.isPlaying.value)
                                         viewModel.togglePlayPause()
                                     },
-                                    onNext = { playerHaptics.skip(); viewModel.skipToNext() },
-                                    onPrevious = { playerHaptics.skip(); viewModel.skipToPrevious() },
+                                    swipeToSkip = swipeToSkip,
                                     ringColor = primaryColor,
                                     ringTrackColor = onSurfaceVariantColor.copy(alpha = 0.2f)
                                 )
@@ -290,33 +293,42 @@ fun MorphPlayerSheetContent(
                     }
 
                     // ========== TITLE / ARTIST ==========
-                    Text(
-                        text = currentSong?.title?.takeIf { !it.startsWith("Unknown") } ?: "Untitled",
-                        style = MaterialTheme.typography.headlineLarge.copy(fontWeight = FontWeight.Bold),
-                        color = onSurfaceColor,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        textAlign = TextAlign.Center,
+                    // Wrapped so the song information is one swipe target the
+                    // full width of the player, not two text-shaped ones.
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 24.dp)
-                    )
-                    val artistName = currentSong?.artist?.takeIf { !it.startsWith("Unknown") }
-                        ?: "Unknown Artist"
-                    Text(
-                        text = artistName,
-                        style = MaterialTheme.typography.titleMedium,
-                        color = primaryColor.copy(alpha = 0.9f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier
-                            .align(Alignment.CenterHorizontally)
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable(enabled = artistName != "Unknown Artist") {
-                                onArtistClick(artistName)
-                            }
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
-                    )
+                            .swipeToSkip(swipeToSkip)
+                            .swipeToSkipFollow(swipeToSkip)
+                    ) {
+                        Text(
+                            text = currentSong?.title?.takeIf { !it.startsWith("Unknown") } ?: "Untitled",
+                            style = MaterialTheme.typography.headlineLarge.copy(fontWeight = FontWeight.Bold),
+                            color = onSurfaceColor,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 24.dp)
+                        )
+                        val artistName = currentSong?.artist?.takeIf { !it.startsWith("Unknown") }
+                            ?: "Unknown Artist"
+                        Text(
+                            text = artistName,
+                            style = MaterialTheme.typography.titleMedium,
+                            color = primaryColor.copy(alpha = 0.9f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier
+                                .align(Alignment.CenterHorizontally)
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable(enabled = artistName != "Unknown Artist") {
+                                    onArtistClick(artistName)
+                                }
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    }
 
                     // ========== SCRUB LINE ==========
                     Column(modifier = Modifier.padding(horizontal = 24.dp)) {
@@ -502,8 +514,7 @@ private fun MorphHero(
     isBuffering: Boolean,
     progressFraction: Float,
     onPlayPause: () -> Unit,
-    onNext: () -> Unit,
-    onPrevious: () -> Unit,
+    swipeToSkip: SwipeToSkipState,
     ringColor: Color,
     ringTrackColor: Color
 ) {
@@ -585,10 +596,8 @@ private fun MorphHero(
     )
 
     // Horizontal drag: stretch toward the skip, spring back if abandoned.
-    val scope = rememberCoroutineScope()
-    val dragX = remember { Animatable(0f) }
-    val currentOnNext by rememberUpdatedState(onNext)
-    val currentOnPrevious by rememberUpdatedState(onPrevious)
+    // The gesture itself is the shared contract; only the hero's reaction to
+    // it (tilt, stretch) is Morph's own.
     val currentOnPlayPause by rememberUpdatedState(onPlayPause)
     val styleWheel = LocalPlayerStyleWheelController.current
 
@@ -599,7 +608,6 @@ private fun MorphHero(
         if (maxWidth < 50.dp || maxHeight < 50.dp) return@BoxWithConstraints
         val heroSize = minOf(maxWidth, maxHeight) * 0.72f
         val ringSize = heroSize + 40.dp
-        val skipThresholdPx = with(LocalDensity.current) { 100.dp.toPx() }
 
         CircularWavyProgressIndicator(
             progress = { progressFraction },
@@ -613,9 +621,10 @@ private fun MorphHero(
             modifier = Modifier
                 .size(heroSize)
                 .graphicsLayer {
-                    translationX = dragX.value * 0.5f
-                    rotationZ = tilt + dragX.value / 60f
-                    scaleX = breath * (1f + (abs(dragX.value) / 2500f).coerceAtMost(0.08f))
+                    val dx = swipeToSkip.offset
+                    translationX = dx * SwipeToSkipDefaults.ArtFollow
+                    rotationZ = tilt + dx / 60f
+                    scaleX = breath * (1f + (abs(dx) / 2500f).coerceAtMost(0.08f))
                     scaleY = breath
                 }
                 .clip(heroShape)
@@ -623,32 +632,7 @@ private fun MorphHero(
                 .pointerInput(Unit) {
                     detectTapGestures(onTap = { currentOnPlayPause() })
                 }
-                .pointerInput(Unit) {
-                    detectHorizontalDragGestures(
-                        onHorizontalDrag = { change, dragAmount ->
-                            change.consume()
-                            scope.launch { dragX.snapTo(dragX.value + dragAmount) }
-                        },
-                        onDragEnd = {
-                            val dx = dragX.value
-                            scope.launch {
-                                if (abs(dx) > skipThresholdPx) {
-                                    if (dx < 0) currentOnNext() else currentOnPrevious()
-                                }
-                                dragX.animateTo(
-                                    0f,
-                                    spring(
-                                        dampingRatio = Spring.DampingRatioMediumBouncy,
-                                        stiffness = Spring.StiffnessLow
-                                    )
-                                )
-                            }
-                        },
-                        onDragCancel = {
-                            scope.launch { dragX.animateTo(0f, spring()) }
-                        }
-                    )
-                }
+                .swipeToSkip(swipeToSkip)
                 // Last in the chain: consumes the post-long-press hold
                 // stream before the tap and skip-drag detectors see it.
                 .styleWheelHold(styleWheel),
