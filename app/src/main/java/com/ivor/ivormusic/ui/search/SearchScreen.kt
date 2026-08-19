@@ -94,6 +94,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -220,7 +221,15 @@ fun SearchScreen(
     listState: androidx.compose.foundation.lazy.LazyListState =
         androidx.compose.foundation.lazy.rememberLazyListState()
 ) {
-    var query by remember { mutableStateOf("") }
+    // Saveable, not just remembered: this composable is disposed and rebuilt
+    // both on a tab switch (AnimatedContent in HomeScreen only keeps the
+    // target tab's subtree composed) and on process death, and a plainly-
+    // remembered query silently threw away what was typed either way - see
+    // ROADMAP.md, Surviving process death. Only the query and the filters
+    // that shape it are saved; the result lists stay plain remember and are
+    // re-fetched by the LaunchedEffect below once query is restored, which
+    // avoids needing a Parcelable/serializer story for every result type.
+    var query by rememberSaveable { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
     var isLoadingMore by remember { mutableStateOf(false) }
     // Set once a "load more" comes back empty, so scrolling at the bottom of
@@ -236,10 +245,10 @@ fun SearchScreen(
     var artistResults by remember { mutableStateOf<List<ArtistItem>>(emptyList()) }
     var albumResults by remember { mutableStateOf<List<PlaylistDisplayItem>>(emptyList()) }
     var playlistResults by remember { mutableStateOf<List<PlaylistDisplayItem>>(emptyList()) }
-    var selectedCategory by remember { mutableStateOf(SearchCategory.SONGS) }
-    var selectedVideoCategory by remember { mutableStateOf(VideoSearchCategory.VIDEOS) }
-    var selectedDateFilter by remember { mutableStateOf(VideoSearchDateFilter.ANY) }
-    var selectedSort by remember { mutableStateOf(VideoSearchSort.RELEVANCE) }
+    var selectedCategory by rememberSaveable { mutableStateOf(SearchCategory.SONGS) }
+    var selectedVideoCategory by rememberSaveable { mutableStateOf(VideoSearchCategory.VIDEOS) }
+    var selectedDateFilter by rememberSaveable { mutableStateOf(VideoSearchDateFilter.ANY) }
+    var selectedSort by rememberSaveable { mutableStateOf(VideoSearchSort.RELEVANCE) }
     
     var visibleLocalCount by remember { mutableIntStateOf(20) }
     val scope = rememberCoroutineScope()
