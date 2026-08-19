@@ -127,14 +127,6 @@ Both palettes need to flow through the shared theme everywhere it is used — su
 
 Tracked in [#179](https://github.com/Ivorisnoob/Koda/issues/179).
 
-#### Swipe song information to change tracks
-
-The player already uses the album-cover area for the previous/next-song swipe. The same gesture should also work on the **song title and artist-name area**, so the visible song information is an equally natural navigation surface.
-
-This should be one gesture contract, not a second interaction model: identical direction, threshold, animation, and playback behavior across every player style and every compact, expanded, or full-screen surface where song navigation exists. Taps on the text, controls, menus, links, scrolling titles, larger text, and accessibility must continue to work, and a gesture crossing from the artwork into the text must not trigger navigation twice.
-
-Tracked in [#180](https://github.com/Ivorisnoob/Koda/issues/180).
-
 #### Respect reduced motion
 
 Koda animates more than almost anything in its category (roughly 97 spring animations, eight player styles built on motion, staggered entrances on every screen), and it reads nothing about whether the person using it wants that. There is no read of `Settings.Global.ANIMATOR_DURATION_SCALE` anywhere in the source, so a user who has turned animations off system-wide, whether for vestibular reasons or because they are on a slow device, still gets every spring and every stagger.
@@ -459,6 +451,11 @@ The milestones behind us, kept here so the direction of travel is visible.
 - Playlist links, shared in or pasted into search, opening the playlist's page rather than playing it or previewing it, so one can be kept the same way a searched one can
 - The video mini bar rebuilt: swipe up to expand and down to dismiss instead of a close button, a progress line that moves with playback rather than once a second, and a resting position that follows what is actually on screen under it
 - A persistent Appearance choice between the expressive floating navigation pill and a standard short bottom navigation bar, shared by music and video mode
+- Swipe on the song title and artist to change tracks, in every player style, on one shared gesture contract that the album-cover swipe now also runs on
+
+The song-information swipe is worth recording for what the work actually turned out to be. The request read as "add the gesture to one more area", and the survey found something else: **the swipe had been hand-rolled per style, and three of the eight had never got one.** Classic, Bento and Dial had prev/next buttons and nothing else, Morph had drifted to a 100dp threshold against everyone else's 90dp, and there was no single place that would have made any of that visible. So the fix was a shared contract (`ui/player/SwipeToSkip.kt`: one `rememberSwipeToSkip`, `Modifier.swipeToSkip`, `Modifier.swipeToSkipFollow`) that the artwork gestures were migrated onto, rather than a ninth copy of the same twenty lines. **A rule that lives only in prose is a rule that will be missed by whoever adds the next style**; this one is now a function it is easier to call than to reimplement.
+
+Two things stayed deliberately un-unified. **Sticker keeps its peel** - the art is thrown off the canvas and the next one slapped on, which is that style's identity and is not a spring-back - and **Gesture's title swipe steps the queue** rather than calling the ViewModel's skip, because its carousel follows `currentIndex` and would otherwise disagree with the gesture that moved it. Same direction, same commit, different animation. The mini player was left alone: horizontal there already means dismiss, and splitting one 64dp bar between dismiss and skip is a coin flip every time.
 
 Three fixed defects retain lessons worth carrying forward. **Shorts and downloads now recover from a flagged `visitorData`** by re-minting between attempts and invalidating URLs resolved under the refused token; re-resolving under the same token is not a retry. **The video mini bar no longer floats above absent chrome** because an overlay composed above the NavHost is told what is actually beneath it instead of inferring that from playback state. **Portrait uploads no longer sit inside a pillarboxed 16:9 watch-page box**; the player uses the source aspect ratio with a cap that preserves the page below, and fits rather than zooms so faces and captions are not cropped.
 

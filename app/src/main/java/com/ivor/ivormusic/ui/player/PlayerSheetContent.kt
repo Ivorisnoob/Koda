@@ -39,7 +39,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
@@ -246,6 +245,13 @@ private fun ExpressiveNowPlayingView(
     // State for toggling between album art and lyrics
     var showLyrics by remember { mutableStateOf(false) }
     val playerHaptics = rememberPlayerHaptics()
+
+    // Swipe-to-skip, shared by the album art and the title/artist block so
+    // both commit at the same threshold with the same spring home.
+    val swipeToSkip = rememberSwipeToSkip(
+        onNext = { playerHaptics.skip(); viewModel.skipToNext() },
+        onPrevious = { playerHaptics.skip(); viewModel.skipToPrevious() }
+    )
     
     // Get album art URL for background
     val albumArtUrl = currentSong?.highResThumbnailUrl 
@@ -368,7 +374,9 @@ private fun ExpressiveNowPlayingView(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
-                .padding(horizontal = 24.dp),
+                .padding(horizontal = 24.dp)
+                // Off while lyrics are up: that view scrolls and seeks.
+                .swipeToSkip(swipeToSkip, enabled = !showLyrics),
             contentAlignment = Alignment.Center
         ) {
             Crossfade(targetState = showLyrics, label = "AlbumLyricsCrossfade") { isLyricsVisible ->
@@ -403,6 +411,7 @@ private fun ExpressiveNowPlayingView(
                             Surface(
                                 modifier = Modifier
                                     .size(albumSize)
+                                    .swipeToSkipFollow(swipeToSkip, SwipeToSkipDefaults.ArtFollow)
                                     .styleWheelHold(styleWheel),
                                 shape = RoundedCornerShape(cornerRadius),
                                 color = MaterialTheme.colorScheme.surfaceContainerHigh
@@ -533,7 +542,13 @@ private fun ExpressiveNowPlayingView(
             Spacer(modifier = Modifier.height(20.dp))
 
             // Song Title & Artist
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .swipeToSkip(swipeToSkip)
+                    .swipeToSkipFollow(swipeToSkip),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
                 Text(
                     text = currentSong?.title?.takeIf { !it.startsWith("Unknown") } ?: "Untitled",
                     style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),

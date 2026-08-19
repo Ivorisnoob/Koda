@@ -120,6 +120,13 @@ fun DialPlayerSheetContent(
 
     var showQueue by remember { mutableStateOf(false) }
     var showLyrics by remember { mutableStateOf(false) }
+
+    // Swipe-to-skip, shared by the dial's puck art and the title/artist
+    // block so both commit at the same threshold with the same spring home.
+    val swipeToSkip = rememberSwipeToSkip(
+        onNext = { playerHaptics.skip(); viewModel.skipToNext() },
+        onPrevious = { playerHaptics.skip(); viewModel.skipToPrevious() }
+    )
     var showAddToPlaylist by remember { mutableStateOf(false) }
 
     val field = MaterialTheme.colorScheme.surfaceContainerLowest
@@ -246,7 +253,8 @@ fun DialPlayerSheetContent(
                                     onPlayPause = {
                                         playerHaptics.playPause(!viewModel.isPlaying.value)
                                         viewModel.togglePlayPause()
-                                    }
+                                    },
+                                    swipeToSkip = swipeToSkip
                                 )
                             }
                         }
@@ -267,33 +275,42 @@ fun DialPlayerSheetContent(
                     Spacer(modifier = Modifier.height(6.dp))
 
                     // ========== TITLE / ARTIST ==========
-                    Text(
-                        text = currentSong?.title?.takeIf { !it.startsWith("Unknown") } ?: "Untitled",
-                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                        color = ink,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        textAlign = TextAlign.Center,
+                    // Wrapped so the song information is one swipe target the
+                    // full width of the player, not two text-shaped ones.
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 24.dp)
-                    )
-                    val artistName = currentSong?.artist?.takeIf { !it.startsWith("Unknown") }
-                        ?: "Unknown Artist"
-                    Text(
-                        text = artistName,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = inkVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier
-                            .align(Alignment.CenterHorizontally)
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable(enabled = artistName != "Unknown Artist") {
-                                onArtistClick(artistName)
-                            }
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
-                    )
+                            .swipeToSkip(swipeToSkip)
+                            .swipeToSkipFollow(swipeToSkip)
+                    ) {
+                        Text(
+                            text = currentSong?.title?.takeIf { !it.startsWith("Unknown") } ?: "Untitled",
+                            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                            color = ink,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 24.dp)
+                        )
+                        val artistName = currentSong?.artist?.takeIf { !it.startsWith("Unknown") }
+                            ?: "Unknown Artist"
+                        Text(
+                            text = artistName,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = inkVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier
+                                .align(Alignment.CenterHorizontally)
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable(enabled = artistName != "Unknown Artist") {
+                                    onArtistClick(artistName)
+                                }
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    }
 
                     Spacer(modifier = Modifier.height(10.dp))
 
@@ -405,7 +422,8 @@ private fun RotaryDial(
     progress: Long,
     duration: Long,
     onSeekTo: (Long) -> Unit,
-    onPlayPause: () -> Unit
+    onPlayPause: () -> Unit,
+    swipeToSkip: SwipeToSkipState
 ) {
     val styleWheel = LocalPlayerStyleWheelController.current
     val tickColor = MaterialTheme.colorScheme.primary
@@ -543,15 +561,20 @@ private fun RotaryDial(
             )
         }
 
-        // Center puck.
+        // Center puck. The swipe lives here rather than on the ring, which
+        // owns the rotary scrub; the puck sits on top of it, so a horizontal
+        // drag started here is consumed before the ring's detector clears
+        // touch slop and never turns into a seek.
         Box(
             modifier = Modifier
                 .size(puckSize)
+                .swipeToSkipFollow(swipeToSkip, SwipeToSkipDefaults.ArtFollow)
                 .clip(puckShape)
                 .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                 .pointerInput(Unit) {
                     detectTapGestures(onTap = { onPlayPause() })
                 }
+                .swipeToSkip(swipeToSkip)
                 .styleWheelHold(styleWheel),
             contentAlignment = Alignment.Center
         ) {
