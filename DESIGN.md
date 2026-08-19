@@ -27,7 +27,7 @@ These are counts from the current source tree, not aspirations.
 | `MaterialShapes` references | 142, across 17 distinct shapes |
 | `spring()` animation specs | 127, across 45 files |
 | `animate*AsState` call sites | 81 |
-| Built-in color palettes | 27, in 6 families |
+| Built-in color palettes | 29, in 6 families |
 | Player styles | 8, each a full independent layout |
 | Material 3 version | `1.5.0-alpha24` (Expressive APIs) |
 
@@ -153,7 +153,7 @@ flowchart TD
     Q -->|Yes, Android 12+| Dyn["dynamicLight/DarkColorScheme<br/>from wallpaper"]
     Q -->|No| Neutral["App neutral scheme<br/>DarkColorScheme / expressiveLightColorScheme"]
 
-    Neutral --> Pal["buildPaletteColorScheme()<br/>27 palettes, 6 families"]
+    Neutral --> Pal["buildPaletteColorScheme()<br/>29 palettes, 6 families"]
     Pal --> Merge
     Dyn --> Merge([Resolved scheme])
 
@@ -180,7 +180,7 @@ The palette families are chosen to cover genuinely different moods rather than t
 | Aesthetic | Vintage Film, Dusty Rose, Sage & Sand, Faded Denim, Oat Latte, Sun-bleached |
 | Earthy | Terracotta, Forest, Mocha, Autumn |
 | Moody | Crimson Noir, Midnight Indigo, Deep Teal, Royal Plum |
-| Jewel & Mono | Emerald, Ocean, Rose Gold, Graphite |
+| Jewel & Mono | Emerald, Ocean, Rose Gold, Graphite, Black, White |
 
 Each palette is three seed colors expanded into full Material role sets (`primary`, `onPrimary`, `primaryContainer`, and so on for secondary and tertiary) via HSL manipulation in `ColorPalettes.kt`. Picking a fixed palette **fully ignores** wallpaper color rather than blending with it, so the result is predictable.
 
@@ -224,7 +224,7 @@ If Koda's look is not to your taste, a lot is already adjustable in Settings bef
 
 - **Theme mode:** light, dark, or follow system
 - **AMOLED true black:** for OLED panels
-- **Color palette:** wallpaper-based dynamic color, or any of the 27 fixed palettes
+- **Color palette:** wallpaper-based dynamic color, or any of the 29 fixed palettes
 - **Album Art Colors:** recolor the expanded player from the current cover art
 - **Ambient artwork background** and the optional chromatic-mist effect
 - **Player style:** eight full layouts, switchable from the style wheel

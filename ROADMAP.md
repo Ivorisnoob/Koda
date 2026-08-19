@@ -22,7 +22,7 @@ The app is past the point of proving itself. The core loops all work end to end:
 
 **Identity is plural.** Several YouTube accounts and device-only local profiles sit side by side, switchable with one preference write and no re-authentication, no network, and no interruption to playback.
 
-**The interface is the product.** Eight fully animated player styles, 27 color palettes plus wallpaper-based dynamic color and AMOLED, a settings hub of eleven pages with full-text search, and spring physics on anything touch-driven.
+**The interface is the product.** Eight fully animated player styles, 29 color palettes plus wallpaper-based dynamic color and AMOLED, a settings hub of eleven pages with full-text search, and spring physics on anything touch-driven.
 
 Where the weight sits today:
 

@@ -70,7 +70,16 @@ val APP_PALETTES: List<AppPalette> = listOf(
     AppPalette("emerald", "Emerald", "Jewel & Mono", Color(0xFF10B981), Color(0xFF34D399), Color(0xFF6EE7B7)),
     AppPalette("ocean", "Ocean", "Jewel & Mono", Color(0xFF0077B6), Color(0xFF0096C7), Color(0xFF3A67C4)),
     AppPalette("rosegold", "Rose Gold", "Jewel & Mono", Color(0xFFE18C8C), Color(0xFFE0B0A0), Color(0xFFD4AF37)),
-    AppPalette("graphite", "Graphite", "Jewel & Mono", Color(0xFF64748B), Color(0xFF94A3B8), Color(0xFF475569))
+    AppPalette("graphite", "Graphite", "Jewel & Mono", Color(0xFF64748B), Color(0xFF94A3B8), Color(0xFF475569)),
+    // Pure black/white seeds have zero saturation, so hue is meaningless and
+    // the generic tone() re-mapping below - which deliberately discards a
+    // seed's own lightness so every palette lands on the same Material tone
+    // targets - would make these two indistinguishable from each other and
+    // from Graphite. roleColors() special-cases these two ids instead of
+    // deriving from the seeds; the seeds here only feed the picker's preview
+    // swatches, so they are kept literal.
+    AppPalette("black", "Black", "Jewel & Mono", Color(0xFF000000), Color(0xFF000000), Color(0xFF000000)),
+    AppPalette("white", "White", "Jewel & Mono", Color(0xFFFFFFFF), Color(0xFFFFFFFF), Color(0xFFFFFFFF))
 )
 
 /** Ordered list of the distinct categories, for grouping in the picker UI. */
@@ -145,11 +154,66 @@ data class PaletteRoles(
 )
 
 /**
+ * Role colors for the two monochrome presets (Black, White), which cannot go
+ * through the seed-based derivation below: it deliberately discards a seed's
+ * own lightness so every hued palette lands on the same fixed Material tone
+ * targets regardless of how light or dark its swatch was, and with
+ * saturation 0 that lightness is the only thing that told a black seed and a
+ * white seed apart. Both would come out as the exact same grey.
+ *
+ * [primary]/[secondary]/[tertiary] and their "on" colors stay mode-adaptive -
+ * dark ink in light mode, light ink in dark mode - the same flip every other
+ * palette makes for small controls, because one that goes invisible against
+ * its own surface is not a design choice. What actually carries the
+ * Black-vs-White identity is the containers: large fills that have room to
+ * lean all the way toward one end without losing legibility, since
+ * [contrastInk] picks each one's "on" color from the fill itself rather than
+ * from the app's light/dark mode - so a near-black container can still carry
+ * legible light text even inside the app's light mode, and vice versa.
+ * Primary/secondary/tertiary containers step slightly apart from each other
+ * so three filled elements on screen together still read as distinct
+ * surfaces rather than one flat block.
+ */
+private fun monochromeRoles(dark: Boolean, leanDark: Boolean): PaletteRoles {
+    val ink = if (dark) Color(0xFFF2F2F2) else Color(0xFF141414)
+    val onInk = if (dark) Color(0xFF141414) else Color(0xFFF2F2F2)
+    val containers = if (leanDark) {
+        // Never pure black in dark mode - the app's own dark surfaces sit
+        // near black too, and a container identical to its background is an
+        // invisible one.
+        if (dark) listOf(Color(0xFF2B2B2B), Color(0xFF363636), Color(0xFF414141))
+        else listOf(Color(0xFF1E1E1E), Color(0xFF292929), Color(0xFF343434))
+    } else {
+        if (dark) listOf(Color(0xFFE8E8E8), Color(0xFFD8D8D8), Color(0xFFC8C8C8))
+        else listOf(Color(0xFFECECEC), Color(0xFFE2E2E2), Color(0xFFD6D6D6))
+    }
+    val (primaryContainer, secondaryContainer, tertiaryContainer) = containers
+    return PaletteRoles(
+        primary = ink,
+        onPrimary = onInk,
+        primaryContainer = primaryContainer,
+        onPrimaryContainer = contrastInk(primaryContainer),
+        secondary = ink,
+        onSecondary = onInk,
+        secondaryContainer = secondaryContainer,
+        onSecondaryContainer = contrastInk(secondaryContainer),
+        tertiary = ink,
+        onTertiary = onInk,
+        tertiaryContainer = tertiaryContainer,
+        onTertiaryContainer = contrastInk(tertiaryContainer)
+    )
+}
+
+/**
  * Derive the M3 accent roles from the palette's three seeds for the active
  * mode. Primary keeps near-full chroma (expressive), containers ease off a
  * touch so soft fills don't glow.
  */
 fun AppPalette.roleColors(dark: Boolean): PaletteRoles {
+    when (id) {
+        "black" -> return monochromeRoles(dark, leanDark = true)
+        "white" -> return monochromeRoles(dark, leanDark = false)
+    }
     val p = seedPrimary; val s = seedSecondary; val t = seedTertiary
     return if (dark) PaletteRoles(
         primary = p.tone(0.80f, 0.98f),
