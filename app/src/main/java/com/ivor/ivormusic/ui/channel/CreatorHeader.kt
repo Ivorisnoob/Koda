@@ -313,7 +313,7 @@ fun CreatorAvatar(
  * A Subscribe button that changes its whole shape, not just its label.
  *
  * The state has to be readable at a glance from across the header, which a
- * colour swap alone does not achieve on every one of the app's 27 palettes.
+ * colour swap alone does not achieve on every one of the app's 29 palettes.
  * The corner radius carries it: subscribed is a settled pill, not-subscribed
  * is a squarer, more clickable-looking button, and the spring between them is
  * the house bouncy default because this is a touch-driven state change.

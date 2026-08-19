@@ -22,7 +22,7 @@ The app is past the point of proving itself. The core loops all work end to end:
 
 **Identity is plural.** Several YouTube accounts and device-only local profiles sit side by side, switchable with one preference write and no re-authentication, no network, and no interruption to playback.
 
-**The interface is the product.** Eight fully animated player styles, 27 color palettes plus wallpaper-based dynamic color and AMOLED, a settings hub of eleven pages with full-text search, and spring physics on anything touch-driven.
+**The interface is the product.** Eight fully animated player styles, 29 color palettes plus wallpaper-based dynamic color and AMOLED, a settings hub of eleven pages with full-text search, and spring physics on anything touch-driven.
 
 Where the weight sits today:
 
@@ -307,15 +307,15 @@ The write side already exists: `PlaylistRepository.createPlaylist` and `replaceP
 
 #### Surviving process death
 
-`rememberSaveable` appears in exactly one file, and no ViewModel takes a `SavedStateHandle`. Almost nothing in Koda is restored when the process is killed and rebuilt.
+**Most of the highest-value targets are now handled; deeper screens are not.** The original diagnosis undersold what was already in place and oversold what still needed building, so both halves are worth restating precisely.
 
-**This hides well, which is why it has lasted.** `MainActivity` declares `configChanges` for orientation, screen size and layout, so rotation never recreates anything and the usual way people notice missing state never fires. What does fire is ordinary Android behaviour: the app goes to the background, the system reclaims it, and returning to it rebuilds from nothing. Scroll positions, expanded sections, the search query and its results, and open sheets are all gone. On phones with aggressive memory management this happens several times a day, and it reads as the app having forgotten what you were doing.
+`HomeScreen`'s `selectedTab` and its six per-tab `LazyListState`s (`videoHomeScrollState`, `musicHomeScrollState`, `searchScrollState`, `subscriptionsScrollState`, `musicLibraryScrollState`, `videoLibraryScrollState`) were already `rememberSaveable` / `rememberLazyListState` before this entry was reworked - `rememberLazyListState()` has carried its own `Saver` since it was introduced, and `selectedTab` was made saveable back in the channel-page work (`f968d8e`). Both ride `ComponentActivity`'s normal `onSaveInstanceState` Bundle, which is real process-death coverage, not just configuration-change survival - the earlier claim that they were "still plain remember" was wrong. Which tab was open and Home's own scroll positions were never the gap.
 
-**It also gets worse exactly when the tablet work lands.** Large-screen resizing and multi-window produce real recreation that `configChanges` will not absorb, so a gap that is currently intermittent becomes routine on the devices that item is meant to serve. Worth treating as a prerequisite for that work rather than a separate cleanup.
+What *was* actually missing, and is now fixed: the search query and its category/date/sort filters in `ui/search/SearchScreen.kt` were plain `remember`, so they vanished not just on process death but on every ordinary tab switch away from Search and back (`AnimatedContent` in `HomeScreen` disposes the tab that is not the target state). They are `rememberSaveable` now; the result lists themselves stay plain `remember` and simply re-fetch from the restored query once recomposed, rather than round-tripping full result objects through a Bundle.
 
-Not everything needs saving. The highest-value targets, roughly in order: which tab was open, feed and library scroll positions, the search query with its results, and the video position for a player that was open when the process died. The last of which matters most, because losing your place in a long video is the most annoying version of this bug.
+The video position - called out as the one that matters most, since losing your place in a long video is the most annoying version of this bug - is handled too, via `data/VideoPlaybackSessionRepository.kt`, the video-mode counterpart of the music session snapshot `PlayerViewModel` already had (`data/PlaybackSessionRepository.kt`). `VideoPlayerViewModel` saves the current video (or queue, windowed the same way the music snapshot is) and position on backgrounding and on a throttled poll while playing, and restores it paused, collapsed to the mini player, on the next cold `init` - the user decides when to jump back in, same as music already does. Live broadcasts are excluded: there is no position to return to and the manifest a resume would reopen has likely rolled off its DVR window.
 
-**One prerequisite is already paid for.** Each Home tab's `LazyListState` is now hoisted above the tab `AnimatedContent` in `HomeScreen`, so the positions survive a tab switch and, more to the point here, there is finally a single owner to save them from. They are still plain `remember`, and so is `selectedTab`, so this entry is unchanged in substance. What has gone away is having to do the hoisting first.
+**Still open:** scroll positions and navigation state one layer deeper than Home - `PlaylistDetailScreen`, `ArtistScreen`, `ChannelScreen`'s grid, the queue sheets - and any open bottom sheet or dialog. None of those are wired to a `SavedStateHandle` or `rememberSaveable` yet, so a process death while one is open still rebuilds from nothing. Worth another pass, and still a prerequisite for the tablet work: large-screen resizing and multi-window produce real recreation that `MainActivity`'s `configChanges` will not absorb, so what is currently an intermittent gap becomes routine on the devices that work is meant to serve.
 
 #### One image loader
 

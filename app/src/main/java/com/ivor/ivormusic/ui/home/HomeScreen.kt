@@ -332,6 +332,7 @@ fun HomeScreen(
 
     // Auth Dialog State
     var showAuthDialog by remember { mutableStateOf(false) }
+    var addAuthAsNewProfile by remember { mutableStateOf(false) }
     var showAccountSheet by remember { mutableStateOf(false) }
 
     // The avatar always opens the profile switcher now, signed in or not: with
@@ -1008,9 +1009,13 @@ fun HomeScreen(
 
     if (showAuthDialog) {
         com.ivor.ivormusic.ui.auth.YouTubeAuthDialog(
-            onDismiss = { showAuthDialog = false },
+            onDismiss = {
+                showAuthDialog = false
+                addAuthAsNewProfile = false
+            },
             onAuthSuccess = {
                 showAuthDialog = false
+                addAuthAsNewProfile = false
                 // Refresh login state, account info and the feeds so the UI
                 // reflects the account immediately instead of after a restart
                 viewModel.checkYouTubeConnection()
@@ -1020,7 +1025,8 @@ fun HomeScreen(
                 } else {
                     viewModel.loadYouTubeRecommendations()
                 }
-            }
+            },
+            addAsNewProfile = addAuthAsNewProfile
         )
     }
 
@@ -1035,9 +1041,15 @@ fun HomeScreen(
                 // already holds, so adding a second account without clearing it
                 // silently hands back the first one. Stored sessions live in
                 // EncryptedSharedPreferences and are untouched by this.
-                android.webkit.CookieManager.getInstance().removeAllCookies(null)
-                android.webkit.CookieManager.getInstance().flush()
-                showAuthDialog = true
+                val cookieManager = android.webkit.CookieManager.getInstance()
+                cookieManager.removeAllCookies {
+                    // removeAllCookies is asynchronous. Opening the login page
+                    // before its callback can immediately recapture the old
+                    // account and make "Add account" appear to sign it out.
+                    cookieManager.flush()
+                    addAuthAsNewProfile = true
+                    showAuthDialog = true
+                }
             }
         )
     }
