@@ -88,12 +88,17 @@ data class AudioProfile(
     val keyMode: String? = null,
     val keyConfidence: Float = 0f,
 
+    /** Key measured at the outro; songs often modulate after their intro. */
+    val outroKeyPitchClass: Int? = null,
+    val outroKeyMode: String? = null,
+    val outroKeyConfidence: Float = 0f,
+
     /** Schema version, so a later measurement change can invalidate old rows. */
     val version: Int = CURRENT_VERSION
 ) {
     companion object {
-        // Version 4 extends incoming analysis through the first fifteen
-        // seconds, so older profiles cannot safely drive the longer window.
-        const val CURRENT_VERSION = 4
+        // Version 5 uses transient-aware rhythm analysis, persists the schema
+        // marker explicitly, and measures the outro key independently.
+        const val CURRENT_VERSION = 5
     }
 }

@@ -172,6 +172,7 @@ class MusicService : MediaLibraryService() {
         // Covers the maintained NewPipe extraction and the direct InnerTube
         // fallback; their individual requests are also bounded by OkHttp.
         private const val RESOLVE_TIMEOUT_MS = 20_000L
+        private const val PROFILE_TIMEOUT_MS = 30_000L
         private const val PLACEHOLDER_PREFIX = "https://placeholder.ivormusic/"
         private const val CACHED_PREFIX = "https://cached.ivormusic/"
         private const val ANDROID_AUTO_BROWSE_TIMEOUT_MS = 30_000L
@@ -1623,14 +1624,16 @@ class MusicService : MediaLibraryService() {
                     !CacheManager.isFullyCached(id)
                 ) return@launch
 
-                AudioProfiler.profile(
-                    songId = id,
-                    context = this@MusicService,
-                    uri = uri,
-                    cacheKey = id,
-                    factory = factory,
-                    durationMs = durationMs,
-                )?.let { profile ->
+                withTimeoutOrNull(PROFILE_TIMEOUT_MS) {
+                    AudioProfiler.profile(
+                        songId = id,
+                        context = this@MusicService,
+                        uri = uri,
+                        cacheKey = id,
+                        factory = factory,
+                        durationMs = durationMs,
+                    )
+                }?.let { profile ->
                     audioProfileStore.put(profile)
                     Log.d(
                         TAG,
@@ -1815,6 +1818,12 @@ class MusicService : MediaLibraryService() {
                         outgoing = current.currentMediaItem?.mediaId?.let(audioProfileStore::peek),
                         incoming = audioProfileStore.peek(nextItem.mediaId),
                         outgoingDurationMs = duration,
+                        preserveAbruptEnding = !current.shuffleModeEnabled &&
+                            current.currentMediaItem?.mediaMetadata?.albumTitle
+                                ?.toString()?.takeIf { it.isNotBlank() }?.let { album ->
+                                    album == nextItem.mediaMetadata.albumTitle
+                                        ?.toString()?.takeIf { it.isNotBlank() }
+                                } == true,
                     )
                 } else {
                     TransitionPlan(
@@ -1840,7 +1849,8 @@ class MusicService : MediaLibraryService() {
                     Log.d(
                         TAG,
                         "Crossfade: ${plan.reason} ${plan.overlapMs}ms " +
-                            "lead=${plan.incomingStartMs} speed=${plan.incomingSpeed} " +
+                            "lead=${plan.incomingStartMs} beatIn=${plan.incomingDownbeatDelayMs} " +
+                            "speed=${plan.incomingSpeed} " +
                             "key=${plan.harmonicMatch} into ${nextItem.mediaId}"
                     )
                 }

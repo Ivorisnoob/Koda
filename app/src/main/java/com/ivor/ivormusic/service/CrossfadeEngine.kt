@@ -6,6 +6,7 @@ import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import android.os.SystemClock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -248,6 +249,34 @@ class CrossfadeEngine(
                 }
             }
 
+            val outGain = gainFor(outgoing)
+            val inGain = gainFor(incoming)
+            val incomingBeforeStart = incoming.currentPosition
+            incoming.playWhenReady = true
+
+            // STATE_READY means decoded data exists, not that the audio sink's
+            // clock has begun. Starting the fade on READY alone makes the
+            // incoming beat device-latency late and can create a dip. Keep the
+            // outgoing track untouched until the incoming position advances.
+            val clockStarted = withTimeoutOrNull(INCOMING_CLOCK_TIMEOUT_MS) {
+                while (!incoming.isPlaying ||
+                    incoming.currentPosition <= incomingBeforeStart + MIN_CLOCK_ADVANCE_MS
+                ) {
+                    currentCoroutineContext().ensureActive()
+                    if (incoming.playerError != null ||
+                        incoming.playbackState == Player.STATE_IDLE ||
+                        incoming.playbackState == Player.STATE_ENDED
+                    ) return@withTimeoutOrNull false
+                    delay(RAMP_INTERVAL_MS)
+                }
+                true
+            } == true
+            if (!clockStarted) {
+                Log.w(TAG, "Incoming playback clock did not start; abandoning the overlap")
+                abortInto(outgoing, incoming)
+                return
+            }
+
             val remaining = outgoing.duration - outgoing.currentPosition
             val fadeMs = requestedFadeMs.coerceAtMost(remaining - END_GUARD_MS)
             if (fadeMs < MIN_FADE_MS) {
@@ -255,17 +284,54 @@ class CrossfadeEngine(
                 return
             }
 
-            val startPosition = outgoing.currentPosition
-            val outGain = gainFor(outgoing)
-            val inGain = gainFor(incoming)
-            incoming.playWhenReady = true
+            val outgoingStartPosition = outgoing.currentPosition
+            val incomingStartPosition = incoming.currentPosition
+            val outgoingSpeed = outgoing.playbackParameters.speed.coerceAtLeast(0.01f)
+            val incomingSpeed = incoming.playbackParameters.speed.coerceAtLeast(0.01f)
+            var incomingStallStartedMs = 0L
+            var maxClockDriftMs = 0L
 
             while (scope.isActive) {
                 currentCoroutineContext().ensureActive()
-                // Read the curve off real playback position, so a stall moves
-                // both halves together instead of sliding them apart.
-                val elapsed = outgoing.currentPosition - startPosition
-                val t = (elapsed.toFloat() / fadeMs).coerceIn(0f, 1f)
+                // If the audible player buffers, pause the muted/quiet player
+                // so it cannot run ahead. If only the incoming player buffers,
+                // hold the curve briefly with the outgoing track still audible;
+                // a longer stall abandons the overlap instead of fading toward
+                // a player that is not producing audio.
+                if (outgoing.playWhenReady && !outgoing.isPlaying && incoming.isPlaying) {
+                    incoming.playWhenReady = false
+                } else if (outgoing.isPlaying && !incoming.playWhenReady) {
+                    incoming.playWhenReady = true
+                }
+
+                if (outgoing.isPlaying && incoming.playWhenReady && !incoming.isPlaying) {
+                    if (incomingStallStartedMs == 0L) {
+                        incomingStallStartedMs = SystemClock.elapsedRealtime()
+                    } else if (SystemClock.elapsedRealtime() - incomingStallStartedMs >=
+                        MAX_INCOMING_STALL_MS
+                    ) {
+                        Log.w(TAG, "Incoming engine stalled mid-fade; abandoning the overlap")
+                        abortInto(outgoing, incoming)
+                        return
+                    }
+                } else {
+                    incomingStallStartedMs = 0L
+                }
+
+                val outgoingElapsedMs = (
+                    (outgoing.currentPosition - outgoingStartPosition).coerceAtLeast(0L) /
+                        outgoingSpeed
+                    ).toLong()
+                val incomingElapsedMs = (
+                    (incoming.currentPosition - incomingStartPosition).coerceAtLeast(0L) /
+                        incomingSpeed
+                    ).toLong()
+                val clockDriftMs = kotlin.math.abs(outgoingElapsedMs - incomingElapsedMs)
+                maxClockDriftMs = maxOf(maxClockDriftMs, clockDriftMs)
+                // The quieter player determines safe progress. In particular,
+                // the outgoing side never disappears ahead of incoming audio.
+                val elapsedMs = minOf(outgoingElapsedMs, incomingElapsedMs)
+                val t = (elapsedMs.toFloat() / fadeMs).coerceIn(0f, 1f)
 
                 // Equal power: cos^2 + sin^2 == 1, so the summed energy is flat
                 // across the transition instead of dipping in the middle.
@@ -290,6 +356,7 @@ class CrossfadeEngine(
                 delay(RAMP_INTERVAL_MS)
             }
             currentCoroutineContext().ensureActive()
+            Log.d(TAG, "Transition clocks completed with max drift=${maxClockDriftMs}ms")
             completeSwap(outgoing, incoming, gainFor(incoming), targetIndex)
         } catch (e: CancellationException) {
             abortInto(outgoing, incoming)
@@ -470,6 +537,9 @@ class CrossfadeEngine(
 
         /** A prepared, warmed next item should become ready almost instantly. */
         private const val STANDBY_READY_TIMEOUT_MS = 1_500L
+        private const val INCOMING_CLOCK_TIMEOUT_MS = 750L
+        private const val MIN_CLOCK_ADVANCE_MS = 8L
+        private const val MAX_INCOMING_STALL_MS = 350L
         private const val MIN_TRANSITION_SPEED = 0.96f
         private const val MAX_TRANSITION_SPEED = 1.04f
         private const val TEMPO_RELEASE_MS = 2_500L

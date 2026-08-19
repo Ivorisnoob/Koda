@@ -1,10 +1,12 @@
 package com.ivor.ivormusic.data
 
 import android.media.MediaCodec
+import android.media.AudioFormat
 import android.media.MediaDataSource
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.content.Context
+import android.os.SystemClock
 import android.util.Log
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSpec
@@ -106,8 +108,8 @@ object AudioProfiler {
 
             if (head.envelope.isEmpty() && tail.envelope.isEmpty()) return@withContext null
 
-            val rhythm = analyseRhythm(head.envelope)
-            val outroRhythm = analyseRhythm(tail.envelope)
+            val rhythm = analyseRhythm(head)
+            val outroRhythm = analyseRhythm(tail)
             val tailStartMs = tailStartUs / 1000L
             val outroDownbeatLeadMs = lastDownbeatLead(
                 rhythm = outroRhythm,
@@ -122,6 +124,7 @@ object AudioProfiler {
                 gridOriginMs = tailStartMs + outroRhythm.downbeatOffsetMs,
             )
             val key = analyseKey(head.samples, head.sampleRate)
+            val outroKey = analyseKey(tail.samples, tail.sampleRate, fromEnd = true)
 
             AudioProfile(
                 songId = songId,
@@ -141,6 +144,9 @@ object AudioProfiler {
                 keyPitchClass = key.pitchClass,
                 keyMode = key.mode,
                 keyConfidence = key.confidence,
+                outroKeyPitchClass = outroKey.pitchClass,
+                outroKeyMode = outroKey.mode,
+                outroKeyConfidence = outroKey.confidence,
             )
         } catch (e: Exception) {
             Log.d(TAG, "No profile for $songId: ${e.message}")
@@ -168,9 +174,11 @@ object AudioProfiler {
             ?: return DecodedAudio.EMPTY
 
         val envelope = ArrayList<Float>(512)
-        val sampleRate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE, 44_100)
-        val channels = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT, 2).coerceAtLeast(1)
+        var sampleRate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE, 44_100)
+        var channels = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT, 2).coerceAtLeast(1)
+        var pcmEncoding = AudioFormat.ENCODING_PCM_16BIT
         val mono = FloatCollector((sampleRate * (windowUs / 1_000_000L)).toInt())
+        var firstAcceptedPresentationUs = Long.MIN_VALUE
         try {
             codec.configure(format, null, null, 0)
             codec.start()
@@ -179,18 +187,38 @@ object AudioProfiler {
             val bufferInfo = MediaCodec.BufferInfo()
             var sawInputEnd = false
             var sawOutputEnd = false
-            val samplesPerWindow = (sampleRate * channels * WINDOW_MS / 1000).coerceAtLeast(1)
+            var emptyDrains = 0
+            var samplesPerWindow = (sampleRate * channels * WINDOW_MS / 1000).coerceAtLeast(1)
+            val decodeDeadlineMs = SystemClock.elapsedRealtime() + DECODE_BUDGET_MS
 
             var acc = 0.0
             var accCount = 0
             var channelIndex = 0
             var monoAcc = 0f
 
-            while (!sawOutputEnd) {
+            fun collect(sample: Float) {
+                acc += (sample * sample).toDouble()
+                accCount++
+                monoAcc += sample
+                channelIndex++
+                if (channelIndex == channels) {
+                    mono.add(monoAcc / channels)
+                    channelIndex = 0
+                    monoAcc = 0f
+                }
+                if (accCount >= samplesPerWindow) {
+                    envelope.add(sqrt(acc / accCount).toFloat())
+                    acc = 0.0
+                    accCount = 0
+                }
+            }
+
+            while (!sawOutputEnd && SystemClock.elapsedRealtime() < decodeDeadlineMs) {
                 if (!sawInputEnd) {
                     val inIndex = codec.dequeueInputBuffer(DECODE_TIMEOUT_US)
                     if (inIndex >= 0) {
                         val inBuffer = codec.getInputBuffer(inIndex)
+                        inBuffer?.clear()
                         val size = if (inBuffer == null) -1 else extractor.readSampleData(inBuffer, 0)
                         val presentationUs = extractor.sampleTime
                         if (size < 0 || presentationUs > fromUs + windowUs) {
@@ -207,30 +235,26 @@ object AudioProfiler {
 
                 val outIndex = codec.dequeueOutputBuffer(bufferInfo, DECODE_TIMEOUT_US)
                 if (outIndex >= 0) {
+                    emptyDrains = 0
                     val outBuffer = codec.getOutputBuffer(outIndex)
                     if (outBuffer != null && bufferInfo.size > 0 &&
                         bufferInfo.presentationTimeUs >= fromUs
                     ) {
+                        if (firstAcceptedPresentationUs == Long.MIN_VALUE) {
+                            firstAcceptedPresentationUs = bufferInfo.presentationTimeUs
+                        }
                         outBuffer.position(bufferInfo.offset)
                         outBuffer.limit(bufferInfo.offset + bufferInfo.size)
-                        val shorts = outBuffer.slice()
-                            .order(ByteOrder.nativeOrder())
-                            .asShortBuffer()
-                        while (shorts.hasRemaining()) {
-                            val sample = shorts.get() / 32768f
-                            acc += (sample * sample).toDouble()
-                            accCount++
-                            monoAcc += sample
-                            channelIndex++
-                            if (channelIndex == channels) {
-                                mono.add(monoAcc / channels)
-                                channelIndex = 0
-                                monoAcc = 0f
+                        val pcm = outBuffer.slice().order(ByteOrder.nativeOrder())
+                        if (pcmEncoding == AudioFormat.ENCODING_PCM_FLOAT) {
+                            val floats = pcm.asFloatBuffer()
+                            while (floats.hasRemaining()) {
+                                collect(floats.get().coerceIn(-1f, 1f))
                             }
-                            if (accCount >= samplesPerWindow) {
-                                envelope.add(sqrt(acc / accCount).toFloat())
-                                acc = 0.0
-                                accCount = 0
+                        } else {
+                            val shorts = pcm.asShortBuffer()
+                            while (shorts.hasRemaining()) {
+                                collect(shorts.get() / 32768f)
                             }
                         }
                     }
@@ -238,9 +262,24 @@ object AudioProfiler {
                     if (bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) {
                         sawOutputEnd = true
                     }
+                } else if (outIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+                    val output = codec.outputFormat
+                    sampleRate = output.getInteger(MediaFormat.KEY_SAMPLE_RATE, sampleRate)
+                    channels = output.getInteger(MediaFormat.KEY_CHANNEL_COUNT, channels)
+                        .coerceAtLeast(1)
+                    pcmEncoding = if (output.containsKey(MediaFormat.KEY_PCM_ENCODING)) {
+                        output.getInteger(MediaFormat.KEY_PCM_ENCODING)
+                    } else {
+                        AudioFormat.ENCODING_PCM_16BIT
+                    }
+                    samplesPerWindow = (sampleRate * channels * WINDOW_MS / 1000)
+                        .coerceAtLeast(1)
                 } else if (outIndex == MediaCodec.INFO_TRY_AGAIN_LATER && sawInputEnd) {
-                    // Nothing left to drain and nothing more going in.
-                    sawOutputEnd = true
+                    // Some decoders return TRY_AGAIN while delayed output is
+                    // still pending. A small drain grace avoids truncating the
+                    // final PCM buffer and corrupting the tail measurements.
+                    emptyDrains++
+                    if (emptyDrains >= MAX_EMPTY_DRAINS) sawOutputEnd = true
                 }
             }
             if (accCount > 0) envelope.add(sqrt(acc / accCount).toFloat())
@@ -250,17 +289,24 @@ object AudioProfiler {
             runCatching { codec.stop() }
             runCatching { codec.release() }
         }
-        return DecodedAudio(envelope.toFloatArray(), mono.toArray(), sampleRate)
+        val firstPresentationUs = if (firstAcceptedPresentationUs == Long.MIN_VALUE) {
+            fromUs
+        } else {
+            firstAcceptedPresentationUs
+        }
+        return DecodedAudio(
+            envelope = envelope.toFloatArray(),
+            samples = mono.toArray(),
+            sampleRate = sampleRate,
+            startOffsetMs = ((firstPresentationUs - fromUs) / 1000L).coerceAtLeast(0L),
+        )
     }
 
-    /** Tempo and phase from positive changes in the 20 ms energy envelope. */
-    private fun analyseRhythm(envelope: FloatArray): RhythmAnalysis {
+    /** Tempo and phase from spectral transients plus broad energy changes. */
+    private fun analyseRhythm(audio: DecodedAudio): RhythmAnalysis {
+        val envelope = audio.envelope
         if (envelope.size < 180) return RhythmAnalysis.NONE
-        val onset = FloatArray(envelope.size)
-        for (i in 2 until envelope.size) {
-            val local = (envelope[i - 1] + envelope[i - 2]) * 0.5f
-            onset[i] = (envelope[i] - local).coerceAtLeast(0f)
-        }
+        val onset = onsetStrength(audio)
         val mean = onset.average().toFloat()
         if (mean <= 0.0001f) return RhythmAnalysis.NONE
         for (i in onset.indices) onset[i] = (onset[i] - mean * 0.35f).coerceAtLeast(0f)
@@ -324,12 +370,81 @@ object AudioProfiler {
         val fractional = if (kotlin.math.abs(denominator) > 1e-9) {
             (0.5 * (left - right) / denominator).coerceIn(-0.5, 0.5)
         } else 0.0
+        val refinedLag = bestLag + fractional
         return RhythmAnalysis(
             bpm = (60_000.0 / ((bestLag + fractional) * WINDOW_MS)).toFloat(),
             confidence = confidence,
-            beatOffsetMs = beatPhase.toLong() * WINDOW_MS,
-            downbeatOffsetMs = (beatPhase + downbeatBeat * bestLag).toLong() * WINDOW_MS,
+            beatOffsetMs = audio.startOffsetMs + beatPhase.toLong() * WINDOW_MS,
+            downbeatOffsetMs = audio.startOffsetMs +
+                ((beatPhase + downbeatBeat * refinedLag) * WINDOW_MS).toLong(),
         )
+    }
+
+    /**
+     * Percussive attacks change the spectrum even when total loudness barely
+     * moves. Spectral flux therefore carries most of the onset score, while a
+     * smaller RMS derivative keeps soft broadband attacks visible.
+     */
+    private fun onsetStrength(audio: DecodedAudio): FloatArray {
+        val energy = FloatArray(audio.envelope.size)
+        for (i in 2 until audio.envelope.size) {
+            val local = (audio.envelope[i - 1] + audio.envelope[i - 2]) * 0.5f
+            energy[i] = (audio.envelope[i] - local).coerceAtLeast(0f)
+        }
+        normaliseOnsets(energy)
+
+        val flux = spectralFlux(audio.samples, audio.sampleRate, audio.envelope.size)
+        if (flux.none { it > 0f }) return energy
+        normaliseOnsets(flux)
+        return FloatArray(audio.envelope.size) { index ->
+            flux.getOrElse(index) { 0f } * 0.78f + energy[index] * 0.22f
+        }
+    }
+
+    private fun normaliseOnsets(values: FloatArray) {
+        val positive = values.filter { it > 0f }
+        if (positive.isEmpty()) return
+        val scale = positive.average().toFloat().coerceAtLeast(1e-7f)
+        for (i in values.indices) values[i] /= scale
+    }
+
+    private fun spectralFlux(
+        samples: FloatArray,
+        sampleRate: Int,
+        outputSize: Int,
+    ): FloatArray {
+        if (sampleRate <= 0 || samples.size < TRANSIENT_FFT_SIZE) return FloatArray(outputSize)
+        val hop = (sampleRate * WINDOW_MS / 1000).coerceAtLeast(1)
+        val real = DoubleArray(TRANSIENT_FFT_SIZE)
+        val imag = DoubleArray(TRANSIENT_FFT_SIZE)
+        val previous = DoubleArray(TRANSIENT_FFT_SIZE / 2)
+        val result = FloatArray(outputSize)
+        val firstBin = (60.0 * TRANSIENT_FFT_SIZE / sampleRate).roundToInt().coerceAtLeast(1)
+        val lastBin = (8_000.0 * TRANSIENT_FFT_SIZE / sampleRate).roundToInt()
+            .coerceAtMost(TRANSIENT_FFT_SIZE / 2 - 1)
+        var offset = 0
+        var frame = 0
+        while (offset + TRANSIENT_FFT_SIZE <= samples.size && frame < outputSize) {
+            for (i in 0 until TRANSIENT_FFT_SIZE) {
+                val window = 0.5 - 0.5 * cos(2.0 * PI * i / (TRANSIENT_FFT_SIZE - 1))
+                real[i] = samples[offset + i] * window
+                imag[i] = 0.0
+            }
+            fft(real, imag)
+            var change = 0.0
+            for (bin in firstBin..lastBin) {
+                val magnitude = ln(
+                    1.0 + sqrt(real[bin] * real[bin] + imag[bin] * imag[bin])
+                )
+                change += (magnitude - previous[bin]).coerceAtLeast(0.0)
+                previous[bin] = magnitude
+            }
+            // The first spectrum has no predecessor and is not an onset.
+            if (frame > 0) result[frame] = (change / (lastBin - firstBin + 1)).toFloat()
+            offset += hop
+            frame++
+        }
+        return result
     }
 
     /** Snap a measured energy boundary to the nearest bar line. */
@@ -367,18 +482,23 @@ object AudioProfiler {
     }
 
     /** FFT chroma followed by the standard major/minor key templates. */
-    private fun analyseKey(samples: FloatArray, sampleRate: Int): KeyAnalysis {
+    private fun analyseKey(
+        samples: FloatArray,
+        sampleRate: Int,
+        fromEnd: Boolean = false,
+    ): KeyAnalysis {
         if (samples.size < FFT_SIZE || sampleRate <= 0) return KeyAnalysis.NONE
         val chroma = DoubleArray(12)
         val real = DoubleArray(FFT_SIZE)
         val imag = DoubleArray(FFT_SIZE)
         var frameCount = 0
-        var offset = 0
+        val keySampleCount = minOf(samples.size, sampleRate * KEY_WINDOW_SECONDS)
+        var offset = if (fromEnd) samples.size - keySampleCount else 0
+        val endOffset = offset + keySampleCount
         // The longer head window is for silence/rhythm coverage. Eight seconds
         // already gives chroma hundreds of spectra and avoids nearly doubling
         // the most expensive part of profiling just to support a 15s intro.
-        val keySampleLimit = minOf(samples.size, sampleRate * KEY_WINDOW_SECONDS)
-        while (offset + FFT_SIZE <= keySampleLimit) {
+        while (offset + FFT_SIZE <= endOffset) {
             var energy = 0.0
             for (i in 0 until FFT_SIZE) {
                 val window = 0.5 - 0.5 * cos(2.0 * PI * i / (FFT_SIZE - 1))
@@ -460,8 +580,14 @@ object AudioProfiler {
         }
     }
 
-    private data class DecodedAudio(val envelope: FloatArray, val samples: FloatArray, val sampleRate: Int) {
-        companion object { val EMPTY = DecodedAudio(FloatArray(0), FloatArray(0), 0) }
+    private data class DecodedAudio(
+        val envelope: FloatArray,
+        val samples: FloatArray,
+        val sampleRate: Int,
+        /** Actual first PCM timestamp relative to the requested seek point. */
+        val startOffsetMs: Long,
+    ) {
+        companion object { val EMPTY = DecodedAudio(FloatArray(0), FloatArray(0), 0, 0L) }
     }
     private data class RhythmAnalysis(
         val bpm: Float?, val confidence: Float, val beatOffsetMs: Long, val downbeatOffsetMs: Long,
@@ -483,7 +609,10 @@ object AudioProfiler {
     private val MINOR_KEY = doubleArrayOf(6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17)
     private const val FFT_SIZE = 4096
     private const val FFT_HOP = 2048
+    private const val TRANSIENT_FFT_SIZE = 1024
     private const val KEY_WINDOW_SECONDS = 8
+    private const val DECODE_BUDGET_MS = 12_000L
+    private const val MAX_EMPTY_DRAINS = 5
     private const val MIN_BPM = 70f
     private const val MAX_BPM = 180f
     private const val MIN_TEMPO_CONFIDENCE_TO_STORE = 0.12f

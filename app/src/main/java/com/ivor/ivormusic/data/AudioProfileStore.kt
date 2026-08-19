@@ -7,6 +7,11 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
 
 /**
@@ -26,7 +31,13 @@ import java.io.File
 class AudioProfileStore(context: Context) {
 
     private val file = File(context.applicationContext.filesDir, FILE_NAME)
-    private val json = Json { ignoreUnknownKeys = true }
+    private val json = Json {
+        ignoreUnknownKeys = true
+        // The schema version is a default-valued property. Without defaults in
+        // the payload, an old row that predates `version` is decoded using the
+        // *current* default and silently passes invalidation.
+        encodeDefaults = true
+    }
     private val mutex = Mutex()
 
     @Volatile
@@ -38,8 +49,16 @@ class AudioProfileStore(context: Context) {
             cache ?: withContext(Dispatchers.IO) {
                 val map = runCatching {
                     if (!file.exists()) return@runCatching mutableMapOf<String, AudioProfile>()
-                    json.decodeFromString<List<AudioProfile>>(file.readText())
-                        .filter { it.version == AudioProfile.CURRENT_VERSION }
+                    json.parseToJsonElement(file.readText()).jsonArray
+                        .mapNotNull { element ->
+                            // Missing is not current. Older payloads omitted
+                            // this default-valued field, and decoding first
+                            // would manufacture CURRENT_VERSION for them.
+                            val storedVersion = element.jsonObject["version"]
+                                ?.jsonPrimitive?.intOrNull
+                            if (storedVersion != AudioProfile.CURRENT_VERSION) null
+                            else json.decodeFromJsonElement<AudioProfile>(element)
+                        }
                         .associateBy { it.songId }
                         .toMutableMap()
                 }.getOrElse {
