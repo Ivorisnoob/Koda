@@ -2,6 +2,7 @@ package com.ivor.ivormusic.service
 
 import android.util.Log
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
@@ -75,6 +76,8 @@ class CrossfadeEngine(
     private val onActiveChanged: (ExoPlayer) -> Unit,
     /** The loudness correction for the media item playing on [player]. */
     private val gainFor: (player: ExoPlayer) -> Float,
+    /** Per-player transition filter. Zero must be a true bypass. */
+    private val setFilterSweep: (player: ExoPlayer, amount: Float) -> Unit = { _, _ -> },
 ) {
 
     private val playerA: ExoPlayer = playerFactory()
@@ -95,6 +98,7 @@ class CrossfadeEngine(
         }
 
     private var fadeJob: Job? = null
+    private var tempoReleaseJob: Job? = null
 
     /** True from the moment the standby starts until the swap completes. */
     val isFading: Boolean get() = fadeJob?.isActive == true
@@ -155,6 +159,11 @@ class CrossfadeEngine(
         nextItem: MediaItem,
         durationMs: Long,
         targetIndex: Int = active.getNextMediaItemIndex(),
+        incomingStartMs: Long = 0L,
+        incomingSpeed: Float = 1f,
+        filterSweepStrength: Float = 0f,
+        /** Natural transitions prepare early, then begin at this remainder. */
+        startAtRemainingMs: Long? = null,
     ): Boolean {
         if (isFading) return false
         val outgoing = active
@@ -174,13 +183,20 @@ class CrossfadeEngine(
             pendingTargetIndex = targetIndex
             // One item only. The rest of the queue is spliced around it at swap
             // time, from the live timeline rather than a stale snapshot.
-            incoming.setMediaItem(nextItem)
+            incoming.setMediaItem(nextItem, incomingStartMs.coerceAtLeast(0L))
+            incoming.playbackParameters = PlaybackParameters(
+                incomingSpeed.coerceIn(MIN_TRANSITION_SPEED, MAX_TRANSITION_SPEED), 1f
+            )
             incoming.volume = 0f
             incoming.prepare()
             incoming.playWhenReady = false
 
             fadeJob = scope.launch {
-                runFade(outgoing, incoming, fadeMs, targetIndex)
+                runFade(
+                    outgoing, incoming, fadeMs, targetIndex,
+                    filterSweepStrength.coerceIn(0f, 1f),
+                    startAtRemainingMs,
+                )
             }.also { job ->
                 job.invokeOnCompletion {
                     if (fadeJob === job) fadeJob = null
@@ -201,6 +217,8 @@ class CrossfadeEngine(
         incoming: ExoPlayer,
         requestedFadeMs: Long,
         targetIndex: Int,
+        filterSweepStrength: Float,
+        startAtRemainingMs: Long?,
     ) {
         try {
             val ready = withTimeoutOrNull(STANDBY_READY_TIMEOUT_MS) {
@@ -217,6 +235,17 @@ class CrossfadeEngine(
                 Log.w(TAG, "Standby was not ready in time; abandoning the overlap")
                 abortInto(outgoing, incoming)
                 return
+            }
+
+            if (startAtRemainingMs != null) {
+                while (outgoing.duration - outgoing.currentPosition > startAtRemainingMs) {
+                    currentCoroutineContext().ensureActive()
+                    if (!outgoing.isPlaying || incoming.playbackState != Player.STATE_READY) {
+                        abortInto(outgoing, incoming)
+                        return
+                    }
+                    delay(RAMP_INTERVAL_MS)
+                }
             }
 
             val remaining = outgoing.duration - outgoing.currentPosition
@@ -243,6 +272,7 @@ class CrossfadeEngine(
                 val angle = t * (Math.PI.toFloat() / 2f)
                 outgoing.volume = outGain * cos(angle) * duckGain
                 incoming.volume = inGain * sin(angle) * duckGain
+                setFilterSweep(outgoing, filterSweepStrength * t)
 
                 if (t >= 1f) break
                 // The outgoing player ending early (a short file, an error)
@@ -323,11 +353,17 @@ class CrossfadeEngine(
             outgoing.stop()
             outgoing.clearMediaItems()
             outgoing.volume = 0f
+            outgoing.playbackParameters = PlaybackParameters.DEFAULT
+            setFilterSweep(outgoing, 0f)
+            releaseTempo(incoming)
         } catch (e: Exception) {
             Log.e(TAG, "Swap failed; falling back to the outgoing player", e)
             runCatching {
                 incoming.stop()
                 incoming.clearMediaItems()
+                incoming.playbackParameters = PlaybackParameters.DEFAULT
+                setFilterSweep(incoming, 0f)
+                setFilterSweep(outgoing, 0f)
                 outgoing.volume = gainFor(outgoing) * duckGain
             }
         } finally {
@@ -349,6 +385,9 @@ class CrossfadeEngine(
             incoming.stop()
             incoming.clearMediaItems()
             incoming.volume = 0f
+            incoming.playbackParameters = PlaybackParameters.DEFAULT
+            setFilterSweep(incoming, 0f)
+            setFilterSweep(outgoing, 0f)
             outgoing.volume = gainFor(outgoing) * duckGain
         }
     }
@@ -360,9 +399,11 @@ class CrossfadeEngine(
      * the queue changes under it, playback pauses.
      */
     fun cancelTransition() {
-        val job = fadeJob ?: return
-        if (!job.isActive) return
-        job.cancel()
+        tempoReleaseJob?.cancel()
+        tempoReleaseJob = null
+        active.playbackParameters = PlaybackParameters.DEFAULT
+        val job = fadeJob
+        if (job?.isActive == true) job.cancel()
         fadeJob = null
         fadingIntoId = null
         pendingTargetIndex = null
@@ -370,7 +411,29 @@ class CrossfadeEngine(
             standby.stop()
             standby.clearMediaItems()
             standby.volume = 0f
+            standby.playbackParameters = PlaybackParameters.DEFAULT
+            setFilterSweep(standby, 0f)
+            setFilterSweep(active, 0f)
             active.volume = gainFor(active) * duckGain
+        }
+    }
+
+    /** Ease the small tempo correction back to the source tempo after mixing. */
+    private fun releaseTempo(player: ExoPlayer) {
+        tempoReleaseJob?.cancel()
+        val start = player.playbackParameters.speed
+        if (kotlin.math.abs(start - 1f) < 0.001f) {
+            player.playbackParameters = PlaybackParameters.DEFAULT
+            return
+        }
+        tempoReleaseJob = scope.launch {
+            val steps = (TEMPO_RELEASE_MS / TEMPO_RELEASE_STEP_MS).toInt()
+            repeat(steps) { index ->
+                val t = (index + 1f) / steps
+                player.playbackParameters = PlaybackParameters(start + (1f - start) * t, 1f)
+                delay(TEMPO_RELEASE_STEP_MS)
+            }
+            player.playbackParameters = PlaybackParameters.DEFAULT
         }
     }
 
@@ -382,6 +445,9 @@ class CrossfadeEngine(
 
     fun release() {
         fadeJob?.cancel()
+        tempoReleaseJob?.cancel()
+        setFilterSweep(playerA, 0f)
+        setFilterSweep(playerB, 0f)
         runCatching { playerA.release() }
         runCatching { playerB.release() }
     }
@@ -404,5 +470,9 @@ class CrossfadeEngine(
 
         /** A prepared, warmed next item should become ready almost instantly. */
         private const val STANDBY_READY_TIMEOUT_MS = 1_500L
+        private const val MIN_TRANSITION_SPEED = 0.96f
+        private const val MAX_TRANSITION_SPEED = 1.04f
+        private const val TEMPO_RELEASE_MS = 2_500L
+        private const val TEMPO_RELEASE_STEP_MS = 100L
     }
 }

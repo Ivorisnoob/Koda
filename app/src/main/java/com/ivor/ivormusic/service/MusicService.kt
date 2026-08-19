@@ -21,6 +21,8 @@ import androidx.media3.datasource.TransferListener
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.audio.AudioSink
+import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.LibraryResult
 import androidx.media3.session.MediaLibraryService
@@ -35,6 +37,8 @@ import android.media.audiofx.AudioEffect
 import com.ivor.ivormusic.data.CacheManager
 import com.ivor.ivormusic.data.DownloadRepository
 import com.ivor.ivormusic.data.NotificationArtworkLoader
+import com.ivor.ivormusic.data.AudioProfileStore
+import com.ivor.ivormusic.data.AudioProfiler
 import com.ivor.ivormusic.data.TrackLoudnessStore
 import com.ivor.ivormusic.data.PlaylistDisplayItem
 import com.ivor.ivormusic.data.Song
@@ -83,6 +87,8 @@ class MusicService : MediaLibraryService() {
     private lateinit var youtubeRepository: YouTubeRepository
     private lateinit var downloadRepository: DownloadRepository
     private lateinit var themePreferences: ThemePreferences
+    private lateinit var audioProfileStore: AudioProfileStore
+    private val transitionFilters = ConcurrentHashMap<ExoPlayer, TransitionFilterAudioProcessor>()
 
     // --- Scopes ---
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -111,13 +117,19 @@ class MusicService : MediaLibraryService() {
     // cache this session, so each prefetch round doesn't re-warm them.
     private val warmedIds =
         java.util.Collections.newSetFromMap(ConcurrentHashMap<String, Boolean>())
+    private val profilingIds =
+        java.util.Collections.newSetFromMap(ConcurrentHashMap<String, Boolean>())
+    private val prefetchingIds =
+        java.util.Collections.newSetFromMap(ConcurrentHashMap<String, Boolean>())
 
     // One warm at a time: warming must never contend with the current song's
     // own buffering for the whole prefetch window.
     private val warmSemaphore = kotlinx.coroutines.sync.Semaphore(1)
+    private val profileSemaphore = kotlinx.coroutines.sync.Semaphore(1)
     
     // --- Configuration ---
     private var isCrossfadeEnabled = true
+    private var isAutoMixEnabled = true
     private var crossfadeDurationMs = 3000L
     private var isNormalizeVolumeEnabled = true
 
@@ -182,6 +194,8 @@ class MusicService : MediaLibraryService() {
         private const val MANUAL_CROSSFADE_MS = 500L
         private const val MANUAL_RESOLVE_WAIT_MS = 1_500L
         private const val PREVIOUS_RESTART_MS = 3_000L
+        private const val AUTO_MIX_FALLBACK_OVERLAP_MS = 3_000L
+        private const val AUTO_MIX_MAX_OVERLAP_MS = 6_000L
 
         /**
          * How often the transition watcher checks whether the outgoing track
@@ -189,6 +203,7 @@ class MusicService : MediaLibraryService() {
          * fade, which the one-second progress tick never was.
          */
         private const val TRANSITION_POLL_MS = 200L
+        private const val TRANSITION_PREPARE_LEAD_MS = 1_500L
 
         // Re-resolution attempts before a song is skipped. A dead or expired URL
         // is fixed by a fresh extraction or not at all, so the general ceiling
@@ -260,6 +275,7 @@ class MusicService : MediaLibraryService() {
         CacheManager.initialize(this, themePreferences.maxCacheSizeMb.value)
         youtubeRepository = YouTubeRepository(this)
         downloadRepository = DownloadRepository.getInstance(this)
+        audioProfileStore = AudioProfileStore(this)
 
         // 2. Setup Notifications & Live Updates
         // Create the shared playback channel before the media provider is
@@ -290,6 +306,7 @@ class MusicService : MediaLibraryService() {
         // sessions (and Android Auto) never construct VideoPlayerViewModel,
         // which was the only other place that prefetched it.
         resolveScope.launch { youtubeRepository.prefetchVisitorData() }
+        resolveScope.launch { audioProfileStore.warm() }
 
         // 8. React to the user switching profile.
         observeProfileSwitches()
@@ -417,9 +434,6 @@ class MusicService : MediaLibraryService() {
                 .build()
         }
 
-        val renderersFactory = DefaultRenderersFactory(this)
-            .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF)
-
         // SMART DATA SOURCE FACTORY
         // Logic: Use CacheDataSource for network (http/https), but use valid DefaultDataSource for local files (content/file).
         // This prevents the cache from trying to grasp local content which causes playback failures on some devices.
@@ -486,6 +500,18 @@ class MusicService : MediaLibraryService() {
         // outgoing track dying exactly when the incoming one starts. Focus is
         // owned by [audioFocus] instead.
         val buildPlayer: () -> ExoPlayer = {
+            val transitionFilter = TransitionFilterAudioProcessor()
+            val renderersFactory = object : DefaultRenderersFactory(this) {
+                override fun buildAudioSink(
+                    context: android.content.Context,
+                    enableFloatOutput: Boolean,
+                    enableAudioTrackPlaybackParams: Boolean,
+                ): AudioSink = DefaultAudioSink.Builder(context)
+                    .setAudioProcessors(arrayOf(transitionFilter))
+                    .setEnableFloatOutput(false)
+                    .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
+                    .build()
+            }.setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF)
             ExoPlayer.Builder(this)
                 .setRenderersFactory(renderersFactory)
                 .setMediaSourceFactory(
@@ -495,6 +521,7 @@ class MusicService : MediaLibraryService() {
                 .setAudioAttributes(AudioAttributes.DEFAULT, false)
                 .setHandleAudioBecomingNoisy(true)
                 .build()
+                .also { transitionFilters[it] = transitionFilter }
         }
 
         engine = CrossfadeEngine(
@@ -502,6 +529,7 @@ class MusicService : MediaLibraryService() {
             playerFactory = buildPlayer,
             onActiveChanged = { newActive -> onEngineSwapped(newActive) },
             gainFor = { p -> gainForPlayer(p) },
+            setFilterSweep = { p, amount -> transitionFilters[p]?.setSweep(amount) },
         )
 
         audioFocus = AudioFocusController(
@@ -550,7 +578,18 @@ class MusicService : MediaLibraryService() {
         // These flows update live across ThemePreferences instances (the
         // settings screen writes through its own instance) thanks to the
         // SharedPreferences change listener inside ThemePreferences.
-        serviceScope.launch { themePreferences.crossfadeEnabled.collect { isCrossfadeEnabled = it } }
+        serviceScope.launch {
+            themePreferences.crossfadeEnabled.collect { enabled ->
+                isCrossfadeEnabled = enabled
+                if (!enabled && ::engine.isInitialized) {
+                    manualTransitionJob?.cancel()
+                    fadeVolumeJob?.cancel()
+                    engine.cancelTransition()
+                    engine.applyIdleVolumes()
+                }
+            }
+        }
+        serviceScope.launch { themePreferences.crossfadeAuto.collect { isAutoMixEnabled = it } }
         serviceScope.launch { themePreferences.crossfadeDurationMs.collect { crossfadeDurationMs = it.toLong() } }
         serviceScope.launch { themePreferences.cacheEnabled.collect { isCacheEnabled = it } }
         serviceScope.launch {
@@ -606,9 +645,9 @@ class MusicService : MediaLibraryService() {
 
             // 2. Volume for the new track. An automatic advance that reaches
             // here is one the engine did *not* overlap - crossfade off, an
-            // unresolved next item, repeat-one - so it gets the same short ramp
-            // a manual skip does rather than a bare cut.
-            if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT) {
+            // unresolved next item or repeat-one. Off means literally off: no
+            // overlap and no fade-in on either automatic or manual changes.
+            if (!isCrossfadeEnabled || reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT) {
                 player.volume = trackGain * engine.duckGain
             } else {
                 performSkipFadeIn()
@@ -637,6 +676,7 @@ class MusicService : MediaLibraryService() {
                 // only when no fade is running, so a crossfade-in keeps the
                 // volume it is ramping.
                 refreshTrackGain(applyNow = true)
+                player.currentMediaItem?.let { maybeProfile(it, player.duration) }
                 prefetchUpcomingSongs()
             }
 
@@ -747,18 +787,26 @@ class MusicService : MediaLibraryService() {
         val currentIndex = player.currentMediaItemIndex
         if (currentIndex == C.INDEX_UNSET) return
 
+        // The first entry must be the player's real next item. In shuffle mode
+        // that is usually not currentIndex + 1, and resolving only sequential
+        // indices leaves the actual successor as a placeholder until the
+        // outgoing song has already ended.
+        val targetIndices = linkedSetOf<Int>()
+        player.getNextMediaItemIndex()
+            .takeIf { it != C.INDEX_UNSET }
+            ?.let(targetIndices::add)
         for (i in 1..PREFETCH_AHEAD_COUNT) {
             val targetIndex = currentIndex + i
             if (targetIndex >= player.mediaItemCount) break
+            targetIndices.add(targetIndex)
+        }
 
+        targetIndices.take(PREFETCH_AHEAD_COUNT).forEachIndexed { offset, targetIndex ->
             val item = player.getMediaItemAt(targetIndex)
             val uri = item.localConfiguration?.uri
 
             if (isPlaceholder(uri)) {
-                // Start resolution in background (fire and forget)
-                // This populates activeResolutions so validateAndPlayCurrentItem can pick it up instantly
-                getOrStartResolution(item)
-                
+                if (!prefetchingIds.add(item.mediaId)) return@forEachIndexed
                 serviceScope.launch {
                     try {
                         val deferred = getOrStartResolution(item)
@@ -767,12 +815,19 @@ class MusicService : MediaLibraryService() {
                         // Update player if item is still there
                         if (targetIndex < player.mediaItemCount &&
                             player.getMediaItemAt(targetIndex).mediaId == item.mediaId) {
-                            Log.d(TAG, "Prefetch: Updated item +$i (${item.mediaId})")
+                            Log.d(
+                                TAG,
+                                "Prefetch: Updated ${if (offset == 0) "actual next" else "+${offset + 1}"} " +
+                                    "(${item.mediaId})"
+                            )
                             player.replaceMediaItem(targetIndex, resolvedItem)
                             warmStreamCache(item.mediaId, resolvedItem.localConfiguration?.uri)
+                            maybeProfile(resolvedItem)
                         }
                     } catch (e: Exception) {
                         Log.w(TAG, "Prefetch: Failed to resolve upcoming ${item.mediaId}")
+                    } finally {
+                        prefetchingIds.remove(item.mediaId)
                     }
                 }
             }
@@ -1347,6 +1402,7 @@ class MusicService : MediaLibraryService() {
                 .setTitle(song.title)
                 .setArtist(song.artist)
                 .setAlbumTitle(song.album)
+                .setDurationMs(song.duration.takeIf { it > 0L })
                 .setArtworkUri(song.thumbnailUrl.toArtworkUri())
                 .setIsBrowsable(false)
                 .setIsPlayable(true)
@@ -1543,6 +1599,53 @@ class MusicService : MediaLibraryService() {
         }
     }
 
+    /**
+     * Analyse only the small head/tail windows needed by AutoMix. Metered
+     * networks never fetch bytes for analysis; they can still use a profile
+     * once normal playback has fully cached the song.
+     */
+    private fun maybeProfile(mediaItem: MediaItem, knownDurationMs: Long? = null) {
+        val id = mediaItem.mediaId
+        val uri = mediaItem.localConfiguration?.uri ?: return
+        val factory = cacheDataSourceFactory
+        val durationMs = knownDurationMs?.takeIf { it > 0L }
+            ?: mediaItem.mediaMetadata.durationMs?.takeIf { it > 0L }
+            ?: return
+        val isNetwork = uri.scheme == "http" || uri.scheme == "https"
+        if (isNetwork && factory == null) return
+        if (!profilingIds.add(id)) return
+
+        resolveScope.launch {
+            profileSemaphore.acquire()
+            try {
+                if (audioProfileStore.get(id) != null) return@launch
+                if (isNetwork && ThemePreferences.isNetworkMetered(this@MusicService) &&
+                    !CacheManager.isFullyCached(id)
+                ) return@launch
+
+                AudioProfiler.profile(
+                    songId = id,
+                    context = this@MusicService,
+                    uri = uri,
+                    cacheKey = id,
+                    factory = factory,
+                    durationMs = durationMs,
+                )?.let { profile ->
+                    audioProfileStore.put(profile)
+                    Log.d(
+                        TAG,
+                        "Profile: $id lead=${profile.leadInSilenceMs} " +
+                            "tail=${profile.tailFadeMs} abrupt=${profile.endsAbruptly} " +
+                            "outro=${profile.outroLeadMs}"
+                    )
+                }
+            } finally {
+                profileSemaphore.release()
+                profilingIds.remove(id)
+            }
+        }
+    }
+
     /** Resolve Previous/Next against the audible queue, including rapid taps. */
     private fun requestManualSkip(forward: Boolean) {
         val current = player
@@ -1569,9 +1672,8 @@ class MusicService : MediaLibraryService() {
 
     /**
      * Briefly overlap the currently audible track with a user-requested queue
-     * item. The normal crossfade preference deliberately does not gate this:
-     * even with automatic crossfade off, a manual track change should avoid a
-     * click without making the control feel delayed.
+     * item. Off bypasses this method's preparation entirely and performs an
+     * ordinary immediate player jump.
      */
     private fun requestManualTransition(targetIndex: Int) {
         val current = player
@@ -1579,6 +1681,10 @@ class MusicService : MediaLibraryService() {
         if (targetIndex == current.currentMediaItemIndex) {
             current.seekTo(0L)
             current.play()
+            return
+        }
+        if (!isCrossfadeEnabled) {
+            jumpWithoutTransition(targetIndex)
             return
         }
 
@@ -1607,10 +1713,16 @@ class MusicService : MediaLibraryService() {
             }
 
             if (target !== original) outgoing.replaceMediaItem(targetIndex, target)
+            val incomingStartMs = audioProfileStore.peek(target.mediaId)
+                ?.leadInSilenceMs
+                ?.minus(60L)
+                ?.coerceIn(0L, 7_500L)
+                ?: 0L
             val canOverlap = outgoing.isPlaying && engine.startTransition(
                 nextItem = target,
                 durationMs = MANUAL_CROSSFADE_MS,
                 targetIndex = targetIndex,
+                incomingStartMs = incomingStartMs,
             )
             if (!canOverlap) fallbackManualJump(targetIndex)
         }
@@ -1622,6 +1734,18 @@ class MusicService : MediaLibraryService() {
         if (targetIndex !in 0 until current.mediaItemCount) return
         engine.cancelTransition()
         current.volume = 0f
+        current.seekTo(targetIndex, 0L)
+        current.play()
+    }
+
+    /** A literal Off path: no overlap and no volume ramp. */
+    private fun jumpWithoutTransition(targetIndex: Int) {
+        val current = player
+        if (targetIndex !in 0 until current.mediaItemCount) return
+        manualTransitionJob?.cancel()
+        fadeVolumeJob?.cancel()
+        engine.cancelTransition()
+        current.volume = gainForPlayer(current) * engine.duckGain
         current.seekTo(targetIndex, 0L)
         current.play()
     }
@@ -1670,17 +1794,56 @@ class MusicService : MediaLibraryService() {
                 val duration = current.duration
                 if (duration <= 0) continue
                 val remaining = duration - current.currentPosition
-                if (remaining > crossfadeDurationMs || remaining <= 0) continue
+                if (remaining <= 0) continue
 
                 val nextIndex = current.getNextMediaItemIndex()
                 if (nextIndex !in 0 until current.mediaItemCount) continue
                 val nextItem = current.getMediaItemAt(nextIndex)
                 // An unresolved item has no stream to fade in. Let the normal
-                // advance happen and let validateAndPlayCurrentItem resolve it.
-                if (isPlaceholder(nextItem.localConfiguration?.uri)) continue
+                // advance happen only as the degraded path; normally this
+                // proactively resolves the real playback-order successor long
+                // before the transition window.
+                if (isPlaceholder(nextItem.localConfiguration?.uri)) {
+                    prefetchUpcomingSongs()
+                    continue
+                }
 
-                val started = engine.startTransition(nextItem, crossfadeDurationMs)
-                if (started) Log.d(TAG, "Crossfade: overlapping into ${nextItem.mediaId}")
+                val plan = if (isAutoMixEnabled) {
+                    TransitionPlanner.plan(
+                        fallbackOverlapMs = AUTO_MIX_FALLBACK_OVERLAP_MS,
+                        maximumOverlapMs = AUTO_MIX_MAX_OVERLAP_MS,
+                        outgoing = current.currentMediaItem?.mediaId?.let(audioProfileStore::peek),
+                        incoming = audioProfileStore.peek(nextItem.mediaId),
+                        outgoingDurationMs = duration,
+                    )
+                } else {
+                    TransitionPlan(
+                        overlapMs = crossfadeDurationMs,
+                        incomingStartMs = 0L,
+                        reason = TransitionPlan.Reason.FALLBACK,
+                    )
+                }
+                if (!plan.shouldOverlap ||
+                    remaining > plan.overlapMs + TRANSITION_PREPARE_LEAD_MS
+                ) continue
+
+                val started = engine.startTransition(
+                    nextItem = nextItem,
+                    durationMs = plan.overlapMs,
+                    targetIndex = nextIndex,
+                    incomingStartMs = plan.incomingStartMs,
+                    incomingSpeed = plan.incomingSpeed,
+                    filterSweepStrength = plan.filterSweepStrength,
+                    startAtRemainingMs = plan.overlapMs,
+                )
+                if (started) {
+                    Log.d(
+                        TAG,
+                        "Crossfade: ${plan.reason} ${plan.overlapMs}ms " +
+                            "lead=${plan.incomingStartMs} speed=${plan.incomingSpeed} " +
+                            "key=${plan.harmonicMatch} into ${nextItem.mediaId}"
+                    )
+                }
             }
         }
     }

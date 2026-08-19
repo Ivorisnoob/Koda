@@ -377,6 +377,8 @@ internal fun PlayerSettingsPage(
 internal fun PlaybackSettingsPage(
     crossfadeEnabled: Boolean,
     onCrossfadeEnabledToggle: (Boolean) -> Unit,
+    crossfadeAuto: Boolean,
+    onCrossfadeAutoChange: (Boolean) -> Unit,
     crossfadeDurationMs: Int,
     onCrossfadeDurationChange: (Int) -> Unit,
     normalizeVolume: Boolean,
@@ -401,43 +403,91 @@ internal fun PlaybackSettingsPage(
         item {
             SettingsSection(title = "Playback") {
                 SettingsCard {
-                    SettingsToggleRow(
+                    SettingsRow(
                         icon = Icons.Rounded.GraphicEq,
-                        title = "Crossfade",
-                        subtitle = "Smoothly fade between songs",
-                        enabled = crossfadeEnabled,
-                        onToggle = onCrossfadeEnabledToggle
+                        title = "Song transitions",
+                        subtitle = when {
+                            !crossfadeEnabled -> "Songs change without an overlap"
+                            crossfadeAuto -> "AutoMix adapts to each song"
+                            else -> "Always overlap by ${crossfadeDurationMs / 1000}s"
+                        },
+                        onClick = {
+                            if (crossfadeEnabled) {
+                                onCrossfadeEnabledToggle(false)
+                            } else {
+                                onCrossfadeAutoChange(true)
+                                onCrossfadeEnabledToggle(true)
+                            }
+                        },
                     )
 
-                    AnimatedVisibility(
-                        visible = crossfadeEnabled,
-                        enter = fadeIn(tween(200)) + slideInVertically(
-                            initialOffsetY = { -it / 4 },
-                            animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy)
-                        ),
-                        exit = fadeOut(tween(150))
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
                     ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 8.dp)
+                        val selectedIndex = when {
+                            !crossfadeEnabled -> 0
+                            crossfadeAuto -> 1
+                            else -> 2
+                        }
+                        val labels = listOf("Off", "AutoMix", "Manual")
+                        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                            labels.forEachIndexed { index, label ->
+                                SegmentedButton(
+                                    selected = selectedIndex == index,
+                                    onClick = {
+                                        when (index) {
+                                            0 -> onCrossfadeEnabledToggle(false)
+                                            1 -> {
+                                                onCrossfadeAutoChange(true)
+                                                onCrossfadeEnabledToggle(true)
+                                            }
+                                            2 -> {
+                                                onCrossfadeAutoChange(false)
+                                                onCrossfadeEnabledToggle(true)
+                                            }
+                                        }
+                                    },
+                                    shape = SegmentedButtonDefaults.itemShape(
+                                        index = index,
+                                        count = labels.size,
+                                    ),
+                                    icon = {
+                                        SegmentedButtonDefaults.Icon(active = selectedIndex == index) {}
+                                    },
+                                ) {
+                                    Text(label)
+                                }
+                            }
+                        }
+
+                        AnimatedVisibility(
+                            visible = crossfadeEnabled && !crossfadeAuto,
+                            enter = fadeIn(tween(200)) + slideInVertically(
+                                initialOffsetY = { -it / 4 },
+                                animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy)
+                            ),
+                            exit = fadeOut(tween(150))
                         ) {
-                            Text(
-                                text = "Duration: ${crossfadeDurationMs / 1000}s",
-                                color = MaterialTheme.colorScheme.onBackground,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Medium
-                            )
-                            Slider(
-                                value = crossfadeDurationMs.toFloat(),
-                                onValueChange = { onCrossfadeDurationChange(it.toInt()) },
-                                valueRange = 1000f..12000f,
-                                steps = 10,
-                                colors = SliderDefaults.colors(
-                                    thumbColor = MaterialTheme.colorScheme.primary,
-                                    activeTrackColor = MaterialTheme.colorScheme.primary
+                            Column(modifier = Modifier.padding(top = 12.dp)) {
+                                Text(
+                                    text = "Duration: ${crossfadeDurationMs / 1000}s",
+                                    color = MaterialTheme.colorScheme.onBackground,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Medium
                                 )
-                            )
+                                Slider(
+                                    value = crossfadeDurationMs.toFloat(),
+                                    onValueChange = { onCrossfadeDurationChange(it.toInt()) },
+                                    valueRange = 1000f..12000f,
+                                    steps = 10,
+                                    colors = SliderDefaults.colors(
+                                        thumbColor = MaterialTheme.colorScheme.primary,
+                                        activeTrackColor = MaterialTheme.colorScheme.primary
+                                    )
+                                )
+                            }
                         }
                     }
 

@@ -11,8 +11,8 @@ import kotlinx.serialization.Serializable
  * lays a fade over tracks that already fade themselves, fades into three
  * seconds of lead-in silence, and destroys album transitions that were
  * deliberately continuous. Every field here exists to answer one of those, and
- * they all come from the same cheap measurement - an RMS envelope over the
- * first and last few seconds, taken from audio already sitting in the cache.
+ * they come from short PCM windows at the head and tail: an RMS envelope,
+ * onset autocorrelation for rhythm, and FFT chroma for harmonic content.
  *
  * Absent for a track never profiled, and everything downstream has to work
  * without one: the fallback is a plain equal-power fade at the user's chosen
@@ -61,16 +61,39 @@ data class AudioProfile(
     val outroLeadMs: Long = 0,
 
     /**
-     * Detected tempo, for beat-matched transitions. Null when the estimate was
+     * Detected intro tempo, for beat-matched transitions. Null when the estimate was
      * not confident enough to act on - a wrong tempo is worse than none,
      * because nudging playback speed to match it is audible.
      */
     val bpm: Float? = null,
 
+    /** Reliability of [bpm], from zero to one. */
+    val tempoConfidence: Float = 0f,
+
+    /** First detected beat and downbeat positions from the start of the file. */
+    val beatOffsetMs: Long = 0,
+    val downbeatOffsetMs: Long = 0,
+
+    /** Tempo/grid measured at the outro, avoiding whole-song drift. */
+    val outroBpm: Float? = null,
+    val outroTempoConfidence: Float = 0f,
+    val outroDownbeatLeadMs: Long = 0,
+
+    /** A musically useful outro phrase boundary, measured back from the end. */
+    val phraseOutroLeadMs: Long = 0,
+    val phraseConfidence: Float = 0f,
+
+    /** Krumhansl-Schmuckler key estimate. Pitch class is C=0 through B=11. */
+    val keyPitchClass: Int? = null,
+    val keyMode: String? = null,
+    val keyConfidence: Float = 0f,
+
     /** Schema version, so a later measurement change can invalidate old rows. */
     val version: Int = CURRENT_VERSION
 ) {
     companion object {
-        const val CURRENT_VERSION = 1
+        // Version 3 adds beat-grid, phrase and harmonic measurements. Older
+        // profiles do not contain enough evidence for advanced decisions.
+        const val CURRENT_VERSION = 3
     }
 }

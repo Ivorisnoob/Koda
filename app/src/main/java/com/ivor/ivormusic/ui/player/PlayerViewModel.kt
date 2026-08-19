@@ -383,6 +383,17 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                         android.util.Log.d("PlayerViewModel", "Ignoring media transition - player was cleared")
                         return
                     }
+
+                    // A crossfade swaps the MediaSession onto an incoming
+                    // player that is already STATE_READY, so there may be no
+                    // later READY callback to refresh these values. Publish
+                    // the new timeline values at the item boundary instead of
+                    // leaving the previous song's duration on screen.
+                    val transitionedDuration = controller?.duration?.takeIf { it > 0L }
+                        ?: mediaItem?.mediaMetadata?.durationMs?.takeIf { it > 0L }
+                        ?: 0L
+                    _duration.value = transitionedDuration
+                    _progress.value = controller?.currentPosition?.coerceAtLeast(0L) ?: 0L
                     
                     // Update current song based on Media ID
                     val id = mediaItem?.mediaId
@@ -572,9 +583,11 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                         _progress.value = currentPos
                     }
                     
-                    // Also update duration if it was not set yet (fallback)
+                    // Keep duration tied to the active player. Crossfade swaps
+                    // between already-ready players, so this is also a
+                    // backstop if a controller misses the item callback.
                     val dur = it.duration
-                    if (dur > 0 && _duration.value == 0L) {
+                    if (dur > 0 && _duration.value != dur) {
                         _duration.value = dur
                     }
                     
@@ -949,6 +962,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                     androidx.media3.common.MediaMetadata.Builder()
                         .setTitle(song.title)
                         .setArtist(song.artist)
+                        .setDurationMs(song.duration.takeIf { it > 0L })
                         .setArtworkUri(song.albumArtUri)
                         .build()
                 )
@@ -964,6 +978,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                     androidx.media3.common.MediaMetadata.Builder()
                         .setTitle(song.title)
                         .setArtist(song.artist)
+                        .setDurationMs(song.duration.takeIf { it > 0L })
                         // Absent rather than an empty Uri when there is no
                         // artwork: Uri.parse("") is a valid-looking Uri that
                         // every consumer then fails to load, and this metadata

@@ -113,6 +113,9 @@ class ThemePreferences(context: Context) {
     // Crossfade Settings
     private val _crossfadeEnabled = MutableStateFlow(getCrossfadeEnabledPreference())
     val crossfadeEnabled: StateFlow<Boolean> = _crossfadeEnabled.asStateFlow()
+
+    private val _crossfadeAuto = MutableStateFlow(getCrossfadeAutoPreference())
+    val crossfadeAuto: StateFlow<Boolean> = _crossfadeAuto.asStateFlow()
     
     private val _crossfadeDurationMs = MutableStateFlow(getCrossfadeDurationPreference())
     val crossfadeDurationMs: StateFlow<Int> = _crossfadeDurationMs.asStateFlow()
@@ -173,6 +176,7 @@ class ThemePreferences(context: Context) {
             KEY_MAX_CACHE_SIZE_MB -> _maxCacheSizeMb.value = getMaxCacheSizeMbPreference()
             KEY_AUTO_LOAD_QUEUE -> _autoLoadQueue.value = getAutoLoadQueuePreference()
             KEY_CROSSFADE_ENABLED -> _crossfadeEnabled.value = getCrossfadeEnabledPreference()
+            KEY_CROSSFADE_AUTO -> _crossfadeAuto.value = getCrossfadeAutoPreference()
             KEY_CROSSFADE_DURATION -> _crossfadeDurationMs.value = getCrossfadeDurationPreference()
             KEY_NORMALIZE_VOLUME -> _normalizeVolume.value = getNormalizeVolumePreference()
             KEY_OEM_FIX_ENABLED -> _oemFixEnabled.value = getOemFixEnabledPreference()
@@ -402,6 +406,7 @@ class ThemePreferences(context: Context) {
         private const val KEY_MAX_CACHE_SIZE_MB = "max_cache_size_mb"
         private const val KEY_AUTO_LOAD_QUEUE = "auto_load_queue"
         private const val KEY_CROSSFADE_ENABLED = "crossfade_enabled"
+        private const val KEY_CROSSFADE_AUTO = "crossfade_auto"
         private const val KEY_CROSSFADE_DURATION = "crossfade_duration"
         private const val KEY_NORMALIZE_VOLUME = "normalize_volume"
         private const val KEY_OEM_FIX_ENABLED = "oem_fix_enabled"
@@ -1057,6 +1062,15 @@ class ThemePreferences(context: Context) {
     
     fun toggleCrossfadeEnabled() {
         setCrossfadeEnabled(!_crossfadeEnabled.value)
+    }
+
+    private fun getCrossfadeAutoPreference(): Boolean {
+        return prefs.getBoolean(KEY_CROSSFADE_AUTO, true)
+    }
+
+    fun setCrossfadeAuto(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_CROSSFADE_AUTO, enabled).apply()
+        _crossfadeAuto.value = enabled
     }
     
     private fun getCrossfadeDurationPreference(): Int {

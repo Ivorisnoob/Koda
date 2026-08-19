@@ -310,6 +310,8 @@ fun SettingsScreen(
     onAutoLoadQueueToggle: (Boolean) -> Unit,
     crossfadeEnabled: Boolean,
     onCrossfadeEnabledToggle: (Boolean) -> Unit,
+    crossfadeAuto: Boolean,
+    onCrossfadeAutoChange: (Boolean) -> Unit,
     crossfadeDurationMs: Int,
     onCrossfadeDurationChange: (Int) -> Unit,
     normalizeVolume: Boolean,
@@ -683,6 +685,8 @@ fun SettingsScreen(
                 SettingsPage.PLAYBACK -> PlaybackSettingsPage(
                     crossfadeEnabled = crossfadeEnabled,
                     onCrossfadeEnabledToggle = onCrossfadeEnabledToggle,
+                    crossfadeAuto = crossfadeAuto,
+                    onCrossfadeAutoChange = onCrossfadeAutoChange,
                     crossfadeDurationMs = crossfadeDurationMs,
                     onCrossfadeDurationChange = onCrossfadeDurationChange,
                     normalizeVolume = normalizeVolume,

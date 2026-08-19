@@ -229,7 +229,10 @@ internal fun buildSettingsSearchIndex(
     // Playback and quality
     entry(
         "crossfade", "Crossfade", "Playback and quality", Icons.Rounded.GraphicEq,
-        listOf("fade", "blend", "transition", "overlap", "gapless")
+        listOf(
+            "fade", "blend", "transition", "overlap", "gapless", "automix",
+            "automatic", "manual", "smart transition"
+        )
     ) { onOpenPage(SettingsPage.PLAYBACK) }
     entry(
         "normalizevolume", "Normalise volume", "Playback and quality",
