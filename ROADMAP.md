@@ -10,7 +10,7 @@ For how the app is built, see [`CLAUDE.md`](CLAUDE.md). For the design system an
 
 ## Where Koda is today
 
-Version **4.3** (`versionCode` 21), targeting Android 16 (API 36) with a floor at Android 11 (API 30). Roughly **82,000 lines** of Kotlin across **155 files**, all of it Compose, all of it rendered inside a single `MaterialExpressiveTheme`.
+Version **4.5** (`versionCode` 23), targeting Android 16 (API 36) with a floor at Android 11 (API 30). Roughly **78,000 lines** of Kotlin across **155 files**, all of it Compose, all of it rendered inside a single `MaterialExpressiveTheme`.
 
 The app is past the point of proving itself. The core loops all work end to end:
 
@@ -58,13 +58,7 @@ These are not goals. They are the walls the roadmap has to fit inside, and any p
 
 ## Known defects
 
-Not roadmap items. These are things that are wrong today, recorded here because they were raised alongside the planning and because each has a diagnosed cause rather than a suspicion.
-
-The entry that stood here, **Shorts and downloads cannot recover from a flagged `visitorData`**, is fixed: `ShortsPlayerViewModel` now registers an `onPlayerError` that splits renderer failures from source failures the way the video player does, and `DownloadRepository` re-mints between attempts when a media fetch came back 403. Two things about it generalise. **A surface that plays googlevideo streams and does not handle player errors has no way out of the bad bucket**, and it will look like a hang rather than a failure, because a fatal error drives the player to `STATE_IDLE` and the buffering flag goes *false* on the way. And **re-resolving under the refused token is not a retry**: the downloader already re-resolved on each of its three attempts and rebuilt an equally dead URL every time, which is why it failed three times in a row and looked like a broken video rather than a flagged session. Anything holding pre-resolved URLs has to drop them at the same moment, which for Shorts meant the five-deep prefetch cache and an epoch counter so a fetch already in flight cannot write its dead URLs back in behind the purge.
-
-**The video mini bar floating in empty space**, is fixed, and the cause generalises to anything else drawn at that level. `VideoPlayerOverlay` is composed in `MainActivity` above the NavHost, so it renders on every route, while the floating nav bar and the music pill are both inside `HomeScreen` and exist on one. It reserved their height unconditionally, so on Settings, Downloads, Stats and any channel page the bar hovered a nav bar's worth above a nav bar that was not there. **Anything drawn above the NavHost has to be told what is under it rather than assuming**, which is what `hostBottomChrome` is; `musicPillVisible` was wrong for the same reason, since a song being loaded is not the same as the pill being on screen.
-
-The last entry, **vertical videos pillarboxed on the watch page**, is fixed: the video box now takes the source aspect ratio when the source is portrait, capped so the watch page underneath survives. What made that one worth writing down rather than patching blind is worth keeping in mind for the next layout of its kind. The portrait signal was already correct on both parse paths and simply discarded for everything but live streams, so the work was never detection; and the fix is fit rather than zoom, because the box is never narrower than the video and filling it would have cropped the top and bottom, which is exactly where a vertical upload puts faces and captions.
+There are no diagnosed, still-open defects recorded here for version 4.5. Fixed diagnoses are retained under [Shipped](#shipped), where they cannot be mistaken for current behaviour.
 
 ---
 
@@ -140,16 +134,6 @@ The player already uses the album-cover area for the previous/next-song swipe. T
 This should be one gesture contract, not a second interaction model: identical direction, threshold, animation, and playback behavior across every player style and every compact, expanded, or full-screen surface where song navigation exists. Taps on the text, controls, menus, links, scrolling titles, larger text, and accessibility must continue to work, and a gesture crossing from the artwork into the text must not trigger navigation twice.
 
 Tracked in [#180](https://github.com/Ivorisnoob/Koda/issues/180).
-
-#### A choice between the floating nav pill and a short bottom bar
-
-Koda's current navigation is the inline `HorizontalFloatingToolbar` in `HomeScreen.kt`, an expressive floating pill shared by music and video mode. Some users will prefer a familiar, compact bottom navigation bar that stays anchored to the bottom of the screen.
-
-Add a local preference under **Settings → Appearance** with the floating pill as the default and a short standard bottom navigation bar as the alternative. Both surfaces should use the same tab model and selection handler, including selected and unselected icons, labels, haptics, accessibility, and the existing re-tap-to-scroll behavior. Insets must leave room for the system navigation bar and the mini-player, and the choice must persist across restarts and work signed out. The setting also belongs in the settings search index.
-
-This is an appearance choice, not a second navigation architecture. The tablet work may still move navigation to a rail at medium width and up; this preference describes the phone-sized bottom-navigation alternatives, so those decisions should be coordinated rather than allowed to drift.
-
-Tracked in [#181](https://github.com/Ivorisnoob/Koda/issues/181).
 
 #### Respect reduced motion
 
@@ -474,6 +458,9 @@ The milestones behind us, kept here so the direction of travel is visible.
 - Real channel pages: banner, about, and every tab a creator actually has, reachable from anywhere a channel name appears - including shared channel links, which the manifest had been claiming and dropping
 - Playlist links, shared in or pasted into search, opening the playlist's page rather than playing it or previewing it, so one can be kept the same way a searched one can
 - The video mini bar rebuilt: swipe up to expand and down to dismiss instead of a close button, a progress line that moves with playback rather than once a second, and a resting position that follows what is actually on screen under it
+- A persistent Appearance choice between the expressive floating navigation pill and a standard short bottom navigation bar, shared by music and video mode
+
+Three fixed defects retain lessons worth carrying forward. **Shorts and downloads now recover from a flagged `visitorData`** by re-minting between attempts and invalidating URLs resolved under the refused token; re-resolving under the same token is not a retry. **The video mini bar no longer floats above absent chrome** because an overlay composed above the NavHost is told what is actually beneath it instead of inferring that from playback state. **Portrait uploads no longer sit inside a pillarboxed 16:9 watch-page box**; the player uses the source aspect ratio with a cap that preserves the page below, and fits rather than zooms so faces and captions are not cropped.
 
 The channel screen is worth recording for what turned out **not** to be the work. The plan called for probing the browse `params` of six tabs and writing them down, and the probe found something better: **a channel page describes itself.** The first browse returns the tab list with each tab's own `params`, every sort order with its own continuation token, and every next page as another token, all of it signed out. So there is exactly one hardcoded browse parameter left in the file, kept as a fallback, and the tab row is built from the response rather than from an enum.
 

@@ -208,7 +208,6 @@ Koda's interface is the product, not a wrapper around one. The whole app is cons
 - **Settings search.** There are around fifty settings, and people know what they want rather than what it is called, so the index carries synonyms and tolerates typos. "offline" finds Local Only, "battery" finds the OEM fix, "bitrate" finds music quality, "songs not showing" finds compatibility scanning, and "amol" and "crossfde" both land where you meant.
 - **Quality is per-network.** Separate Wi-Fi and mobile-data settings for video and for music, applied automatically based on what you are connected to.
 - **Music streaming quality** of its own: High, Normal, or Data Saver.
-- **Prefer HDR Videos**, off by default. Turned on, HDR variants are listed alongside SDR and preferred at equal resolution, with a clean fallback for videos that have none.
 - **Destructive actions use the theme's error color**, so they read correctly across all palettes and AMOLED rather than being a hardcoded red.
 
 ### Authentication
