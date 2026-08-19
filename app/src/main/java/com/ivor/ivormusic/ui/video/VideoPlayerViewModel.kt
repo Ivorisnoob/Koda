@@ -72,6 +72,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     private val videoPlaybackSessionRepository =
         com.ivor.ivormusic.data.VideoPlaybackSessionRepository(context)
     private var lastSessionSaveAt = 0L
+    private var sessionPersistenceJob: kotlinx.coroutines.Job? = null
 
     // Player Instance
     private var _exoPlayer: ExoPlayer? = null
@@ -761,7 +762,11 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      */
     private fun saveVideoPlaybackSession() {
         val video = _currentVideo.value ?: return
-        if (_isLive.value) return
+        // Feed/search items often already know they are live before Phase 1
+        // resolves the stream qualities. Checking both signals prevents the
+        // progress poll from briefly persisting a broadcast as a resumable
+        // VOD. startVideo() clears the prior snapshot once per broadcast.
+        if (_isLive.value || video.isLive) return
         val position = _exoPlayer?.currentPosition?.coerceAtLeast(0L) ?: return
         val activeQueue = _queue.value
 
@@ -781,9 +786,27 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             playlistId = null
         }
 
-        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+        enqueueSessionPersistence {
             videoPlaybackSessionRepository.save(videos, index, title, playlistId, position)
         }
+    }
+
+    /**
+     * Keep snapshot writes and clears ordered. A progress checkpoint can still
+     * be writing when the user closes the player or opens a live broadcast;
+     * independent IO launches let that older save finish after the clear and
+     * bring the supposedly removed session back.
+     */
+    private fun enqueueSessionPersistence(action: () -> Unit) {
+        val previous = sessionPersistenceJob
+        sessionPersistenceJob = viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            previous?.join()
+            action()
+        }
+    }
+
+    private fun clearVideoPlaybackSession() {
+        enqueueSessionPersistence { videoPlaybackSessionRepository.clear() }
     }
 
     /**
@@ -1196,6 +1219,12 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         }
 
         _currentVideo.value = video
+        if (video.isLive) {
+            // Live broadcasts have no stable resume position. Clear the VOD
+            // watched before this one so it is not resurrected if the process
+            // dies while the broadcast is open.
+            clearVideoPlaybackSession()
+        }
         _isExpanded.value = expand
         _isLoading.value = true
         // Zero the progress for the new video rather than letting the previous
@@ -1281,6 +1310,12 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                     val qualities = youtubeRepository.getVideoStreamQualities(video.videoId)
                     _availableQualities.value = qualities
                     _isLive.value = qualities.any { it.isLive }
+                    if (_isLive.value) {
+                        // Some entry points do not know a broadcast is live
+                        // until its stream qualities arrive. Remove any prior
+                        // snapshot once that verdict is definitive.
+                        clearVideoPlaybackSession()
+                    }
                     // Before the first frame: the stream dimensions are the only
                     // shape signal there is, and both the vertical live layout
                     // and the watch page's video box are sized from it.
@@ -1292,8 +1327,8 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
                     if (qualities.isNotEmpty()) {
                         loadQuality(pickDefaultQuality(qualities))
-                        if (resumePositionMs != null && resumePositionMs > 0) {
-                            _exoPlayer?.seekTo(resumePositionMs)
+                        if (resumePositionMs != null) {
+                            if (resumePositionMs > 0) _exoPlayer?.seekTo(resumePositionMs)
                             _exoPlayer?.pause()
                         } else {
                             // FORCE PLAY: Ensure we override any previous paused state
@@ -1314,8 +1349,8 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                                 .createMediaSource(nowPlayingMediaItem(streamUrl))
                             _exoPlayer?.setMediaSource(source)
                             _exoPlayer?.prepare()
-                            if (resumePositionMs != null && resumePositionMs > 0) {
-                                _exoPlayer?.seekTo(resumePositionMs)
+                            if (resumePositionMs != null) {
+                                if (resumePositionMs > 0) _exoPlayer?.seekTo(resumePositionMs)
                                 _exoPlayer?.pause()
                             } else {
                                 _exoPlayer?.play() // FORCE PLAY
@@ -1690,7 +1725,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         // An explicit close means "I'm done with this video" - the opposite
         // of what the resume snapshot is for, so it must not reappear next
         // launch.
-        videoPlaybackSessionRepository.clear()
+        clearVideoPlaybackSession()
     }
 
     fun togglePlayPause() {
