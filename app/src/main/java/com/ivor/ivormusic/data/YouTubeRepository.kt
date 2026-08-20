@@ -224,12 +224,19 @@ class YouTubeRepository(private val context: Context) {
          * The caption cache is deliberately left alone: it is keyed by video id
          * and a video's subtitles are the same whoever is watching.
          */
-        fun invalidateSessionScopedCaches(context: Context) {
+        /**
+         * [commitNow] forces the erase to disk before returning. Only a
+         * restore needs it: it kills the process on purpose, and a queued
+         * apply() dying with it would leave the previous identity's
+         * visitorData persisted and re-read on the next start.
+         */
+        fun invalidateSessionScopedCaches(context: Context, commitNow: Boolean = false) {
             cachedVisitorData = null
             visitorDataFetchedAt = 0L
-            context.applicationContext
+            val editor = context.applicationContext
                 .getSharedPreferences("ivor_visitor_data", Context.MODE_PRIVATE)
-                .edit().remove("visitor_data").remove("visitor_data_at").apply()
+                .edit().remove("visitor_data").remove("visitor_data_at")
+            if (commitNow) editor.commit() else editor.apply()
         }
     }
 
@@ -1550,6 +1557,26 @@ class YouTubeRepository(private val context: Context) {
             // Save user name if found
             if (!userName.isNullOrEmpty()) {
                 sessionManager.saveUserName(userName)
+            }
+
+            // YouTube's own account identifier, which every authenticated
+            // response carries for free (verified August 2026 against
+            // account_menu, FEsubscriptions and FEwhat_to_watch: present on all
+            // three, identical across them, alongside a `loggedOut` boolean).
+            // Stored verbatim, trailing separators included - it is only ever
+            // compared against another copy of itself.
+            //
+            // This is what lets the app recognise an account it already has:
+            // signing back in repairs that profile instead of adding a
+            // duplicate row, and a restored backup can tell that an account in
+            // the file is the one already signed in here.
+            runCatching {
+                org.json.JSONObject(jsonResponse)
+                    .optJSONObject("responseContext")
+                    ?.optJSONObject("mainAppWebResponseContext")
+                    ?.optString("datasyncId")
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { sessionManager.saveDatasyncId(it) }
             }
             
         } catch (e: Exception) {

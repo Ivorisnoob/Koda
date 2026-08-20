@@ -86,6 +86,7 @@ import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.RadioButtonChecked
 import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.Security
+import androidx.compose.material.icons.rounded.SettingsBackupRestore
 import androidx.compose.material.icons.rounded.FlashOn
 import androidx.compose.material.icons.rounded.HighQuality
 import androidx.compose.material.icons.rounded.SignalCellularAlt
@@ -172,6 +173,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.ivor.ivormusic.data.DownloadNotificationHelper
 import com.ivor.ivormusic.data.FolderInfo
+import com.ivor.ivormusic.data.BackupRepository
 import com.ivor.ivormusic.data.SessionManager
 import com.ivor.ivormusic.data.ThemePreferences
 import com.ivor.ivormusic.data.YouTubeAuthUtils
@@ -294,6 +296,7 @@ fun SettingsScreen(
     onFastSubscriptionFeedToggle: (Boolean) -> Unit = {},
     onNavigateToSubscriptions: () -> Unit = {},
     onNavigateToNotInterested: () -> Unit = {},
+    onNavigateToBackup: () -> Unit = {},
     excludedFolders: Set<String>,
     onAddExcludedFolder: (String) -> Unit,
     onRemoveExcludedFolder: (String) -> Unit,
@@ -505,6 +508,7 @@ fun SettingsScreen(
         onNavigateToColorPalette = onNavigateToColorPalette,
         onNavigateToSubscriptions = onNavigateToSubscriptions,
         onNavigateToNotInterested = onNavigateToNotInterested,
+        onNavigateToBackup = onNavigateToBackup,
         supportsLiveUpdates = ThemePreferences.SUPPORTS_LIVE_UPDATES
     )
 
@@ -570,6 +574,7 @@ fun SettingsScreen(
                 loadLocalSongs = loadLocalSongs,
                 excludedFolderCount = excludedFolders.size,
                 onOpenPage = { page = it },
+                onNavigateToBackup = onNavigateToBackup,
                 onShowAbout = { showAboutDialog = true },
                 onBackClick = onBackClick
             )
@@ -908,6 +913,7 @@ private fun SettingsHub(
     loadLocalSongs: Boolean,
     excludedFolderCount: Int,
     onOpenPage: (SettingsPage) -> Unit,
+    onNavigateToBackup: () -> Unit,
     onShowAbout: () -> Unit,
     onBackClick: () -> Unit
 ) {
@@ -959,6 +965,12 @@ private fun SettingsHub(
         livePlaybackUpdates -> "Playback only"
         else -> "Off"
     }
+
+    // Read on entry rather than held in a flow: Navigation Compose disposes
+    // this destination while the backup screen is on top, so returning from
+    // one re-runs this and the row is current without any plumbing.
+    val backupContext = LocalContext.current
+    val backupValue = remember { lastBackupLine(BackupRepository.lastBackupAt(backupContext)) }
 
     val localLibraryValue = when {
         !loadLocalSongs -> "Off"
@@ -1135,6 +1147,13 @@ private fun SettingsHub(
                             title = "Local library",
                             value = localLibraryValue,
                             onClick = { onOpenPage(SettingsPage.LOCAL_LIBRARY) }
+                        )
+                        SettingsDivider()
+                        SettingsHubRow(
+                            icon = Icons.Rounded.SettingsBackupRestore,
+                            title = "Backup and restore",
+                            value = backupValue,
+                            onClick = onNavigateToBackup
                         )
                         SettingsDivider()
                         SettingsHubRow(

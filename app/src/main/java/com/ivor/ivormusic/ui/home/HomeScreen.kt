@@ -1050,6 +1050,24 @@ fun HomeScreen(
                     addAuthAsNewProfile = true
                     showAuthDialog = true
                 }
+            },
+            onReconnectProfile = {
+                // Same jar wipe as adding an account, for the same reason: the
+                // login page auto-continues as whoever WebView still holds, so
+                // without this a reconnect can silently store the *other*
+                // account's session against this profile.
+                val cookieManager = android.webkit.CookieManager.getInstance()
+                cookieManager.removeAllCookies {
+                    cookieManager.flush()
+                    // False, unlike the add path: the profile already exists
+                    // and is now active, so the session has to land on it
+                    // rather than in a new row. addYouTubeProfileAndSwitch
+                    // cannot match it either - the datasyncId is only known
+                    // after an authenticated call, so it would mint a fresh id
+                    // and orphan this profile's subscriptions and blocklist.
+                    addAuthAsNewProfile = false
+                    showAuthDialog = true
+                }
             }
         )
     }
