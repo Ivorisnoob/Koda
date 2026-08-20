@@ -195,18 +195,6 @@ The fix is a decision followed by a sweep: define the ladder once (screen title,
 
 This is low-risk, high-legibility work with no architectural weight, which makes it a good candidate to fold into the tablet pass, both touch every screen, and doing them in one sweep is much less disruptive than doing them in two.
 
-#### Lyrics that fill as they are sung
-
-Lyrics come from LRCLIB and scroll a line at a time. The line that is playing turns the accent color all at once. The ask is the thing every music app does now: words filling in as they are sung, letter by letter rather than line by line.
-
-**Most of this is already written and it never runs.** `data/LrcLine.kt` carries `contentSpans`, a list of `LrcContentSpan(timeMs, text, durationMs)`. `LyricsRepository.parseLrc` parses Enhanced LRC's `<mm:ss.xx>` word tags into those spans in the same pass as the standard `[mm:ss.xx]` line tags, and back-fills the final span's duration from the next line's start. `ui/player/SyncedLyricsView.kt` branches on `line.contentSpans.isNotEmpty()` and colors each span independently. The word-level path exists end to end. What is missing is a source: LRCLIB's `syncedLyrics` is line-level standard LRC, so `contentSpans` is empty for effectively every song the app fetches, and that branch is dead code.
-
-**So this is a data problem before it is a rendering one**, and there are two honest answers. Either find real word timings - a source that serves Enhanced LRC, or a service carrying a word-level sync - or interpolate them from the line by spreading its duration across its characters. `SyncedLyricsView` refuses the second on purpose and says so in a comment: no "fake" gradient filling, on the grounds that it is more honest to the user. That decision is worth re-taking rather than inheriting, because a sweep that is approximately right reads better than a line that pops, and the players that do this at scale interpolate inside the word anyway. What it must not do is interpolate blindly across a line: one whose last word lands two seconds before the next line begins will finish its sweep early and then sit there, which looks worse than not sweeping at all.
-
-**Even with real spans the current renderer pops rather than fills.** It compares `currentPositionMs >= span.timeMs` and switches a whole word, so the smallest true version of this is a fraction within the active span, not a boolean. Compose takes a `brush` on `SpanStyle`, so the fill can be a gradient with a moving stop across one `Text` rather than a composable per character, which is what keeps it cheap every frame. Worth knowing that the annotated string is already rebuilt on every position tick for the current line, and a per-character version keeping that shape will be rebuilding it per frame.
-
-Two small things to fix while in there: the span style has a dead conditional, where `fontSize` is identical on both branches of `if (isWordPassed)`, and spans are rejoined with a plain `append(" ")`, which does not reproduce the original spacing around punctuation.
-
 ### Playback
 
 #### A genuinely YouTube Music-first catalogue
@@ -301,7 +289,7 @@ Opening those pages on a playlist nobody owns exposed a rule that was being read
 
 **`data/SubscriptionTransfer.kt` is most of the machinery and the right model to copy.** It sniffs by content rather than by extension or MIME type, both of which providers lie about; `read()` recognises a zip by its magic bytes, unpacks it into a scratch `File`, and opens the Room database inside it with SQLite. The NewPipe/PipePipe/Tubular backup archive it already reads for subscriptions is the same archive that holds those apps' playlists, so that path is close to free - though those tables have not been probed the way `subscriptions` and `feed_group` were, and must be before anything is written against them. `ui/video/SubscriptionsManagerScreen.kt` and `HomeViewModel.importSubscriptions` are the shape of the flow, down to handing back a summary of what came across and what did not.
 
-**The line that decides the whole design is whether an export carries YouTube ids or only text.** A NewPipe archive, a Tubular export or a Takeout playlist CSV carries ids or urls, so the import is exact, offline and instant. A Spotify export - Exportify, TuneMyMusic, Soundiiz, all CSV - carries a title, an artist, an album and a duration and nothing else. Turning that into something playable is one search per track, and **a wrong match is worse than a missing one**: search a well-known song on YouTube and the top result is as likely to be a live cut, a cover, a sped-up edit or an hour-long loop as the recording the person meant. Duration is the strongest signal available, the way `LyricsRepository` already leans on it against LRCLIB, and on its own it is not enough.
+**The line that decides the whole design is whether an export carries YouTube ids or only text.** A NewPipe archive, a Tubular export or a Takeout playlist CSV carries ids or urls, so the import is exact, offline and instant. A Spotify export - Exportify, TuneMyMusic, Soundiiz, all CSV - carries a title, an artist, an album and a duration and nothing else. Turning that into something playable is one search per track, and **a wrong match is worse than a missing one**: search a well-known song on YouTube and the top result is as likely to be a live cut, a cover, a sped-up edit or an hour-long loop as the recording the person meant. Duration is the strongest signal available, the way lyrics matching already leans on it across providers, and on its own it is not enough.
 
 So this cannot be a one-tap import that writes straight into the library. It resolves, then shows what it found and what it could not, and lets the user drop or correct before a playlist is created. That is also the only sane place to put the cost: a 200-track export is 200 searches, and they have to be bounded the way `getLocalSubscriptionsFeed` bounds its fetches at `FEED_CONCURRENCY` rather than fired off at once.
 
@@ -437,7 +425,7 @@ The milestones behind us, kept here so the direction of travel is visible.
 
 - Playlist management: create, rename, reorder, and delete, with cover art you pick or the app generates from your palette
 - Saving other people's playlists and albums to the library in both music and video mode, stored as live references rather than copies
-- Synced lyrics from LRCLIB, scrolling in time with playback
+- Multi-provider lyrics with TTML, QRC, Enhanced LRC, line and plain-text fallbacks, plus letter-by-letter highlighting from real word timings
 - In-app video with a personalized feed, chapters, captions, and comments
 - Eight player styles and a 27-palette color system with dynamic color and AMOLED
 - Listening statistics with play charts, streaks, and top artists

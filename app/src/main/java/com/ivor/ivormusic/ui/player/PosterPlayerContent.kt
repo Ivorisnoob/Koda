@@ -286,6 +286,7 @@ fun PosterPlayerSheetContent(
                             SyncedLyricsView(
                                 lyricsResult = lyricsResult,
                                 currentPositionMs = progress,
+                                isPlaying = isPlaying,
                                 onSeekTo = { viewModel.seekTo(it) },
                                 primaryColor = glyph,
                                 onSurfaceColor = glyph.copy(alpha = 0.9f),

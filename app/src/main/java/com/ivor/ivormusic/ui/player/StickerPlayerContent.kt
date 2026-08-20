@@ -274,6 +274,7 @@ fun StickerPlayerSheetContent(
                                     SyncedLyricsView(
                                         lyricsResult = lyricsResult,
                                         currentPositionMs = progress,
+                                        isPlaying = isPlaying,
                                         onSeekTo = { viewModel.seekTo(it) },
                                         primaryColor = accent,
                                         onSurfaceColor = ink,

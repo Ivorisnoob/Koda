@@ -427,6 +427,7 @@ private fun GestureNowPlayingView(
                                     SyncedLyricsView(
                                         lyricsResult = lyricsResult,
                                         currentPositionMs = progress,
+                                        isPlaying = isPlaying,
                                         onSeekTo = onSeekTo,
                                         primaryColor = primaryColor,
                                         onSurfaceColor = onSurfaceColor,

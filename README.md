@@ -95,7 +95,7 @@ On Android 11 specifically, wallpaper-based dynamic color is unavailable, since 
 - **Like tracks straight from the player.** Liked songs appear immediately and are stored locally, no login required.
 - **Sleep timer** in all eight player styles, each in its own idiom, with a live countdown and a visible armed state. It lives with playback rather than the screen, so leaving the app does not cancel it. There is a duration mode that fades out over five seconds rather than cutting the audio dead, and an **end of this track** mode.
 - **Library sort that persists** across launches, including **Most played** and **Recently added**, each showing what it sorted on ("12 plays", "3d ago") so the order never reads as arbitrary.
-- **Synced lyrics** fetched from LRCLIB, scrolling in time with playback.
+- **Multi-provider lyrics** with word-, line-, and plain-text fallbacks. Real word timings render as smooth letter-by-letter highlighting in every player style.
 - **Listening statistics**: songs played, artists explored, liked-song count, top artist, top songs and artists, daily / weekly / monthly play charts, a listening streak, and recent searches.
 - **Local audio playback** with MediaStore scanning, per-folder exclusion, and a high-compatibility scan mode for devices where MediaStore misses files.
 - **Last-played song restoration** so the player comes back where you left it.
@@ -420,7 +420,7 @@ app/src/main/java/com/ivor/ivormusic/
 │   ├── NotInterestedActions # Local hide plus best-effort account feedback
 │   ├── RecommendationEngine # Local taste profile and queue continuation
 │   ├── StatsRepository      # Listening statistics
-│   ├── LyricsRepository     # Synced lyrics (LRCLIB)
+│   ├── LyricsRepository     # Multi-provider timed and plain lyrics
 │   ├── UpdateRepository     # In-app updates from GitHub Releases
 │   ├── SessionManager       # The active profile's session cookies
 │   ├── ProfileManager       # Profile roster: YouTube accounts and local ones
