@@ -57,6 +57,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -104,7 +105,6 @@ import com.ivor.ivormusic.data.TileScoreStore
 import com.ivor.ivormusic.ui.components.SongArtwork
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
-import kotlinx.coroutines.withFrameNanos
 
 /**
  * Tiles - the rhythm board.
@@ -820,7 +820,11 @@ private fun TilesBoard(
     }
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-        val boardHeightPx = with(density) { maxHeight.toPx() }
+        // Read out here rather than inside the Box below: BoxWithConstraintsScope
+        // extends BoxScope, so the inner Box's receiver shadows this one and
+        // `maxHeight` stops resolving against an implicit receiver.
+        val boardHeight = maxHeight
+        val boardHeightPx = with(density) { boardHeight.toPx() }
         val boardWidthPx = with(density) { maxWidth.toPx() }
         val laneWidthPx = boardWidthPx / TILE_LANES
         val hitLineY = boardHeightPx * HIT_LINE_FRACTION
@@ -978,7 +982,7 @@ private fun TilesBoard(
                     // Coerced because a short board (landscape, a small phone)
                     // puts the line within 64dp of the top, and a negative
                     // padding is a crash rather than a layout.
-                    .padding(top = (maxHeight * HIT_LINE_FRACTION - 64.dp).coerceAtLeast(0.dp))
+                    .padding(top = (boardHeight * HIT_LINE_FRACTION - 64.dp).coerceAtLeast(0.dp))
             )
 
             if (!isPlaying) {
