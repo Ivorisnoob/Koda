@@ -426,6 +426,7 @@ The milestones behind us, kept here so the direction of travel is visible.
 - Playlist management: create, rename, reorder, and delete, with cover art you pick or the app generates from your palette
 - Saving other people's playlists and albums to the library in both music and video mode, stored as live references rather than copies
 - Multi-provider lyrics with TTML, QRC, Enhanced LRC, line and plain-text fallbacks, plus letter-by-letter highlighting from real word timings
+- Full-height expanded music players on Android 11 and 12, measured from the edge-to-edge window rather than the inset-excluding resource configuration
 - In-app video with a personalized feed, chapters, captions, and comments
 - Eight player styles and a 27-palette color system with dynamic color and AMOLED
 - Listening statistics with play charts, streaks, and top artists

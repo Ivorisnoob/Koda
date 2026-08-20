@@ -23,8 +23,8 @@ import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
@@ -88,9 +88,21 @@ fun ExpandablePlayer(
         if (!isExpanded) styleWheel.dismiss()
     }
 
-    val configuration = LocalConfiguration.current
-    val screenHeight = configuration.screenHeightDp.dp
-    val screenWidth = configuration.screenWidthDp.dp
+    // Configuration.screenHeightDp/screenWidthDp exclude the status and
+    // navigation bars on older Android releases even though enableEdgeToEdge
+    // makes our Compose container cover them. A bottom-aligned surface with
+    // that shorter height therefore leaves both inset heights exposed at the
+    // top on Android 11/12. The window container is the space this overlay
+    // actually has to fill.
+    //
+    // Both axes come from it, not just the height: the width is how far the
+    // dismiss gesture throws the collapsed pill, and in landscape (or on a
+    // device that keeps its bar on the side) it is short by the same inset.
+    // VideoPlayerOverlay solves the same problem with BoxWithConstraints; here
+    // the measurement is needed above the layout that would provide it.
+    val windowSize = LocalWindowInfo.current.containerDpSize
+    val screenHeight = windowSize.height
+    val screenWidth = windowSize.width
     val density = LocalDensity.current
     val bottomWindowInsets = WindowInsets.navigationBars
     val bottomInset = with(density) { bottomWindowInsets.getBottom(this).toDp() }
