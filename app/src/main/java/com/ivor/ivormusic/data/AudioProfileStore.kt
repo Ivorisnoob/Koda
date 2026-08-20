@@ -108,6 +108,20 @@ class AudioProfileStore(context: Context) {
         loaded()
     }
 
+    /**
+     * Re-read the file, picking up profiles written by another instance.
+     *
+     * The map is loaded once and kept, which is right for the player service
+     * that also writes it - but every other holder news up its own store (there
+     * is no DI here), and the analysis for the track playing right now is
+     * normally written *after* a reader has already loaded. Without this, a
+     * consumer that starts before the profile lands never sees it at all.
+     */
+    suspend fun reload() {
+        mutex.withLock { cache = null }
+        loaded()
+    }
+
     private companion object {
         const val TAG = "AudioProfileStore"
         const val FILE_NAME = "audio_profiles.json"

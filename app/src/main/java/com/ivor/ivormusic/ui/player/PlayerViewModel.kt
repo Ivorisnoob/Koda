@@ -1039,6 +1039,18 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         _progress.value = position
     }
 
+    /**
+     * Playback position right now, for callers that cannot wait for [progress].
+     *
+     * [progress] ticks once a second, which is right for a seek bar and useless
+     * for anything drawn against the beat. `MediaController` extrapolates
+     * locally between the session's own updates, so reading it per frame is
+     * both cheap and smooth. Falls back to the last tick before the controller
+     * connects.
+     */
+    fun playbackPositionMs(): Long =
+        controller?.currentPosition?.coerceAtLeast(0L) ?: _progress.value
+
     // --- Sleep timer ---
     //
     // Owned by MusicService, not by this ViewModel. The timer used to be a

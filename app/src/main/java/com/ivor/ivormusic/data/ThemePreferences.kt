@@ -379,6 +379,53 @@ class ThemePreferences(context: Context) {
                 ?: VIDEO_QUALITY_AUTO
 
         /**
+         * The Tiles player's own two settings, set from its tuning sheet rather
+         * than the Settings screen and read fresh by it, the same trade
+         * [KEY_DOWNLOAD_VIDEO_QUALITY] makes: they only mean anything inside
+         * one player style, and a Settings row for them would be a control the
+         * reader has no context for.
+         *
+         * [KEY_TILES_SYNC_OFFSET] is milliseconds of audio output latency, and
+         * it is a per-device physical fact rather than a taste: the position
+         * the player reports is what the decoder has produced, and the sound
+         * reaches the ear some milliseconds later. Judging a tap against the
+         * raw position marks a player who is exactly in time as late by that
+         * much, on every single tile. It is the difference between the board
+         * feeling tight and feeling broken, so it is adjustable and it is
+         * remembered.
+         */
+        private const val KEY_TILES_DIFFICULTY = "tiles_difficulty"
+        private const val KEY_TILES_SYNC_OFFSET = "tiles_sync_offset_ms"
+
+        /** Sensible bounds for the sync slider; well past any real device latency. */
+        const val TILES_SYNC_OFFSET_MIN_MS = -150
+        const val TILES_SYNC_OFFSET_MAX_MS = 400
+
+        fun currentTilesDifficulty(context: Context): String? =
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getString(KEY_TILES_DIFFICULTY, null)
+
+        fun setTilesDifficulty(context: Context, key: String) {
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .edit().putString(KEY_TILES_DIFFICULTY, key).apply()
+        }
+
+        fun currentTilesSyncOffsetMs(context: Context): Int =
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getInt(KEY_TILES_SYNC_OFFSET, 0)
+                .coerceIn(TILES_SYNC_OFFSET_MIN_MS, TILES_SYNC_OFFSET_MAX_MS)
+
+        fun setTilesSyncOffsetMs(context: Context, offsetMs: Int) {
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .edit()
+                .putInt(
+                    KEY_TILES_SYNC_OFFSET,
+                    offsetMs.coerceIn(TILES_SYNC_OFFSET_MIN_MS, TILES_SYNC_OFFSET_MAX_MS)
+                )
+                .apply()
+        }
+
+        /**
          * Static fresh read of the active palette id, for the playlist cover
          * generator. It runs when a playlist is created or renamed, long after
          * the Settings screen changed the palette through its own
@@ -1195,5 +1242,7 @@ enum class PlayerStyle {
     /** Living hero shape that cycles organic cuts while playing */
     MORPH,
     /** Rotary instrument: a tick-ring dial spun to scrub */
-    DIAL
+    DIAL,
+    /** Rhythm board: four lanes of tiles charted from the track's own analysis */
+    TILES
 }

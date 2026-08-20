@@ -437,7 +437,7 @@ The milestones behind us, kept here so the direction of travel is visible.
 - Saving other people's playlists and albums to the library in both music and video mode, stored as live references rather than copies
 - Synced lyrics from LRCLIB, scrolling in time with playback
 - In-app video with a personalized feed, chapters, captions, and comments
-- Eight player styles and a 27-palette color system with dynamic color and AMOLED
+- Nine player styles and a 27-palette color system with dynamic color and AMOLED
 - Listening statistics with play charts, streaks, and top artists
 - Offline downloads for music and video, written to the system Downloads folder
 - Live streams with live chat, including a full-screen player for vertical broadcasts
@@ -464,10 +464,16 @@ The milestones behind us, kept here so the direction of travel is visible.
 - Swipe on the song title and artist to change tracks, in every player style, on one shared gesture contract that the album-cover swipe now also runs on
 - Genuine two-player crossfade: configurable equal-power overlap on natural changes and a short 500ms overlap on manual skips, shared by app controls, queue taps, Bluetooth and Android Auto
 - AutoMix transition planner: transient-aware beat grids at both ends, pickup-preserving downbeat alignment, bounded tempo correction, separate intro/outro harmonic checks, and a clock-verified two-player handoff that abandons unsafe overlaps
+- Tiles, a four-lane rhythm player style charted from the tempo, downbeat and key the app already measures for AutoMix, with holds, bar-numbered downbeat tiles, per-track best scores and a sync calibration
 
 Crossfade alternates two fully configured ExoPlayers while keeping one logical queue visible through the media session. The standby must reach `STATE_READY` before either volume moves; a failed resolution or buffer deadline keeps the outgoing track alive and falls back to a short ramp only when overlap is impossible. Both players share audio focus, the pinned audio-session id, loudness correction and ducking. Cancellation is an abort, never a swap, and shuffled playback asks the player for its real next index instead of assuming timeline order.
 
 The song-information swipe is worth recording for what the work actually turned out to be. The request read as "add the gesture to one more area", and the survey found something else: **the swipe had been hand-rolled per style, and three of the eight had never got one.** Classic, Bento and Dial had prev/next buttons and nothing else, Morph had drifted to a 100dp threshold against everyone else's 90dp, and there was no single place that would have made any of that visible. So the fix was a shared contract (`ui/player/SwipeToSkip.kt`: one `rememberSwipeToSkip`, `Modifier.swipeToSkip`, `Modifier.swipeToSkipFollow`) that the artwork gestures were migrated onto, rather than a ninth copy of the same twenty lines. **A rule that lives only in prose is a rule that will be missed by whoever adds the next style**; this one is now a function it is easier to call than to reimplement.
+
+Tiles is worth recording for the opposite reason: **almost none of it was new work.** A rhythm game needs a beat map, and `AudioProfiler` had been writing one for every track played since AutoMix shipped - tempo and its confidence, the first beat and downbeat, the same measured independently at the outro, the key, where the audio starts and where it fades. All of that existed to decide how to overlap two songs, and nothing read it anywhere else. `data/TileChart.kt` turns it into a chart with no decode, no request and no new analysis, and the outro anchor earns its keep a second time: two independently measured downbeats a whole track apart are a tempo fit, which is what keeps the last minute of a long song on the grid instead of a few hundred milliseconds adrift.
+
+Two decisions are the load-bearing ones. **Playback is never a consequence of play** - a miss costs score and the streak and nothing else - because Magic Tiles' game-over is right for a game and wrong for the player somebody keeps their music in. And **a chart is never faked**: a track with no confident tempo says so and offers Freestyle as an explicit choice, because tiles that do not match the music read as the app being broken rather than as a track it has not measured yet. The corollaries are all of the same shape: seeking past a passage skips those tiles rather than missing them, pausing abandons a held tile rather than breaking it, and the run survives the player being collapsed.
+
 
 Two things stayed deliberately un-unified. **Sticker keeps its peel** - the art is thrown off the canvas and the next one slapped on, which is that style's identity and is not a spring-back - and **Gesture's title swipe steps the queue** rather than calling the ViewModel's skip, because its carousel follows `currentIndex` and would otherwise disagree with the gesture that moved it. Same direction, same commit, different animation. The mini player was left alone: horizontal there already means dismiss, and splitting one 64dp bar between dismiss and skip is a coin flip every time.
 

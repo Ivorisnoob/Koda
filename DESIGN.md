@@ -197,9 +197,9 @@ Two families, each doing a specific job:
 
 ---
 
-## Eight players, one design language
+## Nine players, one design language
 
-The player styles are the clearest demonstration that Expressive is a construction material rather than a coat of paint. Each is an independent layout (roughly 11,900 lines across the player package), and none of them re-implements theming, motion, or shape. They all draw from the same system.
+The player styles are the clearest demonstration that Expressive is a construction material rather than a coat of paint. Each is an independent layout (roughly 14,100 lines across the player package), and none of them re-implements theming, motion, or shape. They all draw from the same system.
 
 | Style | Idea |
 |---|---|
@@ -211,8 +211,9 @@ The player styles are the clearest demonstration that Expressive is a constructi
 | Sticker | Die-cut sticker with drag, peel, squash-and-stretch |
 | Morph | Living hero shape cycling organic cuts while playing |
 | Dial | Rotary tick-ring instrument spun to scrub |
+| Tiles | Four-lane rhythm board charted from the track's own tempo analysis |
 
-Eight visually distinct players share one theme, one motion scheme, and one shape library. That is the point of a design system, and it is why adding a ninth style is a contained piece of work while replacing the design language is not.
+Nine visually distinct players share one theme, one motion scheme, and one shape library. That is the point of a design system, and it is why adding a tenth style is a contained piece of work while replacing the design language is not. Tiles is the clearest case: it is a playable rhythm board, and it still needed no color, no motion curve and no shape of its own - it is set in the Editorial dress, two flat tones and a serif, because that dress was already there to be used.
 
 **The same reasoning runs the other way, and `ui/channel/CreatorHeader.kt` is where it shows.** A creator's channel page in video mode and their artist page in music mode are two screens over genuinely different content - an upload feed and a discography - so they are two screens. But they are one person, and a viewer arriving from either mode should not feel like they arrived at two different people, so the identity is one shared component: banner, avatar, verified tick, counts, and a slot the two screens fill differently (Subscribe and Share on one side, Play, Shuffle and Radio on the other). **Share the part that must not differ; do not share the part that genuinely does.** Two headers maintained separately drift until the same name has two avatars and two follower counts, and nothing fails when they do.
 
@@ -227,7 +228,7 @@ If Koda's look is not to your taste, a lot is already adjustable in Settings bef
 - **Color palette:** wallpaper-based dynamic color, or any of the 29 fixed palettes
 - **Album Art Colors:** recolor the expanded player from the current cover art
 - **Ambient artwork background** and the optional chromatic-mist effect
-- **Player style:** eight full layouts, switchable from the style wheel
+- **Player style:** nine full layouts, switchable from the style wheel
 - **Home mode toggle:** reshape Home, Search, and Library between music and video
 
 Between palettes, theme modes, and player styles, that is a very large number of distinct looks without touching the design language underneath.
@@ -240,7 +241,7 @@ Between palettes, theme modes, and player styles, that is a very large number of
 
 The reasons are practical, not stubborn:
 
-1. **It is not a theme, it is the app.** 49 files use Expressive-only APIs directly. Replacing the design language means rewriting every screen, both players, all eight player styles, both music homes, onboarding, and settings. Roughly 60,000 lines of UI code.
+1. **It is not a theme, it is the app.** 51 files use Expressive-only APIs directly. Replacing the design language means rewriting every screen, both players, all nine player styles, both music homes, onboarding, and settings. Roughly 60,000 lines of UI code.
 2. **Two design languages means two apps.** Every future feature would need building twice, and every bug would need reproducing twice. In a project this size that is not a sustainable trade.
 3. **The design is the differentiator.** There are many capable NewPipe-based players. What Koda offers on top of the same extraction stack is this interface. Making it generic removes the reason to choose it.
 

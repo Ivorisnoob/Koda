@@ -445,6 +445,17 @@ fun ExpandablePlayer(
                                     onArtistClick = onArtistClick
                                 )
                             }
+                            PlayerStyle.TILES -> {
+                                TilesPlayerSheetContent(
+                                    viewModel = viewModel,
+                                    ambientBackground = ambientBackground,
+                                    onCollapse = { onExpandChange(false) },
+                                    onLoadMore = {
+                                        viewModel.loadMoreRecommendations()
+                                    },
+                                    onArtistClick = onArtistClick
+                                )
+                            }
                         }
                         }
                         }

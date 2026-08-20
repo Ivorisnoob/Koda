@@ -26,6 +26,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Animation
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.Interests
 import androidx.compose.material.icons.rounded.Newspaper
@@ -110,6 +111,10 @@ internal val playerStyleCatalog: List<PlayerStyleInfo> = listOf(
     PlayerStyleInfo(
         PlayerStyle.DIAL, "Dial", "Rotary ring, spin to scrub",
         Icons.Rounded.RadioButtonChecked, MaterialShapes.Sunny
+    ),
+    PlayerStyleInfo(
+        PlayerStyle.TILES, "Tiles", "Play the beat on four lanes",
+        Icons.Rounded.GraphicEq, MaterialShapes.Cookie9Sided
     )
 )
 
@@ -463,6 +468,45 @@ private fun PlayerStylePreview(style: PlayerStyle, modifier: Modifier = Modifier
                     color = art,
                     modifier = Modifier.fillMaxSize(0.9f)
                 )
+            }
+
+            // Four lanes with tiles mid-fall and the line they are aimed at.
+            PlayerStyle.TILES -> Row(
+                modifier = Modifier.fillMaxSize(),
+                horizontalArrangement = Arrangement.spacedBy(3.dp)
+            ) {
+                // Staggered so the preview reads as falling rather than as a
+                // static grid; the third lane carries the long hold.
+                val drops = listOf(0.10f, 0.45f, 0.24f, 0.62f)
+                val lengths = listOf(0.18f, 0.18f, 0.34f, 0.18f)
+                drops.forEachIndexed { index, drop ->
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .clip(RoundedCornerShape(3.dp))
+                            .background(soft.copy(alpha = 0.22f))
+                    ) {
+                        Column(modifier = Modifier.fillMaxSize()) {
+                            Spacer(modifier = Modifier.weight(drop))
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .weight(lengths[index])
+                                    .clip(RoundedCornerShape(3.dp))
+                                    .background(art)
+                            )
+                            Spacer(modifier = Modifier.weight(1f - drop - lengths[index]))
+                        }
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .fillMaxWidth()
+                                .height(2.dp)
+                                .background(line)
+                        )
+                    }
+                }
             }
 
             // Scrub ring with its handle.
