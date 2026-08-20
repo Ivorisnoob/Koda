@@ -37,3 +37,11 @@
 -dontwarn com.yausername.**
 -keep class org.apache.commons.** { *; }
 -dontwarn org.apache.commons.**
+
+# jAudioTagger reads local lyric tags. Its tag bodies are instantiated by
+# identifier and its desktop-only artwork helpers are never used on Android.
+-keep class org.jaudiotagger.tag.id3.framebody.** { *; }
+-keep class org.jaudiotagger.tag.datatype.** { *; }
+-dontwarn java.awt.**
+-dontwarn javax.imageio.**
+-dontwarn javax.swing.**

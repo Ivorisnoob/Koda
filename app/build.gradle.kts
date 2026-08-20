@@ -137,6 +137,9 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.androidx.security.crypto)
     implementation(libs.kotlinx.coroutines.guava)
+    // Local files may carry lyrics in ID3, Vorbis/FLAC, MP4 and other tag
+    // formats. Keep that container-specific parsing out of the player.
+    implementation(libs.jaudiotagger)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

@@ -14,13 +14,23 @@ import java.util.LinkedHashMap
 
 /**
  * Fetches the best available lyric format without coupling the player to a
- * particular remote service. Word-timed providers are tried first, followed
- * by line-synced and plain-text fallbacks.
+ * particular remote service.
+ *
+ * Lyrics that travel with a device file are tried before anything on the
+ * network and win outright: they are what the user deliberately put next to
+ * that track, they are the only ones that work offline, and matching a local
+ * file to a provider by title and artist is exactly the guess that fails on
+ * the thinly-tagged rips these are usually paired with. Only then do the
+ * word-timed providers run, followed by line-synced and plain-text fallbacks.
+ *
+ * Local-only mode turns off the providers, not the local read - see
+ * [fetchLyrics]'s `allowRemote`.
  */
 class LyricsRepository internal constructor(
     private val http: LyricsHttpClient = LyricsHttpClient(),
     private val wordProviders: List<RemoteLyricsProvider> = defaultWordLyricsProviders(http),
-    private val fallbackProviders: List<RemoteLyricsProvider> = defaultFallbackLyricsProviders(http)
+    private val fallbackProviders: List<RemoteLyricsProvider> = defaultFallbackLyricsProviders(http),
+    private val localLyricsSource: LocalLyricsSource = LocalLyricsSource()
 ) {
     private companion object {
         const val TAG = "LyricsRepository"
@@ -36,21 +46,16 @@ class LyricsRepository internal constructor(
         }
     )
 
-    suspend fun fetchLyrics(
-        songId: String,
-        title: String,
-        artist: String,
-        album: String = "",
-        durationMs: Long
-    ): LyricsResult = withContext(Dispatchers.IO) {
-        if (title.isBlank()) return@withContext LyricsResult.NotFound
+    suspend fun fetchLyrics(song: Song, allowRemote: Boolean = true): LyricsResult = withContext(Dispatchers.IO) {
+        localLyricsSource.find(song)?.let { return@withContext it }
+        if (!allowRemote || song.title.isBlank()) return@withContext LyricsResult.NotFound
 
         val request = LyricsRequest(
-            songId = songId,
-            title = title.trim(),
-            artist = artist.trim(),
-            album = album.trim(),
-            durationMs = durationMs.coerceAtLeast(0L)
+            songId = song.id,
+            title = song.title.trim(),
+            artist = song.artist.trim(),
+            album = song.album.trim(),
+            durationMs = song.duration.coerceAtLeast(0L)
         )
         val key = request.cacheKey()
         cache[key]?.let { return@withContext it }
