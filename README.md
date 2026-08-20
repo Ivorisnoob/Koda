@@ -95,7 +95,7 @@ On Android 11 specifically, wallpaper-based dynamic color is unavailable, since 
 - **Like tracks straight from the player.** Liked songs appear immediately and are stored locally, no login required.
 - **Sleep timer** in all eight player styles, each in its own idiom, with a live countdown and a visible armed state. It lives with playback rather than the screen, so leaving the app does not cancel it. There is a duration mode that fades out over five seconds rather than cutting the audio dead, and an **end of this track** mode.
 - **Library sort that persists** across launches, including **Most played** and **Recently added**, each showing what it sorted on ("12 plays", "3d ago") so the order never reads as arbitrary.
-- **Synced lyrics** fetched from LRCLIB, scrolling in time with playback.
+- **Multi-provider lyrics** with word-, line-, and plain-text fallbacks. Real word timings render as smooth letter-by-letter highlighting in every player style.
 - **Listening statistics**: songs played, artists explored, liked-song count, top artist, top songs and artists, daily / weekly / monthly play charts, a listening streak, and recent searches.
 - **Local audio playback** with MediaStore scanning, per-folder exclusion, and a high-compatibility scan mode for devices where MediaStore misses files.
 - **Last-played song restoration** so the player comes back where you left it.
@@ -209,6 +209,9 @@ Koda's interface is the product, not a wrapper around one. The whole app is cons
 - **Quality is per-network.** Separate Wi-Fi and mobile-data settings for video and for music, applied automatically based on what you are connected to.
 - **Music streaming quality** of its own: High, Normal, or Data Saver.
 - **Destructive actions use the theme's error color**, so they read correctly across all palettes and AMOLED rather than being a hardcoded red.
+- **Backup and restore the whole install** to a single file you keep wherever you like. It covers both modes: the music *and* video playlists you built and the artwork you chose for them, liked songs, playlists and albums you saved from either mode, listening statistics, watch and search history, the channels you follow and their groups, everything you asked not to be recommended, and every setting down to your palette, player style and per-network quality. Followed channels and hidden recommendations are stored per profile and come back that way rather than being flattened onto one identity. It works offline and signed out, and takes nothing from the network.
+- **A backup carries no sign-in**, so it is safe to keep in cloud storage or mail to yourself. Accounts come back by name asking to be signed into again, and any account already signed in on the device stays that way. Downloaded audio and video are not in it either - those files live in Downloads/Koda and survive an uninstall on their own.
+- Restoring shows you what is in the file - and what it will replace - before anything is touched, and Koda restarts once when it is done. This is a different thing from Android's own auto-backup, which is opaque, tied to a Google account, and cannot move your data to a phone you are holding.
 
 ### Authentication
 
@@ -417,7 +420,7 @@ app/src/main/java/com/ivor/ivormusic/
 │   ├── NotInterestedActions # Local hide plus best-effort account feedback
 │   ├── RecommendationEngine # Local taste profile and queue continuation
 │   ├── StatsRepository      # Listening statistics
-│   ├── LyricsRepository     # Synced lyrics (LRCLIB)
+│   ├── LyricsRepository     # Multi-provider timed and plain lyrics
 │   ├── UpdateRepository     # In-app updates from GitHub Releases
 │   ├── SessionManager       # The active profile's session cookies
 │   ├── ProfileManager       # Profile roster: YouTube accounts and local ones

@@ -25,10 +25,14 @@ enum class ProfileKind { YOUTUBE, LOCAL }
  * [id] is a device-local UUID and never changes, because it keys this
  * profile's stored cookies and its feed-shaping data. [datasyncId] is
  * YouTube's own account identifier (`responseContext.mainAppWebResponseContext
- * .datasyncId`, verified August 2026) and is filled in once an authenticated
- * call has answered; it exists only to recognise that a re-added account is
- * one already in the roster, so adding it again updates rather than
- * duplicates.
+ * .datasyncId`, verified August 2026), filled in by
+ * [YouTubeRepository.fetchAccountInfo] once an authenticated call has
+ * answered. It exists to recognise that an account is one already in the
+ * roster, so signing back into it updates rather than duplicates - and so a
+ * restored backup can tell that an account in the file is the one this device
+ * is already signed into. **It is null until that first authenticated call
+ * lands**, so anything matching on it needs a path for null rather than
+ * assuming every YouTube profile has one.
  */
 data class Profile(
     val id: String,
@@ -223,12 +227,51 @@ class ProfileManager(context: Context) {
         )
     }
 
-    /** Point the app at another profile. Invalidation is [AccountSwitcher]'s job. */
-    fun setActive(id: String) {
+    /**
+     * Add profiles read out of a backup, keeping the ids they arrived with,
+     * and drop [dropping] in the same write.
+     *
+     * The one place a profile is created with an id rather than a fresh UUID,
+     * and it has to be: [profileScopedKey] suffixes a profile's local
+     * subscriptions and blocklist with its id, so a restored profile that got
+     * a new one would be an identity with none of its own data.
+     *
+     * Anything whose id is already in the roster is skipped rather than
+     * overwritten, so this can never take a live session away from a row.
+     * [dropping] exists for one case that [BackupRepository] decides on - a
+     * fresh install's untouched default profile, which would otherwise sit
+     * beside the restored one under the same name - and is applied in the same
+     * write so the roster is never briefly wrong. It is refused if it would
+     * empty the roster, since there is always an identity.
+     */
+    fun restoreProfiles(restored: List<Profile>, dropping: Set<String> = emptySet()) {
+        val current = sharedProfiles!!.value
+        val known = current.map { it.id }.toSet()
+        val additions = restored.filterNot { it.id in known }.distinctBy { it.id }
+        val next = (current + additions).filterNot { it.id in dropping }
+        if (next.isEmpty() || next == current) return
+        if (dropping.isNotEmpty()) {
+            val editor = prefs.edit()
+            dropping.forEach { editor.remove(keyCookies(it)) }
+            editor.commit()
+        }
+        saveProfiles(next, commitNow = true)
+    }
+
+    /**
+     * Point the app at another profile. Invalidation is [AccountSwitcher]'s job.
+     *
+     * [commitNow] forces the write to disk before returning, which only a
+     * restore needs: it kills the process on purpose, and an `apply()` still
+     * queued when it does is lost, leaving the restored data scoped to a
+     * profile the app comes back on the wrong side of.
+     */
+    fun setActive(id: String, commitNow: Boolean = false) {
         if (get(id) == null) return
         val leaving = sharedActiveId!!.value
         if (leaving.isNotBlank() && leaving != id) sharedPreviousId.value = leaving
-        prefs.edit().putString(KEY_ACTIVE_PROFILE, id).apply()
+        val editor = prefs.edit().putString(KEY_ACTIVE_PROFILE, id)
+        if (commitNow) editor.commit() else editor.apply()
         sharedActiveId!!.value = id
     }
 
@@ -306,10 +349,11 @@ class ProfileManager(context: Context) {
         editor.apply()
     }
 
-    private fun saveProfiles(list: List<Profile>) {
+    private fun saveProfiles(list: List<Profile>, commitNow: Boolean = false) {
         val array = JSONArray()
         list.forEach { array.put(it.toJson()) }
-        prefs.edit().putString(KEY_PROFILES, array.toString()).apply()
+        val editor = prefs.edit().putString(KEY_PROFILES, array.toString())
+        if (commitNow) editor.commit() else editor.apply()
         sharedProfiles!!.value = list
     }
 

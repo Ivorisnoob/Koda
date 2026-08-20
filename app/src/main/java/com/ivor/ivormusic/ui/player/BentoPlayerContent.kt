@@ -292,6 +292,7 @@ fun BentoPlayerSheetContent(
                                     SyncedLyricsView(
                                         lyricsResult = lyricsResult,
                                         currentPositionMs = progress,
+                                        isPlaying = isPlaying,
                                         onSeekTo = { viewModel.seekTo(it) },
                                         primaryColor = MaterialTheme.colorScheme.primary,
                                         onSurfaceColor = onTile,

@@ -120,6 +120,22 @@ class SessionManager(context: Context) {
         profileManager.updateIdentity(activeId(), name = name)
     }
 
+    /**
+     * Record YouTube's own identifier for the account behind the active
+     * profile.
+     *
+     * Nothing wrote this until backups needed it, which meant
+     * [ProfileManager.addYouTubeProfile]'s dedupe by [Profile.datasyncId] had
+     * never once fired: signing back into an account already in the roster
+     * added a second identical row instead of repairing the first, and a
+     * restored backup could not tell that an account on the file was the one
+     * this device is already signed into.
+     */
+    fun saveDatasyncId(datasyncId: String) {
+        if (datasyncId.isBlank()) return
+        profileManager.updateIdentity(activeId(), datasyncId = datasyncId)
+    }
+
     fun getUserName(): String? = profileManager.active().name.takeIf { !profileManager.active().isLocal }
 
     private fun activeId(): String = profileManager.active().id

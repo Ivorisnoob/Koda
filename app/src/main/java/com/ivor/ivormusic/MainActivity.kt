@@ -654,6 +654,7 @@ fun MusicApp(
                     onNavigateToColorPalette = { navController.navigate("color_palette") },
                     onNavigateToSubscriptions = { navController.navigate("subscriptions") },
                     onNavigateToNotInterested = { navController.navigate("not_interested") },
+                    onNavigateToBackup = { navController.navigate("backup") },
                     loadLocalSongs = loadLocalSongs,
                     onLoadLocalSongsToggle = onLoadLocalSongsToggle,
                     ambientBackground = ambientBackground,
@@ -760,6 +761,17 @@ fun MusicApp(
                     // ask from here has to go back for it rather than opening a
                     // second WebView on top of a settings sub-screen.
                     onLoginClick = { navController.popBackStack("home", inclusive = false) }
+                )
+            }
+            composable(
+                route = "backup",
+                enterTransition = { slideInHorizontally(initialOffsetX = { it }) + fadeIn() },
+                exitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut() },
+                popEnterTransition = { slideInHorizontally(initialOffsetX = { -it / 3 }) + fadeIn() },
+                popExitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut() }
+            ) {
+                com.ivor.ivormusic.ui.settings.BackupScreen(
+                    onBack = { navController.popBackStack() }
                 )
             }
             composable(

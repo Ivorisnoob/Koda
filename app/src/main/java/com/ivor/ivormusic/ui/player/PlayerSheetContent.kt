@@ -385,6 +385,7 @@ private fun ExpressiveNowPlayingView(
                     SyncedLyricsView(
                         lyricsResult = lyricsResult,
                         currentPositionMs = progress,
+                        isPlaying = isPlaying,
                         onSeekTo = onSeekTo,
                         primaryColor = primaryColor,
                         onSurfaceColor = onSurfaceColor,

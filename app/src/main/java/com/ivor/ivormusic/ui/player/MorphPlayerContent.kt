@@ -266,6 +266,7 @@ fun MorphPlayerSheetContent(
                                     SyncedLyricsView(
                                         lyricsResult = lyricsResult,
                                         currentPositionMs = progress,
+                                        isPlaying = isPlaying,
                                         onSeekTo = { viewModel.seekTo(it) },
                                         primaryColor = primaryColor,
                                         onSurfaceColor = onSurfaceColor,

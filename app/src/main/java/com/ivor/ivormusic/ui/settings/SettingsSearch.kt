@@ -43,7 +43,9 @@ import androidx.compose.material.icons.rounded.NotInterested
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.Save
+import androidx.compose.material.icons.rounded.Restore
 import androidx.compose.material.icons.rounded.Security
+import androidx.compose.material.icons.rounded.SettingsBackupRestore
 import androidx.compose.material.icons.rounded.SignalCellularAlt
 import androidx.compose.material.icons.rounded.Subscriptions
 import androidx.compose.material.icons.rounded.ToggleOn
@@ -149,6 +151,7 @@ internal fun buildSettingsSearchIndex(
     onNavigateToColorPalette: () -> Unit,
     onNavigateToSubscriptions: () -> Unit,
     onNavigateToNotInterested: () -> Unit,
+    onNavigateToBackup: () -> Unit,
     supportsLiveUpdates: Boolean
 ): List<SettingsSearchEntry> = buildList {
     fun entry(
@@ -345,6 +348,31 @@ internal fun buildSettingsSearchIndex(
         "clear_cache", "Clear Cache", "Storage and cache", Icons.Rounded.FolderOff,
         listOf("clear", "delete", "free space", "wipe", "clean", "reset storage")
     ) { onOpenPage(SettingsPage.STORAGE) }
+
+    // Backup and restore. Three entries rather than one, because people arrive
+    // at this from opposite directions - "back up" before a new phone, and
+    // "restore" or "transfer" after one - and neither word finds the other.
+    entry(
+        "backup", "Create a backup", "Backup and restore", Icons.Rounded.SettingsBackupRestore,
+        listOf(
+            "backup", "back up", "export", "save everything", "new phone",
+            "transfer", "move", "migrate", "copy"
+        )
+    ) { onNavigateToBackup() }
+    entry(
+        "restore", "Restore from a backup", "Backup and restore", Icons.Rounded.Restore,
+        listOf(
+            "restore", "import", "recover", "reinstall", "lost", "bring back",
+            "old phone", "transfer"
+        )
+    ) { onNavigateToBackup() }
+    entry(
+        "backup_playlists", "Save playlists and likes", "Backup and restore", Icons.Rounded.Save,
+        listOf(
+            "playlists", "liked songs", "stats", "history", "keep", "protect",
+            "lose", "wipe", "uninstall"
+        )
+    ) { onNavigateToBackup() }
 
     // Notifications - only where the platform can promote an ongoing notification
     if (supportsLiveUpdates) {

@@ -358,6 +358,7 @@ private fun EditorialNowPlayingView(
                         SyncedLyricsView(
                             lyricsResult = lyricsResult,
                             currentPositionMs = progress,
+                            isPlaying = isPlaying,
                             onSeekTo = onSeekTo,
                             primaryColor = accent,
                             onSurfaceColor = accent,

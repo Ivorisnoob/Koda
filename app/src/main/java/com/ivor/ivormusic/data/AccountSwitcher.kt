@@ -46,6 +46,20 @@ class AccountSwitcher(context: Context) {
     fun active(): Profile = profileManager.active()
 
     /**
+     * Whether [profileId] still has a stored session behind it.
+     *
+     * Tells the two reasons a YouTube profile can be unusable apart, which
+     * look identical on [Profile.expired] alone: a session YouTube started
+     * rejecting (cookies present, refreshable) versus a profile that has never
+     * had a session on this device at all - which is what a profile restored
+     * from a backup is, since backups deliberately carry no credentials.
+     * Calling both "expired" told someone on a new phone that something had
+     * broken, when nothing had.
+     */
+    fun hasStoredSession(profileId: String): Boolean =
+        profileManager.cookiesFor(profileId) != null
+
+    /**
      * True while a switch is settling, so the UI can show progress on the
      * avatar rather than blocking the whole app behind a spinner.
      */

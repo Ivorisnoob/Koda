@@ -78,6 +78,14 @@ import com.ivor.ivormusic.data.Profile
 fun AccountSwitcherSheet(
     onDismiss: () -> Unit,
     onAddYouTubeAccount: () -> Unit,
+    /**
+     * Sign back into the profile that is now active, rather than adding a new
+     * one. Separate from [onAddYouTubeAccount] because the two must not share
+     * a path: adding captures the session into a *new* profile, which for a
+     * row that already exists would strand that profile's subscriptions and
+     * blocklist on an id nothing is active on any more.
+     */
+    onReconnectProfile: () -> Unit = onAddYouTubeAccount,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -88,6 +96,17 @@ fun AccountSwitcherSheet(
 
     var pendingRemoval by remember { mutableStateOf<Profile?>(null) }
     var showAddLocal by remember { mutableStateOf(false) }
+
+    /**
+     * YouTube profiles with no stored session: restored from a backup, or
+     * otherwise never signed into on this device. Resolved once per roster
+     * change rather than per row, since each lookup is a decrypt.
+     */
+    val needSignIn = remember(profiles) {
+        profiles.filter { !it.isLocal && !switcher.hasStoredSession(it.id) }
+            .map { it.id }
+            .toSet()
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -123,14 +142,22 @@ fun AccountSwitcherSheet(
                 ProfileRow(
                     profile = profile,
                     isActive = profile.id == activeId,
+                    needsSignIn = profile.id in needSignIn,
                     // The last profile standing cannot be deleted, but a
                     // YouTube account on it can still be disconnected - that is
                     // the plain "sign out" case, and it must not disappear just
                     // because the roster has one row.
                     canRemove = profiles.size > 1 || !profile.isLocal,
                     onClick = {
+                        // The row has been promising "tap to reconnect" while
+                        // doing nothing but switch, so tapping the profile that
+                        // was already active was a dead tap. Switch first so
+                        // the captured session is stored against this profile,
+                        // then hand off to the sign-in flow.
+                        val broken = profile.expired || profile.id in needSignIn
                         if (profile.id != activeId) switcher.switchTo(profile.id)
                         onDismiss()
+                        if (broken) onReconnectProfile()
                     },
                     onRemove = { pendingRemoval = profile }
                 )
@@ -196,10 +223,13 @@ fun AccountSwitcherSheet(
 private fun ProfileRow(
     profile: Profile,
     isActive: Boolean,
+    /** A YouTube profile with no stored session: restored, or never signed in. */
+    needsSignIn: Boolean,
     canRemove: Boolean,
     onClick: () -> Unit,
     onRemove: () -> Unit
 ) {
+    val flagged = profile.expired || needsSignIn
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
@@ -236,12 +266,16 @@ private fun ProfileRow(
                 overflow = TextOverflow.Ellipsis
             )
             val subtitle = when {
+                // Order matters: a restored profile is also flagged expired,
+                // and "signed out" is the accurate half of that. Nothing
+                // expired on a phone the account was never signed into.
+                needsSignIn -> "Signed out - tap to sign in"
                 profile.expired -> "Session expired - tap to reconnect"
                 profile.isLocal -> "On this device"
                 else -> profile.handle ?: "YouTube account"
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                if (profile.expired) {
+                if (flagged) {
                     Icon(
                         imageVector = Icons.Rounded.ErrorOutline,
                         contentDescription = null,
@@ -253,7 +287,7 @@ private fun ProfileRow(
                 Text(
                     text = subtitle,
                     style = MaterialTheme.typography.bodySmall,
-                    color = if (profile.expired) MaterialTheme.colorScheme.error
+                    color = if (flagged) MaterialTheme.colorScheme.error
                     else MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
