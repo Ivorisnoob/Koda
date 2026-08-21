@@ -1248,20 +1248,15 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         // response would otherwise land last and show A's lyrics over B.
         lyricsFetchJob?.cancel()
 
-        // Lyrics come from an online API; skip entirely in local-only mode
-        if (themePreferences.isLocalOnlyModeEnabled()) {
-            _lyricsResult.value = LyricsResult.NotFound
-            return
-        }
         _lyricsResult.value = LyricsResult.Loading
 
         lyricsFetchJob = viewModelScope.launch {
             val result = lyricsRepository.fetchLyrics(
-                songId = song.id,
-                title = song.title,
-                artist = song.artist,
-                album = song.album ?: "",
-                durationMs = song.duration
+                song = song,
+                // Local lyrics are always checked first. Local-only mode only
+                // disables the provider fallback; it must not disable files
+                // already stored on the device.
+                allowRemote = !themePreferences.isLocalOnlyModeEnabled()
             )
             // Belt and braces for the same race: only apply the result if
             // this is still the song on screen.
