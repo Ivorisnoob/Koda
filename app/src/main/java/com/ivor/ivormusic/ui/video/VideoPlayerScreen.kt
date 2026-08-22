@@ -480,7 +480,7 @@ fun FullscreenPlayerContent(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.32f))
+                    .background(Color.Black.copy(alpha = 0.22f))
             ) {
                 // Top Bar
                 Column(
@@ -502,27 +502,37 @@ fun FullscreenPlayerContent(
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        FilledIconButton(
-                            onClick = onBack,
-                            colors = IconButtonDefaults.filledIconButtonColors(
-                                containerColor = Color.Black.copy(0.5f),
-                                contentColor = Color.White
-                            ),
-                            shapes = stableShapes
+                        Surface(
+                            modifier = Modifier.weight(1f),
+                            shape = CircleShape,
+                            color = Color.Black.copy(alpha = 0.46f),
+                            contentColor = Color.White
                         ) {
-                            Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back")
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                FilledIconButton(
+                                    onClick = onBack,
+                                    colors = IconButtonDefaults.filledIconButtonColors(
+                                        containerColor = Color.Transparent,
+                                        contentColor = Color.White
+                                    ),
+                                    shapes = stableShapes
+                                ) {
+                                    Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back")
+                                }
+                                Text(
+                                    text = videoTitle,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = Color.White,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .padding(end = 18.dp)
+                                )
+                            }
                         }
-
-                        Text(
-                            text = videoTitle,
-                            style = MaterialTheme.typography.titleLarge,
-                            color = Color.White,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f)
-                        )
 
                         // Landscape keeps the single row it always had.
                         if (!compactChrome) topBarActions()
@@ -541,24 +551,110 @@ fun FullscreenPlayerContent(
                     }
                 }
                 
-                // Playback is one floating dock rather than controls scattered
-                // across the frame. The seek row remains immediately above it
-                // so transport and position read as one system.
+                // Familiar transport stays at the visual centre of the video.
+                // Expressiveness belongs to the primary control's motion, not
+                // to a large permanent container covering the frame.
+                Row(
+                    modifier = Modifier.align(Alignment.Center),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(28.dp)
+                ) {
+                    if (showQueueControls) {
+                        QueueSkipButton(
+                            icon = Icons.Rounded.SkipPrevious,
+                            contentDescription = "Previous in playlist",
+                            enabled = hasPreviousInQueue,
+                            onClick = onPreviousInQueue,
+                            size = 54.dp
+                        )
+                    } else {
+                        PlayerIconButton(
+                            icon = Icons.Rounded.Replay10,
+                            contentDescription = "Rewind 10 seconds",
+                            onClick = onSeekBackward
+                        )
+                    }
+                    ExpressivePlayPauseButton(
+                        isPlaying = isPlaying,
+                        isBuffering = isBuffering,
+                        onClick = onPlayPause,
+                        size = 74.dp,
+                        overVideo = true
+                    )
+                    if (showQueueControls) {
+                        QueueSkipButton(
+                            icon = Icons.Rounded.SkipNext,
+                            contentDescription = "Next in playlist",
+                            enabled = hasNextInQueue,
+                            onClick = onNextInQueue,
+                            size = 54.dp
+                        )
+                    } else {
+                        PlayerIconButton(
+                            icon = Icons.Rounded.Forward10,
+                            contentDescription = "Forward 10 seconds",
+                            onClick = onSeekForward
+                        )
+                    }
+                }
+
+                // Low-weight utilities and a full-width timeline hug the edge.
+                // They remain discoverable without becoming the visual subject.
                 Column(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
-                        .fillMaxWidth(0.92f)
-                        .displayCutoutPadding()
-                        .padding(bottom = 18.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    if (chapters.isNotEmpty()) {
-                        ChapterTitleChip(
-                            chapters = chapters,
-                            currentPositionMs = currentPosition,
-                            onClick = onOpenChapters
+                        .fillMaxWidth()
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(Color.Transparent, Color.Black.copy(alpha = 0.72f))
+                            )
                         )
+                        .displayCutoutPadding()
+                        .padding(horizontal = 24.dp, vertical = 18.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (chapters.isNotEmpty() || showCommentsButton) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (chapters.isNotEmpty()) {
+                                ChapterTitleChip(
+                                    chapters = chapters,
+                                    currentPositionMs = currentPosition,
+                                    onClick = onOpenChapters
+                                )
+                            }
+                            Spacer(Modifier.weight(1f))
+                            if (showCommentsButton) {
+                                Surface(
+                                    onClick = onCommentsToggle,
+                                    shape = CircleShape,
+                                    color = if (commentsActive) {
+                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.92f)
+                                    } else Color.Black.copy(alpha = 0.46f),
+                                    contentColor = if (commentsActive) {
+                                        MaterialTheme.colorScheme.onPrimary
+                                    } else Color.White
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(7.dp)
+                                    ) {
+                                        Icon(
+                                            Icons.AutoMirrored.Rounded.Comment,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(19.dp)
+                                        )
+                                        Text(
+                                            if (commentsActive) "Close comments" else "Comments",
+                                            style = MaterialTheme.typography.labelLarge
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -593,71 +689,6 @@ fun FullscreenPlayerContent(
                         }
                     }
 
-                    Surface(
-                        shape = CircleShape,
-                        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.96f),
-                        contentColor = MaterialTheme.colorScheme.onSurface,
-                        tonalElevation = 2.dp
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(16.dp)
-                        ) {
-                            if (showQueueControls) {
-                                QueueSkipButton(
-                                    icon = Icons.Rounded.SkipPrevious,
-                                    contentDescription = "Previous in playlist",
-                                    enabled = hasPreviousInQueue,
-                                    onClick = onPreviousInQueue,
-                                    size = 52.dp,
-                                    onTonalSurface = true
-                                )
-                            } else {
-                                FilledTonalIconButton(onClick = onSeekBackward) {
-                                    Icon(Icons.Rounded.Replay10, "Rewind 10 seconds")
-                                }
-                            }
-                            ExpressivePlayPauseButton(
-                                isPlaying = isPlaying,
-                                isBuffering = isBuffering,
-                                onClick = onPlayPause,
-                                size = 64.dp
-                            )
-                            if (showQueueControls) {
-                                QueueSkipButton(
-                                    icon = Icons.Rounded.SkipNext,
-                                    contentDescription = "Next in playlist",
-                                    enabled = hasNextInQueue,
-                                    onClick = onNextInQueue,
-                                    size = 52.dp,
-                                    onTonalSurface = true
-                                )
-                            } else {
-                                FilledTonalIconButton(onClick = onSeekForward) {
-                                    Icon(Icons.Rounded.Forward10, "Forward 10 seconds")
-                                }
-                            }
-                            if (showCommentsButton) {
-                                Button(
-                                    onClick = onCommentsToggle,
-                                    colors = if (commentsActive) {
-                                        ButtonDefaults.buttonColors()
-                                    } else {
-                                        ButtonDefaults.filledTonalButtonColors()
-                                    }
-                                ) {
-                                    Icon(
-                                        Icons.AutoMirrored.Rounded.Comment,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                    Spacer(Modifier.width(8.dp))
-                                    Text(if (commentsActive) "Close comments" else "Comments")
-                                }
-                            }
-                        }
-                    }
                 }
             }
         }
@@ -2651,7 +2682,8 @@ fun ExpressivePlayPauseButton(
     isPlaying: Boolean,
     isBuffering: Boolean = false,
     onClick: () -> Unit,
-    size: androidx.compose.ui.unit.Dp = 72.dp
+    size: androidx.compose.ui.unit.Dp = 72.dp,
+    overVideo: Boolean = false
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
@@ -2680,9 +2712,11 @@ fun ExpressivePlayPauseButton(
         onClick = onClick,
         modifier = Modifier.size(scale),
         shape = RoundedCornerShape(cornerRadius),
-        color = MaterialTheme.colorScheme.primaryContainer,
+        color = if (overVideo) Color.Black.copy(alpha = 0.62f)
+            else MaterialTheme.colorScheme.primaryContainer,
         interactionSource = interactionSource,
-        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        contentColor = if (overVideo) Color.White
+            else MaterialTheme.colorScheme.onPrimaryContainer,
         shadowElevation = 0.dp
     ) {
         Box(contentAlignment = Alignment.Center) {
@@ -2690,7 +2724,8 @@ fun ExpressivePlayPauseButton(
                 // Expressive Loading Indicator
                  LoadingIndicator(
                     modifier = Modifier.size(size * 0.5f),
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    color = if (overVideo) Color.White
+                        else MaterialTheme.colorScheme.onPrimaryContainer,
                     polygons = listOf(
                         MaterialShapes.SoftBurst,
                         MaterialShapes.Cookie9Sided,

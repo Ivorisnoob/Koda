@@ -10,7 +10,7 @@ import android.graphics.drawable.Icon
 import android.os.Build
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalContext
@@ -83,8 +83,18 @@ fun VideoPipController(viewModel: VideoPlayerViewModel) {
         onDispose { runCatching { context.unregisterReceiver(receiver) } }
     }
 
-    LaunchedEffect(currentVideo?.videoId, isPlaying, isExpanded, videoAspectRatio, videoBounds) {
+    // PictureInPictureParams live on the Activity and are sticky. Update them
+    // synchronously after every successful composition instead of from a
+    // coroutine effect: when the player collapses and the user immediately
+    // swipes Home, even one queued frame with auto-enter still armed lets the
+    // system capture the mini player and the entire app hierarchy into PiP.
+    SideEffect {
         val builder = PictureInPictureParams.Builder()
+        val validBounds = videoBounds?.takeIf { !it.isEmpty }
+        val autoEnterEligible = currentVideo != null &&
+            isExpanded &&
+            isPlaying &&
+            validBounds != null
 
         if (currentVideo == null) {
             // No video: disarm. Auto-enter is sticky, so a player closed while
@@ -103,16 +113,23 @@ fun VideoPipController(viewModel: VideoPlayerViewModel) {
             // the entire screen down - app chrome, nav bar and all - which is
             // what made the transition look like the UI was being sucked into
             // the window.
-            videoBounds?.takeIf { !it.isEmpty }?.let { builder.setSourceRectHint(it) }
+            // A source rect describes the content that will remain visible in
+            // PiP. Never retain the old expanded-player rect while automatic
+            // entry is disarmed; that stale rect is what makes Android animate
+            // and sometimes freeze a crop of the normal activity UI.
+            if (autoEnterEligible) validBounds?.let { builder.setSourceRectHint(it) }
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 // Only auto-enter PiP while the full player is on screen.
                 // Auto-entering from the mini player captures the whole app UI
-                // into the PiP window instead of just the video surface.
-                builder.setAutoEnterEnabled(isExpanded)
+                // into the PiP window instead of just the video surface. A
+                // paused player is also ineligible: its newly attached PiP
+                // SurfaceView may not produce a fresh frame to replace the
+                // system's transition snapshot.
+                builder.setAutoEnterEnabled(autoEnterEligible)
                 // The content is a video, not a layout that needs to reflow, so
                 // let the system crossfade the resize instead of re-laying out.
-                builder.setSeamlessResizeEnabled(true)
+                builder.setSeamlessResizeEnabled(autoEnterEligible)
             }
         }
 

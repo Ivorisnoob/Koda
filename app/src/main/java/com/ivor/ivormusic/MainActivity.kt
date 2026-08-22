@@ -595,11 +595,13 @@ fun MusicApp(
     // composition, in onUserLeaveHint, where there is no way to read state.
     val pipAspectRatio by videoPlayerViewModel.videoAspectRatio.collectAsState()
     val pipBounds by videoPlayerViewModel.videoSurfaceBounds.collectAsState()
-    androidx.compose.runtime.LaunchedEffect(
-        overlayVideo, isVideoOverlayExpanded, pipAspectRatio, pipBounds
-    ) {
+    val videoIsPlaying by videoPlayerViewModel.isPlaying.collectAsState()
+    androidx.compose.runtime.SideEffect {
         onPipStateChanged(
-            overlayVideo != null && isVideoOverlayExpanded,
+            overlayVideo != null &&
+                isVideoOverlayExpanded &&
+                videoIsPlaying &&
+                pipBounds?.isEmpty == false,
             pipAspectRatio,
             pipBounds
         )
