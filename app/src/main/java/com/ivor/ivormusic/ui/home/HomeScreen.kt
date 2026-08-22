@@ -195,6 +195,7 @@ fun HomeScreen(
     nonExpressiveNavigationBar: Boolean = false
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
+    val homePreferences = remember(context) { com.ivor.ivormusic.data.ThemePreferences(context) }
     val localSongs by viewModel.songs.collectAsState()
     val youtubeSongs by viewModel.youtubeSongs.collectAsState()
     val isYouTubeConnected by viewModel.isYouTubeConnected.collectAsState()
@@ -275,8 +276,12 @@ fun HomeScreen(
     // and a plainly-remembered tab index would drop the user on Home every time
     // they looked at a creator from the Subscriptions feed. The scroll states
     // below already survive it, because rememberLazyListState is saveable.
-    var selectedTab by androidx.compose.runtime.saveable.rememberSaveable {
-        mutableIntStateOf(0)
+    var selectedTab by androidx.compose.runtime.saveable.rememberSaveable(videoMode) {
+        mutableIntStateOf(homePreferences.getLastHomeTab(videoMode))
+    }
+
+    LaunchedEffect(selectedTab, videoMode) {
+        homePreferences.setLastHomeTab(videoMode, selectedTab)
     }
 
     // Every tab's scroll position, remembered HERE rather than inside the tab

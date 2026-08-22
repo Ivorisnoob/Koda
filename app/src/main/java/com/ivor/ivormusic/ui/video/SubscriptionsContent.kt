@@ -6,6 +6,7 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -33,10 +34,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
+import androidx.compose.material.icons.automirrored.rounded.Sort
 import androidx.compose.material.icons.rounded.FileUpload
 import androidx.compose.material.icons.rounded.Login
 import androidx.compose.material.icons.rounded.PersonRemove
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.FilterList
 import androidx.compose.material.icons.rounded.Subscriptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -44,6 +47,8 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearWavyProgressIndicator
@@ -57,6 +62,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -84,11 +90,22 @@ import com.ivor.ivormusic.ui.home.HomeViewModel
 import com.ivor.ivormusic.util.MatchField
 import com.ivor.ivormusic.util.fuzzyScore
 
+private enum class SubscriptionFeedPeriod(val label: String, val ageMs: Long?) {
+    ALL("Any time", null),
+    TODAY("Today", 24L * 60L * 60L * 1000L),
+    THIS_WEEK("This week", 7L * 24L * 60L * 60L * 1000L)
+}
+
+private enum class SubscriptionFeedOrder(val label: String) {
+    NEWEST("Newest first"),
+    OLDEST("Oldest first")
+}
+
 /**
  * Subscriptions tab for Video Mode. Default view is the subscriptions feed
  * (latest uploads across all subscribed channels) topped by a horizontal
- * rail of channel avatars; an "All channels" entry opens the full channel
- * list, and tapping any channel opens its full page on its own route.
+ * rail of channel avatars. The rail is a feed filter: tapping a creator shows
+ * only their uploads, while the leading All item clears the selection.
  *
  * The feed no longer implies a Google account. Channels followed on this
  * device sit in the same list as the account's, so the sign-in wall only
@@ -130,6 +147,43 @@ fun SubscriptionsContent(
     val groups by viewModel.subscriptionGroups.collectAsState()
     val selectedGroupId by viewModel.selectedGroupId.collectAsState()
     val backgroundColor = MaterialTheme.colorScheme.background
+
+    var selectedChannelId by rememberSaveable { mutableStateOf<String?>(null) }
+    var feedPeriodName by rememberSaveable { mutableStateOf(SubscriptionFeedPeriod.ALL.name) }
+    var feedOrderName by rememberSaveable { mutableStateOf(SubscriptionFeedOrder.NEWEST.name) }
+    val feedPeriod = remember(feedPeriodName) {
+        SubscriptionFeedPeriod.entries.firstOrNull { it.name == feedPeriodName } ?: SubscriptionFeedPeriod.ALL
+    }
+    val feedOrder = remember(feedOrderName) {
+        SubscriptionFeedOrder.entries.firstOrNull { it.name == feedOrderName } ?: SubscriptionFeedOrder.NEWEST
+    }
+    var showKindMenu by remember { mutableStateOf(false) }
+    var showOrderMenu by remember { mutableStateOf(false) }
+
+    val visibleFeed = remember(feed, selectedChannelId, feedPeriod, feedOrder) {
+        val selectedChannel = channels.firstOrNull { it.channelId == selectedChannelId }
+        val now = System.currentTimeMillis()
+        feed.asSequence()
+            .filter { video ->
+                selectedChannel == null || video.channelId == selectedChannel.channelId ||
+                    video.channelName.equals(selectedChannel.name, ignoreCase = true)
+            }
+            .filter { video ->
+                feedPeriod.ageMs == null ||
+                    (video.publishedAtMs ?: VideoItem.parseRelativeTime(video.uploadedDate, now))
+                        ?.let { now - it <= feedPeriod.ageMs } == true
+            }
+            .sortedWith(compareBy<VideoItem> {
+                it.publishedAtMs ?: VideoItem.parseRelativeTime(it.uploadedDate) ?: Long.MIN_VALUE
+            }.let { if (feedOrder == SubscriptionFeedOrder.NEWEST) it.reversed() else it })
+            .toList()
+    }
+
+    LaunchedEffect(channels, selectedChannelId) {
+        if (selectedChannelId != null && channels.none { it.channelId == selectedChannelId }) {
+            selectedChannelId = null
+        }
+    }
 
     val locallyFollowedIds = remember(localSubscriptions) {
         localSubscriptions.map { it.channelId }.toSet()
@@ -393,73 +447,121 @@ fun SubscriptionsContent(
                         }
                     }
 
-                    // Channel avatar rail with the All-channels entry
+                    // Creator rail: selection filters the feed in place instead
+                    // of navigating away from the uploads the user came to see.
                     if (channels.isNotEmpty()) {
-                        item {
+                        item(key = "channel-filter") {
                             LazyRow(
                                 contentPadding = PaddingValues(horizontal = 16.dp),
                                 horizontalArrangement = Arrangement.spacedBy(14.dp)
                             ) {
-                                items(channels.take(20), key = { it.channelId }) { channel ->
-                                    val isLocal = channel.channelId in locallyFollowedIds
-                                    Column(
-                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                        modifier = Modifier
-                                            .clip(RoundedCornerShape(12.dp))
-                                            .combinedClickable(
-                                                onClick = { onOpenChannel?.invoke(channel.channelId) },
-                                                // Only device-followed channels can be
-                                                // dropped from here; unfollowing an
-                                                // account subscription is a write to
-                                                // the user's Google account and should
-                                                // not hang off an accidental long-press.
-                                                onLongClick = if (isLocal) {
-                                                    { channelToUnfollow = channel }
-                                                } else null
-                                            )
-                                            .padding(4.dp)
-                                            .width(64.dp)
-                                    ) {
-                                        ChannelAvatar(channel = channel, size = 56.dp)
-                                        Spacer(Modifier.height(4.dp))
-                                        Text(
-                                            text = channel.name,
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                    }
-                                }
                                 item(key = "all-channels") {
                                     Column(
                                         horizontalAlignment = Alignment.CenterHorizontally,
                                         modifier = Modifier
                                             .clip(RoundedCornerShape(12.dp))
-                                            .clickable { showChannelList = true }
+                                            .clickable { selectedChannelId = null }
                                             .padding(4.dp)
                                             .width(64.dp)
                                     ) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(56.dp)
-                                                .clip(CircleShape)
-                                                .background(MaterialTheme.colorScheme.primaryContainer),
-                                            contentAlignment = Alignment.Center
+                                        Surface(
+                                            modifier = Modifier.size(56.dp),
+                                            shape = CircleShape,
+                                            color = if (selectedChannelId == null) MaterialTheme.colorScheme.primaryContainer
+                                            else MaterialTheme.colorScheme.surfaceContainerHigh,
+                                            border = if (selectedChannelId == null) BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+                                            else null
                                         ) {
-                                            Icon(
-                                                Icons.AutoMirrored.Rounded.ArrowForward,
-                                                contentDescription = "All channels",
-                                                tint = MaterialTheme.colorScheme.onPrimaryContainer
-                                            )
+                                            Box(contentAlignment = Alignment.Center) {
+                                                Icon(
+                                                    Icons.Rounded.Subscriptions,
+                                                    contentDescription = "All channels",
+                                                    tint = if (selectedChannelId == null) MaterialTheme.colorScheme.onPrimaryContainer
+                                                    else MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
                                         }
                                         Spacer(Modifier.height(4.dp))
                                         Text(
                                             text = "All",
                                             style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            maxLines = 1
+                                            color = if (selectedChannelId == null) MaterialTheme.colorScheme.primary
+                                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
                                         )
+                                    }
+                                }
+                                items(channels, key = { it.channelId }) { channel ->
+                                    val selected = selectedChannelId == channel.channelId
+                                    Column(
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .clickable {
+                                                selectedChannelId = if (selected) null else channel.channelId
+                                            }
+                                            .padding(4.dp)
+                                            .width(64.dp)
+                                    ) {
+                                        Surface(
+                                            shape = CircleShape,
+                                            border = if (selected) BorderStroke(3.dp, MaterialTheme.colorScheme.primary) else null,
+                                            color = MaterialTheme.colorScheme.surface,
+                                            modifier = Modifier.size(56.dp)
+                                        ) {
+                                            ChannelAvatar(channel = channel, size = 56.dp)
+                                        }
+                                        Spacer(Modifier.height(4.dp))
+                                        Text(
+                                            text = channel.name,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = if (selected) MaterialTheme.colorScheme.primary
+                                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        item(key = "feed-controls") {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Box {
+                                    FilterChip(
+                                        selected = feedPeriod != SubscriptionFeedPeriod.ALL,
+                                        onClick = { showKindMenu = true },
+                                        leadingIcon = { Icon(Icons.Rounded.FilterList, null, Modifier.size(18.dp)) },
+                                        label = { Text(feedPeriod.label) }
+                                    )
+                                    DropdownMenu(expanded = showKindMenu, onDismissRequest = { showKindMenu = false }) {
+                                        SubscriptionFeedPeriod.entries.forEach { period ->
+                                            DropdownMenuItem(
+                                                text = { Text(period.label) },
+                                                onClick = { feedPeriodName = period.name; showKindMenu = false }
+                                            )
+                                        }
+                                    }
+                                }
+                                Box {
+                                    FilterChip(
+                                        selected = feedOrder != SubscriptionFeedOrder.NEWEST,
+                                        onClick = { showOrderMenu = true },
+                                        leadingIcon = { Icon(Icons.AutoMirrored.Rounded.Sort, null, Modifier.size(18.dp)) },
+                                        label = { Text(feedOrder.label) }
+                                    )
+                                    DropdownMenu(expanded = showOrderMenu, onDismissRequest = { showOrderMenu = false }) {
+                                        SubscriptionFeedOrder.entries.forEach { order ->
+                                            DropdownMenuItem(
+                                                text = { Text(order.label) },
+                                                onClick = { feedOrderName = order.name; showOrderMenu = false }
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -484,8 +586,22 @@ fun SubscriptionsContent(
                                 onManage = onManageSubscriptions
                             )
                         }
+                    } else if (visibleFeed.isEmpty()) {
+                        item(key = "filtered-feed-empty") {
+                            FeedEmptyState(
+                                error = "No uploads match these filters.",
+                                hasChannels = true,
+                                isGroupFiltered = selectedGroupId != null,
+                                onRetry = {
+                                    selectedChannelId = null
+                                    feedPeriodName = SubscriptionFeedPeriod.ALL.name
+                                },
+                                onClearGroup = { viewModel.selectSubscriptionGroup(null) },
+                                onManage = onManageSubscriptions
+                            )
+                        }
                     } else {
-                        items(feed, key = { it.videoId }) { video ->
+                        items(visibleFeed, key = { it.videoId }) { video ->
                             VideoCard(
                                 video = video,
                                 onClick = { onVideoClick(video) },
