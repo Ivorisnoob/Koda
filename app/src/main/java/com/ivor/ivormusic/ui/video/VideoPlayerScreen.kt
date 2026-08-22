@@ -29,6 +29,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -42,6 +43,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -154,6 +156,7 @@ import com.ivor.ivormusic.data.ThemePreferences
 import com.ivor.ivormusic.data.VideoChapter
 import com.ivor.ivormusic.data.VideoEngagement
 import com.ivor.ivormusic.data.VideoItem
+import com.ivor.ivormusic.data.VideoSeekPreview
 import com.ivor.ivormusic.data.VttCue
 import com.ivor.ivormusic.data.WebVttParser
 import kotlinx.coroutines.delay
@@ -256,6 +259,7 @@ fun FullscreenPlayerContent(
     duration: Long,
     progress: Float,
     bufferedProgress: Float = 0f,
+    seekPreview: VideoSeekPreview? = null,
     videoTitle: String,
     onPlayPause: () -> Unit,
     onSeek: (Float) -> Unit,
@@ -265,6 +269,8 @@ fun FullscreenPlayerContent(
     onFullscreenToggle: () -> Unit,
     onSettings: () -> Unit,
     onLoopToggle: () -> Unit,
+    showPipButton: Boolean = false,
+    onPipClick: () -> Unit = {},
     showTimedCommentsButton: Boolean = false,
     timedCommentsActive: Boolean = false,
     onTimedCommentsToggle: () -> Unit = {},
@@ -344,6 +350,19 @@ fun FullscreenPlayerContent(
             shapes = stableShapes
         ) {
             Icon(Icons.Rounded.Settings, "Playback settings")
+        }
+
+        if (showPipButton) {
+            FilledTonalIconButton(
+                onClick = onPipClick,
+                colors = IconButtonDefaults.filledTonalIconButtonColors(
+                    containerColor = Color.Black.copy(0.5f),
+                    contentColor = Color.White
+                ),
+                shapes = stableShapes
+            ) {
+                Icon(Icons.Rounded.PictureInPictureAlt, "Picture in picture")
+            }
         }
 
         Box {
@@ -504,34 +523,30 @@ fun FullscreenPlayerContent(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Surface(
+                        Row(
                             modifier = Modifier.weight(1f),
-                            shape = CircleShape,
-                            color = Color.Black.copy(alpha = 0.46f),
-                            contentColor = Color.White
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                FilledIconButton(
-                                    onClick = onBack,
-                                    colors = IconButtonDefaults.filledIconButtonColors(
-                                        containerColor = Color.Transparent,
-                                        contentColor = Color.White
-                                    ),
-                                    shapes = stableShapes
-                                ) {
-                                    Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back")
-                                }
-                                Text(
-                                    text = videoTitle,
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = Color.White,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .padding(end = 18.dp)
-                                )
+                            FilledIconButton(
+                                onClick = onBack,
+                                colors = IconButtonDefaults.filledIconButtonColors(
+                                    containerColor = Color.Black.copy(alpha = 0.46f),
+                                    contentColor = Color.White
+                                ),
+                                shapes = stableShapes
+                            ) {
+                                Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back")
                             }
+                            Text(
+                                text = videoTitle,
+                                style = MaterialTheme.typography.titleMedium,
+                                color = Color.White,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .padding(horizontal = 12.dp)
+                            )
                         }
 
                         // Landscape keeps the single row it always had.
@@ -579,7 +594,6 @@ fun FullscreenPlayerContent(
                         isBuffering = isBuffering,
                         onClick = onPlayPause,
                         size = 74.dp,
-                        overVideo = true
                     )
                     if (showQueueControls) {
                         QueueSkipButton(
@@ -674,7 +688,8 @@ fun FullscreenPlayerContent(
                             onSeek = onSeek,
                             modifier = Modifier.weight(1f),
                             chapters = chapters,
-                            durationMs = duration
+                            durationMs = duration,
+                            seekPreview = seekPreview,
                         )
 
                         if (isLive) {
@@ -711,6 +726,7 @@ fun PortraitPlayerContent(
     duration: Long,
     progress: Float,
     bufferedProgress: Float = 0f,
+    seekPreview: VideoSeekPreview? = null,
     videoTitle: String,
     onPlayPause: () -> Unit,
     onSeek: (Float) -> Unit,
@@ -969,7 +985,8 @@ fun PortraitPlayerContent(
                             onSeek = onSeek,
                             modifier = Modifier.weight(1f),
                             chapters = chapters,
-                            durationMs = duration
+                            durationMs = duration,
+                            seekPreview = seekPreview,
                         )
 
                         if (isLive) {
@@ -1063,6 +1080,7 @@ internal fun PlayerSeekBar(
     bufferedProgress: Float = 0f,
     chapters: List<VideoChapter> = emptyList(),
     durationMs: Long = 0L,
+    seekPreview: VideoSeekPreview? = null,
     onTonalSurface: Boolean = false
 ) {
     var isScrubbing by remember { mutableStateOf(false) }
@@ -1084,7 +1102,7 @@ internal fun PlayerSeekBar(
         Color.Black.copy(alpha = 0.85f)
     }
 
-    Box(modifier = modifier) {
+    BoxWithConstraints(modifier = modifier) {
         // Buffered-ahead indicator: a soft white bar from the start to the
         // buffered position, drawn under the Slider. The inactive track is
         // translucent, so the buffered region reads as a brighter segment
@@ -1121,6 +1139,19 @@ internal fun PlayerSeekBar(
             modifier = Modifier.fillMaxWidth()
         )
 
+        if (isScrubbing && durationMs > 0L) {
+            val previewWidth = if (seekPreview?.isUsable == true) 144.dp else 72.dp
+            val previewX = (maxWidth * scrubValue - previewWidth / 2)
+                .coerceIn(0.dp, (maxWidth - previewWidth).coerceAtLeast(0.dp))
+            SeekPreviewCard(
+                preview = seekPreview,
+                positionMs = (scrubValue * durationMs).toLong(),
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .offset(x = previewX, y = if (seekPreview?.isUsable == true) (-126).dp else (-46).dp)
+            )
+        }
+
         // Chapter boundary ticks drawn over the track. Purely decorative; the
         // Canvas has no pointer input so touches still reach the Slider.
         if (chapters.size > 1 && durationMs > 0) {
@@ -1141,6 +1172,56 @@ internal fun PlayerSeekBar(
                     }
                 }
             }
+        }
+    }
+}
+
+/** Storyboard frame (when available) plus the exact target time while dragging. */
+@Composable
+private fun SeekPreviewCard(
+    preview: VideoSeekPreview?,
+    positionMs: Long,
+    modifier: Modifier = Modifier,
+) {
+    val frame = preview?.frameAt(positionMs)
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(10.dp),
+        color = Color.Black.copy(alpha = 0.9f),
+        contentColor = Color.White,
+        shadowElevation = 4.dp,
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            if (preview != null && frame != null) {
+                val frameWidth = 144.dp
+                val frameHeight = frameWidth *
+                    (preview.frameHeightPx.toFloat() / preview.frameWidthPx.toFloat())
+                Box(
+                    modifier = Modifier
+                        .size(frameWidth, frameHeight)
+                        .clip(RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp))
+                ) {
+                    AsyncImage(
+                        model = frame.pageUrl,
+                        contentDescription = null,
+                        contentScale = ContentScale.FillBounds,
+                        modifier = Modifier
+                            .size(
+                                frameWidth * preview.framesPerPageX,
+                                frameHeight * preview.framesPerPageY,
+                            )
+                            .offset(
+                                x = -(frameWidth * frame.column),
+                                y = -(frameHeight * frame.row),
+                            )
+                    )
+                }
+            }
+            Text(
+                text = formatDuration(positionMs),
+                style = MaterialTheme.typography.labelMedium,
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+            )
         }
     }
 }
@@ -2258,7 +2339,7 @@ private fun PlayerOverflowMenu(
     DropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismiss,
-        shape = MaterialTheme.shapes.extraLarge,
+        shape = RoundedCornerShape(12.dp),
         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
     ) {
         if (showQueue) {
@@ -2690,7 +2771,6 @@ fun ExpressivePlayPauseButton(
     isBuffering: Boolean = false,
     onClick: () -> Unit,
     size: androidx.compose.ui.unit.Dp = 72.dp,
-    overVideo: Boolean = false
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
@@ -2719,20 +2799,17 @@ fun ExpressivePlayPauseButton(
         onClick = onClick,
         modifier = Modifier.size(scale),
         shape = RoundedCornerShape(cornerRadius),
-        color = if (overVideo) Color.Black.copy(alpha = 0.62f)
-            else MaterialTheme.colorScheme.primaryContainer,
+        color = MaterialTheme.colorScheme.primaryContainer,
         interactionSource = interactionSource,
-        contentColor = if (overVideo) Color.White
-            else MaterialTheme.colorScheme.onPrimaryContainer,
-        shadowElevation = 0.dp
+        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        shadowElevation = 6.dp
     ) {
         Box(contentAlignment = Alignment.Center) {
             if (isBuffering && !isPlaying) {
                 // Expressive Loading Indicator
                  LoadingIndicator(
                     modifier = Modifier.size(size * 0.5f),
-                    color = if (overVideo) Color.White
-                        else MaterialTheme.colorScheme.onPrimaryContainer,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
                     polygons = listOf(
                         MaterialShapes.SoftBurst,
                         MaterialShapes.Cookie9Sided,

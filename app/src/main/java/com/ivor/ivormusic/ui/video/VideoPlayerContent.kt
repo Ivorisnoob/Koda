@@ -113,6 +113,7 @@ fun VideoPlayerContent(
     val relatedVideos by viewModel.relatedVideos.collectAsState()
     val queue by viewModel.queue.collectAsState()
     val chapters by viewModel.chapters.collectAsState()
+    val seekPreview by viewModel.seekPreview.collectAsState()
     val captionTracks by viewModel.captionTracks.collectAsState()
     val selectedCaption by viewModel.selectedCaption.collectAsState()
     val captionCues by viewModel.captionCues.collectAsState()
@@ -361,7 +362,11 @@ fun VideoPlayerContent(
             window?.let { WindowCompat.setDecorFitsSystemWindows(it, false) }
             // Draw into the camera cutout area too, otherwise the system
             // letterboxes the window and background shows around the notch
-            setCutoutMode(WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES)
+            // The moving image is background content and should use every
+            // physical pixel, including waterfall/corner-cutout layouts. The
+            // controls independently apply displayCutoutPadding, so only the
+            // video and its gradients extend behind camera hardware.
+            setCutoutMode(WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS)
             // A vertical video fills the screen held upright, so fullscreen
             // holds it there rather than rotating into a letterboxed strip.
             // Everything else gets sensor landscape, both directions, like
@@ -570,6 +575,7 @@ fun VideoPlayerContent(
                 duration = duration,
                 progress = progress,
                 bufferedProgress = bufferedProgress,
+                seekPreview = seekPreview,
                 videoTitle = currentVideo.title,
                 onPlayPause = { viewModel.togglePlayPause() },
                 onSeek = { newProgress -> exoPlayer.seekTo((newProgress * duration).toLong()) },
@@ -585,6 +591,13 @@ fun VideoPlayerContent(
                 },
                 onSettings = { showQualitySheet = true },
                 onLoopToggle = { viewModel.toggleLooping() },
+                showPipButton = pipSupported,
+                onPipClick = {
+                    val host = activity as? androidx.activity.ComponentActivity
+                    if (host != null) {
+                        enterPipMode(host, videoAspectRatio, videoSurfaceBounds)
+                    }
+                },
                 showTimedCommentsButton = timedCommentsFeatureEnabled,
                 timedCommentsActive = timedCommentsActive,
                 onTimedCommentsToggle = { timedCommentsActive = !timedCommentsActive },
@@ -881,6 +894,7 @@ fun VideoPlayerContent(
                         duration = duration,
                         progress = progress,
                         bufferedProgress = bufferedProgress,
+                        seekPreview = seekPreview,
                         videoTitle = currentVideo.title,
                         onPlayPause = { viewModel.togglePlayPause() },
                         onSeek = { newProgress -> exoPlayer.seekTo((newProgress * duration).toLong()) },

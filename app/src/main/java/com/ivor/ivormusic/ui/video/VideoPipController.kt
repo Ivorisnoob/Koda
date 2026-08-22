@@ -93,8 +93,7 @@ fun VideoPipController(viewModel: VideoPlayerViewModel) {
         val validBounds = videoBounds?.takeIf { !it.isEmpty }
         val autoEnterEligible = currentVideo != null &&
             isExpanded &&
-            isPlaying &&
-            validBounds != null
+            isPlaying
 
         if (currentVideo == null) {
             // No video: disarm. Auto-enter is sticky, so a player closed while

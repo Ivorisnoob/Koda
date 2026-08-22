@@ -4446,6 +4446,31 @@ class YouTubeRepository(private val context: Context) {
         val extractor = ytService.getStreamExtractor("https://www.youtube.com/watch?v=$videoId")
         extractor.fetchPage()
 
+        // Storyboards ride the same extraction as the stream URLs. Prefer the
+        // largest usable frameset so a fullscreen scrub preview stays sharp;
+        // failure is best-effort and must never hold playback resolution up.
+        cachedSeekPreview = runCatching {
+            extractor.frames
+                .asSequence()
+                .filter {
+                    it.urls.isNotEmpty() && it.frameWidth > 0 && it.frameHeight > 0 &&
+                        it.framesPerPageX > 0 && it.framesPerPageY > 0 &&
+                        it.totalCount > 0 && it.durationPerFrame > 0
+                }
+                .maxByOrNull { it.frameWidth * it.frameHeight }
+                ?.let {
+                    videoId to VideoSeekPreview(
+                        pageUrls = it.urls,
+                        frameWidthPx = it.frameWidth,
+                        frameHeightPx = it.frameHeight,
+                        framesPerPageX = it.framesPerPageX,
+                        framesPerPageY = it.framesPerPageY,
+                        totalFrameCount = it.totalCount,
+                        durationPerFrameMs = it.durationPerFrame,
+                    )
+                }
+        }.getOrNull()
+
         val videoOnlyStreams = extractor.videoOnlyStreams
         val muxedStreams = extractor.videoStreams
         val isLiveStream = extractor.streamType == StreamType.LIVE_STREAM ||
@@ -4562,6 +4587,13 @@ class YouTubeRepository(private val context: Context) {
                     .thenByDescending { fps(it.resolution) }
             )
     }
+
+    @Volatile
+    private var cachedSeekPreview: Pair<String, VideoSeekPreview>? = null
+
+    /** Storyboard harvested by the most recent NewPipe stream extraction. */
+    fun getCachedSeekPreview(videoId: String): VideoSeekPreview? =
+        cachedSeekPreview?.takeIf { it.first == videoId }?.second
 
     /**
      * Resolve the full video quality ladder via InnerTube: ANDROID_VR first

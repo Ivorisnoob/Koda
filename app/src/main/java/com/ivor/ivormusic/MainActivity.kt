@@ -600,8 +600,7 @@ fun MusicApp(
         onPipStateChanged(
             overlayVideo != null &&
                 isVideoOverlayExpanded &&
-                videoIsPlaying &&
-                pipBounds?.isEmpty == false,
+                videoIsPlaying,
             pipAspectRatio,
             pipBounds
         )

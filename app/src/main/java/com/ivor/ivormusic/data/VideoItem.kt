@@ -294,6 +294,52 @@ data class VideoChapter(
 )
 
 /**
+ * A YouTube storyboard sprite used while scrubbing the video timeline.
+ *
+ * NewPipe returns the sprite pages as part of the same extraction that resolves
+ * playback, so this adds no second player request. [durationPerFrameMs] maps a
+ * requested playback position to one cell inside one of [pageUrls].
+ */
+data class VideoSeekPreview(
+    val pageUrls: List<String>,
+    val frameWidthPx: Int,
+    val frameHeightPx: Int,
+    val framesPerPageX: Int,
+    val framesPerPageY: Int,
+    val totalFrameCount: Int,
+    val durationPerFrameMs: Int,
+) {
+    val isUsable: Boolean
+        get() = pageUrls.isNotEmpty() &&
+            frameWidthPx > 0 && frameHeightPx > 0 &&
+            framesPerPageX > 0 && framesPerPageY > 0 &&
+            totalFrameCount > 0 && durationPerFrameMs > 0
+
+    fun frameAt(positionMs: Long): VideoSeekPreviewFrame? {
+        if (!isUsable) return null
+        val frameIndex = (positionMs.coerceAtLeast(0L) / durationPerFrameMs)
+            .coerceAtMost((totalFrameCount - 1).toLong())
+            .toInt()
+        val framesPerPage = framesPerPageX * framesPerPageY
+        val pageIndex = frameIndex / framesPerPage
+        val indexOnPage = frameIndex % framesPerPage
+        return pageUrls.getOrNull(pageIndex)?.let { url ->
+            VideoSeekPreviewFrame(
+                pageUrl = url,
+                column = indexOnPage % framesPerPageX,
+                row = indexOnPage / framesPerPageX,
+            )
+        }
+    }
+}
+
+data class VideoSeekPreviewFrame(
+    val pageUrl: String,
+    val column: Int,
+    val row: Int,
+)
+
+/**
  * Everything the video player needs from a single watch-next (/next) call:
  * engagement state, enriched metadata, related videos and chapters.
  */
