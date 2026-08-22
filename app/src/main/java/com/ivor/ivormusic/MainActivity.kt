@@ -628,10 +628,9 @@ fun MusicApp(
         onOpenChannel = openChannel
     )
 
-    // Drives the PiP window's shape and keeps its transport icons current.
-    // Composed above the early return because everything below it is torn out
-    // the moment PiP starts. Button input itself goes straight to the video
-    // media service and therefore does not depend on this UI lifetime.
+    // Drives the PiP window's shape and its transport controls. Composed above
+    // the early return so the package-scoped receiver remains alive when the
+    // normal app UI is replaced by the dedicated video-only PiP surface.
     com.ivor.ivormusic.ui.video.VideoPipController(viewModel = videoPlayerViewModel)
 
     // In system PiP the app is just a video surface. Returning here keeps the

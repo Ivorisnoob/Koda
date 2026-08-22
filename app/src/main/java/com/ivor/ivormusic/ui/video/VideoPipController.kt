@@ -9,24 +9,25 @@ import android.content.Intent
 import android.graphics.drawable.Icon
 import android.os.Build
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.media3.common.util.UnstableApi
 import com.ivor.ivormusic.R
-import com.ivor.ivormusic.service.VideoPlaybackService
 
 /**
  * Everything that keeps the system Picture-in-Picture window in sync with the
- * video player: its shape and its transport controls.
+ * video player: its shape, its transport controls, and the receiver those
+ * controls fire into.
  *
  * This has to be composed **above** MainActivity's `if (isInPipMode) return`,
  * and that is the whole reason it is its own composable rather than a block
  * inside [VideoPlayerOverlay]. The overlay is part of the app UI that PiP
- * replaces, so entering PiP tears it out of the composition. The actions target
- * [VideoPlaybackService] directly rather than relying on any UI-owned receiver;
- * this controller remains here so their icons track play/pause state in PiP.
+ * replaces, so entering PiP tears it out of the composition. This controller
+ * stays above that replacement so its package-scoped action receiver remains
+ * registered and its icons continue to track play/pause state in PiP.
  *
  * Being composed for the whole life of the player also means the params are
  * kept honest when there is no video: auto-enter used to stay armed after the
@@ -49,6 +50,42 @@ fun VideoPipController(viewModel: VideoPlayerViewModel) {
     val videoAspectRatio by viewModel.videoAspectRatio.collectAsState()
     val videoBounds by viewModel.videoSurfaceBounds.collectAsState()
     val miniVideoBounds by viewModel.miniVideoSurfaceBounds.collectAsState()
+
+    val packageName = context.packageName
+
+    // This is the known-good pre-redesign control path. Keep the receiver in
+    // the controller above MainActivity's PiP early return so swapping the app
+    // UI for PipVideoSurface cannot unregister the buttons behind the window.
+    DisposableEffect(context, viewModel, packageName) {
+        val receiver = object : android.content.BroadcastReceiver() {
+            override fun onReceive(ctx: android.content.Context?, intent: Intent?) {
+                when (intent?.action) {
+                    "$packageName.$ACTION_PLAY" -> viewModel.exoPlayer?.play()
+                    "$packageName.$ACTION_PAUSE" -> viewModel.exoPlayer?.pause()
+                    "$packageName.$ACTION_REWIND" ->
+                        viewModel.seekBy(-VideoPlayerViewModel.SEEK_STEP_MS)
+                    "$packageName.$ACTION_FORWARD" ->
+                        viewModel.seekBy(VideoPlayerViewModel.SEEK_STEP_MS)
+                }
+            }
+        }
+        val filter = android.content.IntentFilter().apply {
+            addAction("$packageName.$ACTION_PLAY")
+            addAction("$packageName.$ACTION_PAUSE")
+            addAction("$packageName.$ACTION_REWIND")
+            addAction("$packageName.$ACTION_FORWARD")
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            context.registerReceiver(
+                receiver,
+                filter,
+                android.content.Context.RECEIVER_NOT_EXPORTED
+            )
+        } else {
+            context.registerReceiver(receiver, filter)
+        }
+        onDispose { runCatching { context.unregisterReceiver(receiver) } }
+    }
 
     // PictureInPictureParams live on the Activity and are sticky. Update them
     // synchronously after every successful composition instead of from a
@@ -73,7 +110,7 @@ fun VideoPipController(viewModel: VideoPlayerViewModel) {
             builder.setActions(emptyList<RemoteAction>())
         } else {
             builder.setAspectRatio(pipAspectRatio(videoAspectRatio))
-            builder.setActions(pipActions(activity, isPlaying))
+            builder.setActions(pipActions(activity, packageName, isPlaying))
 
             // Animate the PiP window out of the video rather than out of the
             // whole activity window. Without a source rect the system scales
@@ -125,28 +162,29 @@ fun VideoPipController(viewModel: VideoPlayerViewModel) {
  */
 private fun pipActions(
     activity: androidx.activity.ComponentActivity,
+    packageName: String,
     isPlaying: Boolean
 ): List<RemoteAction> {
     val playPause = if (isPlaying) {
         remoteAction(
-            activity, VideoPlaybackService.ACTION_PAUSE,
+            activity, packageName, ACTION_PAUSE,
             R.drawable.ic_media_pause, "Pause"
         )
     } else {
         remoteAction(
-            activity, VideoPlaybackService.ACTION_PLAY,
+            activity, packageName, ACTION_PLAY,
             R.drawable.ic_media_play, "Play"
         )
     }
 
     return listOf(
         remoteAction(
-            activity, VideoPlaybackService.ACTION_REWIND,
+            activity, packageName, ACTION_REWIND,
             R.drawable.ic_media_replay_10, "Back 10 seconds"
         ),
         playPause,
         remoteAction(
-            activity, VideoPlaybackService.ACTION_FORWARD,
+            activity, packageName, ACTION_FORWARD,
             R.drawable.ic_media_forward_10, "Forward 10 seconds"
         )
     )
@@ -154,20 +192,22 @@ private fun pipActions(
 
 private fun remoteAction(
     activity: androidx.activity.ComponentActivity,
+    packageName: String,
     action: String,
     iconRes: Int,
     label: String
 ): RemoteAction {
-    // The explicit service is already publishing this ExoPlayer through its
-    // MediaSession. Unlike a dynamic receiver, it does not belong to a Compose
-    // subtree or Activity UI that an OEM may suspend while PiP is active.
-    val intent = PendingIntent.getService(
+    val intent = PendingIntent.getBroadcast(
         activity,
         action.hashCode(),
-        Intent(activity, VideoPlaybackService::class.java).setAction(action),
+        Intent("$packageName.$action").setPackage(packageName),
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
     )
     return RemoteAction(Icon.createWithResource(activity, iconRes), label, label, intent)
 }
 
 private const val TAG = "VideoPipController"
+private const val ACTION_PLAY = "PIP_PLAY"
+private const val ACTION_PAUSE = "PIP_PAUSE"
+private const val ACTION_REWIND = "PIP_REWIND"
+private const val ACTION_FORWARD = "PIP_FORWARD"

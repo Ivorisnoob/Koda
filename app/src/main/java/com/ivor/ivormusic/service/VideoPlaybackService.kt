@@ -125,24 +125,6 @@ class VideoPlaybackService : MediaSessionService() {
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
 
     /**
-     * PiP RemoteActions arrive here directly instead of passing through an
-     * Activity- or Compose-owned receiver. The service already represents this
-     * exact player to Android, so its lifetime is the stable control boundary
-     * while the normal app UI is replaced by the video-only PiP surface.
-     */
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val player = session?.player ?: pendingPlayer
-        when (intent?.action) {
-            ACTION_PLAY -> player?.play()
-            ACTION_PAUSE -> player?.pause()
-            ACTION_REWIND -> player?.seekBack()
-            ACTION_FORWARD -> player?.seekForward()
-            else -> return super.onStartCommand(intent, flags, startId)
-        }
-        return START_NOT_STICKY
-    }
-
-    /**
      * Swiped out of recents. The player belongs to the ViewModel, which is
      * being torn down with the task, so pause and go away rather than leaving
      * an undismissable foreground notification behind.
@@ -257,8 +239,6 @@ class VideoPlaybackService : MediaSessionService() {
 
         const val ACTION_REWIND = "com.ivor.ivormusic.VIDEO_REWIND"
         const val ACTION_FORWARD = "com.ivor.ivormusic.VIDEO_FORWARD"
-        const val ACTION_PLAY = "com.ivor.ivormusic.VIDEO_PLAY"
-        const val ACTION_PAUSE = "com.ivor.ivormusic.VIDEO_PAUSE"
 
         @Volatile
         private var instance: VideoPlaybackService? = null
