@@ -73,6 +73,8 @@ Personalized feeds, watch history, comments, and engagement need a signed-in acc
 
 Everything else works signed out: search, streaming, downloads, local playlists, liked songs, subscriptions, and recommendations built from a local taste profile of your own listening. Signing in adds to that rather than replacing it, so the feeds merge. See [Authentication](#authentication) for the full split.
 
+> **Warning:** signed in, destructive actions act on your real YouTube account, not just on this device. Deleting a playlist you own deletes it from YouTube itself, removing a song from Liked Music removes the like, and these changes show up on youtube.com and in the official apps immediately. Koda tells you when a confirmation prompt is about to touch your account — read it before confirming. Signed out, nothing leaves the device.
+
 On Android 11 specifically, wallpaper-based dynamic color is unavailable, since that is an Android 12 platform feature. Koda falls back to its bundled palettes; everything else behaves the same.
 
 ---

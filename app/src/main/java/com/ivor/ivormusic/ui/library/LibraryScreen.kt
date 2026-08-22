@@ -428,6 +428,7 @@ fun LibraryMainScreen(
     val recentlyPlayed by viewModel.recentlyPlayed.collectAsState()
     val playCounts by viewModel.playCounts.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    val isYouTubeConnected by viewModel.isYouTubeConnected.collectAsState()
 
     var selectedTab by rememberSaveable { mutableStateOf(LibraryTab.All) }
 
@@ -642,7 +643,8 @@ fun LibraryMainScreen(
                             onLikedSongsClick = {
                                 onNavigateToPlaylist(PlaylistDisplayItem("Liked Songs", "LM", "You", likedSongs.size, null))
                             },
-                            contentPadding = contentPadding
+                            contentPadding = contentPadding,
+                            isLoggedIn = isYouTubeConnected
                         )
                     }
                     LibraryTab.Artists -> {
@@ -1272,7 +1274,9 @@ fun PlaylistsGrid(
     onLikedSongsClick: () -> Unit,
     contentPadding: PaddingValues,
     savedPlaylistIds: Set<String> = emptySet(),
-    onRemoveSavedPlaylist: (PlaylistDisplayItem) -> Unit = {}
+    onRemoveSavedPlaylist: (PlaylistDisplayItem) -> Unit = {},
+    /** Signed in, so the account's own playlists live on YouTube for real. */
+    isLoggedIn: Boolean = false
 ) {
     LazyVerticalGrid(
         columns = GridCells.Fixed(2),
@@ -1339,6 +1343,7 @@ fun PlaylistsGrid(
                 description = playlist.description,
                 isEditable = isLocalPlaylist || isYouTubeEditable,
                 isSaved = isSavedPlaylist,
+                affectsYouTubeAccount = isYouTubeEditable && isLoggedIn,
                 onEditConfirmed = { name, description -> onEditPlaylist(playlist, name, description) },
                 onDeleteConfirmed = { onDeletePlaylist(playlist) },
                 onRemoveSaved = { onRemoveSavedPlaylist(playlist) },
@@ -1538,6 +1543,12 @@ fun ExpressivePlaylistCard(
     isLiked: Boolean = false,
     isEditable: Boolean = false,
     isSaved: Boolean = false,
+    /**
+     * Deleting this card destroys a playlist on the signed-in YouTube account,
+     * not just on the device. Signed out, or for a local playlist, it is false
+     * and the confirmation says nothing about YouTube.
+     */
+    affectsYouTubeAccount: Boolean = false,
     onEditConfirmed: (String, String?) -> Unit = { _, _ -> },
     onDeleteConfirmed: () -> Unit = {},
     onRemoveSaved: () -> Unit = {},
@@ -1726,7 +1737,16 @@ fun ExpressivePlaylistCard(
         AlertDialog(
             onDismissRequest = { showDeleteDialog = false },
             title = { Text("Delete playlist?") },
-            text = { Text("This will permanently remove \"$name\".") },
+            text = {
+                Text(
+                    if (affectsYouTubeAccount) {
+                        "This will permanently remove \"$name\" from your YouTube account. " +
+                            "It disappears everywhere you use YouTube, including youtube.com and the official apps."
+                    } else {
+                        "This will permanently remove \"$name\"."
+                    }
+                )
+            },
             confirmButton = {
                 TextButton(onClick = {
                     onDeleteConfirmed()
@@ -2361,6 +2381,7 @@ fun PlaylistDetailScreen(
     var loadAttempted by remember { mutableStateOf(preloadedSongs != null) }
     var showEditDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
+    var songPendingRemoval by remember { mutableStateOf<Song?>(null) }
     var showOverflow by remember { mutableStateOf(false) }
     var isReorderMode by remember { mutableStateOf(false) }
     var descriptionExpanded by remember { mutableStateOf(false) }
@@ -2602,14 +2623,10 @@ fun PlaylistDetailScreen(
             }
         } else {
             // Remote removal is not locally reversible (a re-add would land at
-            // the end of the playlist), so confirm it rather than offer undo.
-            viewModel.removeSongFromYouTubePlaylist(resolvedPlaylist.id, song)
-            scope.launch {
-                snackbarHostState.showSnackbar(
-                    message = "Removed ${song.title}",
-                    duration = SnackbarDuration.Short
-                )
-            }
+            // the end of the playlist) and it is a write against the signed-in
+            // YouTube account - for "LM" it removes the like outright - so it
+            // is confirmed rather than offered with an undo.
+            songPendingRemoval = song
         }
     }
 
@@ -3235,7 +3252,14 @@ fun PlaylistDetailScreen(
             title = { Text("Delete playlist?") },
             text = {
                 Text(
-                    "This will permanently remove \"${resolvedPlaylist.name}\".",
+                    // Only reached for the account's own playlists when it can
+                    // actually be deleted there; a local one stays device-only.
+                    if (!isLocalPlaylist) {
+                        "This will permanently delete \"${resolvedPlaylist.name}\" from your YouTube account. " +
+                            "It disappears everywhere you use YouTube, including youtube.com and the official apps."
+                    } else {
+                        "This will permanently remove \"${resolvedPlaylist.name}\" from this device."
+                    },
                     textAlign = TextAlign.Center
                 )
             },
@@ -3260,6 +3284,51 @@ fun PlaylistDetailScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showDeleteDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    songPendingRemoval?.let { song ->
+        // Same calm destructive idiom as the delete dialog above: no bounce,
+        // no scale-in entrance, error-colored confirm.
+        AlertDialog(
+            onDismissRequest = { songPendingRemoval = null },
+            shape = RoundedCornerShape(32.dp),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            title = { Text("Remove from your YouTube account?") },
+            text = {
+                Text(
+                    if (resolvedPlaylist.id == "LM") {
+                        "Removing \"${song.title}\" from Your Likes removes the like from your YouTube account, everywhere you use YouTube."
+                    } else {
+                        "This removes \"${song.title}\" from \"${resolvedPlaylist.name}\" on your YouTube account, everywhere you use YouTube."
+                    }
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.removeSongFromYouTubePlaylist(resolvedPlaylist.id, song)
+                        scope.launch {
+                            snackbarHostState.showSnackbar(
+                                message = "Removed ${song.title}",
+                                duration = SnackbarDuration.Short
+                            )
+                        }
+                        songPendingRemoval = null
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError
+                    )
+                ) {
+                    Text("Remove")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { songPendingRemoval = null }) {
                     Text("Cancel")
                 }
             }
