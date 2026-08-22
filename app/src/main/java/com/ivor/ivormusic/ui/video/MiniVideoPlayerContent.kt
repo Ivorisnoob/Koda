@@ -22,7 +22,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
-import androidx.compose.material.icons.rounded.SkipNext
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.ContainedLoadingIndicator
 import androidx.compose.material3.FilledIconButton
@@ -67,12 +67,10 @@ private val MINI_VIDEO_THUMB_WIDTH = 92.dp
  * The video player's collapsed bar: the video still playing, what it is, and
  * the two controls worth reaching for without opening the player.
  *
- * **There is no close button.** A downward drag on the bar dismisses it and an
- * upward one expands it, both handled by [VideoPlayerOverlay] which owns the
- * bar's position; a close button would spend a fifth target on the thing the
- * gesture already does, in a row that has a video, two lines of text and two
- * buttons in 88dp. The gesture is the same one the expanded player already
- * answers, so it is not a new thing to learn.
+ * Play/pause and Close are the durable actions here. The downward dismiss
+ * gesture remains as a shortcut, but is no longer the only way to stop and
+ * remove a persistent player. Queue transport remains in the expanded player,
+ * where previous and next can stay together and keep their positions.
  *
  * Nothing here polls. Position comes off [VideoPlayerViewModel.progress], which
  * the expanded player's scrubber already drives, replacing a one-second loop
@@ -85,7 +83,6 @@ fun MiniVideoPlayerContent(viewModel: VideoPlayerViewModel) {
     val currentVideo by viewModel.currentVideo.collectAsState()
     val isPlaying by viewModel.isPlaying.collectAsState()
     val isBuffering by viewModel.isBuffering.collectAsState()
-    val queue by viewModel.queue.collectAsState()
     val progress by viewModel.progress.collectAsState()
     val isLive by viewModel.isLive.collectAsState()
     val isPortrait by viewModel.isPortraitVideo.collectAsState()
@@ -171,30 +168,21 @@ fun MiniVideoPlayerContent(viewModel: VideoPlayerViewModel) {
             )
         }
 
-        // Next is hidden rather than disabled off the end of a queue, and
-        // absent entirely without one: a permanently dead target costs
-        // more room here than it is worth. The expanded player disables
-        // its pair instead, where there is space for both to stay put.
-        if (queue?.hasNext == true) {
-            Spacer(modifier = Modifier.width(6.dp))
-            FilledIconButton(
-                onClick = {
-                    haptics.skip()
-                    viewModel.playNextInQueue()
-                },
-                modifier = Modifier.size(44.dp),
-                shapes = IconButtonDefaults.shapes(),
-                colors = IconButtonDefaults.filledIconButtonColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.SkipNext,
-                    contentDescription = "Next in playlist",
-                    modifier = Modifier.size(24.dp)
-                )
-            }
+        Spacer(modifier = Modifier.width(6.dp))
+        FilledIconButton(
+            onClick = { viewModel.closePlayer() },
+            modifier = Modifier.size(44.dp),
+            shapes = IconButtonDefaults.shapes(),
+            colors = IconButtonDefaults.filledIconButtonColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Close,
+                contentDescription = "Close video player",
+                modifier = Modifier.size(22.dp)
+            )
         }
     }
 }

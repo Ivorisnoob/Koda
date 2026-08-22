@@ -1,5 +1,7 @@
 package com.ivor.ivormusic.data
 
+import com.ivor.ivormusic.util.KLog
+
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -206,7 +208,7 @@ class PlaylistRepository(private val context: Context) {
                     android.graphics.BitmapFactory.decodeStream(input, null, options)
                 }
             } catch (e: Exception) {
-                android.util.Log.w(TAG, "Could not read the chosen cover", e)
+                KLog.w(TAG, "Could not read the chosen cover", e)
                 null
             } ?: return@withContext false
 
@@ -217,7 +219,7 @@ class PlaylistRepository(private val context: Context) {
                     square.compress(Bitmap.CompressFormat.JPEG, 92, out)
                 }
             } catch (e: Exception) {
-                android.util.Log.e(TAG, "Could not write the cover", e)
+                KLog.e(TAG, "Could not write the cover", e)
                 target.delete()
                 return@withContext false
             } finally {

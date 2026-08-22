@@ -1,5 +1,7 @@
 package com.ivor.ivormusic.data
 
+import com.ivor.ivormusic.util.KLog
+
 import android.content.Context
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -259,7 +261,7 @@ class LocalSubscriptionsRepository(context: Context) {
                 )
             }.distinctBy { it.channelId }
         } catch (e: Exception) {
-            android.util.Log.e(TAG, "Failed to load local subscriptions", e)
+            KLog.e(TAG, "Failed to load local subscriptions", e)
             emptyList()
         }
     }
@@ -294,7 +296,7 @@ class LocalSubscriptionsRepository(context: Context) {
                 )
             }
         } catch (e: Exception) {
-            android.util.Log.e(TAG, "Failed to load subscription groups", e)
+            KLog.e(TAG, "Failed to load subscription groups", e)
             emptyList()
         }
     }

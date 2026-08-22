@@ -1,10 +1,11 @@
 package com.ivor.ivormusic.service
 
+import com.ivor.ivormusic.util.KLog
+
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
-import android.util.Log
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.CommandButton
@@ -69,7 +70,7 @@ class VideoPlaybackService : MediaSessionService() {
             // Nothing to publish - the ViewModel went away between the start
             // request and the service actually being created, or the system
             // restarted us stickily after the process died.
-            Log.w(TAG, "Started without a player; stopping")
+            KLog.w(TAG, "Started without a player; stopping")
             stopSelf()
             return
         }
@@ -108,7 +109,7 @@ class VideoPlaybackService : MediaSessionService() {
                 .setCustomLayout(seekLayout())
                 .build()
         } catch (e: Exception) {
-            Log.e(TAG, "Could not build the video media session", e)
+            KLog.e(TAG, "Could not build the video media session", e)
             stopSelf()
             return
         }
@@ -268,7 +269,7 @@ class VideoPlaybackService : MediaSessionService() {
                 context.startService(Intent(context, VideoPlaybackService::class.java))
             } catch (e: Exception) {
                 // A refused start costs the notification, never playback.
-                Log.w(TAG, "Could not start the video playback service", e)
+                KLog.w(TAG, "Could not start the video playback service", e)
             }
         }
 
@@ -287,7 +288,7 @@ class VideoPlaybackService : MediaSessionService() {
             try {
                 context.stopService(Intent(context, VideoPlaybackService::class.java))
             } catch (e: Exception) {
-                Log.w(TAG, "Could not stop the video playback service", e)
+                KLog.w(TAG, "Could not stop the video playback service", e)
             }
         }
     }

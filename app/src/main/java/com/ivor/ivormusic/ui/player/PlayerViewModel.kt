@@ -1,5 +1,7 @@
 package com.ivor.ivormusic.ui.player
 
+import com.ivor.ivormusic.util.KLog
+
 import android.content.ComponentName
 import android.content.Context
 import androidx.lifecycle.ViewModel
@@ -35,7 +37,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         } catch (e: Exception) {
             // Future may have completed exceptionally if the service connection
             // failed (e.g. onGetSession returned null during a teardown race).
-            android.util.Log.w("PlayerViewModel", "controller getter: failed future", e)
+            KLog.w("PlayerViewModel", "controller getter: failed future", e)
             null
         }
     private var connectRetryAttempts = 0
@@ -186,7 +188,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                 if (buffering) {
                     delay(30_000)
                     if (_isBuffering.value && !_isPlaying.value) {
-                        android.util.Log.w("PlayerViewModel", "Buffering watchdog: clearing stuck state")
+                        KLog.w("PlayerViewModel", "Buffering watchdog: clearing stuck state")
                         _isBuffering.value = false
                     }
                 }
@@ -219,7 +221,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
             }
 
             val song = session.songs[session.currentIndex]
-            android.util.Log.d(
+            KLog.d(
                 "PlayerViewModel",
                 "Restoring session: ${session.songs.size} songs, index=${session.currentIndex}, pos=${session.positionMs}"
             )
@@ -247,7 +249,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     private fun restoreLastPlayedSong() {
         val song = themePreferences.getLastPlayedSong() ?: return
 
-        android.util.Log.d("PlayerViewModel", "Restoring last played song: ${song.title}")
+        KLog.d("PlayerViewModel", "Restoring last played song: ${song.title}")
 
         // Set the current song for UI display
         _currentSong.value = song
@@ -287,7 +289,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                 // service teardown after the app was swiped away. Retry a couple of
                 // times with backoff so the next time the user opens the app the
                 // controller binds cleanly instead of leaving the UI dead.
-                android.util.Log.w("PlayerViewModel", "MediaController connect failed: ${e.message}")
+                KLog.w("PlayerViewModel", "MediaController connect failed: ${e.message}")
                 // Release the failed future before scheduling a retry so we don't
                 // leak it — Media3 requires every buildAsync() future to be released
                 // exactly once, and initializeController() will overwrite the field.
@@ -361,7 +363,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                 }
 
                 override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
-                    android.util.Log.e("PlayerViewModel", "Playback error: ${error.errorCodeName}", error)
+                    KLog.e("PlayerViewModel", "Playback error: ${error.errorCodeName}", error)
                     // MusicService retries and skips on its own; if it recovers,
                     // the player re-enters BUFFERING and the flag comes back.
                     // Clearing here guarantees the spinner can't outlive a
@@ -380,7 +382,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                 override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                     // If we just cleared the player, don't restore from this callback
                     if (isPlayerCleared) {
-                        android.util.Log.d("PlayerViewModel", "Ignoring media transition - player was cleared")
+                        KLog.d("PlayerViewModel", "Ignoring media transition - player was cleared")
                         return
                     }
 
@@ -471,7 +473,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                         if (songsLeft < 5 && !_isLoadingMore.value &&
                             themePreferences.isAutoLoadQueueEnabled()
                         ) {
-                             android.util.Log.d("PlayerViewModel", "Auto-Queue: $songsLeft songs left, loading more...")
+                             KLog.d("PlayerViewModel", "Auto-Queue: $songsLeft songs left, loading more...")
                              loadMoreRecommendations()
                         }
                     }
@@ -521,7 +523,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
             }
         }
         
-        android.util.Log.d("PlayerViewModel", "Synced state: playing=${_isPlaying.value}, song=${_currentSong.value?.title}, queue=${_currentQueue.value.size} items")
+        KLog.d("PlayerViewModel", "Synced state: playing=${_isPlaying.value}, song=${_currentSong.value?.title}, queue=${_currentQueue.value.size} items")
     }
     
     /**
@@ -707,7 +709,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                     addToQueue(radio)
                 }
             } catch (e: Exception) {
-                android.util.Log.e("PlayerViewModel", "Radio fetch failed for ${song.id}", e)
+                KLog.e("PlayerViewModel", "Radio fetch failed for ${song.id}", e)
             } finally {
                 // A cancelled predecessor must not release the flag it no
                 // longer owns — only the current seed clears it.
@@ -1342,7 +1344,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
             playbackSessionRepository.clear()
         }
         
-        android.util.Log.d("PlayerViewModel", "Player cleared and mini player dismissed")
+        KLog.d("PlayerViewModel", "Player cleared and mini player dismissed")
     }
 
     override fun onCleared() {

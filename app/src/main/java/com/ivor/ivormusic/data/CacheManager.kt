@@ -1,7 +1,8 @@
 package com.ivor.ivormusic.data
 
+import com.ivor.ivormusic.util.KLog
+
 import android.content.Context
-import android.util.Log
 import androidx.media3.common.C
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.database.StandaloneDatabaseProvider
@@ -140,7 +141,7 @@ object CacheManager {
     @Synchronized
     fun initialize(context: Context, maxSizeMb: Long = DEFAULT_CACHE_SIZE_MB) {
         if (simpleCache != null) {
-            Log.d(TAG, "Cache already initialized")
+            KLog.d(TAG, "Cache already initialized")
             setMaxCacheSize(context, maxSizeMb)
             return
         }
@@ -157,9 +158,9 @@ object CacheManager {
                 evictor!!,
                 databaseProvider!!
             )
-            Log.d(TAG, "Cache initialized with max size: ${maxSizeMb}MB")
+            KLog.d(TAG, "Cache initialized with max size: ${maxSizeMb}MB")
         } catch (e: Exception) {
-            Log.e(TAG, "Cache initialization failed, attempting recovery by clearing cache", e)
+            KLog.e(TAG, "Cache initialization failed, attempting recovery by clearing cache", e)
             // Cache is corrupted - delete and retry
             try {
                 cacheDir?.deleteRecursively()
@@ -171,9 +172,9 @@ object CacheManager {
                     evictor!!,
                     databaseProvider!!
                 )
-                Log.d(TAG, "Cache recovery successful")
+                KLog.d(TAG, "Cache recovery successful")
             } catch (e2: Exception) {
-                Log.e(TAG, "Cache recovery failed - caching disabled", e2)
+                KLog.e(TAG, "Cache recovery failed - caching disabled", e2)
                 simpleCache = null
                 evictor = null
             }
@@ -212,7 +213,7 @@ object CacheManager {
                     CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR
                 )
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to create cache data source factory", e)
+            KLog.e(TAG, "Failed to create cache data source factory", e)
             return null
         }
     }
@@ -258,11 +259,11 @@ object CacheManager {
                 keys.forEach { key ->
                     cache.removeResource(key)
                 }
-                Log.d(TAG, "Cache cleared: removed ${keys.size} items")
+                KLog.d(TAG, "Cache cleared: removed ${keys.size} items")
             }
             updateCacheSize()
         } catch (e: Exception) {
-            Log.e(TAG, "Error clearing cache", e)
+            KLog.e(TAG, "Error clearing cache", e)
         }
     }
 
@@ -276,9 +277,9 @@ object CacheManager {
             simpleCache = null
             databaseProvider = null
             evictor = null
-            Log.d(TAG, "Cache released")
+            KLog.d(TAG, "Cache released")
         } catch (e: Exception) {
-            Log.e(TAG, "Error releasing cache", e)
+            KLog.e(TAG, "Error releasing cache", e)
         }
     }
 
@@ -301,7 +302,7 @@ object CacheManager {
             return
         }
 
-        Log.d(TAG, "Updating cache size to ${maxSizeMb}MB (live)")
+        KLog.d(TAG, "Updating cache size to ${maxSizeMb}MB (live)")
         currentEvictor.updateMaxBytes(cache, newSizeBytes)
         updateCacheSize()
     }
@@ -374,7 +375,7 @@ object CacheManager {
                 }
             }.toMap()
         }.getOrElse {
-            Log.w(TAG, "Failed to enumerate cached keys", it)
+            KLog.w(TAG, "Failed to enumerate cached keys", it)
             emptyMap()
         }
     }

@@ -1,5 +1,7 @@
 package com.ivor.ivormusic.data
 
+import com.ivor.ivormusic.util.KLog
+
 import android.media.MediaCodec
 import android.media.AudioFormat
 import android.media.MediaDataSource
@@ -7,7 +9,6 @@ import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.content.Context
 import android.os.SystemClock
-import android.util.Log
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.cache.CacheDataSource
@@ -149,7 +150,7 @@ object AudioProfiler {
                 outroKeyConfidence = outroKey.confidence,
             )
         } catch (e: Exception) {
-            Log.d(TAG, "No profile for $songId: ${e.message}")
+            KLog.d(TAG, "No profile for $songId: ${e.message}")
             null
         } finally {
             runCatching { extractor?.release() }
@@ -284,7 +285,7 @@ object AudioProfiler {
             }
             if (accCount > 0) envelope.add(sqrt(acc / accCount).toFloat())
         } catch (e: Exception) {
-            Log.d(TAG, "Decode window failed: ${e.message}")
+            KLog.d(TAG, "Decode window failed: ${e.message}")
         } finally {
             runCatching { codec.stop() }
             runCatching { codec.release() }

@@ -297,6 +297,8 @@ fun SettingsScreen(
     onNavigateToSubscriptions: () -> Unit = {},
     onNavigateToNotInterested: () -> Unit = {},
     onNavigateToBackup: () -> Unit = {},
+    onNavigateToReportBug: () -> Unit = {},
+    onNavigateToTimeLimit: () -> Unit = {},
     excludedFolders: Set<String>,
     onAddExcludedFolder: (String) -> Unit,
     onRemoveExcludedFolder: (String) -> Unit,
@@ -509,6 +511,8 @@ fun SettingsScreen(
         onNavigateToSubscriptions = onNavigateToSubscriptions,
         onNavigateToNotInterested = onNavigateToNotInterested,
         onNavigateToBackup = onNavigateToBackup,
+        onNavigateToReportBug = onNavigateToReportBug,
+        onNavigateToTimeLimit = onNavigateToTimeLimit,
         supportsLiveUpdates = ThemePreferences.SUPPORTS_LIVE_UPDATES
     )
 
@@ -770,6 +774,8 @@ fun SettingsScreen(
                     SettingsPage.ADVANCED -> AdvancedSettingsPage(
                         manualScanEnabled = manualScanEnabled,
                         onManualScanEnabledToggle = onManualScanEnabledToggle,
+                        onReportBug = onNavigateToReportBug,
+                        onOpenTimeLimit = onNavigateToTimeLimit,
                         onBack = { page = SettingsPage.HUB }
                     )
                 }

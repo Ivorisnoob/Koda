@@ -1,5 +1,7 @@
 package com.ivor.ivormusic.data
 
+import com.ivor.ivormusic.util.KLog
+
 import android.content.Context
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -78,7 +80,7 @@ class SessionManager(context: Context) {
         if (active.isLocal) return
         profileManager.setExpired(active.id, expired)
         if (_sessionExpired.value != expired) {
-            if (expired) android.util.Log.w(TAG, "YouTube rejected the session as signed out")
+            if (expired) KLog.w(TAG, "YouTube rejected the session as signed out")
             _sessionExpired.value = expired
         }
     }

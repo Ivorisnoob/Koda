@@ -1,5 +1,7 @@
 package com.ivor.ivormusic.ui.home
 
+import com.ivor.ivormusic.util.KLog
+
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import com.ivor.ivormusic.ui.theme.playlistCoverSeeds
@@ -710,7 +712,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
             } catch (e: Exception) {
-                android.util.Log.e("HomeViewModel", "Subscription feed refresh failed", e)
+                KLog.e("HomeViewModel", "Subscription feed refresh failed", e)
                 _subscriptionFeedError.value =
                     "Couldn't load recent uploads. Check your connection and try again."
             } finally {
@@ -739,7 +741,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                         "Couldn't load uploads from ${channel.name}. Pull to try again."
                 }
             } catch (e: Exception) {
-                android.util.Log.e("HomeViewModel", "Selected channel feed failed", e)
+                KLog.e("HomeViewModel", "Selected channel feed failed", e)
                 _selectedChannelFeedError.value =
                     "Couldn't load uploads from ${channel.name}. Pull to try again."
             } finally {
@@ -915,7 +917,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 backfillLocalChannelProfiles()
                 loadSubscriptionFeed(force = true)
             } catch (e: Exception) {
-                android.util.Log.e("HomeViewModel", "Subscription import failed", e)
+                KLog.e("HomeViewModel", "Subscription import failed", e)
                 onResult(
                     com.ivor.ivormusic.data.SubscriptionImportResult(
                         0, 0, 0, error = "Couldn't read that file."
@@ -975,7 +977,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 )
             } catch (e: Exception) {
-                android.util.Log.e("HomeViewModel", "Account subscription copy failed", e)
+                KLog.e("HomeViewModel", "Account subscription copy failed", e)
                 onResult(
                     com.ivor.ivormusic.data.SubscriptionImportResult(
                         0, 0, 0, error = "Couldn't reach YouTube."
@@ -1005,7 +1007,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                         .openOutputStream(uri)?.use { it.write(json.toByteArray(Charsets.UTF_8)) }
                     true
                 } catch (e: Exception) {
-                    android.util.Log.e("HomeViewModel", "Subscription export failed", e)
+                    KLog.e("HomeViewModel", "Subscription export failed", e)
                     false
                 }
             }
@@ -1279,7 +1281,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 // destructive and does not warrant tearing the screen down.
                 // It does have to be visible in a bug report though, which is
                 // what this was missing.
-                android.util.Log.e("HomeViewModel", "Home recommendations failed to load", e)
+                KLog.e("HomeViewModel", "Home recommendations failed to load", e)
             } finally {
                 _isLoading.value = false
             }

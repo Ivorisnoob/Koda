@@ -59,7 +59,6 @@ import androidx.compose.material.icons.automirrored.rounded.Comment
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material.icons.outlined.ThumbDown
 import androidx.compose.material.icons.outlined.ThumbUp
-import androidx.compose.material.icons.rounded.Autorenew
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ClosedCaption
@@ -71,6 +70,7 @@ import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Forward10
 import androidx.compose.material.icons.rounded.Fullscreen
 import androidx.compose.material.icons.rounded.FullscreenExit
+import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
@@ -88,6 +88,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ContainedLoadingIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledIconButton
@@ -266,6 +268,9 @@ fun FullscreenPlayerContent(
     showTimedCommentsButton: Boolean = false,
     timedCommentsActive: Boolean = false,
     onTimedCommentsToggle: () -> Unit = {},
+    showCommentsButton: Boolean = false,
+    commentsActive: Boolean = false,
+    onCommentsToggle: () -> Unit = {},
     chapters: List<VideoChapter> = emptyList(),
     onOpenChapters: () -> Unit = {},
     captionsActive: Boolean = false,
@@ -309,77 +314,13 @@ fun FullscreenPlayerContent(
 ) {
     // Stable shapes to prevent "square flash"
     val stableShapes = IconButtonDefaults.shapes()
+    var showMoreControls by remember { mutableStateOf(false) }
 
     // The top-bar actions, defined once and placed either beside the title or
     // on a line of their own. Landscape has width for one row and portrait
     // does not, and the alternative to hoisting them is the same five buttons
     // written twice.
     val topBarActions: @Composable RowScope.() -> Unit = {
-        if (showQueueControls) {
-            FilledTonalIconButton(
-                onClick = onOpenQueue,
-                colors = IconButtonDefaults.filledTonalIconButtonColors(
-                    containerColor = Color.Black.copy(0.5f),
-                    contentColor = Color.White
-                ),
-                shapes = stableShapes
-            ) {
-                Icon(
-                    Icons.AutoMirrored.Rounded.PlaylistPlay,
-                    contentDescription = "Playlist queue"
-                )
-            }
-        }
-
-        // Combined mode toggle: repeat off = auto-play next, repeat on = loop this video
-        FilledTonalIconButton(
-            onClick = onLoopToggle,
-            colors = IconButtonDefaults.filledTonalIconButtonColors(
-                containerColor = if (isLooping) MaterialTheme.colorScheme.primary else Color.Black.copy(0.5f),
-                contentColor = if (isLooping) MaterialTheme.colorScheme.onPrimary else Color.White
-            ),
-            shapes = stableShapes
-        ) {
-            Icon(
-                if (isLooping) Icons.Rounded.RepeatOne else Icons.Rounded.Autorenew,
-                contentDescription = if (isLooping) "Repeat" else "Auto Play"
-            )
-        }
-
-        if (showTimedCommentsButton && !isLive) {
-            FilledTonalIconButton(
-                onClick = onTimedCommentsToggle,
-                colors = IconButtonDefaults.filledTonalIconButtonColors(
-                    containerColor = if (timedCommentsActive) MaterialTheme.colorScheme.primary else Color.Black.copy(0.5f),
-                    contentColor = if (timedCommentsActive) MaterialTheme.colorScheme.onPrimary else Color.White
-                ),
-                shapes = stableShapes
-            ) {
-                Icon(
-                    Icons.AutoMirrored.Rounded.Comment,
-                    contentDescription = "Timed comments"
-                )
-            }
-        }
-
-        // Landscape is where a side-by-side chat actually fits, so
-        // the toggle only exists here.
-        if (isLive) {
-            FilledTonalIconButton(
-                onClick = onLiveChatToggle,
-                colors = IconButtonDefaults.filledTonalIconButtonColors(
-                    containerColor = if (liveChatActive) MaterialTheme.colorScheme.primary else Color.Black.copy(0.5f),
-                    contentColor = if (liveChatActive) MaterialTheme.colorScheme.onPrimary else Color.White
-                ),
-                shapes = stableShapes
-            ) {
-                Icon(
-                    Icons.AutoMirrored.Rounded.Chat,
-                    contentDescription = if (liveChatActive) "Hide live chat" else "Show live chat"
-                )
-            }
-        }
-
         FilledTonalIconButton(
             onClick = onCaptionsClick,
             colors = IconButtonDefaults.filledTonalIconButtonColors(
@@ -402,7 +343,37 @@ fun FullscreenPlayerContent(
             ),
             shapes = stableShapes
         ) {
-            Icon(Icons.Rounded.Settings, "Quality")
+            Icon(Icons.Rounded.Settings, "Playback settings")
+        }
+
+        Box {
+            FilledTonalIconButton(
+                onClick = { showMoreControls = true },
+                colors = IconButtonDefaults.filledTonalIconButtonColors(
+                    containerColor = Color.Black.copy(0.5f),
+                    contentColor = Color.White
+                ),
+                shapes = stableShapes
+            ) {
+                Icon(Icons.Rounded.MoreVert, "More playback controls")
+            }
+            PlayerOverflowMenu(
+                expanded = showMoreControls,
+                onDismiss = { showMoreControls = false },
+                isLooping = isLooping,
+                onLoopToggle = onLoopToggle,
+                showQueue = showQueueControls,
+                onOpenQueue = onOpenQueue,
+                showTimedComments = showTimedCommentsButton && !isLive,
+                timedCommentsActive = timedCommentsActive,
+                onTimedCommentsToggle = onTimedCommentsToggle,
+                showComments = showCommentsButton,
+                commentsActive = commentsActive,
+                onCommentsToggle = onCommentsToggle,
+                showLiveChat = isLive,
+                liveChatActive = liveChatActive,
+                onLiveChatToggle = onLiveChatToggle
+            )
         }
 
         FilledIconButton(
@@ -509,7 +480,7 @@ fun FullscreenPlayerContent(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.5f))
+                    .background(Color.Black.copy(alpha = 0.22f))
             ) {
                 // Top Bar
                 Column(
@@ -531,27 +502,37 @@ fun FullscreenPlayerContent(
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        FilledIconButton(
-                            onClick = onBack,
-                            colors = IconButtonDefaults.filledIconButtonColors(
-                                containerColor = Color.Black.copy(0.5f),
-                                contentColor = Color.White
-                            ),
-                            shapes = stableShapes
+                        Surface(
+                            modifier = Modifier.weight(1f),
+                            shape = CircleShape,
+                            color = Color.Black.copy(alpha = 0.46f),
+                            contentColor = Color.White
                         ) {
-                            Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back")
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                FilledIconButton(
+                                    onClick = onBack,
+                                    colors = IconButtonDefaults.filledIconButtonColors(
+                                        containerColor = Color.Transparent,
+                                        contentColor = Color.White
+                                    ),
+                                    shapes = stableShapes
+                                ) {
+                                    Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back")
+                                }
+                                Text(
+                                    text = videoTitle,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = Color.White,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .padding(end = 18.dp)
+                                )
+                            }
                         }
-
-                        Text(
-                            text = videoTitle,
-                            style = MaterialTheme.typography.titleLarge,
-                            color = Color.White,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f)
-                        )
 
                         // Landscape keeps the single row it always had.
                         if (!compactChrome) topBarActions()
@@ -570,11 +551,13 @@ fun FullscreenPlayerContent(
                     }
                 }
                 
-                // Center Play/Pause
+                // Familiar transport stays at the visual centre of the video.
+                // Expressiveness belongs to the primary control's motion, not
+                // to a large permanent container covering the frame.
                 Row(
                     modifier = Modifier.align(Alignment.Center),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(32.dp)
+                    horizontalArrangement = Arrangement.spacedBy(28.dp)
                 ) {
                     if (showQueueControls) {
                         QueueSkipButton(
@@ -582,14 +565,21 @@ fun FullscreenPlayerContent(
                             contentDescription = "Previous in playlist",
                             enabled = hasPreviousInQueue,
                             onClick = onPreviousInQueue,
-                            size = 56.dp
+                            size = 54.dp
+                        )
+                    } else {
+                        PlayerIconButton(
+                            icon = Icons.Rounded.Replay10,
+                            contentDescription = "Rewind 10 seconds",
+                            onClick = onSeekBackward
                         )
                     }
                     ExpressivePlayPauseButton(
                         isPlaying = isPlaying,
                         isBuffering = isBuffering,
                         onClick = onPlayPause,
-                        size = 80.dp
+                        size = 74.dp,
+                        overVideo = true
                     )
                     if (showQueueControls) {
                         QueueSkipButton(
@@ -597,26 +587,74 @@ fun FullscreenPlayerContent(
                             contentDescription = "Next in playlist",
                             enabled = hasNextInQueue,
                             onClick = onNextInQueue,
-                            size = 56.dp
+                            size = 54.dp
+                        )
+                    } else {
+                        PlayerIconButton(
+                            icon = Icons.Rounded.Forward10,
+                            contentDescription = "Forward 10 seconds",
+                            onClick = onSeekForward
                         )
                     }
                 }
-                
-                // Bottom Bar
+
+                // Low-weight utilities and a full-width timeline hug the edge.
+                // They remain discoverable without becoming the visual subject.
                 Column(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
-                        .background(Brush.verticalGradient(colors = listOf(Color.Transparent, Color.Black.copy(0.8f))))
-                        .padding(horizontal = 32.dp, vertical = 32.dp),
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(Color.Transparent, Color.Black.copy(alpha = 0.72f))
+                            )
+                        )
+                        .displayCutoutPadding()
+                        .padding(horizontal = 24.dp, vertical = 18.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    if (chapters.isNotEmpty()) {
-                        ChapterTitleChip(
-                            chapters = chapters,
-                            currentPositionMs = currentPosition,
-                            onClick = onOpenChapters
-                        )
+                    if (chapters.isNotEmpty() || showCommentsButton) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (chapters.isNotEmpty()) {
+                                ChapterTitleChip(
+                                    chapters = chapters,
+                                    currentPositionMs = currentPosition,
+                                    onClick = onOpenChapters
+                                )
+                            }
+                            Spacer(Modifier.weight(1f))
+                            if (showCommentsButton) {
+                                Surface(
+                                    onClick = onCommentsToggle,
+                                    shape = CircleShape,
+                                    color = if (commentsActive) {
+                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.92f)
+                                    } else Color.Black.copy(alpha = 0.46f),
+                                    contentColor = if (commentsActive) {
+                                        MaterialTheme.colorScheme.onPrimary
+                                    } else Color.White
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(7.dp)
+                                    ) {
+                                        Icon(
+                                            Icons.AutoMirrored.Rounded.Comment,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(19.dp)
+                                        )
+                                        Text(
+                                            if (commentsActive) "Close comments" else "Comments",
+                                            style = MaterialTheme.typography.labelLarge
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -650,6 +688,7 @@ fun FullscreenPlayerContent(
                             Text(formatDuration(duration), color = Color.White, style = MaterialTheme.typography.labelLarge)
                         }
                     }
+
                 }
             }
         }
@@ -721,6 +760,7 @@ fun PortraitPlayerContent(
 ) {
     // Stable shapes
     val stableShapes = IconButtonDefaults.shapes()
+    var showMoreControls by remember { mutableStateOf(false) }
 
     // Speed captured when a hold-to-2x begins, restored when the finger lifts
     var speedBeforeBoost by remember { mutableFloatStateOf(1f) }
@@ -789,7 +829,7 @@ fun PortraitPlayerContent(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.5f))
+                    .background(Color.Black.copy(alpha = 0.32f))
             ) {
                 // Top
                 Row(
@@ -812,35 +852,6 @@ fun PortraitPlayerContent(
                     }
                     
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        // Combined mode toggle: repeat off = auto-play next, repeat on = loop this video
-                         FilledTonalIconButton(
-                            onClick = onLoopToggle,
-                            colors = IconButtonDefaults.filledTonalIconButtonColors(
-                                containerColor = if (isLooping) MaterialTheme.colorScheme.primary else Color.Black.copy(0.5f),
-                                contentColor = if (isLooping) MaterialTheme.colorScheme.onPrimary else Color.White
-                            ),
-                            shapes = stableShapes
-                        ) {
-                             Icon(
-                                if (isLooping) Icons.Rounded.RepeatOne else Icons.Rounded.Autorenew,
-                                contentDescription = if (isLooping) "Repeat" else "Auto Play"
-                            )
-                        }
-                        if (showTimedCommentsButton && !isLive) {
-                            FilledTonalIconButton(
-                                onClick = onTimedCommentsToggle,
-                                colors = IconButtonDefaults.filledTonalIconButtonColors(
-                                    containerColor = if (timedCommentsActive) MaterialTheme.colorScheme.primary else Color.Black.copy(0.5f),
-                                    contentColor = if (timedCommentsActive) MaterialTheme.colorScheme.onPrimary else Color.White
-                                ),
-                                shapes = stableShapes
-                            ) {
-                                Icon(
-                                    Icons.AutoMirrored.Rounded.Comment,
-                                    contentDescription = "Timed comments"
-                                )
-                            }
-                        }
                         FilledTonalIconButton(
                             onClick = onCaptionsClick,
                             colors = IconButtonDefaults.filledTonalIconButtonColors(
@@ -854,25 +865,6 @@ fun PortraitPlayerContent(
                                 contentDescription = "Captions"
                             )
                         }
-                        // The only discoverable way into PiP. Auto-enter covers
-                        // leaving the app on API 31+, but nothing advertised
-                        // that PiP existed, and on Android 11 there was no way
-                        // in at all.
-                        if (showPipButton) {
-                            FilledTonalIconButton(
-                                onClick = onPipClick,
-                                colors = IconButtonDefaults.filledTonalIconButtonColors(
-                                    containerColor = Color.Black.copy(0.5f),
-                                    contentColor = Color.White
-                                ),
-                                shapes = stableShapes
-                            ) {
-                                Icon(
-                                    Icons.Rounded.PictureInPictureAlt,
-                                    contentDescription = "Picture in picture"
-                                )
-                            }
-                        }
                         FilledIconButton(
                             onClick = onSettings,
                             colors = IconButtonDefaults.filledIconButtonColors(
@@ -881,22 +873,32 @@ fun PortraitPlayerContent(
                             ),
                             shapes = stableShapes
                         ) {
-                            Icon(Icons.Rounded.Settings, "Quality")
+                            Icon(Icons.Rounded.Settings, "Playback settings")
                         }
-                        if (showVerticalLiveButton) {
-                            FilledIconButton(
-                                onClick = onVerticalLiveClick,
-                                colors = IconButtonDefaults.filledIconButtonColors(
+                        Box {
+                            FilledTonalIconButton(
+                                onClick = { showMoreControls = true },
+                                colors = IconButtonDefaults.filledTonalIconButtonColors(
                                     containerColor = Color.Black.copy(0.5f),
                                     contentColor = Color.White
                                 ),
                                 shapes = stableShapes
                             ) {
-                                Icon(
-                                    Icons.Rounded.StayCurrentPortrait,
-                                    contentDescription = "Fill the screen vertically"
-                                )
+                                Icon(Icons.Rounded.MoreVert, "More playback controls")
                             }
+                            PlayerOverflowMenu(
+                                expanded = showMoreControls,
+                                onDismiss = { showMoreControls = false },
+                                isLooping = isLooping,
+                                onLoopToggle = onLoopToggle,
+                                showTimedComments = showTimedCommentsButton && !isLive,
+                                timedCommentsActive = timedCommentsActive,
+                                onTimedCommentsToggle = onTimedCommentsToggle,
+                                showPip = showPipButton,
+                                onPipClick = onPipClick,
+                                showVerticalLive = showVerticalLiveButton,
+                                onVerticalLiveClick = onVerticalLiveClick
+                            )
                         }
                         FilledIconButton(
                             onClick = onFullscreenToggle,
@@ -1825,6 +1827,7 @@ fun VideoInfoSection(
     onOpenQueue: () -> Unit = {},
     /** Seek the player, in seconds. Enables timestamp links in the description. */
     onSeekTo: ((seconds: Long) -> Unit)? = null,
+    isOffline: Boolean = false,
     isLive: Boolean = false,
     /** Concurrent viewers, refreshed while the stream is open. */
     liveViewerCount: String? = null,
@@ -1834,7 +1837,7 @@ fun VideoInfoSection(
         modifier = modifier
             .fillMaxWidth()
             .verticalScroll(rememberScrollState())
-            .padding(24.dp)
+            .padding(horizontal = 16.dp, vertical = 20.dp)
             // Applied inside verticalScroll, so this is scrolling clearance
             // rather than a viewport inset: the list passes under the
             // navigation bar and only its last item has to clear it. The
@@ -1843,7 +1846,7 @@ fun VideoInfoSection(
                 bottom = 80.dp +
                     WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
             ),
-        verticalArrangement = Arrangement.spacedBy(24.dp)
+        verticalArrangement = Arrangement.spacedBy(20.dp)
     ) {
         // Title & Stats Group
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1860,6 +1863,12 @@ fun VideoInfoSection(
             if (isLive) {
                 LiveBadge(
                     viewerCount = liveViewerCount ?: video.viewCount.takeIf { it.isNotEmpty() }
+                )
+            } else if (isOffline) {
+                Text(
+                    text = "Available offline",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary
                 )
             } else {
                 Text(
@@ -1883,7 +1892,7 @@ fun VideoInfoSection(
 
         // Like / Dislike + Save + Share Actions (scrolls like YouTube's chip
         // row so the pills never squash on narrow screens)
-        Row(
+        if (!isOffline) Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             modifier = Modifier.horizontalScroll(rememberScrollState())
@@ -1899,7 +1908,7 @@ fun VideoInfoSection(
         }
 
         // Channel Info Surface (tap navigates to the channel)
-        Surface(
+        if (!isOffline) Surface(
             shape = RoundedCornerShape(16.dp),
             color = MaterialTheme.colorScheme.surfaceContainer,
             modifier = Modifier.fillMaxWidth(),
@@ -2007,7 +2016,7 @@ fun VideoInfoSection(
         }
 
         // Comments Entry
-        if (!isLive) {
+        if (!isLive && !isOffline) {
             Surface(
                 shape = RoundedCornerShape(16.dp),
                 color = MaterialTheme.colorScheme.surfaceContainer,
@@ -2145,7 +2154,7 @@ fun VideoInfoSection(
                         // Thumbnail
                         Box(
                             modifier = Modifier
-                                .width(160.dp)
+                                .width(144.dp)
                                 .aspectRatio(16f/9f)
                                 .clip(RoundedCornerShape(8.dp))
                                 .background(MaterialTheme.colorScheme.surfaceContainerHigh)
@@ -2212,6 +2221,137 @@ fun VideoInfoSection(
 }
 
 /**
+ * Secondary playback actions shared by inline and fullscreen chrome.
+ *
+ * Keeping these as labeled rows preserves every capability without asking a
+ * viewer to decode a wall of equally weighted icons over the video. Selected
+ * states retain both icon and color cues, while the menu itself provides the
+ * stable tonal surface that moving frames cannot.
+ */
+@Composable
+private fun PlayerOverflowMenu(
+    expanded: Boolean,
+    onDismiss: () -> Unit,
+    isLooping: Boolean,
+    onLoopToggle: () -> Unit,
+    showQueue: Boolean = false,
+    onOpenQueue: () -> Unit = {},
+    showTimedComments: Boolean = false,
+    timedCommentsActive: Boolean = false,
+    onTimedCommentsToggle: () -> Unit = {},
+    showComments: Boolean = false,
+    commentsActive: Boolean = false,
+    onCommentsToggle: () -> Unit = {},
+    showLiveChat: Boolean = false,
+    liveChatActive: Boolean = false,
+    onLiveChatToggle: () -> Unit = {},
+    showPip: Boolean = false,
+    onPipClick: () -> Unit = {},
+    showVerticalLive: Boolean = false,
+    onVerticalLiveClick: () -> Unit = {}
+) {
+    fun runAndDismiss(action: () -> Unit) {
+        onDismiss()
+        action()
+    }
+
+    DropdownMenu(
+        expanded = expanded,
+        onDismissRequest = onDismiss,
+        shape = MaterialTheme.shapes.extraLarge,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+    ) {
+        if (showQueue) {
+            DropdownMenuItem(
+                text = { Text("Playlist queue") },
+                leadingIcon = {
+                    Icon(Icons.AutoMirrored.Rounded.PlaylistPlay, contentDescription = null)
+                },
+                onClick = { runAndDismiss(onOpenQueue) }
+            )
+        }
+        DropdownMenuItem(
+            text = { Text(if (isLooping) "Loop video on" else "Loop video") },
+            leadingIcon = {
+                Icon(
+                    Icons.Rounded.RepeatOne,
+                    contentDescription = null,
+                    tint = if (isLooping) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            },
+            trailingIcon = if (isLooping) {
+                { Icon(Icons.Rounded.CheckCircle, contentDescription = "Enabled") }
+            } else null,
+            onClick = { runAndDismiss(onLoopToggle) }
+        )
+        if (showTimedComments) {
+            DropdownMenuItem(
+                text = {
+                    Text(if (timedCommentsActive) "Timed comments on" else "Timed comments")
+                },
+                leadingIcon = {
+                    Icon(
+                        Icons.AutoMirrored.Rounded.Comment,
+                        contentDescription = null,
+                        tint = if (timedCommentsActive) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                },
+                trailingIcon = if (timedCommentsActive) {
+                    { Icon(Icons.Rounded.CheckCircle, contentDescription = "Enabled") }
+                } else null,
+                onClick = { runAndDismiss(onTimedCommentsToggle) }
+            )
+        }
+        if (showComments) {
+            DropdownMenuItem(
+                text = { Text(if (commentsActive) "Close comments" else "Browse comments") },
+                leadingIcon = {
+                    Icon(
+                        Icons.AutoMirrored.Rounded.Comment,
+                        contentDescription = null,
+                        tint = if (commentsActive) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                },
+                trailingIcon = if (commentsActive) {
+                    { Icon(Icons.Rounded.CheckCircle, contentDescription = "Open") }
+                } else null,
+                onClick = { runAndDismiss(onCommentsToggle) }
+            )
+        }
+        if (showLiveChat) {
+            DropdownMenuItem(
+                text = { Text(if (liveChatActive) "Hide live chat" else "Show live chat") },
+                leadingIcon = {
+                    Icon(Icons.AutoMirrored.Rounded.Chat, contentDescription = null)
+                },
+                onClick = { runAndDismiss(onLiveChatToggle) }
+            )
+        }
+        if (showPip) {
+            DropdownMenuItem(
+                text = { Text("Picture in picture") },
+                leadingIcon = {
+                    Icon(Icons.Rounded.PictureInPictureAlt, contentDescription = null)
+                },
+                onClick = { runAndDismiss(onPipClick) }
+            )
+        }
+        if (showVerticalLive) {
+            DropdownMenuItem(
+                text = { Text("Vertical live view") },
+                leadingIcon = {
+                    Icon(Icons.Rounded.StayCurrentPortrait, contentDescription = null)
+                },
+                onClick = { runAndDismiss(onVerticalLiveClick) }
+            )
+        }
+    }
+}
+
+/**
  * Previous / next within the playlist, flanking play/pause.
  *
  * Only composed while a queue is running: on a one-off video both buttons would
@@ -2226,17 +2366,24 @@ private fun QueueSkipButton(
     contentDescription: String,
     enabled: Boolean,
     onClick: () -> Unit,
-    size: Dp = 48.dp
+    size: Dp = 48.dp,
+    onTonalSurface: Boolean = false
 ) {
     FilledTonalIconButton(
         onClick = onClick,
         enabled = enabled,
         modifier = Modifier.size(size),
         colors = IconButtonDefaults.filledTonalIconButtonColors(
-            containerColor = Color.Black.copy(0.5f),
-            contentColor = Color.White,
-            disabledContainerColor = Color.Black.copy(0.3f),
-            disabledContentColor = Color.White.copy(0.35f)
+            containerColor = if (onTonalSurface) MaterialTheme.colorScheme.secondaryContainer
+                else Color.Black.copy(0.5f),
+            contentColor = if (onTonalSurface) MaterialTheme.colorScheme.onSecondaryContainer
+                else Color.White,
+            disabledContainerColor = if (onTonalSurface) {
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+            } else Color.Black.copy(0.3f),
+            disabledContentColor = if (onTonalSurface) {
+                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+            } else Color.White.copy(0.35f)
         ),
         // Same "square flash" guard the rest of the control chrome uses.
         shapes = IconButtonDefaults.shapes()
@@ -2542,16 +2689,17 @@ fun ExpressivePlayPauseButton(
     isPlaying: Boolean,
     isBuffering: Boolean = false,
     onClick: () -> Unit,
-    size: androidx.compose.ui.unit.Dp = 72.dp
+    size: androidx.compose.ui.unit.Dp = 72.dp,
+    overVideo: Boolean = false
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     
     // Expressive Spring Animation for Scale
     val scale by animateDpAsState(
-        targetValue = if (isPressed) size * 0.9f else size,
+        targetValue = if (isPressed) size * 0.95f else size,
         animationSpec = spring(
-            dampingRatio = 0.4f, // Bouncy!
+            dampingRatio = 0.72f,
             stiffness = 600f
         ),
         label = "ButtonScale"
@@ -2571,17 +2719,20 @@ fun ExpressivePlayPauseButton(
         onClick = onClick,
         modifier = Modifier.size(scale),
         shape = RoundedCornerShape(cornerRadius),
-        color = MaterialTheme.colorScheme.primaryContainer,
+        color = if (overVideo) Color.Black.copy(alpha = 0.62f)
+            else MaterialTheme.colorScheme.primaryContainer,
         interactionSource = interactionSource,
-        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-        shadowElevation = 6.dp
+        contentColor = if (overVideo) Color.White
+            else MaterialTheme.colorScheme.onPrimaryContainer,
+        shadowElevation = 0.dp
     ) {
         Box(contentAlignment = Alignment.Center) {
             if (isBuffering && !isPlaying) {
                 // Expressive Loading Indicator
                  LoadingIndicator(
                     modifier = Modifier.size(size * 0.5f),
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    color = if (overVideo) Color.White
+                        else MaterialTheme.colorScheme.onPrimaryContainer,
                     polygons = listOf(
                         MaterialShapes.SoftBurst,
                         MaterialShapes.Cookie9Sided,

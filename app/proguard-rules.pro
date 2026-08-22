@@ -12,13 +12,13 @@
 #   public *;
 #}
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
-
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# Keep real file names and line numbers in release stack traces. The in-app
+# bug reporter (ReportBugScreen / CrashReporter) puts traces straight into
+# user reports, and without this a minified release trace reads
+# "a.b.c: Unknown source(1)". Pair with the mapping.txt upload in build.yml,
+# which is what deobfuscates the renamed symbols.
+-keepattributes SourceFile,LineNumberTable
+-renamesourcefileattribute SourceFile
 
 # Fix for NewPipe Extractor / Rhino (missing java.beans and javax.script on Android)
 -dontwarn org.mozilla.javascript.**

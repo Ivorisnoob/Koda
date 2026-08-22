@@ -1,5 +1,7 @@
 package com.ivor.ivormusic.ui.video
 
+import com.ivor.ivormusic.util.KLog
+
 import android.app.PictureInPictureParams
 import android.os.Build
 import android.util.Rational
@@ -102,7 +104,7 @@ fun enterPipMode(
             .build()
         activity.enterPictureInPictureMode(params)
     } catch (e: Exception) {
-        android.util.Log.w("VideoPlayerOverlay", "enterPictureInPictureMode refused", e)
+        KLog.w("VideoPlayerOverlay", "enterPictureInPictureMode refused", e)
         false
     }
 }

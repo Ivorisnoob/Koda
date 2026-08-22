@@ -1,6 +1,7 @@
 package com.ivor.ivormusic.service
 
-import android.util.Log
+import com.ivor.ivormusic.util.KLog
+
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
@@ -245,7 +246,7 @@ class CrossfadeEngine(
             }
             true
         } catch (e: Exception) {
-            Log.e(TAG, "Could not start transition", e)
+            KLog.e(TAG, "Could not start transition", e)
             fadingIntoId = null
             pendingTargetIndex = null
             runCatching { incoming.stop() }
@@ -273,7 +274,7 @@ class CrossfadeEngine(
                 true
             } == true
             if (!ready) {
-                Log.w(TAG, "Standby was not ready in time; abandoning the overlap")
+                KLog.w(TAG, "Standby was not ready in time; abandoning the overlap")
                 abortInto(outgoing, incoming)
                 return
             }
@@ -312,7 +313,7 @@ class CrossfadeEngine(
                 true
             } == true
             if (!clockStarted) {
-                Log.w(TAG, "Incoming playback clock did not start; abandoning the overlap")
+                KLog.w(TAG, "Incoming playback clock did not start; abandoning the overlap")
                 abortInto(outgoing, incoming)
                 return
             }
@@ -350,7 +351,7 @@ class CrossfadeEngine(
                     } else if (SystemClock.elapsedRealtime() - incomingStallStartedMs >=
                         MAX_INCOMING_STALL_MS
                     ) {
-                        Log.w(TAG, "Incoming engine stalled mid-fade; abandoning the overlap")
+                        KLog.w(TAG, "Incoming engine stalled mid-fade; abandoning the overlap")
                         abortInto(outgoing, incoming)
                         return
                     }
@@ -389,20 +390,20 @@ class CrossfadeEngine(
                 // Swapping onto a dead engine would be silence with a running
                 // progress bar, so abandon and let the outgoing track finish.
                 if (incoming.playbackState == Player.STATE_IDLE) {
-                    Log.w(TAG, "Standby engine died mid-fade; abandoning the overlap")
+                    KLog.w(TAG, "Standby engine died mid-fade; abandoning the overlap")
                     abortInto(outgoing, incoming)
                     return
                 }
                 delay(RAMP_INTERVAL_MS)
             }
             currentCoroutineContext().ensureActive()
-            Log.d(TAG, "Transition clocks completed with max drift=${maxClockDriftMs}ms")
+            KLog.d(TAG, "Transition clocks completed with max drift=${maxClockDriftMs}ms")
             completeSwap(outgoing, incoming, gainFor(incoming), targetIndex)
         } catch (e: CancellationException) {
             abortInto(outgoing, incoming)
             throw e
         } catch (e: Exception) {
-            Log.e(TAG, "Transition failed; keeping the outgoing player", e)
+            KLog.e(TAG, "Transition failed; keeping the outgoing player", e)
             abortInto(outgoing, incoming)
         }
     }
@@ -463,7 +464,7 @@ class CrossfadeEngine(
             setFilterSweep(outgoing, 0f)
             releaseTempo(incoming)
         } catch (e: Exception) {
-            Log.e(TAG, "Swap failed; falling back to the outgoing player", e)
+            KLog.e(TAG, "Swap failed; falling back to the outgoing player", e)
             runCatching {
                 incoming.stop()
                 incoming.clearMediaItems()

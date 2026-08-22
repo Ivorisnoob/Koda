@@ -1,5 +1,7 @@
 package com.ivor.ivormusic.data
 
+import com.ivor.ivormusic.util.KLog
+
 import android.content.Context
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -222,7 +224,7 @@ class SavedPlaylistsRepository(context: Context) {
                 )
             }
         } catch (e: Exception) {
-            android.util.Log.w(TAG, "Could not read saved playlists", e)
+            KLog.w(TAG, "Could not read saved playlists", e)
             emptyList()
         }
     }

@@ -1,5 +1,7 @@
 package com.ivor.ivormusic.data
 
+import com.ivor.ivormusic.util.KLog
+
 import android.database.sqlite.SQLiteDatabase
 import org.json.JSONArray
 import org.json.JSONObject
@@ -72,7 +74,7 @@ object SubscriptionTransfer {
                 scratchFile.writeBytes(bytes)
                 parseDatabase(scratchFile)
             } catch (e: Exception) {
-                android.util.Log.w(TAG, "Could not read that database", e)
+                KLog.w(TAG, "Could not read that database", e)
                 ImportedFile()
             } finally {
                 scratchFile.delete()
@@ -167,10 +169,10 @@ object SubscriptionTransfer {
                     return true
                 }
             }
-            android.util.Log.w(TAG, "No database inside that archive")
+            KLog.w(TAG, "No database inside that archive")
             false
         } catch (e: Exception) {
-            android.util.Log.w(TAG, "Could not unpack that archive", e)
+            KLog.w(TAG, "Could not unpack that archive", e)
             destination.delete()
             false
         }
@@ -239,7 +241,7 @@ object SubscriptionTransfer {
                 ImportedFile(channels, readDatabaseGroups(db, channelIdByRow), foreign)
             }
         } catch (e: Exception) {
-            android.util.Log.w(TAG, "Not a NewPipe-family database", e)
+            KLog.w(TAG, "Not a NewPipe-family database", e)
             ImportedFile()
         }
     }
@@ -285,7 +287,7 @@ object SubscriptionTransfer {
                 )
             }
         } catch (e: Exception) {
-            android.util.Log.w(TAG, "No readable feed groups in that database", e)
+            KLog.w(TAG, "No readable feed groups in that database", e)
             emptyList()
         }
     }
@@ -319,7 +321,7 @@ object SubscriptionTransfer {
                 fromUrl(url, name)
             }
         } catch (e: Exception) {
-            android.util.Log.w(TAG, "Not a NewPipe subscriptions file", e)
+            KLog.w(TAG, "Not a NewPipe subscriptions file", e)
             emptyList()
         }
     }

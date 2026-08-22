@@ -11,16 +11,25 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -30,10 +39,15 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
 import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.ui.home.HomeScreen
 import com.ivor.ivormusic.ui.home.HomeViewModel
@@ -48,6 +62,10 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import com.ivor.ivormusic.ui.theme.ThemeMode
 
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import com.ivor.ivormusic.ui.onboarding.OnboardingScreen
 import com.ivor.ivormusic.ui.video.enterPipMode
 import com.ivor.ivormusic.ui.share.PendingSharedLink
@@ -90,6 +108,17 @@ class MainActivity : ComponentActivity() {
     private var pipVideoAspectRatio: Float? = null
     private var pipVideoBounds: android.graphics.Rect? = null
     private var pipEligible = false
+
+    /**
+     * The daily time limit's lock state, evaluated by [tickAppTime] every 30
+     * seconds while foregrounded (and once at start). Snapshot state so the
+     * overlay in MusicApp reacts without any flow plumbing; the underlying
+     * decision always fresh-reads preferences, so budget changes apply on the
+     * next tick.
+     */
+    private var appTimeLocked by androidx.compose.runtime.mutableStateOf(false)
+    private var foregroundedAtMs = 0L
+    private var appTimeTicker: kotlinx.coroutines.Job? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         val splashScreen = installSplashScreen()
@@ -165,6 +194,7 @@ class MainActivity : ComponentActivity() {
                     MusicApp(
                         pendingSharedLink = pendingSharedLink,
                         isInPipMode = isInPipMode,
+                        appTimeLocked = appTimeLocked,
                         onPipStateChanged = { eligible, aspectRatio, bounds ->
                             pipEligible = eligible
                             pipVideoAspectRatio = aspectRatio
@@ -268,6 +298,66 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
+     * Daily time limit bookkeeping. STARTED is the whole definition of
+     * "using Koda" here: foregrounded, on screen, in front of the user.
+     * PiP counts as background - the video is a floating window, not app use.
+     */
+    override fun onStart() {
+        super.onStart()
+        foregroundedAtMs = android.os.SystemClock.elapsedRealtime()
+        tickAppTime()
+        appTimeTicker = lifecycleScope.launch {
+            while (isActive) {
+                delay(30_000L)
+                chargeForegroundTime()
+                tickAppTime()
+            }
+        }
+    }
+
+    override fun onStop() {
+        appTimeTicker?.cancel()
+        appTimeTicker = null
+        chargeForegroundTime()
+        super.onStop()
+    }
+
+    /** Flush the time since the last marker into today's total. */
+    private fun chargeForegroundTime() {
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (foregroundedAtMs == 0L || appTimeLocked) {
+            // Locked sessions are deliberately uncounted: sitting on the lock
+            // screen must not eat the budget, and the marker still moves so a
+            // midnight rollover or budget raise resumes cleanly.
+            foregroundedAtMs = now
+            return
+        }
+        val prefs = com.ivor.ivormusic.data.ThemePreferences(applicationContext)
+        val shouldTrack = prefs.isTimeLimitEnabled() &&
+            com.ivor.ivormusic.data.AppTimeLimit.budgetMinutesForToday(
+                com.ivor.ivormusic.data.AppTimeLimit.parseBudgets(
+                    prefs.getTimeLimitBudgets()
+                )
+            ) > 0
+        if (shouldTrack) {
+            com.ivor.ivormusic.data.AppTimeLimit.addForegroundMillis(
+                this,
+                now - foregroundedAtMs
+            )
+        }
+        foregroundedAtMs = now
+    }
+
+    private fun tickAppTime() {
+        val prefs = com.ivor.ivormusic.data.ThemePreferences(applicationContext)
+        appTimeLocked = com.ivor.ivormusic.data.AppTimeLimit.isLocked(
+            this,
+            prefs.isTimeLimitEnabled(),
+            prefs.getTimeLimitBudgets()
+        )
+    }
+
+    /**
      * Entering PiP on the way out of the app.
      *
      * On API 31+ the system does this itself from setAutoEnterEnabled, which
@@ -310,6 +400,13 @@ class MainActivity : ComponentActivity() {
 fun MusicApp(
     pendingSharedLink: PendingSharedLink?,
     isInPipMode: Boolean,
+
+    /**
+     * The daily time limit's lock. Owned by the activity's ticker rather
+     * than a flow: the decision fresh-reads preferences every tick, and the
+     * only consumer is this overlay.
+     */
+    appTimeLocked: Boolean = false,
     onPipStateChanged: (eligible: Boolean, aspectRatio: Float?, bounds: android.graphics.Rect?) -> Unit,
     currentThemeMode: ThemeMode,
     onThemeModeChange: (ThemeMode) -> Unit,
@@ -498,11 +595,13 @@ fun MusicApp(
     // composition, in onUserLeaveHint, where there is no way to read state.
     val pipAspectRatio by videoPlayerViewModel.videoAspectRatio.collectAsState()
     val pipBounds by videoPlayerViewModel.videoSurfaceBounds.collectAsState()
-    androidx.compose.runtime.LaunchedEffect(
-        overlayVideo, isVideoOverlayExpanded, pipAspectRatio, pipBounds
-    ) {
+    val videoIsPlaying by videoPlayerViewModel.isPlaying.collectAsState()
+    androidx.compose.runtime.SideEffect {
         onPipStateChanged(
-            overlayVideo != null && isVideoOverlayExpanded,
+            overlayVideo != null &&
+                isVideoOverlayExpanded &&
+                videoIsPlaying &&
+                pipBounds?.isEmpty == false,
             pipAspectRatio,
             pipBounds
         )
@@ -655,6 +754,8 @@ fun MusicApp(
                     onNavigateToSubscriptions = { navController.navigate("subscriptions") },
                     onNavigateToNotInterested = { navController.navigate("not_interested") },
                     onNavigateToBackup = { navController.navigate("backup") },
+                    onNavigateToReportBug = { navController.navigate("report") },
+                    onNavigateToTimeLimit = { navController.navigate("app_time_limit") },
                     loadLocalSongs = loadLocalSongs,
                     onLoadLocalSongsToggle = onLoadLocalSongsToggle,
                     ambientBackground = ambientBackground,
@@ -844,8 +945,6 @@ fun MusicApp(
                 val downloadedSongs by playerViewModel.downloadedSongs.collectAsState()
                 val downloadedVideos by playerViewModel.downloadedVideos.collectAsState()
                 val downloadProgress by playerViewModel.downloadProgress.collectAsState()
-                val downloadsContext = LocalContext.current
-
                 com.ivor.ivormusic.ui.downloads.DownloadsScreen(
                     downloadedSongs = downloadedSongs,
                     downloadedVideos = downloadedVideos,
@@ -857,16 +956,8 @@ fun MusicApp(
                     onPlayQueue = { songs, song ->
                         playerViewModel.playQueue(songs, song)
                     },
-                    onPlayVideo = { video ->
-                        // Handed to the system player rather than the in-app one:
-                        // VideoPlayerViewModel.playVideo drives the two-phase
-                        // InnerTube resolution, and a downloaded file has no
-                        // stream to resolve. Local playback in the app player is
-                        // a separate piece of work.
-                        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW)
-                            .setDataAndType(video.uri, "video/*")
-                            .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                        runCatching { downloadsContext.startActivity(intent) }
+                    onPlayVideo = { videos, video ->
+                        videoPlayerViewModel.playDownloadedVideos(videos, video)
                     },
                     onDeleteDownload = { songId ->
                         playerViewModel.deleteDownload(songId)
@@ -933,6 +1024,28 @@ fun MusicApp(
                     )
                 }
             }
+            composable(
+                route = "report",
+                enterTransition = { slideInHorizontally(initialOffsetX = { it }) + fadeIn() },
+                exitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut() },
+                popEnterTransition = { slideInHorizontally(initialOffsetX = { -it / 3 }) + fadeIn() },
+                popExitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut() }
+            ) {
+                com.ivor.ivormusic.ui.report.ReportBugScreen(
+                    onBack = { navController.popBackStack() }
+                )
+            }
+            composable(
+                route = "app_time_limit",
+                enterTransition = { slideInHorizontally(initialOffsetX = { it }) + fadeIn() },
+                exitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut() },
+                popEnterTransition = { slideInHorizontally(initialOffsetX = { -it / 3 }) + fadeIn() },
+                popExitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut() }
+            ) {
+                com.ivor.ivormusic.ui.applock.AppTimeLimitScreen(
+                    onBack = { navController.popBackStack() }
+                )
+            }
         }
         
         com.ivor.ivormusic.ui.video.VideoPlayerOverlay(
@@ -963,6 +1076,59 @@ fun MusicApp(
                 .navigationBarsPadding()
                 .padding(bottom = if (musicPillVisible) 96.dp else 16.dp)
         )
+
+        // Offer to report the crash from the previous run. Read once per
+        // composition of MusicApp (an activity recreation re-reads the file,
+        // but either answer has deleted it by then). Only after onboarding -
+        // a crash during first-run setup would otherwise interrupt it again.
+        if (onboardingCompleted) {
+            var showCrashPrompt by remember {
+                mutableStateOf(
+                    com.ivor.ivormusic.data.CrashReporter.readPendingCrash(context) != null
+                )
+            }
+            if (showCrashPrompt) {
+                CrashReportPrompt(
+                    onViewReport = {
+                        showCrashPrompt = false
+                        navController.navigate("report")
+                    },
+                    onDismiss = {
+                        showCrashPrompt = false
+                        com.ivor.ivormusic.data.CrashReporter.clearPendingCrash(context)
+                    }
+                )
+            }
+        }
+
+        // The daily time limit's enforcement surface, last in the stack so it
+        // covers the NavHost, both player overlays and every prompt. Locking
+        // also stands playback down: a limiter that locks the screen while
+        // music keeps playing would be counting nothing and stopping nothing.
+        androidx.compose.runtime.LaunchedEffect(appTimeLocked) {
+            if (appTimeLocked) {
+                playerViewModel.pause()
+                videoPlayerViewModel.pause()
+                shortsPlayerViewModel.pause()
+            }
+        }
+        if (appTimeLocked && !isInPipMode) {
+            val limitPrefs = remember { com.ivor.ivormusic.data.ThemePreferences(context) }
+            val usedSeconds = remember(appTimeLocked) {
+                com.ivor.ivormusic.data.AppTimeLimit.usedSecondsToday(context)
+            }
+            val budgetMinutes = remember(appTimeLocked) {
+                com.ivor.ivormusic.data.AppTimeLimit.budgetMinutesForToday(
+                    com.ivor.ivormusic.data.AppTimeLimit.parseBudgets(
+                        limitPrefs.getTimeLimitBudgets()
+                    )
+                )
+            }
+            com.ivor.ivormusic.ui.applock.AppLockOverlay(
+                usedSecondsToday = usedSeconds,
+                budgetMinutes = budgetMinutes
+            )
+        }
     }
 }
 
@@ -1019,4 +1185,65 @@ private fun NotInterestedUndoHost(modifier: Modifier = Modifier) {
     }
 
     SnackbarHost(hostState = snackbarHostState, modifier = modifier)
+}
+
+/**
+ * One-time offer to report the crash the app died with on its previous run.
+ *
+ * A dialog at the MusicApp root rather than a card inside Home: it must be
+ * answerable before any of the tab content, overlays or mini players settle,
+ * and both answers are one tap - "Report" opens the reporter route (which
+ * carries the crash file's contents), "Not now" deletes the file. Either way
+ * it never appears twice for the same crash.
+ */
+@Composable
+private fun CrashReportPrompt(
+    onViewReport: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = RoundedCornerShape(32.dp),
+        icon = {
+            Box(
+                modifier = Modifier
+                    .size(64.dp)
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.BugReport,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
+        },
+        title = {
+            Text(
+                text = "Koda crashed last time",
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.fillMaxWidth()
+            )
+        },
+        text = {
+            Text(
+                text = "Something went wrong on your previous session. " +
+                    "You can send a bug report with the details - nothing " +
+                    "leaves your device unless you choose to share it.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        },
+        confirmButton = {
+            Button(onClick = onViewReport) {
+                Text("View & report")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Not now")
+            }
+        }
+    )
 }

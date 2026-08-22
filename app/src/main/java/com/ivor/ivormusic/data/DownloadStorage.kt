@@ -1,12 +1,13 @@
 package com.ivor.ivormusic.data
 
+import com.ivor.ivormusic.util.KLog
+
 import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Context
 import android.net.Uri
 import android.os.Environment
 import android.provider.MediaStore
-import android.util.Log
 import java.io.OutputStream
 
 /**
@@ -96,7 +97,7 @@ class DownloadStorage(private val context: Context) {
             }
             resolver.insert(collection, values)
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to create MediaStore entry for $displayName", e)
+            KLog.e(TAG, "Failed to create MediaStore entry for $displayName", e)
             null
         }
     }
@@ -105,7 +106,7 @@ class DownloadStorage(private val context: Context) {
         return try {
             resolver.openOutputStream(uri)
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to open output for $uri", e)
+            KLog.e(TAG, "Failed to open output for $uri", e)
             null
         }
     }
@@ -118,7 +119,7 @@ class DownloadStorage(private val context: Context) {
             }
             resolver.update(uri, values, null, null)
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to publish $uri", e)
+            KLog.e(TAG, "Failed to publish $uri", e)
         }
     }
 
@@ -130,7 +131,7 @@ class DownloadStorage(private val context: Context) {
         return try {
             resolver.delete(uri, null, null) > 0
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to delete $uri", e)
+            KLog.e(TAG, "Failed to delete $uri", e)
             false
         }
     }
@@ -180,7 +181,7 @@ class DownloadStorage(private val context: Context) {
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to list ${type.relativePath}", e)
+            KLog.e(TAG, "Failed to list ${type.relativePath}", e)
         }
         return result
     }

@@ -1,8 +1,9 @@
 package com.ivor.ivormusic.data
 
+import com.ivor.ivormusic.util.KLog
+
 import android.content.Context
 import android.net.Uri
-import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -291,7 +292,7 @@ class DownloadRepository private constructor(private val context: Context) {
             // re-checked on every launch, and so backfilled timestamps stick.
             if (prunedAny || backfilledAny) saveMetadata()
         } catch (e: Exception) {
-            Log.e(TAG, "Error loading downloads", e)
+            KLog.e(TAG, "Error loading downloads", e)
             _downloadedSongs.value = emptyList()
         }
     }
@@ -321,7 +322,7 @@ class DownloadRepository private constructor(private val context: Context) {
             }
             downloadsFile.writeText(jsonArray.toString())
         } catch (e: Exception) {
-            Log.e(TAG, "Error saving metadata", e)
+            KLog.e(TAG, "Error saving metadata", e)
         }
     }
 
@@ -365,7 +366,7 @@ class DownloadRepository private constructor(private val context: Context) {
             _downloadedVideos.value = videos
             if (prunedAny) saveVideoMetadata()
         } catch (e: Exception) {
-            Log.e(TAG, "Error loading video downloads", e)
+            KLog.e(TAG, "Error loading video downloads", e)
             _downloadedVideos.value = emptyList()
         }
     }
@@ -388,7 +389,7 @@ class DownloadRepository private constructor(private val context: Context) {
             }
             videosFile.writeText(jsonArray.toString())
         } catch (e: Exception) {
-            Log.e(TAG, "Error saving video metadata", e)
+            KLog.e(TAG, "Error saving video metadata", e)
         }
     }
 
@@ -607,19 +608,19 @@ class DownloadRepository private constructor(private val context: Context) {
                 throw e
             } catch (e: Exception) {
                 lastError = e
-                Log.w(TAG, "Attempt $attempt/$MAX_ATTEMPTS failed for ${request.title}: ${e.message}")
+                KLog.w(TAG, "Attempt $attempt/$MAX_ATTEMPTS failed for ${request.title}: ${e.message}")
             }
 
             if (attempt < MAX_ATTEMPTS) {
                 if (isMediaForbidden(lastError)) {
-                    Log.w(TAG, "googlevideo refused the media; re-minting visitorData before retry")
+                    KLog.w(TAG, "googlevideo refused the media; re-minting visitorData before retry")
                     youtubeRepository.refreshVisitorDataAfterPlaybackFailure()
                 }
                 kotlinx.coroutines.delay(RETRY_BACKOFF_MS * attempt)
             }
         }
 
-        Log.e(TAG, "Giving up on ${request.title}", lastError)
+        KLog.e(TAG, "Giving up on ${request.title}", lastError)
         updateProgress(request, 0f, DownloadStatus.FAILED)
         _downloadingIds.value = _downloadingIds.value - request.id
     }
@@ -763,7 +764,7 @@ class DownloadRepository private constructor(private val context: Context) {
                     } ?: false
 
                     if (!muxed) {
-                        Log.w(TAG, "Mux failed for ${request.title}, falling back to progressive")
+                        KLog.w(TAG, "Mux failed for ${request.title}, falling back to progressive")
                     }
                 }
 
@@ -933,7 +934,7 @@ class DownloadRepository private constructor(private val context: Context) {
         updateProgress(request, 1f, DownloadStatus.DOWNLOADED)
         _downloadingIds.value = _downloadingIds.value - request.id
         removeProgressAfterCompletion(request.id)
-        Log.d(TAG, "Downloaded ${request.title}")
+        KLog.d(TAG, "Downloaded ${request.title}")
     }
 
     /**
@@ -970,7 +971,7 @@ class DownloadRepository private constructor(private val context: Context) {
      * neither.
      */
     fun cancelDownload(songId: String) {
-        Log.d(TAG, "Cancelling download for $songId")
+        KLog.d(TAG, "Cancelling download for $songId")
 
         repositoryScope.launch {
             val wasQueued = queueMutex.withLock {

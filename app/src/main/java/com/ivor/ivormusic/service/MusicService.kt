@@ -1,10 +1,11 @@
 package com.ivor.ivormusic.service
 
+import com.ivor.ivormusic.util.KLog
+
 import android.app.PendingIntent
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
-import android.util.Log
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -270,7 +271,7 @@ class MusicService : MediaLibraryService() {
 
     override fun onCreate() {
         super.onCreate()
-        Log.i(TAG, "MusicService Creating...")
+        KLog.i(TAG, "MusicService Creating...")
 
         // 1. Initialize Dependencies
         themePreferences = ThemePreferences(this)
@@ -360,7 +361,7 @@ class MusicService : MediaLibraryService() {
                                 session.notifyChildrenChanged(controller, "PLAYLISTS", 0, null)
                             }
                         }
-                    }.onFailure { Log.w(TAG, "notifyChildrenChanged after profile switch failed", it) }
+                    }.onFailure { KLog.w(TAG, "notifyChildrenChanged after profile switch failed", it) }
 
                     resolveScope.launch { youtubeRepository.prefetchVisitorData() }
                 }
@@ -376,7 +377,7 @@ class MusicService : MediaLibraryService() {
     }
 
     override fun onDestroy() {
-        Log.i(TAG, "MusicService Destroying...")
+        KLog.i(TAG, "MusicService Destroying...")
         fadeVolumeJob?.cancel()
         progressJob?.cancel()
         transitionJob?.cancel()
@@ -566,7 +567,7 @@ class MusicService : MediaLibraryService() {
                 putExtra(AudioEffect.EXTRA_CONTENT_TYPE, AudioEffect.CONTENT_TYPE_MUSIC)
             }
             sendBroadcast(intent)
-            Log.i(TAG, "Announced audio session $generatedSessionId for external equalizers")
+            KLog.i(TAG, "Announced audio session $generatedSessionId for external equalizers")
         }
     }
 
@@ -685,7 +686,7 @@ class MusicService : MediaLibraryService() {
             // file. Drop the overlap rather than swap onto a player the queue
             // has already moved past, which would play the same track twice.
             if (engine.isFading && reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) {
-                Log.w(TAG, "Advance beat the crossfade; dropping the overlap")
+                KLog.w(TAG, "Advance beat the crossfade; dropping the overlap")
                 engine.cancelTransition()
             }
 
@@ -780,7 +781,7 @@ class MusicService : MediaLibraryService() {
         }
 
         override fun onPlayerError(error: PlaybackException) {
-            Log.e(TAG, "Player Error: ${error.errorCodeName}", error)
+            KLog.e(TAG, "Player Error: ${error.errorCodeName}", error)
             handlePlayerError(error)
         }
     }
@@ -792,7 +793,7 @@ class MusicService : MediaLibraryService() {
         val videoId = mediaItem.mediaId
 
         if (isPlaceholder(uri)) {
-            Log.w(TAG, "Validation: Hit placeholder for $videoId. Resolving...")
+            KLog.w(TAG, "Validation: Hit placeholder for $videoId. Resolving...")
 
             // Launch resolution main-safe
             serviceScope.launch {
@@ -816,7 +817,7 @@ class MusicService : MediaLibraryService() {
                         // current item to zero even though the controller and
                         // mini player already adopted the saved position.
                         val resumePosition = player.currentPosition.coerceAtLeast(0L)
-                        Log.i(TAG, "Validation: Applied resolved item for $videoId (playWhenReady=$playWhenReady)")
+                        KLog.i(TAG, "Validation: Applied resolved item for $videoId (playWhenReady=$playWhenReady)")
                         val index = player.currentMediaItemIndex
                         player.replaceMediaItem(index, resolvedItem)
                         player.prepare()
@@ -826,11 +827,11 @@ class MusicService : MediaLibraryService() {
                         player.playWhenReady = playWhenReady
                     }
                 } catch (e: Exception) {
-                    Log.e(TAG, "Validation: Resolution failed for $videoId", e)
+                    KLog.e(TAG, "Validation: Resolution failed for $videoId", e)
                 }
             }
         } else {
-            Log.d(TAG, "Validation: Playing valid URI for $videoId")
+            KLog.d(TAG, "Validation: Playing valid URI for $videoId")
         }
     }
 
@@ -868,7 +869,7 @@ class MusicService : MediaLibraryService() {
                         // Update player if item is still there
                         if (targetIndex < player.mediaItemCount &&
                             player.getMediaItemAt(targetIndex).mediaId == item.mediaId) {
-                            Log.d(
+                            KLog.d(
                                 TAG,
                                 "Prefetch: Updated ${if (offset == 0) "actual next" else "+${offset + 1}"} " +
                                     "(${item.mediaId})"
@@ -878,7 +879,7 @@ class MusicService : MediaLibraryService() {
                             maybeProfile(resolvedItem)
                         }
                     } catch (e: Exception) {
-                        Log.w(TAG, "Prefetch: Failed to resolve upcoming ${item.mediaId}")
+                        KLog.w(TAG, "Prefetch: Failed to resolve upcoming ${item.mediaId}")
                     } finally {
                         prefetchingIds.remove(item.mediaId)
                     }
@@ -918,12 +919,12 @@ class MusicService : MediaLibraryService() {
                 androidx.media3.datasource.cache.CacheWriter(
                     factory.createDataSource(), dataSpec, null, null
                 ).cache()
-                Log.d(TAG, "Warm: cached stream head for $videoId")
+                KLog.d(TAG, "Warm: cached stream head for $videoId")
             } catch (e: Exception) {
                 // Retryable on the next prefetch round (e.g. an expired URL
                 // that resolution will refresh).
                 warmedIds.remove(videoId)
-                Log.w(TAG, "Warm: failed for $videoId: ${e.message}")
+                KLog.w(TAG, "Warm: failed for $videoId: ${e.message}")
             } finally {
                 warmSemaphore.release()
             }
@@ -948,12 +949,12 @@ class MusicService : MediaLibraryService() {
 
     private suspend fun performResolution(originalItem: MediaItem): MediaItem {
         val videoId = originalItem.mediaId
-        Log.d(TAG, "Resolution: Starting for $videoId")
+        KLog.d(TAG, "Resolution: Starting for $videoId")
         
         // 1. Downloads
         val downloaded = downloadRepository.downloadedSongs.value.find { it.id == videoId }
         if (downloaded != null && downloaded.uri != null) {
-            Log.d(TAG, "Resolution: Found download for $videoId")
+            KLog.d(TAG, "Resolution: Found download for $videoId")
             return buildMediaItemWithUri(originalItem, downloaded.uri, downloaded.duration)
         }
 
@@ -961,10 +962,10 @@ class MusicService : MediaLibraryService() {
         // still valid; expired entries are re-resolved instead of replayed.
         uriCache[videoId]?.let { cached ->
             if (cached.expiresAtMs > System.currentTimeMillis()) {
-                Log.d(TAG, "Resolution: Found cached URI for $videoId")
+                KLog.d(TAG, "Resolution: Found cached URI for $videoId")
                 return buildMediaItemWithUri(originalItem, Uri.parse(cached.uri))
             }
-            Log.d(TAG, "Resolution: Cached URI expired for $videoId, re-resolving")
+            KLog.d(TAG, "Resolution: Cached URI expired for $videoId, re-resolving")
             uriCache.remove(videoId)
         }
 
@@ -972,7 +973,7 @@ class MusicService : MediaLibraryService() {
         // cache setting is off: the data source then bypasses the cache, so a
         // CACHED_PREFIX URI would hit the network with a fake host and fail.
         if (isCacheEnabled && CacheManager.isFullyCached(videoId)) {
-            Log.d(TAG, "Resolution: Found full disk cache for $videoId. Enabling instant playback.")
+            KLog.d(TAG, "Resolution: Found full disk cache for $videoId. Enabling instant playback.")
             return buildMediaItemWithUri(originalItem, Uri.parse("$CACHED_PREFIX$videoId"))
         }
 
@@ -987,16 +988,16 @@ class MusicService : MediaLibraryService() {
             val streamUrl = result?.getOrNull()
             if (!streamUrl.isNullOrEmpty()) {
                 uriCache[videoId] = CachedUri(streamUrl, streamUrlExpiryMs(streamUrl))
-                Log.d(TAG, "Resolution: Network success for $videoId")
+                KLog.d(TAG, "Resolution: Network success for $videoId")
                 buildMediaItemWithUri(originalItem, Uri.parse(streamUrl))
             } else {
-                Log.e(TAG, "Resolution: Failed or Timed Out for $videoId")
+                KLog.e(TAG, "Resolution: Failed or Timed Out for $videoId")
                 // Return an item with a special error URI instead of the placeholder
                 // This breaks the loop because isPlaceholder() will be false.
                 buildMediaItemWithUri(originalItem, Uri.parse("error://resolution_failed/$videoId"))
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Resolution: Exception for $videoId", e)
+            KLog.e(TAG, "Resolution: Exception for $videoId", e)
             buildMediaItemWithUri(originalItem, Uri.parse("error://exception/$videoId"))
         }
     }
@@ -1033,12 +1034,12 @@ class MusicService : MediaLibraryService() {
         val videoId = currentItem.mediaId
         val uri = currentItem.localConfiguration?.uri
         
-        Log.w(TAG, "Handling Error for $videoId (uri=$uri)")
+        KLog.w(TAG, "Handling Error for $videoId (uri=$uri)")
 
         // Local songs (content:// or file://) — errors are typically unrecoverable
         // (file deleted, permission revoked, corrupt file). Don't try YouTube resolution.
         if (uri != null && (uri.scheme == "content" || uri.scheme == "file")) {
-            Log.e(TAG, "Error: Local song $videoId failed. Skipping (not retryable via YouTube).")
+            KLog.e(TAG, "Error: Local song $videoId failed. Skipping (not retryable via YouTube).")
             if (player.hasNextMediaItem()) {
                 player.seekToNext()
                 player.play()
@@ -1051,7 +1052,7 @@ class MusicService : MediaLibraryService() {
         // 1. If we are already resolving this item, just wait.
         // The validation logic or update logic will handle it when ready.
         if (activeResolutions.containsKey(videoId)) {
-            Log.d(TAG, "Error: Already resolving $videoId. Ignoring error.")
+            KLog.d(TAG, "Error: Already resolving $videoId. Ignoring error.")
             player.playWhenReady = true
             return
         }
@@ -1071,7 +1072,7 @@ class MusicService : MediaLibraryService() {
         val maxRetries = if (isVisitorDataForbidden) MAX_FORBIDDEN_RETRIES else MAX_RETRIES
 
         if (retryCount < maxRetries) {
-            Log.w(TAG, "Error: Retrying ($retryCount/$maxRetries) for $videoId...")
+            KLog.w(TAG, "Error: Retrying ($retryCount/$maxRetries) for $videoId...")
             retryCounts[videoId] = retryCount + 1
             uriCache.remove(videoId) // Clear bad cache
 
@@ -1114,7 +1115,7 @@ class MusicService : MediaLibraryService() {
                 }
             }
         } else {
-            Log.e(TAG, "Error: Max retries exhausted for $videoId. Skipping.")
+            KLog.e(TAG, "Error: Max retries exhausted for $videoId. Skipping.")
             if (player.hasNextMediaItem()) {
                 player.seekToNext()
                 player.play()
@@ -1159,7 +1160,7 @@ class MusicService : MediaLibraryService() {
         // Warming is one-shot per id, so an id warmed under the old token would
         // never be re-warmed. Forget them and let the fresh prefetch warm again.
         warmedIds.clear()
-        if (reset > 0) Log.d(TAG, "Recovery: reset $reset queued item(s) for re-resolution")
+        if (reset > 0) KLog.d(TAG, "Recovery: reset $reset queued item(s) for re-resolution")
     }
 
     /**
@@ -1296,7 +1297,7 @@ class MusicService : MediaLibraryService() {
 
                 if (isLocalUri) {
                     // Local song: preserve the original content:// URI for direct playback
-                    Log.d(TAG, "onAddMediaItems: Preserving local URI for $videoId: $existingUri")
+                    KLog.d(TAG, "onAddMediaItems: Preserving local URI for $videoId: $existingUri")
                     MediaItem.Builder()
                         .setMediaId(videoId)
                         .setUri(existingUri)
@@ -1485,7 +1486,7 @@ class MusicService : MediaLibraryService() {
                     if (playlists.isNotEmpty()) cachedPlaylists = playlists
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Failed to pre-warm cache", e)
+                KLog.e(TAG, "Failed to pre-warm cache", e)
             }
         }
     }
@@ -1706,7 +1707,7 @@ class MusicService : MediaLibraryService() {
                     )
                 }?.let { profile ->
                     audioProfileStore.put(profile)
-                    Log.d(
+                    KLog.d(
                         TAG,
                         "Profile: $id lead=${profile.leadInSilenceMs} " +
                             "tail=${profile.tailFadeMs} abrupt=${profile.endsAbruptly} " +
@@ -1835,7 +1836,7 @@ class MusicService : MediaLibraryService() {
     private fun onEngineSwapped(newActive: ExoPlayer) {
         mediaLibrarySession?.let { session ->
             runCatching { session.setPlayer(newActive) }
-                .onFailure { Log.e(TAG, "Could not re-point the session", it) }
+                .onFailure { KLog.e(TAG, "Could not re-point the session", it) }
         }
         trackGain = gainForPlayer(newActive)
         engine.setPauseAtEndOfMediaItems(sleepTimerEndOfTrack)
@@ -1917,7 +1918,7 @@ class MusicService : MediaLibraryService() {
                     startAtRemainingMs = plan.overlapMs,
                 )
                 if (started) {
-                    Log.d(
+                    KLog.d(
                         TAG,
                         "Crossfade: ${plan.reason} ${plan.overlapMs}ms " +
                             "lead=${plan.incomingStartMs} beatIn=${plan.incomingDownbeatDelayMs} " +

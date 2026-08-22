@@ -1,5 +1,7 @@
 package com.ivor.ivormusic.ui.video
 
+import com.ivor.ivormusic.util.KLog
+
 import android.content.Context
 import android.os.SystemClock
 import androidx.lifecycle.AndroidViewModel
@@ -21,6 +23,7 @@ import androidx.media3.exoplayer.source.MergingMediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import com.ivor.ivormusic.data.CaptionTrack
 import com.ivor.ivormusic.data.CommentItem
+import com.ivor.ivormusic.data.DownloadedVideo
 import com.ivor.ivormusic.data.LikeStatus
 import com.ivor.ivormusic.data.LocalSubscription
 import com.ivor.ivormusic.data.SubscriptionActions
@@ -81,6 +84,11 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     // State
     private val _currentVideo = MutableStateFlow<VideoItem?>(null)
     val currentVideo: StateFlow<VideoItem?> = _currentVideo
+
+    /** True when ExoPlayer is reading a completed device download, not YouTube. */
+    private val _isLocalPlayback = MutableStateFlow(false)
+    val isLocalPlayback: StateFlow<Boolean> = _isLocalPlayback.asStateFlow()
+    private var localDownloadsById: Map<String, DownloadedVideo> = emptyMap()
 
     private val _isExpanded = MutableStateFlow(false)
     val isExpanded: StateFlow<Boolean> = _isExpanded
@@ -620,7 +628,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                     // player on an error overlay the user cannot dismiss.
                     if (isTransientRendererError(error) && rendererRetryCount < MAX_RENDERER_RETRIES) {
                         rendererRetryCount++
-                        android.util.Log.w(
+                        KLog.w(
                             "VideoPlayerVM",
                             "Transient renderer error (attempt $rendererRetryCount/$MAX_RENDERER_RETRIES); re-preparing",
                             error
@@ -632,9 +640,12 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                     // A source failure means the URL is dead, not the video:
                     // re-resolving is the only thing that can help, and
                     // re-preparing the same URL never will.
-                    if (isRecoverableSourceError(error) && sourceRetryCount < MAX_SOURCE_RETRIES) {
+                    if (!_isLocalPlayback.value &&
+                        isRecoverableSourceError(error) &&
+                        sourceRetryCount < MAX_SOURCE_RETRIES
+                    ) {
                         sourceRetryCount++
-                        android.util.Log.w(
+                        KLog.w(
                             "VideoPlayerVM",
                             "Source error (attempt $sourceRetryCount/$MAX_SOURCE_RETRIES); re-resolving stream",
                             error
@@ -655,7 +666,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                         queueErrorSkipCount < MAX_QUEUE_ERROR_SKIPS
                     ) {
                         queueErrorSkipCount++
-                        android.util.Log.w(
+                        KLog.w(
                             "VideoPlayerVM",
                             "Unplayable video in the queue at ${activeQueue.index} " +
                                 "(skip $queueErrorSkipCount/$MAX_QUEUE_ERROR_SKIPS); moving on",
@@ -717,7 +728,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                 )
             }
 
-            android.util.Log.d(
+            KLog.d(
                 "VideoPlayerVM",
                 "Restoring video session: ${videos.size} videos, " +
                     "index=${session.currentIndex}, pos=${session.positionMs}"
@@ -762,6 +773,11 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      */
     private fun saveVideoPlaybackSession() {
         val video = _currentVideo.value ?: return
+        // The persisted snapshot does not carry a durable local URI. Restoring
+        // it as an online item would silently turn an offline session into a
+        // network request, so downloaded playback deliberately has no resume-
+        // after-process-death entry.
+        if (_isLocalPlayback.value) return
         // Feed/search items often already know they are live before Phase 1
         // resolves the stream qualities. Checking both signals prevents the
         // progress poll from briefly persisting a broadcast as a resumable
@@ -908,6 +924,10 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         sourceRetryCount = 0
         _playbackError.value = null
         val video = _currentVideo.value ?: return
+        if (_isLocalPlayback.value) {
+            startVideo(video, forceRestart = true)
+            return
+        }
         if (_exoPlayer == null) {
             // startVideo, not playVideo: retrying the video that failed is not
             // leaving the playlist it belongs to.
@@ -977,7 +997,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             // Caught before CancellationException below, which it subclasses:
             // a timed-out resolution is a real failure the caller must surface,
             // not a cancellation to propagate.
-            android.util.Log.w("VideoPlayerVM", "Re-resolve timed out for ${video.videoId}", e)
+            KLog.w("VideoPlayerVM", "Re-resolve timed out for ${video.videoId}", e)
             emptyList()
         } catch (e: kotlinx.coroutines.CancellationException) {
             // playVideo() cancels this job when the user moves on. Swallowing
@@ -985,7 +1005,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             // over the video that replaced it.
             throw e
         } catch (e: Exception) {
-            android.util.Log.w("VideoPlayerVM", "Re-resolve failed for ${video.videoId}", e)
+            KLog.w("VideoPlayerVM", "Re-resolve failed for ${video.videoId}", e)
             emptyList()
         }
         if (_currentVideo.value?.videoId != video.videoId) {
@@ -1074,6 +1094,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      * the retry path - tapping the same video otherwise only re-expands.
      */
     fun playVideo(video: VideoItem, forceRestart: Boolean = false) {
+        leaveLocalPlayback()
         _queue.value = null
         // The queue this belonged to is gone, so restoring into the next one
         // would drop a video into a list it was never part of.
@@ -1090,6 +1111,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      */
     fun playQueue(queue: com.ivor.ivormusic.data.VideoQueue) {
         if (queue.videos.isEmpty()) return
+        leaveLocalPlayback()
         val normalized = queue.at(queue.index)
         _queue.value = normalized
         lastQueueRemoval = null
@@ -1103,6 +1125,41 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         }
         startVideo(target)
     }
+
+    /**
+     * Play completed downloads through Koda's normal video surface. The queue
+     * is a snapshot, matching online playlist playback, and every source stays
+     * a content/file URI so advancing never performs network resolution.
+     */
+    fun playDownloadedVideos(videos: List<DownloadedVideo>, selected: DownloadedVideo) {
+        val index = videos.indexOfFirst { it.id == selected.id }
+        if (index < 0) return
+        localDownloadsById = videos.associateBy { it.id }
+        _isLocalPlayback.value = true
+        val items = videos.map { it.toVideoItem() }
+        _queue.value = com.ivor.ivormusic.data.VideoQueue(
+            videos = items,
+            index = index,
+            title = "Downloads"
+        )
+        lastQueueRemoval = null
+        queueErrorSkipCount = 0
+        startVideo(items[index], forceRestart = true)
+    }
+
+    private fun leaveLocalPlayback() {
+        _isLocalPlayback.value = false
+        localDownloadsById = emptyMap()
+    }
+
+    private fun DownloadedVideo.toVideoItem() = VideoItem(
+        videoId = id,
+        title = title,
+        channelName = channelName,
+        thumbnailUrl = thumbnailUrl,
+        duration = durationMs / 1000L,
+        viewCount = ""
+    )
 
     /**
      * Jump to a position in the active queue.
@@ -1218,6 +1275,12 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             return
         }
 
+        // Decide from the item, not merely from the queue that introduced it.
+        // This keeps ad-hoc online items added after an offline download from
+        // being mislabeled or having their network features suppressed.
+        val localDownload = localDownloadsById[video.videoId]
+        _isLocalPlayback.value = localDownload != null
+
         _currentVideo.value = video
         if (video.isLive) {
             // Live broadcasts have no stable resume position. Clear the VOD
@@ -1295,6 +1358,35 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         // repeat calls once it is up are no-ops.
         _exoPlayer?.let {
             com.ivor.ivormusic.service.VideoPlaybackService.start(context, it)
+        }
+
+        if (localDownload != null) {
+            playbackReportJob?.cancel()
+            clearVideoPlaybackSession()
+            try {
+                _exoPlayer?.stop()
+                _exoPlayer?.clearMediaItems()
+                val offlineQuality = VideoQuality(
+                    resolution = localDownload.quality?.let { "$it • Offline" } ?: "Offline",
+                    url = localDownload.uri.toString(),
+                    format = "video/mp4"
+                )
+                _availableQualities.value = listOf(offlineQuality)
+                _currentQuality.value = offlineQuality
+                _exoPlayer?.setMediaItem(nowPlayingMediaItem(localDownload.uri.toString()))
+                _exoPlayer?.prepare()
+                if (resumePositionMs != null) {
+                    if (resumePositionMs > 0) _exoPlayer?.seekTo(resumePositionMs)
+                    _exoPlayer?.pause()
+                } else {
+                    _exoPlayer?.play()
+                }
+                _isLoading.value = false
+            } catch (e: Exception) {
+                _playbackError.value = e
+                _isLoading.value = false
+            }
+            return
         }
 
         // ========== PHASE 1: START PLAYBACK ASAP (fast) ==========
@@ -1401,7 +1493,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                 liveChatContinuation = watchNext.liveChatContinuation
             } catch (e: Exception) {
                 // Phase 2 errors are non-critical - playback already started
-                android.util.Log.w("VideoPlayerVM", "Failed to load watch-next data", e)
+                KLog.w("VideoPlayerVM", "Failed to load watch-next data", e)
             }
         }
         
@@ -1566,7 +1658,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             // key all have to stay byte-identical for the update to be seamless.
             player.replaceMediaItem(0, current.buildUpon().setMediaMetadata(metadata).build())
         } catch (e: Exception) {
-            android.util.Log.w("VideoPlayerVM", "Could not refresh now-playing metadata", e)
+            KLog.w("VideoPlayerVM", "Could not refresh now-playing metadata", e)
         }
     }
 
@@ -1649,6 +1741,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
     /** Load the caption track list for the current video, once, on demand. */
     fun ensureCaptionsLoaded() {
+        if (_isLocalPlayback.value) return
         val video = _currentVideo.value ?: return
         if (captionsLoadedForVideoId == video.videoId) return
         captionsLoadedForVideoId = video.videoId
@@ -1694,7 +1787,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             if (_selectedCaption.value == track) {
                 _captionCues.value = cues
                 if (cues.isEmpty()) {
-                    android.util.Log.w(
+                    KLog.w(
                         "VideoPlayerVM",
                         "Caption track ${track.languageCode} produced no cues"
                     )
@@ -1719,6 +1812,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         liveChatStartedForVideoId = null
         _currentVideo.value = null
         _queue.value = null
+        leaveLocalPlayback()
         _isExpanded.value = false
         // Nothing is playing any more, so nothing should be on the lock screen.
         com.ivor.ivormusic.service.VideoPlaybackService.stop(context)
@@ -2031,7 +2125,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                     onFailure(result.error ?: "Message not sent")
                 }
             } catch (e: Exception) {
-                android.util.Log.w("VideoPlayerVM", "Failed to send live chat message", e)
+                KLog.w("VideoPlayerVM", "Failed to send live chat message", e)
                 onFailure("Message not sent")
             } finally {
                 _isSendingLiveChat.value = false

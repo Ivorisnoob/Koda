@@ -232,9 +232,23 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: app-release-armeabi-v7a
+        # Was globbing *arm64-v8a*.apk, which put the arm64 APK in this
+        # artifact and left the real armeabi build nowhere.
         path: app/build/outputs/apk/release/*armeabi-v7a*.apk
         if-no-files-found: error
         retention-days: 14
+
+    # R8 deobfuscation map for this exact build. Release stack traces arriving
+    # through the in-app bug reporter are only readable against the mapping of
+    # the versionCode that produced them, so keep it alongside the APKs (and
+    # attach it to GitHub releases when cutting one).
+    - name: Upload Release mapping.txt
+      uses: actions/upload-artifact@v4
+      with:
+        name: app-release-mapping
+        path: app/build/outputs/mapping/release/mapping.txt
+        if-no-files-found: error
+        retention-days: 90
 
     - name: Send Release APKs to Telegram
       if: github.event_name == 'pull_request'

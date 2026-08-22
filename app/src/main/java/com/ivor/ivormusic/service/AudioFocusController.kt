@@ -1,10 +1,11 @@
 package com.ivor.ivormusic.service
 
+import com.ivor.ivormusic.util.KLog
+
 import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
-import android.util.Log
 
 /**
  * Audio focus, owned by the service instead of by a player.
@@ -92,7 +93,7 @@ class AudioFocusController(
         if (holdsFocus) return true
         val result = audioManager.requestAudioFocus(request)
         holdsFocus = result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
-        if (!holdsFocus) Log.w(TAG, "Audio focus refused ($result)")
+        if (!holdsFocus) KLog.w(TAG, "Audio focus refused ($result)")
         return holdsFocus
     }
 

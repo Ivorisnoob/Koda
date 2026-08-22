@@ -135,6 +135,12 @@ class ThemePreferences(context: Context) {
     private val _localOnlyMode = MutableStateFlow(getLocalOnlyModePreference())
     val localOnlyMode: StateFlow<Boolean> = _localOnlyMode.asStateFlow()
 
+    private val _timeLimitEnabled = MutableStateFlow(getTimeLimitEnabledPreference())
+    val timeLimitEnabled: StateFlow<Boolean> = _timeLimitEnabled.asStateFlow()
+
+    private val _timeLimitBudgets = MutableStateFlow(getTimeLimitBudgetsPreference())
+    val timeLimitBudgets: StateFlow<Set<String>> = _timeLimitBudgets.asStateFlow()
+
     private val _librarySortOption = MutableStateFlow(getLibrarySortOptionPreference())
     val librarySortOption: StateFlow<String> = _librarySortOption.asStateFlow()
 
@@ -183,6 +189,8 @@ class ThemePreferences(context: Context) {
             KEY_MANUAL_SCAN_ENABLED -> _manualScanEnabled.value = getManualScanEnabledPreference()
             KEY_ONBOARDING_COMPLETED -> _onboardingCompleted.value = getOnboardingCompletedPreference()
             KEY_LOCAL_ONLY_MODE -> _localOnlyMode.value = getLocalOnlyModePreference()
+            KEY_TIME_LIMIT_ENABLED -> _timeLimitEnabled.value = getTimeLimitEnabledPreference()
+            KEY_TIME_LIMIT_BUDGETS -> _timeLimitBudgets.value = getTimeLimitBudgetsPreference()
             KEY_LIBRARY_SORT_OPTION -> _librarySortOption.value = getLibrarySortOptionPreference()
         }
     }
@@ -422,6 +430,15 @@ class ThemePreferences(context: Context) {
         private const val KEY_MANUAL_SCAN_ENABLED = "manual_scan_enabled"
         private const val KEY_ONBOARDING_COMPLETED = "onboarding_completed"
         private const val KEY_LOCAL_ONLY_MODE = "local_only_mode"
+
+        private const val KEY_TIME_LIMIT_ENABLED = "time_limit_enabled"
+        private const val KEY_TIME_LIMIT_BUDGETS = "time_limit_budgets"
+
+        /** 5 hours a day, every day - the seed when the limiter is first enabled. */
+        val DEFAULT_TIME_LIMIT_BUDGETS: Set<String> =
+            (0..6).map { "$it=${AppTimeLimit.DEFAULT_DAILY_MINUTES}" }.toSet()
+
+        private const val KEY_REPORT_VERBOSE_LOGS = "report_verbose_logs"
 
         private const val KEY_LIBRARY_SORT_OPTION = "library_sort_option"
 
@@ -915,6 +932,20 @@ class ThemePreferences(context: Context) {
     /** Fresh read for ViewModels deciding at refresh time. */
     fun isFastSubscriptionFeedEnabled(): Boolean = getFastSubscriptionFeedPreference()
 
+    // ---------------- Bug reporting ----------------
+
+    /**
+     * Whether the bug reporter's log filter offers "everything" (debug-level
+     * lines) or stops at warnings. Sheet-persisted like download video quality
+     * rather than a settings page row: it belongs to the report flow, and the
+     * choice only ever matters inside it.
+     */
+    fun getReportVerboseLogs(): Boolean = prefs.getBoolean(KEY_REPORT_VERBOSE_LOGS, false)
+
+    fun setReportVerboseLogs(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_REPORT_VERBOSE_LOGS, enabled).apply()
+    }
+
     private fun getMusicQualityWifiPreference(): String {
         return prefs.getString(KEY_MUSIC_QUALITY_WIFI, DEFAULT_MUSIC_QUALITY)
             ?: DEFAULT_MUSIC_QUALITY
@@ -1210,6 +1241,57 @@ class ThemePreferences(context: Context) {
     fun setLocalOnlyMode(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_LOCAL_ONLY_MODE, enabled).apply()
         _localOnlyMode.value = enabled
+    }
+
+    // ---------------- Daily time limit ----------------
+    //
+    // The enforcement side (usage accrual, lock evaluation) lives in
+    // [AppTimeLimit]; this is only where the user's choices are kept.
+
+    private fun getTimeLimitEnabledPreference(): Boolean =
+        prefs.getBoolean(KEY_TIME_LIMIT_ENABLED, false)
+
+    /** Fresh read for the activity's lock ticker deciding at tick time. */
+    fun isTimeLimitEnabled(): Boolean = getTimeLimitEnabledPreference()
+
+    fun setTimeLimitEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_TIME_LIMIT_ENABLED, enabled).apply()
+        _timeLimitEnabled.value = enabled
+    }
+
+    /**
+     * Per-weekday budgets as "day=minutes" entries, day 0 = Monday .. 6 =
+     * Sunday. A day absent from the set, or stored 0, means unlimited.
+     */
+    private fun getTimeLimitBudgetsPreference(): Set<String> {
+        val stored = prefs.getStringSet(KEY_TIME_LIMIT_BUDGETS, null)
+        return stored ?: DEFAULT_TIME_LIMIT_BUDGETS
+    }
+
+    fun getTimeLimitBudgets(): Set<String> = getTimeLimitBudgetsPreference()
+
+    fun setTimeLimitBudgets(budgets: Set<String>) {
+        val canonical = AppTimeLimit.parseBudgets(budgets)
+            .map { (day, minutes) -> "$day=$minutes" }
+            .toSet()
+        prefs.edit().putStringSet(KEY_TIME_LIMIT_BUDGETS, canonical).apply()
+        _timeLimitBudgets.value = canonical
+    }
+
+    /** Replace one weekday's value without leaving an ambiguous duplicate entry. */
+    fun setTimeLimitBudget(day: Int, minutes: Int) {
+        require(day in 0..6) { "Weekday must be in 0..6" }
+        require(minutes >= 0) { "Budget cannot be negative" }
+        val updated = AppTimeLimit.parseBudgets(getTimeLimitBudgetsPreference()).toMutableMap()
+        updated[day] = minutes
+        setTimeLimitBudgets(updated.map { (storedDay, storedMinutes) ->
+            "$storedDay=$storedMinutes"
+        }.toSet())
+    }
+
+    /** One budget applied to all seven days - the onboarding preset path. */
+    fun setAllTimeLimitBudgets(minutesPerDay: Int) {
+        setTimeLimitBudgets((0..6).map { "$it=$minutesPerDay" }.toSet())
     }
 
     /**

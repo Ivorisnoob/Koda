@@ -1,6 +1,7 @@
 package com.ivor.ivormusic.data
 
-import android.util.Log
+import com.ivor.ivormusic.util.KLog
+
 import org.jaudiotagger.audio.AudioFileIO
 import org.jaudiotagger.tag.FieldKey
 import java.io.File
@@ -40,7 +41,7 @@ internal class LocalLyricsSource(
         }
 
         val embedded = runCatching { embeddedLyricsReader(audioFile) }
-            .onFailure { Log.w(TAG, "Could not read embedded lyrics from ${audioFile.name}", it) }
+            .onFailure { KLog.w(TAG, "Could not read embedded lyrics from ${audioFile.name}", it) }
             .getOrNull()
             ?.takeIf { it.isNotBlank() && it.length <= MAX_EMBEDDED_LYRICS_CHARS }
 
@@ -95,7 +96,7 @@ internal class LocalLyricsSource(
                 candidate.isFile && candidate.extension.lowercase() in SIDECAR_EXTENSIONS
             }?.toList()
         }.onFailure {
-            Log.w(TAG, "Could not list ${directory.name} for lyric sidecars", it)
+            KLog.w(TAG, "Could not list ${directory.name} for lyric sidecars", it)
         }.getOrNull().orEmpty()
 
         sidecarCache[directory.path] = CachedSidecars(stamp, files)
@@ -106,7 +107,7 @@ internal class LocalLyricsSource(
         if (file.length() !in 1..MAX_SIDECAR_BYTES) return@runCatching null
         decodeSidecar(file.readBytes())
     }.onFailure {
-        Log.w(TAG, "Could not read lyric sidecar ${file.name}", it)
+        KLog.w(TAG, "Could not read lyric sidecar ${file.name}", it)
     }.getOrNull()
 
     /**

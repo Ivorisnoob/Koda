@@ -1,5 +1,7 @@
 package com.ivor.ivormusic.ui.video
 
+import com.ivor.ivormusic.util.KLog
+
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
@@ -131,7 +133,7 @@ fun VideoDownloadSheet(
                     ?: downloadable.first().resolution
             }
         } catch (e: Exception) {
-            android.util.Log.w("VideoDownloadSheet", "Failed to load qualities", e)
+            KLog.w("VideoDownloadSheet", "Failed to load qualities", e)
             options = emptyList()
             loadFailed = true
         }

@@ -1,10 +1,11 @@
 package com.ivor.ivormusic.data
 
+import com.ivor.ivormusic.util.KLog
+
 import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.media.MediaMuxer
-import android.util.Log
 import java.io.File
 import java.io.FileDescriptor
 import java.nio.ByteBuffer
@@ -49,7 +50,7 @@ object DownloadMuxer {
             videoExtractor = MediaExtractor().apply { setDataSource(videoFile.absolutePath) }
             val videoTrack = selectTrack(videoExtractor, "video/")
                 ?: run {
-                    Log.e(TAG, "No video track in ${videoFile.name}")
+                    KLog.e(TAG, "No video track in ${videoFile.name}")
                     return false
                 }
             val videoFormat = videoExtractor.getTrackFormat(videoTrack)
@@ -67,7 +68,7 @@ object DownloadMuxer {
                     // Publishing this as a successful silent download hides a
                     // broken audio response. Let the worker discard the partial
                     // mux and use its progressive fallback instead.
-                    Log.e(TAG, "No audio track in ${audioFile.name}")
+                    KLog.e(TAG, "No audio track in ${audioFile.name}")
                     return false
                 }
             }
@@ -84,7 +85,7 @@ object DownloadMuxer {
         } catch (e: Exception) {
             // Most often IllegalArgumentException from addTrack for a codec the
             // MP4 muxer will not accept (VP9, Opus, sometimes AV1).
-            Log.e(TAG, "Muxing failed: ${e.message}", e)
+            KLog.e(TAG, "Muxing failed: ${e.message}", e)
             false
         } finally {
             runCatching { muxer?.release() }

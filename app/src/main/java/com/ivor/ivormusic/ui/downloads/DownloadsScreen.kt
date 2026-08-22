@@ -123,7 +123,7 @@ fun DownloadsScreen(
     onBack: () -> Unit,
     onPlaySong: (Song) -> Unit,
     onPlayQueue: (List<Song>, Song) -> Unit = { _, song -> onPlaySong(song) },
-    onPlayVideo: (DownloadedVideo) -> Unit,
+    onPlayVideo: (List<DownloadedVideo>, DownloadedVideo) -> Unit,
     onDeleteDownload: (String) -> Unit,
     onDeleteVideo: (String) -> Unit,
     onCancelDownload: (String) -> Unit,
@@ -252,7 +252,7 @@ fun DownloadsScreen(
                     DownloadsTab.VIDEO -> VideoTab(
                         videos = downloadedVideos,
                         progress = videoProgress,
-                        onPlay = onPlayVideo,
+                        onPlay = { video -> onPlayVideo(downloadedVideos, video) },
                         onDelete = onDeleteVideo,
                         onCancel = onCancelDownload,
                         onRetry = onRetryDownload

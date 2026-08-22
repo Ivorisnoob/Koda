@@ -1,5 +1,7 @@
 package com.ivor.ivormusic.data
 
+import com.ivor.ivormusic.util.KLog
+
 import android.content.Context
 import android.net.Uri
 import kotlinx.coroutines.Dispatchers
@@ -520,13 +522,13 @@ class YouTubeRepository(private val context: Context) {
                 }
             }
 
-            android.util.Log.d(
+            KLog.d(
                 "YouTubeRepo",
                 "Artist $artistId: ${songs.size} songs, ${albums.size} releases"
             )
             Pair(songs.distinctBy { it.id }, albums.distinctBy { it.id })
         } catch (e: Exception) {
-            android.util.Log.e("YouTubeRepo", "Error fetching artist details", e)
+            KLog.e("YouTubeRepo", "Error fetching artist details", e)
             Pair(emptyList(), emptyList())
         }
     }
@@ -579,7 +581,7 @@ class YouTubeRepository(private val context: Context) {
                     )
                 }
         } catch (e: Exception) {
-            android.util.Log.e("YouTubeRepo", "Error fetching album $browseId", e)
+            KLog.e("YouTubeRepo", "Error fetching album $browseId", e)
             emptyList()
         }
     }
@@ -624,7 +626,7 @@ class YouTubeRepository(private val context: Context) {
             val response = okHttpClient.newCall(requestBuilder.build()).execute()
             response.body?.string()?.takeIf { it.isNotEmpty() }
         } catch (e: Exception) {
-            android.util.Log.e("YouTubeRepo", "browseMusic($browseId) failed", e)
+            KLog.e("YouTubeRepo", "browseMusic($browseId) failed", e)
             null
         }
     }
@@ -677,7 +679,7 @@ class YouTubeRepository(private val context: Context) {
         // long song can fail only after it has already been playing for a while.
         val newPipeUrl = resolveAudioUrlViaNewPipe(videoId)
         if (!newPipeUrl.isNullOrEmpty()) {
-            android.util.Log.i(
+            KLog.i(
                 "YouTubeRepository",
                 "Resolve[NewPipe] OK videoId=$videoId dt=${System.currentTimeMillis() - startMs}ms",
             )
@@ -690,13 +692,13 @@ class YouTubeRepository(private val context: Context) {
         val innerTubeUrl = resolvePlayerStreamingData(videoId)?.let { pickAudioStreamUrl(videoId, it) }
         val dt = System.currentTimeMillis() - startMs
         if (!innerTubeUrl.isNullOrEmpty()) {
-            android.util.Log.i(
+            KLog.i(
                 "YouTubeRepository",
                 "Resolve[InnerTube fallback] OK videoId=$videoId dt=${dt}ms",
             )
             Result.success(innerTubeUrl)
         } else {
-            android.util.Log.e(
+            KLog.e(
                 "YouTubeRepository",
                 "Resolve FAIL videoId=$videoId all clients exhausted (NewPipe + InnerTube) dt=${dt}ms",
             )
@@ -743,7 +745,7 @@ class YouTubeRepository(private val context: Context) {
                 .mapNotNull { it.content?.takeIf(String::isNotBlank) }
                 .firstOrNull()
         } catch (e: Exception) {
-            android.util.Log.w(
+            KLog.w(
                 "YouTubeRepository",
                 "Resolve[NewPipe] failed videoId=$videoId: ${e.message}",
             )
@@ -800,7 +802,7 @@ class YouTubeRepository(private val context: Context) {
         try {
             getVisitorData()
         } catch (e: Exception) {
-            android.util.Log.w("YouTubeRepository", "visitorData prefetch failed: ${e.message}")
+            KLog.w("YouTubeRepository", "visitorData prefetch failed: ${e.message}")
         }
     }
 
@@ -830,7 +832,7 @@ class YouTubeRepository(private val context: Context) {
                 cachedVisitorData = fresh
                 visitorDataFetchedAt = nowInner
                 persistVisitorData(fresh)
-                android.util.Log.i("YouTubeRepository", "visitorData refreshed (len=${fresh.length})")
+                KLog.i("YouTubeRepository", "visitorData refreshed (len=${fresh.length})")
                 fresh
             } else {
                 // Reuse a previously-good value: this session's, else the last
@@ -862,10 +864,10 @@ class YouTubeRepository(private val context: Context) {
                 cachedVisitorData = fresh
                 visitorDataFetchedAt = System.currentTimeMillis()
                 persistVisitorData(fresh)
-                android.util.Log.i("YouTubeRepository", "visitorData reminted after bot-check flag")
+                KLog.i("YouTubeRepository", "visitorData reminted after bot-check flag")
                 fresh
             } else {
-                android.util.Log.w("YouTubeRepository", "visitorData remint failed (bootstrap fetch)")
+                KLog.w("YouTubeRepository", "visitorData remint failed (bootstrap fetch)")
                 null
             }
         }
@@ -889,7 +891,7 @@ class YouTubeRepository(private val context: Context) {
         try {
             remintVisitorData(flagged)
         } catch (e: Exception) {
-            android.util.Log.w(
+            KLog.w(
                 "YouTubeRepository",
                 "visitorData remint after playback failure failed: ${e.message}",
             )
@@ -966,7 +968,7 @@ class YouTubeRepository(private val context: Context) {
                 ?.replace("%3d", "=")
                 ?.takeIf { it.isNotEmpty() }
         } catch (e: Exception) {
-            android.util.Log.w("YouTubeRepository", "visitor_id mint failed: ${e.message}")
+            KLog.w("YouTubeRepository", "visitor_id mint failed: ${e.message}")
             null
         }
     }
@@ -995,7 +997,7 @@ class YouTubeRepository(private val context: Context) {
                 ?.replace("\\u0026", "&")
                 ?.takeIf { it.isNotEmpty() }
         } catch (e: Exception) {
-            android.util.Log.w("YouTubeRepository", "bootstrap visitorData scrape failed: ${e.message}")
+            KLog.w("YouTubeRepository", "bootstrap visitorData scrape failed: ${e.message}")
             null
         }
     }
@@ -1019,24 +1021,23 @@ class YouTubeRepository(private val context: Context) {
     }
 
 
-
     /**
      * Get personalized recommendations (Quick Picks / Home).
      * Uses Internal YTM API with Cookies for personalized content.
      */
     suspend fun getRecommendations(): List<Song> = withContext(Dispatchers.IO) {
         if (!sessionManager.isLoggedIn()) {
-            android.util.Log.d("YouTubeRepo", "Not logged in, falling back to popular search")
+            KLog.d("YouTubeRepo", "Not logged in, falling back to popular search")
             return@withContext search("trending music 2026", FILTER_SONGS)
         }
 
         try {
             // Fetch personalized home page content
-            android.util.Log.d("YouTubeRepo", "Fetching personalized recommendations from FEmusic_home")
+            KLog.d("YouTubeRepo", "Fetching personalized recommendations from FEmusic_home")
             val jsonResponse = fetchInternalApi("FEmusic_home")
             
             if (jsonResponse.isEmpty()) {
-                android.util.Log.e("YouTubeRepo", "Empty response from FEmusic_home")
+                KLog.e("YouTubeRepo", "Empty response from FEmusic_home")
                 // Try liked music as fallback
                 val likedSongs = getLikedMusic()
                 if (likedSongs.isNotEmpty()) return@withContext likedSongs
@@ -1045,19 +1046,19 @@ class YouTubeRepository(private val context: Context) {
             
             // Parse songs from the home page response
             val items = parseSongsFromInternalJson(jsonResponse)
-            android.util.Log.d("YouTubeRepo", "Parsed ${items.size} songs from recommendations")
+            KLog.d("YouTubeRepo", "Parsed ${items.size} songs from recommendations")
             
             if (items.isNotEmpty()) return@withContext items
             
             // Fallback to liked music if home parsing failed
-            android.util.Log.d("YouTubeRepo", "Recommendations empty, trying liked music")
+            KLog.d("YouTubeRepo", "Recommendations empty, trying liked music")
             val likedSongs = getLikedMusic()
             if (likedSongs.isNotEmpty()) return@withContext likedSongs
             
             // Last resort: search
             search("trending music 2026", FILTER_SONGS)
         } catch (e: Exception) {
-            android.util.Log.e("YouTubeRepo", "Error fetching recommendations", e)
+            KLog.e("YouTubeRepo", "Error fetching recommendations", e)
             try {
                 getLikedMusic()
             } catch (e2: Exception) {
@@ -1118,7 +1119,7 @@ class YouTubeRepository(private val context: Context) {
                 .distinctBy { it.id }
                 .take(limit)
         } catch (e: Exception) {
-            android.util.Log.e("YouTubeRepo", "Error fetching related songs for $videoId", e)
+            KLog.e("YouTubeRepo", "Error fetching related songs for $videoId", e)
             emptyList()
         }
     }
@@ -1229,7 +1230,7 @@ class YouTubeRepository(private val context: Context) {
                 val parsed = parsePlaylistsFromInternalJson(json)
                 playlists.addAll(parsed)
                 pageCount++
-                android.util.Log.d("YouTubeRepo", "Library playlists page $pageCount: ${parsed.size} items")
+                KLog.d("YouTubeRepo", "Library playlists page $pageCount: ${parsed.size} items")
                 if (parsed.isEmpty()) break
                 val token = extractContinuationToken(json) ?: break
                 json = fetchContinuation(token)
@@ -1238,7 +1239,7 @@ class YouTubeRepository(private val context: Context) {
             // The library grid can include "Your Likes" (VLLM) which we already synthesized
             playlists.distinctBy { it.id }
         } catch (e: Exception) {
-            android.util.Log.e("YouTubeRepo", "Error fetching user playlists", e)
+            KLog.e("YouTubeRepo", "Error fetching user playlists", e)
             emptyList()
         }
     }
@@ -1274,7 +1275,7 @@ class YouTubeRepository(private val context: Context) {
                 continuationToken = extractContinuationToken(json)
                 pageCount++
                 
-                android.util.Log.d("YouTubeRepo", "Liked songs page $pageCount: ${songs.size} songs, total: ${allSongs.size}")
+                KLog.d("YouTubeRepo", "Liked songs page $pageCount: ${songs.size} songs, total: ${allSongs.size}")
                 
             } while (continuationToken != null && pageCount < maxPages)
             
@@ -1282,7 +1283,7 @@ class YouTubeRepository(private val context: Context) {
                 return@withContext allSongs.distinctBy { it.id }
             }
         } catch (e: Exception) {
-            android.util.Log.e("YouTubeRepo", "Error fetching liked music", e)
+            KLog.e("YouTubeRepo", "Error fetching liked music", e)
             e.printStackTrace()
         }
         
@@ -1442,7 +1443,7 @@ class YouTubeRepository(private val context: Context) {
                          allItems.addAll(currentPage.items.filterIsInstance<StreamInfoItem>())
                      } catch (e: Exception) {
                          newPipeComplete = false
-                         android.util.Log.w(
+                         KLog.w(
                              "YouTubeRepo",
                              "NewPipe playlist continuation failed for $playlistId after ${allItems.size} items",
                              e
@@ -1494,7 +1495,7 @@ class YouTubeRepository(private val context: Context) {
             accountResult.songs
         } else newPipeSongs
         if (partial.isNotEmpty()) {
-            android.util.Log.w(
+            KLog.w(
                 "YouTubeRepo",
                 "Returning incomplete playlist $playlistId (${partial.size} songs) after all full-load paths failed"
             )
@@ -1524,12 +1525,12 @@ class YouTubeRepository(private val context: Context) {
             val token = extractPlaylistContinuationToken(json)
                 ?: return PlaylistLoadResult(allSongs, complete = true)
             if (!seenTokens.add(token)) {
-                android.util.Log.w("YouTubeRepo", "Repeated playlist continuation for $playlistId")
+                KLog.w("YouTubeRepo", "Repeated playlist continuation for $playlistId")
                 return PlaylistLoadResult(allSongs, complete = false)
             }
             json = fetchContinuation(token)
             if (json.isEmpty()) {
-                android.util.Log.w(
+                KLog.w(
                     "YouTubeRepo",
                     "Authenticated playlist continuation failed for $playlistId after ${allSongs.size} songs"
                 )
@@ -1563,10 +1564,10 @@ class YouTubeRepository(private val context: Context) {
             val jsonResponse = fetchInternalApi("account/account_menu")
 
             if (jsonResponse.isEmpty()) {
-                android.util.Log.w("YouTubeRepo", "fetchAccountInfo: empty response from account/account_menu")
+                KLog.w("YouTubeRepo", "fetchAccountInfo: empty response from account/account_menu")
                 return@withContext
             }
-            android.util.Log.d("YouTubeRepo", "fetchAccountInfo response: ${jsonResponse.take(400)}")
+            KLog.d("YouTubeRepo", "fetchAccountInfo response: ${jsonResponse.take(400)}")
             
             var avatarUrl: String? = null
             var userName: String? = null
@@ -1628,7 +1629,7 @@ class YouTubeRepository(private val context: Context) {
                 // Ignore
             }
             
-            android.util.Log.d("YouTubeRepo", "fetchAccountInfo parsed name=$userName avatar=$avatarUrl")
+            KLog.d("YouTubeRepo", "fetchAccountInfo parsed name=$userName avatar=$avatarUrl")
 
             // Save avatar if found
             if (!avatarUrl.isNullOrEmpty()) {
@@ -1703,7 +1704,7 @@ class YouTubeRepository(private val context: Context) {
         first.streamingData?.let { return it }
         if (!first.visitorDataSuspect) return null
 
-        android.util.Log.w(
+        KLog.w(
             "YouTubeRepository",
             "Resolve: visitorData flagged by bot check, reminting and retrying videoId=$videoId",
         )
@@ -1807,7 +1808,7 @@ class YouTubeRepository(private val context: Context) {
                 it.optString("mimeType").contains("audio") && hasPlayableUrl(it)
             }
         )
-        android.util.Log.d(
+        KLog.d(
             "YouTubeRepository",
             "Resolve[InnerTube] formats=${formats.size} audioOnly=${audioFormats.size} videoId=$videoId",
         )
@@ -1833,7 +1834,7 @@ class YouTubeRepository(private val context: Context) {
         }
         muxedFormats.minByOrNull { it.optInt("bitrate") }?.optString("url")
             ?.takeIf { it.isNotEmpty() }?.let {
-                android.util.Log.w(
+                KLog.w(
                     "YouTubeRepository",
                     "Resolve[InnerTube] using muxed video format videoId=$videoId (no audio-only)",
                 )
@@ -1844,7 +1845,7 @@ class YouTubeRepository(private val context: Context) {
             !it.optString("signatureCipher").isNullOrEmpty() ||
                 !it.optString("cipher").isNullOrEmpty()
         }
-        android.util.Log.w(
+        KLog.w(
             "YouTubeRepository",
             "Resolve[InnerTube] no usable URL videoId=$videoId ciphered=${cipheredCount}/${formats.size}",
         )
@@ -1913,14 +1914,14 @@ class YouTubeRepository(private val context: Context) {
             response.close()
 
             if (code !in 200..299) {
-                android.util.Log.w(
+                KLog.w(
                     "YouTubeRepository",
                     "Resolve[InnerTube/$clientName] HTTP $code videoId=$videoId body=${json.take(160)}",
                 )
                 return@withContext PlayerResponse(null, false)
             }
             if (json.isEmpty()) {
-                android.util.Log.w(
+                KLog.w(
                     "YouTubeRepository",
                     "Resolve[InnerTube/$clientName] empty body videoId=$videoId",
                 )
@@ -1932,7 +1933,7 @@ class YouTubeRepository(private val context: Context) {
             val playability = root.optJSONObject("playabilityStatus")
             val status = playability?.optString("status").orEmpty()
             if (status.isNotEmpty() && status != "OK") {
-                android.util.Log.w(
+                KLog.w(
                     "YouTubeRepository",
                     "Resolve[InnerTube/$clientName] playability=$status reason=${playability?.optString("reason")} videoId=$videoId",
                 )
@@ -1954,7 +1955,7 @@ class YouTubeRepository(private val context: Context) {
 
             val streamingData = root.optJSONObject("streamingData")
             if (streamingData == null) {
-                android.util.Log.w(
+                KLog.w(
                     "YouTubeRepository",
                     "Resolve[InnerTube/$clientName] no streamingData videoId=$videoId",
                 )
@@ -1964,7 +1965,7 @@ class YouTubeRepository(private val context: Context) {
             }
             PlayerResponse(streamingData, false, captionTracks, loudnessDb)
         } catch (e: Exception) {
-            android.util.Log.e(
+            KLog.e(
                 "YouTubeRepository",
                 "Resolve[InnerTube/$clientName] exception videoId=$videoId",
                 e,
@@ -2512,7 +2513,6 @@ class YouTubeRepository(private val context: Context) {
     }
 
 
-
     private fun extractVideoId(url: String): String {
         // Extract video ID from various YouTube URL formats
         val patterns = listOf(
@@ -2600,7 +2600,7 @@ class YouTubeRepository(private val context: Context) {
             playerResponse.close()
             
             if (playerResponseBody.isNullOrEmpty()) {
-                android.util.Log.e("YouTubeRepo", "Player response empty for $videoId")
+                KLog.e("YouTubeRepo", "Player response empty for $videoId")
                 return@withContext
             }
 
@@ -2613,7 +2613,7 @@ class YouTubeRepository(private val context: Context) {
                 val playabilityStatus = playerJson.optJSONObject("playabilityStatus")
                 val status = playabilityStatus?.optString("status")
                 val reason = playabilityStatus?.optString("reason")
-                android.util.Log.e("YouTubeRepo", "No playbackTracking. Status: $status, Reason: $reason")
+                KLog.e("YouTubeRepo", "No playbackTracking. Status: $status, Reason: $reason")
                 return@withContext
             }
             
@@ -2622,7 +2622,7 @@ class YouTubeRepository(private val context: Context) {
                 ?.optString("baseUrl")
 
             if (videostatsPlaybackUrl.isNullOrEmpty()) {
-                android.util.Log.e("YouTubeRepo", "No playback tracking URL found for $videoId")
+                KLog.e("YouTubeRepo", "No playback tracking URL found for $videoId")
                 return@withContext
             }
 
@@ -2650,14 +2650,14 @@ class YouTubeRepository(private val context: Context) {
 
             val trackingResponse = okHttpClient.newCall(trackingRequest).execute()
             if (trackingResponse.isSuccessful) {
-                android.util.Log.d("YouTubeRepo", "History sync SUCCESS for $videoId")
+                KLog.d("YouTubeRepo", "History sync SUCCESS for $videoId")
             } else {
-                android.util.Log.e("YouTubeRepo", "History sync failed: ${trackingResponse.code}")
+                KLog.e("YouTubeRepo", "History sync failed: ${trackingResponse.code}")
             }
             trackingResponse.close()
 
         } catch (e: Exception) {
-            android.util.Log.e("YouTubeRepo", "Error in reportPlayback", e)
+            KLog.e("YouTubeRepo", "Error in reportPlayback", e)
         }
     }
 
@@ -2681,7 +2681,7 @@ class YouTubeRepository(private val context: Context) {
         if (sort != VideoSearchSort.RELEVANCE) {
             val sorted = searchVideosInnerTube(effectiveQuery, sort)
             if (sorted.isNotEmpty()) return@withContext sorted
-            android.util.Log.w("YouTubeRepo", "Sorted video search empty, falling back to relevance order")
+            KLog.w("YouTubeRepo", "Sorted video search empty, falling back to relevance order")
         }
 
         try {
@@ -2699,7 +2699,7 @@ class YouTubeRepository(private val context: Context) {
 
             searchExtractor.initialPage.items.toVideoItems()
         } catch (e: Exception) {
-            android.util.Log.e("YouTubeRepo", "Error searching videos", e)
+            KLog.e("YouTubeRepo", "Error searching videos", e)
             emptyList()
         }
     }
@@ -2727,7 +2727,7 @@ class YouTubeRepository(private val context: Context) {
 
             nextPage.items.toVideoItems()
         } catch (e: Exception) {
-            android.util.Log.e("YouTubeRepo", "Error loading more video results", e)
+            KLog.e("YouTubeRepo", "Error loading more video results", e)
             emptyList()
         }
     }
@@ -2790,7 +2790,7 @@ class YouTubeRepository(private val context: Context) {
                 )
             }
         } catch (e: Exception) {
-            android.util.Log.e("YouTubeRepo", "Error searching video playlists", e)
+            KLog.e("YouTubeRepo", "Error searching video playlists", e)
             emptyList()
         }
     }
@@ -2831,7 +2831,7 @@ class YouTubeRepository(private val context: Context) {
                     }
                     .distinctBy { it.channelId }
             } catch (e: Exception) {
-                android.util.Log.e("YouTubeRepo", "Error searching channels", e)
+                KLog.e("YouTubeRepo", "Error searching channels", e)
                 emptyList()
             }
         }
@@ -2870,7 +2870,7 @@ class YouTubeRepository(private val context: Context) {
                 else parseLockupViewModel(renderer)
             }.distinctBy { it.videoId }
         } catch (e: Exception) {
-            android.util.Log.e("YouTubeRepo", "InnerTube video search failed", e)
+            KLog.e("YouTubeRepo", "InnerTube video search failed", e)
             emptyList()
         }
     }
@@ -2887,36 +2887,36 @@ class YouTubeRepository(private val context: Context) {
      */
     suspend fun getTrendingVideos(): VideoFeedPage = withContext(Dispatchers.IO) {
         val isLoggedIn = sessionManager.isLoggedIn()
-        android.util.Log.d("YouTubeRepo", "getTrendingVideos - isLoggedIn: $isLoggedIn")
+        KLog.d("YouTubeRepo", "getTrendingVideos - isLoggedIn: $isLoggedIn")
 
         if (isLoggedIn) {
             try {
                 val page = getPersonalizedVideoRecommendations()
                 if (page.videos.isNotEmpty()) {
-                    android.util.Log.d("YouTubeRepo", "Got ${page.videos.size} personalized videos (continuation=${page.continuation != null})")
+                    KLog.d("YouTubeRepo", "Got ${page.videos.size} personalized videos (continuation=${page.continuation != null})")
                     return@withContext page
                 }
-                android.util.Log.w("YouTubeRepo", "Personalized recommendations empty, using taste-based feed")
+                KLog.w("YouTubeRepo", "Personalized recommendations empty, using taste-based feed")
             } catch (e: Exception) {
-                android.util.Log.e("YouTubeRepo", "Error fetching personalized videos", e)
+                KLog.e("YouTubeRepo", "Error fetching personalized videos", e)
             }
         }
 
         try {
             val tasteFeed = getTasteBasedVideos()
             if (tasteFeed.isNotEmpty()) {
-                android.util.Log.d("YouTubeRepo", "Got ${tasteFeed.size} taste-based videos")
+                KLog.d("YouTubeRepo", "Got ${tasteFeed.size} taste-based videos")
                 return@withContext VideoFeedPage(tasteFeed)
             }
         } catch (e: Exception) {
-            android.util.Log.e("YouTubeRepo", "Error building taste-based feed", e)
+            KLog.e("YouTubeRepo", "Error building taste-based feed", e)
         }
 
         // Cold start: nothing watched yet and not logged in
         try {
             VideoFeedPage(searchVideos("trending videos ${java.time.Year.now().value}"))
         } catch (e: Exception) {
-            android.util.Log.e("YouTubeRepo", "Cold-start search failed", e)
+            KLog.e("YouTubeRepo", "Cold-start search failed", e)
             VideoFeedPage(emptyList())
         }
     }
@@ -2931,7 +2931,7 @@ class YouTubeRepository(private val context: Context) {
             val root = fetchWatchNextRoot(videoId) ?: return emptyList()
             parseRelatedFromWatchNext(root)
         } catch (e: Exception) {
-            android.util.Log.w("YouTubeRepo", "getRelatedVideosLight failed for $videoId", e)
+            KLog.w("YouTubeRepo", "getRelatedVideosLight failed for $videoId", e)
             emptyList()
         }
     }
@@ -3047,18 +3047,18 @@ class YouTubeRepository(private val context: Context) {
             .build()
 
         try {
-            android.util.Log.d("YouTubeRepo", "Making personalized video request with auth: ${authHeader.take(30)}...")
+            KLog.d("YouTubeRepo", "Making personalized video request with auth: ${authHeader.take(30)}...")
             val response = okHttpClient.newCall(request).execute()
             val responseBody = response.body?.string() ?: return@withContext empty
             response.close()
 
-            android.util.Log.d("YouTubeRepo", "Got personalized response: ${responseBody.take(500)}...")
+            KLog.d("YouTubeRepo", "Got personalized response: ${responseBody.take(500)}...")
             val root = org.json.JSONObject(responseBody)
             val videos = parseVideosFromYouTubeJson(responseBody)
-            android.util.Log.d("YouTubeRepo", "Parsed ${videos.size} personalized videos")
+            KLog.d("YouTubeRepo", "Parsed ${videos.size} personalized videos")
             VideoFeedPage(videos, extractRichGridContinuation(root))
         } catch (e: Exception) {
-            android.util.Log.e("YouTubeRepo", "Error in getPersonalizedVideoRecommendations", e)
+            KLog.e("YouTubeRepo", "Error in getPersonalizedVideoRecommendations", e)
             empty
         }
     }
@@ -3134,10 +3134,10 @@ class YouTubeRepository(private val context: Context) {
                         ?.let { nextToken = it }
                 }
             }
-            android.util.Log.d("YouTubeRepo", "Feed continuation: ${videos.size} videos, next=${nextToken != null}")
+            KLog.d("YouTubeRepo", "Feed continuation: ${videos.size} videos, next=${nextToken != null}")
             VideoFeedPage(videos.distinctBy { it.videoId }, nextToken)
         } catch (e: Exception) {
-            android.util.Log.e("YouTubeRepo", "Feed continuation failed", e)
+            KLog.e("YouTubeRepo", "Feed continuation failed", e)
             VideoFeedPage(emptyList())
         }
     }
@@ -3209,7 +3209,7 @@ class YouTubeRepository(private val context: Context) {
             // Re-use the existing parsing logic which handles various video item formats
             parseVideosFromYouTubeJson(responseBody)
         } catch (e: Exception) {
-            android.util.Log.e("YouTubeRepo", "Error fetching watch history", e)
+            KLog.e("YouTubeRepo", "Error fetching watch history", e)
             emptyList()
         }
     }
@@ -3366,9 +3366,9 @@ class YouTubeRepository(private val context: Context) {
                     val shorts = parseShortsLockups(org.json.JSONObject(raw))
                     if (shorts.isNotEmpty()) return@withContext shorts
                 }
-                android.util.Log.w("YouTubeRepo", "No Shorts shelf on home, using search fallback")
+                KLog.w("YouTubeRepo", "No Shorts shelf on home, using search fallback")
             } catch (e: Exception) {
-                android.util.Log.e("YouTubeRepo", "Shorts home shelf failed", e)
+                KLog.e("YouTubeRepo", "Shorts home shelf failed", e)
             }
         }
         try {
@@ -3382,7 +3382,7 @@ class YouTubeRepository(private val context: Context) {
             val raw = postWatchApi("search", body) ?: return@withContext emptyList()
             parseShortsLockups(org.json.JSONObject(raw))
         } catch (e: Exception) {
-            android.util.Log.e("YouTubeRepo", "Shorts search fallback failed", e)
+            KLog.e("YouTubeRepo", "Shorts search fallback failed", e)
             emptyList()
         }
     }
@@ -3419,7 +3419,7 @@ class YouTubeRepository(private val context: Context) {
                 ?.optString("token")?.takeIf { it.isNotBlank() }
             ShortsFeedPage(items, continuation)
         } catch (e: Exception) {
-            android.util.Log.e("YouTubeRepo", "getShortsSequence failed", e)
+            KLog.e("YouTubeRepo", "getShortsSequence failed", e)
             ShortsFeedPage(emptyList(), null)
         }
     }
@@ -3465,7 +3465,7 @@ class YouTubeRepository(private val context: Context) {
                 thumbnailUrl = lockupThumb ?: base.thumbnailUrl
             )
         } catch (e: Exception) {
-            android.util.Log.w("YouTubeRepo", "parseShortsLockup failed", e)
+            KLog.w("YouTubeRepo", "parseShortsLockup failed", e)
             null
         }
     }
@@ -3508,7 +3508,7 @@ class YouTubeRepository(private val context: Context) {
                 .filter { it.playlistId != "LL" && it.playlistId != "WL" }
                 .distinctBy { it.playlistId }
         } catch (e: Exception) {
-            android.util.Log.e("YouTubeRepo", "getVideoPlaylists failed", e)
+            KLog.e("YouTubeRepo", "getVideoPlaylists failed", e)
             emptyList()
         }
     }
@@ -3539,7 +3539,7 @@ class YouTubeRepository(private val context: Context) {
             lockups.mapNotNull { parseLockupViewModel(it) }
                 .ifEmpty { getPlaylistVideosAnonymous(playlistId) }
         } catch (e: Exception) {
-            android.util.Log.e("YouTubeRepo", "getPlaylistVideos failed for $playlistId", e)
+            KLog.e("YouTubeRepo", "getPlaylistVideos failed for $playlistId", e)
             getPlaylistVideosAnonymous(playlistId)
         }
     }
@@ -3576,7 +3576,7 @@ class YouTubeRepository(private val context: Context) {
                 extractor.fetchPage()
                 extractor.initialPage.items.toVideoItems()
             } catch (e: Exception) {
-                android.util.Log.e("YouTubeRepo", "Anonymous playlist fetch failed for $listId", e)
+                KLog.e("YouTubeRepo", "Anonymous playlist fetch failed for $listId", e)
                 emptyList()
             }
         }
@@ -3614,7 +3614,7 @@ class YouTubeRepository(private val context: Context) {
                 parseModernPlaylistHeader(root, listId)
                     ?: parseLegacyPlaylistHeader(root, listId)
             } catch (e: Exception) {
-                android.util.Log.e("YouTubeRepo", "getPlaylistHeader failed for $playlistId", e)
+                KLog.e("YouTubeRepo", "getPlaylistHeader failed for $playlistId", e)
                 null
             }
         }
@@ -4251,8 +4251,6 @@ class YouTubeRepository(private val context: Context) {
      */
 
 
-
-
     /**
      * Get the video stream URL (both audio and video) for playback.
      * For video mode, we need the video stream not just audio.
@@ -4286,7 +4284,7 @@ class YouTubeRepository(private val context: Context) {
             
             bestVideoStream?.content
         } catch (e: Exception) {
-            android.util.Log.e("YouTubeRepo", "Error getting video stream", e)
+            KLog.e("YouTubeRepo", "Error getting video stream", e)
             null
         }
     }
@@ -4355,7 +4353,7 @@ class YouTubeRepository(private val context: Context) {
             val response = okHttpClient.newCall(request).execute()
             response.body?.string() ?: ""
         } catch (e: Exception) {
-            android.util.Log.e("YouTubeRepo", "Error in fetchYouTubeBrowse", e)
+            KLog.e("YouTubeRepo", "Error in fetchYouTubeBrowse", e)
             ""
         }
     }
@@ -4389,7 +4387,7 @@ class YouTubeRepository(private val context: Context) {
             }
             
         } catch (e: Exception) {
-            android.util.Log.e("YouTubeRepo", "Error fetching channel avatar", e)
+            KLog.e("YouTubeRepo", "Error fetching channel avatar", e)
         }
         return null
     }
@@ -4410,14 +4408,14 @@ class YouTubeRepository(private val context: Context) {
         try {
             val extractedQualities = getVideoQualitiesFromNewPipe(videoId)
             if (extractedQualities.isNotEmpty()) {
-                android.util.Log.i(
+                KLog.i(
                     "YouTubeRepo",
                     "Video qualities via NewPipe: ${extractedQualities.size} for $videoId"
                 )
                 return@withContext extractedQualities
             }
         } catch (e: Exception) {
-            android.util.Log.w(
+            KLog.w(
                 "YouTubeRepo",
                 "NewPipe quality resolution failed, falling back to direct InnerTube",
                 e,
@@ -4429,7 +4427,7 @@ class YouTubeRepository(private val context: Context) {
         try {
             getVideoQualitiesFromInnerTube(videoId)
         } catch (e: Exception) {
-            android.util.Log.e("YouTubeRepo", "Error getting video stream qualities", e)
+            KLog.e("YouTubeRepo", "Error getting video stream qualities", e)
             emptyList()
         }
     }
@@ -4852,7 +4850,7 @@ class YouTubeRepository(private val context: Context) {
 
             VideoDetails(finalQualities, related, updatedVideoItem)
         } catch (e: Exception) {
-            android.util.Log.e("YouTubeRepo", "Error getting video details", e)
+            KLog.e("YouTubeRepo", "Error getting video details", e)
             VideoDetails(emptyList(), emptyList())
         }
     }
@@ -4905,12 +4903,12 @@ class YouTubeRepository(private val context: Context) {
                 if (response.isSuccessful) {
                     response.body?.string()?.also { noteSessionState(it) }
                 } else {
-                    android.util.Log.w("YouTubeRepo", "watch api $endpoint HTTP ${response.code}")
+                    KLog.w("YouTubeRepo", "watch api $endpoint HTTP ${response.code}")
                     null
                 }
             }
         } catch (e: Exception) {
-            android.util.Log.e("YouTubeRepo", "watch api $endpoint failed", e)
+            KLog.e("YouTubeRepo", "watch api $endpoint failed", e)
             null
         }
     }
@@ -4941,7 +4939,7 @@ class YouTubeRepository(private val context: Context) {
             val root = fetchWatchNextRoot(videoId) ?: return@withContext null
             parseEngagementFromWatchNext(videoId, root)
         } catch (e: Exception) {
-            android.util.Log.e("YouTubeRepo", "getVideoEngagement failed", e)
+            KLog.e("YouTubeRepo", "getVideoEngagement failed", e)
             null
         }
     }
@@ -4959,7 +4957,7 @@ class YouTubeRepository(private val context: Context) {
                 .getOrNull()
                 ?: parseVideoMetadataFromWatchNext(videoId, root, null)?.channelId
         } catch (e: Exception) {
-            android.util.Log.w("YouTubeRepo", "Channel lookup failed for $videoId", e)
+            KLog.w("YouTubeRepo", "Channel lookup failed for $videoId", e)
             null
         }
     }
@@ -4982,7 +4980,7 @@ class YouTubeRepository(private val context: Context) {
                 engagement = try {
                     parseEngagementFromWatchNext(videoId, root)
                 } catch (e: Exception) {
-                    android.util.Log.w("YouTubeRepo", "engagement parse failed for $videoId", e)
+                    KLog.w("YouTubeRepo", "engagement parse failed for $videoId", e)
                     null
                 },
                 updatedVideoItem = parseVideoMetadataFromWatchNext(videoId, root, baseVideo),
@@ -4990,13 +4988,13 @@ class YouTubeRepository(private val context: Context) {
                 chapters = try {
                     parseChaptersFromWatchNext(root)
                 } catch (e: Exception) {
-                    android.util.Log.w("YouTubeRepo", "chapters parse failed for $videoId", e)
+                    KLog.w("YouTubeRepo", "chapters parse failed for $videoId", e)
                     emptyList()
                 },
                 liveChatContinuation = parseLiveChatContinuation(root)
             )
         } catch (e: Exception) {
-            android.util.Log.e("YouTubeRepo", "getWatchNextData failed", e)
+            KLog.e("YouTubeRepo", "getWatchNextData failed", e)
             WatchNextData(null, null, emptyList())
         }
     }
@@ -5066,7 +5064,7 @@ class YouTubeRepository(private val context: Context) {
             val root = fetchWatchNextRoot(videoId) ?: return@withContext null
             parseLiveChatContinuation(root)?.let { LiveChatSession(continuation = it) }
         } catch (e: Exception) {
-            android.util.Log.e("YouTubeRepo", "getLiveChatSession failed for $videoId", e)
+            KLog.e("YouTubeRepo", "getLiveChatSession failed for $videoId", e)
             null
         }
     }
@@ -5221,7 +5219,7 @@ class YouTubeRepository(private val context: Context) {
                     ?: 200,
             )
         } catch (e: Exception) {
-            android.util.Log.e("YouTubeRepo", "pollLiveChat failed", e)
+            KLog.e("YouTubeRepo", "pollLiveChat failed", e)
             null
         }
     }
@@ -5277,7 +5275,7 @@ class YouTubeRepository(private val context: Context) {
                     ?.takeIf { it.isNotBlank() }
                 LiveChatSendResult(false, error = reason ?: "Message not sent")
             } catch (e: Exception) {
-                android.util.Log.e("YouTubeRepo", "sendLiveChatMessage failed", e)
+                KLog.e("YouTubeRepo", "sendLiveChatMessage failed", e)
                 LiveChatSendResult(false, error = "Message not sent")
             }
         }
@@ -5316,7 +5314,7 @@ class YouTubeRepository(private val context: Context) {
                     ?.takeIf { it.isNotBlank() },
             )
         } catch (e: Exception) {
-            android.util.Log.e("YouTubeRepo", "getLiveMetadata failed for $videoId", e)
+            KLog.e("YouTubeRepo", "getLiveMetadata failed for $videoId", e)
             null
         }
     }
@@ -5431,7 +5429,7 @@ class YouTubeRepository(private val context: Context) {
 
             return null
         } catch (e: Exception) {
-            android.util.Log.w("YouTubeRepo", "parseLiveChatItem failed", e)
+            KLog.w("YouTubeRepo", "parseLiveChatItem failed", e)
             return null
         }
     }
@@ -5593,7 +5591,7 @@ class YouTubeRepository(private val context: Context) {
                 .distinctBy { it.languageCode to it.isAutoGenerated }
                 .sortedBy { it.isAutoGenerated }
         } catch (e: Exception) {
-            android.util.Log.e("YouTubeRepo", "parseCaptionTracks failed", e)
+            KLog.e("YouTubeRepo", "parseCaptionTracks failed", e)
             emptyList()
         }
     }
@@ -5638,7 +5636,7 @@ class YouTubeRepository(private val context: Context) {
             cacheCaptionTracks(videoId, tracks)
             tracks
         } catch (e: Exception) {
-            android.util.Log.e("YouTubeRepo", "getCaptionTracks failed for $videoId", e)
+            KLog.e("YouTubeRepo", "getCaptionTracks failed for $videoId", e)
             emptyList()
         }
     }
@@ -5692,7 +5690,7 @@ class YouTubeRepository(private val context: Context) {
                 .build()
             okHttpClient.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) {
-                    android.util.Log.w(
+                    KLog.w(
                         "YouTubeRepo",
                         "Caption fetch failed for ${track.languageCode}: HTTP ${response.code}"
                     )
@@ -5702,7 +5700,7 @@ class YouTubeRepository(private val context: Context) {
                 WebVttParser.parse(body)
             }
         } catch (e: Exception) {
-            android.util.Log.e("YouTubeRepo", "getCaptionCues failed for ${track.languageCode}", e)
+            KLog.e("YouTubeRepo", "getCaptionCues failed for ${track.languageCode}", e)
             emptyList()
         }
     }
@@ -5779,7 +5777,7 @@ class YouTubeRepository(private val context: Context) {
                 descriptionLinks = if (description != null) richDescription.links else emptyList()
             )
         } catch (e: Exception) {
-            android.util.Log.w("YouTubeRepo", "watch-next metadata parse failed for $videoId", e)
+            KLog.w("YouTubeRepo", "watch-next metadata parse failed for $videoId", e)
             baseVideo
         }
     }
@@ -5956,7 +5954,7 @@ class YouTubeRepository(private val context: Context) {
 
             CommentsPage(comments, nextToken, createCommentParams)
         } catch (e: Exception) {
-            android.util.Log.e("YouTubeRepo", "getCommentsPage failed", e)
+            KLog.e("YouTubeRepo", "getCommentsPage failed", e)
             null
         }
     }
@@ -6118,12 +6116,12 @@ class YouTubeRepository(private val context: Context) {
                 if (response.isSuccessful) {
                     response.body?.string()
                 } else {
-                    android.util.Log.w("YouTubeRepo", "music api $endpoint HTTP ${response.code}")
+                    KLog.w("YouTubeRepo", "music api $endpoint HTTP ${response.code}")
                     null
                 }
             }
         } catch (e: Exception) {
-            android.util.Log.e("YouTubeRepo", "music api $endpoint failed", e)
+            KLog.e("YouTubeRepo", "music api $endpoint failed", e)
             null
         }
     }
@@ -6300,7 +6298,7 @@ class YouTubeRepository(private val context: Context) {
                     }
                 }
             } catch (e: Exception) {
-                android.util.Log.e("YouTubeRepo", "getPlaylistSetVideoIds failed", e)
+                KLog.e("YouTubeRepo", "getPlaylistSetVideoIds failed", e)
                 emptyMap()
             }
         }
@@ -6431,7 +6429,7 @@ class YouTubeRepository(private val context: Context) {
                 toolbarSurfaces = toolbarSurfaces
             )
         } catch (e: Exception) {
-            android.util.Log.e("YouTubeRepo", "parseCreatedComment failed", e)
+            KLog.e("YouTubeRepo", "parseCreatedComment failed", e)
             null
         }
     }
@@ -6458,7 +6456,7 @@ class YouTubeRepository(private val context: Context) {
                 ?.optJSONObject("videostatsPlaybackUrl")
                 ?.optString("baseUrl")
             if (baseUrl.isNullOrEmpty()) {
-                android.util.Log.w("YouTubeRepo", "No videostatsPlaybackUrl for $videoId")
+                KLog.w("YouTubeRepo", "No videostatsPlaybackUrl for $videoId")
                 return@withContext
             }
             val trackingUrl = buildString {
@@ -6483,13 +6481,13 @@ class YouTubeRepository(private val context: Context) {
             }
             okHttpClient.newCall(builder.build()).execute().use { response ->
                 if (response.isSuccessful) {
-                    android.util.Log.d("YouTubeRepo", "Video history sync SUCCESS for $videoId")
+                    KLog.d("YouTubeRepo", "Video history sync SUCCESS for $videoId")
                 } else {
-                    android.util.Log.w("YouTubeRepo", "Video history sync failed: ${response.code}")
+                    KLog.w("YouTubeRepo", "Video history sync failed: ${response.code}")
                 }
             }
         } catch (e: Exception) {
-            android.util.Log.e("YouTubeRepo", "Error in reportVideoPlayback", e)
+            KLog.e("YouTubeRepo", "Error in reportVideoPlayback", e)
         }
     }
 
@@ -6506,7 +6504,7 @@ class YouTubeRepository(private val context: Context) {
             ) ?: return@withContext emptyList()
             parseVideosFromYouTubeJson(raw)
         } catch (e: Exception) {
-            android.util.Log.e("YouTubeRepo", "getSubscriptionsFeed failed", e)
+            KLog.e("YouTubeRepo", "getSubscriptionsFeed failed", e)
             emptyList()
         }
     }
@@ -6560,7 +6558,7 @@ class YouTubeRepository(private val context: Context) {
             }
             channels.distinctBy { it.channelId }
         } catch (e: Exception) {
-            android.util.Log.e("YouTubeRepo", "getSubscribedChannels failed", e)
+            KLog.e("YouTubeRepo", "getSubscribedChannels failed", e)
             emptyList()
         }
     }
@@ -6600,7 +6598,7 @@ class YouTubeRepository(private val context: Context) {
                 )
             }.distinctBy { it.videoId }
         } catch (e: Exception) {
-            android.util.Log.e("YouTubeRepo", "getChannelVideos failed", e)
+            KLog.e("YouTubeRepo", "getChannelVideos failed", e)
             emptyList()
         }
     }
@@ -6659,7 +6657,7 @@ class YouTubeRepository(private val context: Context) {
                 selectedContent = content
             )
         } catch (e: Exception) {
-            android.util.Log.e("YouTubeRepo", "getChannelPage failed for $channelId", e)
+            KLog.e("YouTubeRepo", "getChannelPage failed for $channelId", e)
             null
         }
     }
@@ -6682,7 +6680,7 @@ class YouTubeRepository(private val context: Context) {
             val scope = parseSelectedTab(root)?.second ?: root
             parseChannelTabPage(scope, header)
         } catch (e: Exception) {
-            android.util.Log.e("YouTubeRepo", "getChannelTab failed for $channelId", e)
+            KLog.e("YouTubeRepo", "getChannelTab failed for $channelId", e)
             ChannelTabPage()
         }
     }
@@ -6705,7 +6703,7 @@ class YouTubeRepository(private val context: Context) {
             ) ?: return@withContext ChannelTabPage()
             parseChannelTabPage(org.json.JSONObject(raw), header)
         } catch (e: Exception) {
-            android.util.Log.e("YouTubeRepo", "getChannelContinuation failed", e)
+            KLog.e("YouTubeRepo", "getChannelContinuation failed", e)
             ChannelTabPage()
         }
     }
@@ -6737,7 +6735,7 @@ class YouTubeRepository(private val context: Context) {
             val root = org.json.JSONObject(raw)
             parseChannelTabPage(parseSelectedTab(root)?.second ?: root, header)
         } catch (e: Exception) {
-            android.util.Log.e("YouTubeRepo", "searchWithinChannel failed for $channelId", e)
+            KLog.e("YouTubeRepo", "searchWithinChannel failed for $channelId", e)
             ChannelTabPage()
         }
     }
@@ -6777,7 +6775,7 @@ class YouTubeRepository(private val context: Context) {
                 canonicalUrl = view.optString("canonicalChannelUrl").takeIf { it.isNotBlank() }
             )
         } catch (e: Exception) {
-            android.util.Log.e("YouTubeRepo", "getChannelAbout failed", e)
+            KLog.e("YouTubeRepo", "getChannelAbout failed", e)
             null
         }
     }
@@ -7549,7 +7547,7 @@ class YouTubeRepository(private val context: Context) {
                 ?.optString("browseId")
                 ?.takeIf { it.startsWith("UC") }
         } catch (e: Exception) {
-            android.util.Log.w("YouTubeRepo", "resolveChannelId failed for $url", e)
+            KLog.w("YouTubeRepo", "resolveChannelId failed for $url", e)
             null
         }
     }
@@ -7592,7 +7590,7 @@ class YouTubeRepository(private val context: Context) {
 
             ChannelProfile(id, name, avatarUrl, handle, subscriberCountText)
         } catch (e: Exception) {
-            android.util.Log.w("YouTubeRepo", "getChannelProfile failed for $channelId", e)
+            KLog.w("YouTubeRepo", "getChannelProfile failed for $channelId", e)
             null
         }
     }
@@ -7628,14 +7626,14 @@ class YouTubeRepository(private val context: Context) {
                     // 404 means the channel is gone or the id was never valid;
                     // the caller keeps the subscription either way, because a
                     // transient failure must not silently delete channels.
-                    android.util.Log.w("YouTubeRepo", "channel feed $channelId HTTP ${response.code}")
+                    KLog.w("YouTubeRepo", "channel feed $channelId HTTP ${response.code}")
                     return@withContext emptyList()
                 }
                 response.body?.string()
             } ?: return@withContext emptyList()
             parseChannelFeedXml(body, avatarUrl)
         } catch (e: Exception) {
-            android.util.Log.w("YouTubeRepo", "getChannelFeedRss failed for $channelId", e)
+            KLog.w("YouTubeRepo", "getChannelFeedRss failed for $channelId", e)
             emptyList()
         }
     }
@@ -7798,7 +7796,7 @@ class YouTubeRepository(private val context: Context) {
                         }
                         videos.take(maxPerChannel)
                     } catch (e: Exception) {
-                        android.util.Log.w("YouTubeRepo", "feed fetch failed for ${channel.channelId}", e)
+                        KLog.w("YouTubeRepo", "feed fetch failed for ${channel.channelId}", e)
                         emptyList()
                     } finally {
                         gate.release()
@@ -7949,11 +7947,11 @@ class YouTubeRepository(private val context: Context) {
                 ?.optJSONObject(0)
                 ?.optBoolean("isProcessed", false) ?: false
             if (!processed) {
-                android.util.Log.w("YouTubeRepo", "feedback token not processed")
+                KLog.w("YouTubeRepo", "feedback token not processed")
             }
             processed
         } catch (e: Exception) {
-            android.util.Log.e("YouTubeRepo", "feedback failed", e)
+            KLog.e("YouTubeRepo", "feedback failed", e)
             false
         }
     }
@@ -7996,7 +7994,7 @@ class YouTubeRepository(private val context: Context) {
                 )
             }
         } catch (e: Exception) {
-            android.util.Log.e("YouTubeRepo", "getNotifications failed", e)
+            KLog.e("YouTubeRepo", "getNotifications failed", e)
             emptyList()
         }
     }
