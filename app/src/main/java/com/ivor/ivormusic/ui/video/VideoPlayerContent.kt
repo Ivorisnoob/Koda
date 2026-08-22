@@ -587,6 +587,17 @@ fun VideoPlayerContent(
                 showTimedCommentsButton = timedCommentsFeatureEnabled,
                 timedCommentsActive = timedCommentsActive,
                 onTimedCommentsToggle = { timedCommentsActive = !timedCommentsActive },
+                showCommentsButton = !isLive && commentsToken != null && !fullscreenIsPortrait,
+                commentsActive = showCommentsSheet,
+                onCommentsToggle = {
+                    if (showCommentsSheet) {
+                        showCommentsSheet = false
+                    } else {
+                        viewModel.ensureCommentsLoaded()
+                        showCommentsSheet = true
+                        showControls = false
+                    }
+                },
                 chapters = chapters,
                 onOpenChapters = { showChaptersSheet = true },
                 captionsActive = selectedCaption != null,
@@ -627,6 +638,51 @@ fun VideoPlayerContent(
                         modifier = Modifier
                             .align(Alignment.BottomStart)
                             .padding(start = 24.dp, end = 24.dp, bottom = 104.dp)
+                    )
+                }
+
+                // Regular comments stay inside immersive landscape as a
+                // detached trailing panel. The video remains fullscreen behind
+                // it; opening comments never rotates or returns to the watch
+                // page, and the panel has its own close/back path.
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = showCommentsSheet && !isLive && !fullscreenIsPortrait,
+                    enter = slideInHorizontally(
+                        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+                        initialOffsetX = { it }
+                    ) + fadeIn(),
+                    exit = slideOutHorizontally(targetOffsetX = { it }) + fadeOut(),
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .fillMaxHeight()
+                ) {
+                    CommentsPanel(
+                        comments = comments,
+                        replies = commentReplies,
+                        loadingReplyIds = loadingReplyIds,
+                        isLoading = isCommentsLoading,
+                        isLoadingMore = isLoadingMoreComments,
+                        commentsAvailable = commentsToken != null,
+                        canComment = canComment,
+                        isPosting = isPostingComment,
+                        onLoadMore = { viewModel.loadMoreComments() },
+                        onLoadReplies = { viewModel.loadReplies(it) },
+                        onPostComment = { viewModel.postComment(it) },
+                        onPostReply = { target, threadParent, text ->
+                            viewModel.postReply(target, threadParent, text)
+                        },
+                        onLikeComment = { comment ->
+                            requireLogin { viewModel.toggleCommentLike(comment) }
+                        },
+                        onDeleteComment = { comment -> viewModel.deleteComment(comment) },
+                        onDismiss = { showCommentsSheet = false },
+                        onSeekTo = { seconds -> exoPlayer.seekTo(seconds * 1000L) },
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .width(400.dp)
+                            .displayCutoutPadding()
+                            .padding(end = 8.dp, top = 8.dp, bottom = 8.dp)
+                            .clip(RoundedCornerShape(20.dp))
                     )
                 }
 
@@ -1008,7 +1064,7 @@ fun VideoPlayerContent(
     }
 
     // Back closes an open panel before collapsing the player
-    androidx.activity.compose.BackHandler(enabled = showCommentsSheet && !isFullscreen) {
+    androidx.activity.compose.BackHandler(enabled = showCommentsSheet) {
         showCommentsSheet = false
     }
 

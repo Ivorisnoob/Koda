@@ -194,6 +194,7 @@ class MainActivity : ComponentActivity() {
                     MusicApp(
                         pendingSharedLink = pendingSharedLink,
                         isInPipMode = isInPipMode,
+                        appTimeLocked = appTimeLocked,
                         onPipStateChanged = { eligible, aspectRatio, bounds ->
                             pipEligible = eligible
                             pipVideoAspectRatio = aspectRatio
@@ -303,7 +304,7 @@ class MainActivity : ComponentActivity() {
      */
     override fun onStart() {
         super.onStart()
-        foregroundedAtMs = System.currentTimeMillis()
+        foregroundedAtMs = android.os.SystemClock.elapsedRealtime()
         tickAppTime()
         appTimeTicker = lifecycleScope.launch {
             while (isActive) {
@@ -323,7 +324,7 @@ class MainActivity : ComponentActivity() {
 
     /** Flush the time since the last marker into today's total. */
     private fun chargeForegroundTime() {
-        val now = System.currentTimeMillis()
+        val now = android.os.SystemClock.elapsedRealtime()
         if (foregroundedAtMs == 0L || appTimeLocked) {
             // Locked sessions are deliberately uncounted: sitting on the lock
             // screen must not eat the budget, and the marker still moves so a
@@ -331,7 +332,19 @@ class MainActivity : ComponentActivity() {
             foregroundedAtMs = now
             return
         }
-        com.ivor.ivormusic.data.AppTimeLimit.addForegroundMillis(this, now - foregroundedAtMs)
+        val prefs = com.ivor.ivormusic.data.ThemePreferences(applicationContext)
+        val shouldTrack = prefs.isTimeLimitEnabled() &&
+            com.ivor.ivormusic.data.AppTimeLimit.budgetMinutesForToday(
+                com.ivor.ivormusic.data.AppTimeLimit.parseBudgets(
+                    prefs.getTimeLimitBudgets()
+                )
+            ) > 0
+        if (shouldTrack) {
+            com.ivor.ivormusic.data.AppTimeLimit.addForegroundMillis(
+                this,
+                now - foregroundedAtMs
+            )
+        }
         foregroundedAtMs = now
     }
 

@@ -3,6 +3,7 @@ package com.ivor.ivormusic.ui.applock
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -146,9 +147,10 @@ fun AppTimeLimitScreen(onBack: () -> Unit) {
                             style = MaterialTheme.typography.titleSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        Row(
+                        FlowRow(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             listOf(60, 120, 180, 300, 480).forEach { minutes ->
                                 FilterChip(
@@ -171,12 +173,7 @@ fun AppTimeLimitScreen(onBack: () -> Unit) {
                         dayName = dayNames[day],
                         minutes = minutes,
                         isToday = day == todayIndex,
-                        onChange = { newMinutes ->
-                            prefs.setTimeLimitBudgets(
-                                budgetsStored.toMutableSet() +
-                                    "$day=$newMinutes"
-                            )
-                        }
+                        onChange = { newMinutes -> prefs.setTimeLimitBudget(day, newMinutes) }
                     )
                 }
 

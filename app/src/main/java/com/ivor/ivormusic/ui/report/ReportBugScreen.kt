@@ -20,10 +20,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.ContentCopy
-import androidx.compose.material.icons.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.Troubleshoot
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -133,7 +133,7 @@ fun ReportBugScreen(onBack: () -> Unit) {
         val clipboard =
             context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as ClipboardManager
         clipboard.setPrimaryClip(ClipData.newPlainText("Koda bug report", reportText))
-        if (crashText != null && !crashConsumed) {
+        if (includeCrash && crashText != null && !crashConsumed) {
             CrashReporter.clearPendingCrash(context)
             crashConsumed = true
         }
@@ -344,7 +344,7 @@ fun ReportBugScreen(onBack: () -> Unit) {
                         },
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Icon(Icons.Rounded.OpenInNew, contentDescription = null)
+                        Icon(Icons.AutoMirrored.Rounded.OpenInNew, contentDescription = null)
                         Spacer(Modifier.width(8.dp))
                         Text("Open GitHub issue")
                     }

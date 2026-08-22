@@ -189,6 +189,8 @@ class ThemePreferences(context: Context) {
             KEY_MANUAL_SCAN_ENABLED -> _manualScanEnabled.value = getManualScanEnabledPreference()
             KEY_ONBOARDING_COMPLETED -> _onboardingCompleted.value = getOnboardingCompletedPreference()
             KEY_LOCAL_ONLY_MODE -> _localOnlyMode.value = getLocalOnlyModePreference()
+            KEY_TIME_LIMIT_ENABLED -> _timeLimitEnabled.value = getTimeLimitEnabledPreference()
+            KEY_TIME_LIMIT_BUDGETS -> _timeLimitBudgets.value = getTimeLimitBudgetsPreference()
             KEY_LIBRARY_SORT_OPTION -> _librarySortOption.value = getLibrarySortOptionPreference()
         }
     }
@@ -1269,8 +1271,22 @@ class ThemePreferences(context: Context) {
     fun getTimeLimitBudgets(): Set<String> = getTimeLimitBudgetsPreference()
 
     fun setTimeLimitBudgets(budgets: Set<String>) {
-        prefs.edit().putStringSet(KEY_TIME_LIMIT_BUDGETS, budgets).apply()
-        _timeLimitBudgets.value = budgets
+        val canonical = AppTimeLimit.parseBudgets(budgets)
+            .map { (day, minutes) -> "$day=$minutes" }
+            .toSet()
+        prefs.edit().putStringSet(KEY_TIME_LIMIT_BUDGETS, canonical).apply()
+        _timeLimitBudgets.value = canonical
+    }
+
+    /** Replace one weekday's value without leaving an ambiguous duplicate entry. */
+    fun setTimeLimitBudget(day: Int, minutes: Int) {
+        require(day in 0..6) { "Weekday must be in 0..6" }
+        require(minutes >= 0) { "Budget cannot be negative" }
+        val updated = AppTimeLimit.parseBudgets(getTimeLimitBudgetsPreference()).toMutableMap()
+        updated[day] = minutes
+        setTimeLimitBudgets(updated.map { (storedDay, storedMinutes) ->
+            "$storedDay=$storedMinutes"
+        }.toSet())
     }
 
     /** One budget applied to all seven days - the onboarding preset path. */
