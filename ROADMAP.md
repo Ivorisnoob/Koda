@@ -442,7 +442,7 @@ The milestones behind us, kept here so the direction of travel is visible.
 - Complete account-playlist loading through authenticated playlist-scoped continuations, instead of accepting NewPipe's exact-page partial results
 - Persist shuffle and repeat, keep one stable shuffle order across crossfade swaps, and restore active sleep timers safely
 - Resume music and video sessions from 15-second checkpoints without resetting the restored music seek during stream resolution
-- Replace the video mini-player's layout-heavy expansion morph with a compositor-only transition while preserving its gestures
+- Replace the video mini-player's layout-heavy expansion morph with a lightweight reveal curtain that never transforms the full video surface
 - Skeleton placeholders on every feed's first load, replacing the doubled spinners
 - A listening history for music, grouped by day, searchable, with a pause toggle
 - Vertical videos given a player box their own shape instead of a pillarboxed 16:9 frame
