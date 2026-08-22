@@ -51,6 +51,7 @@ fun VideoPipController(viewModel: VideoPlayerViewModel) {
     val isExpanded by viewModel.isExpanded.collectAsState()
     val videoAspectRatio by viewModel.videoAspectRatio.collectAsState()
     val videoBounds by viewModel.videoSurfaceBounds.collectAsState()
+    val miniVideoBounds by viewModel.miniVideoSurfaceBounds.collectAsState()
 
     val packageName = context.packageName
 
@@ -90,10 +91,11 @@ fun VideoPipController(viewModel: VideoPlayerViewModel) {
     // system capture the mini player and the entire app hierarchy into PiP.
     SideEffect {
         val builder = PictureInPictureParams.Builder()
-        val validBounds = videoBounds?.takeIf { !it.isEmpty }
+        val validBounds = (if (isExpanded) videoBounds else miniVideoBounds)
+            ?.takeIf { !it.isEmpty }
         val autoEnterEligible = currentVideo != null &&
-            isExpanded &&
-            isPlaying
+            isPlaying &&
+            validBounds != null
 
         if (currentVideo == null) {
             // No video: disarm. Auto-enter is sticky, so a player closed while
@@ -119,12 +121,12 @@ fun VideoPipController(viewModel: VideoPlayerViewModel) {
             if (autoEnterEligible) validBounds?.let { builder.setSourceRectHint(it) }
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                // Only auto-enter PiP while the full player is on screen.
-                // Auto-entering from the mini player captures the whole app UI
-                // into the PiP window instead of just the video surface. A
-                // paused player is also ineligible: its newly attached PiP
-                // SurfaceView may not produce a fresh frame to replace the
-                // system's transition snapshot.
+                // Both expanded and collapsed playback are eligible, but only
+                // after that layout's own video surface has reported bounds.
+                // The source rect makes the transition snapshot video-only;
+                // MainActivity then replaces the app with PipVideoSurface.
+                // A paused player remains ineligible because its newly attached
+                // PiP SurfaceView may not produce a fresh replacement frame.
                 builder.setAutoEnterEnabled(autoEnterEligible)
                 // The content is a video, not a layout that needs to reflow, so
                 // let the system crossfade the resize instead of re-laying out.
@@ -149,9 +151,9 @@ fun VideoPipController(viewModel: VideoPlayerViewModel) {
  * skips live here as buttons rather than as the gesture they are on the full
  * player.
  *
- * Devices advertise how many actions they will render (three on every current
- * Android build). If a device offers fewer, play/pause is the one control that
- * must survive, so the seeks are dropped rather than the list truncated.
+ * Devices advertise how many actions they will render. Play/pause is the one
+ * control that must survive; a two-slot OEM still gets forward seek rather
+ * than unnecessarily collapsing the row to a single button.
  */
 private fun pipActions(
     activity: androidx.activity.ComponentActivity,
@@ -169,9 +171,7 @@ private fun pipActions(
     } catch (e: Exception) {
         3
     }
-    if (maxActions < 3) return listOf(playPause)
-
-    return listOf(
+    val actions = listOf(
         remoteAction(
             activity, packageName, ACTION_REWIND,
             R.drawable.ic_media_replay_10, "Back 10 seconds"
@@ -182,6 +182,11 @@ private fun pipActions(
             R.drawable.ic_media_forward_10, "Forward 10 seconds"
         )
     )
+    return when {
+        maxActions >= 3 -> actions
+        maxActions == 2 -> listOf(playPause, actions.last())
+        else -> listOf(playPause)
+    }
 }
 
 private fun remoteAction(

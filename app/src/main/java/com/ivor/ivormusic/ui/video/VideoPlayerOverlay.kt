@@ -86,11 +86,8 @@ private const val VIDEO_BACK_PEEK = 0.82f
  * device does not support it), so callers can fall back to doing nothing
  * rather than assuming they are now in PiP.
  */
-fun enterPipMode(
-    activity: androidx.activity.ComponentActivity,
-    videoAspectRatio: Float?,
-    videoBounds: android.graphics.Rect?
-): Boolean {
+@Suppress("DEPRECATION")
+fun enterPipMode(activity: androidx.activity.ComponentActivity): Boolean {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return false
     if (!activity.packageManager.hasSystemFeature(
             android.content.pm.PackageManager.FEATURE_PICTURE_IN_PICTURE
@@ -98,11 +95,12 @@ fun enterPipMode(
     ) return false
 
     return try {
-        val params = PictureInPictureParams.Builder()
-            .setAspectRatio(pipAspectRatio(videoAspectRatio))
-            .apply { videoBounds?.takeIf { !it.isEmpty }?.let { setSourceRectHint(it) } }
-            .build()
-        activity.enterPictureInPictureMode(params)
+        // VideoPipController has already installed the current aspect ratio,
+        // source rectangle and transport actions. Passing a freshly built
+        // params object here used to erase those actions at the moment PiP was
+        // entered, leaving only the system's basic control.
+        activity.enterPictureInPictureMode()
+        true
     } catch (e: Exception) {
         KLog.w("VideoPlayerOverlay", "enterPictureInPictureMode refused", e)
         false

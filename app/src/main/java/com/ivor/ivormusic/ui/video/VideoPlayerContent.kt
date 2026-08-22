@@ -118,7 +118,6 @@ fun VideoPlayerContent(
     val selectedCaption by viewModel.selectedCaption.collectAsState()
     val captionCues by viewModel.captionCues.collectAsState()
     val videoAspectRatio by viewModel.videoAspectRatio.collectAsState()
-    val videoSurfaceBounds by viewModel.videoSurfaceBounds.collectAsState()
 
     // PiP is a device capability, not a given: Android TV and a few OEM builds
     // ship without it, and the button must not sit there doing nothing.
@@ -595,7 +594,7 @@ fun VideoPlayerContent(
                 onPipClick = {
                     val host = activity as? androidx.activity.ComponentActivity
                     if (host != null) {
-                        enterPipMode(host, videoAspectRatio, videoSurfaceBounds)
+                        enterPipMode(host)
                     }
                 },
                 showTimedCommentsButton = timedCommentsFeatureEnabled,
@@ -933,7 +932,7 @@ fun VideoPlayerContent(
                         onPipClick = {
                             val host = activity as? androidx.activity.ComponentActivity
                             if (host != null) {
-                                enterPipMode(host, videoAspectRatio, videoSurfaceBounds)
+                                enterPipMode(host)
                             }
                         },
                         minimizeDragEnabled = true,

@@ -103,10 +103,9 @@ class MainActivity : ComponentActivity() {
     // any gap around the video showed app chrome instead of black.
     private var isInPipMode by androidx.compose.runtime.mutableStateOf(false)
 
-    // Set by the video player so onUserLeaveHint can enter PiP with the right
-    // window shape on Android 11, where setAutoEnterEnabled does not exist.
-    private var pipVideoAspectRatio: Float? = null
-    private var pipVideoBounds: android.graphics.Rect? = null
+    // Set by the video player so onUserLeaveHint can enter PiP on Android 11,
+    // where setAutoEnterEnabled does not exist. The controller has already
+    // installed the active surface bounds and the full transport action set.
     private var pipEligible = false
 
     /**
@@ -195,11 +194,7 @@ class MainActivity : ComponentActivity() {
                         pendingSharedLink = pendingSharedLink,
                         isInPipMode = isInPipMode,
                         appTimeLocked = appTimeLocked,
-                        onPipStateChanged = { eligible, aspectRatio, bounds ->
-                            pipEligible = eligible
-                            pipVideoAspectRatio = aspectRatio
-                            pipVideoBounds = bounds
-                        },
+                        onPipStateChanged = { eligible -> pipEligible = eligible },
                         currentThemeMode = themeMode,
                         onThemeModeChange = { themeViewModel.setThemeMode(it) },
                         amoledTheme = amoledTheme,
@@ -370,7 +365,7 @@ class MainActivity : ComponentActivity() {
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
         if (!pipEligible || isInPipMode || isInPictureInPictureMode) return
-        enterPipMode(this, pipVideoAspectRatio, pipVideoBounds)
+        enterPipMode(this)
     }
 
     /**
@@ -408,7 +403,7 @@ fun MusicApp(
      * only consumer is this overlay.
      */
     appTimeLocked: Boolean = false,
-    onPipStateChanged: (eligible: Boolean, aspectRatio: Float?, bounds: android.graphics.Rect?) -> Unit,
+    onPipStateChanged: (eligible: Boolean) -> Unit,
     currentThemeMode: ThemeMode,
     onThemeModeChange: (ThemeMode) -> Unit,
     amoledTheme: Boolean,
@@ -594,16 +589,15 @@ fun MusicApp(
 
     // Keep the Activity's PiP inputs current. It needs them outside the
     // composition, in onUserLeaveHint, where there is no way to read state.
-    val pipAspectRatio by videoPlayerViewModel.videoAspectRatio.collectAsState()
     val pipBounds by videoPlayerViewModel.videoSurfaceBounds.collectAsState()
+    val miniPipBounds by videoPlayerViewModel.miniVideoSurfaceBounds.collectAsState()
     val videoIsPlaying by videoPlayerViewModel.isPlaying.collectAsState()
+    val activePipBounds = if (isVideoOverlayExpanded) pipBounds else miniPipBounds
     androidx.compose.runtime.SideEffect {
         onPipStateChanged(
             overlayVideo != null &&
-                isVideoOverlayExpanded &&
-                videoIsPlaying,
-            pipAspectRatio,
-            pipBounds
+                videoIsPlaying &&
+                activePipBounds?.isEmpty == false
         )
     }
 

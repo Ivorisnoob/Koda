@@ -255,8 +255,20 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     private val _videoSurfaceBounds = MutableStateFlow<android.graphics.Rect?>(null)
     val videoSurfaceBounds: StateFlow<android.graphics.Rect?> = _videoSurfaceBounds.asStateFlow()
 
+    // Kept separate from the expanded/fullscreen surface bounds. Reusing one
+    // rectangle across both layouts briefly leaves the expanded window bounds
+    // attached to a collapsed player, which lets Android snapshot the whole UI
+    // when Home is pressed during that hand-off.
+    private val _miniVideoSurfaceBounds = MutableStateFlow<android.graphics.Rect?>(null)
+    val miniVideoSurfaceBounds: StateFlow<android.graphics.Rect?> =
+        _miniVideoSurfaceBounds.asStateFlow()
+
     fun setVideoSurfaceBounds(bounds: android.graphics.Rect?) {
         _videoSurfaceBounds.value = bounds
+    }
+
+    fun setMiniVideoSurfaceBounds(bounds: android.graphics.Rect?) {
+        _miniVideoSurfaceBounds.value = bounds
     }
 
     // True while the app is in system Picture-in-Picture. Set by the
