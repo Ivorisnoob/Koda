@@ -117,9 +117,11 @@ fun VideoPipController(viewModel: VideoPlayerViewModel) {
  * skips live here as buttons rather than as the gesture they are on the full
  * player.
  *
- * Devices advertise how many actions they will render. Play/pause is the one
- * control that must survive; a two-slot OEM still gets forward seek rather
- * than unnecessarily collapsing the row to a single button.
+ * Always publish the complete row. Some OEM builds report an action capacity
+ * of one even though their PiP menu renders the normal three slots; trusting
+ * that value made Koda voluntarily remove both seeks on those devices. The
+ * window manager remains free to lay out what it can, but the actions handed
+ * to it are never incomplete.
  */
 private fun pipActions(
     activity: androidx.activity.ComponentActivity,
@@ -137,12 +139,7 @@ private fun pipActions(
         )
     }
 
-    val maxActions = try {
-        activity.maxNumPictureInPictureActions
-    } catch (e: Exception) {
-        3
-    }
-    val actions = listOf(
+    return listOf(
         remoteAction(
             activity, VideoPlaybackService.ACTION_REWIND,
             R.drawable.ic_media_replay_10, "Back 10 seconds"
@@ -153,11 +150,6 @@ private fun pipActions(
             R.drawable.ic_media_forward_10, "Forward 10 seconds"
         )
     )
-    return when {
-        maxActions >= 3 -> actions
-        maxActions == 2 -> listOf(playPause, actions.last())
-        else -> listOf(playPause)
-    }
 }
 
 private fun remoteAction(
