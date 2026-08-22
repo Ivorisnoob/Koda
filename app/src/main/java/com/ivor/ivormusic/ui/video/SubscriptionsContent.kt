@@ -196,6 +196,40 @@ fun SubscriptionsContent(
         localSubscriptions.map { it.channelId }.toSet()
     }
 
+    // YouTube does not expose a stable ordering contract for the subscription
+    // list itself. The feed does expose the thing this rail is meant to answer:
+    // who uploaded most recently. Channels missing from the current feed stay
+    // available after those recent creators, alphabetically.
+    val recentlyUploadingChannels = remember(channels, feed) {
+        val newestUploadById = mutableMapOf<String, Long>()
+        val newestUploadByName = mutableMapOf<String, Long>()
+        val now = System.currentTimeMillis()
+        feed.forEachIndexed { index, video ->
+            val uploadedAt = video.publishedAtMs
+                ?: VideoItem.parseRelativeTime(video.uploadedDate, now)
+                // The merged feed is already newest-first. Preserve that
+                // server/feed order when an item omitted its date entirely.
+                ?: (now - index)
+            video.channelId?.takeIf { it.isNotBlank() }?.let { id ->
+                newestUploadById[id] = maxOf(newestUploadById[id] ?: Long.MIN_VALUE, uploadedAt)
+            }
+            val normalizedName = video.channelName.trim().lowercase()
+            if (normalizedName.isNotEmpty()) {
+                newestUploadByName[normalizedName] = maxOf(
+                    newestUploadByName[normalizedName] ?: Long.MIN_VALUE,
+                    uploadedAt
+                )
+            }
+        }
+        channels.sortedWith(
+            compareByDescending<SubscribedChannel> { channel ->
+                newestUploadById[channel.channelId]
+                    ?: newestUploadByName[channel.name.trim().lowercase()]
+                    ?: Long.MIN_VALUE
+            }.thenBy { it.name.lowercase() }
+        )
+    }
+
     // Confirmation before dropping a channel, because the gesture that opens
     // it (a long-press on an avatar) is easy to trigger by accident while
     // scrolling the rail.
@@ -511,7 +545,7 @@ fun SubscriptionsContent(
                                         )
                                     }
                                 }
-                                items(channels, key = { it.channelId }) { channel ->
+                                items(recentlyUploadingChannels, key = { it.channelId }) { channel ->
                                     val selected = selectedChannelId == channel.channelId
                                     Column(
                                         horizontalAlignment = Alignment.CenterHorizontally,
