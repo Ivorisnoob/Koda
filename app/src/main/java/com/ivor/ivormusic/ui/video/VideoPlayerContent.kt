@@ -147,6 +147,7 @@ fun VideoPlayerContent(
     val videoPlaylists by viewModel.videoPlaylists.collectAsState()
     val isVideoPlaylistsLoading by viewModel.isVideoPlaylistsLoading.collectAsState()
     val isLive by viewModel.isLive.collectAsState()
+    val isLocalPlayback by viewModel.isLocalPlayback.collectAsState()
     val isPortraitVideo by viewModel.isPortraitVideo.collectAsState()
     val liveViewerCount by viewModel.liveViewerCount.collectAsState()
     val liveChatMessages by viewModel.liveChatMessages.collectAsState()
@@ -979,6 +980,7 @@ fun VideoPlayerContent(
                             if (channelId != null) onOpenChannel(channelId)
                         },
                         onSeekTo = { seconds -> exoPlayer.seekTo(seconds * 1000L) },
+                        isOffline = isLocalPlayback,
                         onRelatedLongPress = { related ->
                             if (isLoggedIn) viewModel.loadVideoPlaylists()
                             saveTargetVideo = related

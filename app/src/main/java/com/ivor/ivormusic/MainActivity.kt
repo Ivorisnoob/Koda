@@ -945,8 +945,6 @@ fun MusicApp(
                 val downloadedSongs by playerViewModel.downloadedSongs.collectAsState()
                 val downloadedVideos by playerViewModel.downloadedVideos.collectAsState()
                 val downloadProgress by playerViewModel.downloadProgress.collectAsState()
-                val downloadsContext = LocalContext.current
-
                 com.ivor.ivormusic.ui.downloads.DownloadsScreen(
                     downloadedSongs = downloadedSongs,
                     downloadedVideos = downloadedVideos,
@@ -958,16 +956,8 @@ fun MusicApp(
                     onPlayQueue = { songs, song ->
                         playerViewModel.playQueue(songs, song)
                     },
-                    onPlayVideo = { video ->
-                        // Handed to the system player rather than the in-app one:
-                        // VideoPlayerViewModel.playVideo drives the two-phase
-                        // InnerTube resolution, and a downloaded file has no
-                        // stream to resolve. Local playback in the app player is
-                        // a separate piece of work.
-                        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW)
-                            .setDataAndType(video.uri, "video/*")
-                            .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                        runCatching { downloadsContext.startActivity(intent) }
+                    onPlayVideo = { videos, video ->
+                        videoPlayerViewModel.playDownloadedVideos(videos, video)
                     },
                     onDeleteDownload = { songId ->
                         playerViewModel.deleteDownload(songId)

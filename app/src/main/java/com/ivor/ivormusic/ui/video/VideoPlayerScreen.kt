@@ -1827,6 +1827,7 @@ fun VideoInfoSection(
     onOpenQueue: () -> Unit = {},
     /** Seek the player, in seconds. Enables timestamp links in the description. */
     onSeekTo: ((seconds: Long) -> Unit)? = null,
+    isOffline: Boolean = false,
     isLive: Boolean = false,
     /** Concurrent viewers, refreshed while the stream is open. */
     liveViewerCount: String? = null,
@@ -1863,6 +1864,12 @@ fun VideoInfoSection(
                 LiveBadge(
                     viewerCount = liveViewerCount ?: video.viewCount.takeIf { it.isNotEmpty() }
                 )
+            } else if (isOffline) {
+                Text(
+                    text = "Available offline",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary
+                )
             } else {
                 Text(
                     text = buildString {
@@ -1885,7 +1892,7 @@ fun VideoInfoSection(
 
         // Like / Dislike + Save + Share Actions (scrolls like YouTube's chip
         // row so the pills never squash on narrow screens)
-        Row(
+        if (!isOffline) Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             modifier = Modifier.horizontalScroll(rememberScrollState())
@@ -1901,7 +1908,7 @@ fun VideoInfoSection(
         }
 
         // Channel Info Surface (tap navigates to the channel)
-        Surface(
+        if (!isOffline) Surface(
             shape = RoundedCornerShape(16.dp),
             color = MaterialTheme.colorScheme.surfaceContainer,
             modifier = Modifier.fillMaxWidth(),
@@ -2009,7 +2016,7 @@ fun VideoInfoSection(
         }
 
         // Comments Entry
-        if (!isLive) {
+        if (!isLive && !isOffline) {
             Surface(
                 shape = RoundedCornerShape(16.dp),
                 color = MaterialTheme.colorScheme.surfaceContainer,
