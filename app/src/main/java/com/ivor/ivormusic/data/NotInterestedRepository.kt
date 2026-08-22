@@ -1,5 +1,7 @@
 package com.ivor.ivormusic.data
 
+import com.ivor.ivormusic.util.KLog
+
 import android.content.Context
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -274,7 +276,7 @@ class NotInterestedRepository(context: Context) {
                 )
             }.distinctBy { it.videoId }
         } catch (e: Exception) {
-            android.util.Log.e(TAG, "Failed to load hidden videos", e)
+            KLog.e(TAG, "Failed to load hidden videos", e)
             emptyList()
         }
     }
@@ -311,7 +313,7 @@ class NotInterestedRepository(context: Context) {
                 )
             }
         } catch (e: Exception) {
-            android.util.Log.e(TAG, "Failed to load blocked channels", e)
+            KLog.e(TAG, "Failed to load blocked channels", e)
             emptyList()
         }
     }

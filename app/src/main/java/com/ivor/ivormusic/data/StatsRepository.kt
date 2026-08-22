@@ -1,5 +1,7 @@
 package com.ivor.ivormusic.data
 
+import com.ivor.ivormusic.util.KLog
+
 import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
@@ -57,7 +59,7 @@ class StatsRepository(private val context: Context) {
                 // This prevents duplicate entries from media item resolution loops.
                 val lastEntry = history.firstOrNull()
                 if (lastEntry?.songId == song.id && (System.currentTimeMillis() - lastEntry.timestamp) < 10000L) {
-                    Log.d(TAG, "Stats: Debouncing duplicate play event for ${song.title}")
+                    KLog.d(TAG, "Stats: Debouncing duplicate play event for ${song.title}")
                     return@withLock
                 }
 
@@ -77,7 +79,7 @@ class StatsRepository(private val context: Context) {
                 } else history
                 historyFile.writeText(json.encodeToString(trimmedHistory))
             } catch (e: Exception) {
-                Log.e(TAG, "Error saving play event", e)
+                KLog.e(TAG, "Error saving play event", e)
             }
         }
     }
@@ -87,7 +89,7 @@ class StatsRepository(private val context: Context) {
         try {
             json.decodeFromString<List<PlayHistoryEntry>>(historyFile.readText())
         } catch (e: Exception) {
-            Log.e(TAG, "Error loading history", e)
+            KLog.e(TAG, "Error loading history", e)
             emptyList()
         }
     }
@@ -228,7 +230,7 @@ class StatsRepository(private val context: Context) {
                 historyFile.writeText(json.encodeToString(entries))
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error writing history", e)
+            KLog.e(TAG, "Error writing history", e)
         }
     }
 

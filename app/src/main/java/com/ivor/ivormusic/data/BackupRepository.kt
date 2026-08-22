@@ -1,9 +1,10 @@
 package com.ivor.ivormusic.data
 
+import com.ivor.ivormusic.util.KLog
+
 import android.content.Context
 import android.net.Uri
 import android.os.Build
-import android.util.Log
 import com.ivor.ivormusic.BuildConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -243,7 +244,7 @@ class BackupRepository(context: Context) {
                 .edit().putLong(KEY_LAST_BACKUP_AT, snapshot.manifest.createdAt).apply()
             snapshot.manifest
         } catch (e: Exception) {
-            Log.e(TAG, "Backup failed", e)
+            KLog.e(TAG, "Backup failed", e)
             null
         }
     }
@@ -294,7 +295,7 @@ class BackupRepository(context: Context) {
             val file = File(filesDir, name)
             if (file.isFile) {
                 runCatching { files.add(BackupFile(name, file.readBytes())) }
-                    .onFailure { Log.w(TAG, "Skipped $name", it) }
+                    .onFailure { KLog.w(TAG, "Skipped $name", it) }
             }
         }
         for (dirName in BACKED_UP_DIRECTORIES) {
@@ -303,7 +304,7 @@ class BackupRepository(context: Context) {
             dir.listFiles()?.forEach { file ->
                 if (!file.isFile) return@forEach
                 runCatching { files.add(BackupFile("$dirName/${file.name}", file.readBytes())) }
-                    .onFailure { Log.w(TAG, "Skipped ${file.name}", it) }
+                    .onFailure { KLog.w(TAG, "Skipped ${file.name}", it) }
             }
         }
         return files
@@ -394,7 +395,7 @@ class BackupRepository(context: Context) {
                 signInNeeded = snapshot.profiles.count { it.kind == ProfileKind.YOUTUBE.name }
             )
         } catch (e: Exception) {
-            Log.e(TAG, "Restore failed", e)
+            KLog.e(TAG, "Restore failed", e)
             RestoreResult(success = false, error = "The restore could not be completed.")
         }
     }
@@ -552,7 +553,7 @@ class BackupRepository(context: Context) {
             // resolved path outside filesDir is never written, whatever the
             // entry name claimed.
             if (!target.canonicalPath.startsWith(filesDir.canonicalPath + File.separator)) {
-                Log.w(TAG, "Refused an entry outside filesDir: ${file.path}")
+                KLog.w(TAG, "Refused an entry outside filesDir: ${file.path}")
                 continue
             }
             runCatching {
@@ -562,7 +563,7 @@ class BackupRepository(context: Context) {
                 } else {
                     target.writeBytes(file.bytes)
                 }
-            }.onFailure { Log.w(TAG, "Could not write ${file.path}", it) }
+            }.onFailure { KLog.w(TAG, "Could not write ${file.path}", it) }
         }
     }
 

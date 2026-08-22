@@ -1,5 +1,7 @@
 package com.ivor.ivormusic.service
 
+import com.ivor.ivormusic.util.KLog
+
 import android.app.Notification
 import android.content.Context
 import android.os.Build
@@ -120,7 +122,7 @@ class LiveUpdateMediaNotificationProvider(
             } catch (e: Exception) {
                 // Promotion is a nicety; a failure here must never cost the
                 // user their transport controls.
-                android.util.Log.w(TAG, "Failed to add Live Update flag", e)
+                KLog.w(TAG, "Failed to add Live Update flag", e)
             }
         }
 

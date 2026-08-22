@@ -1,7 +1,8 @@
 package com.ivor.ivormusic.data
 
+import com.ivor.ivormusic.util.KLog
+
 import android.content.Context
-import android.util.Log
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -101,7 +102,7 @@ class VideoPlaybackSessionRepository(context: Context) {
                 tmp.delete()
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to save video playback session", e)
+            KLog.e(TAG, "Failed to save video playback session", e)
         }
     }
 
@@ -112,7 +113,7 @@ class VideoPlaybackSessionRepository(context: Context) {
             if (session.videos.isEmpty() || session.currentIndex !in session.videos.indices) null
             else session
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to load video playback session", e)
+            KLog.e(TAG, "Failed to load video playback session", e)
             null
         }
     }
@@ -121,7 +122,7 @@ class VideoPlaybackSessionRepository(context: Context) {
         try {
             sessionFile.delete()
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to clear video playback session", e)
+            KLog.e(TAG, "Failed to clear video playback session", e)
         }
     }
 }

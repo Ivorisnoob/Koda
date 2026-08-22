@@ -1,5 +1,7 @@
 package com.ivor.ivormusic.ui.video
 
+import com.ivor.ivormusic.util.KLog
+
 import android.content.Context
 import android.os.SystemClock
 import androidx.lifecycle.AndroidViewModel
@@ -620,7 +622,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                     // player on an error overlay the user cannot dismiss.
                     if (isTransientRendererError(error) && rendererRetryCount < MAX_RENDERER_RETRIES) {
                         rendererRetryCount++
-                        android.util.Log.w(
+                        KLog.w(
                             "VideoPlayerVM",
                             "Transient renderer error (attempt $rendererRetryCount/$MAX_RENDERER_RETRIES); re-preparing",
                             error
@@ -634,7 +636,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                     // re-preparing the same URL never will.
                     if (isRecoverableSourceError(error) && sourceRetryCount < MAX_SOURCE_RETRIES) {
                         sourceRetryCount++
-                        android.util.Log.w(
+                        KLog.w(
                             "VideoPlayerVM",
                             "Source error (attempt $sourceRetryCount/$MAX_SOURCE_RETRIES); re-resolving stream",
                             error
@@ -655,7 +657,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                         queueErrorSkipCount < MAX_QUEUE_ERROR_SKIPS
                     ) {
                         queueErrorSkipCount++
-                        android.util.Log.w(
+                        KLog.w(
                             "VideoPlayerVM",
                             "Unplayable video in the queue at ${activeQueue.index} " +
                                 "(skip $queueErrorSkipCount/$MAX_QUEUE_ERROR_SKIPS); moving on",
@@ -717,7 +719,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                 )
             }
 
-            android.util.Log.d(
+            KLog.d(
                 "VideoPlayerVM",
                 "Restoring video session: ${videos.size} videos, " +
                     "index=${session.currentIndex}, pos=${session.positionMs}"
@@ -977,7 +979,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             // Caught before CancellationException below, which it subclasses:
             // a timed-out resolution is a real failure the caller must surface,
             // not a cancellation to propagate.
-            android.util.Log.w("VideoPlayerVM", "Re-resolve timed out for ${video.videoId}", e)
+            KLog.w("VideoPlayerVM", "Re-resolve timed out for ${video.videoId}", e)
             emptyList()
         } catch (e: kotlinx.coroutines.CancellationException) {
             // playVideo() cancels this job when the user moves on. Swallowing
@@ -985,7 +987,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             // over the video that replaced it.
             throw e
         } catch (e: Exception) {
-            android.util.Log.w("VideoPlayerVM", "Re-resolve failed for ${video.videoId}", e)
+            KLog.w("VideoPlayerVM", "Re-resolve failed for ${video.videoId}", e)
             emptyList()
         }
         if (_currentVideo.value?.videoId != video.videoId) {
@@ -1401,7 +1403,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                 liveChatContinuation = watchNext.liveChatContinuation
             } catch (e: Exception) {
                 // Phase 2 errors are non-critical - playback already started
-                android.util.Log.w("VideoPlayerVM", "Failed to load watch-next data", e)
+                KLog.w("VideoPlayerVM", "Failed to load watch-next data", e)
             }
         }
         
@@ -1566,7 +1568,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             // key all have to stay byte-identical for the update to be seamless.
             player.replaceMediaItem(0, current.buildUpon().setMediaMetadata(metadata).build())
         } catch (e: Exception) {
-            android.util.Log.w("VideoPlayerVM", "Could not refresh now-playing metadata", e)
+            KLog.w("VideoPlayerVM", "Could not refresh now-playing metadata", e)
         }
     }
 
@@ -1694,7 +1696,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             if (_selectedCaption.value == track) {
                 _captionCues.value = cues
                 if (cues.isEmpty()) {
-                    android.util.Log.w(
+                    KLog.w(
                         "VideoPlayerVM",
                         "Caption track ${track.languageCode} produced no cues"
                     )
@@ -2031,7 +2033,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                     onFailure(result.error ?: "Message not sent")
                 }
             } catch (e: Exception) {
-                android.util.Log.w("VideoPlayerVM", "Failed to send live chat message", e)
+                KLog.w("VideoPlayerVM", "Failed to send live chat message", e)
                 onFailure("Message not sent")
             } finally {
                 _isSendingLiveChat.value = false

@@ -1,5 +1,7 @@
 package com.ivor.ivormusic.data
 
+import com.ivor.ivormusic.util.KLog
+
 import android.content.Context
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
@@ -365,7 +367,7 @@ class ProfileManager(context: Context) {
                 array.optJSONObject(i)?.let { fromJson(it) }
             }
         } catch (e: Exception) {
-            android.util.Log.e(TAG, "Failed to load profiles", e)
+            KLog.e(TAG, "Failed to load profiles", e)
             emptyList()
         }
     }
@@ -446,7 +448,7 @@ class ProfileManager(context: Context) {
                     val created = try {
                         buildPrefs(app)
                     } catch (e: Exception) {
-                        android.util.Log.e(TAG, "EncryptedSharedPreferences corrupted, resetting", e)
+                        KLog.e(TAG, "EncryptedSharedPreferences corrupted, resetting", e)
                         app.getSharedPreferences(PREFS_FILE_NAME, Context.MODE_PRIVATE)
                             .edit().clear().apply()
                         java.io.File(

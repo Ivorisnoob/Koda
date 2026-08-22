@@ -1,12 +1,13 @@
 package com.ivor.ivormusic.service
 
+import com.ivor.ivormusic.util.KLog
+
 import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
-import android.util.Log
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
@@ -53,7 +54,7 @@ class DownloadService : Service() {
             try {
                 ContextCompat.startForegroundService(context, intent)
             } catch (e: Exception) {
-                Log.w(TAG, "Could not start download service: ${e.message}")
+                KLog.w(TAG, "Could not start download service: ${e.message}")
             }
         }
 
@@ -61,7 +62,7 @@ class DownloadService : Service() {
             try {
                 context.stopService(Intent(context, DownloadService::class.java))
             } catch (e: Exception) {
-                Log.w(TAG, "Could not stop download service: ${e.message}")
+                KLog.w(TAG, "Could not stop download service: ${e.message}")
             }
         }
     }
@@ -211,7 +212,7 @@ class DownloadService : Service() {
         } catch (e: Exception) {
             // Android 12+ throws when a foreground start is not permitted from
             // the background. The transfer continues regardless.
-            Log.w(TAG, "startForeground refused: ${e.message}")
+            KLog.w(TAG, "startForeground refused: ${e.message}")
         }
     }
 

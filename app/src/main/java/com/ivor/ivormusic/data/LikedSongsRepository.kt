@@ -1,8 +1,9 @@
 package com.ivor.ivormusic.data
 
+import com.ivor.ivormusic.util.KLog
+
 import android.content.Context
 import android.content.SharedPreferences
-import android.util.Log
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -82,12 +83,12 @@ class LikedSongsRepository(context: Context) {
                 try {
                     songsFile.writeText(json.encodeToString(backfilled))
                 } catch (e: Exception) {
-                    Log.e(TAG, "Error persisting backfilled like timestamps", e)
+                    KLog.e(TAG, "Error persisting backfilled like timestamps", e)
                 }
                 backfilled
             } else stored
         } catch (e: Exception) {
-            Log.e(TAG, "Error loading liked song metadata", e)
+            KLog.e(TAG, "Error loading liked song metadata", e)
             emptyList()
         }
     }
@@ -97,7 +98,7 @@ class LikedSongsRepository(context: Context) {
         try {
             songsFile.writeText(json.encodeToString(songs))
         } catch (e: Exception) {
-            Log.e(TAG, "Error saving liked song metadata", e)
+            KLog.e(TAG, "Error saving liked song metadata", e)
         }
     }
 

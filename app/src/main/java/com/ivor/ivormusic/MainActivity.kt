@@ -11,16 +11,25 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -30,10 +39,15 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
 import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.ui.home.HomeScreen
 import com.ivor.ivormusic.ui.home.HomeViewModel
@@ -655,6 +669,7 @@ fun MusicApp(
                     onNavigateToSubscriptions = { navController.navigate("subscriptions") },
                     onNavigateToNotInterested = { navController.navigate("not_interested") },
                     onNavigateToBackup = { navController.navigate("backup") },
+                    onNavigateToReportBug = { navController.navigate("report") },
                     loadLocalSongs = loadLocalSongs,
                     onLoadLocalSongsToggle = onLoadLocalSongsToggle,
                     ambientBackground = ambientBackground,
@@ -933,6 +948,17 @@ fun MusicApp(
                     )
                 }
             }
+            composable(
+                route = "report",
+                enterTransition = { slideInHorizontally(initialOffsetX = { it }) + fadeIn() },
+                exitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut() },
+                popEnterTransition = { slideInHorizontally(initialOffsetX = { -it / 3 }) + fadeIn() },
+                popExitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut() }
+            ) {
+                com.ivor.ivormusic.ui.report.ReportBugScreen(
+                    onBack = { navController.popBackStack() }
+                )
+            }
         }
         
         com.ivor.ivormusic.ui.video.VideoPlayerOverlay(
@@ -963,6 +989,30 @@ fun MusicApp(
                 .navigationBarsPadding()
                 .padding(bottom = if (musicPillVisible) 96.dp else 16.dp)
         )
+
+        // Offer to report the crash from the previous run. Read once per
+        // composition of MusicApp (an activity recreation re-reads the file,
+        // but either answer has deleted it by then). Only after onboarding -
+        // a crash during first-run setup would otherwise interrupt it again.
+        if (onboardingCompleted) {
+            var showCrashPrompt by remember {
+                mutableStateOf(
+                    com.ivor.ivormusic.data.CrashReporter.readPendingCrash(context) != null
+                )
+            }
+            if (showCrashPrompt) {
+                CrashReportPrompt(
+                    onViewReport = {
+                        showCrashPrompt = false
+                        navController.navigate("report")
+                    },
+                    onDismiss = {
+                        showCrashPrompt = false
+                        com.ivor.ivormusic.data.CrashReporter.clearPendingCrash(context)
+                    }
+                )
+            }
+        }
     }
 }
 
@@ -1019,4 +1069,65 @@ private fun NotInterestedUndoHost(modifier: Modifier = Modifier) {
     }
 
     SnackbarHost(hostState = snackbarHostState, modifier = modifier)
+}
+
+/**
+ * One-time offer to report the crash the app died with on its previous run.
+ *
+ * A dialog at the MusicApp root rather than a card inside Home: it must be
+ * answerable before any of the tab content, overlays or mini players settle,
+ * and both answers are one tap - "Report" opens the reporter route (which
+ * carries the crash file's contents), "Not now" deletes the file. Either way
+ * it never appears twice for the same crash.
+ */
+@Composable
+private fun CrashReportPrompt(
+    onViewReport: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = RoundedCornerShape(32.dp),
+        icon = {
+            Box(
+                modifier = Modifier
+                    .size(64.dp)
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.BugReport,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
+        },
+        title = {
+            Text(
+                text = "Koda crashed last time",
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.fillMaxWidth()
+            )
+        },
+        text = {
+            Text(
+                text = "Something went wrong on your previous session. " +
+                    "You can send a bug report with the details - nothing " +
+                    "leaves your device unless you choose to share it.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        },
+        confirmButton = {
+            Button(onClick = onViewReport) {
+                Text("View & report")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Not now")
+            }
+        }
+    )
 }

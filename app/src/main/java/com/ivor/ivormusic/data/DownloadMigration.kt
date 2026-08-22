@@ -1,7 +1,8 @@
 package com.ivor.ivormusic.data
 
+import com.ivor.ivormusic.util.KLog
+
 import android.content.Context
-import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -96,7 +97,7 @@ object DownloadMigration {
 
                     val target = storage.createPending(fileName, DownloadMediaType.MUSIC)
                     if (target == null) {
-                        Log.e(TAG, "Could not create MediaStore entry for $fileName")
+                        KLog.e(TAG, "Could not create MediaStore entry for $fileName")
                         continue
                     }
 
@@ -105,7 +106,7 @@ object DownloadMigration {
                             legacyFile.inputStream().use { input -> input.copyTo(output) }
                         } != null
                     }.getOrElse { e ->
-                        Log.e(TAG, "Copy failed for $fileName", e)
+                        KLog.e(TAG, "Copy failed for $fileName", e)
                         false
                     }
 
@@ -137,12 +138,12 @@ object DownloadMigration {
 
                 prefs.edit().putBoolean(KEY_MIGRATED, true).apply()
                 completedThisProcess = true
-                Log.i(TAG, "Download migration finished (migratedAny=$migratedAny)")
+                KLog.i(TAG, "Download migration finished (migratedAny=$migratedAny)")
             } catch (e: Exception) {
                 // Leave the flag unset so the next launch retries. The metadata
                 // file is still valid: migrated entries carry mediaUri, the rest
                 // still carry localPath, and both are readable.
-                Log.e(TAG, "Download migration failed, will retry next launch", e)
+                KLog.e(TAG, "Download migration failed, will retry next launch", e)
             }
 
             migratedAny

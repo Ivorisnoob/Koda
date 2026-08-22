@@ -1,5 +1,7 @@
 package com.ivor.ivormusic.data
 
+import com.ivor.ivormusic.util.KLog
+
 import android.content.Context
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -83,7 +85,7 @@ class VideoHistoryRepository(context: Context) {
                 )
             }
         } catch (e: Exception) {
-            android.util.Log.e("VideoHistoryRepo", "Failed to load local video history", e)
+            KLog.e("VideoHistoryRepo", "Failed to load local video history", e)
             emptyList()
         }
     }

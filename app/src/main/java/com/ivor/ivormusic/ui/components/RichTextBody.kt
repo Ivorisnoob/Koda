@@ -1,9 +1,10 @@
 package com.ivor.ivormusic.ui.components
 
+import com.ivor.ivormusic.util.KLog
+
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
-import android.util.Log
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -79,8 +80,8 @@ private fun openUrl(context: android.content.Context, url: String) {
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         )
     } catch (e: ActivityNotFoundException) {
-        Log.w("RichTextBody", "No handler for $url", e)
+        KLog.w("RichTextBody", "No handler for $url", e)
     } catch (e: Exception) {
-        Log.w("RichTextBody", "Could not open $url", e)
+        KLog.w("RichTextBody", "Could not open $url", e)
     }
 }

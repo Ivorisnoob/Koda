@@ -1,6 +1,7 @@
 package com.ivor.ivormusic.data
 
-import android.util.Log
+import com.ivor.ivormusic.util.KLog
+
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
@@ -86,7 +87,7 @@ class LyricsRepository internal constructor(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            Log.e(TAG, "Unexpected lyrics failure", e)
+            KLog.e(TAG, "Unexpected lyrics failure", e)
             LyricsResult.Error("Lyrics services are temporarily unavailable")
         }
     }
@@ -134,7 +135,7 @@ class LyricsRepository internal constructor(
 
                 attempt.error?.let { error ->
                     errorCount++
-                    Log.w(TAG, "${completed.provider.name} lyrics request failed", error)
+                    KLog.w(TAG, "${completed.provider.name} lyrics request failed", error)
                 }
                 attempt.parsed
                     ?.takeIf { it.lines.isNotEmpty() }

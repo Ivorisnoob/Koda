@@ -1,5 +1,7 @@
 package com.ivor.ivormusic.data
 
+import com.ivor.ivormusic.util.KLog
+
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
@@ -194,7 +196,7 @@ object BackupTransfer {
         } catch (e: UnsupportedBackupException) {
             throw e
         } catch (e: Exception) {
-            android.util.Log.w(TAG, "Could not read that backup", e)
+            KLog.w(TAG, "Could not read that backup", e)
             return null
         }
 

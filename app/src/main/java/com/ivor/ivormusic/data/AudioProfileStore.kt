@@ -1,7 +1,8 @@
 package com.ivor.ivormusic.data
 
+import com.ivor.ivormusic.util.KLog
+
 import android.content.Context
-import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -62,7 +63,7 @@ class AudioProfileStore(context: Context) {
                         .associateBy { it.songId }
                         .toMutableMap()
                 }.getOrElse {
-                    Log.w(TAG, "Unreadable profile store, starting over", it)
+                    KLog.w(TAG, "Unreadable profile store, starting over", it)
                     mutableMapOf()
                 }
                 cache = map
@@ -98,7 +99,7 @@ class AudioProfileStore(context: Context) {
                         )
                     )
                 }
-                    .onFailure { Log.w(TAG, "Could not persist profiles", it) }
+                    .onFailure { KLog.w(TAG, "Could not persist profiles", it) }
             }
         }
     }

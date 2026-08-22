@@ -1,5 +1,7 @@
 package com.ivor.ivormusic.ui.shorts
 
+import com.ivor.ivormusic.util.KLog
+
 import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -244,7 +246,7 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
                         prefetchSemaphore.release()
                     }
                 } catch (e: Exception) {
-                    android.util.Log.w("ShortsPlayerVM", "stream prefetch failed for $id", e)
+                    KLog.w("ShortsPlayerVM", "stream prefetch failed for $id", e)
                 } finally {
                     prefetchingIds.remove("s:$id")
                 }
@@ -267,7 +269,7 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
                         prefetchSemaphore.release()
                     }
                 } catch (e: Exception) {
-                    android.util.Log.w("ShortsPlayerVM", "watch-next prefetch failed for $id", e)
+                    KLog.w("ShortsPlayerVM", "watch-next prefetch failed for $id", e)
                 } finally {
                     prefetchingIds.remove("w:$id")
                 }
@@ -506,7 +508,7 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
     private fun handlePlayerError(error: PlaybackException) {
         if (isTransientRendererError(error) && rendererRetryCount < MAX_RENDERER_RETRIES) {
             rendererRetryCount++
-            android.util.Log.w(
+            KLog.w(
                 "ShortsPlayerVM",
                 "Transient renderer error (attempt $rendererRetryCount/$MAX_RENDERER_RETRIES); re-preparing",
                 error
@@ -517,7 +519,7 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
 
         if (isRecoverableSourceError(error) && sourceRetryCount < MAX_SOURCE_RETRIES) {
             sourceRetryCount++
-            android.util.Log.w(
+            KLog.w(
                 "ShortsPlayerVM",
                 "Source error (attempt $sourceRetryCount/$MAX_SOURCE_RETRIES); re-resolving stream",
                 error
@@ -580,7 +582,7 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
-                android.util.Log.w("ShortsPlayerVM", "Recovery failed for ${item.videoId}", e)
+                KLog.w("ShortsPlayerVM", "Recovery failed for ${item.videoId}", e)
                 if (_currentIndex.value == index) {
                     _playbackError.value = original
                     _isBuffering.value = false
@@ -707,7 +709,7 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
                     _currentVideo.value = watchNext.updatedVideoItem
                 }
             } catch (e: Exception) {
-                android.util.Log.w("ShortsPlayerVM", "watch-next failed for ${item.videoId}", e)
+                KLog.w("ShortsPlayerVM", "watch-next failed for ${item.videoId}", e)
             }
         }
 

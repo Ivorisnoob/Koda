@@ -423,6 +423,8 @@ class ThemePreferences(context: Context) {
         private const val KEY_ONBOARDING_COMPLETED = "onboarding_completed"
         private const val KEY_LOCAL_ONLY_MODE = "local_only_mode"
 
+        private const val KEY_REPORT_VERBOSE_LOGS = "report_verbose_logs"
+
         private const val KEY_LIBRARY_SORT_OPTION = "library_sort_option"
 
         /**
@@ -914,6 +916,20 @@ class ThemePreferences(context: Context) {
 
     /** Fresh read for ViewModels deciding at refresh time. */
     fun isFastSubscriptionFeedEnabled(): Boolean = getFastSubscriptionFeedPreference()
+
+    // ---------------- Bug reporting ----------------
+
+    /**
+     * Whether the bug reporter's log filter offers "everything" (debug-level
+     * lines) or stops at warnings. Sheet-persisted like download video quality
+     * rather than a settings page row: it belongs to the report flow, and the
+     * choice only ever matters inside it.
+     */
+    fun getReportVerboseLogs(): Boolean = prefs.getBoolean(KEY_REPORT_VERBOSE_LOGS, false)
+
+    fun setReportVerboseLogs(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_REPORT_VERBOSE_LOGS, enabled).apply()
+    }
 
     private fun getMusicQualityWifiPreference(): String {
         return prefs.getString(KEY_MUSIC_QUALITY_WIFI, DEFAULT_MUSIC_QUALITY)

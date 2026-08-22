@@ -1,5 +1,7 @@
 package com.ivor.ivormusic.ui.video
 
+import com.ivor.ivormusic.util.KLog
+
 import android.app.PictureInPictureParams
 import android.app.PendingIntent
 import android.app.RemoteAction
@@ -117,7 +119,7 @@ fun VideoPipController(viewModel: VideoPlayerViewModel) {
         try {
             activity.setPictureInPictureParams(builder.build())
         } catch (e: Exception) {
-            android.util.Log.w(TAG, "setPictureInPictureParams refused", e)
+            KLog.w(TAG, "setPictureInPictureParams refused", e)
         }
     }
 }

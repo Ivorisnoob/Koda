@@ -1,7 +1,8 @@
 package com.ivor.ivormusic.data
 
+import com.ivor.ivormusic.util.KLog
+
 import android.os.Build
-import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -37,7 +38,7 @@ class UpdateRepository {
         try {
             val url = "$GITHUB_API_BASE/$repoPath/releases/latest"
             
-            Log.d(TAG, "Checking for updates at: $url")
+            KLog.d(TAG, "Checking for updates at: $url")
             
             val request = Request.Builder()
                 .url(url)
@@ -84,7 +85,7 @@ class UpdateRepository {
                     val latestVersion = tagName.removePrefix("v").removePrefix("V")
                     val cleanCurrentVersion = currentVersion.removePrefix("v").removePrefix("V")
                     
-                    Log.d(TAG, "Latest version: $latestVersion, Current: $cleanCurrentVersion")
+                    KLog.d(TAG, "Latest version: $latestVersion, Current: $cleanCurrentVersion")
                     
                     val isUpdateAvailable = isNewerVersion(latestVersion, cleanCurrentVersion)
                     
@@ -104,16 +105,16 @@ class UpdateRepository {
                     }
                 }
                 404 -> {
-                    Log.w(TAG, "No releases found for $repoPath")
+                    KLog.w(TAG, "No releases found for $repoPath")
                     UpdateResult.NoReleases
                 }
                 else -> {
-                    Log.e(TAG, "API error ${response.code}: ${response.message}")
+                    KLog.e(TAG, "API error ${response.code}: ${response.message}")
                     UpdateResult.Error("GitHub API error (${response.code})")
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error checking for updates", e)
+            KLog.e(TAG, "Error checking for updates", e)
             UpdateResult.Error(e.message ?: "Unknown error")
         }
     }
@@ -140,7 +141,7 @@ class UpdateRepository {
             
             return false // Versions are equal
         } catch (e: Exception) {
-            Log.e(TAG, "Version comparison failed", e)
+            KLog.e(TAG, "Version comparison failed", e)
             return false
         }
     }

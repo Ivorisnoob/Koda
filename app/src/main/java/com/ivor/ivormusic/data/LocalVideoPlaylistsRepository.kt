@@ -1,7 +1,8 @@
 package com.ivor.ivormusic.data
 
+import com.ivor.ivormusic.util.KLog
+
 import android.content.Context
-import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -177,7 +178,7 @@ class LocalVideoPlaylistsRepository(context: Context) {
         try {
             File(dir, fileNameFor(playlist.id)).writeText(encode(playlist).toString())
         } catch (e: Exception) {
-            Log.e(TAG, "Could not write playlist ${playlist.id}", e)
+            KLog.e(TAG, "Could not write playlist ${playlist.id}", e)
             return
         }
         val current = state.value
@@ -194,7 +195,7 @@ class LocalVideoPlaylistsRepository(context: Context) {
             try {
                 decode(JSONObject(file.readText()))
             } catch (e: Exception) {
-                Log.w(TAG, "Skipping unreadable playlist ${file.name}", e)
+                KLog.w(TAG, "Skipping unreadable playlist ${file.name}", e)
                 null
             }
         }.sortedByDescending { it.createdAt }
