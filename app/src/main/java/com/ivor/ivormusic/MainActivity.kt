@@ -628,10 +628,10 @@ fun MusicApp(
         onOpenChannel = openChannel
     )
 
-    // Drives the PiP window's shape and its transport controls. Composed above
-    // the early return on purpose: everything below it is torn out of the
-    // composition the moment PiP starts, which is what used to unregister the
-    // receiver behind the PiP play/pause button and leave it inert.
+    // Drives the PiP window's shape and keeps its transport icons current.
+    // Composed above the early return because everything below it is torn out
+    // the moment PiP starts. Button input itself goes straight to the video
+    // media service and therefore does not depend on this UI lifetime.
     com.ivor.ivormusic.ui.video.VideoPipController(viewModel = videoPlayerViewModel)
 
     // In system PiP the app is just a video surface. Returning here keeps the
