@@ -150,6 +150,8 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
+import coil.request.CachePolicy
+import coil.request.ImageRequest
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import com.ivor.ivormusic.data.LikeStatus
@@ -1185,6 +1187,7 @@ private fun SeekPreviewCard(
     modifier: Modifier = Modifier,
 ) {
     val frame = preview?.frameAt(positionMs)
+    val context = LocalContext.current
     Surface(
         modifier = modifier,
         shape = RoundedCornerShape(10.dp),
@@ -1197,13 +1200,39 @@ private fun SeekPreviewCard(
                 val frameWidth = 144.dp
                 val frameHeight = frameWidth *
                     (preview.frameHeightPx.toFloat() / preview.frameWidthPx.toFloat())
+                val pageRequest = remember(
+                    frame.pageUrl,
+                    preview.frameWidthPx,
+                    preview.frameHeightPx,
+                    preview.framesPerPageX,
+                    preview.framesPerPageY,
+                ) {
+                    ImageRequest.Builder(context)
+                        .data(frame.pageUrl)
+                        // Decode at the storyboard's real dimensions rather
+                        // than the density-scaled size of the Compose grid.
+                        .size(
+                            preview.frameWidthPx * preview.framesPerPageX,
+                            preview.frameHeightPx * preview.framesPerPageY,
+                        )
+                        // A long video can have many multi-megabyte pages. The
+                        // visible painter already owns the current one; keeping
+                        // every page in Coil's memory cache exhausts the 128MB
+                        // heap after a scrub across the timeline. Compressed
+                        // pages remain on disk, so revisiting one avoids network.
+                        .memoryCachePolicy(CachePolicy.DISABLED)
+                        .diskCachePolicy(CachePolicy.ENABLED)
+                        .allowRgb565(true)
+                        .crossfade(false)
+                        .build()
+                }
                 Box(
                     modifier = Modifier
                         .size(frameWidth, frameHeight)
                         .clip(RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp))
                 ) {
                     AsyncImage(
-                        model = frame.pageUrl,
+                        model = pageRequest,
                         contentDescription = null,
                         contentScale = ContentScale.FillBounds,
                         // `size` is capped by the one-frame parent constraints,
