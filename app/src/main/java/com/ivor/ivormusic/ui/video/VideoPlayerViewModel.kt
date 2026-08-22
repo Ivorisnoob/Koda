@@ -35,6 +35,7 @@ import com.ivor.ivormusic.data.TimedComment
 import com.ivor.ivormusic.data.VideoEngagement
 import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.data.VideoQuality
+import com.ivor.ivormusic.data.VideoSeekPreview
 import com.ivor.ivormusic.data.VttCue
 import com.ivor.ivormusic.data.YouTubeRepository
 import com.ivor.ivormusic.data.ThemePreferences
@@ -209,6 +210,11 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     private val _chapters = MutableStateFlow<List<com.ivor.ivormusic.data.VideoChapter>>(emptyList())
     val chapters: StateFlow<List<com.ivor.ivormusic.data.VideoChapter>> = _chapters.asStateFlow()
 
+    // YouTube storyboard sprite harvested during the stream extraction. Null
+    // for live streams, local downloads and videos that do not expose frames.
+    private val _seekPreview = MutableStateFlow<VideoSeekPreview?>(null)
+    val seekPreview: StateFlow<VideoSeekPreview?> = _seekPreview.asStateFlow()
+
     // Caption/subtitle tracks (loaded lazily when the user opens the CC menu)
     private val _captionTracks = MutableStateFlow<List<CaptionTrack>>(emptyList())
     val captionTracks: StateFlow<List<CaptionTrack>> = _captionTracks.asStateFlow()
@@ -249,8 +255,20 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     private val _videoSurfaceBounds = MutableStateFlow<android.graphics.Rect?>(null)
     val videoSurfaceBounds: StateFlow<android.graphics.Rect?> = _videoSurfaceBounds.asStateFlow()
 
+    // Kept separate from the expanded/fullscreen surface bounds. Reusing one
+    // rectangle across both layouts briefly leaves the expanded window bounds
+    // attached to a collapsed player, which lets Android snapshot the whole UI
+    // when Home is pressed during that hand-off.
+    private val _miniVideoSurfaceBounds = MutableStateFlow<android.graphics.Rect?>(null)
+    val miniVideoSurfaceBounds: StateFlow<android.graphics.Rect?> =
+        _miniVideoSurfaceBounds.asStateFlow()
+
     fun setVideoSurfaceBounds(bounds: android.graphics.Rect?) {
         _videoSurfaceBounds.value = bounds
+    }
+
+    fun setMiniVideoSurfaceBounds(bounds: android.graphics.Rect?) {
+        _miniVideoSurfaceBounds.value = bounds
     }
 
     // True while the app is in system Picture-in-Picture. Set by the
@@ -1295,6 +1313,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         resetProgress()
         _relatedVideos.value = emptyList() // Clear previous related
         _chapters.value = emptyList() // Clear previous chapters
+        _seekPreview.value = null // Never show a frame from the previous video
         _captionTracks.value = emptyList() // Clear previous caption tracks
         _selectedCaption.value = null // Captions default off per video
         _isCaptionsLoading.value = false
@@ -1401,6 +1420,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                     // FAST: Get stream URLs only (no metadata, no related, no channel avatar)
                     val qualities = youtubeRepository.getVideoStreamQualities(video.videoId)
                     _availableQualities.value = qualities
+                    _seekPreview.value = youtubeRepository.getCachedSeekPreview(video.videoId)
                     _isLive.value = qualities.any { it.isLive }
                     if (_isLive.value) {
                         // Some entry points do not know a broadcast is live

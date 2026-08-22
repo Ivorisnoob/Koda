@@ -103,10 +103,9 @@ class MainActivity : ComponentActivity() {
     // any gap around the video showed app chrome instead of black.
     private var isInPipMode by androidx.compose.runtime.mutableStateOf(false)
 
-    // Set by the video player so onUserLeaveHint can enter PiP with the right
-    // window shape on Android 11, where setAutoEnterEnabled does not exist.
-    private var pipVideoAspectRatio: Float? = null
-    private var pipVideoBounds: android.graphics.Rect? = null
+    // Set by the video player so onUserLeaveHint can enter PiP on Android 11,
+    // where setAutoEnterEnabled does not exist. The controller has already
+    // installed the active surface bounds and the full transport action set.
     private var pipEligible = false
 
     /**
@@ -195,11 +194,7 @@ class MainActivity : ComponentActivity() {
                         pendingSharedLink = pendingSharedLink,
                         isInPipMode = isInPipMode,
                         appTimeLocked = appTimeLocked,
-                        onPipStateChanged = { eligible, aspectRatio, bounds ->
-                            pipEligible = eligible
-                            pipVideoAspectRatio = aspectRatio
-                            pipVideoBounds = bounds
-                        },
+                        onPipStateChanged = { eligible -> pipEligible = eligible },
                         currentThemeMode = themeMode,
                         onThemeModeChange = { themeViewModel.setThemeMode(it) },
                         amoledTheme = amoledTheme,
@@ -360,16 +355,17 @@ class MainActivity : ComponentActivity() {
     /**
      * Entering PiP on the way out of the app.
      *
-     * On API 31+ the system does this itself from setAutoEnterEnabled, which
-     * handles the gesture-nav swipe up as well and animates better, so this
-     * only covers Android 11 and 12 where that flag does not exist.
+     * API 31+ is already armed through setAutoEnterEnabled for the smooth
+     * gesture-navigation transition. Keep this explicit path on every version
+     * as an OEM fallback: some Android 16 builds deliver onUserLeaveHint but do
+     * not honor the armed auto-enter flag. enterPictureInPictureMode is safe to
+     * call only while entry has not started, hence both state checks below.
      */
     @Deprecated("Deprecated in Java")
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) return
-        if (!pipEligible || isInPipMode) return
-        enterPipMode(this, pipVideoAspectRatio, pipVideoBounds)
+        if (!pipEligible || isInPipMode || isInPictureInPictureMode) return
+        enterPipMode(this)
     }
 
     /**
@@ -407,7 +403,7 @@ fun MusicApp(
      * only consumer is this overlay.
      */
     appTimeLocked: Boolean = false,
-    onPipStateChanged: (eligible: Boolean, aspectRatio: Float?, bounds: android.graphics.Rect?) -> Unit,
+    onPipStateChanged: (eligible: Boolean) -> Unit,
     currentThemeMode: ThemeMode,
     onThemeModeChange: (ThemeMode) -> Unit,
     amoledTheme: Boolean,
@@ -593,17 +589,15 @@ fun MusicApp(
 
     // Keep the Activity's PiP inputs current. It needs them outside the
     // composition, in onUserLeaveHint, where there is no way to read state.
-    val pipAspectRatio by videoPlayerViewModel.videoAspectRatio.collectAsState()
     val pipBounds by videoPlayerViewModel.videoSurfaceBounds.collectAsState()
+    val miniPipBounds by videoPlayerViewModel.miniVideoSurfaceBounds.collectAsState()
     val videoIsPlaying by videoPlayerViewModel.isPlaying.collectAsState()
+    val activePipBounds = if (isVideoOverlayExpanded) pipBounds else miniPipBounds
     androidx.compose.runtime.SideEffect {
         onPipStateChanged(
             overlayVideo != null &&
-                isVideoOverlayExpanded &&
                 videoIsPlaying &&
-                pipBounds?.isEmpty == false,
-            pipAspectRatio,
-            pipBounds
+                activePipBounds?.isEmpty == false
         )
     }
 
@@ -635,9 +629,8 @@ fun MusicApp(
     )
 
     // Drives the PiP window's shape and its transport controls. Composed above
-    // the early return on purpose: everything below it is torn out of the
-    // composition the moment PiP starts, which is what used to unregister the
-    // receiver behind the PiP play/pause button and leave it inert.
+    // the early return so the package-scoped receiver remains alive when the
+    // normal app UI is replaced by the dedicated video-only PiP surface.
     com.ivor.ivormusic.ui.video.VideoPipController(viewModel = videoPlayerViewModel)
 
     // In system PiP the app is just a video surface. Returning here keeps the

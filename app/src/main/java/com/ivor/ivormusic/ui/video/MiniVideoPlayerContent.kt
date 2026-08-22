@@ -38,6 +38,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -223,6 +225,20 @@ private fun MiniVideoSurface(
         modifier = Modifier
             .width(MINI_VIDEO_THUMB_WIDTH)
             .aspectRatio(16f / 9f)
+            // PiP entry from the collapsed player must animate from the video
+            // thumbnail, never from a stale expanded-player rectangle or the
+            // whole activity. Window coordinates are what Android expects.
+            .onGloballyPositioned { coordinates ->
+                val bounds = coordinates.boundsInWindow()
+                viewModel.setMiniVideoSurfaceBounds(
+                    android.graphics.Rect(
+                        bounds.left.toInt(),
+                        bounds.top.toInt(),
+                        bounds.right.toInt(),
+                        bounds.bottom.toInt(),
+                    )
+                )
+            }
             .clip(RoundedCornerShape(12.dp))
             // Letterbox bars are the absence of picture, not a themed surface,
             // so they stay black in either theme. The documented exception to

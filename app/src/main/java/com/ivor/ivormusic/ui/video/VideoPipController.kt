@@ -25,11 +25,9 @@ import com.ivor.ivormusic.R
  * This has to be composed **above** MainActivity's `if (isInPipMode) return`,
  * and that is the whole reason it is its own composable rather than a block
  * inside [VideoPlayerOverlay]. The overlay is part of the app UI that PiP
- * replaces, so entering PiP tore it out of the composition, which disposed the
- * broadcast receiver and unregistered it - the play/pause button in the PiP
- * window fired an intent nothing was listening for, and did nothing. The params
- * effect went with it, so even a working button could never have flipped its
- * own icon between play and pause.
+ * replaces, so entering PiP tears it out of the composition. This controller
+ * stays above that replacement so its package-scoped action receiver remains
+ * registered and its icons continue to track play/pause state in PiP.
  *
  * Being composed for the whole life of the player also means the params are
  * kept honest when there is no video: auto-enter used to stay armed after the
@@ -51,12 +49,14 @@ fun VideoPipController(viewModel: VideoPlayerViewModel) {
     val isExpanded by viewModel.isExpanded.collectAsState()
     val videoAspectRatio by viewModel.videoAspectRatio.collectAsState()
     val videoBounds by viewModel.videoSurfaceBounds.collectAsState()
+    val miniVideoBounds by viewModel.miniVideoSurfaceBounds.collectAsState()
 
     val packageName = context.packageName
 
-    // Registered for as long as a video player exists, PiP or not. Actions are
-    // package-scoped so no other app can drive playback through them.
-    DisposableEffect(context, viewModel) {
+    // This is the known-good pre-redesign control path. Keep the receiver in
+    // the controller above MainActivity's PiP early return so swapping the app
+    // UI for PipVideoSurface cannot unregister the buttons behind the window.
+    DisposableEffect(context, viewModel, packageName) {
         val receiver = object : android.content.BroadcastReceiver() {
             override fun onReceive(ctx: android.content.Context?, intent: Intent?) {
                 when (intent?.action) {
@@ -76,7 +76,11 @@ fun VideoPipController(viewModel: VideoPlayerViewModel) {
             addAction("$packageName.$ACTION_FORWARD")
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            context.registerReceiver(receiver, filter, android.content.Context.RECEIVER_NOT_EXPORTED)
+            context.registerReceiver(
+                receiver,
+                filter,
+                android.content.Context.RECEIVER_NOT_EXPORTED
+            )
         } else {
             context.registerReceiver(receiver, filter)
         }
@@ -90,9 +94,9 @@ fun VideoPipController(viewModel: VideoPlayerViewModel) {
     // system capture the mini player and the entire app hierarchy into PiP.
     SideEffect {
         val builder = PictureInPictureParams.Builder()
-        val validBounds = videoBounds?.takeIf { !it.isEmpty }
+        val validBounds = (if (isExpanded) videoBounds else miniVideoBounds)
+            ?.takeIf { !it.isEmpty }
         val autoEnterEligible = currentVideo != null &&
-            isExpanded &&
             isPlaying &&
             validBounds != null
 
@@ -120,12 +124,12 @@ fun VideoPipController(viewModel: VideoPlayerViewModel) {
             if (autoEnterEligible) validBounds?.let { builder.setSourceRectHint(it) }
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                // Only auto-enter PiP while the full player is on screen.
-                // Auto-entering from the mini player captures the whole app UI
-                // into the PiP window instead of just the video surface. A
-                // paused player is also ineligible: its newly attached PiP
-                // SurfaceView may not produce a fresh frame to replace the
-                // system's transition snapshot.
+                // Both expanded and collapsed playback are eligible, but only
+                // after that layout's own video surface has reported bounds.
+                // The source rect makes the transition snapshot video-only;
+                // MainActivity then replaces the app with PipVideoSurface.
+                // A paused player remains ineligible because its newly attached
+                // PiP SurfaceView may not produce a fresh replacement frame.
                 builder.setAutoEnterEnabled(autoEnterEligible)
                 // The content is a video, not a layout that needs to reflow, so
                 // let the system crossfade the resize instead of re-laying out.
@@ -150,9 +154,11 @@ fun VideoPipController(viewModel: VideoPlayerViewModel) {
  * skips live here as buttons rather than as the gesture they are on the full
  * player.
  *
- * Devices advertise how many actions they will render (three on every current
- * Android build). If a device offers fewer, play/pause is the one control that
- * must survive, so the seeks are dropped rather than the list truncated.
+ * Always publish the complete row. Some OEM builds report an action capacity
+ * of one even though their PiP menu renders the normal three slots; trusting
+ * that value made Koda voluntarily remove both seeks on those devices. The
+ * window manager remains free to lay out what it can, but the actions handed
+ * to it are never incomplete.
  */
 private fun pipActions(
     activity: androidx.activity.ComponentActivity,
@@ -160,17 +166,16 @@ private fun pipActions(
     isPlaying: Boolean
 ): List<RemoteAction> {
     val playPause = if (isPlaying) {
-        remoteAction(activity, packageName, ACTION_PAUSE, R.drawable.ic_media_pause, "Pause")
+        remoteAction(
+            activity, packageName, ACTION_PAUSE,
+            R.drawable.ic_media_pause, "Pause"
+        )
     } else {
-        remoteAction(activity, packageName, ACTION_PLAY, R.drawable.ic_media_play, "Play")
+        remoteAction(
+            activity, packageName, ACTION_PLAY,
+            R.drawable.ic_media_play, "Play"
+        )
     }
-
-    val maxActions = try {
-        activity.maxNumPictureInPictureActions
-    } catch (e: Exception) {
-        3
-    }
-    if (maxActions < 3) return listOf(playPause)
 
     return listOf(
         remoteAction(
