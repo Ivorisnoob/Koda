@@ -360,15 +360,16 @@ class MainActivity : ComponentActivity() {
     /**
      * Entering PiP on the way out of the app.
      *
-     * On API 31+ the system does this itself from setAutoEnterEnabled, which
-     * handles the gesture-nav swipe up as well and animates better, so this
-     * only covers Android 11 and 12 where that flag does not exist.
+     * API 31+ is already armed through setAutoEnterEnabled for the smooth
+     * gesture-navigation transition. Keep this explicit path on every version
+     * as an OEM fallback: some Android 16 builds deliver onUserLeaveHint but do
+     * not honor the armed auto-enter flag. enterPictureInPictureMode is safe to
+     * call only while entry has not started, hence both state checks below.
      */
     @Deprecated("Deprecated in Java")
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) return
-        if (!pipEligible || isInPipMode) return
+        if (!pipEligible || isInPipMode || isInPictureInPictureMode) return
         enterPipMode(this, pipVideoAspectRatio, pipVideoBounds)
     }
 
