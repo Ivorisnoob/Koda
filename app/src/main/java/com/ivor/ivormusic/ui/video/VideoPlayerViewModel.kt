@@ -2435,7 +2435,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
          * the foreground-kill backstop above, where every-500ms would be a
          * disk write nobody asked for.
          */
-        private const val SESSION_SAVE_INTERVAL_MS = 10_000L
+        private const val SESSION_SAVE_INTERVAL_MS = 15_000L
     }
 
     override fun onCleared() {

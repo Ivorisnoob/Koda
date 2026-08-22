@@ -410,6 +410,11 @@ class ThemePreferences(context: Context) {
         private const val KEY_CROSSFADE_ENABLED = "crossfade_enabled"
         private const val KEY_CROSSFADE_AUTO = "crossfade_auto"
         private const val KEY_CROSSFADE_DURATION = "crossfade_duration"
+        private const val KEY_PLAYBACK_SHUFFLE = "playback_shuffle"
+        private const val KEY_PLAYBACK_REPEAT_MODE = "playback_repeat_mode"
+        private const val KEY_PLAYBACK_SHUFFLE_SEED = "playback_shuffle_seed"
+        private const val KEY_SLEEP_TIMER_ENDS_AT = "sleep_timer_ends_at"
+        private const val KEY_SLEEP_TIMER_END_OF_TRACK = "sleep_timer_end_of_track"
         private const val MIN_CROSSFADE_DURATION_MS = 1_000
         private const val MAX_CROSSFADE_DURATION_MS = 15_000
         private const val KEY_NORMALIZE_VOLUME = "normalize_volume"
@@ -1100,6 +1105,52 @@ class ThemePreferences(context: Context) {
         val bounded = durationMs.coerceIn(MIN_CROSSFADE_DURATION_MS, MAX_CROSSFADE_DURATION_MS)
         prefs.edit().putInt(KEY_CROSSFADE_DURATION, bounded).apply()
         _crossfadeDurationMs.value = bounded
+    }
+
+    // --- Durable playback modes ---
+
+    fun isPlaybackShuffleEnabled(): Boolean = prefs.getBoolean(KEY_PLAYBACK_SHUFFLE, false)
+
+    fun setPlaybackShuffle(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_PLAYBACK_SHUFFLE, enabled).apply()
+    }
+
+    fun getPlaybackRepeatMode(): Int = prefs.getInt(
+        KEY_PLAYBACK_REPEAT_MODE,
+        androidx.media3.common.Player.REPEAT_MODE_OFF
+    ).takeIf {
+        it == androidx.media3.common.Player.REPEAT_MODE_OFF ||
+            it == androidx.media3.common.Player.REPEAT_MODE_ONE ||
+            it == androidx.media3.common.Player.REPEAT_MODE_ALL
+    } ?: androidx.media3.common.Player.REPEAT_MODE_OFF
+
+    fun setPlaybackRepeatMode(mode: Int) {
+        prefs.edit().putInt(KEY_PLAYBACK_REPEAT_MODE, mode).apply()
+    }
+
+    fun getPlaybackShuffleSeed(): Long = prefs.getLong(KEY_PLAYBACK_SHUFFLE_SEED, 0L)
+
+    fun setPlaybackShuffleSeed(seed: Long) {
+        prefs.edit().putLong(KEY_PLAYBACK_SHUFFLE_SEED, seed).apply()
+    }
+
+    fun getSleepTimerEndsAt(): Long = prefs.getLong(KEY_SLEEP_TIMER_ENDS_AT, 0L)
+
+    fun isSleepTimerEndOfTrack(): Boolean =
+        prefs.getBoolean(KEY_SLEEP_TIMER_END_OF_TRACK, false)
+
+    fun saveSleepTimer(endsAt: Long, endOfTrack: Boolean) {
+        prefs.edit()
+            .putLong(KEY_SLEEP_TIMER_ENDS_AT, endsAt)
+            .putBoolean(KEY_SLEEP_TIMER_END_OF_TRACK, endOfTrack)
+            .apply()
+    }
+
+    fun clearSleepTimer() {
+        prefs.edit()
+            .remove(KEY_SLEEP_TIMER_ENDS_AT)
+            .remove(KEY_SLEEP_TIMER_END_OF_TRACK)
+            .apply()
     }
 
     /**

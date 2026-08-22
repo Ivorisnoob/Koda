@@ -23,7 +23,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.lerp
 import androidx.activity.compose.PredictiveBackHandler
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
@@ -207,10 +206,11 @@ fun VideoPlayerOverlay(
         val fullHeightPx = with(density) { fullHeight.toPx() }
         val scope = rememberCoroutineScope()
 
-        // 0 = mini player, 1 = expanded. One progress drives every dimension,
-        // so the swipe-down gesture on the video surface can drag the whole
-        // player and the settle animation continues from wherever the finger
-        // let go instead of jumping.
+        // 0 = mini player, 1 = expanded. Progress is applied only as a render
+        // transform. The old shared-element-style morph animated height,
+        // padding, shape and elevation on every frame, forcing the Android
+        // video surface through a full measure/layout pass and producing
+        // visible jank on mid-range devices.
         val expandProgress = remember { Animatable(if (isExpanded) 1f else 0f) }
 
         // Live value while a finger is down. The drag deliberately does not go
@@ -240,10 +240,8 @@ fun VideoPlayerOverlay(
             )
         }
 
-        // 1:1 with the finger: height interpolates over the full screen and the
-        // player is bottom-anchored, so a range of one screen height moves the
-        // player's top edge exactly as far as the finger travels. The old 0.8
-        // range made it run ahead of the touch.
+        // 1:1 with the finger: progress maps to a compositor translation over
+        // one screen height. No player content is remeasured while dragging.
         val dragRangePx = fullHeightPx
 
         // A short, unhurried pull is all it takes: ~40dp of travel commits the
@@ -326,15 +324,15 @@ fun VideoPlayerOverlay(
         // Minimized resting position clears the system navigation inset plus
         // whatever bottom chrome the host says it is drawing, which is nothing
         // on most routes.
-        val p = if (isDragging) dragProgress else expandProgress.value
-        val height = lerp(MINI_VIDEO_HEIGHT, fullHeight, p)
-        val widthPadding = lerp(16.dp, 0.dp, p)
-        val bottomPadding = lerp(
-            MINI_VIDEO_MARGIN + bottomInset + hostBottomChrome,
-            0.dp,
-            p
-        )
-        val cornerRadius = lerp(28.dp, 0.dp, p)
+        val widthPadding = if (isExpanded) 0.dp else 16.dp
+        val bottomPadding = if (isExpanded) {
+            0.dp
+        } else {
+            MINI_VIDEO_MARGIN + bottomInset + hostBottomChrome
+        }
+        val height = if (isExpanded) fullHeight else MINI_VIDEO_HEIGHT
+        val cornerRadius = if (isExpanded) 0.dp else 28.dp
+        val enterDistancePx = with(density) { 24.dp.toPx() }
 
         // Offset and fade live on a wrapper rather than on the Surface itself.
         // A graphicsLayer on an elevated Surface makes its shadow render
@@ -351,20 +349,40 @@ fun VideoPlayerOverlay(
                 .padding(bottom = bottomPadding.coerceAtLeast(0.dp))
                 .padding(horizontal = widthPadding.coerceAtLeast(0.dp))
                 .graphicsLayer {
-                    val offsetY = if (isMiniDragging) {
-                        miniDragY
+                    // Read animated state inside the layer block so animation
+                    // frames invalidate only this render layer, not the
+                    // composition that owns the PlayerView.
+                    val progress = if (isDragging) dragProgress else expandProgress.value
+                    val gestureOffset = if (isMiniDragging) miniDragY else miniSettleOffset.value
+                    if (isExpanded) {
+                        // While dragging the expanded player, follow the
+                        // finger exactly. State-driven expansion is a short
+                        // lift/fade instead of resizing the video surface.
+                        translationY = if (isDragging) {
+                            (1f - progress) * fullHeightPx
+                        } else {
+                            (1f - progress) * enterDistancePx
+                        }
+                        alpha = if (isDragging) 1f else progress
+                        val entranceScale = 0.985f + (0.015f * progress)
+                        scaleX = entranceScale
+                        scaleY = entranceScale
                     } else {
-                        miniSettleOffset.value
-                    }
-                    translationY = offsetY
+                        translationY = gestureOffset
+                        val miniVisibility = (1f - progress).coerceIn(0f, 1f)
+                        alpha = miniVisibility
+                        val miniScale = 0.96f + (0.04f * miniVisibility)
+                        scaleX = miniScale
+                        scaleY = miniScale
 
-                    // Fades as it is pushed down, so dismiss remains legible.
-                    // An uncommitted drag keeps at least half of the bar visible;
-                    // once committed it fades all the way out during the settle.
-                    val fadeLimit = if (isDismissingMini) 1f else 0.5f
-                    alpha = 1f - (
-                        offsetY.coerceAtLeast(0f) / (miniDismissThresholdPx * 2f)
-                    ).coerceIn(0f, fadeLimit)
+                        // Fades further as it is pushed down, so dismiss
+                        // remains legible without triggering recomposition.
+                        val fadeLimit = if (isDismissingMini) 1f else 0.5f
+                        alpha *= 1f - (
+                            gestureOffset.coerceAtLeast(0f) /
+                                (miniDismissThresholdPx * 2f)
+                            ).coerceIn(0f, fadeLimit)
+                    }
                 }
                 .fillMaxWidth()
                 .height(height.coerceAtLeast(0.dp))
@@ -501,8 +519,8 @@ fun VideoPlayerOverlay(
                 },
             shape = RoundedCornerShape(cornerRadius.coerceAtLeast(0.dp)),
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            tonalElevation = lerp(4.dp, 0.dp, p),
-            shadowElevation = lerp(12.dp, 0.dp, p)
+            tonalElevation = if (isExpanded) 0.dp else 4.dp,
+            shadowElevation = if (isExpanded) 0.dp else 12.dp
         ) {
              if (isExpanded) {
                  // Full Screen Content

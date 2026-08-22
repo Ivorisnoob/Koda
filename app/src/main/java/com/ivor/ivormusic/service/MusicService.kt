@@ -4,7 +4,6 @@ import android.app.PendingIntent
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
-import android.os.SystemClock
 import android.util.Log
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
@@ -12,6 +11,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.Timeline
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DataSource
@@ -151,6 +151,10 @@ class MusicService : MediaLibraryService() {
     private var progressJob: Job? = null
     private var transitionJob: Job? = null
     private var manualTransitionJob: Job? = null
+    private var playbackShuffleEnabled = false
+    private var playbackShuffleSeed = 0L
+    private var playbackRepeatMode = Player.REPEAT_MODE_OFF
+    private var lastShuffleOrderItemCount = -1
 
     // Live Update (Android 16+)
     private var musicProgressLiveUpdate: MusicProgressLiveUpdate? = null
@@ -295,6 +299,8 @@ class MusicService : MediaLibraryService() {
 
         // 4. Initialize Player
         initializePlayer()
+        restorePlaybackModes()
+        restoreSleepTimer()
 
         // 5. Initialize Session
         initializeSession()
@@ -575,6 +581,15 @@ class MusicService : MediaLibraryService() {
             .build()
     }
 
+    private fun restorePlaybackModes() {
+        playbackShuffleEnabled = themePreferences.isPlaybackShuffleEnabled()
+        playbackRepeatMode = themePreferences.getPlaybackRepeatMode()
+        playbackShuffleSeed = themePreferences.getPlaybackShuffleSeed().takeIf { it != 0L }
+            ?: kotlin.random.Random.nextLong().also(themePreferences::setPlaybackShuffleSeed)
+        engine.setShuffleState(playbackShuffleEnabled, playbackShuffleSeed)
+        engine.setRepeatMode(playbackRepeatMode)
+    }
+
     private fun observePreferences() {
         // These flows update live across ThemePreferences instances (the
         // settings screen writes through its own instance) thanks to the
@@ -624,6 +639,36 @@ class MusicService : MediaLibraryService() {
     // --- Core Logic: The Player Event Listener ---
 
     private inner class PlayerEventListener : Player.Listener {
+
+        override fun onTimelineChanged(timeline: Timeline, reason: Int) {
+            val itemCount = player.mediaItemCount
+            if (reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED &&
+                playbackShuffleEnabled &&
+                itemCount != lastShuffleOrderItemCount
+            ) {
+                // Set before applying: setShuffleOrder itself publishes a
+                // timeline change with the same count.
+                lastShuffleOrderItemCount = itemCount
+                engine.refreshActiveShuffleOrder()
+            }
+        }
+
+        override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
+            if (shuffleModeEnabled && !playbackShuffleEnabled) {
+                playbackShuffleSeed = kotlin.random.Random.nextLong()
+                themePreferences.setPlaybackShuffleSeed(playbackShuffleSeed)
+            }
+            playbackShuffleEnabled = shuffleModeEnabled
+            lastShuffleOrderItemCount = player.mediaItemCount
+            themePreferences.setPlaybackShuffle(shuffleModeEnabled)
+            engine.setShuffleState(shuffleModeEnabled, playbackShuffleSeed)
+        }
+
+        override fun onRepeatModeChanged(repeatMode: Int) {
+            playbackRepeatMode = repeatMode
+            themePreferences.setPlaybackRepeatMode(repeatMode)
+            engine.setRepeatMode(repeatMode)
+        }
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             super.onMediaItemTransition(mediaItem, reason)
@@ -767,10 +812,17 @@ class MusicService : MediaLibraryService() {
                         // settled: true for a tap, still false for cold-start restore
                         // (which never calls play()), so playback no longer pauses.
                         val playWhenReady = player.playWhenReady
+                        // Replacing the restored placeholder can reset the
+                        // current item to zero even though the controller and
+                        // mini player already adopted the saved position.
+                        val resumePosition = player.currentPosition.coerceAtLeast(0L)
                         Log.i(TAG, "Validation: Applied resolved item for $videoId (playWhenReady=$playWhenReady)")
                         val index = player.currentMediaItemIndex
                         player.replaceMediaItem(index, resolvedItem)
                         player.prepare()
+                        if (resumePosition > 0L) {
+                            player.seekTo(index, resumePosition)
+                        }
                         player.playWhenReady = playWhenReady
                     }
                 } catch (e: Exception) {
@@ -1474,27 +1526,47 @@ class MusicService : MediaLibraryService() {
             // the item boundary rather than a callback or two later, and a
             // later play() still moves on to the next track normally.
             sleepTimerEndOfTrack = true
-            player.pauseAtEndOfMediaItems = true
+            engine.setPauseAtEndOfMediaItems(true)
+            themePreferences.saveSleepTimer(endsAt = 0L, endOfTrack = true)
         } else {
             val durationMs = minutes * 60_000L
-            sleepTimerEndsAt = System.currentTimeMillis() + durationMs
-            val deadline = SystemClock.elapsedRealtime() + durationMs
-            sleepTimerJob = serviceScope.launch {
-                // Sliced against elapsedRealtime rather than one long delay:
-                // coroutine delays on the main dispatcher are driven by
-                // uptimeMillis, which stops counting while the device is in
-                // deep sleep. A timer set and then paused would come due long
-                // after the wall clock said it should.
-                while (true) {
-                    val remaining = deadline - SystemClock.elapsedRealtime()
-                    if (remaining <= 0L) break
-                    delay(remaining.coerceAtMost(SLEEP_TIMER_TICK_MS))
-                }
-                fadeOutAndPause()
-                clearSleepTimer()
-            }
+            armDurationSleepTimer(System.currentTimeMillis() + durationMs)
         }
         publishSleepTimerState()
+    }
+
+    private fun armDurationSleepTimer(endsAt: Long) {
+        sleepTimerEndOfTrack = false
+        sleepTimerEndsAt = endsAt
+        engine.setPauseAtEndOfMediaItems(false)
+        themePreferences.saveSleepTimer(endsAt = endsAt, endOfTrack = false)
+        sleepTimerJob = serviceScope.launch {
+            while (true) {
+                val remaining = sleepTimerEndsAt - System.currentTimeMillis()
+                if (remaining <= 0L) break
+                delay(remaining.coerceAtMost(SLEEP_TIMER_TICK_MS))
+            }
+            fadeOutAndPause()
+            clearSleepTimer()
+        }
+    }
+
+    /** Re-arm a timer after the media service itself was recreated. */
+    private fun restoreSleepTimer() {
+        val endOfTrack = themePreferences.isSleepTimerEndOfTrack()
+        val endsAt = themePreferences.getSleepTimerEndsAt()
+        when {
+            endOfTrack -> {
+                sleepTimerEndOfTrack = true
+                sleepTimerEndsAt = 0L
+                engine.setPauseAtEndOfMediaItems(true)
+            }
+            endsAt > System.currentTimeMillis() -> armDurationSleepTimer(endsAt)
+            else -> {
+                engine.setPauseAtEndOfMediaItems(false)
+                themePreferences.clearSleepTimer()
+            }
+        }
     }
 
     /**
@@ -1524,12 +1596,11 @@ class MusicService : MediaLibraryService() {
         sleepTimerJob?.cancel()
         sleepTimerJob = null
         sleepTimerEndsAt = 0L
-        if (sleepTimerEndOfTrack) {
-            sleepTimerEndOfTrack = false
-            // Leaving this set would silently pause at the end of every
-            // subsequent track too.
-            player.pauseAtEndOfMediaItems = false
-        }
+        sleepTimerEndOfTrack = false
+        // Both engines matter. The standby becomes audible at the next
+        // crossfade and must not carry an old end-of-track instruction.
+        engine.setPauseAtEndOfMediaItems(false)
+        themePreferences.clearSleepTimer()
         if (publish) publishSleepTimerState()
     }
 
@@ -1767,7 +1838,7 @@ class MusicService : MediaLibraryService() {
                 .onFailure { Log.e(TAG, "Could not re-point the session", it) }
         }
         trackGain = gainForPlayer(newActive)
-        newActive.pauseAtEndOfMediaItems = sleepTimerEndOfTrack
+        engine.setPauseAtEndOfMediaItems(sleepTimerEndOfTrack)
         prefetchUpcomingSongs()
     }
 
