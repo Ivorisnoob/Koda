@@ -22,6 +22,7 @@ import androidx.compose.material.icons.automirrored.rounded.Comment
 import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.AccountCircle
+import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.BookmarkAdd
@@ -154,6 +155,7 @@ internal fun buildSettingsSearchIndex(
     onNavigateToNotInterested: () -> Unit,
     onNavigateToBackup: () -> Unit,
     onNavigateToReportBug: () -> Unit,
+    onNavigateToTimeLimit: () -> Unit,
     supportsLiveUpdates: Boolean
 ): List<SettingsSearchEntry> = buildList {
     fun entry(
@@ -420,6 +422,13 @@ internal fun buildSettingsSearchIndex(
             "not working", "broken", "error", "diagnostics", "telegram"
         )
     ) { onNavigateToReportBug() }
+    entry(
+        "time_limit", "Daily time limit", "Advanced", Icons.Rounded.Bedtime,
+        listOf(
+            "screen time", "usage", "app lock", "lock", "limit", "focus",
+            "digital wellbeing", "parental", "hours", "listening time"
+        )
+    ) { onNavigateToTimeLimit() }
 
     // About
     entry(

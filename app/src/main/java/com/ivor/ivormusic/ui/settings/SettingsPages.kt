@@ -33,6 +33,7 @@ import androidx.compose.material.icons.rounded.Contrast
 import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.Cookie
 import androidx.compose.material.icons.rounded.FilterList
+import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.FlashOn
 import androidx.compose.material.icons.rounded.Folder
@@ -1103,6 +1104,7 @@ internal fun AdvancedSettingsPage(
     manualScanEnabled: Boolean,
     onManualScanEnabledToggle: (Boolean) -> Unit,
     onReportBug: () -> Unit,
+    onOpenTimeLimit: () -> Unit,
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
@@ -1118,6 +1120,20 @@ internal fun AdvancedSettingsPage(
                     text = "Xiaomi device detected. Enabling both of these is highly recommended.",
                     tint = MaterialTheme.colorScheme.tertiary
                 )
+            }
+        }
+
+        item {
+            SettingsSection(title = "Wellbeing") {
+                SettingsCard {
+                    SettingsRow(
+                        icon = Icons.Rounded.Bedtime,
+                        title = "Daily time limit",
+                        subtitle = "Lock Koda after a set amount of listening per day",
+                        onClick = onOpenTimeLimit,
+                        showChevron = true
+                    )
+                }
             }
         }
 

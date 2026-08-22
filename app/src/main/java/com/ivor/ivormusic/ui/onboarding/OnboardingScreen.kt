@@ -48,6 +48,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.rounded.Album
+import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
@@ -67,6 +68,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
@@ -118,7 +120,7 @@ import com.ivor.ivormusic.ui.theme.ThemeMode
 import kotlin.math.absoluteValue
 import kotlinx.coroutines.launch
 
-private const val ONBOARDING_PAGE_COUNT = 6
+private const val ONBOARDING_PAGE_COUNT = 7
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -293,7 +295,7 @@ fun OnboardingScreen(
                             playerStyle = playerStyle,
                             onPlayerStyleChange = onPlayerStyleChange
                         )
-                        else -> FinalTouchesPage(
+                        5 -> FinalTouchesPage(
                             crossfadeEnabled = crossfadeEnabled,
                             onCrossfadeEnabledToggle = onCrossfadeEnabledToggle,
                             notificationPermissionGranted = notificationPermissionState?.isGranted ?: true,
@@ -309,6 +311,7 @@ fun OnboardingScreen(
                                 onManualScanEnabledToggle(enabled)
                             }
                         )
+                        else -> AppTimeLimitPage()
                     }
                 }
             }
@@ -763,6 +766,85 @@ private fun FinalTouchesPage(
             checked = manualScanEnabled,
             onCheckedChange = onManualScanEnabledToggle
         )
+    }
+}
+
+/**
+ * The last onboarding page: the optional daily time limit. Off by default;
+ * enabling it here applies one budget to every weekday, and the per-day
+ * editor lives in Settings > Advanced for anyone who wants finer control.
+ *
+ * Owns its [ThemePreferences] directly, like this screen already does for
+ * SessionManager - nothing else needs to react to the choice while the page
+ * is up.
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun AppTimeLimitPage() {
+    val context = LocalContext.current
+    val prefs = remember { com.ivor.ivormusic.data.ThemePreferences(context) }
+    var enabled by remember { mutableStateOf(prefs.isTimeLimitEnabled()) }
+    var dailyMinutes by remember {
+        val budgets =
+            com.ivor.ivormusic.data.AppTimeLimit.parseBudgets(prefs.getTimeLimitBudgets())
+        val uniform = budgets.values.distinct().singleOrNull()
+        mutableStateOf(uniform ?: com.ivor.ivormusic.data.AppTimeLimit.DEFAULT_DAILY_MINUTES)
+    }
+
+    fun applyPreset(minutes: Int) {
+        dailyMinutes = minutes
+        prefs.setAllTimeLimitBudgets(minutes)
+        if (!enabled) {
+            enabled = true
+            prefs.setTimeLimitEnabled(true)
+        }
+    }
+
+    OnboardingPageScaffold(
+        icon = Icons.Rounded.Bedtime,
+        iconShape = MaterialShapes.SoftBurst,
+        title = "Daily time limit",
+        body = "Completely optional, and off by default. Decide how much Koda you get each day - when it's used up, the app locks until midnight."
+    ) {
+        SettingSwitchRow(
+            icon = Icons.Rounded.Bedtime,
+            title = "Limit my listening",
+            subtitle = "Locks Koda once today's budget runs out",
+            checked = enabled,
+            onCheckedChange = { on ->
+                enabled = on
+                prefs.setTimeLimitEnabled(on)
+                if (on) prefs.setAllTimeLimitBudgets(dailyMinutes)
+            }
+        )
+
+        AnimatedVisibility(visible = enabled) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = "Every day:",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(60, 120, 180, 300, 480).forEach { minutes ->
+                        FilterChip(
+                            selected = dailyMinutes == minutes,
+                            onClick = { applyPreset(minutes) },
+                            label = {
+                                Text(
+                                    com.ivor.ivormusic.data.AppTimeLimit.formatBudget(minutes)
+                                )
+                            }
+                        )
+                    }
+                }
+                Text(
+                    text = "Different hours per weekday can be set later in Settings > Advanced.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
     }
 }
 

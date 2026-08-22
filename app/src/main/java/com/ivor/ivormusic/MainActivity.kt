@@ -62,6 +62,10 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import com.ivor.ivormusic.ui.theme.ThemeMode
 
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import com.ivor.ivormusic.ui.onboarding.OnboardingScreen
 import com.ivor.ivormusic.ui.video.enterPipMode
 import com.ivor.ivormusic.ui.share.PendingSharedLink
@@ -104,6 +108,17 @@ class MainActivity : ComponentActivity() {
     private var pipVideoAspectRatio: Float? = null
     private var pipVideoBounds: android.graphics.Rect? = null
     private var pipEligible = false
+
+    /**
+     * The daily time limit's lock state, evaluated by [tickAppTime] every 30
+     * seconds while foregrounded (and once at start). Snapshot state so the
+     * overlay in MusicApp reacts without any flow plumbing; the underlying
+     * decision always fresh-reads preferences, so budget changes apply on the
+     * next tick.
+     */
+    private var appTimeLocked by androidx.compose.runtime.mutableStateOf(false)
+    private var foregroundedAtMs = 0L
+    private var appTimeTicker: kotlinx.coroutines.Job? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         val splashScreen = installSplashScreen()
@@ -282,6 +297,54 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
+     * Daily time limit bookkeeping. STARTED is the whole definition of
+     * "using Koda" here: foregrounded, on screen, in front of the user.
+     * PiP counts as background - the video is a floating window, not app use.
+     */
+    override fun onStart() {
+        super.onStart()
+        foregroundedAtMs = System.currentTimeMillis()
+        tickAppTime()
+        appTimeTicker = lifecycleScope.launch {
+            while (isActive) {
+                delay(30_000L)
+                chargeForegroundTime()
+                tickAppTime()
+            }
+        }
+    }
+
+    override fun onStop() {
+        appTimeTicker?.cancel()
+        appTimeTicker = null
+        chargeForegroundTime()
+        super.onStop()
+    }
+
+    /** Flush the time since the last marker into today's total. */
+    private fun chargeForegroundTime() {
+        val now = System.currentTimeMillis()
+        if (foregroundedAtMs == 0L || appTimeLocked) {
+            // Locked sessions are deliberately uncounted: sitting on the lock
+            // screen must not eat the budget, and the marker still moves so a
+            // midnight rollover or budget raise resumes cleanly.
+            foregroundedAtMs = now
+            return
+        }
+        com.ivor.ivormusic.data.AppTimeLimit.addForegroundMillis(this, now - foregroundedAtMs)
+        foregroundedAtMs = now
+    }
+
+    private fun tickAppTime() {
+        val prefs = com.ivor.ivormusic.data.ThemePreferences(applicationContext)
+        appTimeLocked = com.ivor.ivormusic.data.AppTimeLimit.isLocked(
+            this,
+            prefs.isTimeLimitEnabled(),
+            prefs.getTimeLimitBudgets()
+        )
+    }
+
+    /**
      * Entering PiP on the way out of the app.
      *
      * On API 31+ the system does this itself from setAutoEnterEnabled, which
@@ -324,6 +387,13 @@ class MainActivity : ComponentActivity() {
 fun MusicApp(
     pendingSharedLink: PendingSharedLink?,
     isInPipMode: Boolean,
+
+    /**
+     * The daily time limit's lock. Owned by the activity's ticker rather
+     * than a flow: the decision fresh-reads preferences every tick, and the
+     * only consumer is this overlay.
+     */
+    appTimeLocked: Boolean = false,
     onPipStateChanged: (eligible: Boolean, aspectRatio: Float?, bounds: android.graphics.Rect?) -> Unit,
     currentThemeMode: ThemeMode,
     onThemeModeChange: (ThemeMode) -> Unit,
@@ -670,6 +740,7 @@ fun MusicApp(
                     onNavigateToNotInterested = { navController.navigate("not_interested") },
                     onNavigateToBackup = { navController.navigate("backup") },
                     onNavigateToReportBug = { navController.navigate("report") },
+                    onNavigateToTimeLimit = { navController.navigate("app_time_limit") },
                     loadLocalSongs = loadLocalSongs,
                     onLoadLocalSongsToggle = onLoadLocalSongsToggle,
                     ambientBackground = ambientBackground,
@@ -959,6 +1030,17 @@ fun MusicApp(
                     onBack = { navController.popBackStack() }
                 )
             }
+            composable(
+                route = "app_time_limit",
+                enterTransition = { slideInHorizontally(initialOffsetX = { it }) + fadeIn() },
+                exitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut() },
+                popEnterTransition = { slideInHorizontally(initialOffsetX = { -it / 3 }) + fadeIn() },
+                popExitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut() }
+            ) {
+                com.ivor.ivormusic.ui.applock.AppTimeLimitScreen(
+                    onBack = { navController.popBackStack() }
+                )
+            }
         }
         
         com.ivor.ivormusic.ui.video.VideoPlayerOverlay(
@@ -1012,6 +1094,35 @@ fun MusicApp(
                     }
                 )
             }
+        }
+
+        // The daily time limit's enforcement surface, last in the stack so it
+        // covers the NavHost, both player overlays and every prompt. Locking
+        // also stands playback down: a limiter that locks the screen while
+        // music keeps playing would be counting nothing and stopping nothing.
+        androidx.compose.runtime.LaunchedEffect(appTimeLocked) {
+            if (appTimeLocked) {
+                playerViewModel.pause()
+                videoPlayerViewModel.pause()
+                shortsPlayerViewModel.pause()
+            }
+        }
+        if (appTimeLocked && !isInPipMode) {
+            val limitPrefs = remember { com.ivor.ivormusic.data.ThemePreferences(context) }
+            val usedSeconds = remember(appTimeLocked) {
+                com.ivor.ivormusic.data.AppTimeLimit.usedSecondsToday(context)
+            }
+            val budgetMinutes = remember(appTimeLocked) {
+                com.ivor.ivormusic.data.AppTimeLimit.budgetMinutesForToday(
+                    com.ivor.ivormusic.data.AppTimeLimit.parseBudgets(
+                        limitPrefs.getTimeLimitBudgets()
+                    )
+                )
+            }
+            com.ivor.ivormusic.ui.applock.AppLockOverlay(
+                usedSecondsToday = usedSeconds,
+                budgetMinutes = budgetMinutes
+            )
         }
     }
 }
