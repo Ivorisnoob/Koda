@@ -679,6 +679,7 @@ fun HomeScreen(
                         },
                         onPlayVideoQueue = onPlayVideoQueue,
                         onEnqueueVideo = onEnqueueVideo,
+                        onOpenShorts = onOpenShorts,
                         onProfileClick = onProfileClick,
                         onOpenChannel = onOpenChannel,
                         onSongLongPress = { song -> songOptionsTarget = song },
@@ -686,6 +687,7 @@ fun HomeScreen(
                         viewModel = viewModel,
                         isDarkMode = isDarkMode,
                         videoMode = videoMode,
+                        shortsEnabled = shortsEnabled,
                         localOnly = localOnly,
                         listState = searchScrollState
                     )
@@ -1912,6 +1914,7 @@ fun SearchContent(
      */
     onPlayVideoQueue: ((com.ivor.ivormusic.data.VideoQueue) -> Unit)? = null,
     onEnqueueVideo: ((com.ivor.ivormusic.data.VideoItem, Boolean) -> Unit)? = null,
+    onOpenShorts: (List<com.ivor.ivormusic.data.ShortsItem>, Int) -> Unit = { _, _ -> },
     onProfileClick: () -> Unit = {},
     /** Open a creator's page, from a Channels result or the long-press sheet. */
     onOpenChannel: (String) -> Unit = {},
@@ -1919,6 +1922,7 @@ fun SearchContent(
     viewModel: HomeViewModel,
     isDarkMode: Boolean,
     videoMode: Boolean = false,
+    shortsEnabled: Boolean = false,
     localOnly: Boolean = false,
     onSongLongPress: ((Song) -> Unit)? = null,
     /** Hoisted by HomeScreen: survives tab switches, reachable by the nav bar. */
@@ -1968,12 +1972,14 @@ fun SearchContent(
                 },
                 onProfileClick = onProfileClick,
                 onEnqueueVideo = onEnqueueVideo,
+                onOpenShorts = onOpenShorts,
                 onOpenChannel = onOpenChannel,
                 onSongLongPress = onSongLongPress,
                 contentPadding = contentPadding,
                 viewModel = viewModel,
                 isDarkMode = isDarkMode,
                 videoMode = videoMode,
+                shortsEnabled = shortsEnabled,
                 localOnly = localOnly,
                 listState = listState
             )

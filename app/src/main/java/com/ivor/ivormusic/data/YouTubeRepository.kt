@@ -3460,6 +3460,25 @@ class YouTubeRepository(private val context: Context) {
     }
 
     /**
+     * Search for Shorts matching [query] (used for the search results Shorts shelf
+     * and the Shorts search category).
+     */
+    suspend fun searchShorts(query: String): List<ShortsItem> = withContext(Dispatchers.IO) {
+        if (query.isBlank()) return@withContext emptyList()
+        try {
+            val effectiveQuery = if (query.contains("shorts", ignoreCase = true)) query else "$query shorts"
+            val body = org.json.JSONObject()
+                .put("context", webContext())
+                .put("query", effectiveQuery)
+            val raw = postWatchApi("search", body) ?: return@withContext emptyList()
+            parseShortsLockups(org.json.JSONObject(raw))
+        } catch (e: Exception) {
+            android.util.Log.e("YouTubeRepo", "searchShorts failed", e)
+            emptyList()
+        }
+    }
+
+    /**
      * One page of the endless swipe feed from reel/reel_watch_sequence.
      * [sequenceParams] is either a shelf item's seed params or the
      * continuation token of a previous page (the endpoint accepts both in

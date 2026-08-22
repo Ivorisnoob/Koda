@@ -1687,6 +1687,18 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
+     * Search for YouTube Shorts (for video mode search).
+     */
+    suspend fun searchShorts(query: String): List<com.ivor.ivormusic.data.ShortsItem> {
+        if (query.isBlank()) return emptyList()
+        return try {
+            youtubeRepository.searchShorts(query)
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    /**
      * A creator's channel identity - banner, avatar, verified tick, subscriber
      * count - for the music artist page.
      *

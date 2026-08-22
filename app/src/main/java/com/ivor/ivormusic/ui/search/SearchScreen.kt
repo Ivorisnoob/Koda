@@ -138,13 +138,17 @@ import androidx.compose.ui.graphics.Outline
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Link
+import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.LinkOff
 import androidx.compose.material.icons.rounded.PlaylistPlay
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
+import com.ivor.ivormusic.data.ShortsItem
+import com.ivor.ivormusic.ui.video.ShortsShelf
 import com.ivor.ivormusic.ui.video.VideoCard
 import com.ivor.ivormusic.ui.video.VideoOptionsSheetHost
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -193,6 +197,8 @@ fun SearchScreen(
     onSongLongPress: ((Song) -> Unit)? = null,
     /** Queue a video result, next or at the end. */
     onEnqueueVideo: ((VideoItem, Boolean) -> Unit)? = null,
+    /** Open shorts at the given index from a shelf or result list. */
+    onOpenShorts: (List<ShortsItem>, Int) -> Unit = { _, _ -> },
     /**
      * Play a single YouTube result and continue into its radio. Used instead of
      * [onPlayQueue] for loose result lists, where the neighbouring entries are
@@ -211,6 +217,7 @@ fun SearchScreen(
     viewModel: HomeViewModel,
     isDarkMode: Boolean,
     videoMode: Boolean = false,
+    shortsEnabled: Boolean = false,
     localOnly: Boolean = false,
     modifier: Modifier = Modifier,
     /**
@@ -238,6 +245,7 @@ fun SearchScreen(
     var videoResultsExhausted by remember { mutableStateOf(false) }
     var youtubeResults by remember { mutableStateOf<List<Song>>(emptyList()) }
     var videoResults by remember { mutableStateOf<List<VideoItem>>(emptyList()) }
+    var shortsResults by remember { mutableStateOf<List<ShortsItem>>(emptyList()) }
     var videoPlaylistResults by remember { mutableStateOf<List<VideoPlaylist>>(emptyList()) }
     var channelResults by remember {
         mutableStateOf<List<com.ivor.ivormusic.data.SubscribedChannel>>(emptyList())
@@ -319,13 +327,14 @@ fun SearchScreen(
     // Search YouTube/Videos/Artists/Albums/Playlists when query changes.
     // Local-only mode never fetches: the local library filter below is
     // the entire search experience.
-    LaunchedEffect(query, videoMode, selectedCategory, selectedVideoCategory, selectedDateFilter, selectedSort) {
+    LaunchedEffect(query, videoMode, selectedCategory, selectedVideoCategory, selectedDateFilter, selectedSort, shortsEnabled) {
         if (parsedLink != null) {
             // A pasted link is resolved by its own effect below; make sure no
             // stale text-search results linger behind the link result card.
             isLoading = false
             youtubeResults = emptyList()
             videoResults = emptyList()
+            shortsResults = emptyList()
             videoPlaylistResults = emptyList()
             channelResults = emptyList()
             artistResults = emptyList()
@@ -340,6 +349,7 @@ fun SearchScreen(
             // Clear previous results of other types
             youtubeResults = emptyList()
             videoResults = emptyList()
+            shortsResults = emptyList()
             videoPlaylistResults = emptyList()
             channelResults = emptyList()
             artistResults = emptyList()
@@ -352,7 +362,18 @@ fun SearchScreen(
 
             if (videoMode) {
                 when (selectedVideoCategory) {
-                    VideoSearchCategory.VIDEOS -> videoResults = viewModel.searchVideos(query, selectedDateFilter, selectedSort)
+                    VideoSearchCategory.VIDEOS -> {
+                        if (shortsEnabled) {
+                            val videosDeferred = async { viewModel.searchVideos(query, selectedDateFilter, selectedSort) }
+                            val shortsDeferred = async { viewModel.searchShorts(query) }
+                            videoResults = videosDeferred.await()
+                            shortsResults = shortsDeferred.await()
+                        } else {
+                            videoResults = viewModel.searchVideos(query, selectedDateFilter, selectedSort)
+                            shortsResults = emptyList()
+                        }
+                    }
+                    VideoSearchCategory.SHORTS -> shortsResults = viewModel.searchShorts(query)
                     VideoSearchCategory.PLAYLISTS -> videoPlaylistResults = viewModel.searchVideoPlaylists(query)
                     VideoSearchCategory.CHANNELS -> channelResults = viewModel.searchChannels(query)
                 }
@@ -368,6 +389,7 @@ fun SearchScreen(
         } else {
             youtubeResults = emptyList()
             videoResults = emptyList()
+            shortsResults = emptyList()
             videoPlaylistResults = emptyList()
             channelResults = emptyList()
             artistResults = emptyList()
@@ -559,6 +581,7 @@ fun SearchScreen(
                     VideoSearchFilterChips(
                         selectedCategory = selectedVideoCategory,
                         onCategorySelected = { selectedVideoCategory = it },
+                        shortsEnabled = shortsEnabled,
                         modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
                     )
                 }
@@ -744,6 +767,7 @@ fun SearchScreen(
                                 Spacer(modifier = Modifier.height(16.dp))
                                 Text(
                                     when {
+                                        videoMode && selectedVideoCategory == VideoSearchCategory.SHORTS -> "Searching Shorts..."
                                         videoMode && selectedVideoCategory == VideoSearchCategory.PLAYLISTS -> "Searching Playlists..."
                                         videoMode -> "Searching Videos..."
                                         selectedCategory == SearchCategory.ARTISTS -> "Searching Artists..."
@@ -896,10 +920,11 @@ fun SearchScreen(
                     }
                 }
                 
-                // Video Mode Results: the Videos/Playlists toggle above decides
-                // which search ran, so only one of these lists is ever populated
+                // Video Mode Results: the Videos/Shorts/Playlists/Channels toggle above decides
+                // which search ran, and the Videos view embeds a Shorts shelf
                 videoMode && (
                     videoResults.isNotEmpty() ||
+                        shortsResults.isNotEmpty() ||
                         videoPlaylistResults.isNotEmpty() ||
                         channelResults.isNotEmpty()
                     ) -> {
@@ -955,7 +980,45 @@ fun SearchScreen(
                         }
                     }
 
-                    // Video Search Results Section
+                    // Dedicated Shorts Search Category Results
+                    if (selectedVideoCategory == VideoSearchCategory.SHORTS && shortsResults.isNotEmpty()) {
+                        item {
+                            ResultHeader(
+                                title = "Shorts",
+                                count = shortsResults.size,
+                                icon = Icons.Rounded.Bolt,
+                                color = MaterialTheme.colorScheme.primary,
+                                textColor = textColor,
+                                secondaryTextColor = secondaryTextColor
+                            )
+                        }
+                        val shortsPairs = shortsResults.chunked(2)
+                        itemsIndexed(shortsPairs) { rowIndex, pair ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                pair.forEachIndexed { colIndex, item ->
+                                    val flatIndex = rowIndex * 2 + colIndex
+                                    ShortsResultCard(
+                                        item = item,
+                                        onClick = {
+                                            viewModel.addToSearchHistory(query)
+                                            onOpenShorts(shortsResults, flatIndex)
+                                        },
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                                if (pair.size == 1) {
+                                    Spacer(modifier = Modifier.weight(1f))
+                                }
+                            }
+                        }
+                    }
+
+                    // Video Search Results Section (with inline Shorts carousel)
                     if (videoResults.isNotEmpty()) {
                         item {
                             Row(
@@ -995,8 +1058,35 @@ fun SearchScreen(
                             }
                         }
 
-                        // Display video results; long-press opens the save sheet
-                        itemsIndexed(videoResults) { index, video ->
+                        val leadingVideos = if (shortsResults.isEmpty()) videoResults else videoResults.take(2)
+                        val trailingVideos = if (shortsResults.isEmpty()) emptyList() else videoResults.drop(2)
+
+                        // Display leading video results
+                        itemsIndexed(leadingVideos) { index, video ->
+                            VideoCard(
+                                video = video,
+                                onClick = { onVideoClick(video) },
+                                onLongClick = { onVideoLongPress(video) },
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                            )
+                        }
+
+                        // Shorts Carousel Shelf inside Video results (matching standard YouTube feed)
+                        if (shortsResults.isNotEmpty() && selectedVideoCategory == VideoSearchCategory.VIDEOS) {
+                            item {
+                                ShortsShelf(
+                                    shorts = shortsResults,
+                                    onShortClick = { index ->
+                                        viewModel.addToSearchHistory(query)
+                                        onOpenShorts(shortsResults, index)
+                                    },
+                                    modifier = Modifier.padding(vertical = 8.dp)
+                                )
+                            }
+                        }
+
+                        // Display trailing video results
+                        itemsIndexed(trailingVideos) { index, video ->
                             VideoCard(
                                 video = video,
                                 onClick = { onVideoClick(video) },
@@ -1013,6 +1103,18 @@ fun SearchScreen(
                                 cardColor = cardColor,
                                 accentColor = primaryColor,
                                 secondaryTextColor = secondaryTextColor
+                            )
+                        }
+                    } else if (selectedVideoCategory == VideoSearchCategory.VIDEOS && shortsResults.isNotEmpty()) {
+                        // If no standard videos returned but shorts were found
+                        item {
+                            ShortsShelf(
+                                shorts = shortsResults,
+                                onShortClick = { index ->
+                                    viewModel.addToSearchHistory(query)
+                                    onOpenShorts(shortsResults, index)
+                                },
+                                modifier = Modifier.padding(vertical = 8.dp)
                             )
                         }
                     }
@@ -1660,7 +1762,7 @@ enum class SearchCategory {
 }
 
 enum class VideoSearchCategory {
-    VIDEOS, PLAYLISTS, CHANNELS
+    VIDEOS, SHORTS, PLAYLISTS, CHANNELS
 }
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
@@ -1668,14 +1770,19 @@ enum class VideoSearchCategory {
 fun VideoSearchFilterChips(
     selectedCategory: VideoSearchCategory,
     onCategorySelected: (VideoSearchCategory) -> Unit,
+    shortsEnabled: Boolean = true,
     modifier: Modifier = Modifier
 ) {
+    val categories = remember(shortsEnabled) {
+        if (shortsEnabled) VideoSearchCategory.entries
+        else VideoSearchCategory.entries.filter { it != VideoSearchCategory.SHORTS }
+    }
     // Same M3 Expressive connected button group as the music-mode chips
     Row(
         modifier = modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(androidx.compose.material3.ButtonGroupDefaults.ConnectedSpaceBetween)
     ) {
-        VideoSearchCategory.entries.forEachIndexed { index, category ->
+        categories.forEachIndexed { index, category ->
             val selected = category == selectedCategory
             androidx.compose.material3.ToggleButton(
                 checked = selected,
@@ -1685,15 +1792,78 @@ fun VideoSearchFilterChips(
                     .height(44.dp),
                 shapes = when (index) {
                     0 -> androidx.compose.material3.ButtonGroupDefaults.connectedLeadingButtonShapes()
-                    VideoSearchCategory.entries.lastIndex -> androidx.compose.material3.ButtonGroupDefaults.connectedTrailingButtonShapes()
+                    categories.lastIndex -> androidx.compose.material3.ButtonGroupDefaults.connectedTrailingButtonShapes()
                     else -> androidx.compose.material3.ButtonGroupDefaults.connectedMiddleButtonShapes()
                 },
                 contentPadding = PaddingValues(horizontal = 8.dp)
             ) {
                 Text(
-                    category.name.lowercase().capitalize(),
+                    category.name.lowercase().replaceFirstChar { it.uppercase() },
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                    maxLines = 1
+                )
+            }
+        }
+    }
+}
+
+/**
+ * A dedicated Shorts result card used for grid presentation in the Shorts search category.
+ */
+@Composable
+fun ShortsResultCard(
+    item: ShortsItem,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .aspectRatio(9f / 16f)
+            .clip(RoundedCornerShape(16.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .clickable(onClick = onClick)
+    ) {
+        AsyncImage(
+            model = item.portraitThumbnailUrl,
+            contentDescription = item.title,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop
+        )
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(96.dp)
+                .align(Alignment.BottomCenter)
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.75f))
+                    )
+                )
+        )
+
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(10.dp)
+        ) {
+            if (item.title.isNotBlank()) {
+                Text(
+                    text = item.title,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.White,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            if (item.viewCount.isNotBlank()) {
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = item.viewCount,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.White.copy(alpha = 0.75f),
                     maxLines = 1
                 )
             }
