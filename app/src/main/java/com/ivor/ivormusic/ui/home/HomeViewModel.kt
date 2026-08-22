@@ -435,6 +435,17 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val _isSubscriptionFeedLoading = MutableStateFlow(false)
     val isSubscriptionFeedLoading: StateFlow<Boolean> = _isSubscriptionFeedLoading.asStateFlow()
 
+    private val _selectedChannelFeed = MutableStateFlow<List<VideoItem>>(emptyList())
+    val selectedChannelFeed: StateFlow<List<VideoItem>> = _selectedChannelFeed.asStateFlow()
+
+    private val _isSelectedChannelFeedLoading = MutableStateFlow(false)
+    val isSelectedChannelFeedLoading: StateFlow<Boolean> =
+        _isSelectedChannelFeedLoading.asStateFlow()
+
+    private val _selectedChannelFeedError = MutableStateFlow<String?>(null)
+    val selectedChannelFeedError: StateFlow<String?> = _selectedChannelFeedError.asStateFlow()
+    private var selectedChannelFeedJob: kotlinx.coroutines.Job? = null
+
     /**
      * "42 of 130 channels" while a local refresh runs. A device-local feed
      * costs one request per channel, so a large list takes long enough that an
@@ -707,6 +718,41 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 _isSubscriptionFeedLoading.value = false
             }
         }
+    }
+
+    /**
+     * Load the selected creator's Videos tab rather than filtering the recent
+     * subscriptions snapshot. The latter may contain no recent item from a
+     * channel that still has hundreds of uploads, which is not an empty feed.
+     */
+    fun loadSelectedChannelFeed(channel: com.ivor.ivormusic.data.SubscribedChannel) {
+        selectedChannelFeedJob?.cancel()
+        selectedChannelFeedJob = viewModelScope.launch {
+            _selectedChannelFeed.value = emptyList()
+            _selectedChannelFeedError.value = null
+            _isSelectedChannelFeedLoading.value = true
+            try {
+                val videos = youtubeRepository.getChannelVideos(channel)
+                _selectedChannelFeed.value = videos
+                if (videos.isEmpty()) {
+                    _selectedChannelFeedError.value =
+                        "Couldn't load uploads from ${channel.name}. Pull to try again."
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("HomeViewModel", "Selected channel feed failed", e)
+                _selectedChannelFeedError.value =
+                    "Couldn't load uploads from ${channel.name}. Pull to try again."
+            } finally {
+                _isSelectedChannelFeedLoading.value = false
+            }
+        }
+    }
+
+    fun clearSelectedChannelFeed() {
+        selectedChannelFeedJob?.cancel()
+        _selectedChannelFeed.value = emptyList()
+        _selectedChannelFeedError.value = null
+        _isSelectedChannelFeedLoading.value = false
     }
 
     /**

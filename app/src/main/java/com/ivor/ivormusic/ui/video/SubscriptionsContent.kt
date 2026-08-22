@@ -140,6 +140,9 @@ fun SubscriptionsContent(
     val isFeedLoading by viewModel.isSubscriptionFeedLoading.collectAsState()
     val feedProgress by viewModel.subscriptionFeedProgress.collectAsState()
     val feedError by viewModel.subscriptionFeedError.collectAsState()
+    val selectedChannelFeed by viewModel.selectedChannelFeed.collectAsState()
+    val isSelectedChannelFeedLoading by viewModel.isSelectedChannelFeedLoading.collectAsState()
+    val selectedChannelFeedError by viewModel.selectedChannelFeedError.collectAsState()
     val channels by viewModel.subscribedChannels.collectAsState()
     val isChannelsLoading by viewModel.isSubscriptionsLoading.collectAsState()
     val isYouTubeConnected by viewModel.isYouTubeConnected.collectAsState()
@@ -160,14 +163,18 @@ fun SubscriptionsContent(
     var showKindMenu by remember { mutableStateOf(false) }
     var showOrderMenu by remember { mutableStateOf(false) }
 
-    val visibleFeed = remember(feed, selectedChannelId, feedPeriod, feedOrder) {
+    val visibleFeed = remember(
+        feed,
+        selectedChannelFeed,
+        channels,
+        selectedChannelId,
+        feedPeriod,
+        feedOrder
+    ) {
         val selectedChannel = channels.firstOrNull { it.channelId == selectedChannelId }
+        val sourceFeed = if (selectedChannel == null) feed else selectedChannelFeed
         val now = System.currentTimeMillis()
-        feed.asSequence()
-            .filter { video ->
-                selectedChannel == null || video.channelId == selectedChannel.channelId ||
-                    video.channelName.equals(selectedChannel.name, ignoreCase = true)
-            }
+        sourceFeed.asSequence()
             .filter { video ->
                 feedPeriod.ageMs == null ||
                     (video.publishedAtMs ?: VideoItem.parseRelativeTime(video.uploadedDate, now))
@@ -331,10 +338,19 @@ fun SubscriptionsContent(
             ExpressivePullToRefresh(
                 // As above: the pull spinner covers refreshes over existing
                 // videos, the skeleton covers the empty first load.
-                isRefreshing = isFeedLoading && feed.isNotEmpty(),
+                isRefreshing = if (selectedChannelId != null) {
+                    isSelectedChannelFeedLoading && selectedChannelFeed.isNotEmpty()
+                } else {
+                    isFeedLoading && feed.isNotEmpty()
+                },
                 onRefresh = {
-                    viewModel.loadSubscriptionFeed(force = true)
-                    viewModel.loadSubscriptions(force = true)
+                    val selected = channels.firstOrNull { it.channelId == selectedChannelId }
+                    if (selected != null) {
+                        viewModel.loadSelectedChannelFeed(selected)
+                    } else {
+                        viewModel.loadSubscriptionFeed(force = true)
+                        viewModel.loadSubscriptions(force = true)
+                    }
                 },
                 modifier = Modifier.fillMaxSize()
             ) {
@@ -460,7 +476,10 @@ fun SubscriptionsContent(
                                         horizontalAlignment = Alignment.CenterHorizontally,
                                         modifier = Modifier
                                             .clip(RoundedCornerShape(12.dp))
-                                            .clickable { selectedChannelId = null }
+                                            .clickable {
+                                                selectedChannelId = null
+                                                viewModel.clearSelectedChannelFeed()
+                                            }
                                             .padding(4.dp)
                                             .width(64.dp)
                                     ) {
@@ -499,7 +518,13 @@ fun SubscriptionsContent(
                                         modifier = Modifier
                                             .clip(RoundedCornerShape(12.dp))
                                             .clickable {
-                                                selectedChannelId = if (selected) null else channel.channelId
+                                                if (selected) {
+                                                    selectedChannelId = null
+                                                    viewModel.clearSelectedChannelFeed()
+                                                } else {
+                                                    selectedChannelId = channel.channelId
+                                                    viewModel.loadSelectedChannelFeed(channel)
+                                                }
                                             }
                                             .padding(4.dp)
                                             .width(64.dp)
@@ -568,7 +593,14 @@ fun SubscriptionsContent(
                         }
                     }
 
-                    if (isFeedLoading && feed.isEmpty()) {
+                    if (isSelectedChannelFeedLoading && selectedChannelId != null) {
+                        item(key = "selected-channel-loading") {
+                            SkeletonList(
+                                count = 3,
+                                modifier = Modifier.padding(horizontal = 16.dp)
+                            ) { alpha -> VideoCardSkeleton(alpha = alpha) }
+                        }
+                    } else if (isFeedLoading && feed.isEmpty()) {
                         item {
                             SkeletonList(
                                 count = 3,
@@ -589,12 +621,18 @@ fun SubscriptionsContent(
                     } else if (visibleFeed.isEmpty()) {
                         item(key = "filtered-feed-empty") {
                             FeedEmptyState(
-                                error = "No uploads match these filters.",
+                                error = selectedChannelFeedError ?: "No uploads match these filters.",
                                 hasChannels = true,
                                 isGroupFiltered = selectedGroupId != null,
                                 onRetry = {
-                                    selectedChannelId = null
-                                    feedPeriodName = SubscriptionFeedPeriod.ALL.name
+                                    val selected = channels.firstOrNull { it.channelId == selectedChannelId }
+                                    if (selected != null && selectedChannelFeedError != null) {
+                                        viewModel.loadSelectedChannelFeed(selected)
+                                    } else {
+                                        selectedChannelId = null
+                                        feedPeriodName = SubscriptionFeedPeriod.ALL.name
+                                        viewModel.clearSelectedChannelFeed()
+                                    }
                                 },
                                 onClearGroup = { viewModel.selectSubscriptionGroup(null) },
                                 onManage = onManageSubscriptions
