@@ -1121,9 +1121,16 @@ fun YourMixContent(
 
     val isRefreshing by viewModel.isLoading.collectAsState()
 
-    // One pulse shared by every placeholder on the screen, so they breathe in
-    // step instead of twinkling independently.
-    val skeletonAlpha = com.ivor.ivormusic.ui.components.rememberSkeletonAlpha()
+    // Do not leave an infinite transition running behind the loaded Home.
+    // Reading its value here invalidates this whole composition on every
+    // animation frame, which made ordinary vertical scrolling compete with an
+    // invisible skeleton pulse. One pulse is still shared while placeholders
+    // are actually on screen.
+    val skeletonAlpha = if (isInitialLoading) {
+        com.ivor.ivormusic.ui.components.rememberSkeletonAlpha()
+    } else {
+        1f
+    }
 
     ExpressivePullToRefresh(
         // The refresh spinner is for a refresh the user asked for. On first
@@ -1640,11 +1647,14 @@ fun OrganicSongLayout(
                 val localUri = songs[0].albumArtUri
                 
                 if (imageUrl != null || localUri != null) {
-                    coil.compose.SubcomposeAsyncImage(
-                        model = coil.request.ImageRequest.Builder(context)
+                    val request = remember(context, localUri, imageUrl) {
+                        coil.request.ImageRequest.Builder(context)
                             .data(localUri ?: imageUrl)
                             .crossfade(true)
-                            .build(),
+                            .build()
+                    }
+                    coil.compose.SubcomposeAsyncImage(
+                        model = request,
                         contentDescription = songs[0].title,
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop,
@@ -1700,11 +1710,14 @@ fun OrganicSongLayout(
                 val localUri = songs[1].albumArtUri
                 
                 if (imageUrl != null || localUri != null) {
-                    coil.compose.SubcomposeAsyncImage(
-                        model = coil.request.ImageRequest.Builder(context)
+                    val request = remember(context, localUri, imageUrl) {
+                        coil.request.ImageRequest.Builder(context)
                             .data(localUri ?: imageUrl)
                             .crossfade(true)
-                            .build(),
+                            .build()
+                    }
+                    coil.compose.SubcomposeAsyncImage(
+                        model = request,
                         contentDescription = songs[1].title,
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop,
@@ -1760,11 +1773,14 @@ fun OrganicSongLayout(
                 val localUri = songs[2].albumArtUri
                 
                 if (imageUrl != null || localUri != null) {
-                    coil.compose.SubcomposeAsyncImage(
-                        model = coil.request.ImageRequest.Builder(context)
+                    val request = remember(context, localUri, imageUrl) {
+                        coil.request.ImageRequest.Builder(context)
                             .data(localUri ?: imageUrl)
                             .crossfade(true)
-                            .build(),
+                            .build()
+                    }
+                    coil.compose.SubcomposeAsyncImage(
+                        model = request,
                         contentDescription = songs[2].title,
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop,
@@ -1820,11 +1836,15 @@ fun SongStripCard(
         val localUri = song.albumArtUri
         
         if (imageUrl != null || localUri != null) {
-            coil.compose.SubcomposeAsyncImage(
-                model = coil.request.ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current)
+            val context = androidx.compose.ui.platform.LocalContext.current
+            val request = remember(context, localUri, imageUrl) {
+                coil.request.ImageRequest.Builder(context)
                     .data(localUri ?: imageUrl)
                     .crossfade(true)
-                    .build(),
+                    .build()
+            }
+            coil.compose.SubcomposeAsyncImage(
+                model = request,
                 contentDescription = song.title,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop,
