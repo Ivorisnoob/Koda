@@ -44,6 +44,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -1205,8 +1206,13 @@ private fun SeekPreviewCard(
                         model = frame.pageUrl,
                         contentDescription = null,
                         contentScale = ContentScale.FillBounds,
+                        // `size` is capped by the one-frame parent constraints,
+                        // which shrinks the whole storyboard into 144dp and
+                        // makes every translated cell except the first blank.
+                        // The sprite must retain its full grid dimensions; the
+                        // clipped parent is the viewport onto the selected cell.
                         modifier = Modifier
-                            .size(
+                            .requiredSize(
                                 frameWidth * preview.framesPerPageX,
                                 frameHeight * preview.framesPerPageY,
                             )
