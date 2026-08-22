@@ -1323,7 +1323,7 @@ class YouTubeRepository(private val context: Context) {
         
         return try {
             val response = okHttpClient.newCall(request).execute()
-            response.body?.string() ?: ""
+            (response.body?.string() ?: "").also { noteSessionState(it) }
         } catch (e: Exception) {
             e.printStackTrace()
             ""
@@ -1409,6 +1409,19 @@ class YouTubeRepository(private val context: Context) {
      */
     private suspend fun getPlaylistInternal(playlistId: String): List<Song> = withContext(Dispatchers.IO) {
 
+        // The account path must be first. NewPipe is intentionally anonymous,
+        // so an owned/private playlist may expose its first page and then deny
+        // the continuation. That used to return a plausible-looking exact 100
+        // songs and prevent this authenticated path from ever running.
+        val isLoggedIn = sessionManager.isLoggedIn()
+        val accountResult = if (isLoggedIn) {
+            getAuthenticatedPlaylistSongs(playlistId)
+        } else PlaylistLoadResult(emptyList(), complete = false)
+        if (accountResult.complete && accountResult.songs.isNotEmpty()) {
+            return@withContext accountResult.songs
+        }
+
+        var newPipeComplete = true
         val newPipeSongs = try {
              val urlId = if (playlistId.startsWith("VL")) playlistId.removePrefix("VL") else playlistId
              val playlistUrl = "https://www.youtube.com/playlist?list=$urlId"
@@ -1428,6 +1441,12 @@ class YouTubeRepository(private val context: Context) {
                          currentPage = playlistExtractor.getPage(currentPage.nextPage)
                          allItems.addAll(currentPage.items.filterIsInstance<StreamInfoItem>())
                      } catch (e: Exception) {
+                         newPipeComplete = false
+                         android.util.Log.w(
+                             "YouTubeRepo",
+                             "NewPipe playlist continuation failed for $playlistId after ${allItems.size} items",
+                             e
+                         )
                          break
                      }
                  }
@@ -1444,15 +1463,16 @@ class YouTubeRepository(private val context: Context) {
                  }
              } else emptyList()
         } catch (e: Exception) {
+             newPipeComplete = false
              emptyList()
         }
 
-        if (newPipeSongs.isNotEmpty()) return@withContext newPipeSongs
+        if (newPipeComplete && newPipeSongs.isNotEmpty()) return@withContext newPipeSongs
 
         // Fallback to InnerTube /browse. Anonymous WEB_REMIX works for public
         // playlists and album playlists (OLAK5uy_…); cookies personalize when
         // logged in (LM, RTM). Playlists browse as "VL<id>".
-        try {
+        if (!isLoggedIn) try {
             val browseId = if (playlistId.startsWith("VL") || playlistId.startsWith("FE")) {
                 playlistId
             } else {
@@ -1460,14 +1480,80 @@ class YouTubeRepository(private val context: Context) {
             }
             val json = browseMusic(browseId)
             if (json != null) {
-                val internalSongs = parseSongsFromInternalJson(json)
+                val internalSongs = parseSongsFromInternalJson(json, preserveDuplicates = true)
                 if (internalSongs.isNotEmpty()) return@withContext internalSongs
             }
         } catch (e: Exception) {
             e.printStackTrace()
         }
 
-        emptyList()
+        // Do not throw away useful rows if every complete path failed, but log
+        // loudly that this is degraded rather than pretending the exact page
+        // boundary is the playlist's real end.
+        val partial = if (accountResult.songs.size >= newPipeSongs.size) {
+            accountResult.songs
+        } else newPipeSongs
+        if (partial.isNotEmpty()) {
+            android.util.Log.w(
+                "YouTubeRepo",
+                "Returning incomplete playlist $playlistId (${partial.size} songs) after all full-load paths failed"
+            )
+        }
+        partial
+    }
+
+    private data class PlaylistLoadResult(
+        val songs: List<Song>,
+        val complete: Boolean
+    )
+
+    /** Authenticated WEB_REMIX playlist browse, including every continuation. */
+    private fun getAuthenticatedPlaylistSongs(playlistId: String): PlaylistLoadResult {
+        val browseId = if (playlistId.startsWith("VL") || playlistId.startsWith("FE")) {
+            playlistId
+        } else {
+            "VL$playlistId"
+        }
+        val allSongs = mutableListOf<Song>()
+        val seenTokens = mutableSetOf<String>()
+        var json = browseMusic(browseId)
+            ?: return PlaylistLoadResult(emptyList(), complete = false)
+
+        while (true) {
+            allSongs += parseSongsFromInternalJson(json, preserveDuplicates = true)
+            val token = extractPlaylistContinuationToken(json)
+                ?: return PlaylistLoadResult(allSongs, complete = true)
+            if (!seenTokens.add(token)) {
+                android.util.Log.w("YouTubeRepo", "Repeated playlist continuation for $playlistId")
+                return PlaylistLoadResult(allSongs, complete = false)
+            }
+            json = fetchContinuation(token)
+            if (json.isEmpty()) {
+                android.util.Log.w(
+                    "YouTubeRepo",
+                    "Authenticated playlist continuation failed for $playlistId after ${allSongs.size} songs"
+                )
+                return PlaylistLoadResult(allSongs, complete = false)
+            }
+        }
+    }
+
+    /**
+     * Read only the continuation belonging to the playlist shelf. A generic
+     * recursive "first continuation" can pick an unrelated carousel token.
+     */
+    private fun extractPlaylistContinuationToken(json: String): String? = try {
+        val root = org.json.JSONObject(json)
+        val scopes = mutableListOf<org.json.JSONObject>()
+        findObjectsByKey(root, "musicPlaylistShelfRenderer", scopes)
+        findObjectsByKey(root, "musicPlaylistShelfContinuation", scopes)
+        scopes.asSequence().mapNotNull { scope ->
+            val tokens = mutableListOf<String>()
+            findContinuationTokens(scope, tokens)
+            tokens.firstOrNull()
+        }.firstOrNull()
+    } catch (e: Exception) {
+        null
     }
 
     suspend fun fetchAccountInfo() = withContext(Dispatchers.IO) {
@@ -1951,7 +2037,10 @@ class YouTubeRepository(private val context: Context) {
         }
     }
 
-    private fun parseSongsFromInternalJson(json: String): List<Song> {
+    private fun parseSongsFromInternalJson(
+        json: String,
+        preserveDuplicates: Boolean = false
+    ): List<Song> {
         val songs = mutableListOf<Song>()
         try {
             val root = org.json.JSONObject(json)
@@ -1989,7 +2078,7 @@ class YouTubeRepository(private val context: Context) {
         } catch (e: Exception) {
             e.printStackTrace()
         }
-        return songs.distinctBy { it.id }
+        return if (preserveDuplicates) songs else songs.distinctBy { it.id }
     }
 
     // --- Optimized Traversal Helpers ---

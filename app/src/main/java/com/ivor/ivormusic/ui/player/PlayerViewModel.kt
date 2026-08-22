@@ -572,7 +572,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                     // death loses at most a few seconds of position
                     if (it.isPlaying) {
                         ticksSinceSave++
-                        if (ticksSinceSave >= 5) {
+                        if (ticksSinceSave >= 15) {
                             ticksSinceSave = 0
                             savePlaybackSession()
                         }

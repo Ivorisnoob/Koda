@@ -6,6 +6,7 @@ import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.ShuffleOrder
 import android.os.SystemClock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
@@ -115,6 +116,45 @@ class CrossfadeEngine(
         private set
 
     private var movedListener: Player.Listener? = null
+    private var shuffleEnabled = false
+    private var shuffleSeed = 0L
+    private var repeatMode = Player.REPEAT_MODE_OFF
+
+    /**
+     * One shuffle permutation shared by both engines. Copying only the Boolean
+     * makes each incoming ExoPlayer generate a fresh order at every crossfade,
+     * which puts already-played songs back into the future.
+     */
+    fun setShuffleState(enabled: Boolean, seed: Long) {
+        shuffleEnabled = enabled
+        shuffleSeed = seed
+        applyPlaybackOrder(playerA)
+        applyPlaybackOrder(playerB)
+    }
+
+    fun setRepeatMode(mode: Int) {
+        repeatMode = mode
+        playerA.repeatMode = mode
+        playerB.repeatMode = mode
+    }
+
+    /** Rebuild the audible player's permutation after its queue was edited. */
+    fun refreshActiveShuffleOrder() {
+        applyPlaybackOrder(active)
+    }
+
+    fun setPauseAtEndOfMediaItems(enabled: Boolean) {
+        playerA.pauseAtEndOfMediaItems = enabled
+        playerB.pauseAtEndOfMediaItems = enabled
+    }
+
+    private fun applyPlaybackOrder(target: ExoPlayer) {
+        target.setShuffleOrder(
+            ShuffleOrder.DefaultShuffleOrder(target.mediaItemCount, shuffleSeed)
+        )
+        target.shuffleModeEnabled = shuffleEnabled
+        target.repeatMode = repeatMode
+    }
 
     /**
      * Follow the audible player only.
@@ -404,8 +444,7 @@ class CrossfadeEngine(
             // trailing items are appended.
             if (before.isNotEmpty()) incoming.addMediaItems(0, before)
 
-            incoming.repeatMode = outgoing.repeatMode
-            incoming.shuffleModeEnabled = outgoing.shuffleModeEnabled
+            applyPlaybackOrder(incoming)
             incoming.volume = inGain * duckGain
 
             movedListener?.let {

@@ -301,7 +301,7 @@ The write side already exists: `PlaylistRepository.createPlaylist` and `replaceP
 
 **Most of the highest-value targets are now handled; deeper screens are not.** The original diagnosis undersold what was already in place and oversold what still needed building, so both halves are worth restating precisely.
 
-`HomeScreen`'s `selectedTab` and its six per-tab `LazyListState`s (`videoHomeScrollState`, `musicHomeScrollState`, `searchScrollState`, `subscriptionsScrollState`, `musicLibraryScrollState`, `videoLibraryScrollState`) were already `rememberSaveable` / `rememberLazyListState` before this entry was reworked - `rememberLazyListState()` has carried its own `Saver` since it was introduced, and `selectedTab` was made saveable back in the channel-page work (`f968d8e`). Both ride `ComponentActivity`'s normal `onSaveInstanceState` Bundle, which is real process-death coverage, not just configuration-change survival - the earlier claim that they were "still plain remember" was wrong. Which tab was open and Home's own scroll positions were never the gap.
+`HomeScreen`'s `selectedTab` and its six per-tab `LazyListState`s (`videoHomeScrollState`, `musicHomeScrollState`, `searchScrollState`, `subscriptionsScrollState`, `musicLibraryScrollState`, `videoLibraryScrollState`) were already `rememberSaveable` / `rememberLazyListState` before this entry was reworked - `rememberLazyListState()` has carried its own `Saver` since it was introduced, and `selectedTab` was made saveable back in the channel-page work (`f968d8e`). Both ride `ComponentActivity`'s normal `onSaveInstanceState` Bundle, which covers recreation but is not a durable preference for a fresh task after Koda has been closed. The root tab is now also persisted in `ThemePreferences`, separately for music and video because their destination sets differ; scroll positions remain saved-instance state rather than permanent history.
 
 What *was* actually missing, and is now fixed: the search query and its category/date/sort filters in `ui/search/SearchScreen.kt` were plain `remember`, so they vanished not just on process death but on every ordinary tab switch away from Search and back (`AnimatedContent` in `HomeScreen` disposes the tab that is not the target state). They are `rememberSaveable` now; the result lists themselves stay plain `remember` and simply re-fetch from the restored query once recomposed, rather than round-tripping full result objects through a Bundle.
 
@@ -438,6 +438,12 @@ The milestones behind us, kept here so the direction of travel is visible.
 - Spotlight, an alternative music Home with a shortcut grid, paged quick picks and artwork shelves, chosen in onboarding or Appearance
 - Settings split into a searchable hub of eleven pages
 - Tab scroll positions that survive a switch, and a re-tap that returns the list to the top
+- The last root tab restored after relaunch, independently in music and video mode
+- A Subscriptions feed whose creator rail is ordered by recent uploads and loads that channel's full Videos tab in place, with upload-age and date-order controls
+- Complete account-playlist loading through authenticated playlist-scoped continuations, instead of accepting NewPipe's exact-page partial results
+- Persist shuffle and repeat, keep one stable shuffle order across crossfade swaps, and restore active sleep timers safely
+- Resume music and video sessions from 15-second checkpoints without resetting the restored music seek during stream resolution
+- Replace the video mini-player's layout-heavy expansion morph with a lightweight reveal curtain that never transforms the full video surface
 - Skeleton placeholders on every feed's first load, replacing the doubled spinners
 - A listening history for music, grouped by day, searchable, with a pause toggle
 - Vertical videos given a player box their own shape instead of a pillarboxed 16:9 frame

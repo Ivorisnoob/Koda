@@ -203,6 +203,8 @@ class ThemePreferences(context: Context) {
         private const val KEY_AMBIENT_BACKGROUND = "ambient_background"
         private const val KEY_PLAYER_ARTWORK_COLORS = "player_artwork_colors"
         private const val KEY_VIDEO_MODE = "video_mode"
+        private const val KEY_LAST_MUSIC_TAB = "last_music_tab"
+        private const val KEY_LAST_VIDEO_TAB = "last_video_tab"
         private const val KEY_HOME_MODE_TOGGLE_ENABLED = "home_mode_toggle_enabled"
         private const val KEY_PLAYER_STYLE = "player_style"
         private const val KEY_SAVE_VIDEO_HISTORY = "save_video_history"
@@ -408,6 +410,11 @@ class ThemePreferences(context: Context) {
         private const val KEY_CROSSFADE_ENABLED = "crossfade_enabled"
         private const val KEY_CROSSFADE_AUTO = "crossfade_auto"
         private const val KEY_CROSSFADE_DURATION = "crossfade_duration"
+        private const val KEY_PLAYBACK_SHUFFLE = "playback_shuffle"
+        private const val KEY_PLAYBACK_REPEAT_MODE = "playback_repeat_mode"
+        private const val KEY_PLAYBACK_SHUFFLE_SEED = "playback_shuffle_seed"
+        private const val KEY_SLEEP_TIMER_ENDS_AT = "sleep_timer_ends_at"
+        private const val KEY_SLEEP_TIMER_END_OF_TRACK = "sleep_timer_end_of_track"
         private const val MIN_CROSSFADE_DURATION_MS = 1_000
         private const val MAX_CROSSFADE_DURATION_MS = 15_000
         private const val KEY_NORMALIZE_VOLUME = "normalize_volume"
@@ -626,6 +633,20 @@ class ThemePreferences(context: Context) {
      */
     fun toggleVideoMode() {
         setVideoMode(!_videoMode.value)
+    }
+
+    /** Root Home destination restored after Koda is recreated. */
+    fun getLastHomeTab(videoMode: Boolean): Int {
+        val key = if (videoMode) KEY_LAST_VIDEO_TAB else KEY_LAST_MUSIC_TAB
+        val lastValidTab = if (videoMode) 3 else 2
+        return prefs.getInt(key, 0).coerceIn(0, lastValidTab)
+    }
+
+    /** Music and video keep separate positions because their tab sets differ. */
+    fun setLastHomeTab(videoMode: Boolean, tab: Int) {
+        val key = if (videoMode) KEY_LAST_VIDEO_TAB else KEY_LAST_MUSIC_TAB
+        val lastValidTab = if (videoMode) 3 else 2
+        prefs.edit().putInt(key, tab.coerceIn(0, lastValidTab)).apply()
     }
 
     /**
@@ -1084,6 +1105,52 @@ class ThemePreferences(context: Context) {
         val bounded = durationMs.coerceIn(MIN_CROSSFADE_DURATION_MS, MAX_CROSSFADE_DURATION_MS)
         prefs.edit().putInt(KEY_CROSSFADE_DURATION, bounded).apply()
         _crossfadeDurationMs.value = bounded
+    }
+
+    // --- Durable playback modes ---
+
+    fun isPlaybackShuffleEnabled(): Boolean = prefs.getBoolean(KEY_PLAYBACK_SHUFFLE, false)
+
+    fun setPlaybackShuffle(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_PLAYBACK_SHUFFLE, enabled).apply()
+    }
+
+    fun getPlaybackRepeatMode(): Int = prefs.getInt(
+        KEY_PLAYBACK_REPEAT_MODE,
+        androidx.media3.common.Player.REPEAT_MODE_OFF
+    ).takeIf {
+        it == androidx.media3.common.Player.REPEAT_MODE_OFF ||
+            it == androidx.media3.common.Player.REPEAT_MODE_ONE ||
+            it == androidx.media3.common.Player.REPEAT_MODE_ALL
+    } ?: androidx.media3.common.Player.REPEAT_MODE_OFF
+
+    fun setPlaybackRepeatMode(mode: Int) {
+        prefs.edit().putInt(KEY_PLAYBACK_REPEAT_MODE, mode).apply()
+    }
+
+    fun getPlaybackShuffleSeed(): Long = prefs.getLong(KEY_PLAYBACK_SHUFFLE_SEED, 0L)
+
+    fun setPlaybackShuffleSeed(seed: Long) {
+        prefs.edit().putLong(KEY_PLAYBACK_SHUFFLE_SEED, seed).apply()
+    }
+
+    fun getSleepTimerEndsAt(): Long = prefs.getLong(KEY_SLEEP_TIMER_ENDS_AT, 0L)
+
+    fun isSleepTimerEndOfTrack(): Boolean =
+        prefs.getBoolean(KEY_SLEEP_TIMER_END_OF_TRACK, false)
+
+    fun saveSleepTimer(endsAt: Long, endOfTrack: Boolean) {
+        prefs.edit()
+            .putLong(KEY_SLEEP_TIMER_ENDS_AT, endsAt)
+            .putBoolean(KEY_SLEEP_TIMER_END_OF_TRACK, endOfTrack)
+            .apply()
+    }
+
+    fun clearSleepTimer() {
+        prefs.edit()
+            .remove(KEY_SLEEP_TIMER_ENDS_AT)
+            .remove(KEY_SLEEP_TIMER_END_OF_TRACK)
+            .apply()
     }
 
     /**

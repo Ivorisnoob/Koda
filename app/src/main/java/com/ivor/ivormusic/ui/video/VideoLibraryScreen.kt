@@ -1103,6 +1103,10 @@ fun VideoPlaylistDetail(
     // "play this next" has the most to say - the whole list is right there -
     // and until now it was the one place a video card did nothing on hold.
     var optionsTarget by remember { mutableStateOf<VideoItem?>(null) }
+    // Removal from an account playlist is a write against YouTube - from Watch
+    // Later or Liked it unlikes outright - so it confirms first. A device
+    // playlist stays instant, same as music mode's local playlists.
+    var videoPendingRemoval by remember { mutableStateOf<VideoItem?>(null) }
     optionsTarget?.let { video ->
         VideoOptionsSheetHost(
             video = video,
@@ -1114,6 +1118,43 @@ fun VideoPlaylistDetail(
             // put it in yourself, is the app arguing with the user. Remove is
             // the tool here, and it is on the row already.
             allowNotInterested = false
+        )
+    }
+
+    videoPendingRemoval?.let { video ->
+        AlertDialog(
+            onDismissRequest = { videoPendingRemoval = null },
+            shape = RoundedCornerShape(32.dp),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            title = { Text("Remove from your YouTube account?") },
+            text = {
+                Text(
+                    when (playlist.playlistId) {
+                        "WL" -> "This removes \"${video.title}\" from Watch Later on your YouTube account, everywhere you use YouTube."
+                        "LL" -> "This removes the like from \"${video.title}\" on your YouTube account, everywhere you use YouTube."
+                        else -> "This removes \"${video.title}\" from \"${playlist.title}\" on your YouTube account, everywhere you use YouTube."
+                    }
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.removePlaylistVideo(playlist.playlistId, video)
+                        videoPendingRemoval = null
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError
+                    )
+                ) {
+                    Text("Remove")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { videoPendingRemoval = null }) {
+                    Text("Cancel")
+                }
+            }
         )
     }
 
@@ -1241,7 +1282,10 @@ fun VideoPlaylistDetail(
                         },
                         onLongClick = { optionsTarget = video },
                         onRemove = if (allowRemove) {
-                            { viewModel.removePlaylistVideo(playlist.playlistId, video) }
+                            {
+                                if (isLocal) viewModel.removePlaylistVideo(playlist.playlistId, video)
+                                else videoPendingRemoval = video
+                            }
                         } else null,
                         removeLabel = when (playlist.playlistId) {
                             "WL" -> "Remove from Watch Later"
