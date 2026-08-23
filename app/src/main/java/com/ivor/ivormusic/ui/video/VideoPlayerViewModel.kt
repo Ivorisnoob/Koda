@@ -40,6 +40,7 @@ import com.ivor.ivormusic.data.VttCue
 import com.ivor.ivormusic.data.YouTubeRepository
 import com.ivor.ivormusic.data.ThemePreferences
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
@@ -55,6 +56,30 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+
+internal enum class VideoEndAction {
+    STOP,
+    NEXT_IN_QUEUE,
+    NEXT_RELATED
+}
+
+/**
+ * Resolves one completed video into exactly one outcome. Keeping this decision
+ * free of ExoPlayer makes the precedence explicit and unit-testable: autoplay
+ * is the master gate, a user-chosen playlist beats recommendations, and PiP
+ * may continue that playlist but never wanders into related videos.
+ */
+internal fun resolveVideoEndAction(
+    autoplayEnabled: Boolean,
+    queueHasNext: Boolean,
+    isInPipMode: Boolean,
+    hasRelatedVideo: Boolean
+): VideoEndAction = when {
+    !autoplayEnabled -> VideoEndAction.STOP
+    queueHasNext -> VideoEndAction.NEXT_IN_QUEUE
+    !isInPipMode && hasRelatedVideo -> VideoEndAction.NEXT_RELATED
+    else -> VideoEndAction.STOP
+}
 
 @UnstableApi
 class VideoPlayerViewModel(application: android.app.Application) : AndroidViewModel(application) {
@@ -122,6 +147,15 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     val bufferedProgress: StateFlow<Float> = _bufferedProgress
 
     private var progressJob: Job? = null
+
+    // Initial stream resolution and watch-next metadata belong to one specific
+    // startVideo invocation. Cancellation handles the normal case; the
+    // generation check is still required because NewPipe's blocking fetch can
+    // finish after cancellation and because a forced retry can reuse the same
+    // video id.
+    private var streamLoadJob: Job? = null
+    private var watchNextJob: Job? = null
+    private var videoLoadGeneration = 0L
 
     // Qualities and Related
     private val _availableQualities = MutableStateFlow<List<VideoQuality>>(emptyList())
@@ -281,9 +315,16 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         _isInPipMode = inPip
     }
 
-    // Repeat sticks across videos and app restarts, so seed it from prefs
-    // rather than defaulting to off on every player creation.
-    private val _isLooping = MutableStateFlow(themePreferences.isVideoRepeatEnabled())
+    // End-of-video behavior sticks across videos and app restarts. Autoplay is
+    // the master gate: when it is off, a stored repeat flag is ignored and
+    // normalized away during init so the UI and ExoPlayer cannot disagree.
+    private val _isAutoplayEnabled =
+        MutableStateFlow(themePreferences.isVideoAutoplayEnabled())
+    val isAutoplayEnabled: StateFlow<Boolean> = _isAutoplayEnabled.asStateFlow()
+
+    private val _isLooping = MutableStateFlow(
+        _isAutoplayEnabled.value && themePreferences.isVideoRepeatEnabled()
+    )
     val isLooping: StateFlow<Boolean> = _isLooping.asStateFlow()
 
     private val _playbackSpeed = MutableStateFlow(1f)
@@ -526,6 +567,10 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     init {
         observeProfileSwitches()
 
+        if (!_isAutoplayEnabled.value && themePreferences.isVideoRepeatEnabled()) {
+            themePreferences.setVideoRepeatEnabled(false)
+        }
+
         // Near-instant first frame (~1s buffered) plus an aggressive
         // read-ahead: up to 5 minutes (min == max: continuous top-up),
         // hard-capped at 200MB of sample RAM so high-bitrate 4K streams
@@ -603,36 +648,41 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                         queueErrorSkipCount = 0
                     }
                     if (playbackState == Player.STATE_ENDED) {
-                        // Repeat and auto-play are mutually exclusive: looping
-                        // repeats the current video, otherwise playback moves on.
-                        if (!_isLooping.value) {
-                            val activeQueue = _queue.value
-                            when {
-                                // A playlist is the strongest statement of what
-                                // to play next there is, so it beats the
-                                // recommendations outright - and it advances in
-                                // PiP too. The rule below about staying on the
-                                // video the user put in the window is about not
-                                // wandering off into recommendations; a queue
-                                // the user built by opening a playlist is
-                                // exactly where they meant to go.
-                                activeQueue != null && activeQueue.hasNext && _exoPlayer != null ->
-                                    viewModelScope.launch { playQueueIndex(activeQueue.index + 1) }
+                        // Repeat-one normally prevents STATE_ENDED entirely.
+                        // The guard keeps a transient player/state mismatch
+                        // from advancing away from a video meant to loop.
+                        if (_isLooping.value) return
 
-                                // Off the end of the playlist (or never in one):
-                                // fall back to the related video, suppressed
-                                // during PiP so the user returns to the video
-                                // they put there.
-                                !_isInPipMode -> {
-                                    // The filtered list, not the raw one:
-                                    // auto-playing a video the user just said
-                                    // "not interested" to is the single most
-                                    // annoying way to get this wrong.
-                                    val nextVideo = relatedVideos.value.firstOrNull()
-                                    // Guard: ensure ViewModel/player is still valid before launching
-                                    if (nextVideo != null && _exoPlayer != null) {
-                                        viewModelScope.launch { playVideo(nextVideo) }
-                                    }
+                        val activeQueue = _queue.value
+                        val nextRelated = relatedVideos.value.firstOrNull()
+                        when (
+                            resolveVideoEndAction(
+                                autoplayEnabled = _isAutoplayEnabled.value,
+                                queueHasNext = activeQueue?.hasNext == true,
+                                isInPipMode = _isInPipMode,
+                                hasRelatedVideo = nextRelated != null
+                            )
+                        ) {
+                            VideoEndAction.STOP -> {
+                                // STATE_ENDED is not always exposed as paused
+                                // by media controls. Clear playWhenReady so the
+                                // UI, PiP and notification all agree it stopped.
+                                _exoPlayer?.pause()
+                            }
+
+                            VideoEndAction.NEXT_IN_QUEUE -> {
+                                if (activeQueue != null && _exoPlayer != null) {
+                                    viewModelScope.launch { playQueueIndex(activeQueue.index + 1) }
+                                }
+                            }
+
+                            VideoEndAction.NEXT_RELATED -> {
+                                // Use the filtered list: autoplaying something
+                                // the viewer marked not interested is worse than
+                                // stopping. The resolver already suppresses this
+                                // branch while PiP is active.
+                                if (nextRelated != null && _exoPlayer != null) {
+                                    viewModelScope.launch { playVideo(nextRelated) }
                                 }
                             }
                         }
@@ -1082,10 +1132,26 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         }
     }
 
+    fun setAutoplayEnabled(enabled: Boolean) {
+        _isAutoplayEnabled.value = enabled
+        themePreferences.setVideoAutoplayEnabled(enabled)
+        if (!enabled) setLooping(false)
+    }
+
     fun toggleLooping() {
-        _isLooping.value = !_isLooping.value
-        _exoPlayer?.repeatMode = if (_isLooping.value) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
-        themePreferences.setVideoRepeatEnabled(_isLooping.value)
+        val enableLoop = !_isLooping.value
+        // A direct tap on Loop should work, not bounce against a disabled
+        // master setting. It opts back into end-of-video behavior explicitly.
+        if (enableLoop && !_isAutoplayEnabled.value) {
+            setAutoplayEnabled(true)
+        }
+        setLooping(enableLoop)
+    }
+
+    private fun setLooping(enabled: Boolean) {
+        _isLooping.value = enabled
+        _exoPlayer?.repeatMode = if (enabled) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
+        themePreferences.setVideoRepeatEnabled(enabled)
     }
 
     /** Set the playback speed for the current video. Resets to 1x on video change. */
@@ -1293,6 +1359,10 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             return
         }
 
+        val loadGeneration = ++videoLoadGeneration
+        streamLoadJob?.cancel()
+        watchNextJob?.cancel()
+
         // Decide from the item, not merely from the queue that introduced it.
         // This keeps ad-hoc online items added after an offline download from
         // being mislabeled or having their network features suppressed.
@@ -1311,6 +1381,8 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         // Zero the progress for the new video rather than letting the previous
         // one's position sit in the seek bar until the first poll lands.
         resetProgress()
+        _availableQualities.value = emptyList()
+        _currentQuality.value = null
         _relatedVideos.value = emptyList() // Clear previous related
         _chapters.value = emptyList() // Clear previous chapters
         _seekPreview.value = null // Never show a frame from the previous video
@@ -1410,17 +1482,20 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
         // ========== PHASE 1: START PLAYBACK ASAP (fast) ==========
         // Uses lightweight getVideoStreamQualities() which ONLY fetches stream URLs
-        viewModelScope.launch {
+        streamLoadJob = viewModelScope.launch {
             try {
+                if (!isCurrentVideoLoad(video.videoId, loadGeneration)) return@launch
                 _exoPlayer?.stop()
                 _exoPlayer?.clearMediaItems()
                 
                 // Add timeout for stream fetching to prevent "stuck in buffering"
                 kotlinx.coroutines.withTimeout(15000L) {
                     // FAST: Get stream URLs only (no metadata, no related, no channel avatar)
-                    val qualities = youtubeRepository.getVideoStreamQualities(video.videoId)
+                    val streamResult = youtubeRepository.getVideoStreamResult(video.videoId)
+                    if (!isCurrentVideoLoad(video.videoId, loadGeneration)) return@withTimeout
+                    val qualities = streamResult.qualities
                     _availableQualities.value = qualities
-                    _seekPreview.value = youtubeRepository.getCachedSeekPreview(video.videoId)
+                    _seekPreview.value = streamResult.seekPreview
                     _isLive.value = qualities.any { it.isLive }
                     if (_isLive.value) {
                         // Some entry points do not know a broadcast is live
@@ -1446,10 +1521,11 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                             // FORCE PLAY: Ensure we override any previous paused state
                             _exoPlayer?.play()
                         }
-                        _isLoading.value = false // ✅ Playback starting NOW!
+                        _isLoading.value = false // Playback is starting now.
                     } else {
                         // Fallback to legacy stream URL
                         val streamUrl = youtubeRepository.getVideoStreamUrl(video.videoId)
+                        if (!isCurrentVideoLoad(video.videoId, loadGeneration)) return@withTimeout
                         if (streamUrl != null) {
                             _currentQuality.value = VideoQuality(
                                 resolution = "Auto",
@@ -1475,12 +1551,18 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                     }
                 }
             } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
-                _playbackError.value = Exception("Connection timed out. Please check your internet.")
-                _isLoading.value = false
+                if (isCurrentVideoLoad(video.videoId, loadGeneration)) {
+                    _playbackError.value = Exception("Connection timed out. Please check your internet.")
+                    _isLoading.value = false
+                }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                e.printStackTrace()
-                _playbackError.value = e
-                _isLoading.value = false
+                if (isCurrentVideoLoad(video.videoId, loadGeneration)) {
+                    KLog.e("VideoPlayerVM", "Initial stream load failed for ${video.videoId}", e)
+                    _playbackError.value = e
+                    _isLoading.value = false
+                }
             }
         }
         
@@ -1488,11 +1570,11 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         // One watch-next call answers all three (the old code paid for an
         // engagement /next call AND a full NewPipe extraction here, competing
         // with Phase 1's initial buffering for bandwidth).
-        viewModelScope.launch {
+        watchNextJob = viewModelScope.launch {
             try {
                 val watchNext = youtubeRepository.getWatchNextData(video.videoId, video)
                 // Guard against a video switch that happened mid-flight
-                if (_currentVideo.value?.videoId != video.videoId) return@launch
+                if (!isCurrentVideoLoad(video.videoId, loadGeneration)) return@launch
                 _engagement.value = watchNext.engagement
                 if (watchNext.updatedVideoItem != null) {
                     val wasNameless = _currentVideo.value?.title.isNullOrBlank()
@@ -1511,9 +1593,13 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                 // Opening the chat panel now costs one poll instead of a second
                 // watch-next round trip plus its parse.
                 liveChatContinuation = watchNext.liveChatContinuation
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 // Phase 2 errors are non-critical - playback already started
-                KLog.w("VideoPlayerVM", "Failed to load watch-next data", e)
+                if (isCurrentVideoLoad(video.videoId, loadGeneration)) {
+                    KLog.w("VideoPlayerVM", "Failed to load watch-next data", e)
+                }
             }
         }
         
@@ -1542,6 +1628,9 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             }
         }
     }
+
+    private fun isCurrentVideoLoad(videoId: String, generation: Long): Boolean =
+        videoLoadGeneration == generation && _currentVideo.value?.videoId == videoId
 
     /**
      * Pick the starting quality based on the Settings preference for the
@@ -1846,6 +1935,11 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         if (_isPlaying.value) {
             _exoPlayer?.pause()
         } else {
+            // After autoplay deliberately stops at the end, Play means replay
+            // this video. ExoPlayer does not leave STATE_ENDED on play() alone.
+            if (_exoPlayer?.playbackState == Player.STATE_ENDED) {
+                _exoPlayer?.seekToDefaultPosition()
+            }
             _exoPlayer?.play()
         }
     }
@@ -2559,6 +2653,10 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         qualityChangeListener = null
         sourceRecoveryJob?.cancel()
         sourceRecoveryJob = null
+        streamLoadJob?.cancel()
+        streamLoadJob = null
+        watchNextJob?.cancel()
+        watchNextJob = null
         progressJob?.cancel()
         progressJob = null
         stopLivePolling()

@@ -428,6 +428,8 @@ The milestones behind us, kept here so the direction of travel is visible.
 - Local-first lyrics for device songs (`.lrc`/`.ttml` sidecars and embedded tags), multi-provider online fallbacks with TTML, QRC, Enhanced LRC, line and plain text, plus letter-by-letter highlighting from real word timings
 - Full-height expanded music players on Android 11 and 12, measured from the edge-to-edge window rather than the inset-excluding resource configuration
 - In-app video with a personalized feed, chapters, captions, and comments
+- Video scrubbing with chapter-aligned buffering and bounded storyboard previews that stay stable through release, control auto-hide, and rapid video switches
+- A restrained video chrome with one scroll-safe Playback settings surface for secondary controls, plus durable Autoplay and Loop behavior that cannot contradict itself
 - Eight player styles and a 27-palette color system with dynamic color and AMOLED
 - Listening statistics with play charts, streaks, and top artists
 - Offline downloads for music and video, written to the system Downloads folder

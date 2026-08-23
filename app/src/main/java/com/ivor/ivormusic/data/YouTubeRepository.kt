@@ -5,6 +5,7 @@ import com.ivor.ivormusic.util.KLog
 import android.content.Context
 import android.net.Uri
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.withLock
@@ -4397,7 +4398,15 @@ class YouTubeRepository(private val context: Context) {
      * Does NOT fetch channel avatar, related videos, or extra metadata.
      * Use this to start playback ASAP, then call getVideoDetails() for the rest.
      */
-    suspend fun getVideoStreamQualities(videoId: String): List<VideoQuality> = withContext(Dispatchers.IO) {
+    suspend fun getVideoStreamQualities(videoId: String): List<VideoQuality> =
+        getVideoStreamResult(videoId).qualities
+
+    /**
+     * Resolve the quality ladder and the storyboard harvested by that exact
+     * extraction as one value. Callers that render a scrub preview must use
+     * this API instead of trying to coordinate two independently mutable reads.
+     */
+    suspend fun getVideoStreamResult(videoId: String): VideoStreamResult = withContext(Dispatchers.IO) {
         // NewPipe 0.26.3+ deliberately resolves VOD streams through Android's
         // reel endpoint and a visionOS fallback, both of which avoid the WEB
         // client's SABR-only response. Keep that maintained client selection in
@@ -4406,14 +4415,16 @@ class YouTubeRepository(private val context: Context) {
         // succeeds, so accepting that ladder first creates a source that starts
         // normally and then dies part-way through playback.
         try {
-            val extractedQualities = getVideoQualitiesFromNewPipe(videoId)
-            if (extractedQualities.isNotEmpty()) {
+            val extracted = getVideoStreamsFromNewPipe(videoId)
+            if (extracted.qualities.isNotEmpty()) {
                 KLog.i(
                     "YouTubeRepo",
-                    "Video qualities via NewPipe: ${extractedQualities.size} for $videoId"
+                    "Video qualities via NewPipe: ${extracted.qualities.size} for $videoId"
                 )
-                return@withContext extractedQualities
+                return@withContext extracted
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.w(
                 "YouTubeRepo",
@@ -4425,10 +4436,12 @@ class YouTubeRepository(private val context: Context) {
         // Last-resort fallback. It is still useful for a client-specific edge
         // case, but it must not be the normal VOD path for the reason above.
         try {
-            getVideoQualitiesFromInnerTube(videoId)
+            VideoStreamResult(getVideoQualitiesFromInnerTube(videoId))
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e("YouTubeRepo", "Error getting video stream qualities", e)
-            emptyList()
+            VideoStreamResult(emptyList())
         }
     }
 
@@ -4440,16 +4453,16 @@ class YouTubeRepository(private val context: Context) {
      * content is not a URI and handing it to Media3's progressive source fails
      * before the first frame.
      */
-    private fun getVideoQualitiesFromNewPipe(videoId: String): List<VideoQuality> {
+    private fun getVideoStreamsFromNewPipe(videoId: String): VideoStreamResult {
         val ytService = ServiceList.all().find { it.serviceInfo.name == "YouTube" }
-            ?: return emptyList()
+            ?: return VideoStreamResult(emptyList())
         val extractor = ytService.getStreamExtractor("https://www.youtube.com/watch?v=$videoId")
         extractor.fetchPage()
 
         // Storyboards ride the same extraction as the stream URLs. Prefer the
         // largest usable frameset so a fullscreen scrub preview stays sharp;
         // failure is best-effort and must never hold playback resolution up.
-        cachedSeekPreview = runCatching {
+        val seekPreview = runCatching {
             extractor.frames
                 .asSequence()
                 .filter {
@@ -4459,7 +4472,7 @@ class YouTubeRepository(private val context: Context) {
                 }
                 .maxByOrNull { it.frameWidth * it.frameHeight }
                 ?.let {
-                    videoId to VideoSeekPreview(
+                    VideoSeekPreview(
                         pageUrls = it.urls,
                         frameWidthPx = it.frameWidth,
                         frameHeightPx = it.frameHeight,
@@ -4502,7 +4515,7 @@ class YouTubeRepository(private val context: Context) {
         }
 
         // Progressive live entries are segment endpoints, not complete files.
-        if (isLiveStream) return qualities
+        if (isLiveStream) return VideoStreamResult(qualities)
 
         val bestAudio = originalTrackAudioStreams(extractedAudioStreams)
             .asSequence()
@@ -4572,7 +4585,7 @@ class YouTubeRepository(private val context: Context) {
         // NewPipe exposes several codecs for the same label. Retain the AVC
         // MP4 variant when one exists so the download worker is not left with
         // only a VP9/WebM entry after de-duplication.
-        return qualities
+        val sortedQualities = qualities
             .groupBy { it.resolution }
             .mapNotNull { (_, variants) ->
                 variants.maxWithOrNull(
@@ -4586,14 +4599,8 @@ class YouTubeRepository(private val context: Context) {
                 compareByDescending<VideoQuality> { height(it.resolution) }
                     .thenByDescending { fps(it.resolution) }
             )
+        return VideoStreamResult(sortedQualities, seekPreview)
     }
-
-    @Volatile
-    private var cachedSeekPreview: Pair<String, VideoSeekPreview>? = null
-
-    /** Storyboard harvested by the most recent NewPipe stream extraction. */
-    fun getCachedSeekPreview(videoId: String): VideoSeekPreview? =
-        cachedSeekPreview?.takeIf { it.first == videoId }?.second
 
     /**
      * Resolve the full video quality ladder via InnerTube: ANDROID_VR first

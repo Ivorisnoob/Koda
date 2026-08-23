@@ -340,6 +340,18 @@ data class VideoSeekPreviewFrame(
 )
 
 /**
+ * The atomic result of resolving a video's playback streams.
+ *
+ * The storyboard belongs to the same NewPipe extraction as [qualities]. Keeping
+ * them in one value prevents a second video resolution from overwriting a
+ * repository-level "last preview" between the two reads.
+ */
+data class VideoStreamResult(
+    val qualities: List<VideoQuality>,
+    val seekPreview: VideoSeekPreview? = null,
+)
+
+/**
  * Everything the video player needs from a single watch-next (/next) call:
  * engagement state, enriched metadata, related videos and chapters.
  */

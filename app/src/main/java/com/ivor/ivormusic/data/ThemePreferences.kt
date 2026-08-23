@@ -406,6 +406,7 @@ class ThemePreferences(context: Context) {
          * and written when the user changes them in the player itself.
          */
         private const val KEY_VIDEO_REPEAT = "video_repeat"
+        private const val KEY_VIDEO_AUTOPLAY = "video_autoplay"
         private const val KEY_VIDEO_BRIGHTNESS = "video_brightness"
 
         /** Stored brightness sentinel meaning "never set, follow the system". */
@@ -1020,6 +1021,18 @@ class ThemePreferences(context: Context) {
 
     fun setVideoRepeatEnabled(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_VIDEO_REPEAT, enabled).apply()
+    }
+
+    /**
+     * Whether a finished video may advance to the next playlist or related
+     * item. Defaults to on to preserve the player's historical behaviour.
+     * Loop is governed by the same end-of-video master switch in the player,
+     * so disabling autoplay also disables repeat there.
+     */
+    fun isVideoAutoplayEnabled(): Boolean = prefs.getBoolean(KEY_VIDEO_AUTOPLAY, true)
+
+    fun setVideoAutoplayEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_VIDEO_AUTOPLAY, enabled).apply()
     }
 
     /**
