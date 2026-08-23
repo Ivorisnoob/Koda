@@ -3,7 +3,6 @@ package com.ivor.ivormusic.ui.video
 import android.app.Activity
 import android.content.pm.ActivityInfo
 import android.os.Build
-import android.view.WindowManager
 import androidx.annotation.OptIn
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -369,22 +368,9 @@ fun VideoPlayerContent(
         val window = activity?.window
         val insetsController = window?.let { WindowCompat.getInsetsController(it, it.decorView) }
 
-        fun setCutoutMode(mode: Int) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && window != null) {
-                window.attributes = window.attributes.also { it.layoutInDisplayCutoutMode = mode }
-            }
-        }
-
         if (isFullscreen) {
             // Allow content to draw behind system bars first
             window?.let { WindowCompat.setDecorFitsSystemWindows(it, false) }
-            // Draw into the camera cutout area too, otherwise the system
-            // letterboxes the window and background shows around the notch
-            // The moving image is background content and should use every
-            // physical pixel, including waterfall/corner-cutout layouts. The
-            // controls independently apply displayCutoutPadding, so only the
-            // video and its gradients extend behind camera hardware.
-            setCutoutMode(WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS)
             // A vertical video fills the screen held upright, so fullscreen
             // holds it there rather than rotating into a letterboxed strip.
             // Everything else gets sensor landscape, both directions, like
@@ -401,13 +387,11 @@ fun VideoPlayerContent(
         } else {
             activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
             insetsController?.show(WindowInsetsCompat.Type.systemBars())
-            setCutoutMode(WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT)
         }
 
         onDispose {
             activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
             insetsController?.show(WindowInsetsCompat.Type.systemBars())
-            setCutoutMode(WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT)
             // The app is edge-to-edge (enableEdgeToEdge in MainActivity), so
             // keep decorFits false — restoring true here used to break the
             // edge-to-edge layout for the rest of the session
@@ -691,7 +675,6 @@ fun VideoPlayerContent(
                         modifier = Modifier
                             .fillMaxHeight()
                             .width(400.dp)
-                            .displayCutoutPadding()
                             .padding(end = 8.dp, top = 8.dp, bottom = 8.dp)
                             .clip(RoundedCornerShape(20.dp))
                     )
@@ -728,10 +711,6 @@ fun VideoPlayerContent(
                         modifier = Modifier
                             .fillMaxHeight()
                             .width(landscapeChatWidth)
-                            // Immersive fullscreen hides the system bars but
-                            // not the camera cutout, which is exactly where a
-                            // right-docked panel lands in landscape.
-                            .displayCutoutPadding()
                             .padding(end = 8.dp, top = 8.dp, bottom = 8.dp)
                             // Swallow taps: the gesture surface underneath
                             // would otherwise toggle the player controls when
@@ -1295,7 +1274,6 @@ fun VideoPlayerContent(
                 Surface(
                     modifier = Modifier
                         .fillMaxHeight()
-                        .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.End))
                         .padding(12.dp)
                         .width(360.dp),
                     shape = RoundedCornerShape(28.dp),

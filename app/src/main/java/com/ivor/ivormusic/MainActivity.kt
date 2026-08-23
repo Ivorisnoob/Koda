@@ -3,6 +3,7 @@ package com.ivor.ivormusic
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -135,6 +136,15 @@ class MainActivity : ComponentActivity() {
         requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
 
         enableEdgeToEdge()
+        // Treat camera cutouts as usable edge-to-edge space everywhere. The
+        // old video-only toggle restored DEFAULT on exit, which could
+        // letterbox the rest of the app for the remainder of the session.
+        // Controls still handle status/navigation bars independently; only
+        // the notch-specific exclusion is deliberately ignored.
+        window.attributes = window.attributes.also {
+            it.layoutInDisplayCutoutMode =
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+        }
 
         setContent {
             val themeViewModel: ThemeViewModel = viewModel()
