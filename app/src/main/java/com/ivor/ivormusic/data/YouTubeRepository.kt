@@ -3515,11 +3515,9 @@ class YouTubeRepository(private val context: Context) {
     }
 
     /**
-     * Videos of one playlist via browse VL<playlistId> (first page, up to 100).
-     * Works for Watch Later ("WL") and Liked videos ("LL") too — both need
-     * login. The renderer differs per playlist surface: WL and regular
-     * playlists come as playlistVideoRenderers, LL comes as plain video
-     * lockupViewModels — parse whichever the response contains.
+     * The first page of one video playlist for browsing and playback. A normal
+     * open stays one network call; [getCompletePlaylistVideos] pays for every
+     * continuation only when an operation really needs the whole list.
      */
     suspend fun getPlaylistVideos(playlistId: String): List<VideoItem> = withContext(Dispatchers.IO) {
         try {
@@ -3534,9 +3532,6 @@ class YouTubeRepository(private val context: Context) {
             }
             val lockups = mutableListOf<org.json.JSONObject>()
             findObjectsByKey(root, "lockupViewModel", lockups)
-            // Signed out, a playlist's videos arrive as lockups rather than
-            // playlistVideoRenderers (verified August 2026), so this is the
-            // normal path there rather than the fallback it reads as.
             lockups.mapNotNull { parseLockupViewModel(it) }
                 .ifEmpty { getPlaylistVideosAnonymous(playlistId) }
         } catch (e: Exception) {
@@ -3546,27 +3541,165 @@ class YouTubeRepository(private val context: Context) {
     }
 
     /**
+     * Resolve a playlist only if one of the two independent paths reaches its
+     * real end. Used by whole-playlist download; returning null on an incomplete
+     * chain prevents a button labelled "full playlist" from silently queuing
+     * only the first exact page boundary.
+     *
+     * The WEB renderer differs per session: an authenticated response can carry
+     * `playlistVideoRenderer`s, while an anonymous public playlist uses
+     * `lockupViewModel`s. Verified August 2026: page one puts its playlist token
+     * inside `itemSectionRenderer`; later pages arrive under
+     * `appendContinuationItemsAction.continuationItems`.
+     */
+    suspend fun getCompletePlaylistVideos(playlistId: String): List<VideoItem>? =
+        withContext(Dispatchers.IO) {
+            val browseResult = getPlaylistVideosFromBrowse(playlistId)
+            if (browseResult.complete && browseResult.videos.isNotEmpty()) {
+                return@withContext browseResult.videos
+            }
+
+            val newPipeResult = getCompletePlaylistVideosFromNewPipe(playlistId)
+            if (newPipeResult.complete && newPipeResult.videos.isNotEmpty()) {
+                return@withContext newPipeResult.videos
+            }
+
+            val partialSize = maxOf(browseResult.videos.size, newPipeResult.videos.size)
+            if (partialSize > 0) {
+                KLog.w(
+                    "YouTubeRepo",
+                    "Refusing incomplete full-playlist load for $playlistId ($partialSize videos resolved)"
+                )
+            }
+            null
+        }
+
+    private data class VideoPlaylistLoadResult(
+        val videos: List<VideoItem>,
+        val complete: Boolean
+    )
+
+    private fun getPlaylistVideosFromBrowse(playlistId: String): VideoPlaylistLoadResult {
+        val browseId = if (playlistId.startsWith("VL")) playlistId else "VL$playlistId"
+        val videos = mutableListOf<VideoItem>()
+        val seenTokens = mutableSetOf<String>()
+        var json = fetchYouTubeBrowse(browseId)
+        if (json.isEmpty()) return VideoPlaylistLoadResult(emptyList(), complete = false)
+
+        return try {
+            while (true) {
+                val root = org.json.JSONObject(json)
+                val renderers = mutableListOf<org.json.JSONObject>()
+                findObjectsByKey(root, "playlistVideoRenderer", renderers)
+                if (renderers.isNotEmpty()) {
+                    videos += renderers.mapNotNull { parsePlaylistVideoRenderer(it) }
+                } else {
+                    val lockups = mutableListOf<org.json.JSONObject>()
+                    findObjectsByKey(root, "lockupViewModel", lockups)
+                    videos += lockups.mapNotNull { parseLockupViewModel(it) }
+                }
+
+                val token = extractVideoPlaylistContinuationToken(root) ?: break
+                if (!seenTokens.add(token)) {
+                    KLog.w("YouTubeRepo", "Repeated video playlist continuation for $playlistId")
+                    return VideoPlaylistLoadResult(videos, complete = false)
+                }
+                json = fetchYouTubeBrowseContinuation(token)
+                if (json.isEmpty()) {
+                    KLog.w(
+                        "YouTubeRepo",
+                        "Video playlist continuation failed for $playlistId after ${videos.size} videos"
+                    )
+                    return VideoPlaylistLoadResult(videos, complete = false)
+                }
+            }
+            VideoPlaylistLoadResult(videos, complete = true)
+        } catch (e: Exception) {
+            KLog.e("YouTubeRepo", "Video playlist browse failed for $playlistId", e)
+            VideoPlaylistLoadResult(videos, complete = false)
+        }
+    }
+
+    private fun extractVideoPlaylistContinuationToken(root: org.json.JSONObject): String? {
+        val scopes = mutableListOf<org.json.JSONObject>()
+        findObjectsByKey(root, "itemSectionRenderer", scopes)
+        findObjectsByKey(root, "playlistVideoListRenderer", scopes)
+        findObjectsByKey(root, "appendContinuationItemsAction", scopes)
+        findObjectsByKey(root, "reloadContinuationItemsCommand", scopes)
+        return scopes.asSequence().mapNotNull { scope ->
+            val tokens = mutableListOf<String>()
+            findContinuationTokens(scope, tokens)
+            tokens.firstOrNull()
+        }.firstOrNull()
+    }
+
+    private fun fetchYouTubeBrowseContinuation(token: String): String =
+        postWatchApi(
+            "browse",
+            org.json.JSONObject()
+                .put("context", webContext())
+                .put("continuation", token)
+        ).orEmpty()
+
+    /**
      * A playlist's videos through NewPipe's playlist page, as the last resort
      * when the browse above parsed to nothing.
      *
-     * **Not the signed-out path**, which was the first guess and the wrong one:
-     * NewPipe's playlist extractor collects `playlistVideoRenderer`s, and a
-     * signed-out browse returns lockups, so it comes back with zero items and
-     * *no exception* - an empty playlist page with nothing in the log to say
-     * why. It is kept because it reads a genuinely different response shape,
-     * which is exactly what is wanted in a fallback, and because it is what the
-     * music side leads with (`getPlaylistInternal`, which then falls back to an
-     * anonymous browse of its own - the same pairing, in the other order).
+     * **Not the primary signed-out path**: page-one browsing uses WEB lockups,
+     * while this is the independent full-load fallback. NewPipe's playlist
+     * extractor collects `playlistVideoRenderer`s, and a signed-out browse can
+     * therefore come back with zero items and *no exception* when that shape
+     * changes. It remains valuable here precisely because its page tokens are
+     * independent from WEB's.
      *
-     * First page only, matching the browse: neither follows continuations, and
-     * the same playlist coming back a different length depending on which path
-     * served it would be worse than both being short.
+     * Every NewPipe continuation is followed. If one fails, the rows already
+     * resolved are returned as an explicitly incomplete result so the caller
+     * can reject the batch instead of presenting a partial one as complete.
      */
-    private suspend fun getPlaylistVideosAnonymous(playlistId: String): List<VideoItem> =
+    private suspend fun getCompletePlaylistVideosFromNewPipe(
+        playlistId: String
+    ): VideoPlaylistLoadResult =
         withContext(Dispatchers.IO) {
             val listId = playlistId.removePrefix("VL")
             // The account's own feeds have no public page to fetch: asking for
             // one anonymously is a guaranteed miss, so skip the request.
+            if (listId == "WL" || listId == "LL" || listId == "LM") {
+                return@withContext VideoPlaylistLoadResult(emptyList(), complete = false)
+            }
+            try {
+                val ytService = ServiceList.all().find { it.serviceInfo.name == "YouTube" }
+                    ?: return@withContext VideoPlaylistLoadResult(emptyList(), complete = false)
+                val extractor = ytService.getPlaylistExtractor(
+                    "https://www.youtube.com/playlist?list=$listId"
+                )
+                extractor.fetchPage()
+                val videos = mutableListOf<VideoItem>()
+                var page = extractor.initialPage
+                videos += page.items.toVideoItems()
+                while (page.hasNextPage()) {
+                    try {
+                        page = extractor.getPage(page.nextPage)
+                        videos += page.items.toVideoItems()
+                    } catch (e: Exception) {
+                        KLog.w(
+                            "YouTubeRepo",
+                            "Anonymous video playlist continuation failed for $listId after ${videos.size} videos",
+                            e
+                        )
+                        return@withContext VideoPlaylistLoadResult(videos, complete = false)
+                    }
+                }
+                VideoPlaylistLoadResult(videos, complete = true)
+            } catch (e: Exception) {
+                KLog.e("YouTubeRepo", "Anonymous playlist fetch failed for $listId", e)
+                VideoPlaylistLoadResult(emptyList(), complete = false)
+            }
+        }
+
+    /** First NewPipe page only, matching [getPlaylistVideos]'s browse cost. */
+    private suspend fun getPlaylistVideosAnonymous(playlistId: String): List<VideoItem> =
+        withContext(Dispatchers.IO) {
+            val listId = playlistId.removePrefix("VL")
             if (listId == "WL" || listId == "LL" || listId == "LM") return@withContext emptyList()
             try {
                 val ytService = ServiceList.all().find { it.serviceInfo.name == "YouTube" }

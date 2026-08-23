@@ -101,6 +101,7 @@ import com.ivor.ivormusic.ui.components.ExpressivePullToRefresh
 import com.ivor.ivormusic.ui.components.PlaylistRowSkeleton
 import com.ivor.ivormusic.ui.components.SkeletonList
 import com.ivor.ivormusic.ui.components.PredictiveBackStack
+import com.ivor.ivormusic.ui.downloads.VideoPlaylistDownloadAction
 import com.ivor.ivormusic.ui.home.HomeViewModel
 
 /**
@@ -1256,6 +1257,20 @@ fun VideoPlaylistDetail(
                 ),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
+                item {
+                    // A batch download is a playlist action, not one more row
+                    // menu item. Keeping it above the list makes the action
+                    // reachable without obscuring playback or removal controls.
+                    VideoPlaylistDownloadAction(
+                        playlistId = playlist.playlistId,
+                        playlistTitle = playlist.title,
+                        videos = videos,
+                        playlistCountText = playlist.videoCountText,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                    )
+                }
                 // Index-qualified: YouTube playlists can contain the same video
                 // twice, and duplicate LazyColumn keys crash
                 itemsIndexed(videos, key = { index, video -> "${video.videoId}_$index" }) { index, video ->

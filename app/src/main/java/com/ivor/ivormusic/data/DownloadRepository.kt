@@ -468,10 +468,17 @@ class DownloadRepository private constructor(private val context: Context) {
     /**
      * Queue a whole playlist. Songs already downloaded or already queued are
      * skipped, so re-running this over a partially downloaded playlist only
-     * fetches what is missing.
+     * fetches what is missing. Device-local originals are already offline and
+     * must never be routed through YouTube stream resolution.
      */
     suspend fun downloadPlaylist(songs: List<Song>) {
-        enqueue(songs.map { it.toRequest() })
+        enqueue(
+            songs.asSequence()
+                .filter { it.source == SongSource.YOUTUBE }
+                .distinctBy { it.id }
+                .map { it.toRequest() }
+                .toList()
+        )
     }
 
     /**
@@ -482,9 +489,43 @@ class DownloadRepository private constructor(private val context: Context) {
         enqueue(listOf(video.toRequest(qualityLabel)))
     }
 
-    /** Queue several videos at once. */
-    suspend fun downloadVideos(videos: List<VideoItem>) {
-        enqueue(videos.map { it.toRequest() })
+    /**
+     * Queue several videos at once with one quality cap for the batch.
+     *
+     * Live broadcasts only expose an HLS manifest and cannot be remuxed by the
+     * offline MP4 path. They are skipped here as a final data-layer guard even
+     * though the playlist sheet also explains the skip before confirmation.
+     */
+    suspend fun downloadVideos(videos: List<VideoItem>, qualityLabel: String? = null) {
+        enqueue(
+            videos.asSequence()
+                .filterNot { it.isLive }
+                .distinctBy { it.videoId }
+                .map { it.toRequest(qualityLabel) }
+                .toList()
+        )
+    }
+
+    /**
+     * Resolve and queue a complete video playlist.
+     *
+     * A local playlist already carries its whole copied list. A YouTube
+     * playlist is normally loaded as one page for responsive browsing, so a
+     * batch explicitly follows every continuation here. False means neither
+     * independent resolver reached the real end; no partial batch is queued.
+     */
+    suspend fun downloadVideoPlaylist(
+        playlistId: String,
+        loadedVideos: List<VideoItem>,
+        qualityLabel: String? = null
+    ): Boolean {
+        val completeVideos = if (LocalVideoPlaylistsRepository.isLocal(playlistId)) {
+            loadedVideos
+        } else {
+            youtubeRepository.getCompletePlaylistVideos(playlistId) ?: return false
+        }
+        downloadVideos(completeVideos, qualityLabel)
+        return true
     }
 
     private fun Song.toRequest() = DownloadRequest(
