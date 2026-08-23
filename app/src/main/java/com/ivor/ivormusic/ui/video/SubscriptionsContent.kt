@@ -287,9 +287,12 @@ fun SubscriptionsContent(
 
     // Re-runs when the account connects or the local list changes size, so
     // subscribing to a first channel while signed out fills the tab straight
-    // away instead of leaving the empty state up until a manual refresh.
+    // away instead of leaving the empty state up until a manual refresh. The
+    // ViewModel also warms this before the tab is composed; this non-forced
+    // call simply covers account connection without duplicating an in-flight
+    // local refresh.
     LaunchedEffect(isYouTubeConnected, localSubscriptions.size) {
-        viewModel.loadSubscriptionFeed(force = localSubscriptions.isNotEmpty() && feed.isEmpty())
+        viewModel.loadSubscriptionFeed()
         viewModel.loadSubscriptions()
     }
 
