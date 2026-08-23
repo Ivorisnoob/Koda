@@ -57,6 +57,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
@@ -501,7 +502,7 @@ fun LibraryMainScreen(
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Top
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 // displayLarge is 57sp and "Library" is most of the width at
                 // that size, so this row has space for exactly one action.
@@ -682,12 +683,21 @@ fun LibraryMainScreen(
         button = {
             ToggleFloatingActionButton(
                 checked = fabMenuExpanded,
-                onCheckedChange = { fabMenuExpanded = it }
+                onCheckedChange = { fabMenuExpanded = it },
+                containerColor = ToggleFloatingActionButtonDefaults.containerColor(
+                    initialColor = MaterialTheme.colorScheme.primaryContainer,
+                    finalColor = MaterialTheme.colorScheme.primary
+                )
             ) {
                 Icon(
                     Icons.Rounded.Add,
                     contentDescription = if (fabMenuExpanded) "Close menu" else "Library actions",
                     // + rotates into × as the menu blossoms open
+                    tint = lerp(
+                        MaterialTheme.colorScheme.onPrimaryContainer,
+                        MaterialTheme.colorScheme.onPrimary,
+                        checkedProgress
+                    ),
                     modifier = Modifier.graphicsLayer { rotationZ = checkedProgress * 45f }
                 )
             }
@@ -699,7 +709,9 @@ fun LibraryMainScreen(
                 showCreatePlaylistDialog = true
             },
             icon = { Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, null) },
-            text = { Text("New playlist") }
+            text = { Text("New playlist") },
+            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
         )
         FloatingActionButtonMenuItem(
             onClick = {
@@ -707,7 +719,9 @@ fun LibraryMainScreen(
                 onDownloadsClick()
             },
             icon = { Icon(Icons.Rounded.DownloadDone, null) },
-            text = { Text("Downloads") }
+            text = { Text("Downloads") },
+            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
         )
         FloatingActionButtonMenuItem(
             onClick = {
@@ -715,7 +729,9 @@ fun LibraryMainScreen(
                 onNavigateToHistory()
             },
             icon = { Icon(Icons.Rounded.History, null) },
-            text = { Text("Listening history") }
+            text = { Text("Listening history") },
+            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
         )
         FloatingActionButtonMenuItem(
             onClick = {
@@ -723,7 +739,9 @@ fun LibraryMainScreen(
                 onNavigateToStats()
             },
             icon = { Icon(Icons.Rounded.Insights, null) },
-            text = { Text("Statistics") }
+            text = { Text("Statistics") },
+            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
         )
     }
 
