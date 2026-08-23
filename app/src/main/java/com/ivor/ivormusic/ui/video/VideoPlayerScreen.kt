@@ -150,6 +150,9 @@ import coil.request.ImageRequest
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import com.ivor.ivormusic.data.LikeStatus
+import com.ivor.ivormusic.data.CaptionBackground
+import com.ivor.ivormusic.data.CaptionTextColor
+import com.ivor.ivormusic.data.CaptionTextSize
 import com.ivor.ivormusic.data.ThemePreferences
 import com.ivor.ivormusic.data.VideoChapter
 import com.ivor.ivormusic.data.VideoEngagement
@@ -179,9 +182,10 @@ import java.util.Locale
  * RESIZE_MODE_ZOOM, and their distance from the bottom edge is a plain padding
  * value instead of a fight with per-cue positioning.
  *
- * Black-on-white here rather than ColorScheme: captions sit on video frames, so
- * they have to stay legible whatever the app theme is. Same reasoning as the
- * player controls above them.
+ * Caption colors are intentionally video-safe rather than ColorScheme roles:
+ * they sit directly on arbitrary frames. The user's size, foreground and plate
+ * choices apply consistently in the watch page, fullscreen, vertical live and
+ * PiP, while this layout continues to own collision-free positioning.
  */
 @Composable
 internal fun CaptionOverlay(
@@ -189,6 +193,9 @@ internal fun CaptionOverlay(
     player: ExoPlayer,
     bottomPadding: Dp,
     compact: Boolean,
+    textSize: CaptionTextSize,
+    textColor: CaptionTextColor,
+    background: CaptionBackground,
     modifier: Modifier = Modifier
 ) {
     if (cues.isEmpty()) return
@@ -214,23 +221,50 @@ internal fun CaptionOverlay(
             modifier = Modifier.padding(horizontal = 16.dp)
         ) { cue ->
             if (cue != null) {
+                val baseStyle = if (compact) {
+                    MaterialTheme.typography.bodyMedium
+                } else {
+                    MaterialTheme.typography.titleMedium
+                }
+                val sizeMultiplier = when (textSize) {
+                    CaptionTextSize.SMALL -> 0.85f
+                    CaptionTextSize.MEDIUM -> 1f
+                    CaptionTextSize.LARGE -> 1.25f
+                }
+                val foreground = when (textColor) {
+                    CaptionTextColor.WHITE -> Color.White
+                    CaptionTextColor.YELLOW -> Color.Yellow
+                }
+                val plateAlpha = when (background) {
+                    CaptionBackground.NONE -> 0f
+                    CaptionBackground.TRANSLUCENT -> 0.75f
+                    CaptionBackground.SOLID -> 0.95f
+                }
                 Box(
                     modifier = Modifier.padding(bottom = bottomPadding),
                     contentAlignment = Alignment.BottomCenter
                 ) {
                     Text(
                         text = cue,
-                        color = Color.White,
-                        style = if (compact) {
-                            MaterialTheme.typography.bodyMedium
-                        } else {
-                            MaterialTheme.typography.titleMedium
-                        },
+                        color = foreground,
+                        style = baseStyle.copy(
+                            fontSize = baseStyle.fontSize * sizeMultiplier,
+                            lineHeight = baseStyle.lineHeight * sizeMultiplier,
+                            shadow = if (background == CaptionBackground.NONE) {
+                                androidx.compose.ui.graphics.Shadow(
+                                    color = Color.Black,
+                                    offset = Offset(1f, 1f),
+                                    blurRadius = 4f
+                                )
+                            } else {
+                                null
+                            }
+                        ),
                         fontWeight = FontWeight.Medium,
                         textAlign = TextAlign.Center,
                         modifier = Modifier
                             .background(
-                                color = Color.Black.copy(alpha = 0.75f),
+                                color = Color.Black.copy(alpha = plateAlpha),
                                 shape = RoundedCornerShape(8.dp)
                             )
                             .padding(horizontal = 12.dp, vertical = 6.dp)
@@ -272,6 +306,9 @@ fun FullscreenPlayerContent(
     captionsActive: Boolean = false,
     onCaptionsClick: () -> Unit = {},
     captionCues: List<VttCue> = emptyList(),
+    captionTextSize: CaptionTextSize = CaptionTextSize.MEDIUM,
+    captionTextColor: CaptionTextColor = CaptionTextColor.WHITE,
+    captionBackground: CaptionBackground = CaptionBackground.TRANSLUCENT,
     /**
      * Playlist transport and the way into the queue. Fullscreen is where a
      * playlist is most likely to be watched end to end, and leaving fullscreen
@@ -419,7 +456,10 @@ fun FullscreenPlayerContent(
             cues = captionCues,
             player = exoPlayer,
             bottomPadding = captionLift.value,
-            compact = false
+            compact = false,
+            textSize = captionTextSize,
+            textColor = captionTextColor,
+            background = captionBackground
         )
 
         // Overlays
@@ -658,6 +698,9 @@ fun PortraitPlayerContent(
     captionsActive: Boolean = false,
     onCaptionsClick: () -> Unit = {},
     captionCues: List<VttCue> = emptyList(),
+    captionTextSize: CaptionTextSize = CaptionTextSize.MEDIUM,
+    captionTextColor: CaptionTextColor = CaptionTextColor.WHITE,
+    captionBackground: CaptionBackground = CaptionBackground.TRANSLUCENT,
     isLive: Boolean = false,
     /** Jump to the live edge of the DVR window. */
     onSeekToLive: () -> Unit = {},
@@ -737,7 +780,10 @@ fun PortraitPlayerContent(
             cues = captionCues,
             player = exoPlayer,
             bottomPadding = captionLift.value,
-            compact = true
+            compact = true,
+            textSize = captionTextSize,
+            textColor = captionTextColor,
+            background = captionBackground
         )
 
         if (hasError) ErrorOverlay(errorMessage, onRetry)

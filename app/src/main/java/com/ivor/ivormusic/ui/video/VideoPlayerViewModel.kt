@@ -21,6 +21,9 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.MergingMediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
+import com.ivor.ivormusic.data.CaptionBackground
+import com.ivor.ivormusic.data.CaptionTextColor
+import com.ivor.ivormusic.data.CaptionTextSize
 import com.ivor.ivormusic.data.CaptionTrack
 import com.ivor.ivormusic.data.CommentItem
 import com.ivor.ivormusic.data.DownloadedVideo
@@ -267,7 +270,18 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     private val _captionCues = MutableStateFlow<List<VttCue>>(emptyList())
     val captionCues: StateFlow<List<VttCue>> = _captionCues.asStateFlow()
 
+    val captionTextSize: StateFlow<CaptionTextSize> = themePreferences.captionTextSize
+    val captionTextColor: StateFlow<CaptionTextColor> = themePreferences.captionTextColor
+    val captionBackground: StateFlow<CaptionBackground> = themePreferences.captionBackground
+
     private var captionCuesJob: Job? = null
+
+    fun setCaptionTextSize(size: CaptionTextSize) = themePreferences.setCaptionTextSize(size)
+
+    fun setCaptionTextColor(color: CaptionTextColor) = themePreferences.setCaptionTextColor(color)
+
+    fun setCaptionBackground(background: CaptionBackground) =
+        themePreferences.setCaptionBackground(background)
 
     // ---------------- Picture-in-Picture ----------------
 

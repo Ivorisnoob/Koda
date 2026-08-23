@@ -80,6 +80,9 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
 import com.ivor.ivormusic.data.LikeStatus
+import com.ivor.ivormusic.data.CaptionBackground
+import com.ivor.ivormusic.data.CaptionTextColor
+import com.ivor.ivormusic.data.CaptionTextSize
 import com.ivor.ivormusic.data.LiveChatMessage
 import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.data.VttCue
@@ -143,6 +146,9 @@ fun VerticalLivePlayerContent(
     canSendChat: Boolean,
     captionsActive: Boolean,
     captionCues: List<VttCue>,
+    captionTextSize: CaptionTextSize,
+    captionTextColor: CaptionTextColor,
+    captionBackground: CaptionBackground,
     /** Null until the first frame decodes; drives the fill-vs-fit decision. */
     videoAspectRatio: Float?,
     isSubscribed: Boolean,
@@ -285,7 +291,10 @@ fun VerticalLivePlayerContent(
                 cues = captionCues,
                 player = exoPlayer,
                 bottomPadding = captionBottomPadding,
-                compact = true
+                compact = true,
+                textSize = captionTextSize,
+                textColor = captionTextColor,
+                background = captionBackground
             )
 
             if (hasError) ErrorOverlay(errorMessage, onRetry)

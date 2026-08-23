@@ -55,6 +55,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogWindowProvider
@@ -63,6 +64,9 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.media3.common.util.UnstableApi
 import coil.compose.AsyncImage
+import com.ivor.ivormusic.data.CaptionBackground
+import com.ivor.ivormusic.data.CaptionTextColor
+import com.ivor.ivormusic.data.CaptionTextSize
 import com.ivor.ivormusic.data.CaptionTrack
 import com.ivor.ivormusic.data.LikeStatus
 import com.ivor.ivormusic.data.VideoChapter
@@ -125,6 +129,9 @@ fun VideoPlayerContent(
     val captionTracks by viewModel.captionTracks.collectAsState()
     val selectedCaption by viewModel.selectedCaption.collectAsState()
     val captionCues by viewModel.captionCues.collectAsState()
+    val captionTextSize by viewModel.captionTextSize.collectAsState()
+    val captionTextColor by viewModel.captionTextColor.collectAsState()
+    val captionBackground by viewModel.captionBackground.collectAsState()
     val videoAspectRatio by viewModel.videoAspectRatio.collectAsState()
 
     // PiP is a device capability, not a given: Android TV and a few OEM builds
@@ -610,6 +617,9 @@ fun VideoPlayerContent(
                     showCaptionsSheet = true
                 },
                 captionCues = captionCues,
+                captionTextSize = captionTextSize,
+                captionTextColor = captionTextColor,
+                captionBackground = captionBackground,
                 showQueueControls = queue != null,
                 hasPreviousInQueue = queue?.hasPrevious == true,
                 hasNextInQueue = queue?.hasNext == true,
@@ -775,6 +785,9 @@ fun VideoPlayerContent(
                     canSendChat = canSendLiveChat,
                     captionsActive = selectedCaption != null,
                     captionCues = captionCues,
+                    captionTextSize = captionTextSize,
+                    captionTextColor = captionTextColor,
+                    captionBackground = captionBackground,
                     videoAspectRatio = videoAspectRatio,
                     // Account OR device subscription, same as everywhere else -
                     // engagement.isSubscribed only knows about the account.
@@ -905,6 +918,9 @@ fun VideoPlayerContent(
                             showCaptionsSheet = true
                         },
                         captionCues = captionCues,
+                        captionTextSize = captionTextSize,
+                        captionTextColor = captionTextColor,
+                        captionBackground = captionBackground,
                         showQueueControls = queue != null,
                         hasPreviousInQueue = queue?.hasPrevious == true,
                         hasNextInQueue = queue?.hasNext == true,
@@ -1160,10 +1176,16 @@ fun VideoPlayerContent(
             tracks = captionTracks,
             selected = selectedCaption,
             isLoading = isCaptionsLoading,
+            textSize = captionTextSize,
+            textColor = captionTextColor,
+            background = captionBackground,
             onSelect = {
                 viewModel.setCaptionTrack(it)
                 showCaptionsSheet = false
             },
+            onTextSizeChanged = viewModel::setCaptionTextSize,
+            onTextColorChanged = viewModel::setCaptionTextColor,
+            onBackgroundChanged = viewModel::setCaptionBackground,
             onDismiss = { showCaptionsSheet = false },
             keepSystemBarsHidden = isFullscreen
         )
@@ -1724,7 +1746,13 @@ private fun CaptionsSheet(
     tracks: List<CaptionTrack>,
     selected: CaptionTrack?,
     isLoading: Boolean,
+    textSize: CaptionTextSize,
+    textColor: CaptionTextColor,
+    background: CaptionBackground,
     onSelect: (CaptionTrack?) -> Unit,
+    onTextSizeChanged: (CaptionTextSize) -> Unit,
+    onTextColorChanged: (CaptionTextColor) -> Unit,
+    onBackgroundChanged: (CaptionBackground) -> Unit,
     onDismiss: () -> Unit,
     keepSystemBarsHidden: Boolean = false
 ) {
@@ -1739,33 +1767,51 @@ private fun CaptionsSheet(
             style = MaterialTheme.typography.headlineSmall,
             modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 8.dp)
         )
-        when {
-            isLoading && tracks.isEmpty() -> {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 32.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    ContainedLoadingIndicator()
-                }
-            }
-            tracks.isEmpty() -> {
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 560.dp),
+            contentPadding = PaddingValues(bottom = 32.dp)
+        ) {
+            item {
                 Text(
-                    text = "No captions available for this video",
-                    style = MaterialTheme.typography.bodyMedium,
+                    text = "Language",
+                    style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 24.dp)
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
                 )
             }
-            else -> {
-                Column(modifier = Modifier.padding(bottom = 32.dp)) {
-                    CaptionRow(
-                        label = "Off",
-                        checked = selected == null,
-                        onClick = { onSelect(null) }
+            when {
+                isLoading && tracks.isEmpty() -> item {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 32.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        ContainedLoadingIndicator()
+                    }
+                }
+                tracks.isEmpty() -> item {
+                    Text(
+                        text = "No captions available for this video",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 20.dp)
                     )
-                    tracks.forEach { track ->
+                }
+                else -> {
+                    item {
+                        CaptionRow(
+                            label = "Off",
+                            checked = selected == null,
+                            onClick = { onSelect(null) }
+                        )
+                    }
+                    itemsIndexed(
+                        items = tracks,
+                        key = { index, track -> "${track.languageCode}:${track.isAutoGenerated}:$index" }
+                    ) { _, track ->
                         val label = if (track.isAutoGenerated) "${track.name} (auto)" else track.name
                         CaptionRow(
                             label = label,
@@ -1774,6 +1820,89 @@ private fun CaptionsSheet(
                         )
                     }
                 }
+            }
+
+            item {
+                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+                Text(
+                    text = "Appearance",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
+                )
+            }
+            item {
+                CaptionChoiceRow(
+                    label = "Text size",
+                    options = listOf(
+                        CaptionTextSize.SMALL to "Small",
+                        CaptionTextSize.MEDIUM to "Medium",
+                        CaptionTextSize.LARGE to "Large"
+                    ),
+                    selected = textSize,
+                    onSelect = onTextSizeChanged
+                )
+            }
+            item {
+                CaptionChoiceRow(
+                    label = "Text color",
+                    options = listOf(
+                        CaptionTextColor.WHITE to "White",
+                        CaptionTextColor.YELLOW to "Yellow"
+                    ),
+                    selected = textColor,
+                    onSelect = onTextColorChanged
+                )
+            }
+            item {
+                CaptionChoiceRow(
+                    label = "Background",
+                    options = listOf(
+                        CaptionBackground.NONE to "None",
+                        CaptionBackground.TRANSLUCENT to "Soft",
+                        CaptionBackground.SOLID to "Solid"
+                    ),
+                    selected = background,
+                    onSelect = onBackgroundChanged
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun <T> CaptionChoiceRow(
+    label: String,
+    options: List<Pair<T, String>>,
+    selected: T,
+    onSelect: (T) -> Unit
+) {
+    Column(
+        modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            options.forEach { (value, optionLabel) ->
+                FilterChip(
+                    selected = selected == value,
+                    onClick = { onSelect(value) },
+                    label = {
+                        Text(
+                            text = optionLabel,
+                            maxLines = 1,
+                            modifier = Modifier.fillMaxWidth(),
+                            textAlign = TextAlign.Center
+                        )
+                    },
+                    modifier = Modifier.weight(1f)
+                )
             }
         }
     }
