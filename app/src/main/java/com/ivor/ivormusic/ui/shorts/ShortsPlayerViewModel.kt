@@ -219,6 +219,22 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
         synchronized(watchNextCache) { watchNextCache[videoId] = data }
     }
 
+    private fun updateCachedEngagement(videoId: String, engagement: VideoEngagement) {
+        synchronized(watchNextCache) {
+            val cached = watchNextCache[videoId]
+            if (cached != null) {
+                watchNextCache[videoId] = cached.copy(engagement = engagement)
+            } else {
+                val videoItem = _currentVideo.value?.takeIf { it.videoId == videoId }
+                watchNextCache[videoId] = com.ivor.ivormusic.data.WatchNextData(
+                    engagement = engagement,
+                    updatedVideoItem = videoItem,
+                    relatedVideos = emptyList()
+                )
+            }
+        }
+    }
+
     /**
      * Warm the caches around [index]: stream URLs for the next
      * [STREAM_PREFETCH_AHEAD] Shorts plus the previous one, watch-next for
@@ -644,6 +660,14 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
         _playbackError.value = null
         _currentVideo.value = item.toVideoItem()
         resetEngagementState()
+        // Instantly restore cached engagement if available (avoids like button flickering to unliked)
+        val cached = cachedWatchNext(item.videoId)
+        if (cached != null) {
+            _engagement.value = cached.engagement
+            if (cached.updatedVideoItem != null) {
+                _currentVideo.value = cached.updatedVideoItem
+            }
+        }
 
         // Phase 1: streams only, playback ASAP (same two-phase pattern and
         // 15s stuck-buffering guard as VideoPlayerViewModel.playVideo).
@@ -704,7 +728,21 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
                     ?: youtubeRepository.getWatchNextData(item.videoId, item.toVideoItem())
                         .also { cacheWatchNext(item.videoId, it) }
                 if (_currentIndex.value != index) return@launch
-                _engagement.value = watchNext.engagement
+                val currentEng = _engagement.value
+                val resolvedEng = if (currentEng != null && currentEng.videoId == item.videoId) {
+                    val baseEng = watchNext.engagement ?: currentEng
+                    baseEng.copy(
+                        likeStatus = currentEng.likeStatus,
+                        likeCount = currentEng.likeCount ?: baseEng.likeCount,
+                        isSubscribed = currentEng.isSubscribed
+                    )
+                } else {
+                    watchNext.engagement
+                }
+                _engagement.value = resolvedEng
+                if (resolvedEng != null) {
+                    updateCachedEngagement(item.videoId, resolvedEng)
+                }
                 if (watchNext.updatedVideoItem != null) {
                     _currentVideo.value = watchNext.updatedVideoItem
                 }
@@ -837,8 +875,19 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
         }
     }
 
+    /** Like the video, or remove the like if already liked. Optimistic with rollback. */
     fun toggleLike() = rate { current ->
         if (current == LikeStatus.LIKE) LikeStatus.INDIFFERENT else LikeStatus.LIKE
+    }
+
+    /**
+     * Like the Short unconditionally (used for double-tap to like).
+     * If already liked, this is a no-op.
+     */
+    fun like() {
+        val current = _engagement.value
+        if (current != null && current.likeStatus == LikeStatus.LIKE) return
+        rate { LikeStatus.LIKE }
     }
 
     fun toggleDislike() = rate { current ->
@@ -846,14 +895,77 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
     }
 
     private fun rate(target: (LikeStatus) -> LikeStatus) {
-        val current = _engagement.value ?: return
-        val newStatus = target(current.likeStatus)
-        _engagement.value = current.copy(likeStatus = newStatus)
+        val current = _engagement.value ?: run {
+            val video = _currentVideo.value ?: return
+            VideoEngagement(
+                videoId = video.videoId,
+                likeCount = null,
+                likeStatus = LikeStatus.INDIFFERENT,
+                channelId = video.channelId,
+                isSubscribed = false,
+                subscriberCountText = null,
+                commentsToken = null
+            )
+        }
+        val oldStatus = current.likeStatus
+        val newStatus = target(oldStatus)
+        if (oldStatus == newStatus) return
+
+        val delta = when {
+            newStatus == LikeStatus.LIKE -> 1
+            oldStatus == LikeStatus.LIKE -> -1
+            else -> 0
+        }
+        val newLikeCount = if (delta != 0) adjustLikeCount(current.likeCount, delta) else current.likeCount
+
+        val updatedEngagement = current.copy(
+            likeStatus = newStatus,
+            likeCount = newLikeCount
+        )
+        _engagement.value = updatedEngagement
+        updateCachedEngagement(current.videoId, updatedEngagement)
         viewModelScope.launch {
             val ok = youtubeRepository.rateVideo(current.videoId, newStatus)
             if (!ok && _engagement.value?.videoId == current.videoId) {
-                _engagement.value = _engagement.value?.copy(likeStatus = current.likeStatus)
+                val reverted = _engagement.value?.copy(
+                    likeStatus = current.likeStatus,
+                    likeCount = current.likeCount
+                )
+                _engagement.value = reverted
+                if (reverted != null) updateCachedEngagement(current.videoId, reverted)
             }
+        }
+    }
+
+    private fun adjustLikeCount(countStr: String?, delta: Int): String? {
+        if (countStr.isNullOrBlank()) {
+            return if (delta > 0) "1" else null
+        }
+        val trimmed = countStr.trim()
+        val multiplier = when {
+            trimmed.endsWith("B", ignoreCase = true) -> 1_000_000_000.0
+            trimmed.endsWith("M", ignoreCase = true) -> 1_000_000.0
+            trimmed.endsWith("K", ignoreCase = true) -> 1_000.0
+            else -> 1.0
+        }
+        val numPart = if (multiplier > 1.0) trimmed.dropLast(1).trim() else trimmed
+        val parsed = numPart.toDoubleOrNull() ?: return countStr
+        val totalCount = (parsed * multiplier + delta).coerceAtLeast(0.0)
+        return when {
+            totalCount >= 1_000_000_000 -> {
+                val v = totalCount / 1_000_000_000.0
+                if (v >= 10.0 || v % 1.0 == 0.0) "${v.toLong()}B" else String.format(java.util.Locale.US, "%.1fB", v)
+            }
+            totalCount >= 1_000_000 -> {
+                val v = totalCount / 1_000_000.0
+                if (v >= 10.0 || v % 1.0 == 0.0) "${v.toLong()}M" else String.format(java.util.Locale.US, "%.1fM", v)
+            }
+            totalCount >= 1_000 -> {
+                val v = totalCount / 1_000.0
+                if (v >= 10.0 || v % 1.0 == 0.0) "${v.toLong()}K" else String.format(java.util.Locale.US, "%.1fK", v)
+            }
+            totalCount == 0.0 -> "0"
+            else -> totalCount.toLong().toString()
         }
     }
 
@@ -869,13 +981,15 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
 
         val writesRemote =
             subscriptionActions.resolveTarget() != com.ivor.ivormusic.data.SubscriptionStore.LOCAL
-        _engagement.value = current.copy(
+        val updated = current.copy(
             isSubscribed = when {
                 !subscribe -> false
                 writesRemote -> true
                 else -> current.isSubscribed
             }
         )
+        _engagement.value = updated
+        updateCachedEngagement(current.videoId, updated)
         viewModelScope.launch {
             val ok = subscriptionActions.setSubscribed(
                 channel = com.ivor.ivormusic.data.LocalSubscription(
@@ -887,7 +1001,9 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
                 remotelySubscribed = current.isSubscribed
             )
             if (!ok && _engagement.value?.videoId == current.videoId) {
-                _engagement.value = _engagement.value?.copy(isSubscribed = current.isSubscribed)
+                val reverted = _engagement.value?.copy(isSubscribed = current.isSubscribed)
+                _engagement.value = reverted
+                if (reverted != null) updateCachedEngagement(current.videoId, reverted)
             }
         }
     }

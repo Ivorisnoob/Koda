@@ -17,6 +17,7 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -39,6 +40,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.outlined.ThumbDown
 import androidx.compose.material.icons.outlined.ThumbUp
@@ -72,7 +74,9 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -85,8 +89,11 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -286,15 +293,34 @@ fun ShortsPlayerOverlay(
         ) { page ->
             val item = shorts[page]
             val isCurrent = page == pagerState.settledPage
+            var doubleTapHeartTrigger by remember(item.videoId) { mutableLongStateOf(0L) }
+            val haptics = LocalHapticFeedback.current
+
+            LaunchedEffect(isCurrent) {
+                if (!isCurrent) {
+                    doubleTapHeartTrigger = 0L
+                }
+            }
 
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(Color.Black)
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null
-                    ) { if (isCurrent) viewModel.togglePlayPause() }
+                    .pointerInput(isCurrent) {
+                        if (!isCurrent) return@pointerInput
+                        detectTapGestures(
+                            onTap = {
+                                viewModel.togglePlayPause()
+                            },
+                            onDoubleTap = {
+                                requireLogin {
+                                    viewModel.like()
+                                    doubleTapHeartTrigger = System.currentTimeMillis()
+                                    haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                                }
+                            }
+                        )
+                    }
             ) {
                 // Portrait thumbnail behind the surface: visible on
                 // neighbouring pages and while the current one buffers
@@ -320,6 +346,14 @@ fun ShortsPlayerOverlay(
                 }
 
                 if (isCurrent) {
+                    if (doubleTapHeartTrigger > 0L) {
+                        // Double-tap heart burst animation
+                        DoubleTapHeartBurst(
+                            trigger = doubleTapHeartTrigger,
+                            onDismiss = { doubleTapHeartTrigger = 0L },
+                            modifier = Modifier.align(Alignment.Center)
+                        )
+                    }
                     // Buffering: the expressive shape-morphing loader on a
                     // tonal puck so it reads on any video frame
                     AnimatedVisibility(
@@ -574,68 +608,70 @@ fun ShortsPlayerOverlay(
 
             // Standalone round action buttons; each can be hidden in Settings
             val likeStatus = engagement?.likeStatus ?: LikeStatus.INDIFFERENT
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(14.dp)
-            ) {
-                if (ThemePreferences.SHORTS_ACTION_LIKE !in hiddenActions) {
-                    ShortsAction(
-                        icon = if (likeStatus == LikeStatus.LIKE) Icons.Rounded.ThumbUp
-                            else Icons.Outlined.ThumbUp,
-                        label = engagement?.likeCount ?: "Like",
-                        active = likeStatus == LikeStatus.LIKE,
-                        burstOnActivate = true,
-                        contentDescription = "Like",
-                        onClick = { requireLogin { viewModel.toggleLike() } }
-                    )
-                }
-                if (ThemePreferences.SHORTS_ACTION_DISLIKE !in hiddenActions) {
-                    ShortsAction(
-                        icon = if (likeStatus == LikeStatus.DISLIKE) Icons.Rounded.ThumbDown
-                            else Icons.Outlined.ThumbDown,
-                        label = "Dislike",
-                        active = likeStatus == LikeStatus.DISLIKE,
-                        contentDescription = "Dislike",
-                        onClick = { requireLogin { viewModel.toggleDislike() } }
-                    )
-                }
-                if (ThemePreferences.SHORTS_ACTION_COMMENTS !in hiddenActions) {
-                    ShortsAction(
-                        icon = Icons.Rounded.ChatBubble,
-                        label = "Comments",
-                        contentDescription = "Comments",
-                        onClick = {
-                            viewModel.ensureCommentsLoaded()
-                            showCommentsSheet = true
-                        }
-                    )
-                }
-                if (ThemePreferences.SHORTS_ACTION_SHARE !in hiddenActions) {
-                    ShortsAction(
-                        icon = Icons.Rounded.Share,
-                        label = "Share",
-                        contentDescription = "Share",
-                        onClick = {
-                            val videoId = currentVideo?.videoId ?: return@ShortsAction
-                            val send = Intent(Intent.ACTION_SEND).apply {
-                                type = "text/plain"
-                                putExtra(Intent.EXTRA_TEXT, "https://youtube.com/shorts/$videoId")
+            key(currentVideo?.videoId) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    if (ThemePreferences.SHORTS_ACTION_LIKE !in hiddenActions) {
+                        ShortsAction(
+                            icon = if (likeStatus == LikeStatus.LIKE) Icons.Rounded.ThumbUp
+                                else Icons.Outlined.ThumbUp,
+                            label = engagement?.likeCount ?: "Like",
+                            active = likeStatus == LikeStatus.LIKE,
+                            burstOnActivate = true,
+                            contentDescription = "Like",
+                            onClick = { requireLogin { viewModel.toggleLike() } }
+                        )
+                    }
+                    if (ThemePreferences.SHORTS_ACTION_DISLIKE !in hiddenActions) {
+                        ShortsAction(
+                            icon = if (likeStatus == LikeStatus.DISLIKE) Icons.Rounded.ThumbDown
+                                else Icons.Outlined.ThumbDown,
+                            label = "Dislike",
+                            active = likeStatus == LikeStatus.DISLIKE,
+                            contentDescription = "Dislike",
+                            onClick = { requireLogin { viewModel.toggleDislike() } }
+                        )
+                    }
+                    if (ThemePreferences.SHORTS_ACTION_COMMENTS !in hiddenActions) {
+                        ShortsAction(
+                            icon = Icons.Rounded.ChatBubble,
+                            label = "Comments",
+                            contentDescription = "Comments",
+                            onClick = {
+                                viewModel.ensureCommentsLoaded()
+                                showCommentsSheet = true
                             }
-                            context.startActivity(Intent.createChooser(send, "Share Short"))
-                        }
-                    )
-                }
-                if (ThemePreferences.SHORTS_ACTION_NOT_INTERESTED !in hiddenActions) {
-                    ShortsAction(
-                        icon = Icons.Rounded.NotInterested,
-                        label = "Not interested",
-                        contentDescription = "Not interested",
-                        // Opens a chooser rather than acting straight away: this
-                        // button sits in a rail the thumb rests on while
-                        // swiping, and a one-tap irreversible-looking dismissal
-                        // there would go off by accident constantly.
-                        onClick = { showDismissSheet = true }
-                    )
+                        )
+                    }
+                    if (ThemePreferences.SHORTS_ACTION_SHARE !in hiddenActions) {
+                        ShortsAction(
+                            icon = Icons.Rounded.Share,
+                            label = "Share",
+                            contentDescription = "Share",
+                            onClick = {
+                                val videoId = currentVideo?.videoId ?: return@ShortsAction
+                                val send = Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(Intent.EXTRA_TEXT, "https://youtube.com/shorts/$videoId")
+                                }
+                                context.startActivity(Intent.createChooser(send, "Share Short"))
+                            }
+                        )
+                    }
+                    if (ThemePreferences.SHORTS_ACTION_NOT_INTERESTED !in hiddenActions) {
+                        ShortsAction(
+                            icon = Icons.Rounded.NotInterested,
+                            label = "Not interested",
+                            contentDescription = "Not interested",
+                            // Opens a chooser rather than acting straight away: this
+                            // button sits in a rail the thumb rests on while
+                            // swiping, and a one-tap irreversible-looking dismissal
+                            // there would go off by accident constantly.
+                            onClick = { showDismissSheet = true }
+                        )
+                    }
                 }
             }
         }
@@ -726,14 +762,10 @@ private fun ShortsAction(
 ) {
     val iconScale = remember { Animatable(1f) }
     val burstProgress = remember { Animatable(0f) }
-    var isInitial by remember { mutableStateOf(true) }
+    var prevActive by remember { mutableStateOf(active) }
 
     LaunchedEffect(active) {
-        if (isInitial) {
-            isInitial = false
-            return@LaunchedEffect
-        }
-        if (active) {
+        if (active && !prevActive) {
             launch {
                 iconScale.snapTo(0.5f)
                 iconScale.animateTo(
@@ -750,6 +782,7 @@ private fun ShortsAction(
                 burstProgress.snapTo(0f)
             }
         }
+        prevActive = active
     }
 
     val containerColor by animateColorAsState(
@@ -915,6 +948,115 @@ private fun ShortsDismissRow(
                     overflow = TextOverflow.Ellipsis
                 )
             }
+        }
+    }
+}
+
+/**
+ * Expressive heart pop animation shown in the center of the Short when double-tapped.
+ *
+ * Starts with a springy scale-up overshoot and burst flash, holds momentarily,
+ * then drifts up and fades out cleanly.
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun DoubleTapHeartBurst(
+    trigger: Long,
+    modifier: Modifier = Modifier,
+    onDismiss: () -> Unit = {}
+) {
+    val scale = remember { Animatable(0f) }
+    val alpha = remember { Animatable(0f) }
+    val offsetY = remember { Animatable(0f) }
+    val burstProgress = remember { Animatable(0f) }
+
+    LaunchedEffect(trigger) {
+        if (trigger <= 0L) return@LaunchedEffect
+        scale.snapTo(0f)
+        alpha.snapTo(1f)
+        offsetY.snapTo(0f)
+        burstProgress.snapTo(0f)
+
+        launch {
+            burstProgress.snapTo(0.01f)
+            burstProgress.animateTo(
+                targetValue = 1f,
+                animationSpec = tween(durationMillis = 400, easing = FastOutSlowInEasing)
+            )
+            burstProgress.snapTo(0f)
+        }
+        launch {
+            scale.animateTo(
+                targetValue = 1f,
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                    stiffness = Spring.StiffnessMedium
+                )
+            )
+            delay(350)
+            launch {
+                offsetY.animateTo(
+                    targetValue = -40f,
+                    animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing)
+                )
+            }
+            launch {
+                scale.animateTo(
+                    targetValue = 0.85f,
+                    animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing)
+                )
+            }
+            alpha.animateTo(
+                targetValue = 0f,
+                animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing)
+            )
+            onDismiss()
+        }
+    }
+
+    if (alpha.value > 0f && scale.value > 0f) {
+        val density = androidx.compose.ui.platform.LocalDensity.current.density
+        Box(
+            modifier = modifier
+                .graphicsLayer {
+                    translationY = offsetY.value * density
+                    scaleX = scale.value
+                    scaleY = scale.value
+                    this.alpha = alpha.value
+                },
+            contentAlignment = Alignment.Center
+        ) {
+            val p = burstProgress.value
+            if (p > 0f) {
+                Box(
+                    modifier = Modifier
+                        .size(160.dp)
+                        .graphicsLayer {
+                            scaleX = 0.4f + p * 1.3f
+                            scaleY = 0.4f + p * 1.3f
+                            this.alpha = (1f - p) * alpha.value
+                        }
+                        .clip(MaterialShapes.Burst.toShape())
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.4f))
+                )
+            }
+            // Ambient soft glow behind heart for contrast on any frame
+            Box(
+                modifier = Modifier
+                    .size(110.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.25f * alpha.value))
+            )
+            Icon(
+                imageVector = Icons.Filled.Favorite,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier
+                    .size(96.dp)
+                    .graphicsLayer {
+                        rotationZ = -6f
+                    }
+            )
         }
     }
 }
