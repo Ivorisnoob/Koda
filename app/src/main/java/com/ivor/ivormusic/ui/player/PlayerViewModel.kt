@@ -120,7 +120,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     val isLoadingMore: StateFlow<Boolean> = _isLoadingMore.asStateFlow()
     
     // Lyrics Repository and State
-    private val lyricsRepository = LyricsRepository()
+    private val lyricsRepository = LyricsRepository(context)
     
     // Stats Repository
     private val statsRepository = com.ivor.ivormusic.data.StatsRepository(context)

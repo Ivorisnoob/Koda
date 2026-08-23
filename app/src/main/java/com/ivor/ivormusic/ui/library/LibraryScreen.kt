@@ -79,6 +79,7 @@ import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.data.ThemePreferences
 import com.ivor.ivormusic.ui.artist.ArtistScreen
 import com.ivor.ivormusic.ui.components.ExpressivePullToRefresh
+import com.ivor.ivormusic.ui.downloads.MusicPlaylistDownloadAction
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.runtime.mutableFloatStateOf
 import com.ivor.ivormusic.ui.home.HomeViewModel
@@ -3064,6 +3065,19 @@ fun PlaylistDetailScreen(
                                     }
                                 }
                             }
+                        }
+
+                        // Saving keeps a live reference; downloading makes the
+                        // loaded snapshot available offline. They stay separate
+                        // actions because either can be useful without the other.
+                        if (songs.isNotEmpty()) {
+                            MusicPlaylistDownloadAction(
+                                playlistTitle = resolvedPlaylist.name,
+                                songs = songs,
+                                modifier = Modifier.padding(
+                                    top = if (canSavePlaylist) 12.dp else 20.dp
+                                )
+                            )
                         }
                     }
                 }

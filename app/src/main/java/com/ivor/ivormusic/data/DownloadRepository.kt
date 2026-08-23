@@ -3,8 +3,15 @@ package com.ivor.ivormusic.data
 import com.ivor.ivormusic.util.KLog
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.drawable.BitmapDrawable
 import android.net.Uri
+import androidx.core.graphics.drawable.toBitmap
+import coil.imageLoader
+import coil.request.ImageRequest
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -100,6 +107,8 @@ class DownloadRepository private constructor(private val context: Context) {
         private const val MAX_ATTEMPTS = 3
         private const val RETRY_BACKOFF_MS = 2_000L
         private const val BUFFER_SIZE = 8192
+        private const val DOWNLOAD_ARTWORK_SIZE_PX = 1024
+        private const val DOWNLOAD_ARTWORK_JPEG_QUALITY = 92
 
         // Ranged-request chunk size. Bounded ranges are served at full CDN
         // speed where an open-ended request is paced to the media bitrate.
@@ -135,6 +144,7 @@ class DownloadRepository private constructor(private val context: Context) {
         .build()
 
     private val youtubeRepository = YouTubeRepository(context)
+    private val lyricsRepository = LyricsRepository()
     private val notificationHelper = DownloadNotificationHelper(context)
     private val storage = DownloadStorage(context)
 
@@ -238,6 +248,7 @@ class DownloadRepository private constructor(private val context: Context) {
             val songs = mutableListOf<Song>()
             var prunedAny = false
             var backfilledAny = false
+            var companionStateChanged = false
             // Entries written before downloads carried a timestamp get one
             // synthesized from their position: the array is in completion
             // order, so walking backwards from the metadata file's mtime keeps
@@ -252,6 +263,12 @@ class DownloadRepository private constructor(private val context: Context) {
 
                 val mediaUri = obj.optString("mediaUri").takeIf { it.isNotBlank() }
                 val legacyPath = obj.optString("localPath").takeIf { it.isNotBlank() }
+                val storedArtUri = obj.optString("albumArtUri")
+                    .takeIf(String::isNotBlank)
+                    ?.let(Uri::parse)
+                val storedLyricsUri = obj.optString("lyricsUri")
+                    .takeIf(String::isNotBlank)
+                    ?.let(Uri::parse)
 
                 val uri: Uri? = when {
                     mediaUri != null -> Uri.parse(mediaUri).takeIf { it in liveUris }
@@ -260,13 +277,20 @@ class DownloadRepository private constructor(private val context: Context) {
                 }
 
                 if (uri == null) {
+                    listOfNotNull(storedArtUri, storedLyricsUri)
+                        .filter(storage::isMusicCompanion)
+                        .forEach(storage::delete)
                     prunedAny = true
                     continue
                 }
 
                 val artUrl = obj.optString("albumArtUrl").takeIf {
                     it.isNotBlank() && !obj.isNull("albumArtUrl")
-                }
+                }?.takeIf { Uri.parse(it).scheme in setOf("http", "https") }
+                val localArtUri = storedArtUri?.takeIf { it in liveUris }
+                val lyricsUri = storedLyricsUri?.takeIf { it in liveUris }
+                if (storedArtUri != null && localArtUri == null) companionStateChanged = true
+                if (storedLyricsUri != null && lyricsUri == null) companionStateChanged = true
                 val addedAt = obj.optLong("addedAt").takeIf { it > 0 } ?: run {
                     backfilledAny = true
                     backfillAnchor - (entryCount - i) * 1000L
@@ -279,9 +303,12 @@ class DownloadRepository private constructor(private val context: Context) {
                         album = obj.optString("album", ""),
                         duration = obj.optLong("duration"),
                         uri = uri,
-                        albumArtUri = artUrl?.let(Uri::parse),
-                        thumbnailUrl = artUrl,
+                        albumArtUri = localArtUri ?: artUrl?.let(Uri::parse),
+                        // A local companion must win before any network URL or
+                        // artwork disappears exactly when the user goes offline.
+                        thumbnailUrl = localArtUri?.toString() ?: artUrl,
                         source = SongSource.LOCAL,
+                        lyricsUri = lyricsUri,
                         dateAdded = addedAt
                     )
                 )
@@ -290,7 +317,7 @@ class DownloadRepository private constructor(private val context: Context) {
             _downloadedSongs.value = songs
             // Persist the pruned list so externally deleted files do not get
             // re-checked on every launch, and so backfilled timestamps stick.
-            if (prunedAny || backfilledAny) saveMetadata()
+            if (prunedAny || backfilledAny || companionStateChanged) saveMetadata()
         } catch (e: Exception) {
             KLog.e(TAG, "Error loading downloads", e)
             _downloadedSongs.value = emptyList()
@@ -315,7 +342,13 @@ class DownloadRepository private constructor(private val context: Context) {
                     } else {
                         put("mediaUri", uri.toString())
                     }
-                    put("albumArtUrl", song.thumbnailUrl ?: song.albumArtUri?.toString())
+                    song.thumbnailUrl?.takeIf { url ->
+                        Uri.parse(url).scheme in setOf("http", "https")
+                    }?.let { put("albumArtUrl", it) }
+                    song.albumArtUri?.takeIf { it.scheme == "content" }?.let {
+                        put("albumArtUri", it.toString())
+                    }
+                    song.lyricsUri?.let { put("lyricsUri", it.toString()) }
                     song.dateAdded?.let { put("addedAt", it) }
                 }
                 jsonArray.put(obj)
@@ -468,10 +501,17 @@ class DownloadRepository private constructor(private val context: Context) {
     /**
      * Queue a whole playlist. Songs already downloaded or already queued are
      * skipped, so re-running this over a partially downloaded playlist only
-     * fetches what is missing.
+     * fetches what is missing. Device-local originals are already offline and
+     * must never be routed through YouTube stream resolution.
      */
     suspend fun downloadPlaylist(songs: List<Song>) {
-        enqueue(songs.map { it.toRequest() })
+        enqueue(
+            songs.asSequence()
+                .filter { it.source == SongSource.YOUTUBE }
+                .distinctBy { it.id }
+                .map { it.toRequest() }
+                .toList()
+        )
     }
 
     /**
@@ -482,9 +522,43 @@ class DownloadRepository private constructor(private val context: Context) {
         enqueue(listOf(video.toRequest(qualityLabel)))
     }
 
-    /** Queue several videos at once. */
-    suspend fun downloadVideos(videos: List<VideoItem>) {
-        enqueue(videos.map { it.toRequest() })
+    /**
+     * Queue several videos at once with one quality cap for the batch.
+     *
+     * Live broadcasts only expose an HLS manifest and cannot be remuxed by the
+     * offline MP4 path. They are skipped here as a final data-layer guard even
+     * though the playlist sheet also explains the skip before confirmation.
+     */
+    suspend fun downloadVideos(videos: List<VideoItem>, qualityLabel: String? = null) {
+        enqueue(
+            videos.asSequence()
+                .filterNot { it.isLive }
+                .distinctBy { it.videoId }
+                .map { it.toRequest(qualityLabel) }
+                .toList()
+        )
+    }
+
+    /**
+     * Resolve and queue a complete video playlist.
+     *
+     * A local playlist already carries its whole copied list. A YouTube
+     * playlist is normally loaded as one page for responsive browsing, so a
+     * batch explicitly follows every continuation here. False means neither
+     * independent resolver reached the real end; no partial batch is queued.
+     */
+    suspend fun downloadVideoPlaylist(
+        playlistId: String,
+        loadedVideos: List<VideoItem>,
+        qualityLabel: String? = null
+    ): Boolean {
+        val completeVideos = if (LocalVideoPlaylistsRepository.isLocal(playlistId)) {
+            loadedVideos
+        } else {
+            youtubeRepository.getCompletePlaylistVideos(playlistId) ?: return false
+        }
+        downloadVideos(completeVideos, qualityLabel)
+        return true
     }
 
     private fun Song.toRequest() = DownloadRequest(
@@ -492,7 +566,7 @@ class DownloadRepository private constructor(private val context: Context) {
         title = title,
         subtitle = artist,
         type = DownloadMediaType.MUSIC,
-        thumbnailUrl = thumbnailUrl ?: albumArtUri?.toString(),
+        thumbnailUrl = highResThumbnailUrl ?: thumbnailUrl ?: albumArtUri?.toString(),
         durationMs = duration,
         song = this
     )
@@ -636,52 +710,182 @@ class DownloadRepository private constructor(private val context: Context) {
     private suspend fun attemptMusicDownload(request: DownloadRequest): Boolean =
         withContext(Dispatchers.IO) {
             val song = request.song ?: return@withContext false
-            var pendingTarget: Uri? = null
+            val pendingTargets = mutableListOf<Uri>()
+            var audioTemp: File? = null
+            var artworkTemp: File? = null
             updateProgress(request, 0.02f, DownloadStatus.DOWNLOADING)
 
             try {
-                val streamUrl = youtubeRepository.getStreamUrl(request.id).getOrNull()
+                val streamUrl = youtubeRepository.getDownloadAudioStreamUrl(request.id).getOrNull()
                     ?: throw java.io.IOException("No stream URL for ${request.id}")
 
                 ensureActive()
                 updateProgress(request, 0.1f, DownloadStatus.DOWNLOADING)
 
-                val fileName =
-                    storage.buildFileName(request.title, request.subtitle, DownloadMediaType.MUSIC)
-                val target = storage.createPending(fileName, DownloadMediaType.MUSIC)
-                    ?: throw java.io.IOException("Could not create storage entry")
-                pendingTarget = target
+                coroutineScope {
+                    // These are best-effort enrichments and run under the audio
+                    // transfer rather than extending every playlist item by up
+                    // to two provider timeouts after its bytes have arrived.
+                    val lyricsDeferred = async {
+                        (lyricsRepository.fetchLyrics(song) as? LyricsResult.Success)
+                            ?.toDownloadLyrics()
+                            ?.takeIf(String::isNotBlank)
+                    }
+                    val artworkDeferred = async { loadDownloadArtwork(song) }
 
-                val output = storage.openOutput(target)
-                    ?: throw java.io.IOException("Could not open output")
+                    audioTemp = File.createTempFile("koda_music_", ".m4a", context.cacheDir)
+                    audioTemp!!.outputStream().use { out ->
+                        downloadStream(request, streamUrl, out, 0.1f, 0.82f)
+                    }
 
-                output.use { out ->
-                    downloadStream(request, streamUrl, out, 0.1f, 1f)
+                    ensureActive()
+                    updateProgress(request, 0.84f, DownloadStatus.DOWNLOADING)
+
+                    val lyrics = runCatching { lyricsDeferred.await() }
+                        .onFailure { KLog.w(TAG, "Lyrics unavailable for ${song.title}", it) }
+                        .getOrNull()
+                    val artwork = runCatching { artworkDeferred.await() }
+                        .onFailure { KLog.w(TAG, "Artwork unavailable for ${song.title}", it) }
+                        .getOrNull()
+                    artworkTemp = artwork?.let(::writeArtworkTemp)
+
+                    ensureActive()
+                    updateProgress(request, 0.88f, DownloadStatus.DOWNLOADING)
+                    DownloadedAudioMetadata.write(
+                        audioFile = audioTemp!!,
+                        song = song,
+                        artworkFile = artworkTemp,
+                        lyrics = lyrics
+                    )
+
+                    ensureActive()
+                    updateProgress(request, 0.92f, DownloadStatus.DOWNLOADING)
+
+                    val audioName = storage.buildFileName(
+                        request.title,
+                        request.subtitle,
+                        DownloadMediaType.MUSIC
+                    )
+                    val audioTarget = storage.createPending(audioName, DownloadMediaType.MUSIC)
+                        ?: throw java.io.IOException("Could not create audio storage entry")
+                    pendingTargets += audioTarget
+                    copyToPending(audioTemp!!, audioTarget)
+
+                    val artworkTarget = artworkTemp?.let { cover ->
+                        val name = storage.buildMusicCompanionFileName(
+                            request.title,
+                            request.subtitle,
+                            "jpg"
+                        )
+                        storage.createPendingMusicCompanion(name, "image/jpeg")?.also { target ->
+                            pendingTargets += target
+                            copyToPending(cover, target)
+                        } ?: throw java.io.IOException("Could not create artwork storage entry")
+                    }
+
+                    val lyricsTarget = lyrics?.let { body ->
+                        val name = storage.buildMusicCompanionFileName(
+                            request.title,
+                            request.subtitle,
+                            "lrc"
+                        )
+                        storage.createPendingMusicCompanion(name, "text/plain")?.also { target ->
+                            pendingTargets += target
+                            storage.openOutput(target)?.bufferedWriter(Charsets.UTF_8)?.use {
+                                it.write(body)
+                            } ?: throw java.io.IOException("Could not write lyric storage entry")
+                        } ?: throw java.io.IOException("Could not create lyric storage entry")
+                    }
+
+                    ensureActive()
+                    updateProgress(request, 0.98f, DownloadStatus.DOWNLOADING)
+
+                    // Publish companions first and audio last. A media scanner
+                    // can never observe a finished song before everything that
+                    // was successfully fetched for it is visible beside it.
+                    if (artworkTarget != null && !storage.publish(artworkTarget)) {
+                        throw java.io.IOException("Could not publish artwork storage entry")
+                    }
+                    if (lyricsTarget != null && !storage.publish(lyricsTarget)) {
+                        throw java.io.IOException("Could not publish lyric storage entry")
+                    }
+                    if (!storage.publish(audioTarget)) {
+                        throw java.io.IOException("Could not publish audio storage entry")
+                    }
+                    pendingTargets.clear()
+
+                    val localArtwork = artworkTarget ?: song.albumArtUri
+                    val downloaded = song.copy(
+                        uri = audioTarget,
+                        albumArtUri = localArtwork,
+                        thumbnailUrl = artworkTarget?.toString()
+                            ?: song.thumbnailUrl
+                            ?: song.albumArtUri?.toString(),
+                        source = SongSource.LOCAL,
+                        lyricsUri = lyricsTarget,
+                        dateAdded = System.currentTimeMillis()
+                    )
+                    _downloadedSongs.value = _downloadedSongs.value + downloaded
+                    saveMetadata()
                 }
-
-                storage.publish(target)
-                pendingTarget = null
-
-                val downloaded = song.copy(
-                    uri = target,
-                    source = SongSource.LOCAL,
-                    dateAdded = System.currentTimeMillis()
-                )
-                _downloadedSongs.value = _downloadedSongs.value + downloaded
-                saveMetadata()
 
                 finishSuccess(request)
                 true
             } catch (e: kotlinx.coroutines.CancellationException) {
-                cleanUpCancelled(request, pendingTarget)
+                withContext(kotlinx.coroutines.NonCancellable) {
+                    pendingTargets.forEach(storage::delete)
+                    _downloadingIds.value = _downloadingIds.value - request.id
+                    removeProgress(request.id)
+                }
                 throw e
             } catch (e: Exception) {
-                pendingTarget?.let { storage.delete(it) }
+                pendingTargets.forEach(storage::delete)
                 throw e
             } finally {
+                audioTemp?.delete()
+                artworkTemp?.delete()
                 activeDownloadCalls.remove(request.id)
             }
         }
+
+    /** Decode a bounded, software-backed cover through Coil's shared cache. */
+    private suspend fun loadDownloadArtwork(song: Song): Bitmap? {
+        val urls = listOfNotNull(song.highResThumbnailUrl, song.thumbnailUrl)
+            .distinct()
+        for (url in urls) {
+            val drawable = runCatching {
+                context.imageLoader.execute(
+                    ImageRequest.Builder(context)
+                        .data(url)
+                        .size(DOWNLOAD_ARTWORK_SIZE_PX, DOWNLOAD_ARTWORK_SIZE_PX)
+                        .allowHardware(false)
+                        .build()
+                ).drawable
+            }.getOrNull() ?: continue
+
+            return (drawable as? BitmapDrawable)?.bitmap
+                ?: drawable.toBitmap(DOWNLOAD_ARTWORK_SIZE_PX, DOWNLOAD_ARTWORK_SIZE_PX)
+        }
+        return null
+    }
+
+    private fun writeArtworkTemp(bitmap: Bitmap): File {
+        val file = File.createTempFile("koda_cover_", ".jpg", context.cacheDir)
+        val written = file.outputStream().use { out ->
+            bitmap.compress(Bitmap.CompressFormat.JPEG, DOWNLOAD_ARTWORK_JPEG_QUALITY, out)
+        }
+        if (!written) {
+            file.delete()
+            throw java.io.IOException("Could not encode album artwork")
+        }
+        return file
+    }
+
+    private fun copyToPending(source: File, target: Uri) {
+        val output = storage.openOutput(target)
+            ?: throw java.io.IOException("Could not open storage entry")
+        output.use { out -> source.inputStream().use { input -> input.copyTo(out) } }
+    }
 
     /**
      * One video download attempt.
@@ -1040,6 +1244,9 @@ class DownloadRepository private constructor(private val context: Context) {
                 storage.delete(uri)
             }
         }
+        listOfNotNull(songToDelete.albumArtUri, songToDelete.lyricsUri)
+            .filter(storage::isMusicCompanion)
+            .forEach(storage::delete)
 
         currentList.remove(songToDelete)
         _downloadedSongs.value = currentList

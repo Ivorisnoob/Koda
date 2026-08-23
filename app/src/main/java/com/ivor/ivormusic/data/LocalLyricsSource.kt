@@ -2,6 +2,8 @@ package com.ivor.ivormusic.data
 
 import com.ivor.ivormusic.util.KLog
 
+import android.content.Context
+import android.net.Uri
 import org.jaudiotagger.audio.AudioFileIO
 import org.jaudiotagger.tag.FieldKey
 import java.io.File
@@ -10,6 +12,10 @@ import java.util.LinkedHashMap
 
 /** Reads lyrics that travel with a local audio file, without using the network. */
 internal class LocalLyricsSource(
+    private val sharedSidecarReader: (Song) -> String? = { null },
+    private val sharedEmbeddedLyricsReader: (Song) -> String? = { null },
+    // Keep this last: LocalLyricsSource { ... } is the test seam used for
+    // ordinary file tags, and Kotlin binds a trailing lambda to the last arg.
     private val embeddedLyricsReader: (File) -> String? = ::readEmbeddedLyrics
 ) {
     private class CachedSidecars(val stamp: Long, val files: List<File>)
@@ -32,16 +38,27 @@ internal class LocalLyricsSource(
         val audioFile = song.filePath
             ?.takeIf { it.isNotBlank() }
             ?.let(::File)
-            ?: return null
 
-        findSidecar(audioFile)?.let { sidecar ->
-            readSidecar(sidecar)?.let(LyricsParser::parse)?.let { parsed ->
-                return parsed.toResult("Local ${sidecar.extension.uppercase()}")
+        if (audioFile != null) {
+            findSidecar(audioFile)?.let { sidecar ->
+                readSidecar(sidecar)?.let(LyricsParser::parse)?.let { parsed ->
+                    return parsed.toResult("Local ${sidecar.extension.uppercase()}")
+                }
             }
         }
 
-        val embedded = runCatching { embeddedLyricsReader(audioFile) }
-            .onFailure { KLog.w(TAG, "Could not read embedded lyrics from ${audioFile.name}", it) }
+        runCatching { sharedSidecarReader(song) }
+            .onFailure { KLog.w(TAG, "Could not read downloaded lyric sidecar for ${song.title}", it) }
+            .getOrNull()
+            ?.takeIf { it.isNotBlank() && it.length <= MAX_SIDECAR_BYTES }
+            ?.let(LyricsParser::parse)
+            ?.let { return it.toResult("Downloaded LRC") }
+
+        val embedded = runCatching {
+            if (audioFile != null) embeddedLyricsReader(audioFile)
+            else sharedEmbeddedLyricsReader(song)
+        }
+            .onFailure { KLog.w(TAG, "Could not read embedded lyrics from ${song.title}", it) }
             .getOrNull()
             ?.takeIf { it.isNotBlank() && it.length <= MAX_EMBEDDED_LYRICS_CHARS }
 
@@ -136,7 +153,7 @@ internal class LocalLyricsSource(
         syncType = syncType
     )
 
-    private companion object {
+    companion object {
         const val TAG = "LocalLyricsSource"
         const val MAX_SIDECAR_BYTES = 2L * 1024L * 1024L
         const val MAX_EMBEDDED_LYRICS_CHARS = 2 * 1024 * 1024
@@ -149,6 +166,50 @@ internal class LocalLyricsSource(
                 .tag
                 ?.getFirst(FieldKey.LYRICS)
                 ?.takeIf(String::isNotBlank)
+        }
+
+        /**
+         * Content-URI counterpart used by downloads in scoped shared storage.
+         * Their explicit LRC companion is the fast path; copying the M4A into
+         * cache is only a recovery path if that sidecar was removed while the
+         * embedded tag still survives.
+         */
+        fun forContext(context: Context): LocalLyricsSource {
+            val appContext = context.applicationContext
+            return LocalLyricsSource(
+                sharedSidecarReader = { song ->
+                    song.lyricsUri?.let { uri -> readContentUri(appContext, uri, MAX_SIDECAR_BYTES) }
+                },
+                sharedEmbeddedLyricsReader = { song ->
+                    song.uri?.let { uri ->
+                        val temp = File.createTempFile("koda_lyrics_", ".m4a", appContext.cacheDir)
+                        try {
+                            val copied = appContext.contentResolver.openInputStream(uri)?.use { input ->
+                                temp.outputStream().use(input::copyTo)
+                                true
+                            } ?: false
+                            if (copied) readEmbeddedLyrics(temp) else null
+                        } finally {
+                            temp.delete()
+                        }
+                    }
+                }
+            )
+        }
+
+        private fun readContentUri(context: Context, uri: Uri, maxBytes: Long): String? {
+            return context.contentResolver.openInputStream(uri)?.use { input ->
+                val bytes = input.readNBytes((maxBytes + 1L).toInt())
+                if (bytes.size.toLong() > maxBytes) null else decodeSharedSidecar(bytes)
+            }
+        }
+
+        private fun decodeSharedSidecar(bytes: ByteArray): String = when {
+            bytes.size >= 2 && bytes[0] == 0xFF.toByte() && bytes[1] == 0xFE.toByte() ->
+                String(bytes, 2, bytes.size - 2, Charsets.UTF_16LE)
+            bytes.size >= 2 && bytes[0] == 0xFE.toByte() && bytes[1] == 0xFF.toByte() ->
+                String(bytes, 2, bytes.size - 2, Charsets.UTF_16BE)
+            else -> String(bytes, Charsets.UTF_8)
         }
     }
 }

@@ -2,6 +2,7 @@ package com.ivor.ivormusic.data
 
 import com.ivor.ivormusic.util.KLog
 
+import android.content.Context
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
@@ -28,10 +29,12 @@ import java.util.LinkedHashMap
  * [fetchLyrics]'s `allowRemote`.
  */
 class LyricsRepository internal constructor(
+    context: Context? = null,
     private val http: LyricsHttpClient = LyricsHttpClient(),
     private val wordProviders: List<RemoteLyricsProvider> = defaultWordLyricsProviders(http),
     private val fallbackProviders: List<RemoteLyricsProvider> = defaultFallbackLyricsProviders(http),
-    private val localLyricsSource: LocalLyricsSource = LocalLyricsSource()
+    private val localLyricsSource: LocalLyricsSource =
+        context?.let(LocalLyricsSource::forContext) ?: LocalLyricsSource()
 ) {
     private companion object {
         const val TAG = "LyricsRepository"

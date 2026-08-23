@@ -46,6 +46,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.displayCutoutPadding
@@ -66,21 +67,17 @@ import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ClosedCaption
 import androidx.compose.material.icons.rounded.ClosedCaptionOff
-import androidx.compose.material.icons.rounded.PictureInPictureAlt
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Error
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Forward10
 import androidx.compose.material.icons.rounded.Fullscreen
 import androidx.compose.material.icons.rounded.FullscreenExit
-import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material.icons.rounded.RepeatOne
 import androidx.compose.material.icons.rounded.Replay10
 import androidx.compose.material.icons.rounded.Settings
-import androidx.compose.material.icons.rounded.StayCurrentPortrait
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
@@ -91,8 +88,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ContainedLoadingIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledIconButton
@@ -250,6 +245,7 @@ internal fun CaptionOverlay(
 @Composable
 fun FullscreenPlayerContent(
     exoPlayer: ExoPlayer,
+    videoId: String,
     showControls: Boolean,
     onToggleControls: () -> Unit,
     hasError: Boolean,
@@ -257,7 +253,6 @@ fun FullscreenPlayerContent(
     isLoading: Boolean,
     isBuffering: Boolean,
     isPlaying: Boolean,
-    isLooping: Boolean,
     currentPosition: Long,
     duration: Long,
     progress: Float,
@@ -266,20 +261,12 @@ fun FullscreenPlayerContent(
     videoTitle: String,
     onPlayPause: () -> Unit,
     onSeek: (Float) -> Unit,
+    onScrubbingChanged: (Boolean) -> Unit = {},
     onSeekBackward: () -> Unit,
     onSeekForward: () -> Unit,
     onBack: () -> Unit,
     onFullscreenToggle: () -> Unit,
     onSettings: () -> Unit,
-    onLoopToggle: () -> Unit,
-    showPipButton: Boolean = false,
-    onPipClick: () -> Unit = {},
-    showTimedCommentsButton: Boolean = false,
-    timedCommentsActive: Boolean = false,
-    onTimedCommentsToggle: () -> Unit = {},
-    showCommentsButton: Boolean = false,
-    commentsActive: Boolean = false,
-    onCommentsToggle: () -> Unit = {},
     chapters: List<VideoChapter> = emptyList(),
     onOpenChapters: () -> Unit = {},
     captionsActive: Boolean = false,
@@ -295,10 +282,7 @@ fun FullscreenPlayerContent(
     hasNextInQueue: Boolean = false,
     onPreviousInQueue: () -> Unit = {},
     onNextInQueue: () -> Unit = {},
-    onOpenQueue: () -> Unit = {},
     isLive: Boolean = false,
-    liveChatActive: Boolean = false,
-    onLiveChatToggle: () -> Unit = {},
     /** Jump to the live edge of the DVR window. */
     onSeekToLive: () -> Unit = {},
     /**
@@ -323,12 +307,10 @@ fun FullscreenPlayerContent(
 ) {
     // Stable shapes to prevent "square flash"
     val stableShapes = IconButtonDefaults.shapes()
-    var showMoreControls by remember { mutableStateOf(false) }
 
     // The top-bar actions, defined once and placed either beside the title or
-    // on a line of their own. Landscape has width for one row and portrait
-    // does not, and the alternative to hoisting them is the same five buttons
-    // written twice.
+    // on a line of their own. Only immediate viewing controls live over the
+    // moving frame; everything secondary is in Playback settings.
     val topBarActions: @Composable RowScope.() -> Unit = {
         FilledTonalIconButton(
             onClick = onCaptionsClick,
@@ -353,49 +335,6 @@ fun FullscreenPlayerContent(
             shapes = stableShapes
         ) {
             Icon(Icons.Rounded.Settings, "Playback settings")
-        }
-
-        if (showPipButton) {
-            FilledTonalIconButton(
-                onClick = onPipClick,
-                colors = IconButtonDefaults.filledTonalIconButtonColors(
-                    containerColor = Color.Black.copy(0.5f),
-                    contentColor = Color.White
-                ),
-                shapes = stableShapes
-            ) {
-                Icon(Icons.Rounded.PictureInPictureAlt, "Picture in picture")
-            }
-        }
-
-        Box {
-            FilledTonalIconButton(
-                onClick = { showMoreControls = true },
-                colors = IconButtonDefaults.filledTonalIconButtonColors(
-                    containerColor = Color.Black.copy(0.5f),
-                    contentColor = Color.White
-                ),
-                shapes = stableShapes
-            ) {
-                Icon(Icons.Rounded.MoreVert, "More playback controls")
-            }
-            PlayerOverflowMenu(
-                expanded = showMoreControls,
-                onDismiss = { showMoreControls = false },
-                isLooping = isLooping,
-                onLoopToggle = onLoopToggle,
-                showQueue = showQueueControls,
-                onOpenQueue = onOpenQueue,
-                showTimedComments = showTimedCommentsButton && !isLive,
-                timedCommentsActive = timedCommentsActive,
-                onTimedCommentsToggle = onTimedCommentsToggle,
-                showComments = showCommentsButton,
-                commentsActive = commentsActive,
-                onCommentsToggle = onCommentsToggle,
-                showLiveChat = isLive,
-                liveChatActive = liveChatActive,
-                onLiveChatToggle = onLiveChatToggle
-            )
         }
 
         FilledIconButton(
@@ -630,7 +569,7 @@ fun FullscreenPlayerContent(
                         .padding(horizontal = 24.dp, vertical = 18.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    if (chapters.isNotEmpty() || showCommentsButton) {
+                    if (chapters.isNotEmpty()) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically
@@ -643,34 +582,6 @@ fun FullscreenPlayerContent(
                                 )
                             }
                             Spacer(Modifier.weight(1f))
-                            if (showCommentsButton) {
-                                Surface(
-                                    onClick = onCommentsToggle,
-                                    shape = CircleShape,
-                                    color = if (commentsActive) {
-                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.92f)
-                                    } else Color.Black.copy(alpha = 0.46f),
-                                    contentColor = if (commentsActive) {
-                                        MaterialTheme.colorScheme.onPrimary
-                                    } else Color.White
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(7.dp)
-                                    ) {
-                                        Icon(
-                                            Icons.AutoMirrored.Rounded.Comment,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(19.dp)
-                                        )
-                                        Text(
-                                            if (commentsActive) "Close comments" else "Comments",
-                                            style = MaterialTheme.typography.labelLarge
-                                        )
-                                    }
-                                }
-                            }
                         }
                     }
                     Row(
@@ -686,6 +597,7 @@ fun FullscreenPlayerContent(
                         }
 
                         PlayerSeekBar(
+                            mediaId = videoId,
                             progress = progress,
                             bufferedProgress = bufferedProgress,
                             onSeek = onSeek,
@@ -693,6 +605,8 @@ fun FullscreenPlayerContent(
                             chapters = chapters,
                             durationMs = duration,
                             seekPreview = seekPreview,
+                            showSeekPreview = !isLive,
+                            onScrubbingChanged = onScrubbingChanged,
                         )
 
                         if (isLive) {
@@ -717,6 +631,7 @@ fun FullscreenPlayerContent(
 @Composable
 fun PortraitPlayerContent(
     exoPlayer: ExoPlayer,
+    videoId: String,
     showControls: Boolean,
     onToggleControls: () -> Unit,
     hasError: Boolean,
@@ -724,7 +639,6 @@ fun PortraitPlayerContent(
     isLoading: Boolean,
     isBuffering: Boolean,
     isPlaying: Boolean,
-    isLooping: Boolean,
     currentPosition: Long,
     duration: Long,
     progress: Float,
@@ -733,15 +647,12 @@ fun PortraitPlayerContent(
     videoTitle: String,
     onPlayPause: () -> Unit,
     onSeek: (Float) -> Unit,
+    onScrubbingChanged: (Boolean) -> Unit = {},
     onSeekBackward: () -> Unit,
     onSeekForward: () -> Unit,
     onBack: () -> Unit,
     onFullscreenToggle: () -> Unit,
     onSettings: () -> Unit,
-    onLoopToggle: () -> Unit,
-    showTimedCommentsButton: Boolean = false,
-    timedCommentsActive: Boolean = false,
-    onTimedCommentsToggle: () -> Unit = {},
     chapters: List<VideoChapter> = emptyList(),
     onOpenChapters: () -> Unit = {},
     captionsActive: Boolean = false,
@@ -759,8 +670,6 @@ fun PortraitPlayerContent(
      * the full-bleed layout is built around live chat with nothing to say on a
      * finished video.
      */
-    showVerticalLiveButton: Boolean = false,
-    onVerticalLiveClick: () -> Unit = {},
     /**
      * Playlist transport. Composed only while a queue is running - see
      * [QueueSkipButton].
@@ -770,8 +679,6 @@ fun PortraitPlayerContent(
     hasNextInQueue: Boolean = false,
     onPreviousInQueue: () -> Unit = {},
     onNextInQueue: () -> Unit = {},
-    showPipButton: Boolean = false,
-    onPipClick: () -> Unit = {},
     minimizeDragEnabled: Boolean = false,
     onMinimizeDragDelta: (Float) -> Unit = {},
     onMinimizeDragRelease: (Float) -> Unit = {},
@@ -779,7 +686,6 @@ fun PortraitPlayerContent(
 ) {
     // Stable shapes
     val stableShapes = IconButtonDefaults.shapes()
-    var showMoreControls by remember { mutableStateOf(false) }
 
     // Speed captured when a hold-to-2x begins, restored when the finger lifts
     var speedBeforeBoost by remember { mutableFloatStateOf(1f) }
@@ -894,31 +800,6 @@ fun PortraitPlayerContent(
                         ) {
                             Icon(Icons.Rounded.Settings, "Playback settings")
                         }
-                        Box {
-                            FilledTonalIconButton(
-                                onClick = { showMoreControls = true },
-                                colors = IconButtonDefaults.filledTonalIconButtonColors(
-                                    containerColor = Color.Black.copy(0.5f),
-                                    contentColor = Color.White
-                                ),
-                                shapes = stableShapes
-                            ) {
-                                Icon(Icons.Rounded.MoreVert, "More playback controls")
-                            }
-                            PlayerOverflowMenu(
-                                expanded = showMoreControls,
-                                onDismiss = { showMoreControls = false },
-                                isLooping = isLooping,
-                                onLoopToggle = onLoopToggle,
-                                showTimedComments = showTimedCommentsButton && !isLive,
-                                timedCommentsActive = timedCommentsActive,
-                                onTimedCommentsToggle = onTimedCommentsToggle,
-                                showPip = showPipButton,
-                                onPipClick = onPipClick,
-                                showVerticalLive = showVerticalLiveButton,
-                                onVerticalLiveClick = onVerticalLiveClick
-                            )
-                        }
                         FilledIconButton(
                             onClick = onFullscreenToggle,
                             colors = IconButtonDefaults.filledIconButtonColors(
@@ -983,6 +864,7 @@ fun PortraitPlayerContent(
                         }
 
                         PlayerSeekBar(
+                            mediaId = videoId,
                             progress = progress,
                             bufferedProgress = bufferedProgress,
                             onSeek = onSeek,
@@ -990,6 +872,8 @@ fun PortraitPlayerContent(
                             chapters = chapters,
                             durationMs = duration,
                             seekPreview = seekPreview,
+                            showSeekPreview = !isLive,
+                            onScrubbingChanged = onScrubbingChanged,
                         )
 
                         if (isLive) {
@@ -1015,6 +899,12 @@ fun PortraitPlayerContent(
  * is genuinely behind.
  */
 internal const val LIVE_EDGE_THRESHOLD = 0.995f
+
+/** Time distance close enough to confirm that the position poll observed a seek. */
+private const val SEEK_CONFIRM_TOLERANCE_MS = 1_000f
+
+/** Backstop for failed or heavily rounded seeks; prevents a stale optimistic thumb. */
+private const val SEEK_COMMIT_TIMEOUT_MS = 1_500L
 
 /**
  * The "LIVE" marker where a normal video shows its duration. Red and tappable
@@ -1077,6 +967,7 @@ internal fun LiveEdgeChip(
  */
 @Composable
 internal fun PlayerSeekBar(
+    mediaId: String,
     progress: Float,
     onSeek: (Float) -> Unit,
     modifier: Modifier = Modifier,
@@ -1084,10 +975,39 @@ internal fun PlayerSeekBar(
     chapters: List<VideoChapter> = emptyList(),
     durationMs: Long = 0L,
     seekPreview: VideoSeekPreview? = null,
+    showSeekPreview: Boolean = true,
+    onScrubbingChanged: (Boolean) -> Unit = {},
     onTonalSurface: Boolean = false
 ) {
-    var isScrubbing by remember { mutableStateOf(false) }
-    var scrubValue by remember { mutableFloatStateOf(0f) }
+    var isScrubbing by remember(mediaId) { mutableStateOf(false) }
+    var scrubValue by remember(mediaId) { mutableFloatStateOf(0f) }
+    var committedSeekValue by remember(mediaId) { mutableStateOf<Float?>(null) }
+    val currentScrubbingChanged by rememberUpdatedState(onScrubbingChanged)
+    val externalProgress = progress.coerceIn(0f, 1f)
+    val displayedProgress = when {
+        isScrubbing -> scrubValue
+        committedSeekValue != null -> committedSeekValue ?: externalProgress
+        else -> externalProgress
+    }
+
+    // A seek changes ExoPlayer immediately, but the StateFlow feeding this
+    // composable is sampled twice a second. Hold the committed value until the
+    // poll catches up so the thumb never flashes back to the pre-seek position.
+    LaunchedEffect(externalProgress, mediaId) {
+        val target = committedSeekValue ?: return@LaunchedEffect
+        val distanceMs = abs(externalProgress - target) * durationMs.toFloat()
+        if (distanceMs <= SEEK_CONFIRM_TOLERANCE_MS) {
+            committedSeekValue = null
+        }
+    }
+    LaunchedEffect(committedSeekValue, mediaId) {
+        val target = committedSeekValue ?: return@LaunchedEffect
+        delay(SEEK_COMMIT_TIMEOUT_MS)
+        if (committedSeekValue == target) committedSeekValue = null
+    }
+    DisposableEffect(mediaId) {
+        onDispose { currentScrubbingChanged(false) }
+    }
 
     val bufferedColor = if (onTonalSurface) {
         MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f)
@@ -1104,45 +1024,84 @@ internal fun PlayerSeekBar(
     } else {
         Color.Black.copy(alpha = 0.85f)
     }
+    val sliderColors = SliderDefaults.colors(
+        thumbColor = MaterialTheme.colorScheme.primary,
+        activeTrackColor = MaterialTheme.colorScheme.primary,
+        inactiveTrackColor = inactiveTrackColor
+    )
 
-    BoxWithConstraints(modifier = modifier) {
-        // Buffered-ahead indicator: a soft white bar from the start to the
-        // buffered position, drawn under the Slider. The inactive track is
-        // translucent, so the buffered region reads as a brighter segment
-        // ahead of the playhead (YouTube-style) while the opaque active
-        // track covers the part already played.
-        if (bufferedProgress > 0f) {
-            Canvas(modifier = Modifier.matchParentSize()) {
-                val centerY = size.height / 2f
-                drawLine(
-                    color = bufferedColor,
-                    start = Offset(0f, centerY),
-                    end = Offset(bufferedProgress.coerceIn(0f, 1f) * size.width, centerY),
-                    strokeWidth = 4.dp.toPx(),
-                    cap = StrokeCap.Round
-                )
-            }
-        }
-
+    // Keep the control's measured height identical before and during a drag.
+    // The preview is an overlay: its negative offset changes where it draws,
+    // not the space the bottom controls reserve for this seek bar.
+    BoxWithConstraints(modifier = modifier.height(48.dp)) {
         Slider(
-            value = if (isScrubbing) scrubValue else progress.coerceIn(0f, 1f),
+            value = displayedProgress,
             onValueChange = {
-                isScrubbing = true
+                if (!isScrubbing) {
+                    isScrubbing = true
+                    committedSeekValue = null
+                    onScrubbingChanged(true)
+                }
                 scrubValue = it
             },
             onValueChangeFinished = {
-                onSeek(scrubValue)
+                if (isScrubbing) {
+                    val target = scrubValue.coerceIn(0f, 1f)
+                    committedSeekValue = target
+                    onSeek(target)
+                }
                 isScrubbing = false
+                onScrubbingChanged(false)
             },
-            colors = SliderDefaults.colors(
-                thumbColor = MaterialTheme.colorScheme.primary,
-                activeTrackColor = MaterialTheme.colorScheme.primary,
-                inactiveTrackColor = inactiveTrackColor
-            ),
+            enabled = durationMs > 0L,
+            colors = sliderColors,
+            track = { sliderState ->
+                // The track slot is measured to the slider's actual travel
+                // width and placed half a thumb in from either edge. Drawing
+                // buffer and chapter marks here keeps them on the same geometry
+                // as the gesture, instead of using the wider 48dp touch target.
+                Box {
+                    SliderDefaults.Track(
+                        sliderState = sliderState,
+                        enabled = durationMs > 0L,
+                        colors = sliderColors,
+                    )
+                    Canvas(modifier = Modifier.matchParentSize()) {
+                        val centerY = size.height / 2f
+                        val buffered = bufferedProgress.coerceIn(0f, 1f)
+                        if (buffered > displayedProgress) {
+                            drawLine(
+                                color = bufferedColor,
+                                start = Offset(displayedProgress * size.width, centerY),
+                                end = Offset(buffered * size.width, centerY),
+                                strokeWidth = 4.dp.toPx(),
+                                cap = StrokeCap.Round,
+                            )
+                        }
+
+                        if (chapters.size > 1 && durationMs > 0L) {
+                            val half = 5.dp.toPx()
+                            val stroke = 2.5.dp.toPx()
+                            chapters.forEach { chapter ->
+                                val fraction = chapter.startMs.toFloat() / durationMs.toFloat()
+                                if (fraction > 0.001f && fraction < 0.999f) {
+                                    val x = fraction * size.width
+                                    drawLine(
+                                        color = tickColor,
+                                        start = Offset(x, centerY - half),
+                                        end = Offset(x, centerY + half),
+                                        strokeWidth = stroke,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            },
             modifier = Modifier.fillMaxWidth()
         )
 
-        if (isScrubbing && durationMs > 0L) {
+        if (showSeekPreview && isScrubbing && durationMs > 0L) {
             val previewWidth = if (seekPreview?.isUsable == true) 144.dp else 72.dp
             val previewX = (maxWidth * scrubValue - previewWidth / 2)
                 .coerceIn(0.dp, (maxWidth - previewWidth).coerceAtLeast(0.dp))
@@ -1152,30 +1111,14 @@ internal fun PlayerSeekBar(
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .offset(x = previewX, y = if (seekPreview?.isUsable == true) (-126).dp else (-46).dp)
+                    // Measure the card at its natural size, but report only the
+                    // seek bar's fixed bounds to the parent. Without this, the
+                    // 108dp storyboard card makes the whole bottom row taller
+                    // and visibly pushes the slider upward as dragging begins.
+                    .wrapContentSize(Alignment.TopStart, unbounded = true)
             )
         }
 
-        // Chapter boundary ticks drawn over the track. Purely decorative; the
-        // Canvas has no pointer input so touches still reach the Slider.
-        if (chapters.size > 1 && durationMs > 0) {
-            Canvas(modifier = Modifier.matchParentSize()) {
-                val centerY = size.height / 2f
-                val half = 5.dp.toPx()
-                val stroke = 2.5.dp.toPx()
-                chapters.forEach { chapter ->
-                    val fraction = chapter.startMs.toFloat() / durationMs.toFloat()
-                    if (fraction > 0.001f && fraction < 0.999f) {
-                        val x = fraction * size.width
-                        drawLine(
-                            color = tickColor,
-                            start = Offset(x, centerY - half),
-                            end = Offset(x, centerY + half),
-                            strokeWidth = stroke
-                        )
-                    }
-                }
-            }
-        }
     }
 }
 
@@ -1241,6 +1184,7 @@ private fun SeekPreviewCard(
                         // The sprite must retain its full grid dimensions; the
                         // clipped parent is the viewport onto the selected cell.
                         modifier = Modifier
+                            .wrapContentSize(Alignment.TopStart, unbounded = true)
                             .requiredSize(
                                 frameWidth * preview.framesPerPageX,
                                 frameHeight * preview.framesPerPageY,
@@ -2332,137 +2276,6 @@ fun VideoInfoSection(
                     }
                 }
             }
-        }
-    }
-}
-
-/**
- * Secondary playback actions shared by inline and fullscreen chrome.
- *
- * Keeping these as labeled rows preserves every capability without asking a
- * viewer to decode a wall of equally weighted icons over the video. Selected
- * states retain both icon and color cues, while the menu itself provides the
- * stable tonal surface that moving frames cannot.
- */
-@Composable
-private fun PlayerOverflowMenu(
-    expanded: Boolean,
-    onDismiss: () -> Unit,
-    isLooping: Boolean,
-    onLoopToggle: () -> Unit,
-    showQueue: Boolean = false,
-    onOpenQueue: () -> Unit = {},
-    showTimedComments: Boolean = false,
-    timedCommentsActive: Boolean = false,
-    onTimedCommentsToggle: () -> Unit = {},
-    showComments: Boolean = false,
-    commentsActive: Boolean = false,
-    onCommentsToggle: () -> Unit = {},
-    showLiveChat: Boolean = false,
-    liveChatActive: Boolean = false,
-    onLiveChatToggle: () -> Unit = {},
-    showPip: Boolean = false,
-    onPipClick: () -> Unit = {},
-    showVerticalLive: Boolean = false,
-    onVerticalLiveClick: () -> Unit = {}
-) {
-    fun runAndDismiss(action: () -> Unit) {
-        onDismiss()
-        action()
-    }
-
-    DropdownMenu(
-        expanded = expanded,
-        onDismissRequest = onDismiss,
-        shape = RoundedCornerShape(12.dp),
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-    ) {
-        if (showQueue) {
-            DropdownMenuItem(
-                text = { Text("Playlist queue") },
-                leadingIcon = {
-                    Icon(Icons.AutoMirrored.Rounded.PlaylistPlay, contentDescription = null)
-                },
-                onClick = { runAndDismiss(onOpenQueue) }
-            )
-        }
-        DropdownMenuItem(
-            text = { Text(if (isLooping) "Loop video on" else "Loop video") },
-            leadingIcon = {
-                Icon(
-                    Icons.Rounded.RepeatOne,
-                    contentDescription = null,
-                    tint = if (isLooping) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            },
-            trailingIcon = if (isLooping) {
-                { Icon(Icons.Rounded.CheckCircle, contentDescription = "Enabled") }
-            } else null,
-            onClick = { runAndDismiss(onLoopToggle) }
-        )
-        if (showTimedComments) {
-            DropdownMenuItem(
-                text = {
-                    Text(if (timedCommentsActive) "Timed comments on" else "Timed comments")
-                },
-                leadingIcon = {
-                    Icon(
-                        Icons.AutoMirrored.Rounded.Comment,
-                        contentDescription = null,
-                        tint = if (timedCommentsActive) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                },
-                trailingIcon = if (timedCommentsActive) {
-                    { Icon(Icons.Rounded.CheckCircle, contentDescription = "Enabled") }
-                } else null,
-                onClick = { runAndDismiss(onTimedCommentsToggle) }
-            )
-        }
-        if (showComments) {
-            DropdownMenuItem(
-                text = { Text(if (commentsActive) "Close comments" else "Browse comments") },
-                leadingIcon = {
-                    Icon(
-                        Icons.AutoMirrored.Rounded.Comment,
-                        contentDescription = null,
-                        tint = if (commentsActive) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                },
-                trailingIcon = if (commentsActive) {
-                    { Icon(Icons.Rounded.CheckCircle, contentDescription = "Open") }
-                } else null,
-                onClick = { runAndDismiss(onCommentsToggle) }
-            )
-        }
-        if (showLiveChat) {
-            DropdownMenuItem(
-                text = { Text(if (liveChatActive) "Hide live chat" else "Show live chat") },
-                leadingIcon = {
-                    Icon(Icons.AutoMirrored.Rounded.Chat, contentDescription = null)
-                },
-                onClick = { runAndDismiss(onLiveChatToggle) }
-            )
-        }
-        if (showPip) {
-            DropdownMenuItem(
-                text = { Text("Picture in picture") },
-                leadingIcon = {
-                    Icon(Icons.Rounded.PictureInPictureAlt, contentDescription = null)
-                },
-                onClick = { runAndDismiss(onPipClick) }
-            )
-        }
-        if (showVerticalLive) {
-            DropdownMenuItem(
-                text = { Text("Vertical live view") },
-                leadingIcon = {
-                    Icon(Icons.Rounded.StayCurrentPortrait, contentDescription = null)
-                },
-                onClick = { runAndDismiss(onVerticalLiveClick) }
-            )
         }
     }
 }

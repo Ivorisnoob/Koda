@@ -18,6 +18,7 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -26,10 +27,16 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.Chat
+import androidx.compose.material.icons.automirrored.rounded.Comment
+import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.PictureInPictureAlt
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.RepeatOne
 import androidx.compose.material.icons.rounded.Speed
+import androidx.compose.material.icons.rounded.StayCurrentPortrait
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -46,6 +53,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
@@ -128,6 +136,7 @@ fun VideoPlayerContent(
             )
     }
     val isCaptionsLoading by viewModel.isCaptionsLoading.collectAsState()
+    val isAutoplayEnabled by viewModel.isAutoplayEnabled.collectAsState()
     val isLooping by viewModel.isLooping.collectAsState()
     val playbackSpeed by viewModel.playbackSpeed.collectAsState()
     val playbackError by viewModel.playbackError.collectAsState()
@@ -161,6 +170,9 @@ fun VideoPlayerContent(
 
     // Local UI State
     var showControls by remember { mutableStateOf(false) }
+    // Keyed to the video so a source switch can never inherit a drag that
+    // belonged to the old timeline.
+    var isSeekScrubbing by remember(video?.videoId) { mutableStateOf(false) }
     var isFullscreen by remember { mutableStateOf(false) }
     var showChaptersSheet by remember { mutableStateOf(false) }
     var showCaptionsSheet by remember { mutableStateOf(false) }
@@ -308,8 +320,8 @@ fun VideoPlayerContent(
     }
 
     // Auto-hide controls
-    LaunchedEffect(showControls, isPlaying) {
-        if (showControls && isPlaying) {
+    LaunchedEffect(showControls, isPlaying, isSeekScrubbing) {
+        if (showControls && isPlaying && !isSeekScrubbing) {
             delay(4000)
             showControls = false
         }
@@ -440,9 +452,9 @@ fun VideoPlayerContent(
         onDispose { listener.disable() }
     }
     
-    // Quality Sheet State
-    var showQualitySheet by remember { mutableStateOf(false) }
-    val sheetState = rememberModalBottomSheetState()
+    // Playback-settings sheet state
+    var showPlaybackSettings by remember { mutableStateOf(false) }
+    val playbackSettingsSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     // Comments Sheet + Sign-in Dialog State
     var showCommentsSheet by remember { mutableStateOf(false) }
@@ -562,6 +574,7 @@ fun VideoPlayerContent(
             ) {
                 FullscreenPlayerContent(
                 exoPlayer = exoPlayer,
+                videoId = currentVideo.videoId,
                 showControls = showControls,
                 onToggleControls = { showControls = !showControls },
                 hasError = playbackError != null,
@@ -569,7 +582,6 @@ fun VideoPlayerContent(
                 isLoading = isLoading,
                 isBuffering = isBuffering,
                 isPlaying = isPlaying,
-                isLooping = isLooping,
                 currentPosition = currentPosition,
                 duration = duration,
                 progress = progress,
@@ -578,6 +590,7 @@ fun VideoPlayerContent(
                 videoTitle = currentVideo.title,
                 onPlayPause = { viewModel.togglePlayPause() },
                 onSeek = { newProgress -> exoPlayer.seekTo((newProgress * duration).toLong()) },
+                onScrubbingChanged = { isSeekScrubbing = it },
                 onSeekBackward = { seekBy(-VideoPlayerViewModel.SEEK_STEP_MS) },
                 onSeekForward = { seekBy(VideoPlayerViewModel.SEEK_STEP_MS) },
                 onBack = {
@@ -588,29 +601,7 @@ fun VideoPlayerContent(
                     isFullscreen = false
                     fullscreenIsPortrait = false
                 },
-                onSettings = { showQualitySheet = true },
-                onLoopToggle = { viewModel.toggleLooping() },
-                showPipButton = pipSupported,
-                onPipClick = {
-                    val host = activity as? androidx.activity.ComponentActivity
-                    if (host != null) {
-                        enterPipMode(host)
-                    }
-                },
-                showTimedCommentsButton = timedCommentsFeatureEnabled,
-                timedCommentsActive = timedCommentsActive,
-                onTimedCommentsToggle = { timedCommentsActive = !timedCommentsActive },
-                showCommentsButton = !isLive && commentsToken != null && !fullscreenIsPortrait,
-                commentsActive = showCommentsSheet,
-                onCommentsToggle = {
-                    if (showCommentsSheet) {
-                        showCommentsSheet = false
-                    } else {
-                        viewModel.ensureCommentsLoaded()
-                        showCommentsSheet = true
-                        showControls = false
-                    }
-                },
+                onSettings = { showPlaybackSettings = true },
                 chapters = chapters,
                 onOpenChapters = { showChaptersSheet = true },
                 captionsActive = selectedCaption != null,
@@ -624,10 +615,7 @@ fun VideoPlayerContent(
                 hasNextInQueue = queue?.hasNext == true,
                 onPreviousInQueue = { viewModel.playPreviousInQueue() },
                 onNextInQueue = { viewModel.playNextInQueue() },
-                onOpenQueue = { showQueueSheet = true },
                 isLive = isLive,
-                liveChatActive = showLiveChat,
-                onLiveChatToggle = { showLiveChat = !showLiveChat },
                 onSeekToLive = { exoPlayer.seekToDefaultPosition() },
                 // A pillarboxed 9:16 stream and a docked chat column are the
                 // one pairing where landscape wastes nothing - but only if the
@@ -794,6 +782,7 @@ fun VideoPlayerContent(
                     likeStatus = engagement?.likeStatus ?: LikeStatus.INDIFFERENT,
                     onPlayPause = { viewModel.togglePlayPause() },
                     onSeek = { newProgress -> exoPlayer.seekTo((newProgress * duration).toLong()) },
+                    onScrubbingChanged = { isSeekScrubbing = it },
                     onSeekBackward = { seekBy(-VideoPlayerViewModel.SEEK_STEP_MS) },
                     onSeekForward = { seekBy(VideoPlayerViewModel.SEEK_STEP_MS) },
                     onSeekToLive = { exoPlayer.seekToDefaultPosition() },
@@ -804,7 +793,7 @@ fun VideoPlayerContent(
                         viewModel.ensureCaptionsLoaded()
                         showCaptionsSheet = true
                     },
-                    onSettings = { showQualitySheet = true },
+                    onSettings = { showPlaybackSettings = true },
                     onSubscribeClick = { requireSubscribeLogin { viewModel.toggleSubscribe() } },
                     onLikeClick = { requireLogin { viewModel.toggleLike() } },
                     onRetry = { viewModel.retryPlayback() },
@@ -881,6 +870,7 @@ fun VideoPlayerContent(
                 ) {
                     PortraitPlayerContent(
                         exoPlayer = exoPlayer,
+                        videoId = currentVideo.videoId,
                         showControls = showControls,
                         onToggleControls = { showControls = !showControls },
                         hasError = playbackError != null,
@@ -888,7 +878,6 @@ fun VideoPlayerContent(
                         isLoading = isLoading,
                         isBuffering = isBuffering,
                         isPlaying = isPlaying,
-                        isLooping = isLooping,
                         currentPosition = currentPosition,
                         duration = duration,
                         progress = progress,
@@ -897,6 +886,7 @@ fun VideoPlayerContent(
                         videoTitle = currentVideo.title,
                         onPlayPause = { viewModel.togglePlayPause() },
                         onSeek = { newProgress -> exoPlayer.seekTo((newProgress * duration).toLong()) },
+                        onScrubbingChanged = { isSeekScrubbing = it },
                         onSeekBackward = { seekBy(-VideoPlayerViewModel.SEEK_STEP_MS) },
                         onSeekForward = { seekBy(VideoPlayerViewModel.SEEK_STEP_MS) },
                         onBack = onBackClick,
@@ -906,11 +896,7 @@ fun VideoPlayerContent(
                             fullscreenIsPortrait = portraitFullscreenAvailable
                             isFullscreen = true
                         },
-                        onSettings = { showQualitySheet = true },
-                        onLoopToggle = { viewModel.toggleLooping() },
-                        showTimedCommentsButton = timedCommentsFeatureEnabled,
-                        timedCommentsActive = timedCommentsActive,
-                        onTimedCommentsToggle = { timedCommentsActive = !timedCommentsActive },
+                        onSettings = { showPlaybackSettings = true },
                         chapters = chapters,
                         onOpenChapters = { showChaptersSheet = true },
                         captionsActive = selectedCaption != null,
@@ -926,15 +912,6 @@ fun VideoPlayerContent(
                         onNextInQueue = { viewModel.playNextInQueue() },
                         isLive = isLive,
                         onSeekToLive = { exoPlayer.seekToDefaultPosition() },
-                        showVerticalLiveButton = verticalLiveAvailable,
-                        onVerticalLiveClick = { showVideoPageForVerticalLive = false },
-                        showPipButton = pipSupported,
-                        onPipClick = {
-                            val host = activity as? androidx.activity.ComponentActivity
-                            if (host != null) {
-                                enterPipMode(host)
-                            }
-                        },
                         minimizeDragEnabled = true,
                         onMinimizeDragDelta = onMinimizeDragDelta,
                         onMinimizeDragRelease = onMinimizeDragRelease,
@@ -1203,16 +1180,74 @@ fun VideoPlayerContent(
         )
     }
 
+    // One settings body serves the portrait sheet and fullscreen side panel.
+    // Keeping the action wiring here prevents the two surfaces from drifting
+    // back into different feature sets.
+    val playbackSettingsContent: @Composable () -> Unit = {
+        PlayerSettingsSections(
+            isLoading = isLoading,
+            qualities = availableQualities,
+            currentQuality = currentQuality,
+            onQualitySelected = { viewModel.setQuality(it) },
+            playbackSpeed = playbackSpeed,
+            onSpeedSelected = { viewModel.setPlaybackSpeed(it) },
+            showEndBehavior = !isLive,
+            autoplayEnabled = isAutoplayEnabled,
+            onAutoplayChanged = viewModel::setAutoplayEnabled,
+            isLooping = isLooping,
+            onLoopChanged = { enabled ->
+                if (enabled != isLooping) viewModel.toggleLooping()
+            },
+            showPip = pipSupported,
+            onPipClick = {
+                showPlaybackSettings = false
+                val host = activity as? androidx.activity.ComponentActivity
+                if (host != null) enterPipMode(host)
+            },
+            showComments = !isLive && commentsToken != null,
+            commentsActive = showCommentsSheet,
+            onCommentsClick = {
+                showPlaybackSettings = false
+                if (showCommentsSheet) {
+                    showCommentsSheet = false
+                } else {
+                    viewModel.ensureCommentsLoaded()
+                    showCommentsSheet = true
+                    showControls = false
+                }
+            },
+            showQueue = queue != null,
+            onQueueClick = {
+                showPlaybackSettings = false
+                showQueueSheet = true
+            },
+            showTimedComments = timedCommentsFeatureEnabled && !isLive,
+            timedCommentsActive = timedCommentsActive,
+            onTimedCommentsChanged = { timedCommentsActive = it },
+            showLiveChat = isLive && isLiveChatAvailable == true,
+            liveChatActive = showLiveChat,
+            onLiveChatChanged = { enabled ->
+                showPlaybackSettings = false
+                showLiveChat = enabled
+            },
+            showVerticalLive = verticalLiveAvailable && showVideoPageForVerticalLive,
+            onVerticalLiveClick = {
+                showPlaybackSettings = false
+                showVideoPageForVerticalLive = false
+            }
+        )
+    }
+
     // Playback settings: bottom sheet in portrait, side panel over the video
     // in fullscreen landscape so the video stays visible while adjusting
-    androidx.activity.compose.BackHandler(enabled = showQualitySheet && isFullscreen) {
-        showQualitySheet = false
+    androidx.activity.compose.BackHandler(enabled = showPlaybackSettings && isFullscreen) {
+        showPlaybackSettings = false
     }
 
     if (isFullscreen) {
         Box(modifier = Modifier.fillMaxSize()) {
             AnimatedVisibility(
-                visible = showQualitySheet,
+                visible = showPlaybackSettings,
                 enter = fadeIn(),
                 exit = fadeOut()
             ) {
@@ -1223,11 +1258,11 @@ fun VideoPlayerContent(
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null
-                        ) { showQualitySheet = false }
+                        ) { showPlaybackSettings = false }
                 )
             }
             AnimatedVisibility(
-                visible = showQualitySheet,
+                visible = showPlaybackSettings,
                 modifier = Modifier.align(Alignment.CenterEnd),
                 enter = slideInHorizontally(
                     animationSpec = spring(stiffness = 300f, dampingRatio = 0.8f),
@@ -1258,32 +1293,27 @@ fun VideoPlayerContent(
                                 color = MaterialTheme.colorScheme.onSurface,
                                 modifier = Modifier.weight(1f)
                             )
-                            FilledTonalIconButton(onClick = { showQualitySheet = false }) {
+                            FilledTonalIconButton(onClick = { showPlaybackSettings = false }) {
                                 Icon(Icons.Rounded.Close, contentDescription = "Close")
                             }
                         }
                         Spacer(modifier = Modifier.height(16.dp))
-                        PlayerSettingsSections(
-                            isLoading = isLoading,
-                            qualities = availableQualities,
-                            currentQuality = currentQuality,
-                            onQualitySelected = { viewModel.setQuality(it) },
-                            playbackSpeed = playbackSpeed,
-                            onSpeedSelected = { viewModel.setPlaybackSpeed(it) }
-                        )
+                        playbackSettingsContent()
                     }
                 }
             }
         }
-    } else if (showQualitySheet) {
+    } else if (showPlaybackSettings) {
         ModalBottomSheet(
-            onDismissRequest = { showQualitySheet = false },
-            sheetState = sheetState,
+            onDismissRequest = { showPlaybackSettings = false },
+            sheetState = playbackSettingsSheetState,
             containerColor = MaterialTheme.colorScheme.surfaceContainer,
             contentColor = MaterialTheme.colorScheme.onSurface
         ) {
             Column(
                 modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
                     .padding(horizontal = 24.dp)
                     .padding(bottom = 32.dp)
             ) {
@@ -1294,24 +1324,16 @@ fun VideoPlayerContent(
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Spacer(modifier = Modifier.height(12.dp))
-                PlayerSettingsSections(
-                    isLoading = isLoading,
-                    qualities = availableQualities,
-                    currentQuality = currentQuality,
-                    onQualitySelected = { viewModel.setQuality(it) },
-                    playbackSpeed = playbackSpeed,
-                    onSpeedSelected = { viewModel.setPlaybackSpeed(it) }
-                )
+                playbackSettingsContent()
             }
         }
     }
 }
 
 /**
- * Shared quality + speed pickers for the playback settings surface. Options
- * are expressive ToggleButton pills (shape-morph on select) laid out in a
- * FlowRow, so they wrap to the available width in both the portrait sheet
- * and the landscape side panel.
+ * Shared content for the portrait playback sheet and fullscreen side panel.
+ * End behavior is explicit, quality and speed remain quick pill choices, and
+ * low-frequency actions are labeled rows instead of mystery icons over video.
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalLayoutApi::class)
 @Composable
@@ -1321,12 +1343,73 @@ private fun PlayerSettingsSections(
     currentQuality: VideoQuality?,
     onQualitySelected: (VideoQuality) -> Unit,
     playbackSpeed: Float,
-    onSpeedSelected: (Float) -> Unit
+    onSpeedSelected: (Float) -> Unit,
+    showEndBehavior: Boolean,
+    autoplayEnabled: Boolean,
+    onAutoplayChanged: (Boolean) -> Unit,
+    isLooping: Boolean,
+    onLoopChanged: (Boolean) -> Unit,
+    showPip: Boolean,
+    onPipClick: () -> Unit,
+    showComments: Boolean,
+    commentsActive: Boolean,
+    onCommentsClick: () -> Unit,
+    showQueue: Boolean,
+    onQueueClick: () -> Unit,
+    showTimedComments: Boolean,
+    timedCommentsActive: Boolean,
+    onTimedCommentsChanged: (Boolean) -> Unit,
+    showLiveChat: Boolean,
+    liveChatActive: Boolean,
+    onLiveChatChanged: (Boolean) -> Unit,
+    showVerticalLive: Boolean,
+    onVerticalLiveClick: () -> Unit
 ) {
     val optionColors = ToggleButtonDefaults.toggleButtonColors(
         containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
         contentColor = MaterialTheme.colorScheme.onSurfaceVariant
     )
+
+    if (showEndBehavior) {
+        SettingsSectionLabel(icon = Icons.Rounded.PlayArrow, label = "When video ends")
+        Spacer(modifier = Modifier.height(8.dp))
+        Surface(
+            shape = RoundedCornerShape(20.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh
+        ) {
+            Column {
+                SettingsToggleRow(
+                    icon = Icons.Rounded.PlayArrow,
+                    title = "Autoplay",
+                    supportingText = if (autoplayEnabled) {
+                        "Play the next playlist or related video"
+                    } else {
+                        "Stop and stay on this video"
+                    },
+                    checked = autoplayEnabled,
+                    onCheckedChange = onAutoplayChanged
+                )
+                HorizontalDivider(
+                    modifier = Modifier.padding(start = 64.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant
+                )
+                SettingsToggleRow(
+                    icon = Icons.Rounded.RepeatOne,
+                    title = "Loop video",
+                    supportingText = if (!autoplayEnabled) {
+                        "Turning this on also enables Autoplay"
+                    } else if (isLooping) {
+                        "Repeat this video instead of moving on"
+                    } else {
+                        "Repeat this video when it ends"
+                    },
+                    checked = isLooping,
+                    onCheckedChange = onLoopChanged
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(24.dp))
+    }
 
     SettingsSectionLabel(icon = Icons.Rounded.Tune, label = "Quality")
     Spacer(modifier = Modifier.height(12.dp))
@@ -1397,6 +1480,129 @@ private fun PlayerSettingsSections(
             }
         }
     }
+
+    val hasSecondaryActions = showPip || showComments || showQueue ||
+        showTimedComments || showLiveChat || showVerticalLive
+    if (hasSecondaryActions) {
+        Spacer(modifier = Modifier.height(24.dp))
+        SettingsSectionLabel(icon = Icons.Rounded.Tune, label = "More controls")
+        Spacer(modifier = Modifier.height(8.dp))
+        Surface(
+            shape = RoundedCornerShape(20.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh
+        ) {
+            Column {
+                if (showPip) {
+                    SettingsActionRow(
+                        icon = Icons.Rounded.PictureInPictureAlt,
+                        title = "Picture in picture",
+                        supportingText = "Keep watching over other apps",
+                        onClick = onPipClick
+                    )
+                }
+                if (showComments) {
+                    SettingsActionRow(
+                        icon = Icons.AutoMirrored.Rounded.Comment,
+                        title = if (commentsActive) "Close comments" else "Comments",
+                        supportingText = if (commentsActive) {
+                            "Return to the full video"
+                        } else {
+                            "Browse the conversation"
+                        },
+                        onClick = onCommentsClick
+                    )
+                }
+                if (showQueue) {
+                    SettingsActionRow(
+                        icon = Icons.AutoMirrored.Rounded.PlaylistPlay,
+                        title = "Playlist queue",
+                        supportingText = "See and choose what plays next",
+                        onClick = onQueueClick
+                    )
+                }
+                if (showTimedComments) {
+                    SettingsToggleRow(
+                        icon = Icons.AutoMirrored.Rounded.Comment,
+                        title = "Timed comments",
+                        supportingText = "Show comments at their video moments",
+                        checked = timedCommentsActive,
+                        onCheckedChange = onTimedCommentsChanged
+                    )
+                }
+                if (showLiveChat) {
+                    SettingsToggleRow(
+                        icon = Icons.AutoMirrored.Rounded.Chat,
+                        title = "Live chat",
+                        supportingText = "Show the conversation beside the stream",
+                        checked = liveChatActive,
+                        onCheckedChange = onLiveChatChanged
+                    )
+                }
+                if (showVerticalLive) {
+                    SettingsActionRow(
+                        icon = Icons.Rounded.StayCurrentPortrait,
+                        title = "Vertical live view",
+                        supportingText = "Return to the full-height stream",
+                        onClick = onVerticalLiveClick
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsToggleRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    supportingText: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    ListItem(
+        supportingContent = { Text(supportingText) },
+        leadingContent = {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = if (checked) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        },
+        trailingContent = {
+            Switch(
+                checked = checked,
+                onCheckedChange = null
+            )
+        },
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+        modifier = Modifier.toggleable(
+            value = checked,
+            role = Role.Switch,
+            onValueChange = onCheckedChange
+        )
+    ) { Text(title) }
+}
+
+@Composable
+private fun SettingsActionRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    supportingText: String,
+    onClick: () -> Unit
+) {
+    ListItem(
+        supportingContent = { Text(supportingText) },
+        leadingContent = {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        },
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+        modifier = Modifier.clickable(onClick = onClick)
+    ) { Text(title) }
 }
 
 /**

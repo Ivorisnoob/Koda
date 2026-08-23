@@ -149,6 +149,7 @@ fun VerticalLivePlayerContent(
     likeStatus: LikeStatus,
     onPlayPause: () -> Unit,
     onSeek: (Float) -> Unit,
+    onScrubbingChanged: (Boolean) -> Unit = {},
     onSeekBackward: () -> Unit,
     onSeekForward: () -> Unit,
     onSeekToLive: () -> Unit,
@@ -547,11 +548,14 @@ fun VerticalLivePlayerContent(
                             horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             PlayerSeekBar(
+                                mediaId = video.videoId,
                                 progress = progress,
                                 bufferedProgress = bufferedProgress,
                                 onSeek = onSeek,
                                 modifier = Modifier.weight(1f),
                                 durationMs = duration,
+                                showSeekPreview = false,
+                                onScrubbingChanged = onScrubbingChanged,
                                 onTonalSurface = true
                             )
                             LiveEdgeChip(
