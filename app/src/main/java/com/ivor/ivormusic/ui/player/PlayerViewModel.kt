@@ -1176,15 +1176,28 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     }
     
     // --- Download Actions ---
-    
+
+    private val _pendingSongDownload = MutableStateFlow<Song?>(null)
+    val pendingSongDownload: StateFlow<Song?> = _pendingSongDownload.asStateFlow()
+
     fun toggleDownload(song: Song) {
-        viewModelScope.launch {
-            if (downloadRepository.isDownloaded(song.id)) {
+        if (downloadRepository.isDownloaded(song.id)) {
+            viewModelScope.launch {
                 downloadRepository.deleteDownload(song.id)
-            } else {
-                downloadRepository.downloadSong(song)
             }
+        } else if (!downloadRepository.isLocalOriginal(song) && !isDownloading(song.id)) {
+            _pendingSongDownload.value = song
         }
+    }
+
+    fun dismissPendingSongDownload() {
+        _pendingSongDownload.value = null
+    }
+
+    fun confirmPendingSongDownload() {
+        val song = _pendingSongDownload.value ?: return
+        _pendingSongDownload.value = null
+        viewModelScope.launch { downloadRepository.downloadSong(song) }
     }
     
     fun isDownloaded(songId: String): Boolean {

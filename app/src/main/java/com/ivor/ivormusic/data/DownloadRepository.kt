@@ -523,6 +523,32 @@ class DownloadRepository private constructor(private val context: Context) {
     }
 
     /**
+     * Resolve the exact byte length of the audio stream that would be selected
+     * for [song]. Artwork, lyrics and metadata are deliberately not guessed;
+     * the confirmation UI labels this as an estimate because those small
+     * companions are fetched only while the real download runs.
+     */
+    suspend fun estimateSongDownloadBytes(song: Song): Long? {
+        val url = youtubeRepository.getDownloadAudioStreamUrl(song.id).getOrNull()
+            ?: return null
+        return remoteMediaSize(url)
+    }
+
+    /**
+     * Exact media bytes for a downloadable quality. Adaptive video is the sum
+     * of its separate video and audio files; a progressive stream is one file.
+     * Returning null when either half is unknown avoids presenting a confident
+     * underestimate in the confirmation sheet.
+     */
+    suspend fun estimateVideoDownloadBytes(quality: VideoQuality): Long? = coroutineScope {
+        val urls = listOfNotNull(quality.url, quality.audioUrl).distinct()
+        val sizes = urls.map { url -> async { remoteMediaSize(url) } }.map { it.await() }
+        sizes.takeIf { values -> values.isNotEmpty() && values.all { it != null } }
+            ?.sumOf { it ?: 0L }
+            ?.takeIf { it > 0L }
+    }
+
+    /**
      * Queue several videos at once with one quality cap for the batch.
      *
      * Live broadcasts only expose an HLS manifest and cannot be remuxed by the
@@ -1093,6 +1119,32 @@ class DownloadRepository private constructor(private val context: Context) {
 
         if (totalBytes > 0 && position < totalBytes) {
             throw java.io.IOException("Truncated: $position/$totalBytes")
+        }
+    }
+
+    /**
+     * Ask googlevideo for one bounded byte and read the total from
+     * Content-Range. This keeps the size preview cheap and preserves the
+     * repository-wide rule that media URLs are never fetched open-ended.
+     */
+    private suspend fun remoteMediaSize(url: String): Long? = withContext(Dispatchers.IO) {
+        val response = runCatching {
+            client.newCall(
+                Request.Builder()
+                    .url(url)
+                    .header("User-Agent", YouTubeRepository.uaForPlaybackUri(Uri.parse(url)))
+                    .header("Range", "bytes=0-0")
+                    .build()
+            ).execute()
+        }.getOrNull() ?: return@withContext null
+
+        response.use {
+            if (!it.isSuccessful) return@withContext null
+            if (it.code == 206) {
+                parseContentRangeTotal(it.header("Content-Range"))
+            } else {
+                it.body?.contentLength()?.takeIf { length -> length > 0L }
+            }
         }
     }
 

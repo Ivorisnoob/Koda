@@ -539,6 +539,7 @@ fun MusicApp(
     val isMusicPlaying by playerViewModel.isPlaying.collectAsState()
     val isVideoPlaying by videoPlayerViewModel.isPlaying.collectAsState()
     val isShortsPlaying by shortsPlayerViewModel.isPlaying.collectAsState()
+    val pendingSongDownload by playerViewModel.pendingSongDownload.collectAsState()
     androidx.compose.runtime.LaunchedEffect(isMusicPlaying) {
         if (isMusicPlaying) {
             videoPlayerViewModel.pause()
@@ -1054,6 +1055,18 @@ fun MusicApp(
             hiddenActions = shortsHiddenActions,
             onOpenChannel = openChannel
         )
+
+        // One confirmation host covers the player controls and every song
+        // options sheet. Download requests carry the chosen song through the
+        // PlayerViewModel so a non-playing row works even when no mini player
+        // exists to host UI of its own.
+        pendingSongDownload?.let {
+            com.ivor.ivormusic.ui.downloads.SongDownloadSheet(
+                song = it,
+                onConfirm = playerViewModel::confirmPendingSongDownload,
+                onDismiss = playerViewModel::dismissPendingSongDownload
+            )
+        }
 
         // Undo for "don't recommend", app-wide and last in the stack.
         //
