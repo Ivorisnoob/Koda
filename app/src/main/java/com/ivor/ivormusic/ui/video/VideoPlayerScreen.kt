@@ -3,7 +3,10 @@ package com.ivor.ivormusic.ui.video
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
 import android.media.AudioManager
+import android.media.MediaMetadataRetriever
+import android.net.Uri
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.FrameLayout
@@ -16,6 +19,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -131,6 +135,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -147,6 +152,7 @@ import coil.compose.AsyncImage
 import coil.request.CachePolicy
 import coil.request.ImageRequest
 import kotlin.math.abs
+import kotlin.math.min
 import kotlin.math.roundToInt
 import com.ivor.ivormusic.data.LikeStatus
 import com.ivor.ivormusic.data.CaptionBackground
@@ -160,8 +166,12 @@ import com.ivor.ivormusic.data.VideoSeekPreview
 import com.ivor.ivormusic.data.VttCue
 import com.ivor.ivormusic.data.WebVttParser
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import java.util.Locale
 
 // VideoPlayerScreen function removed.
@@ -1169,6 +1179,7 @@ private fun SeekPreviewCard(
     modifier: Modifier = Modifier,
 ) {
     val frame = preview?.frameAt(positionMs)
+    val localVideoUri = preview?.localVideoUri
     val context = LocalContext.current
     Surface(
         modifier = modifier,
@@ -1178,7 +1189,12 @@ private fun SeekPreviewCard(
         shadowElevation = 4.dp,
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            if (preview != null && frame != null) {
+            if (localVideoUri != null) {
+                LocalVideoSeekFrame(
+                    uriString = localVideoUri,
+                    positionMs = positionMs,
+                )
+            } else if (preview != null && frame != null) {
                 val frameWidth = 144.dp
                 val frameHeight = frameWidth *
                     (preview.frameHeightPx.toFloat() / preview.frameWidthPx.toFloat())
@@ -1243,6 +1259,127 @@ private fun SeekPreviewCard(
         }
     }
 }
+
+/**
+ * Decode downloaded-video previews locally, one request at a time.
+ *
+ * Positions are bucketed and briefly debounced because a slider can emit
+ * hundreds of values in one drag. The mutex prevents cancelled native decoder
+ * calls from piling up; the last good frame remains visible while the next one
+ * is extracted. Frames are deliberately small and recycled when replaced.
+ */
+@Composable
+private fun LocalVideoSeekFrame(
+    uriString: String,
+    positionMs: Long,
+) {
+    val context = LocalContext.current
+    val extractionMutex = remember(uriString) { Mutex() }
+    val frameTimeMs = (positionMs.coerceAtLeast(0L) / LOCAL_PREVIEW_BUCKET_MS) *
+        LOCAL_PREVIEW_BUCKET_MS
+    var bitmap by remember(uriString) { mutableStateOf<Bitmap?>(null) }
+
+    LaunchedEffect(uriString, frameTimeMs) {
+        delay(LOCAL_PREVIEW_DEBOUNCE_MS)
+        val next = extractionMutex.withLock {
+            extractLocalVideoFrame(context, uriString, frameTimeMs)
+        }
+        if (next != null) bitmap = next
+    }
+
+    val displayedBitmap = bitmap
+    DisposableEffect(displayedBitmap) {
+        onDispose { displayedBitmap?.recycle() }
+    }
+
+    Box(
+        modifier = Modifier
+            .size(LOCAL_PREVIEW_WIDTH, LOCAL_PREVIEW_HEIGHT)
+            .background(Color.Black),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (displayedBitmap != null) {
+            Image(
+                bitmap = displayedBitmap.asImageBitmap(),
+                contentDescription = null,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else {
+            ContainedLoadingIndicator(modifier = Modifier.size(28.dp))
+        }
+    }
+}
+
+private suspend fun extractLocalVideoFrame(
+    context: Context,
+    uriString: String,
+    positionMs: Long,
+): Bitmap? = withContext(Dispatchers.IO) {
+    val retriever = MediaMetadataRetriever()
+    try {
+        val uri = Uri.parse(uriString)
+        if (uri.scheme.equals("file", ignoreCase = true)) {
+            val path = uri.path ?: return@withContext null
+            retriever.setDataSource(path)
+        } else {
+            retriever.setDataSource(context, uri)
+        }
+        val encodedWidth = retriever
+            .extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)
+            ?.toIntOrNull()
+            ?: LOCAL_PREVIEW_WIDTH_PX
+        val encodedHeight = retriever
+            .extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)
+            ?.toIntOrNull()
+            ?: LOCAL_PREVIEW_HEIGHT_PX
+        val rotation = retriever
+            .extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)
+            ?.toIntOrNull()
+            ?: 0
+        val (targetWidth, targetHeight) = localPreviewPixelSize(
+            encodedWidth = encodedWidth,
+            encodedHeight = encodedHeight,
+            rotationDegrees = rotation,
+        )
+        retriever.getScaledFrameAtTime(
+            positionMs * 1_000L,
+            MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+            targetWidth,
+            targetHeight,
+        )
+    } catch (_: Exception) {
+        null
+    } finally {
+        retriever.close()
+    }
+}
+
+private fun localPreviewPixelSize(
+    encodedWidth: Int,
+    encodedHeight: Int,
+    rotationDegrees: Int,
+): Pair<Int, Int> {
+    if (encodedWidth <= 0 || encodedHeight <= 0) {
+        return LOCAL_PREVIEW_WIDTH_PX to LOCAL_PREVIEW_HEIGHT_PX
+    }
+    val quarterTurn = rotationDegrees.mod(180) != 0
+    val displayWidth = if (quarterTurn) encodedHeight else encodedWidth
+    val displayHeight = if (quarterTurn) encodedWidth else encodedHeight
+    val scale = min(
+        LOCAL_PREVIEW_WIDTH_PX.toFloat() / displayWidth.toFloat(),
+        LOCAL_PREVIEW_HEIGHT_PX.toFloat() / displayHeight.toFloat(),
+    )
+    return (displayWidth * scale).roundToInt().coerceAtLeast(1) to
+        (displayHeight * scale).roundToInt().coerceAtLeast(1)
+}
+
+private const val LOCAL_PREVIEW_BUCKET_MS = 1_000L
+private const val LOCAL_PREVIEW_DEBOUNCE_MS = 60L
+private const val LOCAL_PREVIEW_WIDTH_PX = 288
+private const val LOCAL_PREVIEW_HEIGHT_PX = 162
+private val LOCAL_PREVIEW_WIDTH = 144.dp
+private val LOCAL_PREVIEW_HEIGHT = 81.dp
 
 /**
  * Pill above the seek bar showing the current chapter title; tapping it opens

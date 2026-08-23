@@ -247,8 +247,9 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     private val _chapters = MutableStateFlow<List<com.ivor.ivormusic.data.VideoChapter>>(emptyList())
     val chapters: StateFlow<List<com.ivor.ivormusic.data.VideoChapter>> = _chapters.asStateFlow()
 
-    // YouTube storyboard sprite harvested during the stream extraction. Null
-    // for live streams, local downloads and videos that do not expose frames.
+    // YouTube storyboard sprite harvested during stream extraction, or a local
+    // URI whose frames can be decoded directly for downloaded playback. Null
+    // for live streams and videos that do not expose either source.
     private val _seekPreview = MutableStateFlow<VideoSeekPreview?>(null)
     val seekPreview: StateFlow<VideoSeekPreview?> = _seekPreview.asStateFlow()
 
@@ -1478,6 +1479,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                 )
                 _availableQualities.value = listOf(offlineQuality)
                 _currentQuality.value = offlineQuality
+                _seekPreview.value = VideoSeekPreview.local(localDownload.uri.toString())
                 _exoPlayer?.setMediaItem(nowPlayingMediaItem(localDownload.uri.toString()))
                 _exoPlayer?.prepare()
                 if (resumePositionMs != null) {
