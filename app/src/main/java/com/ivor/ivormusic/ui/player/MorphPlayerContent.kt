@@ -50,18 +50,16 @@ import androidx.compose.material.icons.rounded.PlaylistAdd
 import androidx.compose.material3.CircularWavyProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import com.ivor.ivormusic.ui.components.ExpressiveSeekBar
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FloatingToolbarDefaults
 import androidx.compose.material3.HorizontalFloatingToolbar
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.IconToggleButton
-import androidx.compose.material3.LinearWavyProgressIndicator
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -333,51 +331,22 @@ fun MorphPlayerSheetContent(
 
                     // ========== SCRUB LINE ==========
                     Column(modifier = Modifier.padding(horizontal = 24.dp)) {
-                        var scrubPosition by remember { mutableStateOf<Float?>(null) }
-                        val displayedProgress = scrubPosition?.toLong() ?: progress
-                        val fraction = if (duration > 0) {
-                            displayedProgress.toFloat() / duration.toFloat()
-                        } else 0f
-                        val animatedFraction by animateFloatAsState(
-                            targetValue = fraction.coerceIn(0f, 1f),
-                            animationSpec = spring(
-                                dampingRatio = Spring.DampingRatioNoBouncy,
-                                stiffness = Spring.StiffnessLow
-                            ),
-                            label = "MorphScrub"
+                        var scrubFraction by remember { mutableStateOf<Float?>(null) }
+                        val displayedProgress = scrubFraction?.let { (it * duration).toLong() } ?: progress
+                        val progressFraction = if (duration > 0) progress.toFloat() / duration.toFloat() else 0f
+
+                        ExpressiveSeekBar(
+                            progress = progressFraction,
+                            onSeek = { fraction ->
+                                viewModel.seekTo((fraction * duration).toLong())
+                            },
+                            onScrub = { scrubFraction = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            durationMs = duration,
+                            isPlaying = isPlaying,
+                            isWavy = true,
+                            onTonalSurface = false
                         )
-                        val lineStroke = Stroke(
-                            width = with(LocalDensity.current) { 3.dp.toPx() },
-                            cap = StrokeCap.Round
-                        )
-                        Box(contentAlignment = Alignment.Center) {
-                            LinearWavyProgressIndicator(
-                                progress = { animatedFraction },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(12.dp),
-                                color = primaryColor,
-                                trackColor = onSurfaceVariantColor.copy(alpha = 0.15f),
-                                stroke = lineStroke,
-                                trackStroke = lineStroke,
-                                amplitude = { if (isPlaying) 1f else 0f }
-                            )
-                            Slider(
-                                value = scrubPosition ?: progress.toFloat(),
-                                onValueChange = { scrubPosition = it },
-                                onValueChangeFinished = {
-                                    scrubPosition?.let { viewModel.seekTo(it.toLong()) }
-                                    scrubPosition = null
-                                },
-                                valueRange = 0f..(duration.toFloat().coerceAtLeast(1f)),
-                                colors = SliderDefaults.colors(
-                                    thumbColor = Color.Transparent,
-                                    activeTrackColor = Color.Transparent,
-                                    inactiveTrackColor = Color.Transparent
-                                ),
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween

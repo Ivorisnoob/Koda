@@ -50,17 +50,15 @@ import androidx.compose.material.icons.rounded.PlaylistAdd
 import androidx.compose.material.icons.rounded.Smartphone
 import androidx.compose.material3.CircularWavyProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import com.ivor.ivormusic.ui.components.ExpressiveSeekBar
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
-import androidx.compose.material3.LinearWavyProgressIndicator
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -510,55 +508,23 @@ private fun EditorialNowPlayingView(
                 }
 
                 Column(modifier = Modifier.weight(1f)) {
-                    // Scrub locally, seek once on release (streamed tracks
-                    // rebuffer if seeked per drag frame).
-                    var scrubPosition by remember { mutableStateOf<Float?>(null) }
-                    val displayedProgress = scrubPosition?.toLong() ?: progress
+                    var scrubFraction by remember { mutableStateOf<Float?>(null) }
+                    val displayedProgress = scrubFraction?.let { (it * duration).toLong() } ?: progress
                     val progressFraction =
-                        if (duration > 0) displayedProgress.toFloat() / duration.toFloat() else 0f
-                    val animatedProgress by animateFloatAsState(
-                        targetValue = progressFraction,
-                        animationSpec = spring(
-                            dampingRatio = Spring.DampingRatioNoBouncy,
-                            stiffness = Spring.StiffnessLow
-                        ),
-                        label = "EditorialProgress"
-                    )
-                    val lineStroke = Stroke(
-                        width = with(LocalDensity.current) { 4.dp.toPx() },
-                        cap = StrokeCap.Round
-                    )
+                        if (duration > 0) progress.toFloat() / duration.toFloat() else 0f
 
-                    Box(contentAlignment = Alignment.Center) {
-                        // Wavy played portion, flat remainder - the wave
-                        // settles flat when paused.
-                        LinearWavyProgressIndicator(
-                            progress = { animatedProgress },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(14.dp),
-                            color = accent,
-                            trackColor = accent.copy(alpha = 0.35f),
-                            stroke = lineStroke,
-                            trackStroke = lineStroke,
-                            amplitude = { if (isPlaying) 1f else 0f }
-                        )
-                        Slider(
-                            value = scrubPosition ?: progress.toFloat(),
-                            onValueChange = { scrubPosition = it },
-                            onValueChangeFinished = {
-                                scrubPosition?.let { onSeekTo(it.toLong()) }
-                                scrubPosition = null
-                            },
-                            valueRange = 0f..(duration.toFloat().coerceAtLeast(1f)),
-                            colors = SliderDefaults.colors(
-                                thumbColor = Color.Transparent,
-                                activeTrackColor = Color.Transparent,
-                                inactiveTrackColor = Color.Transparent
-                            ),
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
+                    ExpressiveSeekBar(
+                        progress = progressFraction,
+                        onSeek = { fraction ->
+                            onSeekTo((fraction * duration).toLong())
+                        },
+                        onScrub = { scrubFraction = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        durationMs = duration,
+                        isPlaying = isPlaying,
+                        isWavy = true,
+                        onTonalSurface = false
+                    )
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
