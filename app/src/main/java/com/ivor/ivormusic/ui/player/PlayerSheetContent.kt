@@ -56,6 +56,7 @@ import com.ivor.ivormusic.ui.components.rememberQueueRemoval
 import com.ivor.ivormusic.ui.components.rememberQueueReorderState
 import com.ivor.ivormusic.ui.components.SongArtwork
 import com.ivor.ivormusic.data.LyricsResult
+import com.ivor.ivormusic.ui.components.ExpressiveSeekBar
 
 /**
  *  Material 3 Expressive Music Player
@@ -485,51 +486,23 @@ private fun ExpressiveNowPlayingView(
                 .padding(bottom = 40.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // 🌟 Wavy Progress Indicator (Expressive!)
-            // While the user is scrubbing we only track the finger locally and
-            // issue a single seek on release — seeking on every drag frame causes
-            // rebuffering storms on streamed tracks.
-            var scrubPosition by remember { mutableStateOf<Float?>(null) }
-            val displayedProgress = scrubPosition?.toLong() ?: progress
-            Box(contentAlignment = Alignment.Center) {
-                val progressFraction = if (duration > 0) displayedProgress.toFloat() / duration.toFloat() else 0f
-                val animatedProgress by animateFloatAsState(
-                    targetValue = progressFraction,
-                    animationSpec = spring(
-                        dampingRatio = Spring.DampingRatioMediumBouncy,
-                        stiffness = Spring.StiffnessLow
-                    ),
-                    label = "Progress"
-                )
+            // 🌟 Wavy Progress Indicator with Expressive Thumb Handle
+            var scrubFraction by remember { mutableStateOf<Float?>(null) }
+            val displayedProgress = scrubFraction?.let { (it * duration).toLong() } ?: progress
+            val progressFraction = if (duration > 0) progress.toFloat() / duration.toFloat() else 0f
 
-                val thickStroke = Stroke(width = with(LocalDensity.current) { 6.dp.toPx() }, cap = StrokeCap.Round)
-
-                LinearWavyProgressIndicator(
-                    progress = { animatedProgress },
-                    modifier = Modifier.fillMaxWidth().height(14.dp),
-                    stroke = thickStroke,
-                    trackStroke = thickStroke,
-                    color = primaryColor,
-                    trackColor = onSurfaceVariantColor.copy(alpha = 0.15f)
-                )
-
-                // Invisible slider for touch interaction
-                Slider(
-                    value = scrubPosition ?: progress.toFloat(),
-                    onValueChange = { scrubPosition = it },
-                    onValueChangeFinished = {
-                        scrubPosition?.let { onSeekTo(it.toLong()) }
-                        scrubPosition = null
-                    },
-                    valueRange = 0f..(duration.toFloat().coerceAtLeast(1f)),
-                    colors = SliderDefaults.colors(
-                        thumbColor = Color.Transparent,
-                        activeTrackColor = Color.Transparent,
-                        inactiveTrackColor = Color.Transparent
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
+            ExpressiveSeekBar(
+                progress = progressFraction,
+                onSeek = { fraction ->
+                    onSeekTo((fraction * duration).toLong())
+                },
+                onScrub = { scrubFraction = it },
+                modifier = Modifier.fillMaxWidth(),
+                durationMs = duration,
+                isPlaying = isPlaying,
+                isWavy = true,
+                onTonalSurface = !ambientBackground
+            )
 
             // Time Labels
             Row(

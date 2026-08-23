@@ -671,6 +671,8 @@ internal fun ContentSettingsPage(
     onShortsEnabledToggle: (Boolean) -> Unit,
     shortsHiddenActions: Set<String>,
     onShowShortsButtons: () -> Unit,
+    videoWavySeekBar: Boolean = true,
+    onVideoWavySeekBarToggle: (Boolean) -> Unit = {},
     onNavigateToNotInterested: () -> Unit,
     onBack: () -> Unit
 ) {
@@ -781,6 +783,20 @@ internal fun ContentSettingsPage(
                                 )
                             }
                         }
+
+                        SettingsDivider()
+
+                        SettingsToggleRow(
+                            icon = Icons.Rounded.GraphicEq,
+                            title = "Wavy seekbar",
+                            subtitle = if (videoWavySeekBar) {
+                                "Wavy playback animation on the video seekbar"
+                            } else {
+                                "Straight linear video seekbar"
+                            },
+                            enabled = videoWavySeekBar,
+                            onToggle = onVideoWavySeekBarToggle
+                        )
                     }
                 }
             }

@@ -66,6 +66,9 @@ class ThemePreferences(context: Context) {
     private val _shortsHiddenActions = MutableStateFlow(getShortsHiddenActionsPreference())
     val shortsHiddenActions: StateFlow<Set<String>> = _shortsHiddenActions.asStateFlow()
 
+    private val _videoWavySeekBar = MutableStateFlow(getVideoWavySeekBarPreference())
+    val videoWavySeekBar: StateFlow<Boolean> = _videoWavySeekBar.asStateFlow()
+
     private val _videoQualityWifi = MutableStateFlow(getVideoQualityWifiPreference())
     val videoQualityWifi: StateFlow<String> = _videoQualityWifi.asStateFlow()
 
@@ -167,6 +170,7 @@ class ThemePreferences(context: Context) {
             KEY_TIMED_COMMENTS_ENABLED -> _timedCommentsEnabled.value = getTimedCommentsEnabledPreference()
             KEY_SHORTS_ENABLED -> _shortsEnabled.value = getShortsEnabledPreference()
             KEY_SHORTS_HIDDEN_ACTIONS -> _shortsHiddenActions.value = getShortsHiddenActionsPreference()
+            KEY_VIDEO_WAVY_SEEKBAR -> _videoWavySeekBar.value = getVideoWavySeekBarPreference()
             KEY_VIDEO_QUALITY_WIFI -> _videoQualityWifi.value = getVideoQualityWifiPreference()
             KEY_VIDEO_QUALITY_MOBILE -> _videoQualityMobile.value = getVideoQualityMobilePreference()
             KEY_MUSIC_QUALITY_WIFI -> _musicQualityWifi.value = getMusicQualityWifiPreference()
@@ -252,6 +256,7 @@ class ThemePreferences(context: Context) {
         private const val KEY_TIMED_COMMENTS_ENABLED = "timed_comments_enabled"
         private const val KEY_SHORTS_ENABLED = "shorts_enabled"
         private const val KEY_SHORTS_HIDDEN_ACTIONS = "shorts_hidden_actions"
+        private const val KEY_VIDEO_WAVY_SEEKBAR = "video_wavy_seekbar"
 
         /** Ids for the Shorts action-rail buttons that can be hidden. */
         const val SHORTS_ACTION_LIKE = "like"
@@ -839,6 +844,21 @@ class ThemePreferences(context: Context) {
     fun setTimedCommentsEnabled(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_TIMED_COMMENTS_ENABLED, enabled).apply()
         _timedCommentsEnabled.value = enabled
+    }
+
+    /**
+     * Get the stored video wavy seekbar preference. Defaults to true (wavy).
+     */
+    fun getVideoWavySeekBarPreference(): Boolean {
+        return prefs.getBoolean(KEY_VIDEO_WAVY_SEEKBAR, true)
+    }
+
+    /**
+     * Save video wavy seekbar preference and update the flow.
+     */
+    fun setVideoWavySeekBar(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_VIDEO_WAVY_SEEKBAR, enabled).apply()
+        _videoWavySeekBar.value = enabled
     }
     
     /**

@@ -311,6 +311,10 @@ internal fun buildSettingsSearchIndex(
         listOf("hide buttons", "like", "share", "overlay", "actions")
     ) { onShowShortsButtons() }
     entry(
+        "video_wavy_seekbar", "Wavy seekbar", "Content and feeds", Icons.Rounded.GraphicEq,
+        listOf("wavy", "seekbar", "seek bar", "slider", "video seekbar", "wave", "waves", "progress bar", "normal seekbar")
+    ) { onOpenPage(SettingsPage.CONTENT) }
+    entry(
         "not_interested", "Not Recommended", "Content and feeds", Icons.Rounded.NotInterested,
         listOf(
             "blocked", "hidden", "not interested", "blocklist", "dont recommend",

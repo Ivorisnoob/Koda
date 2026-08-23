@@ -556,6 +556,7 @@ fun VerticalLivePlayerContent(
                                 durationMs = duration,
                                 showSeekPreview = false,
                                 onScrubbingChanged = onScrubbingChanged,
+                                isPlaying = isPlaying,
                                 onTonalSurface = true
                             )
                             LiveEdgeChip(

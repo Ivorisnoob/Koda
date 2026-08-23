@@ -99,11 +99,10 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.VerticalDivider
+import com.ivor.ivormusic.ui.components.ExpressiveSeekBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
@@ -607,6 +606,7 @@ fun FullscreenPlayerContent(
                             seekPreview = seekPreview,
                             showSeekPreview = !isLive,
                             onScrubbingChanged = onScrubbingChanged,
+                            isPlaying = isPlaying
                         )
 
                         if (isLive) {
@@ -874,6 +874,7 @@ fun PortraitPlayerContent(
                             seekPreview = seekPreview,
                             showSeekPreview = !isLive,
                             onScrubbingChanged = onScrubbingChanged,
+                            isPlaying = isPlaying
                         )
 
                         if (isLive) {
@@ -900,11 +901,6 @@ fun PortraitPlayerContent(
  */
 internal const val LIVE_EDGE_THRESHOLD = 0.995f
 
-/** Time distance close enough to confirm that the position poll observed a seek. */
-private const val SEEK_CONFIRM_TOLERANCE_MS = 1_000f
-
-/** Backstop for failed or heavily rounded seeks; prevents a stale optimistic thumb. */
-private const val SEEK_COMMIT_TIMEOUT_MS = 1_500L
 
 /**
  * The "LIVE" marker where a normal video shows its duration. Red and tappable
@@ -953,21 +949,14 @@ internal fun LiveEdgeChip(
 }
 
 /**
- * Scrubbing seek bar. While the user drags, the thumb follows a local value and
- * the player is NOT touched, so we don't kick off a buffer/fetch on every pixel.
- * The actual seek fires once, on release (onValueChangeFinished). The 500ms
- * progress poll from the parent is ignored during the drag to avoid the thumb
- * fighting the finger.
+ * Expressive wavy seek bar for video playback. While the user drags, the thumb follows
+ * a local value and the player is NOT touched until release.
  *
- * [onTonalSurface] switches the track and tick colors from the white-on-video
- * set to ColorScheme roles. The standard player draws this straight onto the
- * frame, where white is the only thing that reads on any video; the vertical
- * live player floats it inside a surfaceContainer, where white would disappear
- * in a light theme.
+ * [onTonalSurface] switches track colors for tonal containers (e.g. vertical live player).
  */
 @Composable
 internal fun PlayerSeekBar(
-    mediaId: String,
+    mediaId: String = "",
     progress: Float,
     onSeek: (Float) -> Unit,
     modifier: Modifier = Modifier,
@@ -977,131 +966,42 @@ internal fun PlayerSeekBar(
     seekPreview: VideoSeekPreview? = null,
     showSeekPreview: Boolean = true,
     onScrubbingChanged: (Boolean) -> Unit = {},
+    isPlaying: Boolean = false,
+    isWavy: Boolean = true,
+    gapWidth: Dp = 8.dp,
     onTonalSurface: Boolean = false
 ) {
-    var isScrubbing by remember(mediaId) { mutableStateOf(false) }
-    var scrubValue by remember(mediaId) { mutableFloatStateOf(0f) }
-    var committedSeekValue by remember(mediaId) { mutableStateOf<Float?>(null) }
-    val currentScrubbingChanged by rememberUpdatedState(onScrubbingChanged)
-    val externalProgress = progress.coerceIn(0f, 1f)
-    val displayedProgress = when {
-        isScrubbing -> scrubValue
-        committedSeekValue != null -> committedSeekValue ?: externalProgress
-        else -> externalProgress
-    }
+    val context = LocalContext.current
+    val themePreferences = remember(context) { ThemePreferences(context) }
+    val wavySetting by themePreferences.videoWavySeekBar.collectAsState()
 
-    // A seek changes ExoPlayer immediately, but the StateFlow feeding this
-    // composable is sampled twice a second. Hold the committed value until the
-    // poll catches up so the thumb never flashes back to the pre-seek position.
-    LaunchedEffect(externalProgress, mediaId) {
-        val target = committedSeekValue ?: return@LaunchedEffect
-        val distanceMs = abs(externalProgress - target) * durationMs.toFloat()
-        if (distanceMs <= SEEK_CONFIRM_TOLERANCE_MS) {
-            committedSeekValue = null
-        }
-    }
-    LaunchedEffect(committedSeekValue, mediaId) {
-        val target = committedSeekValue ?: return@LaunchedEffect
-        delay(SEEK_COMMIT_TIMEOUT_MS)
-        if (committedSeekValue == target) committedSeekValue = null
-    }
+    var scrubFraction by remember(mediaId) { mutableStateOf<Float?>(null) }
+    val currentScrubbingChanged by rememberUpdatedState(onScrubbingChanged)
+
     DisposableEffect(mediaId) {
         onDispose { currentScrubbingChanged(false) }
     }
 
-    val bufferedColor = if (onTonalSurface) {
-        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f)
-    } else {
-        Color.White.copy(alpha = 0.35f)
-    }
-    val inactiveTrackColor = if (onTonalSurface) {
-        MaterialTheme.colorScheme.surfaceVariant
-    } else {
-        Color.White.copy(0.3f)
-    }
-    val tickColor = if (onTonalSurface) {
-        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f)
-    } else {
-        Color.Black.copy(alpha = 0.85f)
-    }
-    val sliderColors = SliderDefaults.colors(
-        thumbColor = MaterialTheme.colorScheme.primary,
-        activeTrackColor = MaterialTheme.colorScheme.primary,
-        inactiveTrackColor = inactiveTrackColor
-    )
-
-    // Keep the control's measured height identical before and during a drag.
-    // The preview is an overlay: its negative offset changes where it draws,
-    // not the space the bottom controls reserve for this seek bar.
     BoxWithConstraints(modifier = modifier.height(48.dp)) {
-        Slider(
-            value = displayedProgress,
-            onValueChange = {
-                if (!isScrubbing) {
-                    isScrubbing = true
-                    committedSeekValue = null
-                    onScrubbingChanged(true)
-                }
-                scrubValue = it
-            },
-            onValueChangeFinished = {
-                if (isScrubbing) {
-                    val target = scrubValue.coerceIn(0f, 1f)
-                    committedSeekValue = target
-                    onSeek(target)
-                }
-                isScrubbing = false
-                onScrubbingChanged(false)
-            },
-            enabled = durationMs > 0L,
-            colors = sliderColors,
-            track = { sliderState ->
-                // The track slot is measured to the slider's actual travel
-                // width and placed half a thumb in from either edge. Drawing
-                // buffer and chapter marks here keeps them on the same geometry
-                // as the gesture, instead of using the wider 48dp touch target.
-                Box {
-                    SliderDefaults.Track(
-                        sliderState = sliderState,
-                        enabled = durationMs > 0L,
-                        colors = sliderColors,
-                    )
-                    Canvas(modifier = Modifier.matchParentSize()) {
-                        val centerY = size.height / 2f
-                        val buffered = bufferedProgress.coerceIn(0f, 1f)
-                        if (buffered > displayedProgress) {
-                            drawLine(
-                                color = bufferedColor,
-                                start = Offset(displayedProgress * size.width, centerY),
-                                end = Offset(buffered * size.width, centerY),
-                                strokeWidth = 4.dp.toPx(),
-                                cap = StrokeCap.Round,
-                            )
-                        }
-
-                        if (chapters.size > 1 && durationMs > 0L) {
-                            val half = 5.dp.toPx()
-                            val stroke = 2.5.dp.toPx()
-                            chapters.forEach { chapter ->
-                                val fraction = chapter.startMs.toFloat() / durationMs.toFloat()
-                                if (fraction > 0.001f && fraction < 0.999f) {
-                                    val x = fraction * size.width
-                                    drawLine(
-                                        color = tickColor,
-                                        start = Offset(x, centerY - half),
-                                        end = Offset(x, centerY + half),
-                                        strokeWidth = stroke,
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            },
-            modifier = Modifier.fillMaxWidth()
+        ExpressiveSeekBar(
+            progress = progress,
+            onSeek = onSeek,
+            modifier = Modifier.fillMaxWidth(),
+            bufferedProgress = bufferedProgress,
+            chapters = chapters,
+            durationMs = durationMs,
+            isPlaying = isPlaying,
+            isWavy = isWavy && wavySetting,
+            gapWidth = gapWidth,
+            onTonalSurface = onTonalSurface,
+            onScrub = { fraction ->
+                scrubFraction = fraction
+                currentScrubbingChanged(fraction != null)
+            }
         )
 
-        if (showSeekPreview && isScrubbing && durationMs > 0L) {
+        if (showSeekPreview && scrubFraction != null && durationMs > 0L) {
+            val scrubValue = scrubFraction!!
             val previewWidth = if (seekPreview?.isUsable == true) 144.dp else 72.dp
             val previewX = (maxWidth * scrubValue - previewWidth / 2)
                 .coerceIn(0.dp, (maxWidth - previewWidth).coerceAtLeast(0.dp))
@@ -1118,7 +1018,6 @@ internal fun PlayerSeekBar(
                     .wrapContentSize(Alignment.TopStart, unbounded = true)
             )
         }
-
     }
 }
 
@@ -1204,6 +1103,7 @@ private fun SeekPreviewCard(
         }
     }
 }
+
 
 /**
  * Pill above the seek bar showing the current chapter title; tapping it opens

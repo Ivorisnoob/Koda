@@ -154,6 +154,7 @@ class MainActivity : ComponentActivity() {
             val timedCommentsEnabled by themeViewModel.timedCommentsEnabled.collectAsState()
             val shortsEnabled by themeViewModel.shortsEnabled.collectAsState()
             val shortsHiddenActions by themeViewModel.shortsHiddenActions.collectAsState()
+            val videoWavySeekBar by themeViewModel.videoWavySeekBar.collectAsState()
             val videoQualityWifi by themeViewModel.videoQualityWifi.collectAsState()
             val videoQualityMobile by themeViewModel.videoQualityMobile.collectAsState()
             val musicQualityWifi by themeViewModel.musicQualityWifi.collectAsState()
@@ -237,6 +238,8 @@ class MainActivity : ComponentActivity() {
                         onShortsEnabledToggle = { themeViewModel.setShortsEnabled(it) },
                         shortsHiddenActions = shortsHiddenActions,
                         onShortsHiddenActionsChange = { themeViewModel.setShortsHiddenActions(it) },
+                        videoWavySeekBar = videoWavySeekBar,
+                        onVideoWavySeekBarToggle = { themeViewModel.setVideoWavySeekBar(it) },
                         videoQualityWifi = videoQualityWifi,
                         onVideoQualityWifiChange = { themeViewModel.setVideoQualityWifi(it) },
                         videoQualityMobile = videoQualityMobile,
@@ -442,6 +445,8 @@ fun MusicApp(
     onShortsEnabledToggle: (Boolean) -> Unit,
     shortsHiddenActions: Set<String>,
     onShortsHiddenActionsChange: (Set<String>) -> Unit,
+    videoWavySeekBar: Boolean = true,
+    onVideoWavySeekBarToggle: (Boolean) -> Unit = {},
     videoQualityWifi: String,
     onVideoQualityWifiChange: (String) -> Unit,
     videoQualityMobile: String,
@@ -780,6 +785,8 @@ fun MusicApp(
                     onShortsEnabledToggle = onShortsEnabledToggle,
                     shortsHiddenActions = shortsHiddenActions,
                     onShortsHiddenActionsChange = onShortsHiddenActionsChange,
+                    videoWavySeekBar = videoWavySeekBar,
+                    onVideoWavySeekBarToggle = onVideoWavySeekBarToggle,
                     videoQualityWifi = videoQualityWifi,
                     onVideoQualityWifiChange = onVideoQualityWifiChange,
                     videoQualityMobile = videoQualityMobile,

@@ -280,6 +280,8 @@ fun SettingsScreen(
     onShortsEnabledToggle: (Boolean) -> Unit,
     shortsHiddenActions: Set<String> = emptySet(),
     onShortsHiddenActionsChange: (Set<String>) -> Unit = {},
+    videoWavySeekBar: Boolean = true,
+    onVideoWavySeekBarToggle: (Boolean) -> Unit = {},
     videoQualityWifi: String,
     onVideoQualityWifiChange: (String) -> Unit,
     videoQualityMobile: String,
@@ -725,6 +727,8 @@ fun SettingsScreen(
                     onShortsEnabledToggle = onShortsEnabledToggle,
                     shortsHiddenActions = shortsHiddenActions,
                     onShowShortsButtons = { showShortsButtonsDialog = true },
+                    videoWavySeekBar = videoWavySeekBar,
+                    onVideoWavySeekBarToggle = onVideoWavySeekBarToggle,
                     onNavigateToNotInterested = onNavigateToNotInterested,
                     onBack = { page = SettingsPage.HUB }
                 )

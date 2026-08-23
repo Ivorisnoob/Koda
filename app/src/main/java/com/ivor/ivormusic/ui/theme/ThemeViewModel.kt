@@ -32,6 +32,7 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
     val timedCommentsEnabled: StateFlow<Boolean> = themePreferences.timedCommentsEnabled
     val shortsEnabled: StateFlow<Boolean> = themePreferences.shortsEnabled
     val shortsHiddenActions: StateFlow<Set<String>> = themePreferences.shortsHiddenActions
+    val videoWavySeekBar: StateFlow<Boolean> = themePreferences.videoWavySeekBar
     val videoQualityWifi: StateFlow<String> = themePreferences.videoQualityWifi
     val videoQualityMobile: StateFlow<String> = themePreferences.videoQualityMobile
     val musicQualityWifi: StateFlow<String> = themePreferences.musicQualityWifi
@@ -139,6 +140,10 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setShortsHiddenActions(hidden: Set<String>) {
         themePreferences.setShortsHiddenActions(hidden)
+    }
+
+    fun setVideoWavySeekBar(enabled: Boolean) {
+        themePreferences.setVideoWavySeekBar(enabled)
     }
 
     fun setVideoQualityWifi(quality: String) {
