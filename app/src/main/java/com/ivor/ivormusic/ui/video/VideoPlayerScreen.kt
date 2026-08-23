@@ -2048,6 +2048,7 @@ fun VideoInfoSection(
     onSubscribeClick: () -> Unit = {},
     onCommentsClick: () -> Unit = {},
     onSaveClick: () -> Unit = {},
+    onDownloadClick: () -> Unit = {},
     onChannelClick: () -> Unit = {},
     onRelatedLongPress: ((VideoItem) -> Unit)? = null,
     /**
@@ -2135,7 +2136,7 @@ fun VideoInfoSection(
             )
             SaveVideoButton(onClick = onSaveClick)
             ShareVideoButton(video = video)
-            DownloadVideoButton(video = video)
+            DownloadVideoButton(video = video, onDownloadClick = onDownloadClick)
         }
 
         // Channel Info Surface (tap navigates to the channel)
@@ -2584,19 +2585,19 @@ private fun SaveVideoButton(onClick: () -> Unit) {
 }
 
 /**
- * Download pill. Queues the video into the shared download repository, which
- * fetches the best MP4 video and audio streams and remuxes them into
- * Downloads/Koda/Video. Reflects queued/downloading/downloaded state so the
- * pill is not a fire-and-forget button.
+ * Download pill. A new download opens the quality-and-size sheet; an active or
+ * completed one retains its cancel/delete behavior. This keeps the convenient
+ * status control without bypassing the user's quality choice.
  */
 @Composable
-private fun DownloadVideoButton(video: VideoItem) {
+private fun DownloadVideoButton(
+    video: VideoItem,
+    onDownloadClick: () -> Unit,
+) {
     val context = LocalContext.current
     val repository = remember(context) {
         com.ivor.ivormusic.data.DownloadRepository.getInstance(context)
     }
-    val scope = rememberCoroutineScope()
-
     val downloadedVideos by repository.downloadedVideos.collectAsState()
     val progressMap by repository.downloadProgress.collectAsState()
 
@@ -2613,7 +2614,7 @@ private fun DownloadVideoButton(video: VideoItem) {
             when {
                 downloaded -> repository.deleteVideoDownload(video.videoId)
                 inFlight -> repository.cancelDownload(video.videoId)
-                else -> scope.launch { repository.downloadVideo(video) }
+                else -> onDownloadClick()
             }
         }
     ) {

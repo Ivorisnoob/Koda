@@ -962,6 +962,7 @@ fun VideoPlayerContent(
                             if (isLoggedIn) viewModel.loadVideoPlaylists()
                             saveTargetVideo = currentVideo
                         },
+                        onDownloadClick = { downloadTargetVideo = currentVideo },
                         onChannelClick = {
                             val channelId = engagement?.channelId ?: currentVideo.channelId
                             if (channelId != null) onOpenChannel(channelId)
