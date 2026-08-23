@@ -73,7 +73,7 @@ class ThemePreferences(context: Context) {
     val videoQualityMobile: StateFlow<String> = _videoQualityMobile.asStateFlow()
 
     private val _captionTextSize = MutableStateFlow(getCaptionTextSizePreference())
-    val captionTextSize: StateFlow<CaptionTextSize> = _captionTextSize.asStateFlow()
+    val captionTextSize: StateFlow<Float> = _captionTextSize.asStateFlow()
 
     private val _captionTextColor = MutableStateFlow(getCaptionTextColorPreference())
     val captionTextColor: StateFlow<CaptionTextColor> = _captionTextColor.asStateFlow()
@@ -905,10 +905,8 @@ class ThemePreferences(context: Context) {
         _videoQualityMobile.value = quality
     }
 
-    private fun getCaptionTextSizePreference(): CaptionTextSize =
-        prefs.getString(KEY_CAPTION_TEXT_SIZE, null)
-            ?.let { stored -> CaptionTextSize.entries.firstOrNull { it.name == stored } }
-            ?: CaptionTextSize.MEDIUM
+    private fun getCaptionTextSizePreference(): Float =
+        captionTextScaleFromStored(prefs.all[KEY_CAPTION_TEXT_SIZE])
 
     private fun getCaptionTextColorPreference(): CaptionTextColor =
         prefs.getString(KEY_CAPTION_TEXT_COLOR, null)
@@ -920,9 +918,10 @@ class ThemePreferences(context: Context) {
             ?.let { stored -> CaptionBackground.entries.firstOrNull { it.name == stored } }
             ?: CaptionBackground.TRANSLUCENT
 
-    fun setCaptionTextSize(size: CaptionTextSize) {
-        prefs.edit().putString(KEY_CAPTION_TEXT_SIZE, size.name).apply()
-        _captionTextSize.value = size
+    fun setCaptionTextSize(size: Float) {
+        val safeSize = size.coerceIn(CAPTION_TEXT_SCALE_MIN, CAPTION_TEXT_SCALE_MAX)
+        prefs.edit().putFloat(KEY_CAPTION_TEXT_SIZE, safeSize).apply()
+        _captionTextSize.value = safeSize
     }
 
     fun setCaptionTextColor(color: CaptionTextColor) {
@@ -1383,12 +1382,24 @@ class ThemePreferences(context: Context) {
     }
 }
 
-/** Persisted names are user settings and must not be renamed. */
-enum class CaptionTextSize {
-    SMALL,
-    MEDIUM,
-    LARGE
-}
+const val CAPTION_TEXT_SCALE_MIN = 0.75f
+const val CAPTION_TEXT_SCALE_DEFAULT = 1f
+
+/** Twice the former Large preset (1.25x), for high-density displays. */
+const val CAPTION_TEXT_SCALE_MAX = 2.5f
+
+/**
+ * Read both the new float and the three names written by Koda 4.6. Keeping the
+ * conversion outside SharedPreferences makes the migration deterministic and
+ * unit-testable without an Android Context.
+ */
+internal fun captionTextScaleFromStored(stored: Any?): Float = when (stored) {
+    is Number -> stored.toFloat()
+    "SMALL" -> CAPTION_TEXT_SCALE_MIN
+    "MEDIUM" -> CAPTION_TEXT_SCALE_DEFAULT
+    "LARGE" -> 1.25f
+    else -> CAPTION_TEXT_SCALE_DEFAULT
+}.coerceIn(CAPTION_TEXT_SCALE_MIN, CAPTION_TEXT_SCALE_MAX)
 
 /** Video-safe foreground choices, paired with the caption background. */
 enum class CaptionTextColor {

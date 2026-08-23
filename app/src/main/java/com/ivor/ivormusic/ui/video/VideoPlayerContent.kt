@@ -65,7 +65,8 @@ import androidx.media3.common.util.UnstableApi
 import coil.compose.AsyncImage
 import com.ivor.ivormusic.data.CaptionBackground
 import com.ivor.ivormusic.data.CaptionTextColor
-import com.ivor.ivormusic.data.CaptionTextSize
+import com.ivor.ivormusic.data.CAPTION_TEXT_SCALE_MAX
+import com.ivor.ivormusic.data.CAPTION_TEXT_SCALE_MIN
 import com.ivor.ivormusic.data.CaptionTrack
 import com.ivor.ivormusic.data.LikeStatus
 import com.ivor.ivormusic.data.VideoChapter
@@ -73,6 +74,7 @@ import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.data.VideoQuality
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlin.math.roundToInt
 
 /** The shape of the watch page's video box when the source shape is unknown. */
 private const val DEFAULT_VIDEO_ASPECT = 16f / 9f
@@ -1724,11 +1726,11 @@ private fun CaptionsSheet(
     tracks: List<CaptionTrack>,
     selected: CaptionTrack?,
     isLoading: Boolean,
-    textSize: CaptionTextSize,
+    textSize: Float,
     textColor: CaptionTextColor,
     background: CaptionBackground,
     onSelect: (CaptionTrack?) -> Unit,
-    onTextSizeChanged: (CaptionTextSize) -> Unit,
+    onTextSizeChanged: (Float) -> Unit,
     onTextColorChanged: (CaptionTextColor) -> Unit,
     onBackgroundChanged: (CaptionBackground) -> Unit,
     onDismiss: () -> Unit,
@@ -1809,15 +1811,9 @@ private fun CaptionsSheet(
                 )
             }
             item {
-                CaptionChoiceRow(
-                    label = "Text size",
-                    options = listOf(
-                        CaptionTextSize.SMALL to "Small",
-                        CaptionTextSize.MEDIUM to "Medium",
-                        CaptionTextSize.LARGE to "Large"
-                    ),
-                    selected = textSize,
-                    onSelect = onTextSizeChanged
+                CaptionTextSizeSlider(
+                    value = textSize,
+                    onValueCommitted = onTextSizeChanged
                 )
             }
             item {
@@ -1843,6 +1839,63 @@ private fun CaptionsSheet(
                     onSelect = onBackgroundChanged
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun CaptionTextSizeSlider(
+    value: Float,
+    onValueCommitted: (Float) -> Unit
+) {
+    var sliderValue by remember(value) { mutableFloatStateOf(value) }
+    val percent = (sliderValue * 100f).roundToInt()
+
+    Column(
+        modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Text size",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = "$percent%",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
+        Slider(
+            value = sliderValue,
+            onValueChange = { raw ->
+                sliderValue = ((raw * 4f).roundToInt() / 4f)
+                    .coerceIn(CAPTION_TEXT_SCALE_MIN, CAPTION_TEXT_SCALE_MAX)
+            },
+            onValueChangeFinished = { onValueCommitted(sliderValue) },
+            valueRange = CAPTION_TEXT_SCALE_MIN..CAPTION_TEXT_SCALE_MAX,
+            steps = 6,
+            modifier = Modifier.fillMaxWidth()
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                text = "75%",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = "250%",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }

@@ -157,7 +157,7 @@ import kotlin.math.roundToInt
 import com.ivor.ivormusic.data.LikeStatus
 import com.ivor.ivormusic.data.CaptionBackground
 import com.ivor.ivormusic.data.CaptionTextColor
-import com.ivor.ivormusic.data.CaptionTextSize
+import com.ivor.ivormusic.data.CAPTION_TEXT_SCALE_DEFAULT
 import com.ivor.ivormusic.data.ThemePreferences
 import com.ivor.ivormusic.data.VideoChapter
 import com.ivor.ivormusic.data.VideoEngagement
@@ -202,7 +202,7 @@ internal fun CaptionOverlay(
     player: ExoPlayer,
     bottomPadding: Dp,
     compact: Boolean,
-    textSize: CaptionTextSize,
+    textSize: Float,
     textColor: CaptionTextColor,
     background: CaptionBackground,
     modifier: Modifier = Modifier
@@ -235,11 +235,6 @@ internal fun CaptionOverlay(
                 } else {
                     MaterialTheme.typography.titleMedium
                 }
-                val sizeMultiplier = when (textSize) {
-                    CaptionTextSize.SMALL -> 0.85f
-                    CaptionTextSize.MEDIUM -> 1f
-                    CaptionTextSize.LARGE -> 1.25f
-                }
                 val foreground = when (textColor) {
                     CaptionTextColor.WHITE -> Color.White
                     CaptionTextColor.YELLOW -> Color.Yellow
@@ -257,8 +252,8 @@ internal fun CaptionOverlay(
                         text = cue,
                         color = foreground,
                         style = baseStyle.copy(
-                            fontSize = baseStyle.fontSize * sizeMultiplier,
-                            lineHeight = baseStyle.lineHeight * sizeMultiplier,
+                            fontSize = baseStyle.fontSize * textSize,
+                            lineHeight = baseStyle.lineHeight * textSize,
                             shadow = if (background == CaptionBackground.NONE) {
                                 androidx.compose.ui.graphics.Shadow(
                                     color = Color.Black,
@@ -315,7 +310,7 @@ fun FullscreenPlayerContent(
     captionsActive: Boolean = false,
     onCaptionsClick: () -> Unit = {},
     captionCues: List<VttCue> = emptyList(),
-    captionTextSize: CaptionTextSize = CaptionTextSize.MEDIUM,
+    captionTextSize: Float = CAPTION_TEXT_SCALE_DEFAULT,
     captionTextColor: CaptionTextColor = CaptionTextColor.WHITE,
     captionBackground: CaptionBackground = CaptionBackground.TRANSLUCENT,
     /**
@@ -701,7 +696,7 @@ fun PortraitPlayerContent(
     captionsActive: Boolean = false,
     onCaptionsClick: () -> Unit = {},
     captionCues: List<VttCue> = emptyList(),
-    captionTextSize: CaptionTextSize = CaptionTextSize.MEDIUM,
+    captionTextSize: Float = CAPTION_TEXT_SCALE_DEFAULT,
     captionTextColor: CaptionTextColor = CaptionTextColor.WHITE,
     captionBackground: CaptionBackground = CaptionBackground.TRANSLUCENT,
     isLive: Boolean = false,

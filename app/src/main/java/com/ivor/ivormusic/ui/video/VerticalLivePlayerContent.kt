@@ -82,7 +82,6 @@ import coil.compose.AsyncImage
 import com.ivor.ivormusic.data.LikeStatus
 import com.ivor.ivormusic.data.CaptionBackground
 import com.ivor.ivormusic.data.CaptionTextColor
-import com.ivor.ivormusic.data.CaptionTextSize
 import com.ivor.ivormusic.data.LiveChatMessage
 import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.data.VttCue
@@ -146,7 +145,7 @@ fun VerticalLivePlayerContent(
     canSendChat: Boolean,
     captionsActive: Boolean,
     captionCues: List<VttCue>,
-    captionTextSize: CaptionTextSize,
+    captionTextSize: Float,
     captionTextColor: CaptionTextColor,
     captionBackground: CaptionBackground,
     /** Null until the first frame decodes; drives the fill-vs-fit decision. */
