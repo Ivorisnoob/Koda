@@ -708,6 +708,26 @@ class YouTubeRepository(private val context: Context) {
     }
 
     /**
+     * Resolve an AAC/M4A audio-only stream for a file download.
+     *
+     * Playback may consume Opus/WebM or a muxed video fallback because Media3
+     * only needs a playable track. Downloads are published as `.m4a` and then
+     * tagged, so accepting either fallback would put bytes from the wrong
+     * container behind an M4A filename and make metadata writing unreliable.
+     */
+    suspend fun getDownloadAudioStreamUrl(videoId: String): Result<String> =
+        withContext(Dispatchers.IO) {
+            val newPipeUrl = resolveM4aAudioUrlViaNewPipe(videoId)
+            if (!newPipeUrl.isNullOrBlank()) return@withContext Result.success(newPipeUrl)
+
+            val innerTubeUrl = resolvePlayerStreamingData(videoId)
+                ?.let(::pickM4aAudioStreamUrl)
+            if (!innerTubeUrl.isNullOrBlank()) return@withContext Result.success(innerTubeUrl)
+
+            Result.failure(Exception("No AAC/M4A audio stream found for $videoId"))
+        }
+
+    /**
      * Resolve an audio stream URL through NewPipe's maintained client chain.
      * Applies the same per-network music quality policy as [pickAudioStreamUrl]
      * (NewPipe's averageBitrate is in kbps), and falls back to a muxed
@@ -728,13 +748,7 @@ class YouTubeRepository(private val context: Context) {
             val audioStreams = originalTrackAudioStreams(
                 streamExtractor.audioStreams.filter { it.isUrl },
             )
-            when (ThemePreferences.currentMusicQuality(context)) {
-                ThemePreferences.MUSIC_QUALITY_LOW ->
-                    audioStreams.minByOrNull { it.averageBitrate }
-                ThemePreferences.MUSIC_QUALITY_NORMAL ->
-                    audioStreams.minByOrNull { kotlin.math.abs(it.averageBitrate - 128) }
-                else -> audioStreams.maxByOrNull { it.averageBitrate }
-            }
+            pickAudioStreamForCurrentQuality(audioStreams)
                 ?.content
                 ?.takeIf { it.isNotBlank() }
                 ?.let { return@withContext it }
@@ -752,6 +766,63 @@ class YouTubeRepository(private val context: Context) {
             )
             null
         }
+    }
+
+    private suspend fun resolveM4aAudioUrlViaNewPipe(videoId: String): String? =
+        withContext(Dispatchers.IO) {
+            try {
+                val ytService = ServiceList.all().find { it.serviceInfo.name == "YouTube" }
+                    ?: return@withContext null
+                val extractor = ytService.getStreamExtractor(
+                    "https://www.youtube.com/watch?v=$videoId"
+                )
+                extractor.fetchPage()
+
+                val m4aStreams = originalTrackAudioStreams(
+                    extractor.audioStreams.filter { it.isUrl }
+                ).filter { stream ->
+                    stream.format?.suffix.equals("m4a", ignoreCase = true) ||
+                        stream.codec?.contains("mp4a", ignoreCase = true) == true
+                }
+                pickAudioStreamForCurrentQuality(m4aStreams)
+                    ?.content
+                    ?.takeIf(String::isNotBlank)
+            } catch (e: Exception) {
+                KLog.w(
+                    "YouTubeRepository",
+                    "Resolve[M4A/NewPipe] failed videoId=$videoId: ${e.message}"
+                )
+                null
+            }
+        }
+
+    private fun pickAudioStreamForCurrentQuality(streams: List<AudioStream>): AudioStream? =
+        when (ThemePreferences.currentMusicQuality(context)) {
+            ThemePreferences.MUSIC_QUALITY_LOW ->
+                streams.minByOrNull { it.averageBitrate }
+            ThemePreferences.MUSIC_QUALITY_NORMAL ->
+                streams.minByOrNull { kotlin.math.abs(it.averageBitrate - 128) }
+            else -> streams.maxByOrNull { it.averageBitrate }
+        }
+
+    private fun pickM4aAudioStreamUrl(streamingData: org.json.JSONObject): String? {
+        val formats = streamingData.optJSONArray("adaptiveFormats") ?: return null
+        val candidates = (0 until formats.length())
+            .mapNotNull(formats::optJSONObject)
+            .filter { format ->
+                val mime = format.optString("mimeType")
+                mime.startsWith("audio/mp4") &&
+                    (mime.contains("mp4a", ignoreCase = true) || mime.contains("aac", ignoreCase = true)) &&
+                    format.optString("url").isNotBlank()
+            }
+        val originals = originalTrackAudioFormats(candidates)
+        val selected = when (ThemePreferences.currentMusicQuality(context)) {
+            ThemePreferences.MUSIC_QUALITY_LOW -> originals.minByOrNull { it.optInt("bitrate") }
+            ThemePreferences.MUSIC_QUALITY_NORMAL ->
+                originals.minByOrNull { kotlin.math.abs(it.optInt("bitrate") - 128_000) }
+            else -> originals.maxByOrNull { it.optInt("bitrate") }
+        }
+        return selected?.optString("url")?.takeIf(String::isNotBlank)
     }
 
     /**

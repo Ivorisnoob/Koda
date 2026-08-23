@@ -72,15 +72,22 @@ class DownloadStorage(private val context: Context) {
      * "<videoId>.m4a".
      */
     fun buildFileName(title: String, artist: String, type: DownloadMediaType): String {
+        return "${safeBaseName(title, artist)}.${type.extension}"
+    }
+
+    /** A cover or LRC that intentionally shares the audio file's stem. */
+    fun buildMusicCompanionFileName(title: String, artist: String, extension: String): String =
+        "${safeBaseName(title, artist)}.${extension.trimStart('.')}"
+
+    private fun safeBaseName(title: String, artist: String): String {
         val base = if (artist.isBlank()) title else "$title - $artist"
-        val safe = ILLEGAL_FILENAME_CHARS.replace(base, "")
+        return ILLEGAL_FILENAME_CHARS.replace(base, "")
             .replace(Regex("""\s+"""), " ")
             .trim()
             .trim('.')
             .take(MAX_NAME_LENGTH)
             .trim()
             .ifBlank { "Koda download" }
-        return "$safe.${type.extension}"
     }
 
     /**
@@ -88,11 +95,20 @@ class DownloadStorage(private val context: Context) {
      * The file stays invisible to other apps until [publish].
      */
     fun createPending(displayName: String, type: DownloadMediaType): Uri? {
+        return createPending(displayName, type.mimeType, type.relativePath)
+    }
+
+    /** Create album-art or lyric data beside a music download. */
+    fun createPendingMusicCompanion(displayName: String, mimeType: String): Uri? {
+        return createPending(displayName, mimeType, DownloadMediaType.MUSIC.relativePath)
+    }
+
+    private fun createPending(displayName: String, mimeType: String, relativePath: String): Uri? {
         return try {
             val values = ContentValues().apply {
                 put(MediaStore.MediaColumns.DISPLAY_NAME, displayName)
-                put(MediaStore.MediaColumns.MIME_TYPE, type.mimeType)
-                put(MediaStore.MediaColumns.RELATIVE_PATH, type.relativePath)
+                put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
+                put(MediaStore.MediaColumns.RELATIVE_PATH, relativePath)
                 put(MediaStore.MediaColumns.IS_PENDING, 1)
             }
             resolver.insert(collection, values)
@@ -112,14 +128,15 @@ class DownloadStorage(private val context: Context) {
     }
 
     /** Clear IS_PENDING, making the file visible in the Files app. */
-    fun publish(uri: Uri) {
-        try {
+    fun publish(uri: Uri): Boolean {
+        return try {
             val values = ContentValues().apply {
                 put(MediaStore.MediaColumns.IS_PENDING, 0)
             }
-            resolver.update(uri, values, null, null)
+            resolver.update(uri, values, null, null) > 0
         } catch (e: Exception) {
             KLog.e(TAG, "Failed to publish $uri", e)
+            false
         }
     }
 
@@ -149,6 +166,36 @@ class DownloadStorage(private val context: Context) {
                 null,
                 null
             )?.use { it.moveToFirst() } ?: false
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /** Guard companion cleanup so an old external artwork URI is never deleted. */
+    fun isMusicCompanion(uri: Uri): Boolean {
+        if (uri.scheme != "content") return false
+        return try {
+            resolver.query(
+                uri,
+                arrayOf(
+                    MediaStore.MediaColumns.RELATIVE_PATH,
+                    MediaStore.MediaColumns.MIME_TYPE,
+                    MediaStore.MediaColumns.DISPLAY_NAME
+                ),
+                null,
+                null,
+                null
+            )?.use { cursor ->
+                if (!cursor.moveToFirst()) return@use false
+                val path = cursor.getString(0).orEmpty()
+                val mimeType = cursor.getString(1).orEmpty()
+                val displayName = cursor.getString(2).orEmpty().lowercase()
+                path.startsWith(DownloadMediaType.MUSIC.relativePath) &&
+                    (mimeType.startsWith("image/") ||
+                        mimeType.startsWith("text/") ||
+                        displayName.endsWith(".lrc") ||
+                        displayName.endsWith(".ttml"))
+            } ?: false
         } catch (e: Exception) {
             false
         }

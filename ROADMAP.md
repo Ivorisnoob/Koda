@@ -432,7 +432,7 @@ The milestones behind us, kept here so the direction of travel is visible.
 - A restrained video chrome with one scroll-safe Playback settings surface for secondary controls, plus durable Autoplay and Loop behavior that cannot contradict itself
 - Eight player styles and a 27-palette color system with dynamic color and AMOLED
 - Listening statistics with play charts, streaks, and top artists
-- Offline downloads for music and video, written to the system Downloads folder
+- Offline downloads for music and video, written to the system Downloads folder; music files carry portable title, artist, album, cover art and the best available lyric timing
 - Whole-playlist downloads in both modes, with one background queue, resumable partial batches, per-batch video quality, and honest skips for local music and live video
 - Live streams with live chat, including a full-screen player for vertical broadcasts
 - Account-free subscriptions, with import from NewPipe, PipePipe, Tubular, Takeout, and OPML
@@ -469,6 +469,8 @@ The milestones behind us, kept here so the direction of travel is visible.
 - An optional daily time limit with per-weekday budgets: Koda locks behind a full-screen "come back tomorrow" screen once the day's hours are used, offered at onboarding and in Settings > Advanced
 
 Whole-playlist downloads deliberately reuse the same serial worker as a single-item download. A playlist page contributes a batch of requests, and the Downloads screen remains the one place that owns transfer progress, retry and cancellation; there is no second batch state to drift from the files actually being written. Re-running a partially completed playlist only queues the missing ids, duplicate rows share one offline file, device-local songs count as already offline, and live broadcasts are rejected before they can enter the progressive MP4 path. Video batches pin one quality cap onto every request so a retry cannot silently change the choice halfway through the playlist.
+
+Music downloads are portable files rather than audio bytes backed only by Koda's private index. The downloader resolves an AAC audio-only stream before naming it M4A, writes title, artist, album, cover art and lyrics into the file, and places matching JPEG/LRC companions beside it for immediate offline UI use. Word timing survives as Enhanced LRC, line timing as ordinary LRC, and plain lyrics remain plain. Artwork and lyrics are best-effort enrichments—a provider miss cannot discard valid audio—but an invalid container or failed tag commit is never published under a misleading `.m4a` name. Playlist downloads inherit the same path one song at a time.
 
 Crossfade alternates two fully configured ExoPlayers while keeping one logical queue visible through the media session. The standby must reach `STATE_READY` before either volume moves; a failed resolution or buffer deadline keeps the outgoing track alive and falls back to a short ramp only when overlap is impossible. Both players share audio focus, the pinned audio-session id, loudness correction and ducking. Cancellation is an abort, never a swap, and shuffled playback asks the player for its real next index instead of assuming timeline order.
 

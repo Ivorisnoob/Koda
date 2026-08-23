@@ -49,6 +49,40 @@ class LocalLyricsSourceTest {
     }
 
     @Test
+    fun downloadedSidecarWorksWithoutAFilePathAndWinsOverEmbeddedLyrics() {
+        var embeddedRead = false
+        val source = LocalLyricsSource(
+            sharedSidecarReader = { "[00:01.00]Downloaded line" },
+            sharedEmbeddedLyricsReader = {
+                embeddedRead = true
+                "Embedded line"
+            }
+        )
+        val song = localSong(temporaryFolder.newFile("unused.m4a")).copy(filePath = null)
+
+        val result = source.find(song)!!
+
+        assertEquals("Downloaded LRC", result.provider)
+        assertEquals(LyricsSyncType.LINE, result.syncType)
+        assertEquals("Downloaded line", result.lines.single().text)
+        assertEquals(false, embeddedRead)
+    }
+
+    @Test
+    fun downloadedEmbeddedLyricsRecoverWhenTheSidecarIsMissing() {
+        val source = LocalLyricsSource(
+            sharedSidecarReader = { null },
+            sharedEmbeddedLyricsReader = { "Recovered from the M4A" }
+        )
+        val song = localSong(temporaryFolder.newFile("unused.m4a")).copy(filePath = null)
+
+        val result = source.find(song)!!
+
+        assertEquals("Embedded lyrics", result.provider)
+        assertEquals("Recovered from the M4A", result.lines.single().text)
+    }
+
+    @Test
     fun utf16SidecarsAreDecodedRatherThanShownAsGarbage() {
         val audio = temporaryFolder.newFile("Track.mp3")
         // What a Windows editor writes when asked for "Unicode": UTF-16LE
