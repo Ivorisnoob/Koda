@@ -507,6 +507,20 @@ fun MusicApp(
     val videoPlayerViewModel: com.ivor.ivormusic.ui.video.VideoPlayerViewModel = viewModel()
     val shortsPlayerViewModel: com.ivor.ivormusic.ui.shorts.ShortsPlayerViewModel = viewModel()
 
+    // Changing content modes is a clean hand-off: no player from the previous
+    // mode should remain visible or continue playing after the switch. Route
+    // every mode toggle through the same close actions used by the players'
+    // own dismiss buttons, while ignoring callbacks that repeat the current
+    // value (including preference restoration during composition).
+    val switchPlaybackMode: (Boolean) -> Unit = { nextVideoMode ->
+        if (nextVideoMode != videoMode) {
+            playerViewModel.clearPlayer()
+            videoPlayerViewModel.closePlayer()
+            shortsPlayerViewModel.close()
+            onVideoModeToggle(nextVideoMode)
+        }
+    }
+
     // A live broadcast that turned up in the Shorts feed. The Shorts player
     // cannot present one honestly (no chat, and a seek bar for a duration that
     // does not exist), so it closes itself and the stream reopens here, where
@@ -671,7 +685,7 @@ fun MusicApp(
                     ambientBackground = ambientBackground,
                     onAmbientBackgroundToggle = onAmbientBackgroundToggle,
                     videoMode = videoMode,
-                    onVideoModeToggle = onVideoModeToggle,
+                    onVideoModeToggle = switchPlaybackMode,
                     homeModeToggleEnabled = homeModeToggleEnabled,
                     onHomeModeToggleEnabledChange = onHomeModeToggleEnabledChange,
                     shortsEnabled = shortsEnabled,
@@ -730,7 +744,7 @@ fun MusicApp(
                     ambientBackground = ambientBackground,
                     playerArtworkColors = playerArtworkColors,
                     videoMode = videoMode,
-                    onVideoModeToggle = onVideoModeToggle,
+                    onVideoModeToggle = switchPlaybackMode,
                     showModeToggle = homeModeToggleEnabled,
                     playerStyle = playerStyle,
                     onPlayerStyleChange = onPlayerStyleChange,
@@ -767,7 +781,7 @@ fun MusicApp(
                     playerArtworkColors = playerArtworkColors,
                     onPlayerArtworkColorsToggle = onPlayerArtworkColorsToggle,
                     videoMode = videoMode,
-                    onVideoModeToggle = onVideoModeToggle,
+                    onVideoModeToggle = switchPlaybackMode,
                     homeModeToggleEnabled = homeModeToggleEnabled,
                     onHomeModeToggleChange = onHomeModeToggleEnabledChange,
                     spotlightHome = spotlightHome,
