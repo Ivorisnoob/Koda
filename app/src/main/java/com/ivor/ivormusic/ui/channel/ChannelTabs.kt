@@ -373,10 +373,14 @@ private fun FeaturedVideoCard(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
-                if (video.viewCount.isNotBlank()) {
+                val subtitle = listOfNotNull(
+                    video.viewCount.takeIf { it.isNotBlank() },
+                    video.uploadedDate?.takeIf { it.isNotBlank() }
+                ).joinToString(" • ")
+                if (subtitle.isNotBlank()) {
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        text = video.viewCount,
+                        text = subtitle,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
