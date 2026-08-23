@@ -1485,6 +1485,7 @@ internal fun PlayerGestureSurface(
                     detectTapGestures(
                         onTap = { onToggleControls() },
                         onLongPress = {
+                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                             isBoosting = true
                             onSpeedBoostStart()
                         },
