@@ -31,6 +31,7 @@ import androidx.compose.material.icons.rounded.Lyrics
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.rounded.PlaylistAdd
 import androidx.compose.material3.*
+import androidx.compose.material3.toShape
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -586,6 +587,9 @@ private fun ExpressiveNowPlayingView(
             val playInteraction = remember { MutableInteractionSource() }
             val nextInteraction = remember { MutableInteractionSource() }
             val repeatInteraction = remember { MutableInteractionSource() }
+            val pausedPlayShapes = IconButtonDefaults.shapes(
+                shape = MaterialShapes.Square.toShape()
+            )
 
             ButtonGroup(
                 // The five transport buttons are weighted to fill the row exactly, so the
@@ -650,7 +654,7 @@ private fun ExpressiveNowPlayingView(
                                 playerHaptics.playPause(!viewModel.isPlaying.value)
                                 viewModel.togglePlayPause()
                             },
-                            shapes = stableShapes,
+                            shapes = if (isPlaying) stableShapes else pausedPlayShapes,
                             interactionSource = playInteraction,
                             colors = IconButtonDefaults.filledIconButtonColors(
                                 containerColor = primaryContainerColor,
