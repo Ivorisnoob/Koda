@@ -738,6 +738,7 @@ class DownloadRepository private constructor(private val context: Context) {
             val song = request.song ?: return@withContext false
             val pendingTargets = mutableListOf<Uri>()
             var audioTemp: File? = null
+            var taggedAudioTemp: File? = null
             var artworkTemp: File? = null
             updateProgress(request, 0.02f, DownloadStatus.DOWNLOADING)
 
@@ -777,12 +778,28 @@ class DownloadRepository private constructor(private val context: Context) {
 
                     ensureActive()
                     updateProgress(request, 0.88f, DownloadStatus.DOWNLOADING)
-                    DownloadedAudioMetadata.write(
-                        audioFile = audioTemp!!,
+                    val metadataCopy = DownloadedAudioMetadata.writeCopy(
+                        sourceAudio = audioTemp!!,
+                        tempDirectory = context.cacheDir,
                         song = song,
                         artworkFile = artworkTemp,
                         lyrics = lyrics
                     )
+                    taggedAudioTemp = metadataCopy.getOrNull()
+                    val audioToPublish = metadataCopy.getOrElse { error ->
+                        // Portable tags are enrichment, not the song itself.
+                        // In particular, jaudiotagger cannot grow the metadata
+                        // atom in every YouTube M4A layout. Keep the untouched
+                        // download and publish the companion artwork/lyrics
+                        // instead of transferring the same audio three times.
+                        KLog.w(
+                            TAG,
+                            "Portable metadata unavailable for ${song.title}; " +
+                                "publishing untouched audio",
+                            error
+                        )
+                        audioTemp!!
+                    }
 
                     ensureActive()
                     updateProgress(request, 0.92f, DownloadStatus.DOWNLOADING)
@@ -795,7 +812,7 @@ class DownloadRepository private constructor(private val context: Context) {
                     val audioTarget = storage.createPending(audioName, DownloadMediaType.MUSIC)
                         ?: throw java.io.IOException("Could not create audio storage entry")
                     pendingTargets += audioTarget
-                    copyToPending(audioTemp!!, audioTarget)
+                    copyToPending(audioToPublish, audioTarget)
 
                     val artworkTarget = artworkTemp?.let { cover ->
                         val name = storage.buildMusicCompanionFileName(
@@ -869,6 +886,7 @@ class DownloadRepository private constructor(private val context: Context) {
                 throw e
             } finally {
                 audioTemp?.delete()
+                taggedAudioTemp?.delete()
                 artworkTemp?.delete()
                 activeDownloadCalls.remove(request.id)
             }
