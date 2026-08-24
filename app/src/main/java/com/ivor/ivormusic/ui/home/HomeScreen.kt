@@ -1214,6 +1214,7 @@ fun YourMixContent(
                         RecentAlbumsSection(
                             songs = songs,
                             onSongClick = onSongClick,
+                            onSongLongPress = onSongLongPress,
                             isDarkMode = isDarkMode,
                             onShowAll = onShowAllInLibrary
                         )
@@ -2071,6 +2072,7 @@ fun SearchContent(
 fun RecentAlbumsSection(
     songs: List<Song>,
     onSongClick: (Song) -> Unit,
+    onSongLongPress: ((Song) -> Unit)?,
     isDarkMode: Boolean = true,
     onShowAll: (() -> Unit)? = null
 ) {
@@ -2101,7 +2103,7 @@ fun RecentAlbumsSection(
                     // made these read as generic cards.
                     .maskClip(RoundedCornerShape(28.dp))
                     .background(cardBgColor)
-                    .clickable { onSongClick(song) }
+                    .songRowClick({ onSongClick(song) }, { onSongLongPress?.invoke(song) })
             ) {
                 if (song.albumArtUri != null || song.thumbnailUrl != null) {
                     AsyncImage(
