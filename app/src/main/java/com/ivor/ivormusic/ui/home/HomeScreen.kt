@@ -1245,6 +1245,7 @@ fun YourMixContent(
                         JumpBackInSection(
                             songs = recentlyPlayed,
                             onSongClick = onRecentClick,
+                            onSongLongPress = onSongLongPress,
                             onShowAll = onShowAllInLibrary
                         )
                     }
@@ -2191,6 +2192,7 @@ private val CAPTION_GAP = 8.dp
 fun JumpBackInSection(
     songs: List<Song>,
     onSongClick: (Song) -> Unit,
+    onSongLongPress: ((Song) -> Unit)?,
     onShowAll: (() -> Unit)? = null
 ) {
     if (songs.isEmpty()) return
@@ -2214,7 +2216,7 @@ fun JumpBackInSection(
                 Column(
                     modifier = Modifier
                         .width(ARTWORK_SIZE)
-                        .clickable { onSongClick(song) }
+                        .songRowClick({ onSongClick(song) }, { onSongLongPress?.invoke(song) })
                 ) {
                     Box(
                         modifier = Modifier
