@@ -1226,6 +1226,7 @@ fun YourMixContent(
                         RecentAlbumsSection(
                             songs = songs,
                             onSongClick = onSongClick,
+                            onSongLongPress = onSongLongPress,
                             isDarkMode = isDarkMode,
                             onShowAll = onShowAllInLibrary
                         )
@@ -1256,6 +1257,7 @@ fun YourMixContent(
                         JumpBackInSection(
                             songs = recentlyPlayed,
                             onSongClick = onRecentClick,
+                            onSongLongPress = onSongLongPress,
                             onShowAll = onShowAllInLibrary
                         )
                     }
@@ -2083,6 +2085,7 @@ fun SearchContent(
 fun RecentAlbumsSection(
     songs: List<Song>,
     onSongClick: (Song) -> Unit,
+    onSongLongPress: ((Song) -> Unit)? = null,
     isDarkMode: Boolean = true,
     onShowAll: (() -> Unit)? = null
 ) {
@@ -2113,7 +2116,10 @@ fun RecentAlbumsSection(
                     // made these read as generic cards.
                     .maskClip(RoundedCornerShape(28.dp))
                     .background(cardBgColor)
-                    .clickable { onSongClick(song) }
+                    .songRowClick(
+                        onClick = { onSongClick(song) },
+                        onLongClick = onSongLongPress?.let { press -> { press(song) } }
+                    )
             ) {
                 if (song.albumArtUri != null || song.thumbnailUrl != null) {
                     AsyncImage(
@@ -2201,6 +2207,7 @@ private val CAPTION_GAP = 8.dp
 fun JumpBackInSection(
     songs: List<Song>,
     onSongClick: (Song) -> Unit,
+    onSongLongPress: ((Song) -> Unit)? = null,
     onShowAll: (() -> Unit)? = null
 ) {
     if (songs.isEmpty()) return
@@ -2224,7 +2231,10 @@ fun JumpBackInSection(
                 Column(
                     modifier = Modifier
                         .width(ARTWORK_SIZE)
-                        .clickable { onSongClick(song) }
+                        .songRowClick(
+                            onClick = { onSongClick(song) },
+                            onLongClick = onSongLongPress?.let { press -> { press(song) } }
+                        )
                 ) {
                     Box(
                         modifier = Modifier
