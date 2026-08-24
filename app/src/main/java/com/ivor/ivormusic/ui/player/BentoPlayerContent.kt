@@ -117,6 +117,7 @@ fun BentoPlayerSheetContent(
     val shuffleModeEnabled by viewModel.shuffleModeEnabled.collectAsState()
     val repeatMode by viewModel.repeatMode.collectAsState()
     val currentQueue by viewModel.currentQueue.collectAsState()
+    val currentQueueItemId by viewModel.currentQueueItemId.collectAsState()
     val isFavorite by viewModel.isCurrentSongLiked.collectAsState()
     val lyricsResult by viewModel.lyricsResult.collectAsState()
     val isLoadingMore by viewModel.isLoadingMore.collectAsState()
@@ -154,9 +155,9 @@ fun BentoPlayerSheetContent(
             if (queueVisible) {
                 EditorialQueueView(
                     queue = currentQueue,
-                    currentSong = currentSong,
-                    onSongClick = { song -> viewModel.skipToSong(song) },
-                    onRemoveSong = { index -> viewModel.removeQueueItem(index) },
+                    currentQueueItemId = currentQueueItemId,
+                    onQueueItemClick = { item -> viewModel.skipToQueueItem(item.id) },
+                    onRemoveItem = { item -> viewModel.removeQueueItem(item.id) },
                     onMoveSong = { from, to -> viewModel.moveQueueItem(from, to, persist = false) },
                     onCommitOrder = { viewModel.commitQueueOrder() },
                     onUndoRemove = { viewModel.undoQueueRemoval() },
@@ -494,9 +495,9 @@ fun BentoPlayerSheetContent(
                                     modifier = Modifier.size(18.dp)
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
-                                val nextTitle = remember(currentQueue, currentSong?.id) {
-                                    val index = currentQueue.indexOfFirst { it.id == currentSong?.id }
-                                    currentQueue.getOrNull(index + 1)?.title ?: "End of queue"
+                                val nextTitle = remember(currentQueue, currentQueueItemId) {
+                                    val index = currentQueue.indexOfFirst { it.id == currentQueueItemId }
+                                    currentQueue.getOrNull(index + 1)?.song?.title ?: "End of queue"
                                 }
                                 Text(
                                     text = nextTitle,

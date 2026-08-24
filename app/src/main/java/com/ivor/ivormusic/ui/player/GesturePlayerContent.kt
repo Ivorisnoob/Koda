@@ -56,10 +56,10 @@ import androidx.compose.ui.zIndex
 import androidx.media3.common.Player
 import coil.compose.AsyncImage
 import com.ivor.ivormusic.data.Song
+import com.ivor.ivormusic.data.MusicQueueItem
 import com.ivor.ivormusic.ui.components.QueueDragHandle
 import com.ivor.ivormusic.ui.components.QueueRowContainer
 import com.ivor.ivormusic.ui.components.queueDragLongPress
-import com.ivor.ivormusic.ui.components.queueRowKeys
 import com.ivor.ivormusic.ui.components.rememberQueueRemoval
 import com.ivor.ivormusic.ui.components.rememberQueueReorderState
 import com.ivor.ivormusic.ui.components.SongArtwork
@@ -100,6 +100,7 @@ fun GesturePlayerSheetContent(
     val shuffleModeEnabled by viewModel.shuffleModeEnabled.collectAsState()
     val repeatMode by viewModel.repeatMode.collectAsState()
     val currentQueue by viewModel.currentQueue.collectAsState()
+    val currentQueueItemId by viewModel.currentQueueItemId.collectAsState()
     val playWhenReady by viewModel.playWhenReady.collectAsState()
     val isFavorite by viewModel.isCurrentSongLiked.collectAsState()
     
@@ -137,8 +138,8 @@ fun GesturePlayerSheetContent(
             if (isQueueVisible) {
                 GestureQueueView(
                     queue = currentQueue,
-                    currentSong = currentSong,
-                    onSongClick = { song -> viewModel.skipToSong(song) },
+                    currentQueueItemId = currentQueueItemId,
+                    onQueueItemClick = { item -> viewModel.skipToQueueItem(item.id) },
                     onCollapse = onCollapse,
                     onBackToPlayer = { showQueue = false },
                     onLoadMore = onLoadMore,
@@ -149,7 +150,7 @@ fun GesturePlayerSheetContent(
                     primaryColor = primaryColor,
                     onSurfaceColor = onSurfaceColor,
                     onSurfaceVariantColor = onSurfaceVariantColor,
-                    onRemoveSong = { index -> viewModel.removeQueueItem(index) },
+                    onRemoveItem = { item -> viewModel.removeQueueItem(item.id) },
                     onMoveSong = { from, to -> viewModel.moveQueueItem(from, to, persist = false) },
                     onCommitOrder = { viewModel.commitQueueOrder() },
                     onUndoRemove = { viewModel.undoQueueRemoval() }
@@ -158,6 +159,7 @@ fun GesturePlayerSheetContent(
                 GestureNowPlayingView(
                     currentSong = currentSong,
                     queue = currentQueue,
+                    currentQueueItemId = currentQueueItemId,
                     isPlaying = isPlaying,
                     isBuffering = isBuffering && playWhenReady,
                     progress = progress,
@@ -187,7 +189,10 @@ fun GesturePlayerSheetContent(
                         playerHaptics.playPause(!viewModel.isPlaying.value)
                         viewModel.togglePlayPause()
                     },
-                    onSongChange = { song -> playerHaptics.skip(); viewModel.skipToSong(song) },
+                    onQueueItemChange = { item ->
+                        playerHaptics.skip()
+                        viewModel.skipToQueueItem(item.id)
+                    },
 
                     isDownloaded = currentSong?.let { viewModel.isDownloaded(it.id) } ?: false,
                     isDownloading = currentSong?.let { viewModel.isDownloading(it.id) } ?: false,
@@ -224,7 +229,8 @@ fun GesturePlayerSheetContent(
 @Composable
 private fun GestureNowPlayingView(
     currentSong: Song?,
-    queue: List<Song>,
+    queue: List<MusicQueueItem>,
+    currentQueueItemId: String?,
     isPlaying: Boolean,
     isBuffering: Boolean,
     progress: Long,
@@ -248,7 +254,7 @@ private fun GestureNowPlayingView(
     sleepTimerActive: Boolean,
     onSleepTimerClick: () -> Unit,
     onPlayPauseToggle: () -> Unit,
-    onSongChange: (Song) -> Unit,
+    onQueueItemChange: (MusicQueueItem) -> Unit,
     isDownloaded: Boolean,
     isDownloading: Boolean,
     isLocalOriginal: Boolean,
@@ -257,9 +263,10 @@ private fun GestureNowPlayingView(
     onSurfaceVariantColor: Color
 ) {
     // Simple current song index for the custom carousel
-    val currentIndex = remember(currentSong?.id, queue.size) {
+    val currentIndex = remember(currentQueueItemId, queue) {
         if (queue.isEmpty()) 0
-        else queue.indexOfFirst { it.id == currentSong?.id }.coerceIn(0, queue.lastIndex.coerceAtLeast(0))
+        else queue.indexOfFirst { it.id == currentQueueItemId }
+            .coerceIn(0, queue.lastIndex.coerceAtLeast(0))
     }
 
     // Swipe-to-skip on the song information. It steps the queue rather than
@@ -269,8 +276,8 @@ private fun GestureNowPlayingView(
     // style has no prev/next buttons, so running off the queue must be a
     // no-op, not a wrap.
     val swipeToSkip = rememberSwipeToSkip(
-        onNext = { queue.getOrNull(currentIndex + 1)?.let(onSongChange) },
-        onPrevious = { queue.getOrNull(currentIndex - 1)?.let(onSongChange) }
+        onNext = { queue.getOrNull(currentIndex + 1)?.let(onQueueItemChange) },
+        onPrevious = { queue.getOrNull(currentIndex - 1)?.let(onQueueItemChange) }
     )
     
     // Get album info
@@ -443,7 +450,7 @@ private fun GestureNowPlayingView(
                                         isPlaying = isPlaying,
                                         isBuffering = isBuffering,
                                         onPlayPauseToggle = onPlayPauseToggle,
-                                        onSongChange = onSongChange
+                                        onQueueItemChange = onQueueItemChange
                                     )
                                 } else if (currentSong != null) {
                                     // Single album art
@@ -739,12 +746,12 @@ private fun GesturePlayerToolbar(
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun SwipeableAlbumCarousel(
-    queue: List<Song>,
+    queue: List<MusicQueueItem>,
     currentIndex: Int,
     isPlaying: Boolean,
     isBuffering: Boolean,
     onPlayPauseToggle: () -> Unit,
-    onSongChange: (Song) -> Unit
+    onQueueItemChange: (MusicQueueItem) -> Unit
 ) {
     val styleWheel = LocalPlayerStyleWheelController.current
     // The carousel position as a continuous float
@@ -809,7 +816,7 @@ private fun SwipeableAlbumCarousel(
                             
                             // Always trigger song change if we moved to different index
                             if (nearestIndex != startIndex && nearestIndex in 0..queue.lastIndex) {
-                                onSongChange(queue[nearestIndex])
+                                onQueueItemChange(queue[nearestIndex])
                             }
                             targetPosition = nearestIndex.toFloat()
                         },
@@ -833,7 +840,8 @@ private fun SwipeableAlbumCarousel(
             val visibleRange = (centerIndex - 2).coerceAtLeast(0)..(centerIndex + 2).coerceAtMost(queue.lastIndex)
             
             visibleRange.forEach { songIndex ->
-                val song = queue[songIndex]
+                val queueItem = queue[songIndex]
+                val song = queueItem.song
                 
                 // Position relative to center (0 = centered)
                 val relativePosition = songIndex.toFloat() - animatedPosition
@@ -870,7 +878,7 @@ private fun SwipeableAlbumCarousel(
                     ?: song.albumArtUri?.toString()
                 
                 // Use key for stable identity
-                key(song.id) {
+                key(queueItem.id) {
                     Surface(
                         modifier = Modifier
                             .size(currentSize)
@@ -1081,9 +1089,9 @@ private fun SingleAlbumArt(
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun GestureQueueView(
-    queue: List<Song>,
-    currentSong: Song?,
-    onSongClick: (Song) -> Unit,
+    queue: List<MusicQueueItem>,
+    currentQueueItemId: String?,
+    onQueueItemClick: (MusicQueueItem) -> Unit,
     onCollapse: () -> Unit,
     onBackToPlayer: () -> Unit,
     onLoadMore: () -> Unit,
@@ -1094,13 +1102,14 @@ private fun GestureQueueView(
     primaryColor: Color,
     onSurfaceColor: Color,
     onSurfaceVariantColor: Color,
-    onRemoveSong: (index: Int) -> Unit = {},
+    onRemoveItem: (MusicQueueItem) -> Unit = {},
     onMoveSong: (from: Int, to: Int) -> Unit = { _, _ -> },
     onCommitOrder: () -> Unit = {},
     onUndoRemove: () -> Unit = {}
 ) {
+    val currentSong = queue.find { it.id == currentQueueItemId }?.song
     val listState = rememberLazyListState()
-    val rowKeys = remember(queue) { queueRowKeys(queue.map { it.id }, "gesture_queue") }
+    val rowKeys = remember(queue) { queue.map { it.id } }
     val reorder = rememberQueueReorderState(
         listState = listState,
         keys = rowKeys,
@@ -1307,8 +1316,9 @@ private fun GestureQueueView(
                     itemsIndexed(
                         queue,
                         key = { index, _ -> rowKeys.getOrElse(index) { "gesture_queue_$index" } }
-                    ) { index, song ->
-                        val isCurrent = song.id == currentSong?.id
+                    ) { index, queueItem ->
+                        val song = queueItem.song
+                        val isCurrent = queueItem.id == currentQueueItemId
                         val key = rowKeys.getOrElse(index) { "gesture_queue_$index" }
                         val isDragging = reorder.draggingKey == key
 
@@ -1317,7 +1327,7 @@ private fun GestureQueueView(
                             dragOffset = reorder.offsetFor(key),
                             removeEnabled = queue.size > 1,
                             onRemove = {
-                                onRemoveSong(index)
+                                onRemoveItem(queueItem)
                                 removal.onRemoved(song.title)
                             },
                             modifier = if (isDragging) Modifier else Modifier.animateItem()
@@ -1333,7 +1343,7 @@ private fun GestureQueueView(
                                 1.5.dp, 
                                 primaryColor.copy(alpha = 0.3f)
                             ) else null,
-                            onClick = { onSongClick(song) }
+                            onClick = { onQueueItemClick(queueItem) }
                         ) {
                             Row(
                                 modifier = Modifier
@@ -1451,7 +1461,7 @@ private fun GestureQueueView(
 
                                 IconButton(
                                     onClick = {
-                                        onRemoveSong(index)
+                                        onRemoveItem(queueItem)
                                         removal.onRemoved(song.title)
                                     },
                                     enabled = queue.size > 1,

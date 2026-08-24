@@ -13,6 +13,7 @@ import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
 import com.ivor.ivormusic.data.Song
+import com.ivor.ivormusic.data.MusicQueueItem
 import com.ivor.ivormusic.data.LikedSongsRepository
 import com.ivor.ivormusic.data.LyricsRepository
 import com.ivor.ivormusic.data.LyricsResult
@@ -27,6 +28,8 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Job
+
+private const val QUEUE_ITEM_ID_EXTRA = "com.ivor.ivormusic.QUEUE_ITEM_ID"
 
 class PlayerViewModel(private val context: Context) : ViewModel() {
 
@@ -65,7 +68,9 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     private fun savePlaybackSession() {
         val queue = _currentQueue.value
         if (queue.isEmpty()) return
-        val index = controller?.currentMediaItemIndex ?: 0
+        val index = controller?.currentMediaItemIndex
+            ?.takeIf { it in queue.indices }
+            ?: currentIndexInQueue()
         val position = controller?.currentPosition?.coerceAtLeast(0L) ?: 0L
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             playbackSessionRepository.save(queue, index, position)
@@ -81,8 +86,11 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     private val _playWhenReady = MutableStateFlow(false)
     val playWhenReady: StateFlow<Boolean> = _playWhenReady.asStateFlow()
 
-    private val _currentQueue = MutableStateFlow<List<Song>>(emptyList())
-    val currentQueue: StateFlow<List<Song>> = _currentQueue.asStateFlow()
+    private val _currentQueue = MutableStateFlow<List<MusicQueueItem>>(emptyList())
+    val currentQueue: StateFlow<List<MusicQueueItem>> = _currentQueue.asStateFlow()
+
+    private val _currentQueueItemId = MutableStateFlow<String?>(null)
+    val currentQueueItemId: StateFlow<String?> = _currentQueueItemId.asStateFlow()
 
     // Stats tracking
     private var lastRecordedSongId: String? = null
@@ -220,20 +228,22 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                 return@launch
             }
 
-            val song = session.songs[session.currentIndex]
+            val queueItem = session.queue[session.currentIndex]
+            val song = queueItem.song
             KLog.d(
                 "PlayerViewModel",
-                "Restoring session: ${session.songs.size} songs, index=${session.currentIndex}, pos=${session.positionMs}"
+                "Restoring session: ${session.queue.size} songs, index=${session.currentIndex}, pos=${session.positionMs}"
             )
 
-            _currentQueue.value = session.songs
+            _currentQueue.value = session.queue
+            _currentQueueItemId.value = queueItem.id
             _currentSong.value = song
             _progress.value = session.positionMs
             if (song.duration > 0) _duration.value = song.duration
             updateCurrentSongLikedStatus()
 
             controller?.let { player ->
-                val items = session.songs.map { createMediaItem(it) }
+                val items = session.queue.map { createMediaItem(it) }
                 player.setMediaItems(items, session.currentIndex, session.positionMs)
                 player.prepare()
             }
@@ -252,11 +262,13 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         KLog.d("PlayerViewModel", "Restoring last played song: ${song.title}")
 
         // Set the current song for UI display
+        val queueItem = MusicQueueItem(song = song)
         _currentSong.value = song
-        _currentQueue.value = listOf(song)
+        _currentQueue.value = listOf(queueItem)
+        _currentQueueItemId.value = queueItem.id
 
         // Prepare the song in the player (but don't auto-play)
-        val mediaItem = createMediaItem(song)
+        val mediaItem = createMediaItem(queueItem)
         controller?.setMediaItem(mediaItem)
         controller?.prepare()
 
@@ -397,22 +409,23 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                     _duration.value = transitionedDuration
                     _progress.value = controller?.currentPosition?.coerceAtLeast(0L) ?: 0L
                     
-                    // Update current song based on Media ID
+                    // The controller's index identifies the exact queue
+                    // occurrence. mediaId only identifies the underlying song
+                    // and is ambiguous when the same track appears twice.
                     val id = mediaItem?.mediaId
-                    var song: Song? = null
-                    
-                    // Try to find song by mediaId first
-                    if (!id.isNullOrEmpty()) {
-                        song = _currentQueue.value.find { it.id == id }
-                    }
-                    
-                    // Fallback to index-based lookup if mediaId lookup fails
-                    if (song == null) {
-                        val currentIndex = controller?.currentMediaItemIndex ?: -1
-                        if (currentIndex >= 0 && currentIndex < _currentQueue.value.size) {
-                            song = _currentQueue.value.getOrNull(currentIndex)
-                        }
-                    }
+                    val currentIndex = controller?.currentMediaItemIndex ?: -1
+                    // Metadata carries the occurrence ID through placeholder
+                    // resolution and crossfade player swaps. Prefer it over
+                    // the timeline index so a briefly drifted duplicate cannot
+                    // be mistaken for another copy of the same song.
+                    val mediaQueueItemId = mediaItem?.mediaMetadata?.extras
+                        ?.getString(QUEUE_ITEM_ID_EXTRA)
+                    var queueItem = mediaQueueItemId
+                        ?.let { queueItemId -> _currentQueue.value.find { it.id == queueItemId } }
+                        ?: _currentQueue.value.getOrNull(currentIndex)
+                            ?.takeIf { id.isNullOrEmpty() || it.song.id == id }
+
+                    var song: Song? = queueItem?.song
                     
                     // If still null, try to reconstruct from MediaItem metadata
                     if (song == null && mediaItem != null) {
@@ -420,6 +433,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                     }
                     
                     song?.let {
+                        _currentQueueItemId.value = queueItem?.id
                         _currentSong.value = it
                         updateCurrentSongLikedStatus()
                         fetchLyrics(it)
@@ -499,24 +513,39 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         // Rebuild queue from MediaSession
         val itemCount = ctrl.mediaItemCount
         if (itemCount > 0 && _currentQueue.value.isEmpty()) {
-            val songs = mutableListOf<Song>()
+            val queueItems = mutableListOf<MusicQueueItem>()
             for (i in 0 until itemCount) {
                 val mediaItem = ctrl.getMediaItemAt(i)
-                extractSongFromMediaItem(mediaItem)?.let { songs.add(it) }
+                extractSongFromMediaItem(mediaItem)?.let { song ->
+                    queueItems.add(
+                        MusicQueueItem(
+                            id = mediaItem.mediaMetadata.extras
+                                ?.getString(QUEUE_ITEM_ID_EXTRA)
+                                ?: java.util.UUID.randomUUID().toString(),
+                            song = song
+                        )
+                    )
+                }
             }
-            if (songs.isNotEmpty()) {
-                _currentQueue.value = songs
+            if (queueItems.isNotEmpty()) {
+                _currentQueue.value = queueItems
             }
         }
         
         // Sync current song
         val currentMediaItem = ctrl.currentMediaItem
         if (currentMediaItem != null && _currentSong.value == null) {
-            var song = _currentQueue.value.find { it.id == currentMediaItem.mediaId }
+            val currentItem = currentMediaItem.mediaMetadata.extras
+                ?.getString(QUEUE_ITEM_ID_EXTRA)
+                ?.let { id -> _currentQueue.value.find { it.id == id } }
+                ?: _currentQueue.value.getOrNull(ctrl.currentMediaItemIndex)
+                    ?.takeIf { it.song.id == currentMediaItem.mediaId }
+            var song = currentItem?.song
             if (song == null) {
                 song = extractSongFromMediaItem(currentMediaItem)
             }
             song?.let {
+                _currentQueueItemId.value = currentItem?.id
                 _currentSong.value = it
                 updateCurrentSongLikedStatus()
                 fetchLyrics(it)
@@ -614,7 +643,23 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
 
     fun playQueue(songs: List<Song>, startSong: Song? = null) {
         if (songs.isEmpty()) return
-        
+
+        val queue = songs.map { MusicQueueItem(song = it) }
+        // Callers pass the selected object from the displayed list. Reference
+        // identity preserves the selected occurrence when a playlist contains
+        // the same Song value twice; song ID is the compatibility fallback.
+        val startIndex = when (startSong) {
+            null -> 0
+            else -> songs.indexOfFirst { it === startSong }
+                .takeIf { it >= 0 }
+                ?: songs.indexOfFirst { it.id == startSong.id }.coerceAtLeast(0)
+        }
+        playQueueItems(queue, startIndex)
+    }
+
+    private fun playQueueItems(queue: List<MusicQueueItem>, startIndex: Int) {
+        if (queue.isEmpty()) return
+
         // Reset cleared flag - user is actively playing
         isPlayerCleared = false
 
@@ -622,11 +667,13 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         // undoable: putting it back would drop it into a queue it was never in.
         lastQueueRemoval = null
 
-        _currentQueue.value = songs
-        val startIndex = (if (startSong != null) songs.indexOfFirst { it.id == startSong.id } else 0).coerceAtLeast(0)
+        val safeStartIndex = startIndex.coerceIn(queue.indices)
+        _currentQueue.value = queue
         
         // Update current song immediately for UI responsiveness
-        val currentSong = songs[startIndex]
+        val currentItem = queue[safeStartIndex]
+        val currentSong = currentItem.song
+        _currentQueueItemId.value = currentItem.id
         _currentSong.value = currentSong
         _isBuffering.value = true // Immediately show loading
         _duration.value = 0L // Reset duration until we load the new song
@@ -635,12 +682,12 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         
         controller?.let { player ->
             // 1. Set the target song first (triggers URL resolution in MusicService)
-            val startItem = createMediaItem(currentSong)
+            val startItem = createMediaItem(currentItem)
             player.setMediaItem(startItem)
             
             // 2. Add the rest of the queue BEFORE prepare (so notification sees full queue)
-            val otherItemsBefore = songs.subList(0, startIndex).map { createMediaItem(it) }
-            val otherItemsAfter = songs.subList(startIndex + 1, songs.size).map { createMediaItem(it) }
+            val otherItemsBefore = queue.subList(0, safeStartIndex).map { createMediaItem(it) }
+            val otherItemsAfter = queue.subList(safeStartIndex + 1, queue.size).map { createMediaItem(it) }
             
             if (otherItemsBefore.isNotEmpty()) {
                 player.addMediaItems(0, otherItemsBefore)
@@ -705,7 +752,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                 // something else while /next was in flight must not graft the
                 // old mix onto the new queue.
                 val queue = _currentQueue.value
-                if (radio.isNotEmpty() && queue.size == 1 && queue[0].id == song.id) {
+                if (radio.isNotEmpty() && queue.size == 1 && queue[0].song.id == song.id) {
                     addToQueue(radio)
                 }
             } catch (e: Exception) {
@@ -725,12 +772,20 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
      */
     fun skipToSong(song: Song) {
         val queue = _currentQueue.value
-        val index = queue.indexOfFirst { it.id == song.id }
+        val index = queue.indexOfFirst { it.song === song }
+            .takeIf { it >= 0 }
+            ?: queue.indexOfFirst { it.song.id == song.id }
         if (index < 0) {
-            playQueue(queue.ifEmpty { listOf(song) }, song)
+            playQueue(listOf(song), song)
             return
         }
         skipToQueueItem(index)
+    }
+
+    /** Jump to one exact queue occurrence, even when its song appears twice. */
+    fun skipToQueueItem(queueItemId: String) {
+        val index = _currentQueue.value.indexOfFirst { it.id == queueItemId }
+        if (index >= 0) skipToQueueItem(index)
     }
 
     /**
@@ -738,16 +793,17 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
      */
     fun skipToQueueItem(index: Int) {
         val queue = _currentQueue.value
-        val song = queue.getOrNull(index) ?: return
+        val queueItem = queue.getOrNull(index) ?: return
+        val song = queueItem.song
         val player = controller
         if (player == null) {
-            playQueue(queue, song)
+            playQueueItems(queue, index)
             return
         }
 
         // Guard: if the player's timeline drifted from the UI queue, rebuild.
-        if (index >= player.mediaItemCount || player.getMediaItemAt(index).mediaId != song.id) {
-            playQueue(queue, song)
+        if (!timelineAgreesAt(index)) {
+            playQueueItems(queue, index)
             return
         }
 
@@ -759,6 +815,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         isPlayerCleared = false
 
         // Update UI state immediately for responsiveness (same as playQueue)
+        _currentQueueItemId.value = queueItem.id
         _currentSong.value = song
         // The outgoing track remains audible while the target prepares, so
         // this is not a buffering state and must not show a spinner.
@@ -783,7 +840,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                 // seeds from the user's local taste profile (top artists).
                 val newSongs = recommendationEngine.getQueueContinuation(
                     currentSong = _currentSong.value,
-                    excludeIds = _currentQueue.value.map { it.id }.toSet(),
+                    excludeIds = _currentQueue.value.map { it.song.id }.toSet(),
                     limit = 10
                 )
 
@@ -801,12 +858,13 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     fun addToQueue(songs: List<Song>) {
         if (songs.isEmpty()) return
 
+        val added = songs.map { MusicQueueItem(song = it) }
         val currentList = _currentQueue.value.toMutableList()
-        currentList.addAll(songs)
+        currentList.addAll(added)
         _currentQueue.value = currentList
 
         controller?.let { player ->
-            val newItems = songs.map { createMediaItem(it) }
+            val newItems = added.map { createMediaItem(it) }
             player.addMediaItems(newItems)
         }
         savePlaybackSession()
@@ -832,7 +890,8 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         val insertAt = ((player?.currentMediaItemIndex ?: currentIndexInQueue()) + 1)
             .coerceIn(0, currentList.size)
 
-        _currentQueue.value = currentList.toMutableList().apply { addAll(insertAt, songs) }
+        val added = songs.map { MusicQueueItem(song = it) }
+        _currentQueue.value = currentList.toMutableList().apply { addAll(insertAt, added) }
         // The timeline can be shorter than the UI queue when the two have
         // drifted, and Media3 throws rather than clamping an out-of-range
         // insert. Append in that case; the order is wrong either way, and the
@@ -840,7 +899,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         player?.let {
             it.addMediaItems(
                 insertAt.coerceAtMost(it.mediaItemCount),
-                songs.map { song -> createMediaItem(song) }
+                added.map { createMediaItem(it) }
             )
         }
         savePlaybackSession()
@@ -852,8 +911,13 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
 
     /** Where the playing song sits in [_currentQueue], or 0 if it is not in it. */
     private fun currentIndexInQueue(): Int {
-        val id = _currentSong.value?.id ?: return 0
-        return _currentQueue.value.indexOfFirst { it.id == id }.coerceAtLeast(0)
+        val queueItemId = _currentQueueItemId.value
+        if (queueItemId != null) {
+            val index = _currentQueue.value.indexOfFirst { it.id == queueItemId }
+            if (index >= 0) return index
+        }
+        val songId = _currentSong.value?.id ?: return 0
+        return _currentQueue.value.indexOfFirst { it.song.id == songId }.coerceAtLeast(0)
     }
 
     /**
@@ -868,8 +932,12 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
      */
     private fun timelineAgreesAt(index: Int): Boolean {
         val player = controller ?: return false
-        val song = _currentQueue.value.getOrNull(index) ?: return false
-        return index < player.mediaItemCount && player.getMediaItemAt(index).mediaId == song.id
+        val queueItem = _currentQueue.value.getOrNull(index) ?: return false
+        if (index >= player.mediaItemCount) return false
+        val mediaItem = player.getMediaItemAt(index)
+        val mediaQueueItemId = mediaItem.mediaMetadata.extras?.getString(QUEUE_ITEM_ID_EXTRA)
+        return mediaItem.mediaId == queueItem.song.id &&
+            (mediaQueueItemId == null || mediaQueueItemId == queueItem.id)
     }
 
     /**
@@ -887,8 +955,8 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         val agrees = timelineAgreesAt(fromIndex)
 
         val mutable = currentList.toMutableList()
-        val movedSong = mutable.removeAt(fromIndex)
-        mutable.add(toIndex, movedSong)
+        val movedItem = mutable.removeAt(fromIndex)
+        mutable.add(toIndex, movedItem)
         _currentQueue.value = mutable
 
         // Only touch the timeline when it was in step to begin with. Out of
@@ -927,8 +995,14 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         savePlaybackSession()
     }
 
+    /** Remove one exact queue occurrence without relying on a stale UI index. */
+    fun removeQueueItem(queueItemId: String) {
+        val index = _currentQueue.value.indexOfFirst { it.id == queueItemId }
+        if (index >= 0) removeQueueItem(index)
+    }
+
     /** A song just taken out of the queue, kept so the snackbar can put it back. */
-    data class QueueRemoval(val song: Song, val index: Int)
+    data class QueueRemoval(val item: MusicQueueItem, val index: Int)
 
     private var lastQueueRemoval: QueueRemoval? = null
 
@@ -945,16 +1019,20 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         val currentList = _currentQueue.value
         val at = removal.index.coerceIn(0, currentList.size)
 
-        _currentQueue.value = currentList.toMutableList().apply { add(at, removal.song) }
+        _currentQueue.value = currentList.toMutableList().apply { add(at, removal.item) }
         controller?.let { player ->
             if (at <= player.mediaItemCount) {
-                player.addMediaItem(at, createMediaItem(removal.song))
+                player.addMediaItem(at, createMediaItem(removal.item))
             }
         }
         savePlaybackSession()
     }
 
-    private fun createMediaItem(song: Song): MediaItem {
+    private fun createMediaItem(queueItem: MusicQueueItem): MediaItem {
+        val song = queueItem.song
+        val extras = android.os.Bundle().apply {
+            putString(QUEUE_ITEM_ID_EXTRA, queueItem.id)
+        }
         return if (song.source == com.ivor.ivormusic.data.SongSource.LOCAL && song.uri != null) {
             // For local songs, we still need to set mediaId for proper tracking
             MediaItem.Builder()
@@ -966,6 +1044,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                         .setArtist(song.artist)
                         .setDurationMs(song.duration.takeIf { it > 0L })
                         .setArtworkUri(song.albumArtUri)
+                        .setExtras(extras)
                         .build()
                 )
                 .build()
@@ -990,6 +1069,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                                 ?.takeIf { it.isNotBlank() }
                                 ?.let(android.net.Uri::parse)
                         )
+                        .setExtras(extras)
                         .build()
                 )
                 .build()
@@ -1106,8 +1186,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                 if (currentIndex < queue.lastIndex) {
                     // We have a next song in our list, but Player doesn't know it yet.
                     // Add it before asking the service to overlap into it.
-                    val nextSong = queue[currentIndex + 1]
-                    val nextItem = createMediaItem(nextSong)
+                    val nextItem = createMediaItem(queue[currentIndex + 1])
                     player.addMediaItem(currentIndex + 1, nextItem)
                 }
             }
@@ -1344,6 +1423,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         // Clear UI state
         _currentSong.value = null
         _currentQueue.value = emptyList()
+        _currentQueueItemId.value = null
         _isPlaying.value = false
         _isBuffering.value = false
         _playWhenReady.value = false

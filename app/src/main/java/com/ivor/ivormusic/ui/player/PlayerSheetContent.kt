@@ -47,11 +47,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.media3.common.Player
 import coil.compose.AsyncImage
+import com.ivor.ivormusic.data.MusicQueueItem
 import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.ui.components.QueueDragHandle
 import com.ivor.ivormusic.ui.components.QueueRowContainer
 import com.ivor.ivormusic.ui.components.queueDragLongPress
-import com.ivor.ivormusic.ui.components.queueRowKeys
 import com.ivor.ivormusic.ui.components.rememberQueueRemoval
 import com.ivor.ivormusic.ui.components.rememberQueueReorderState
 import com.ivor.ivormusic.ui.components.SongArtwork
@@ -89,6 +89,7 @@ fun PlayerSheetContent(
     val shuffleModeEnabled by viewModel.shuffleModeEnabled.collectAsState()
     val repeatMode by viewModel.repeatMode.collectAsState()
     val currentQueue by viewModel.currentQueue.collectAsState()
+    val currentQueueItemId by viewModel.currentQueueItemId.collectAsState()
     val playWhenReady by viewModel.playWhenReady.collectAsState()
     val isFavorite by viewModel.isCurrentSongLiked.collectAsState()
     
@@ -128,12 +129,12 @@ fun PlayerSheetContent(
                 
                 ExpressiveQueueView(
                     queue = currentQueue,
-                    currentSong = currentSong,
-                    onSongClick = { song -> viewModel.skipToSong(song) },
+                    currentQueueItemId = currentQueueItemId,
+                    onQueueItemClick = { item -> viewModel.skipToQueueItem(item.id) },
                     onMoveSong = { from, to -> viewModel.moveQueueItem(from, to, persist = false) },
                     onCommitOrder = { viewModel.commitQueueOrder() },
                     onUndoRemove = { viewModel.undoQueueRemoval() },
-                    onRemoveSong = { index -> viewModel.removeQueueItem(index) },
+                    onRemoveItem = { item -> viewModel.removeQueueItem(item.id) },
                     onLoadMore = onLoadMore,
                     isLoadingMore = isLoadingMore,
                     onCollapse = onCollapse,
@@ -832,13 +833,13 @@ private fun ExpressiveNowPlayingView(
 @OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalFoundationApi::class)
 @Composable
 private fun ExpressiveQueueView(
-    queue: List<Song>,
-    currentSong: Song?,
-    onSongClick: (Song) -> Unit,
+    queue: List<MusicQueueItem>,
+    currentQueueItemId: String?,
+    onQueueItemClick: (MusicQueueItem) -> Unit,
     onMoveSong: (fromIndex: Int, toIndex: Int) -> Unit,
     onCommitOrder: () -> Unit,
     onUndoRemove: () -> Unit,
-    onRemoveSong: (index: Int) -> Unit,
+    onRemoveItem: (MusicQueueItem) -> Unit,
     onLoadMore: () -> Unit,
     isLoadingMore: Boolean,
     onCollapse: () -> Unit,
@@ -852,8 +853,9 @@ private fun ExpressiveQueueView(
     stableShapes: IconButtonShapes
 ) {
     val primaryContainerColor = MaterialTheme.colorScheme.primaryContainer
+    val currentSong = queue.find { it.id == currentQueueItemId }?.song
     val listState = rememberLazyListState()
-    val rowKeys = remember(queue) { queueRowKeys(queue.map { it.id }, "queue") }
+    val rowKeys = remember(queue) { queue.map { it.id } }
     val reorder = rememberQueueReorderState(
         listState = listState,
         keys = rowKeys,
@@ -1082,14 +1084,12 @@ private fun ExpressiveQueueView(
                     }
                     
                     // ========== QUEUE ITEMS ==========
-                    // Occurrence-qualified, not index-qualified: duplicate keys
-                    // crash, but a key that moves with the index breaks
-                    // reordering outright. See queueRowKeys.
                     itemsIndexed(
                         queue,
                         key = { index, _ -> rowKeys.getOrElse(index) { "queue_$index" } }
-                    ) { index, song ->
-                        val isCurrent = song.id == currentSong?.id
+                    ) { index, queueItem ->
+                        val song = queueItem.song
+                        val isCurrent = queueItem.id == currentQueueItemId
                         val key = rowKeys.getOrElse(index) { "queue_$index" }
                         val isDragging = reorder.draggingKey == key
 
@@ -1098,7 +1098,7 @@ private fun ExpressiveQueueView(
                             dragOffset = reorder.offsetFor(key),
                             removeEnabled = queue.size > 1,
                             onRemove = {
-                                onRemoveSong(index)
+                                onRemoveItem(queueItem)
                                 removal.onRemoved(song.title)
                             },
                             modifier = if (isDragging) Modifier else Modifier.animateItem()
@@ -1114,7 +1114,7 @@ private fun ExpressiveQueueView(
                                 1.5.dp,
                                 primaryColor.copy(alpha = 0.3f)
                             ) else null,
-                            onClick = { onSongClick(song) }
+                            onClick = { onQueueItemClick(queueItem) }
                         ) {
                             Row(
                                 modifier = Modifier
@@ -1218,7 +1218,7 @@ private fun ExpressiveQueueView(
 
                                 IconButton(
                                     onClick = {
-                                        onRemoveSong(index)
+                                        onRemoveItem(queueItem)
                                         removal.onRemoved(song.title)
                                     },
                                     enabled = queue.size > 1,

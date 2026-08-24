@@ -101,12 +101,12 @@ import androidx.graphics.shapes.RoundedPolygon
 import androidx.graphics.shapes.toPath
 import androidx.media3.common.Player
 import com.ivor.ivormusic.data.LyricsResult
+import com.ivor.ivormusic.data.MusicQueueItem
 import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.ui.components.LikeBurstIcon
 import com.ivor.ivormusic.ui.components.QueueDragHandle
 import com.ivor.ivormusic.ui.components.QueueRowContainer
 import com.ivor.ivormusic.ui.components.queueDragLongPress
-import com.ivor.ivormusic.ui.components.queueRowKeys
 import com.ivor.ivormusic.ui.components.rememberQueueRemoval
 import com.ivor.ivormusic.ui.components.rememberQueueReorderState
 import com.ivor.ivormusic.ui.components.SongArtwork
@@ -153,6 +153,7 @@ fun EditorialPlayerSheetContent(
     val shuffleModeEnabled by viewModel.shuffleModeEnabled.collectAsState()
     val repeatMode by viewModel.repeatMode.collectAsState()
     val currentQueue by viewModel.currentQueue.collectAsState()
+    val currentQueueItemId by viewModel.currentQueueItemId.collectAsState()
     val isFavorite by viewModel.isCurrentSongLiked.collectAsState()
     val lyricsResult by viewModel.lyricsResult.collectAsState()
     val isLoadingMore by viewModel.isLoadingMore.collectAsState()
@@ -185,9 +186,9 @@ fun EditorialPlayerSheetContent(
             if (queueVisible) {
                 EditorialQueueView(
                     queue = currentQueue,
-                    currentSong = currentSong,
-                    onSongClick = { song -> viewModel.skipToSong(song) },
-                    onRemoveSong = { index -> viewModel.removeQueueItem(index) },
+                    currentQueueItemId = currentQueueItemId,
+                    onQueueItemClick = { item -> viewModel.skipToQueueItem(item.id) },
+                    onRemoveItem = { item -> viewModel.removeQueueItem(item.id) },
                     onMoveSong = { from, to -> viewModel.moveQueueItem(from, to, persist = false) },
                     onCommitOrder = { viewModel.commitQueueOrder() },
                     onUndoRemove = { viewModel.undoQueueRemoval() },
@@ -814,10 +815,10 @@ internal fun EditorialChip(
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 internal fun EditorialQueueView(
-    queue: List<Song>,
-    currentSong: Song?,
-    onSongClick: (Song) -> Unit,
-    onRemoveSong: (index: Int) -> Unit,
+    queue: List<MusicQueueItem>,
+    currentQueueItemId: String?,
+    onQueueItemClick: (MusicQueueItem) -> Unit,
+    onRemoveItem: (MusicQueueItem) -> Unit,
     onLoadMore: () -> Unit,
     isLoadingMore: Boolean,
     onCollapse: () -> Unit,
@@ -829,7 +830,7 @@ internal fun EditorialQueueView(
     onUndoRemove: () -> Unit = {}
 ) {
     val listState = rememberLazyListState()
-    val rowKeys = remember(queue) { queueRowKeys(queue.map { it.id }, "editorial_queue") }
+    val rowKeys = remember(queue) { queue.map { it.id } }
     val reorder = rememberQueueReorderState(
         listState = listState,
         keys = rowKeys,
@@ -894,14 +895,12 @@ internal fun EditorialQueueView(
                 contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                // Occurrence-qualified, not index-qualified: the same song can
-                // appear twice and duplicate keys crash, but a key that moves
-                // with the index breaks reordering. See queueRowKeys.
                 itemsIndexed(
                     queue,
                     key = { index, _ -> rowKeys.getOrElse(index) { "editorial_queue_$index" } }
-                ) { index, song ->
-                    val isCurrent = song.id == currentSong?.id
+                ) { index, queueItem ->
+                    val song = queueItem.song
+                    val isCurrent = queueItem.id == currentQueueItemId
                     val key = rowKeys.getOrElse(index) { "editorial_queue_$index" }
                     val isDragging = reorder.draggingKey == key
 
@@ -910,7 +909,7 @@ internal fun EditorialQueueView(
                         dragOffset = reorder.offsetFor(key),
                         removeEnabled = queue.size > 1,
                         onRemove = {
-                            onRemoveSong(index)
+                            onRemoveItem(queueItem)
                             removal.onRemoved(song.title)
                         },
                         // animateItem sits on the container rather than the row,
@@ -920,7 +919,7 @@ internal fun EditorialQueueView(
                         modifier = if (isDragging) Modifier else Modifier.animateItem()
                     ) {
                         Surface(
-                            onClick = { onSongClick(song) },
+                            onClick = { onQueueItemClick(queueItem) },
                             shape = RoundedCornerShape(24.dp),
                             color = if (isCurrent) accent else field,
                             contentColor = if (isCurrent) field else accent,
@@ -974,7 +973,7 @@ internal fun EditorialQueueView(
                                 )
                                 IconButton(
                                     onClick = {
-                                        onRemoveSong(index)
+                                        onRemoveItem(queueItem)
                                         removal.onRemoved(song.title)
                                     },
                                     enabled = queue.size > 1,

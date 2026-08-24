@@ -4,6 +4,7 @@ import com.ivor.ivormusic.util.KLog
 
 import android.content.Context
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.File
@@ -14,11 +15,18 @@ import java.io.File
  */
 @Serializable
 data class PlaybackSession(
-    val songs: List<Song>,
+    val queue: List<MusicQueueItem> = emptyList(),
+    // Kept only so sessions written by older app versions still restore. New
+    // snapshots omit this default-valued field and persist queue-entry IDs.
+    @SerialName("songs")
+    val legacySongs: List<Song> = emptyList(),
     val currentIndex: Int,
     val positionMs: Long,
     val savedAt: Long
 )
+
+internal val PlaybackSession.items: List<MusicQueueItem>
+    get() = queue.ifEmpty { legacySongs.map { MusicQueueItem(song = it) } }
 
 /**
  * Persists the last playback session to a JSON file so reopening the app can
@@ -45,16 +53,16 @@ class PlaybackSessionRepository(context: Context) {
         isLenient = true
     }
 
-    fun save(songs: List<Song>, currentIndex: Int, positionMs: Long) {
-        if (songs.isEmpty() || currentIndex !in songs.indices) return
+    fun save(queue: List<MusicQueueItem>, currentIndex: Int, positionMs: Long) {
+        if (queue.isEmpty() || currentIndex !in queue.indices) return
         try {
             // Keep a window around the current song when trimming, so both
             // history (previous button) and upcoming songs survive.
             val start = (currentIndex - MAX_SAVED_SONGS / 2).coerceAtLeast(0)
-            val end = (start + MAX_SAVED_SONGS).coerceAtMost(songs.size)
-            val trimmed = songs.subList(start, end)
+            val end = (start + MAX_SAVED_SONGS).coerceAtMost(queue.size)
+            val trimmed = queue.subList(start, end)
             val session = PlaybackSession(
-                songs = trimmed,
+                queue = trimmed,
                 currentIndex = currentIndex - start,
                 positionMs = positionMs.coerceAtLeast(0L),
                 savedAt = System.currentTimeMillis()
@@ -73,9 +81,10 @@ class PlaybackSessionRepository(context: Context) {
     fun load(): PlaybackSession? {
         return try {
             if (!sessionFile.exists()) return null
-            val session = json.decodeFromString<PlaybackSession>(sessionFile.readText())
-            if (session.songs.isEmpty() || session.currentIndex !in session.songs.indices) null
-            else session
+            val decoded = json.decodeFromString<PlaybackSession>(sessionFile.readText())
+            val items = decoded.items
+            if (items.isEmpty() || decoded.currentIndex !in items.indices) null
+            else decoded.copy(queue = items, legacySongs = emptyList())
         } catch (e: Exception) {
             KLog.e(TAG, "Failed to load playback session", e)
             null

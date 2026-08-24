@@ -113,6 +113,7 @@ fun DialPlayerSheetContent(
     val shuffleModeEnabled by viewModel.shuffleModeEnabled.collectAsState()
     val repeatMode by viewModel.repeatMode.collectAsState()
     val currentQueue by viewModel.currentQueue.collectAsState()
+    val currentQueueItemId by viewModel.currentQueueItemId.collectAsState()
     val isFavorite by viewModel.isCurrentSongLiked.collectAsState()
     val lyricsResult by viewModel.lyricsResult.collectAsState()
     val isLoadingMore by viewModel.isLoadingMore.collectAsState()
@@ -147,9 +148,9 @@ fun DialPlayerSheetContent(
             if (queueVisible) {
                 EditorialQueueView(
                     queue = currentQueue,
-                    currentSong = currentSong,
-                    onSongClick = { song -> viewModel.skipToSong(song) },
-                    onRemoveSong = { index -> viewModel.removeQueueItem(index) },
+                    currentQueueItemId = currentQueueItemId,
+                    onQueueItemClick = { item -> viewModel.skipToQueueItem(item.id) },
+                    onRemoveItem = { item -> viewModel.removeQueueItem(item.id) },
                     onMoveSong = { from, to -> viewModel.moveQueueItem(from, to, persist = false) },
                     onCommitOrder = { viewModel.commitQueueOrder() },
                     onUndoRemove = { viewModel.undoQueueRemoval() },
