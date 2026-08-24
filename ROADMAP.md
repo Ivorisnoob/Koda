@@ -10,7 +10,7 @@ For how the app is built, see [`CLAUDE.md`](CLAUDE.md). For the design system an
 
 ## Where Koda is today
 
-Version **4.5** (`versionCode` 23), targeting Android 16 (API 36) with a floor at Android 11 (API 30). Roughly **78,000 lines** of Kotlin across **155 files**, all of it Compose, all of it rendered inside a single `MaterialExpressiveTheme`.
+Version **4.6** (`versionCode` 24), targeting Android 16 (API 36) with a floor at Android 11 (API 30). Roughly **96,000 lines** of Kotlin across **191 files**, all of it Compose, all of it rendered inside a single `MaterialExpressiveTheme`.
 
 The app is past the point of proving itself. The core loops all work end to end:
 
@@ -58,7 +58,7 @@ These are not goals. They are the walls the roadmap has to fit inside, and any p
 
 ## Known defects
 
-There are no diagnosed, still-open defects recorded here for version 4.5. Fixed diagnoses are retained under [Shipped](#shipped), where they cannot be mistaken for current behaviour.
+There are no diagnosed, still-open defects recorded here for version 4.6. Fixed diagnoses are retained under [Shipped](#shipped), where they cannot be mistaken for current behaviour.
 
 ---
 
@@ -427,13 +427,14 @@ The milestones behind us, kept here so the direction of travel is visible.
 - Saving other people's playlists and albums to the library in both music and video mode, stored as live references rather than copies
 - Local-first lyrics for device songs (`.lrc`/`.ttml` sidecars and embedded tags), multi-provider online fallbacks with TTML, QRC, Enhanced LRC, line and plain text, plus letter-by-letter highlighting from real word timings
 - Full-height expanded music players on Android 11 and 12, measured from the edge-to-edge window rather than the inset-excluding resource configuration
-- In-app video with a personalized feed, chapters, captions, and comments
+- In-app video with a personalized feed, chapters, comments, and captions whose size, text color and background can be adjusted while the video remains visible
 - Video scrubbing with chapter-aligned buffering and bounded storyboard previews that stay stable through release, control auto-hide, and rapid video switches
 - A restrained video chrome with one scroll-safe Playback settings surface for secondary controls, plus durable Autoplay and Loop behavior that cannot contradict itself
 - Eight player styles and a 27-palette color system with dynamic color and AMOLED
 - Listening statistics with play charts, streaks, and top artists
-- Offline downloads for music and video, written to the system Downloads folder; music files carry portable title, artist, album, cover art and the best available lyric timing
+- Offline downloads for music and video, written to the system Downloads folder and playable inside Koda without a network connection; music files carry portable title, artist, album, cover art and the best available lyric timing
 - Whole-playlist downloads in both modes, with one background queue, resumable partial batches, per-batch video quality, and honest skips for local music and live video
+- Download confirmation that resolves the estimated media size before enqueueing, while leaving the action available when YouTube cannot provide a trustworthy size
 - Live streams with live chat, including a full-screen player for vertical broadcasts
 - Account-free subscriptions, with import from NewPipe, PipePipe, Tubular, Takeout, and OPML
 - "Don't recommend this" with a local blocklist, account propagation, and app-wide undo
@@ -478,7 +479,7 @@ The song-information swipe is worth recording for what the work actually turned 
 
 Two things stayed deliberately un-unified. **Sticker keeps its peel** - the art is thrown off the canvas and the next one slapped on, which is that style's identity and is not a spring-back - and **Gesture's title swipe steps the queue** rather than calling the ViewModel's skip, because its carousel follows `currentIndex` and would otherwise disagree with the gesture that moved it. Same direction, same commit, different animation. The mini player was left alone: horizontal there already means dismiss, and splitting one 64dp bar between dismiss and skip is a coin flip every time.
 
-Three fixed defects retain lessons worth carrying forward. **Shorts and downloads now recover from a flagged `visitorData`** by re-minting between attempts and invalidating URLs resolved under the refused token; re-resolving under the same token is not a retry. **The video mini bar no longer floats above absent chrome** because an overlay composed above the NavHost is told what is actually beneath it instead of inferring that from playback state. **Portrait uploads no longer sit inside a pillarboxed 16:9 watch-page box**; the player uses the source aspect ratio with a cap that preserves the page below, and fits rather than zooms so faces and captions are not cropped.
+Four fixed defects retain lessons worth carrying forward. **Shorts and downloads now recover from a flagged `visitorData`** by re-minting between attempts and invalidating URLs resolved under the refused token; re-resolving under the same token is not a retry. **The video mini bar no longer floats above absent chrome** because an overlay composed above the NavHost is told what is actually beneath it instead of inferring that from playback state. **Portrait uploads no longer sit inside a pillarboxed 16:9 watch-page box**; the player uses the source aspect ratio with a cap that preserves the page below, and fits rather than zooms so faces and captions are not cropped. **A downloaded video now stays a local playback item from the Downloads screen through `VideoPlayerViewModel`**: its durable MediaStore URI is prepared directly, quality and seek-preview state are local, and no watch-page or stream-resolution request is allowed to turn an offline tap back into an online one.
 
 The channel screen is worth recording for what turned out **not** to be the work. The plan called for probing the browse `params` of six tabs and writing them down, and the probe found something better: **a channel page describes itself.** The first browse returns the tab list with each tab's own `params`, every sort order with its own continuation token, and every next page as another token, all of it signed out. So there is exactly one hardcoded browse parameter left in the file, kept as a fallback, and the tab row is built from the response rather than from an enum.
 

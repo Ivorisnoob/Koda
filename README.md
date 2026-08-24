@@ -122,7 +122,7 @@ Plus an **ambient artwork background**, an optional **chromatic-mist** effect, a
 - **Personalized video home feed**. It shows your real YouTube feed when you are signed in, and falls back to a taste-based feed built from your watch history when you are not.
 - **A real video player** with the full quality ladder up to 2160p60 and a separate audio track, so it never gets stuck on a low muxed quality.
 - **Chapters** rendered as seek-bar ticks, a current-chapter chip, and a chapters sheet.
-- **Captions / subtitles** with a CC toggle and a language picker, drawn as an overlay so toggling them costs nothing and they survive a quality switch. They work signed out.
+- **Captions / subtitles** with a CC toggle, language picker, adjustable text size, text color and background, drawn as an overlay so toggling them costs nothing and they survive a quality switch. They work signed out.
 - **Double-tap** either side to skip forward or back, and **hold to play at 2x**, with an adjustable playback speed.
 - **Swipe up on the video to go fullscreen, and down the middle to come back:** the corner button is a small target on a phone held in both hands. Pull the whole watch page down to minimize.
 - **Drag the left and right edges for brightness and volume**, with a ladder of slats that lights from the bottom, one slat per real system volume notch, so the haptic tick and the light are the same event. It takes its colors from your palette.
@@ -182,7 +182,8 @@ Plus an **ambient artwork background**, an optional **chromatic-mist** effect, a
 
 ### Downloads
 
-- **Download songs and videos** for offline playback. Video is stitched back together from YouTube's separate high-quality video and audio streams into a single MP4, so downloads are not stuck at the 360p that comes as a ready-made file.
+- **Download songs and videos** for offline playback, then open either one directly in Koda with no network connection. Video is stitched back together from YouTube's separate high-quality video and audio streams into a single MP4, so downloads are not stuck at the 360p that comes as a ready-made file.
+- **See the estimated media size before committing** a song or video download. If YouTube cannot provide a trustworthy size, Koda says so and still lets you continue.
 - **Download a whole album or playlist** in one tap. Anything you already have is skipped, so re-running it only fetches what is missing.
 - **Files go where you can find them:** `Downloads/Koda/Music` and `Downloads/Koda/Video`, named after the track rather than the video id. They show up in the Files app and play in anything else on your device.
 - **Downloads survive leaving the screen.** They run in the background through a foreground service instead of dying when you navigate away.
