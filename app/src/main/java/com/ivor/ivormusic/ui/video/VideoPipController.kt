@@ -159,7 +159,7 @@ fun VideoPipController(viewModel: VideoPlayerViewModel) {
  * normal three slots; trusting that value leaves only play/pause visible. The
  * window manager can truncate the row itself on a genuinely smaller surface.
  */
-private fun pipActions(
+internal fun pipActions(
     activity: androidx.activity.ComponentActivity,
     packageName: String,
     isPlaying: Boolean

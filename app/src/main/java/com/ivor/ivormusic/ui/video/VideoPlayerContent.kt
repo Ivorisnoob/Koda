@@ -1206,7 +1206,7 @@ fun VideoPlayerContent(
             onPipClick = {
                 showPlaybackSettings = false
                 val host = activity as? androidx.activity.ComponentActivity
-                if (host != null) enterPipMode(host)
+                if (host != null) enterPipMode(host, viewModel)
             },
             showComments = !isLive && commentsToken != null,
             commentsActive = showCommentsSheet,

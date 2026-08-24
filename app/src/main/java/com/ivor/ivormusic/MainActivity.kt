@@ -366,14 +366,14 @@ class MainActivity : ComponentActivity() {
      * Entering PiP on the way out of the app.
      *
      * API 31+ is already armed through setAutoEnterEnabled for the smooth
-     * gesture-navigation transition. Keep this explicit path on every version
-     * as an OEM fallback: some Android 16 builds deliver onUserLeaveHint but do
-     * not honor the armed auto-enter flag. enterPictureInPictureMode is safe to
-     * call only while entry has not started, hence both state checks below.
+     * gesture-navigation transition. Calling enterPictureInPictureMode here as
+     * well replaces the prepared action list on OxygenOS 12, leaving PiP with
+     * only the MediaSession pause button, so the explicit path is API 30 only.
      */
     @Deprecated("Deprecated in Java")
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) return
         if (!pipEligible || isInPipMode || isInPictureInPictureMode) return
         enterPipMode(this)
     }

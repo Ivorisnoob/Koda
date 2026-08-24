@@ -108,6 +108,56 @@ fun enterPipMode(activity: androidx.activity.ComponentActivity): Boolean {
 }
 
 /**
+ * Explicit PiP entry from the player's visible PiP button.
+ *
+ * Some OxygenOS 12 builds do not carry parameters previously installed with
+ * setPictureInPictureParams into the no-argument entry call. Pass the complete
+ * snapshot here so the pinned task receives the aspect ratio, source rectangle
+ * and all three RemoteActions atomically.
+ */
+fun enterPipMode(
+    activity: androidx.activity.ComponentActivity,
+    viewModel: VideoPlayerViewModel
+): Boolean {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return false
+    if (!activity.packageManager.hasSystemFeature(
+            android.content.pm.PackageManager.FEATURE_PICTURE_IN_PICTURE
+        )
+    ) return false
+
+    val bounds = (
+        if (viewModel.isExpanded.value) {
+            viewModel.videoSurfaceBounds.value
+        } else {
+            viewModel.miniVideoSurfaceBounds.value
+        }
+    )?.takeIf { !it.isEmpty }
+
+    return try {
+        val params = PictureInPictureParams.Builder()
+            .setAspectRatio(pipAspectRatio(viewModel.videoAspectRatio.value))
+            .setActions(
+                pipActions(
+                    activity = activity,
+                    packageName = activity.packageName,
+                    isPlaying = viewModel.isPlaying.value
+                )
+            )
+            .apply { bounds?.let(::setSourceRectHint) }
+            .apply {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    setSeamlessResizeEnabled(true)
+                }
+            }
+            .build()
+        activity.enterPictureInPictureMode(params)
+    } catch (e: Exception) {
+        KLog.w("VideoPlayerOverlay", "Explicit PiP entry refused", e)
+        false
+    }
+}
+
+/**
  * Overlay component for persistent video playback across the app.
  * Handles both In-App Mini Player and System Picture-in-Picture.
  */
