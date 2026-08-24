@@ -1,6 +1,8 @@
 # Contributing to Koda
 
-First off, thank you for considering contributing to **Koda**! It's people like you that make the open-source community such an amazing place to learn, inspire, and create.
+Thank you for your interest in **Koda**.
+
+> **External contributions are temporarily paused.** The project is not accepting new external pull requests until the author has completed at least 10% of the planned work in [ROADMAP.md](ROADMAP.md). This gives the architecture and product direction time to settle before outside changes are reviewed. Bug reports, feature requests, discussion, and private security reports remain welcome.
 
 ## How Can I Contribute?
 
@@ -17,12 +19,8 @@ First off, thank you for considering contributing to **Koda**! It's people like 
 - Describe the feature, why it would be useful, and how it might work.
 
 ### 3. Pull Requests
-- Fork the repository and create your branch from `main`.
-- If you've added code that should be tested, add tests.
-- Ensure the project builds successfully with `./gradlew assembleDebug`.
-- Follow the existing code style (Kotlin coding conventions).
-- For UI changes, read [DESIGN.md](DESIGN.md) first. Koda is built ground-up on Material 3 Expressive: use Expressive components before standard Material 3, springs for touch-driven motion, and never hardcode a color.
-- Open a PR with a clear title and description.
+
+Please do not open a new external pull request during the temporary pause above. The contribution workflow and technical requirements will be restored here when the author-completed roadmap threshold reaches 10%.
 
 ## Development Setup
 

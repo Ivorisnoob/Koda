@@ -1,3 +1,10 @@
+<!--
+External contributions are temporarily paused until the project author has
+completed at least 10% of the planned work in ROADMAP.md. Please do not open a
+new external pull request during this pause. Bug reports and feature requests
+remain welcome through the issue templates.
+-->
+
 ## What this changes
 
 <!-- A short description of the change and the problem it solves. Link the issue if there is one. -->

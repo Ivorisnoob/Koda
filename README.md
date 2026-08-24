@@ -488,7 +488,7 @@ Both build types split by ABI: `arm64-v8a`, `armeabi-v7a`, and a universal APK c
 | [`CLAUDE.md`](CLAUDE.md) | Architecture, data flows, and the InnerTube layer in depth |
 | [`DESIGN.md`](DESIGN.md) | The design system: shape, motion, color, and the rules for UI code |
 | [`ROADMAP.md`](ROADMAP.md) | Where the app is going, and the defects already diagnosed |
-| [`CONTRIBUTING.md`](CONTRIBUTING.md) | How to open a pull request |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Current contribution policy |
 | [`SECURITY.md`](SECURITY.md) | Reporting a vulnerability, and what is in scope |
 
 ---
@@ -501,7 +501,9 @@ Join the Telegram chat at **[t.me/ivorisnoob_chat](https://t.me/ivorisnoob_chat)
 
 ## Contributing
 
-Contributions are welcome, whether it is a bug report, a feature idea, or a pull request. See [CONTRIBUTING.md](CONTRIBUTING.md) to get started, and [ROADMAP.md](ROADMAP.md) if you are looking for something to pick up. The **Known defects** section lists bugs that have already been traced to a file and a line.
+External pull requests are temporarily paused until the author has completed at least 10% of the planned work in [ROADMAP.md](ROADMAP.md). This pause gives the architecture and product direction time to settle before outside changes are reviewed.
+
+Bug reports, feature requests, and discussion are still welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the current policy. The roadmap's **Known defects** section lists bugs that have already been traced to a file and a line.
 
 Everyone taking part is expected to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 
