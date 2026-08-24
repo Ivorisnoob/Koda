@@ -3,7 +3,10 @@ package com.ivor.ivormusic.ui.video
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
 import android.media.AudioManager
+import android.media.MediaMetadataRetriever
+import android.net.Uri
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.FrameLayout
@@ -16,6 +19,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -49,7 +53,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.displayCutoutPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -132,6 +135,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -148,8 +152,12 @@ import coil.compose.AsyncImage
 import coil.request.CachePolicy
 import coil.request.ImageRequest
 import kotlin.math.abs
+import kotlin.math.min
 import kotlin.math.roundToInt
 import com.ivor.ivormusic.data.LikeStatus
+import com.ivor.ivormusic.data.CaptionBackground
+import com.ivor.ivormusic.data.CaptionTextColor
+import com.ivor.ivormusic.data.CAPTION_TEXT_SCALE_DEFAULT
 import com.ivor.ivormusic.data.ThemePreferences
 import com.ivor.ivormusic.data.VideoChapter
 import com.ivor.ivormusic.data.VideoEngagement
@@ -158,8 +166,12 @@ import com.ivor.ivormusic.data.VideoSeekPreview
 import com.ivor.ivormusic.data.VttCue
 import com.ivor.ivormusic.data.WebVttParser
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import java.util.Locale
 
 // VideoPlayerScreen function removed.
@@ -179,9 +191,10 @@ import java.util.Locale
  * RESIZE_MODE_ZOOM, and their distance from the bottom edge is a plain padding
  * value instead of a fight with per-cue positioning.
  *
- * Black-on-white here rather than ColorScheme: captions sit on video frames, so
- * they have to stay legible whatever the app theme is. Same reasoning as the
- * player controls above them.
+ * Caption colors are intentionally video-safe rather than ColorScheme roles:
+ * they sit directly on arbitrary frames. The user's size, foreground and plate
+ * choices apply consistently in the watch page, fullscreen, vertical live and
+ * PiP, while this layout continues to own collision-free positioning.
  */
 @Composable
 internal fun CaptionOverlay(
@@ -189,6 +202,9 @@ internal fun CaptionOverlay(
     player: ExoPlayer,
     bottomPadding: Dp,
     compact: Boolean,
+    textSize: Float,
+    textColor: CaptionTextColor,
+    background: CaptionBackground,
     modifier: Modifier = Modifier
 ) {
     if (cues.isEmpty()) return
@@ -214,23 +230,45 @@ internal fun CaptionOverlay(
             modifier = Modifier.padding(horizontal = 16.dp)
         ) { cue ->
             if (cue != null) {
+                val baseStyle = if (compact) {
+                    MaterialTheme.typography.bodyMedium
+                } else {
+                    MaterialTheme.typography.titleMedium
+                }
+                val foreground = when (textColor) {
+                    CaptionTextColor.WHITE -> Color.White
+                    CaptionTextColor.YELLOW -> Color.Yellow
+                }
+                val plateAlpha = when (background) {
+                    CaptionBackground.NONE -> 0f
+                    CaptionBackground.TRANSLUCENT -> 0.75f
+                    CaptionBackground.SOLID -> 0.95f
+                }
                 Box(
                     modifier = Modifier.padding(bottom = bottomPadding),
                     contentAlignment = Alignment.BottomCenter
                 ) {
                     Text(
                         text = cue,
-                        color = Color.White,
-                        style = if (compact) {
-                            MaterialTheme.typography.bodyMedium
-                        } else {
-                            MaterialTheme.typography.titleMedium
-                        },
+                        color = foreground,
+                        style = baseStyle.copy(
+                            fontSize = baseStyle.fontSize * textSize,
+                            lineHeight = baseStyle.lineHeight * textSize,
+                            shadow = if (background == CaptionBackground.NONE) {
+                                androidx.compose.ui.graphics.Shadow(
+                                    color = Color.Black,
+                                    offset = Offset(1f, 1f),
+                                    blurRadius = 4f
+                                )
+                            } else {
+                                null
+                            }
+                        ),
                         fontWeight = FontWeight.Medium,
                         textAlign = TextAlign.Center,
                         modifier = Modifier
                             .background(
-                                color = Color.Black.copy(alpha = 0.75f),
+                                color = Color.Black.copy(alpha = plateAlpha),
                                 shape = RoundedCornerShape(8.dp)
                             )
                             .padding(horizontal = 12.dp, vertical = 6.dp)
@@ -272,6 +310,9 @@ fun FullscreenPlayerContent(
     captionsActive: Boolean = false,
     onCaptionsClick: () -> Unit = {},
     captionCues: List<VttCue> = emptyList(),
+    captionTextSize: Float = CAPTION_TEXT_SCALE_DEFAULT,
+    captionTextColor: CaptionTextColor = CaptionTextColor.WHITE,
+    captionBackground: CaptionBackground = CaptionBackground.TRANSLUCENT,
     /**
      * Playlist transport and the way into the queue. Fullscreen is where a
      * playlist is most likely to be watched end to end, and leaving fullscreen
@@ -419,7 +460,10 @@ fun FullscreenPlayerContent(
             cues = captionCues,
             player = exoPlayer,
             bottomPadding = captionLift.value,
-            compact = false
+            compact = false,
+            textSize = captionTextSize,
+            textColor = captionTextColor,
+            background = captionBackground
         )
 
         // Overlays
@@ -449,11 +493,6 @@ fun FullscreenPlayerContent(
                         .align(Alignment.TopCenter)
                         .fillMaxWidth()
                         .background(Brush.verticalGradient(colors = listOf(Color.Black.copy(0.7f), Color.Transparent)))
-                        // Cutout insets are stable, unlike status-bar insets which go
-                        // 0 -> bar-height whenever another window (a bottom sheet)
-                        // makes the hidden system bars reappear — statusBarsPadding
-                        // here made the whole top bar jump down when a sheet opened
-                        .displayCutoutPadding()
                         .padding(
                             horizontal = if (compactChrome) 16.dp else 24.dp,
                             vertical = 12.dp
@@ -565,7 +604,6 @@ fun FullscreenPlayerContent(
                                 listOf(Color.Transparent, Color.Black.copy(alpha = 0.72f))
                             )
                         )
-                        .displayCutoutPadding()
                         .padding(horizontal = 24.dp, vertical = 18.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
@@ -658,6 +696,9 @@ fun PortraitPlayerContent(
     captionsActive: Boolean = false,
     onCaptionsClick: () -> Unit = {},
     captionCues: List<VttCue> = emptyList(),
+    captionTextSize: Float = CAPTION_TEXT_SCALE_DEFAULT,
+    captionTextColor: CaptionTextColor = CaptionTextColor.WHITE,
+    captionBackground: CaptionBackground = CaptionBackground.TRANSLUCENT,
     isLive: Boolean = false,
     /** Jump to the live edge of the DVR window. */
     onSeekToLive: () -> Unit = {},
@@ -737,7 +778,10 @@ fun PortraitPlayerContent(
             cues = captionCues,
             player = exoPlayer,
             bottomPadding = captionLift.value,
-            compact = true
+            compact = true,
+            textSize = captionTextSize,
+            textColor = captionTextColor,
+            background = captionBackground
         )
 
         if (hasError) ErrorOverlay(errorMessage, onRetry)
@@ -1130,6 +1174,7 @@ private fun SeekPreviewCard(
     modifier: Modifier = Modifier,
 ) {
     val frame = preview?.frameAt(positionMs)
+    val localVideoUri = preview?.localVideoUri
     val context = LocalContext.current
     Surface(
         modifier = modifier,
@@ -1139,7 +1184,12 @@ private fun SeekPreviewCard(
         shadowElevation = 4.dp,
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            if (preview != null && frame != null) {
+            if (localVideoUri != null) {
+                LocalVideoSeekFrame(
+                    uriString = localVideoUri,
+                    positionMs = positionMs,
+                )
+            } else if (preview != null && frame != null) {
                 val frameWidth = 144.dp
                 val frameHeight = frameWidth *
                     (preview.frameHeightPx.toFloat() / preview.frameWidthPx.toFloat())
@@ -1204,6 +1254,127 @@ private fun SeekPreviewCard(
         }
     }
 }
+
+/**
+ * Decode downloaded-video previews locally, one request at a time.
+ *
+ * Positions are bucketed and briefly debounced because a slider can emit
+ * hundreds of values in one drag. The mutex prevents cancelled native decoder
+ * calls from piling up; the last good frame remains visible while the next one
+ * is extracted. Frames are deliberately small and recycled when replaced.
+ */
+@Composable
+private fun LocalVideoSeekFrame(
+    uriString: String,
+    positionMs: Long,
+) {
+    val context = LocalContext.current
+    val extractionMutex = remember(uriString) { Mutex() }
+    val frameTimeMs = (positionMs.coerceAtLeast(0L) / LOCAL_PREVIEW_BUCKET_MS) *
+        LOCAL_PREVIEW_BUCKET_MS
+    var bitmap by remember(uriString) { mutableStateOf<Bitmap?>(null) }
+
+    LaunchedEffect(uriString, frameTimeMs) {
+        delay(LOCAL_PREVIEW_DEBOUNCE_MS)
+        val next = extractionMutex.withLock {
+            extractLocalVideoFrame(context, uriString, frameTimeMs)
+        }
+        if (next != null) bitmap = next
+    }
+
+    val displayedBitmap = bitmap
+    DisposableEffect(displayedBitmap) {
+        onDispose { displayedBitmap?.recycle() }
+    }
+
+    Box(
+        modifier = Modifier
+            .size(LOCAL_PREVIEW_WIDTH, LOCAL_PREVIEW_HEIGHT)
+            .background(Color.Black),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (displayedBitmap != null) {
+            Image(
+                bitmap = displayedBitmap.asImageBitmap(),
+                contentDescription = null,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else {
+            ContainedLoadingIndicator(modifier = Modifier.size(28.dp))
+        }
+    }
+}
+
+private suspend fun extractLocalVideoFrame(
+    context: Context,
+    uriString: String,
+    positionMs: Long,
+): Bitmap? = withContext(Dispatchers.IO) {
+    val retriever = MediaMetadataRetriever()
+    try {
+        val uri = Uri.parse(uriString)
+        if (uri.scheme.equals("file", ignoreCase = true)) {
+            val path = uri.path ?: return@withContext null
+            retriever.setDataSource(path)
+        } else {
+            retriever.setDataSource(context, uri)
+        }
+        val encodedWidth = retriever
+            .extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)
+            ?.toIntOrNull()
+            ?: LOCAL_PREVIEW_WIDTH_PX
+        val encodedHeight = retriever
+            .extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)
+            ?.toIntOrNull()
+            ?: LOCAL_PREVIEW_HEIGHT_PX
+        val rotation = retriever
+            .extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)
+            ?.toIntOrNull()
+            ?: 0
+        val (targetWidth, targetHeight) = localPreviewPixelSize(
+            encodedWidth = encodedWidth,
+            encodedHeight = encodedHeight,
+            rotationDegrees = rotation,
+        )
+        retriever.getScaledFrameAtTime(
+            positionMs * 1_000L,
+            MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+            targetWidth,
+            targetHeight,
+        )
+    } catch (_: Exception) {
+        null
+    } finally {
+        retriever.close()
+    }
+}
+
+private fun localPreviewPixelSize(
+    encodedWidth: Int,
+    encodedHeight: Int,
+    rotationDegrees: Int,
+): Pair<Int, Int> {
+    if (encodedWidth <= 0 || encodedHeight <= 0) {
+        return LOCAL_PREVIEW_WIDTH_PX to LOCAL_PREVIEW_HEIGHT_PX
+    }
+    val quarterTurn = rotationDegrees.mod(180) != 0
+    val displayWidth = if (quarterTurn) encodedHeight else encodedWidth
+    val displayHeight = if (quarterTurn) encodedWidth else encodedHeight
+    val scale = min(
+        LOCAL_PREVIEW_WIDTH_PX.toFloat() / displayWidth.toFloat(),
+        LOCAL_PREVIEW_HEIGHT_PX.toFloat() / displayHeight.toFloat(),
+    )
+    return (displayWidth * scale).roundToInt().coerceAtLeast(1) to
+        (displayHeight * scale).roundToInt().coerceAtLeast(1)
+}
+
+private const val LOCAL_PREVIEW_BUCKET_MS = 1_000L
+private const val LOCAL_PREVIEW_DEBOUNCE_MS = 60L
+private const val LOCAL_PREVIEW_WIDTH_PX = 288
+private const val LOCAL_PREVIEW_HEIGHT_PX = 162
+private val LOCAL_PREVIEW_WIDTH = 144.dp
+private val LOCAL_PREVIEW_HEIGHT = 81.dp
 
 /**
  * Pill above the seek bar showing the current chapter title; tapping it opens
@@ -1877,6 +2048,7 @@ fun VideoInfoSection(
     onSubscribeClick: () -> Unit = {},
     onCommentsClick: () -> Unit = {},
     onSaveClick: () -> Unit = {},
+    onDownloadClick: () -> Unit = {},
     onChannelClick: () -> Unit = {},
     onRelatedLongPress: ((VideoItem) -> Unit)? = null,
     /**
@@ -1964,7 +2136,7 @@ fun VideoInfoSection(
             )
             SaveVideoButton(onClick = onSaveClick)
             ShareVideoButton(video = video)
-            DownloadVideoButton(video = video)
+            DownloadVideoButton(video = video, onDownloadClick = onDownloadClick)
         }
 
         // Channel Info Surface (tap navigates to the channel)
@@ -2413,19 +2585,19 @@ private fun SaveVideoButton(onClick: () -> Unit) {
 }
 
 /**
- * Download pill. Queues the video into the shared download repository, which
- * fetches the best MP4 video and audio streams and remuxes them into
- * Downloads/Koda/Video. Reflects queued/downloading/downloaded state so the
- * pill is not a fire-and-forget button.
+ * Download pill. A new download opens the quality-and-size sheet; an active or
+ * completed one retains its cancel/delete behavior. This keeps the convenient
+ * status control without bypassing the user's quality choice.
  */
 @Composable
-private fun DownloadVideoButton(video: VideoItem) {
+private fun DownloadVideoButton(
+    video: VideoItem,
+    onDownloadClick: () -> Unit,
+) {
     val context = LocalContext.current
     val repository = remember(context) {
         com.ivor.ivormusic.data.DownloadRepository.getInstance(context)
     }
-    val scope = rememberCoroutineScope()
-
     val downloadedVideos by repository.downloadedVideos.collectAsState()
     val progressMap by repository.downloadProgress.collectAsState()
 
@@ -2442,7 +2614,7 @@ private fun DownloadVideoButton(video: VideoItem) {
             when {
                 downloaded -> repository.deleteVideoDownload(video.videoId)
                 inFlight -> repository.cancelDownload(video.videoId)
-                else -> scope.launch { repository.downloadVideo(video) }
+                else -> onDownloadClick()
             }
         }
     ) {

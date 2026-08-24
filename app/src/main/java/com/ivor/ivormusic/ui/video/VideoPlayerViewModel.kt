@@ -21,6 +21,8 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.MergingMediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
+import com.ivor.ivormusic.data.CaptionBackground
+import com.ivor.ivormusic.data.CaptionTextColor
 import com.ivor.ivormusic.data.CaptionTrack
 import com.ivor.ivormusic.data.CommentItem
 import com.ivor.ivormusic.data.DownloadedVideo
@@ -244,8 +246,9 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     private val _chapters = MutableStateFlow<List<com.ivor.ivormusic.data.VideoChapter>>(emptyList())
     val chapters: StateFlow<List<com.ivor.ivormusic.data.VideoChapter>> = _chapters.asStateFlow()
 
-    // YouTube storyboard sprite harvested during the stream extraction. Null
-    // for live streams, local downloads and videos that do not expose frames.
+    // YouTube storyboard sprite harvested during stream extraction, or a local
+    // URI whose frames can be decoded directly for downloaded playback. Null
+    // for live streams and videos that do not expose either source.
     private val _seekPreview = MutableStateFlow<VideoSeekPreview?>(null)
     val seekPreview: StateFlow<VideoSeekPreview?> = _seekPreview.asStateFlow()
 
@@ -267,7 +270,18 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     private val _captionCues = MutableStateFlow<List<VttCue>>(emptyList())
     val captionCues: StateFlow<List<VttCue>> = _captionCues.asStateFlow()
 
+    val captionTextSize: StateFlow<Float> = themePreferences.captionTextSize
+    val captionTextColor: StateFlow<CaptionTextColor> = themePreferences.captionTextColor
+    val captionBackground: StateFlow<CaptionBackground> = themePreferences.captionBackground
+
     private var captionCuesJob: Job? = null
+
+    fun setCaptionTextSize(size: Float) = themePreferences.setCaptionTextSize(size)
+
+    fun setCaptionTextColor(color: CaptionTextColor) = themePreferences.setCaptionTextColor(color)
+
+    fun setCaptionBackground(background: CaptionBackground) =
+        themePreferences.setCaptionBackground(background)
 
     // ---------------- Picture-in-Picture ----------------
 
@@ -1464,6 +1478,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                 )
                 _availableQualities.value = listOf(offlineQuality)
                 _currentQuality.value = offlineQuality
+                _seekPreview.value = VideoSeekPreview.local(localDownload.uri.toString())
                 _exoPlayer?.setMediaItem(nowPlayingMediaItem(localDownload.uri.toString()))
                 _exoPlayer?.prepare()
                 if (resumePositionMs != null) {

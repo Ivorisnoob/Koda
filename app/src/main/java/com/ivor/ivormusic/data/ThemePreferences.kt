@@ -72,6 +72,15 @@ class ThemePreferences(context: Context) {
     private val _videoQualityMobile = MutableStateFlow(getVideoQualityMobilePreference())
     val videoQualityMobile: StateFlow<String> = _videoQualityMobile.asStateFlow()
 
+    private val _captionTextSize = MutableStateFlow(getCaptionTextSizePreference())
+    val captionTextSize: StateFlow<Float> = _captionTextSize.asStateFlow()
+
+    private val _captionTextColor = MutableStateFlow(getCaptionTextColorPreference())
+    val captionTextColor: StateFlow<CaptionTextColor> = _captionTextColor.asStateFlow()
+
+    private val _captionBackground = MutableStateFlow(getCaptionBackgroundPreference())
+    val captionBackground: StateFlow<CaptionBackground> = _captionBackground.asStateFlow()
+
     private val _musicQualityWifi = MutableStateFlow(getMusicQualityWifiPreference())
     val musicQualityWifi: StateFlow<String> = _musicQualityWifi.asStateFlow()
 
@@ -169,6 +178,9 @@ class ThemePreferences(context: Context) {
             KEY_SHORTS_HIDDEN_ACTIONS -> _shortsHiddenActions.value = getShortsHiddenActionsPreference()
             KEY_VIDEO_QUALITY_WIFI -> _videoQualityWifi.value = getVideoQualityWifiPreference()
             KEY_VIDEO_QUALITY_MOBILE -> _videoQualityMobile.value = getVideoQualityMobilePreference()
+            KEY_CAPTION_TEXT_SIZE -> _captionTextSize.value = getCaptionTextSizePreference()
+            KEY_CAPTION_TEXT_COLOR -> _captionTextColor.value = getCaptionTextColorPreference()
+            KEY_CAPTION_BACKGROUND -> _captionBackground.value = getCaptionBackgroundPreference()
             KEY_MUSIC_QUALITY_WIFI -> _musicQualityWifi.value = getMusicQualityWifiPreference()
             KEY_MUSIC_QUALITY_MOBILE -> _musicQualityMobile.value = getMusicQualityMobilePreference()
             KEY_SPOTLIGHT_HOME -> _spotlightHome.value = getSpotlightHomePreference()
@@ -269,6 +281,9 @@ class ThemePreferences(context: Context) {
 
         private const val KEY_VIDEO_QUALITY_WIFI = "video_quality_wifi"
         private const val KEY_VIDEO_QUALITY_MOBILE = "video_quality_mobile"
+        private const val KEY_CAPTION_TEXT_SIZE = "caption_text_size"
+        private const val KEY_CAPTION_TEXT_COLOR = "caption_text_color"
+        private const val KEY_CAPTION_BACKGROUND = "caption_background"
 
         /** Sentinel meaning "highest available quality". */
         const val VIDEO_QUALITY_AUTO = "auto"
@@ -890,6 +905,35 @@ class ThemePreferences(context: Context) {
         _videoQualityMobile.value = quality
     }
 
+    private fun getCaptionTextSizePreference(): Float =
+        captionTextScaleFromStored(prefs.all[KEY_CAPTION_TEXT_SIZE])
+
+    private fun getCaptionTextColorPreference(): CaptionTextColor =
+        prefs.getString(KEY_CAPTION_TEXT_COLOR, null)
+            ?.let { stored -> CaptionTextColor.entries.firstOrNull { it.name == stored } }
+            ?: CaptionTextColor.WHITE
+
+    private fun getCaptionBackgroundPreference(): CaptionBackground =
+        prefs.getString(KEY_CAPTION_BACKGROUND, null)
+            ?.let { stored -> CaptionBackground.entries.firstOrNull { it.name == stored } }
+            ?: CaptionBackground.TRANSLUCENT
+
+    fun setCaptionTextSize(size: Float) {
+        val safeSize = size.coerceIn(CAPTION_TEXT_SCALE_MIN, CAPTION_TEXT_SCALE_MAX)
+        prefs.edit().putFloat(KEY_CAPTION_TEXT_SIZE, safeSize).apply()
+        _captionTextSize.value = safeSize
+    }
+
+    fun setCaptionTextColor(color: CaptionTextColor) {
+        prefs.edit().putString(KEY_CAPTION_TEXT_COLOR, color.name).apply()
+        _captionTextColor.value = color
+    }
+
+    fun setCaptionBackground(background: CaptionBackground) {
+        prefs.edit().putString(KEY_CAPTION_BACKGROUND, background.name).apply()
+        _captionBackground.value = background
+    }
+
     // ---------------- Subscriptions ----------------
 
     private fun getSubscriptionSourcePreference(): String =
@@ -1336,6 +1380,38 @@ class ThemePreferences(context: Context) {
         prefs.edit().putBoolean(KEY_ONBOARDING_COMPLETED, completed).apply()
         _onboardingCompleted.value = completed
     }
+}
+
+const val CAPTION_TEXT_SCALE_MIN = 0.75f
+const val CAPTION_TEXT_SCALE_DEFAULT = 1f
+
+/** Twice the former Large preset (1.25x), for high-density displays. */
+const val CAPTION_TEXT_SCALE_MAX = 2.5f
+
+/**
+ * Read both the new float and the three names written by Koda 4.6. Keeping the
+ * conversion outside SharedPreferences makes the migration deterministic and
+ * unit-testable without an Android Context.
+ */
+internal fun captionTextScaleFromStored(stored: Any?): Float = when (stored) {
+    is Number -> stored.toFloat()
+    "SMALL" -> CAPTION_TEXT_SCALE_MIN
+    "MEDIUM" -> CAPTION_TEXT_SCALE_DEFAULT
+    "LARGE" -> 1.25f
+    else -> CAPTION_TEXT_SCALE_DEFAULT
+}.coerceIn(CAPTION_TEXT_SCALE_MIN, CAPTION_TEXT_SCALE_MAX)
+
+/** Video-safe foreground choices, paired with the caption background. */
+enum class CaptionTextColor {
+    WHITE,
+    YELLOW
+}
+
+/** Strength of the black caption plate drawn over the video frame. */
+enum class CaptionBackground {
+    NONE,
+    TRANSLUCENT,
+    SOLID
 }
 
 /**

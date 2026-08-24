@@ -28,6 +28,16 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
+internal fun shouldWarmSubscriptionFeed(
+    source: String,
+    hasLocalSubscriptions: Boolean,
+    isLoggedIn: Boolean
+): Boolean = when (source) {
+    com.ivor.ivormusic.data.ThemePreferences.SUBSCRIPTIONS_LOCAL -> hasLocalSubscriptions
+    com.ivor.ivormusic.data.ThemePreferences.SUBSCRIPTIONS_YOUTUBE -> isLoggedIn
+    else -> hasLocalSubscriptions || isLoggedIn
+}
+
 class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val localRepository = SongRepository(application)
     private val youtubeRepository = YouTubeRepository(application)
@@ -437,6 +447,13 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val _isSubscriptionFeedLoading = MutableStateFlow(false)
     val isSubscriptionFeedLoading: StateFlow<Boolean> = _isSubscriptionFeedLoading.asStateFlow()
 
+    // A force request can arrive while a large imported list is still being
+    // fetched (for example, the import finishes during startup warm-up). The
+    // old guard dropped it outright, leaving the newly added channels absent
+    // until the user pulled manually. Coalesce those requests into one follow-
+    // up pass instead of running two hundred-channel refreshes concurrently.
+    private var subscriptionFeedRefreshPending = false
+
     private val _selectedChannelFeed = MutableStateFlow<List<VideoItem>>(emptyList())
     val selectedChannelFeed: StateFlow<List<VideoItem>> = _selectedChannelFeed.asStateFlow()
 
@@ -549,8 +566,45 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     val isPlaylistVideosLoading: StateFlow<Boolean> = _isPlaylistVideosLoading.asStateFlow()
 
     init {
+        observeSubscriptionFeedWarmup()
         checkYouTubeConnection()
         observeProfileSwitches()
+    }
+
+    /**
+     * Warm the Subscriptions feed from its real inputs, independently of the
+     * tab's composition. Local imports are already persisted and available at
+     * ViewModel construction, so a signed-out user now starts fetching their
+     * device feed as the app opens and sees it ready (or already progressing)
+     * when they visit Subscriptions.
+     *
+     * Only channel ids participate in the key. Avatar/profile backfill rewrites
+     * the same subscriptions and must not restart a potentially large feed.
+     */
+    private fun observeSubscriptionFeedWarmup() {
+        viewModelScope.launch {
+            combine(
+                localSubscriptions
+                    .map { subscriptions -> subscriptions.map { it.channelId }.sorted() }
+                    .distinctUntilChanged(),
+                themePreferences.subscriptionSource,
+                themePreferences.fastSubscriptionFeed
+            ) { localIds, source, fastMode -> Triple(localIds, source, fastMode) }
+                .distinctUntilChanged()
+                .collect { (localIds, source, _) ->
+                    if (shouldWarmSubscriptionFeed(
+                            source = source,
+                            hasLocalSubscriptions = localIds.isNotEmpty(),
+                            isLoggedIn = sessionManager.isLoggedIn()
+                        )
+                    ) {
+                        loadSubscriptionFeed(force = true)
+                    } else {
+                        _subscriptionFeed.value = emptyList()
+                        _subscriptionFeedError.value = null
+                    }
+                }
+        }
     }
 
     /**
@@ -677,10 +731,15 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun loadSubscriptionFeed(force: Boolean = false) {
-        if (_isSubscriptionFeedLoading.value) return
+        if (_isSubscriptionFeedLoading.value) {
+            if (force) subscriptionFeedRefreshPending = true
+            return
+        }
         if (_subscriptionFeed.value.isNotEmpty() && !force) return
+        // Claim the refresh before launching so two callers in the same main-
+        // thread frame cannot both pass the guard and start duplicate work.
+        _isSubscriptionFeedLoading.value = true
         viewModelScope.launch {
-            _isSubscriptionFeedLoading.value = true
             _subscriptionFeedError.value = null
             try {
                 val source = themePreferences.currentSubscriptionSource()
@@ -718,6 +777,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             } finally {
                 _subscriptionFeedProgress.value = null
                 _isSubscriptionFeedLoading.value = false
+                if (subscriptionFeedRefreshPending) {
+                    subscriptionFeedRefreshPending = false
+                    loadSubscriptionFeed(force = true)
+                }
             }
         }
     }
@@ -915,7 +978,6 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 )
                 backfillLocalChannelProfiles()
-                loadSubscriptionFeed(force = true)
             } catch (e: Exception) {
                 KLog.e("HomeViewModel", "Subscription import failed", e)
                 onResult(

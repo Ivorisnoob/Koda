@@ -37,6 +37,9 @@ fun PipVideoSurface(
 ) {
     val exoPlayer = viewModel.exoPlayer ?: return
     val captionCues by viewModel.captionCues.collectAsState()
+    val captionTextSize by viewModel.captionTextSize.collectAsState()
+    val captionTextColor by viewModel.captionTextColor.collectAsState()
+    val captionBackground by viewModel.captionBackground.collectAsState()
 
     androidx.compose.foundation.layout.Box(
         modifier = modifier
@@ -73,7 +76,10 @@ fun PipVideoSurface(
             cues = captionCues,
             player = exoPlayer,
             bottomPadding = 8.dp,
-            compact = true
+            compact = true,
+            textSize = captionTextSize,
+            textColor = captionTextColor,
+            background = captionBackground
         )
     }
 }

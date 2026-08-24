@@ -294,11 +294,12 @@ data class VideoChapter(
 )
 
 /**
- * A YouTube storyboard sprite used while scrubbing the video timeline.
+ * A frame source used while scrubbing the video timeline.
  *
- * NewPipe returns the sprite pages as part of the same extraction that resolves
- * playback, so this adds no second player request. [durationPerFrameMs] maps a
- * requested playback position to one cell inside one of [pageUrls].
+ * Online playback uses YouTube storyboard pages returned by NewPipe as part of
+ * stream extraction. Downloaded playback instead supplies [localVideoUri], so
+ * the UI can decode a bounded frame directly from the offline MP4 without a
+ * network request. Exactly one source is expected to be usable.
  */
 data class VideoSeekPreview(
     val pageUrls: List<String>,
@@ -308,15 +309,22 @@ data class VideoSeekPreview(
     val framesPerPageY: Int,
     val totalFrameCount: Int,
     val durationPerFrameMs: Int,
+    val localVideoUri: String? = null,
 ) {
+    val isLocal: Boolean
+        get() = !localVideoUri.isNullOrBlank()
+
     val isUsable: Boolean
+        get() = isLocal || isStoryboardUsable
+
+    private val isStoryboardUsable: Boolean
         get() = pageUrls.isNotEmpty() &&
             frameWidthPx > 0 && frameHeightPx > 0 &&
             framesPerPageX > 0 && framesPerPageY > 0 &&
             totalFrameCount > 0 && durationPerFrameMs > 0
 
     fun frameAt(positionMs: Long): VideoSeekPreviewFrame? {
-        if (!isUsable) return null
+        if (!isStoryboardUsable) return null
         val frameIndex = (positionMs.coerceAtLeast(0L) / durationPerFrameMs)
             .coerceAtMost((totalFrameCount - 1).toLong())
             .toInt()
@@ -330,6 +338,19 @@ data class VideoSeekPreview(
                 row = indexOnPage / framesPerPageX,
             )
         }
+    }
+
+    companion object {
+        fun local(uri: String): VideoSeekPreview = VideoSeekPreview(
+            pageUrls = emptyList(),
+            frameWidthPx = 0,
+            frameHeightPx = 0,
+            framesPerPageX = 0,
+            framesPerPageY = 0,
+            totalFrameCount = 0,
+            durationPerFrameMs = 0,
+            localVideoUri = uri,
+        )
     }
 }
 

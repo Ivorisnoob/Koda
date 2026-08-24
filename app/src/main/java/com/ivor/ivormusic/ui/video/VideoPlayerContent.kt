@@ -3,7 +3,6 @@ package com.ivor.ivormusic.ui.video
 import android.app.Activity
 import android.content.pm.ActivityInfo
 import android.os.Build
-import android.view.WindowManager
 import androidx.annotation.OptIn
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -55,6 +54,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogWindowProvider
@@ -63,6 +63,10 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.media3.common.util.UnstableApi
 import coil.compose.AsyncImage
+import com.ivor.ivormusic.data.CaptionBackground
+import com.ivor.ivormusic.data.CaptionTextColor
+import com.ivor.ivormusic.data.CAPTION_TEXT_SCALE_MAX
+import com.ivor.ivormusic.data.CAPTION_TEXT_SCALE_MIN
 import com.ivor.ivormusic.data.CaptionTrack
 import com.ivor.ivormusic.data.LikeStatus
 import com.ivor.ivormusic.data.VideoChapter
@@ -70,6 +74,7 @@ import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.data.VideoQuality
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlin.math.roundToInt
 
 /** The shape of the watch page's video box when the source shape is unknown. */
 private const val DEFAULT_VIDEO_ASPECT = 16f / 9f
@@ -125,6 +130,9 @@ fun VideoPlayerContent(
     val captionTracks by viewModel.captionTracks.collectAsState()
     val selectedCaption by viewModel.selectedCaption.collectAsState()
     val captionCues by viewModel.captionCues.collectAsState()
+    val captionTextSize by viewModel.captionTextSize.collectAsState()
+    val captionTextColor by viewModel.captionTextColor.collectAsState()
+    val captionBackground by viewModel.captionBackground.collectAsState()
     val videoAspectRatio by viewModel.videoAspectRatio.collectAsState()
 
     // PiP is a device capability, not a given: Android TV and a few OEM builds
@@ -362,22 +370,9 @@ fun VideoPlayerContent(
         val window = activity?.window
         val insetsController = window?.let { WindowCompat.getInsetsController(it, it.decorView) }
 
-        fun setCutoutMode(mode: Int) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && window != null) {
-                window.attributes = window.attributes.also { it.layoutInDisplayCutoutMode = mode }
-            }
-        }
-
         if (isFullscreen) {
             // Allow content to draw behind system bars first
             window?.let { WindowCompat.setDecorFitsSystemWindows(it, false) }
-            // Draw into the camera cutout area too, otherwise the system
-            // letterboxes the window and background shows around the notch
-            // The moving image is background content and should use every
-            // physical pixel, including waterfall/corner-cutout layouts. The
-            // controls independently apply displayCutoutPadding, so only the
-            // video and its gradients extend behind camera hardware.
-            setCutoutMode(WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS)
             // A vertical video fills the screen held upright, so fullscreen
             // holds it there rather than rotating into a letterboxed strip.
             // Everything else gets sensor landscape, both directions, like
@@ -394,13 +389,11 @@ fun VideoPlayerContent(
         } else {
             activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
             insetsController?.show(WindowInsetsCompat.Type.systemBars())
-            setCutoutMode(WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT)
         }
 
         onDispose {
             activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
             insetsController?.show(WindowInsetsCompat.Type.systemBars())
-            setCutoutMode(WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT)
             // The app is edge-to-edge (enableEdgeToEdge in MainActivity), so
             // keep decorFits false — restoring true here used to break the
             // edge-to-edge layout for the rest of the session
@@ -610,6 +603,9 @@ fun VideoPlayerContent(
                     showCaptionsSheet = true
                 },
                 captionCues = captionCues,
+                captionTextSize = captionTextSize,
+                captionTextColor = captionTextColor,
+                captionBackground = captionBackground,
                 showQueueControls = queue != null,
                 hasPreviousInQueue = queue?.hasPrevious == true,
                 hasNextInQueue = queue?.hasNext == true,
@@ -681,7 +677,6 @@ fun VideoPlayerContent(
                         modifier = Modifier
                             .fillMaxHeight()
                             .width(400.dp)
-                            .displayCutoutPadding()
                             .padding(end = 8.dp, top = 8.dp, bottom = 8.dp)
                             .clip(RoundedCornerShape(20.dp))
                     )
@@ -718,10 +713,6 @@ fun VideoPlayerContent(
                         modifier = Modifier
                             .fillMaxHeight()
                             .width(landscapeChatWidth)
-                            // Immersive fullscreen hides the system bars but
-                            // not the camera cutout, which is exactly where a
-                            // right-docked panel lands in landscape.
-                            .displayCutoutPadding()
                             .padding(end = 8.dp, top = 8.dp, bottom = 8.dp)
                             // Swallow taps: the gesture surface underneath
                             // would otherwise toggle the player controls when
@@ -775,6 +766,9 @@ fun VideoPlayerContent(
                     canSendChat = canSendLiveChat,
                     captionsActive = selectedCaption != null,
                     captionCues = captionCues,
+                    captionTextSize = captionTextSize,
+                    captionTextColor = captionTextColor,
+                    captionBackground = captionBackground,
                     videoAspectRatio = videoAspectRatio,
                     // Account OR device subscription, same as everywhere else -
                     // engagement.isSubscribed only knows about the account.
@@ -905,6 +899,9 @@ fun VideoPlayerContent(
                             showCaptionsSheet = true
                         },
                         captionCues = captionCues,
+                        captionTextSize = captionTextSize,
+                        captionTextColor = captionTextColor,
+                        captionBackground = captionBackground,
                         showQueueControls = queue != null,
                         hasPreviousInQueue = queue?.hasPrevious == true,
                         hasNextInQueue = queue?.hasNext == true,
@@ -965,6 +962,7 @@ fun VideoPlayerContent(
                             if (isLoggedIn) viewModel.loadVideoPlaylists()
                             saveTargetVideo = currentVideo
                         },
+                        onDownloadClick = { downloadTargetVideo = currentVideo },
                         onChannelClick = {
                             val channelId = engagement?.channelId ?: currentVideo.channelId
                             if (channelId != null) onOpenChannel(channelId)
@@ -1160,10 +1158,16 @@ fun VideoPlayerContent(
             tracks = captionTracks,
             selected = selectedCaption,
             isLoading = isCaptionsLoading,
+            textSize = captionTextSize,
+            textColor = captionTextColor,
+            background = captionBackground,
             onSelect = {
                 viewModel.setCaptionTrack(it)
                 showCaptionsSheet = false
             },
+            onTextSizeChanged = viewModel::setCaptionTextSize,
+            onTextColorChanged = viewModel::setCaptionTextColor,
+            onBackgroundChanged = viewModel::setCaptionBackground,
             onDismiss = { showCaptionsSheet = false },
             keepSystemBarsHidden = isFullscreen
         )
@@ -1273,7 +1277,6 @@ fun VideoPlayerContent(
                 Surface(
                     modifier = Modifier
                         .fillMaxHeight()
-                        .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.End))
                         .padding(12.dp)
                         .width(360.dp),
                     shape = RoundedCornerShape(28.dp),
@@ -1724,7 +1727,13 @@ private fun CaptionsSheet(
     tracks: List<CaptionTrack>,
     selected: CaptionTrack?,
     isLoading: Boolean,
+    textSize: Float,
+    textColor: CaptionTextColor,
+    background: CaptionBackground,
     onSelect: (CaptionTrack?) -> Unit,
+    onTextSizeChanged: (Float) -> Unit,
+    onTextColorChanged: (CaptionTextColor) -> Unit,
+    onBackgroundChanged: (CaptionBackground) -> Unit,
     onDismiss: () -> Unit,
     keepSystemBarsHidden: Boolean = false
 ) {
@@ -1739,33 +1748,51 @@ private fun CaptionsSheet(
             style = MaterialTheme.typography.headlineSmall,
             modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 8.dp)
         )
-        when {
-            isLoading && tracks.isEmpty() -> {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 32.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    ContainedLoadingIndicator()
-                }
-            }
-            tracks.isEmpty() -> {
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 560.dp),
+            contentPadding = PaddingValues(bottom = 32.dp)
+        ) {
+            item {
                 Text(
-                    text = "No captions available for this video",
-                    style = MaterialTheme.typography.bodyMedium,
+                    text = "Language",
+                    style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 24.dp)
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
                 )
             }
-            else -> {
-                Column(modifier = Modifier.padding(bottom = 32.dp)) {
-                    CaptionRow(
-                        label = "Off",
-                        checked = selected == null,
-                        onClick = { onSelect(null) }
+            when {
+                isLoading && tracks.isEmpty() -> item {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 32.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        ContainedLoadingIndicator()
+                    }
+                }
+                tracks.isEmpty() -> item {
+                    Text(
+                        text = "No captions available for this video",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 20.dp)
                     )
-                    tracks.forEach { track ->
+                }
+                else -> {
+                    item {
+                        CaptionRow(
+                            label = "Off",
+                            checked = selected == null,
+                            onClick = { onSelect(null) }
+                        )
+                    }
+                    itemsIndexed(
+                        items = tracks,
+                        key = { index, track -> "${track.languageCode}:${track.isAutoGenerated}:$index" }
+                    ) { _, track ->
                         val label = if (track.isAutoGenerated) "${track.name} (auto)" else track.name
                         CaptionRow(
                             label = label,
@@ -1774,6 +1801,140 @@ private fun CaptionsSheet(
                         )
                     }
                 }
+            }
+
+            item {
+                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+                Text(
+                    text = "Appearance",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
+                )
+            }
+            item {
+                CaptionTextSizeSlider(
+                    value = textSize,
+                    onValueCommitted = onTextSizeChanged
+                )
+            }
+            item {
+                CaptionChoiceRow(
+                    label = "Text color",
+                    options = listOf(
+                        CaptionTextColor.WHITE to "White",
+                        CaptionTextColor.YELLOW to "Yellow"
+                    ),
+                    selected = textColor,
+                    onSelect = onTextColorChanged
+                )
+            }
+            item {
+                CaptionChoiceRow(
+                    label = "Background",
+                    options = listOf(
+                        CaptionBackground.NONE to "None",
+                        CaptionBackground.TRANSLUCENT to "Soft",
+                        CaptionBackground.SOLID to "Solid"
+                    ),
+                    selected = background,
+                    onSelect = onBackgroundChanged
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CaptionTextSizeSlider(
+    value: Float,
+    onValueCommitted: (Float) -> Unit
+) {
+    var sliderValue by remember(value) { mutableFloatStateOf(value) }
+    val percent = (sliderValue * 100f).roundToInt()
+
+    Column(
+        modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Text size",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = "$percent%",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
+        Slider(
+            value = sliderValue,
+            onValueChange = { raw ->
+                sliderValue = ((raw * 4f).roundToInt() / 4f)
+                    .coerceIn(CAPTION_TEXT_SCALE_MIN, CAPTION_TEXT_SCALE_MAX)
+            },
+            onValueChangeFinished = { onValueCommitted(sliderValue) },
+            valueRange = CAPTION_TEXT_SCALE_MIN..CAPTION_TEXT_SCALE_MAX,
+            steps = 6,
+            modifier = Modifier.fillMaxWidth()
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                text = "75%",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = "250%",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun <T> CaptionChoiceRow(
+    label: String,
+    options: List<Pair<T, String>>,
+    selected: T,
+    onSelect: (T) -> Unit
+) {
+    Column(
+        modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            options.forEach { (value, optionLabel) ->
+                FilterChip(
+                    selected = selected == value,
+                    onClick = { onSelect(value) },
+                    label = {
+                        Text(
+                            text = optionLabel,
+                            maxLines = 1,
+                            modifier = Modifier.fillMaxWidth(),
+                            textAlign = TextAlign.Center
+                        )
+                    },
+                    modifier = Modifier.weight(1f)
+                )
             }
         }
     }

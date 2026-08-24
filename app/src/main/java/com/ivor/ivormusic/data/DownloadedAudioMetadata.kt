@@ -17,7 +17,31 @@ import java.util.Locale
  */
 internal object DownloadedAudioMetadata {
 
-    fun write(
+    /**
+     * Add portable tags without ever putting the downloaded media at risk.
+     *
+     * Some YouTube M4A layouts leave no free atom large enough for embedded
+     * artwork. jaudiotagger then shifts the MP4 data and can reject its own
+     * rewritten offsets. Performing that operation on the only downloaded
+     * copy made an otherwise playable song fail. The caller can now publish
+     * [sourceAudio] whenever this best-effort result fails.
+     */
+    fun writeCopy(
+        sourceAudio: File,
+        tempDirectory: File,
+        song: Song,
+        artworkFile: File?,
+        lyrics: String?
+    ): Result<File> = createMetadataCopy(sourceAudio, tempDirectory) { taggedCopy ->
+        write(
+            audioFile = taggedCopy,
+            song = song,
+            artworkFile = artworkFile,
+            lyrics = lyrics
+        )
+    }
+
+    private fun write(
         audioFile: File,
         song: Song,
         artworkFile: File?,
@@ -48,6 +72,27 @@ internal object DownloadedAudioMetadata {
     }
 
     private const val FRONT_COVER_PICTURE_TYPE = 3
+}
+
+/**
+ * Copy first, enrich second, and remove a rejected copy. Kept independent of
+ * jaudiotagger so the non-destructive fallback contract has a JVM unit test.
+ */
+internal fun createMetadataCopy(
+    sourceAudio: File,
+    tempDirectory: File,
+    writer: (File) -> Unit
+): Result<File> {
+    var taggedCopy: File? = null
+    return runCatching {
+        File.createTempFile("koda_tagged_", ".m4a", tempDirectory).also { copy ->
+            taggedCopy = copy
+            sourceAudio.copyTo(copy, overwrite = true)
+            writer(copy)
+        }
+    }.onFailure {
+        taggedCopy?.delete()
+    }
 }
 
 /**

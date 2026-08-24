@@ -207,12 +207,22 @@ fun VideoPlayerOverlay(
         val fullHeightPx = with(density) { fullHeight.toPx() }
         val scope = rememberCoroutineScope()
 
-        // 0 = mini player, 1 = expanded. Progress is applied only as a render
-        // transform. The old shared-element-style morph animated height,
-        // padding, shape and elevation on every frame, forcing the Android
-        // video surface through a full measure/layout pass and producing
-        // visible jank on mid-range devices.
-        val expandProgress = remember { Animatable(if (isExpanded) 1f else 0f) }
+        // 0 = mini player, 1 = expanded. Always begin at the collapsed end so
+        // opening a brand-new video gets the same reveal as tapping an existing
+        // mini player. Initialising this from isExpanded skipped every entrance
+        // frame when a video was first opened. Progress never changes layout:
+        // the Android video surface is swapped once, then cheap layers animate.
+        val expandProgress = remember { Animatable(0f) }
+
+        // A restored collapsed player also deserves an entrance instead of
+        // appearing abruptly on the first composed frame. This is read only by
+        // the mini bar's graphics layer, keeping its AndroidView out of measure
+        // and composition during the animation.
+        val miniEntrance = remember { Animatable(0f) }
+        val miniEntranceSpec = MaterialTheme.motionScheme.fastSpatialSpec<Float>()
+        LaunchedEffect(Unit) {
+            miniEntrance.animateTo(1f, miniEntranceSpec)
+        }
 
         // Live value while a finger is down. The drag deliberately does not go
         // through the Animatable: Animatable.snapTo runs under a MutatorMutex,
@@ -320,6 +330,7 @@ fun VideoPlayerOverlay(
         // a different animation entirely, so letting the bar follow the finger
         // up the screen would promise a movement that never continues.
         val miniLiftLimitPx = with(density) { 24.dp.toPx() }
+        val miniEnterOffsetPx = with(density) { 12.dp.toPx() }
         val miniOffsetAnimationSpec = MaterialTheme.motionScheme.fastSpatialSpec<Float>()
 
         // Minimized resting position clears the system navigation inset plus
@@ -342,8 +353,14 @@ fun VideoPlayerOverlay(
                 // emulator compositor and some lower-end device GPUs.
                 val progress = expandProgress.value
                 val gestureOffset = if (isMiniDragging) miniDragY else miniSettleOffset.value
-                translationY = gestureOffset
-                alpha = (1f - progress).coerceIn(0f, 1f)
+                val visibility = (
+                    (1f - progress).coerceIn(0f, 1f) * miniEntrance.value
+                ).coerceIn(0f, 1f)
+                // The collapsed bar rises a very short distance as it becomes
+                // legible. Translation and opacity are compositor-only; the
+                // embedded TextureView remains at its final 88dp size.
+                translationY = gestureOffset + (1f - visibility) * miniEnterOffsetPx
+                alpha = visibility
 
                 val fadeLimit = if (isDismissingMini) 1f else 0.5f
                 alpha *= 1f - (
@@ -573,17 +590,22 @@ fun VideoPlayerOverlay(
         }
         if (isExpanded) {
             // Reveal curtain: the full player itself is completely static.
-            // Only this cheap color layer fades away, avoiding transforms,
-            // offscreen buffers and repeated composition of live video.
+            // A plain color layer lifts toward the top while fading, revealing
+            // the destination from the mini player's bottom edge. This gives a
+            // clear spatial hand-off without scaling, translating or repeatedly
+            // laying out the live video surface.
             Box(
                 modifier = Modifier
                     .matchParentSize()
                     .graphicsLayer {
                         val progress = if (isDragging) dragProgress else expandProgress.value
-                        alpha = if (isDragging) {
-                            (1f - progress) * 0.16f
+                        if (isDragging) {
+                            translationY = 0f
+                            alpha = (1f - progress) * 0.16f
                         } else {
-                            1f - progress
+                            val reveal = progress.coerceIn(0f, 1f)
+                            translationY = -fullHeightPx * reveal
+                            alpha = 1f - reveal
                         }
                     }
                     .background(MaterialTheme.colorScheme.surfaceContainerHigh)

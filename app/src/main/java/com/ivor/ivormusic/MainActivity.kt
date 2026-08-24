@@ -3,6 +3,7 @@ package com.ivor.ivormusic
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -135,6 +136,15 @@ class MainActivity : ComponentActivity() {
         requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
 
         enableEdgeToEdge()
+        // Treat camera cutouts as usable edge-to-edge space everywhere. The
+        // old video-only toggle restored DEFAULT on exit, which could
+        // letterbox the rest of the app for the remainder of the session.
+        // Controls still handle status/navigation bars independently; only
+        // the notch-specific exclusion is deliberately ignored.
+        window.attributes = window.attributes.also {
+            it.layoutInDisplayCutoutMode =
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+        }
 
         setContent {
             val themeViewModel: ThemeViewModel = viewModel()
@@ -497,6 +507,20 @@ fun MusicApp(
     val videoPlayerViewModel: com.ivor.ivormusic.ui.video.VideoPlayerViewModel = viewModel()
     val shortsPlayerViewModel: com.ivor.ivormusic.ui.shorts.ShortsPlayerViewModel = viewModel()
 
+    // Changing content modes is a clean hand-off: no player from the previous
+    // mode should remain visible or continue playing after the switch. Route
+    // every mode toggle through the same close actions used by the players'
+    // own dismiss buttons, while ignoring callbacks that repeat the current
+    // value (including preference restoration during composition).
+    val switchPlaybackMode: (Boolean) -> Unit = { nextVideoMode ->
+        if (nextVideoMode != videoMode) {
+            playerViewModel.clearPlayer()
+            videoPlayerViewModel.closePlayer()
+            shortsPlayerViewModel.close()
+            onVideoModeToggle(nextVideoMode)
+        }
+    }
+
     // A live broadcast that turned up in the Shorts feed. The Shorts player
     // cannot present one honestly (no chat, and a seek bar for a duration that
     // does not exist), so it closes itself and the stream reopens here, where
@@ -539,6 +563,7 @@ fun MusicApp(
     val isMusicPlaying by playerViewModel.isPlaying.collectAsState()
     val isVideoPlaying by videoPlayerViewModel.isPlaying.collectAsState()
     val isShortsPlaying by shortsPlayerViewModel.isPlaying.collectAsState()
+    val pendingSongDownload by playerViewModel.pendingSongDownload.collectAsState()
     androidx.compose.runtime.LaunchedEffect(isMusicPlaying) {
         if (isMusicPlaying) {
             videoPlayerViewModel.pause()
@@ -660,7 +685,7 @@ fun MusicApp(
                     ambientBackground = ambientBackground,
                     onAmbientBackgroundToggle = onAmbientBackgroundToggle,
                     videoMode = videoMode,
-                    onVideoModeToggle = onVideoModeToggle,
+                    onVideoModeToggle = switchPlaybackMode,
                     homeModeToggleEnabled = homeModeToggleEnabled,
                     onHomeModeToggleEnabledChange = onHomeModeToggleEnabledChange,
                     shortsEnabled = shortsEnabled,
@@ -719,7 +744,7 @@ fun MusicApp(
                     ambientBackground = ambientBackground,
                     playerArtworkColors = playerArtworkColors,
                     videoMode = videoMode,
-                    onVideoModeToggle = onVideoModeToggle,
+                    onVideoModeToggle = switchPlaybackMode,
                     showModeToggle = homeModeToggleEnabled,
                     playerStyle = playerStyle,
                     onPlayerStyleChange = onPlayerStyleChange,
@@ -756,7 +781,7 @@ fun MusicApp(
                     playerArtworkColors = playerArtworkColors,
                     onPlayerArtworkColorsToggle = onPlayerArtworkColorsToggle,
                     videoMode = videoMode,
-                    onVideoModeToggle = onVideoModeToggle,
+                    onVideoModeToggle = switchPlaybackMode,
                     homeModeToggleEnabled = homeModeToggleEnabled,
                     onHomeModeToggleChange = onHomeModeToggleEnabledChange,
                     spotlightHome = spotlightHome,
@@ -1054,6 +1079,18 @@ fun MusicApp(
             hiddenActions = shortsHiddenActions,
             onOpenChannel = openChannel
         )
+
+        // One confirmation host covers the player controls and every song
+        // options sheet. Download requests carry the chosen song through the
+        // PlayerViewModel so a non-playing row works even when no mini player
+        // exists to host UI of its own.
+        pendingSongDownload?.let {
+            com.ivor.ivormusic.ui.downloads.SongDownloadSheet(
+                song = it,
+                onConfirm = playerViewModel::confirmPendingSongDownload,
+                onDismiss = playerViewModel::dismissPendingSongDownload
+            )
+        }
 
         // Undo for "don't recommend", app-wide and last in the stack.
         //

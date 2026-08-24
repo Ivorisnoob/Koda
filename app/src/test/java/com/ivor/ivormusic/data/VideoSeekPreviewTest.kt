@@ -73,6 +73,16 @@ class VideoSeekPreviewTest {
         assertNull(preview(durationPerFrameMs = 0).frameAt(0L))
     }
 
+    @Test
+    fun localVideoIsUsableWithoutStoryboardDimensions() {
+        val preview = VideoSeekPreview.local("content://media/video/42")
+
+        assertTrue(preview.isUsable)
+        assertTrue(preview.isLocal)
+        assertEquals("content://media/video/42", preview.localVideoUri)
+        assertNull(preview.frameAt(12_000L))
+    }
+
     private fun preview(
         pageUrls: List<String> = listOf("page-0", "page-1"),
         totalFrameCount: Int = 18,

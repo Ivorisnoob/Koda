@@ -27,6 +27,7 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.ErrorOutline
+import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material3.Button
 import androidx.compose.material3.ContainedLoadingIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -63,6 +64,7 @@ import com.ivor.ivormusic.data.ThemePreferences
 import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.data.VideoQuality
 import com.ivor.ivormusic.data.YouTubeRepository
+import com.ivor.ivormusic.ui.downloads.formatDownloadSize
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -97,6 +99,9 @@ fun VideoDownloadSheet(
     var selectedLabel by remember(video.videoId) { mutableStateOf<String?>(null) }
     var rememberQuality by remember { mutableStateOf(false) }
     var queued by remember(video.videoId) { mutableStateOf(false) }
+    var estimatedBytes by remember(video.videoId) { mutableStateOf<Long?>(null) }
+    var sizeLoading by remember(video.videoId) { mutableStateOf(false) }
+    var sizeResolved by remember(video.videoId) { mutableStateOf(false) }
 
     val downloadedVideos by downloadRepository.downloadedVideos.collectAsState()
     val progressMap by downloadRepository.downloadProgress.collectAsState()
@@ -137,6 +142,22 @@ fun VideoDownloadSheet(
             options = emptyList()
             loadFailed = true
         }
+    }
+
+    LaunchedEffect(selectedLabel, options) {
+        val selected = options.orEmpty().firstOrNull { it.resolution == selectedLabel }
+        if (selected == null) {
+            estimatedBytes = null
+            sizeLoading = false
+            sizeResolved = false
+            return@LaunchedEffect
+        }
+        estimatedBytes = null
+        sizeResolved = false
+        sizeLoading = true
+        estimatedBytes = downloadRepository.estimateVideoDownloadBytes(selected)
+        sizeLoading = false
+        sizeResolved = true
     }
 
     // Linger on the queued state for a beat, then close (same rhythm as the
@@ -251,6 +272,44 @@ fun VideoDownloadSheet(
 
             Spacer(modifier = Modifier.height(16.dp))
 
+            if (selectedLabel != null) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Storage,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Estimated download",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = when {
+                                sizeLoading -> "Calculating size…"
+                                estimatedBytes != null -> formatDownloadSize(estimatedBytes!!)
+                                sizeResolved -> "Size unavailable"
+                                else -> ""
+                            },
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = if (estimatedBytes == null && sizeResolved) {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            } else {
+                                MaterialTheme.colorScheme.onSurface
+                            }
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+
             // Remember-as-default switch: persisted only when the download
             // actually starts, so browsing pills never rewrites the default
             Row(
@@ -286,7 +345,8 @@ fun VideoDownloadSheet(
                     scope.launch { downloadRepository.downloadVideo(video, label) }
                     queued = true
                 },
-                enabled = selectedLabel != null && !queued && !alreadyDownloaded && !inFlight,
+                enabled = selectedLabel != null && !sizeLoading && sizeResolved &&
+                    !queued && !alreadyDownloaded && !inFlight,
                 shape = RoundedCornerShape(20.dp),
                 modifier = Modifier
                     .fillMaxWidth()
@@ -317,7 +377,12 @@ fun VideoDownloadSheet(
                             modifier = Modifier.size(22.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text(text = "Download", fontWeight = FontWeight.SemiBold)
+                        Text(
+                            text = estimatedBytes?.let {
+                                "Download • ${formatDownloadSize(it)}"
+                            } ?: "Download",
+                            fontWeight = FontWeight.SemiBold
+                        )
                     }
                 }
             }
