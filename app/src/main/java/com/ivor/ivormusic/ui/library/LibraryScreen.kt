@@ -860,7 +860,8 @@ fun AllSongsList(
                     items(recentlyPlayed, key = { "recent_${it.id}" }) { song ->
                         RecentSongCard(
                             song = song,
-                            onClick = { onPlayQueue(recentlyPlayed, song) }
+                            onClick = { onPlayQueue(recentlyPlayed, song) },
+                            onLongPress = { onSongLongPress?.invoke(song) }
                         )
                     }
                 }
@@ -1218,12 +1219,12 @@ private fun ListeningHistoryQuickCard(playCount: Int, onClick: () -> Unit) {
 }
 
 @Composable
-private fun RecentSongCard(song: Song, onClick: () -> Unit) {
+private fun RecentSongCard(song: Song, onClick: () -> Unit, onLongPress: () -> Unit) {
     Column(
         modifier = Modifier
             .width(112.dp)
             .clip(RoundedCornerShape(16.dp))
-            .clickable(onClick = onClick)
+            .songRowClick(onClick = onClick, onLongClick = onLongPress)
     ) {
         Surface(
             shape = RoundedCornerShape(16.dp),
