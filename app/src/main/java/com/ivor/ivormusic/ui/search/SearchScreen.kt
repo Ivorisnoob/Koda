@@ -1166,6 +1166,7 @@ fun SearchScreen(
                             // Radio, not the result list: the other hits are
                             // usually the same track from other uploaders.
                             onClick = { onPlayRadio(song) },
+                            onLongClick = { onSongLongPress?.invoke(song) } ,
                             cardColor = cardColor,
                             textColor = textColor,
                             secondaryTextColor = secondaryTextColor,
