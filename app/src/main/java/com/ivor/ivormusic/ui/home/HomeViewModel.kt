@@ -247,6 +247,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     // Downloads
     private val downloadRepository = com.ivor.ivormusic.data.DownloadRepository.getInstance(application)
     val downloadedSongs = downloadRepository.downloadedSongs
+    val downloadedVideos = downloadRepository.downloadedVideos
     val downloadingIds = downloadRepository.downloadingIds
     val downloadProgress = downloadRepository.downloadProgress
 
@@ -367,6 +368,14 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     
     private val _isVideoLoading = MutableStateFlow(false)
     val isVideoLoading: StateFlow<Boolean> = _isVideoLoading.asStateFlow()
+
+    /**
+     * True when the latest empty Home fetch failed without a validated network.
+     * Kept separate from an empty online response so the UI can offer completed
+     * downloads only when they are actually the useful fallback.
+     */
+    private val _isVideoHomeOffline = MutableStateFlow(false)
+    val isVideoHomeOffline: StateFlow<Boolean> = _isVideoHomeOffline.asStateFlow()
 
     private val _isVideoLoadingMore = MutableStateFlow(false)
     val isVideoLoadingMore: StateFlow<Boolean> = _isVideoLoadingMore.asStateFlow()
@@ -723,7 +732,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             .getSystemService(android.content.Context.CONNECTIVITY_SERVICE)
                 as android.net.ConnectivityManager
         val caps = cm.getNetworkCapabilities(cm.activeNetwork)
-        caps?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+        caps?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET) == true &&
+            caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED)
     } catch (e: Exception) {
         // Unknown is treated as connected, so a permissions or API oddity does
         // not turn every empty feed into a bogus "check your connection".
@@ -1533,6 +1543,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 val page = youtubeRepository.getTrendingVideos()
                 if (page.videos.isNotEmpty()) {
+                    _isVideoHomeOffline.value = false
                     _trendingVideos.value = page.videos
                     videoFeedContinuation = page.continuation
                     // Taste-based page 1 seeds from the 6 most recent history
@@ -1540,9 +1551,13 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     tasteSeedOffset = 6
                     videoFeedExhausted = false
                     rememberShown(page.videos)
+                } else if (_trendingVideos.value.isEmpty()) {
+                    _isVideoHomeOffline.value = !hasNetworkConnection()
                 }
             } catch (e: Exception) {
-                // Handle error silently
+                if (_trendingVideos.value.isEmpty()) {
+                    _isVideoHomeOffline.value = !hasNetworkConnection()
+                }
             } finally {
                 _isVideoLoading.value = false
             }

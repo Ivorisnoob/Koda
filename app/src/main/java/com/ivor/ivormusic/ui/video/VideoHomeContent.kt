@@ -71,6 +71,7 @@ import androidx.compose.material3.carousel.HorizontalMultiBrowseCarousel
 import androidx.compose.material3.carousel.rememberCarouselState
 import androidx.compose.material3.toShape
 import coil.compose.AsyncImage
+import com.ivor.ivormusic.data.DownloadedVideo
 import com.ivor.ivormusic.data.ShortsItem
 import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.ui.components.MusicVideoToggle
@@ -87,7 +88,10 @@ import com.ivor.ivormusic.ui.home.HomeViewModel
 fun VideoHomeContent(
     videos: List<VideoItem>,
     isLoading: Boolean,
+    isOffline: Boolean = false,
+    downloadedVideos: List<DownloadedVideo> = emptyList(),
     onVideoClick: (VideoItem) -> Unit,
+    onDownloadedVideoClick: (DownloadedVideo) -> Unit = {},
     onEnqueueVideo: ((VideoItem, Boolean) -> Unit)? = null,
     /** Open a video's creator, from the long-press sheet. */
     onOpenChannel: ((String) -> Unit)? = null,
@@ -112,6 +116,7 @@ fun VideoHomeContent(
     val backgroundColor = MaterialTheme.colorScheme.background
     val textColor = MaterialTheme.colorScheme.onBackground
     val isYouTubeConnected by viewModel.isYouTubeConnected.collectAsState()
+    val showOfflineDownloads = isOffline && videos.isEmpty() && downloadedVideos.isNotEmpty()
 
     // Notifications sheet state
     var showNotificationsSheet by remember { mutableStateOf(false) }
@@ -170,11 +175,11 @@ fun VideoHomeContent(
         // Only let the pull-to-refresh spinner represent a refresh over existing
         // content. The empty-feed case shows its own centered indicator below, and
         // driving both off the same flag renders two spinners at once.
-        isRefreshing = isLoading && videos.isNotEmpty(),
+        isRefreshing = isLoading && (videos.isNotEmpty() || showOfflineDownloads),
         onRefresh = onRefresh,
         modifier = Modifier.fillMaxSize()
     ) {
-        if (isLoading && videos.isEmpty()) {
+        if (isLoading && videos.isEmpty() && !showOfflineDownloads) {
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
@@ -241,7 +246,11 @@ fun VideoHomeContent(
                         )
                     ) {
                         Text(
-                            text = if (isYouTubeConnected) "Recommended For You" else "Trending Videos",
+                            text = when {
+                                showOfflineDownloads -> "Available offline"
+                                isYouTubeConnected -> "Recommended For You"
+                                else -> "Trending Videos"
+                            },
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
                             color = textColor,
@@ -250,42 +259,52 @@ fun VideoHomeContent(
                     }
                 }
                 
-                // Video cards, with the Shorts shelf slotted in after the
-                // first two like the YouTube home feed
-                val leadingVideos = if (shorts.isEmpty()) videos else videos.take(2)
-                val trailingVideos = if (shorts.isEmpty()) emptyList() else videos.drop(2)
+                if (showOfflineDownloads) {
+                    items(downloadedVideos, key = { "download_${it.id}" }) { downloaded ->
+                        VideoCard(
+                            video = downloaded.asOfflineVideoItem(),
+                            onClick = { onDownloadedVideoClick(downloaded) },
+                            modifier = Modifier.padding(horizontal = 16.dp)
+                        )
+                    }
+                } else {
+                    // Video cards, with the Shorts shelf slotted in after the
+                    // first two like the YouTube home feed.
+                    val leadingVideos = if (shorts.isEmpty()) videos else videos.take(2)
+                    val trailingVideos = if (shorts.isEmpty()) emptyList() else videos.drop(2)
 
-                items(leadingVideos) { video ->
-                    VideoCard(
-                        video = video,
-                        onClick = { onVideoClick(video) },
-                        onLongClick = { onVideoLongPress(video) },
-                        onOpenChannel = onOpenChannel,
-                        modifier = Modifier.padding(horizontal = 16.dp)
-                    )
-                }
+                    items(leadingVideos) { video ->
+                        VideoCard(
+                            video = video,
+                            onClick = { onVideoClick(video) },
+                            onLongClick = { onVideoLongPress(video) },
+                            onOpenChannel = onOpenChannel,
+                            modifier = Modifier.padding(horizontal = 16.dp)
+                        )
+                    }
 
-                if (shorts.isNotEmpty()) {
-                    item {
-                        ShortsShelf(
-                            shorts = shorts,
-                            onShortClick = onShortClick
+                    if (shorts.isNotEmpty()) {
+                        item {
+                            ShortsShelf(
+                                shorts = shorts,
+                                onShortClick = onShortClick
+                            )
+                        }
+                    }
+
+                    items(trailingVideos) { video ->
+                        VideoCard(
+                            video = video,
+                            onClick = { onVideoClick(video) },
+                            onLongClick = { onVideoLongPress(video) },
+                            onOpenChannel = onOpenChannel,
+                            modifier = Modifier.padding(horizontal = 16.dp)
                         )
                     }
                 }
-
-                items(trailingVideos) { video ->
-                    VideoCard(
-                        video = video,
-                        onClick = { onVideoClick(video) },
-                        onLongClick = { onVideoLongPress(video) },
-                        onOpenChannel = onOpenChannel,
-                        modifier = Modifier.padding(horizontal = 16.dp)
-                    )
-                }
                 
                 // Empty state
-                if (videos.isEmpty() && !isLoading) {
+                if (videos.isEmpty() && !isLoading && !showOfflineDownloads) {
                     item {
                         Box(
                             modifier = Modifier
@@ -302,10 +321,18 @@ fun VideoHomeContent(
                                 )
                                 Spacer(modifier = Modifier.height(16.dp))
                                 Text(
-                                    text = "No videos found",
+                                    text = if (isOffline) "You're offline" else "No videos found",
                                     style = MaterialTheme.typography.bodyLarge,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
+                                if (isOffline) {
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = "Downloaded videos will appear here",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                             }
                         }
                     }
@@ -333,6 +360,15 @@ fun VideoHomeContent(
         }
     }
 }
+
+private fun DownloadedVideo.asOfflineVideoItem() = VideoItem(
+    videoId = id,
+    title = title,
+    channelName = channelName,
+    thumbnailUrl = thumbnailUrl,
+    duration = durationMs / 1000L,
+    viewCount = quality.orEmpty()
+)
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable

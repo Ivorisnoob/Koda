@@ -1114,11 +1114,21 @@ internal fun PlayerSeekBar(
                         val centerY = size.height / 2f
                         val buffered = bufferedProgress.coerceIn(0f, 1f)
                         if (buffered > displayedProgress) {
+                            // A round cap extends half the stroke past each
+                            // endpoint. At 100% that used to draw beyond the
+                            // seek bar's right edge (most visible once the
+                            // whole video was cached). Map the buffer onto an
+                            // inset centerline so both caps remain inside it.
+                            val strokeWidth = 4.dp.toPx()
+                            val capRadius = strokeWidth / 2f
+                            val drawableWidth = (size.width - strokeWidth).coerceAtLeast(0f)
+                            val startX = capRadius + displayedProgress.coerceIn(0f, 1f) * drawableWidth
+                            val endX = capRadius + buffered * drawableWidth
                             drawLine(
                                 color = bufferedColor,
-                                start = Offset(displayedProgress * size.width, centerY),
-                                end = Offset(buffered * size.width, centerY),
-                                strokeWidth = 4.dp.toPx(),
+                                start = Offset(startX, centerY),
+                                end = Offset(endX, centerY),
+                                strokeWidth = strokeWidth,
                                 cap = StrokeCap.Round,
                             )
                         }

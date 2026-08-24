@@ -719,6 +719,9 @@ fun MusicApp(
                     onNavigateToVideoPlayer = { video ->
                         videoPlayerViewModel.playVideo(video)
                     },
+                    onPlayDownloadedVideos = { videos, selected ->
+                        videoPlayerViewModel.playDownloadedVideos(videos, selected)
+                    },
                     onPlayVideoQueue = { queue ->
                         videoPlayerViewModel.playQueue(queue)
                     },

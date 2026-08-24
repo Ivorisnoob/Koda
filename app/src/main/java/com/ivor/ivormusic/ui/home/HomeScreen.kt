@@ -156,6 +156,11 @@ fun HomeScreen(
     onNavigateToSubscriptions: () -> Unit = {},
     onNavigateToUpdate: () -> Unit = {},
     onNavigateToVideoPlayer: (VideoItem) -> Unit = {},
+    /** Play completed video downloads as a local queue, without URL resolution. */
+    onPlayDownloadedVideos: (
+        List<com.ivor.ivormusic.data.DownloadedVideo>,
+        com.ivor.ivormusic.data.DownloadedVideo
+    ) -> Unit = { _, _ -> },
     /**
      * Open the video player on a whole playlist rather than one video, so the
      * rest of it plays after this one and is browsable from the player.
@@ -254,6 +259,8 @@ fun HomeScreen(
     // Video mode state
     val trendingVideos by viewModel.trendingVideos.collectAsState()
     val isVideoLoading by viewModel.isVideoLoading.collectAsState()
+    val isVideoHomeOffline by viewModel.isVideoHomeOffline.collectAsState()
+    val downloadedVideos by viewModel.downloadedVideos.collectAsState()
     val shortsFeed by viewModel.shortsFeed.collectAsState()
     
     // Load videos when video mode is enabled
@@ -529,9 +536,14 @@ fun HomeScreen(
                                 VideoHomeContent(
                                     videos = trendingVideos,
                                     isLoading = isVideoLoading,
+                                    isOffline = isVideoHomeOffline,
+                                    downloadedVideos = downloadedVideos,
                                     onVideoClick = { video ->
                                         // Navigate to video player screen
                                         onNavigateToVideoPlayer(video)
+                                    },
+                                    onDownloadedVideoClick = { video ->
+                                        onPlayDownloadedVideos(downloadedVideos, video)
                                     },
                                     shorts = if (shortsEnabled) shortsFeed else emptyList(),
                                     onShortClick = { index -> onOpenShorts(shortsFeed, index) },

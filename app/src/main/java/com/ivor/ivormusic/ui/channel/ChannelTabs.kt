@@ -373,10 +373,14 @@ private fun FeaturedVideoCard(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
-                if (video.viewCount.isNotBlank()) {
+                val metadata = listOfNotNull(
+                    video.viewCount.takeIf { it.isNotBlank() },
+                    video.uploadedDate?.takeIf { it.isNotBlank() }
+                ).joinToString(" • ")
+                if (metadata.isNotBlank()) {
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        text = video.viewCount,
+                        text = metadata,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -478,28 +482,35 @@ private fun ShelfVideoCard(
                 )
             }
         }
-        Spacer(Modifier.height(8.dp))
-        Text(
-            text = video.title,
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurface,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(horizontal = 2.dp)
-        )
-        if (video.viewCount.isNotBlank()) {
-            Text(
-                text = listOfNotNull(
-                    video.viewCount.takeIf { it.isNotBlank() },
-                    video.uploadedDate?.takeIf { it.isNotBlank() }
-                ).joinToString(" • "),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(horizontal = 2.dp)
+        Column(
+            modifier = Modifier.padding(
+                start = 8.dp,
+                top = 8.dp,
+                end = 8.dp,
+                bottom = 10.dp
             )
+        ) {
+            Text(
+                text = video.title,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            val metadata = listOfNotNull(
+                video.viewCount.takeIf { it.isNotBlank() },
+                video.uploadedDate?.takeIf { it.isNotBlank() }
+            ).joinToString(" • ")
+            if (metadata.isNotBlank()) {
+                Text(
+                    text = metadata,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
         }
     }
 }
@@ -664,23 +675,32 @@ private fun ChannelPlaylistCard(
                 }
             }
         }
-        Spacer(Modifier.height(8.dp))
-        Text(
-            text = playlist.title,
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurface,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis
-        )
-        playlist.subtitle?.takeIf { it.isNotBlank() }?.let {
+        Column(
+            modifier = Modifier.padding(
+                start = 8.dp,
+                top = 8.dp,
+                end = 8.dp,
+                bottom = 10.dp
+            )
+        ) {
             Text(
-                text = it,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
+                text = playlist.title,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
+            playlist.subtitle?.takeIf { it.isNotBlank() }?.let {
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
         }
     }
 }

@@ -4053,46 +4053,77 @@ class YouTubeRepository(private val context: Context) {
              var channelId: String? = null
              var viewCount = ""
              var uploadDate = ""
+
+             fun absorbVideoStats(parts: org.json.JSONArray?) {
+                 if (parts == null) return
+                 for (i in 0 until parts.length()) {
+                     val raw = parts.optJSONObject(i)
+                         ?.optJSONObject("text")
+                         ?.optString("content")
+                         .orEmpty()
+                     raw.split('•')
+                         .map { it.trim() }
+                         .filter { value -> value.any { it.isLetterOrDigit() } }
+                         .forEach { value ->
+                             when {
+                                 value.contains("view", ignoreCase = true) ||
+                                     value.contains("watching", ignoreCase = true) -> {
+                                     if (viewCount.isBlank()) viewCount = value
+                                 }
+                                 uploadDate.isBlank() -> uploadDate = value
+                             }
+                         }
+                 }
+             }
              
              if (metadataRows != null && metadataRows.length() > 0) {
                  val firstRowParts = metadataRows.optJSONObject(0)?.optJSONArray("metadataParts")
                  if (firstRowParts != null && firstRowParts.length() > 0) {
                      val textObj = firstRowParts.optJSONObject(0)?.optJSONObject("text")
-                     channelName = textObj?.optString("content") ?: channelName
-                     
-                     // Modern lockups use attributed text: the creator link is
-                     // an innertubeCommand in commandRuns. Older responses use
-                     // the legacy runs/navigationEndpoint shape below.
-                     channelId = textObj?.optJSONArray("commandRuns")
-                         ?.optJSONObject(0)
-                         ?.optJSONObject("onTap")
-                         ?.optJSONObject("innertubeCommand")
-                         ?.optJSONObject("browseEndpoint")
-                         ?.optString("browseId")
-                         ?.takeIf { it.isNotBlank() }
+                     val firstText = textObj?.optString("content").orEmpty()
+                     val firstRowIsStats = firstText.contains("view", ignoreCase = true) ||
+                         firstText.contains("watching", ignoreCase = true)
 
-                     if (channelId == null && textObj?.has("runs") == true) {
-                         val runs = textObj.optJSONArray("runs")
-                         if (runs != null && runs.length() > 0) {
-                             val browseEndpoint = runs.optJSONObject(0)?.optJSONObject("navigationEndpoint")?.optJSONObject("browseEndpoint")
-                             channelId = browseEndpoint?.optString("browseId")
-                                 ?.takeIf { it.isNotBlank() }
-                         }
-                     }
-                 }
-                 // Second row usually has views and date
-                 if (metadataRows.length() > 1) {
-                     val secondRow = metadataRows.optJSONObject(1)?.optJSONArray("metadataParts")
-                     if (secondRow != null) {
-                         for (i in 0 until secondRow.length()) {
-                             val part = secondRow.optJSONObject(i)?.optJSONObject("text")?.optString("content") ?: ""
-                             if (part.contains("view", ignoreCase = true)) {
-                                 viewCount = part
-                             } else if (part.isNotBlank() && uploadDate.isBlank()) {
-                                 uploadDate = part
+                     if (firstRowIsStats) {
+                         // Channel tabs omit the creator row because the page
+                         // itself already names the creator. Their first row is
+                         // instead "N views • date"; treating it as a channel
+                         // name used to discard the upload date entirely.
+                         absorbVideoStats(firstRowParts)
+                     } else {
+                         channelName = firstText.ifBlank { channelName }
+
+                         // Modern lockups use attributed text: the creator link
+                         // is an innertubeCommand in commandRuns. Older responses
+                         // use the legacy runs/navigationEndpoint shape below.
+                         channelId = textObj?.optJSONArray("commandRuns")
+                             ?.optJSONObject(0)
+                             ?.optJSONObject("onTap")
+                             ?.optJSONObject("innertubeCommand")
+                             ?.optJSONObject("browseEndpoint")
+                             ?.optString("browseId")
+                             ?.takeIf { it.isNotBlank() }
+
+                         if (channelId == null && textObj?.has("runs") == true) {
+                             val runs = textObj.optJSONArray("runs")
+                             if (runs != null && runs.length() > 0) {
+                                 val browseEndpoint = runs.optJSONObject(0)
+                                     ?.optJSONObject("navigationEndpoint")
+                                     ?.optJSONObject("browseEndpoint")
+                                 channelId = browseEndpoint?.optString("browseId")
+                                     ?.takeIf { it.isNotBlank() }
                              }
                          }
                      }
+                 }
+
+                 // Normal feed lockups put creator in row zero and statistics
+                 // below it. Read every remaining row because some variants
+                 // split views and date while others keep them together.
+                 for (rowIndex in 1 until metadataRows.length()) {
+                     absorbVideoStats(
+                         metadataRows.optJSONObject(rowIndex)?.optJSONArray("metadataParts")
+                     )
                  }
              }
              
@@ -7376,6 +7407,8 @@ class YouTubeRepository(private val context: Context) {
         val title = getRunText(renderer.optJSONObject("title"))?.takeIf { it.isNotBlank() }
             ?: return null
         val viewCount = getRunText(renderer.optJSONObject("viewCountText")).orEmpty()
+        val uploadedDate = getRunText(renderer.optJSONObject("publishedTimeText"))
+            ?.takeIf { it.isNotBlank() }
         return VideoItem(
             videoId = videoId,
             title = title,
@@ -7385,6 +7418,7 @@ class YouTubeRepository(private val context: Context) {
             thumbnailUrl = "https://i.ytimg.com/vi/$videoId/hqdefault.jpg",
             duration = 0L,
             viewCount = viewCount,
+            uploadedDate = uploadedDate,
             description = getRunText(renderer.optJSONObject("description"))
         )
     }
