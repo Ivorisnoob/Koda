@@ -10,7 +10,7 @@ import android.graphics.drawable.Icon
 import android.os.Build
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalContext
@@ -49,7 +49,6 @@ fun VideoPipController(viewModel: VideoPlayerViewModel) {
     val isExpanded by viewModel.isExpanded.collectAsState()
     val videoAspectRatio by viewModel.videoAspectRatio.collectAsState()
     val videoBounds by viewModel.videoSurfaceBounds.collectAsState()
-    val miniVideoBounds by viewModel.miniVideoSurfaceBounds.collectAsState()
 
     val packageName = context.packageName
 
@@ -87,18 +86,21 @@ fun VideoPipController(viewModel: VideoPlayerViewModel) {
         onDispose { runCatching { context.unregisterReceiver(receiver) } }
     }
 
-    // PictureInPictureParams live on the Activity and are sticky. Update them
-    // synchronously after every successful composition instead of from a
-    // coroutine effect: when the player collapses and the user immediately
-    // swipes Home, even one queued frame with auto-enter still armed lets the
-    // system capture the mini player and the entire app hierarchy into PiP.
-    SideEffect {
+    // PictureInPictureParams live on the Activity and are sticky. Match 4.5's
+    // keyed effect so every meaningful player-state change publishes a fresh
+    // snapshot to Android. Eligibility follows the proven 4.5 rule: an
+    // expanded video may auto-enter PiP. Surface bounds improve the transition
+    // but must never decide whether PiP is armed.
+    LaunchedEffect(
+        currentVideo?.videoId,
+        isPlaying,
+        isExpanded,
+        videoAspectRatio,
+        videoBounds
+    ) {
         val builder = PictureInPictureParams.Builder()
-        val validBounds = (if (isExpanded) videoBounds else miniVideoBounds)
-            ?.takeIf { !it.isEmpty }
-        val autoEnterEligible = currentVideo != null &&
-            isPlaying &&
-            validBounds != null
+        val validBounds = videoBounds?.takeIf { !it.isEmpty }
+        val autoEnterEligible = currentVideo != null && isExpanded
 
         if (currentVideo == null) {
             // No video: disarm. Auto-enter is sticky, so a player closed while
@@ -118,22 +120,18 @@ fun VideoPipController(viewModel: VideoPlayerViewModel) {
             // what made the transition look like the UI was being sucked into
             // the window.
             // A source rect describes the content that will remain visible in
-            // PiP. Never retain the old expanded-player rect while automatic
-            // entry is disarmed; that stale rect is what makes Android animate
-            // and sometimes freeze a crop of the normal activity UI.
+            // PiP. It is only a transition hint: Android can still enter PiP
+            // when the expanded surface has not reported bounds yet.
             if (autoEnterEligible) validBounds?.let { builder.setSourceRectHint(it) }
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                // Both expanded and collapsed playback are eligible, but only
-                // after that layout's own video surface has reported bounds.
-                // The source rect makes the transition snapshot video-only;
-                // MainActivity then replaces the app with PipVideoSurface.
-                // A paused player remains ineligible because its newly attached
-                // PiP SurfaceView may not produce a fresh replacement frame.
+                // Match 4.5: only the expanded player auto-enters. Entering from
+                // the mini player can capture the whole activity into the PiP
+                // transition instead of the dedicated video surface.
                 builder.setAutoEnterEnabled(autoEnterEligible)
                 // The content is a video, not a layout that needs to reflow, so
                 // let the system crossfade the resize instead of re-laying out.
-                builder.setSeamlessResizeEnabled(autoEnterEligible)
+                builder.setSeamlessResizeEnabled(true)
             }
         }
 

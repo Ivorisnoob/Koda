@@ -613,17 +613,11 @@ fun MusicApp(
     }
 
     // Keep the Activity's PiP inputs current. It needs them outside the
-    // composition, in onUserLeaveHint, where there is no way to read state.
-    val pipBounds by videoPlayerViewModel.videoSurfaceBounds.collectAsState()
-    val miniPipBounds by videoPlayerViewModel.miniVideoSurfaceBounds.collectAsState()
-    val videoIsPlaying by videoPlayerViewModel.isPlaying.collectAsState()
-    val activePipBounds = if (isVideoOverlayExpanded) pipBounds else miniPipBounds
+    // composition, in onUserLeaveHint on Android 11. Match the same proven 4.5
+    // eligibility used by VideoPipController: bounds and playback state are not
+    // prerequisites for entering PiP.
     androidx.compose.runtime.SideEffect {
-        onPipStateChanged(
-            overlayVideo != null &&
-                videoIsPlaying &&
-                activePipBounds?.isEmpty == false
-        )
+        onPipStateChanged(overlayVideo != null && isVideoOverlayExpanded)
     }
 
     // Keep the ViewModel's PiP flag current so it can suppress auto-play
