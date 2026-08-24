@@ -2,7 +2,7 @@
 
 Thank you for your interest in **Koda**.
 
-> **External contributions are temporarily paused.** The project is not accepting new external pull requests until the author has completed at least 10% of the planned work in [ROADMAP.md](ROADMAP.md). This gives the architecture and product direction time to settle before outside changes are reviewed. Bug reports, feature requests, discussion, and private security reports remain welcome.
+> **External contributions are temporarily paused.** The project is not accepting new external pull requests until the author has completed the planned work in [ROADMAP.md](ROADMAP.md) in full. This gives the architecture and product direction time to settle before outside changes are reviewed. Bug reports, feature requests, discussion, and private security reports remain welcome.
 
 ## How Can I Contribute?
 
@@ -20,7 +20,7 @@ Thank you for your interest in **Koda**.
 
 ### 3. Pull Requests
 
-Please do not open a new external pull request during the temporary pause above. The contribution workflow and technical requirements will be restored here when the author-completed roadmap threshold reaches 10%.
+Please do not open a new external pull request during the temporary pause above. The contribution workflow and technical requirements will be restored here when the author has completed the roadmap in full.
 
 ## Development Setup
 

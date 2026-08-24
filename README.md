@@ -501,7 +501,7 @@ Join the Telegram chat at **[t.me/ivorisnoob_chat](https://t.me/ivorisnoob_chat)
 
 ## Contributing
 
-External pull requests are temporarily paused until the author has completed at least 10% of the planned work in [ROADMAP.md](ROADMAP.md). This pause gives the architecture and product direction time to settle before outside changes are reviewed.
+External pull requests are temporarily paused until the author has completed the planned work in [ROADMAP.md](ROADMAP.md) in full. This pause gives the architecture and product direction time to settle before outside changes are reviewed.
 
 Bug reports, feature requests, and discussion are still welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the current policy. The roadmap's **Known defects** section lists bugs that have already been traced to a file and a line.
 

@@ -1,8 +1,8 @@
 <!--
 External contributions are temporarily paused until the project author has
-completed at least 10% of the planned work in ROADMAP.md. Please do not open a
-new external pull request during this pause. Bug reports and feature requests
-remain welcome through the issue templates.
+completed the planned work in ROADMAP.md in full. Please do not open a new
+external pull request during this pause. Bug reports and feature requests remain
+welcome through the issue templates.
 -->
 
 ## What this changes
