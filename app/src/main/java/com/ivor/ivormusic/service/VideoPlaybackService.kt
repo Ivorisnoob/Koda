@@ -6,7 +6,6 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
-import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.CommandButton
@@ -48,7 +47,6 @@ import com.ivor.ivormusic.R
 class VideoPlaybackService : MediaSessionService() {
 
     private var session: MediaSession? = null
-    private var sessionSourcePlayer: Player? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -90,15 +88,9 @@ class VideoPlaybackService : MediaSessionService() {
      */
     private fun ensureSession(player: Player) {
         session?.let { existing ->
-            if (sessionSourcePlayer === player) return
+            if (existing.player === player) return
             releaseSession()
         }
-
-        // Some OEM PiP implementations ignore PictureInPictureParams actions
-        // whenever an active MediaSession exists and render only that session's
-        // standard previous/play/next row. Present those standard commands as
-        // 10-second seeks without changing the ExoPlayer owned by the ViewModel.
-        val systemPlayer = VideoSeekForwardingPlayer(player)
 
         val sessionIntent = PendingIntent.getActivity(
             this,
@@ -108,7 +100,7 @@ class VideoPlaybackService : MediaSessionService() {
         )
 
         val built = try {
-            MediaSession.Builder(this, systemPlayer)
+            MediaSession.Builder(this, player)
                 // A process may not hold two sessions with the same id, and
                 // MusicService already owns the default (empty) one.
                 .setId(SESSION_ID)
@@ -122,7 +114,6 @@ class VideoPlaybackService : MediaSessionService() {
             return
         }
         session = built
-        sessionSourcePlayer = player
         // Explicit, not incidental: Media3 registers a session automatically
         // only when a MediaController binds and onGetSession answers. Nothing in
         // Koda binds to this service - the ViewModel already has the player - so
@@ -152,46 +143,8 @@ class VideoPlaybackService : MediaSessionService() {
     private fun releaseSession() {
         val current = session ?: return
         session = null
-        sessionSourcePlayer = null
         runCatching { removeSession(current) }
         current.release()
-    }
-
-    /**
-     * Gives OEM system media controls a previous/play/next fallback while the
-     * underlying one-item ExoPlayer keeps its real queue semantics unchanged.
-     * Previous and next are deliberately ten-second seeks here: playlist queue
-     * advancement belongs to VideoPlayerViewModel, not this borrowed session.
-     */
-    private class VideoSeekForwardingPlayer(player: Player) : ForwardingPlayer(player) {
-        override fun getAvailableCommands(): Player.Commands =
-            super.getAvailableCommands().buildUpon()
-                .add(Player.COMMAND_SEEK_TO_PREVIOUS)
-                .add(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
-                .add(Player.COMMAND_SEEK_TO_NEXT)
-                .add(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
-                .build()
-
-        override fun isCommandAvailable(command: Int): Boolean =
-            when (command) {
-                Player.COMMAND_SEEK_TO_PREVIOUS,
-                Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM,
-                Player.COMMAND_SEEK_TO_NEXT,
-                Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM -> true
-                else -> super.isCommandAvailable(command)
-            }
-
-        override fun hasPreviousMediaItem(): Boolean = true
-
-        override fun hasNextMediaItem(): Boolean = true
-
-        override fun seekToPrevious() = seekBack()
-
-        override fun seekToPreviousMediaItem() = seekBack()
-
-        override fun seekToNext() = seekForward()
-
-        override fun seekToNextMediaItem() = seekForward()
     }
 
     /**
@@ -230,16 +183,17 @@ class VideoPlaybackService : MediaSessionService() {
                         .add(SessionCommand(ACTION_FORWARD, Bundle.EMPTY))
                         .build()
                 )
-                // Xiaomi and some other OEM PiP menus prefer standard session
-                // controls over the three custom PiP RemoteActions. The session
-                // wrapper maps this previous/next pair to 10-second seeks, so
-                // either system UI path controls the same underlying player.
+                // The video player holds one ExoPlayer media item. Its playlist
+                // queue lives in VideoPlayerViewModel, so standard previous and
+                // next commands would either restart the item or do nothing.
+                // Keep those slots out of the session; the custom layout above
+                // owns the ten-second seek actions instead.
                 .setAvailablePlayerCommands(
                     MediaSession.ConnectionResult.DEFAULT_PLAYER_COMMANDS.buildUpon()
-                        .add(Player.COMMAND_SEEK_TO_PREVIOUS)
-                        .add(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
-                        .add(Player.COMMAND_SEEK_TO_NEXT)
-                        .add(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
+                        .remove(Player.COMMAND_SEEK_TO_PREVIOUS)
+                        .remove(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
+                        .remove(Player.COMMAND_SEEK_TO_NEXT)
+                        .remove(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
                         .build()
                 )
                 .build()
