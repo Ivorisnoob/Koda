@@ -154,9 +154,10 @@ fun VideoPipController(viewModel: VideoPlayerViewModel) {
  * skips live here as buttons rather than as the gesture they are on the full
  * player.
  *
- * Devices advertise how many actions they can render. Play/pause is the one
- * control that must survive when fewer than three slots are available, so the
- * seek pair is dropped rather than relying on an OEM to truncate the row.
+ * Always publish the complete row. The connected OnePlus Android 12 build
+ * reports fewer than three available actions while its PiP menu can render the
+ * normal three slots; trusting that value leaves only play/pause visible. The
+ * window manager can truncate the row itself on a genuinely smaller surface.
  */
 private fun pipActions(
     activity: androidx.activity.ComponentActivity,
@@ -174,13 +175,6 @@ private fun pipActions(
             R.drawable.ic_media_play, "Play"
         )
     }
-
-    val maxActions = try {
-        activity.maxNumPictureInPictureActions
-    } catch (e: Exception) {
-        3
-    }
-    if (maxActions < 3) return listOf(playPause)
 
     return listOf(
         remoteAction(
