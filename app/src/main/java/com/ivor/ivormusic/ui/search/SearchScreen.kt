@@ -1990,8 +1990,19 @@ fun PlaylistResultCard(
                          modifier = Modifier.size(14.dp)
                       )
                       Spacer(modifier = Modifier.size(6.dp))
+                      val metadata = if (isAlbum) {
+                          "Album • ${item.uploaderName}"
+                      } else {
+                          buildList {
+                              add("Playlist")
+                              item.uploaderName.takeIf { it.isNotBlank() }?.let(::add)
+                              item.itemCount.takeIf { it >= 0 }?.let { count ->
+                                  add(if (count == 1) "1 song" else "$count songs")
+                              }
+                          }.joinToString(" • ")
+                      }
                       Text(
-                         text = if (isAlbum) "Album • ${item.uploaderName}" else "Playlist • ${item.uploaderName} • ${item.itemCount} songs",
+                         text = metadata,
                          style = MaterialTheme.typography.bodySmall,
                          color = secondaryTextColor,
                          maxLines = 1,
