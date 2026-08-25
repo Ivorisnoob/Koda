@@ -584,6 +584,23 @@
     <!-- Auth dialog -->
     <string name="au_sign_in_title">Sign in to YouTube Music</string>
     <string name="cd_close">Close</string>
+
+    <!-- Channel / artist / album -->
+    <string name="ch_search_channel">Search this channel</string>
+    <string name="ch_share_channel">Share channel</string>
+    <string name="ch_share_chooser">Share channel</string>
+    <string name="cd_more_options">More options</string>
+    <string name="ch_open_artist_page">Open music artist page</string>
+    <string name="ch_recommend_again">Recommend this channel again</string>
+    <string name="ch_unavailable_title">This channel isn\'t available</string>
+    <string name="ch_unavailable_body">It may have been renamed, removed, or restricted in your region.</string>
+    <string name="ar_open_youtube_channel">Open YouTube channel</string>
+    <string name="ar_no_songs">No songs found for this artist</string>
+    <string name="ar_more_play_options">More play options</string>
+    <string name="ar_start_radio">Start radio</string>
+    <string name="unknown_album">Unknown Album</string>
+    <string name="ab_tracks">Tracks</string>
+    <string name="ab_download_all">Download all</string>
     <plurals name="n_channels">
         <item quantity="one">%1$d channel</item>
         <item quantity="other">%1$d channels</item>
