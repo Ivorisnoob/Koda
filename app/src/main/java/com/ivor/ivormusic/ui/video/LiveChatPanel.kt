@@ -1,4 +1,6 @@
 package com.ivor.ivormusic.ui.video
+import androidx.compose.ui.res.stringResource
+import com.ivor.ivormusic.R
 
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
@@ -237,7 +239,7 @@ fun LiveChatPanel(
                 LiveDot()
                 Spacer(Modifier.width(10.dp))
                 Text(
-                    text = "Live chat",
+                    text = stringResource(R.string.vp_live_chat),
                     style = if (compact) {
                         MaterialTheme.typography.titleMedium
                     } else {
@@ -249,7 +251,7 @@ fun LiveChatPanel(
                 IconButton(onClick = onDismiss) {
                     Icon(
                         Icons.Rounded.Close,
-                        contentDescription = "Close live chat",
+                        contentDescription = stringResource(R.string.lc_close_chat),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
@@ -280,12 +282,12 @@ fun LiveChatPanel(
 
                     isAvailable == false -> {
                         LiveChatEmptyState(
-                            text = "Live chat is turned off for this stream",
+                            text = stringResource(R.string.lc_turned_off),
                         )
                     }
 
                     messages.isEmpty() -> {
-                        LiveChatEmptyState(text = "Waiting for messages")
+                        LiveChatEmptyState(text = stringResource(R.string.lc_waiting))
                     }
 
                     else -> {
@@ -437,7 +439,7 @@ fun LiveChatOverlay(
                 modifier = Modifier.padding(start = 18.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
             ) {
                 Text(
-                    text = if (canSend) "Say something..." else "Open live chat",
+                    text = if (canSend) stringResource(R.string.lc_say_something) else stringResource(R.string.vp_open_live_chat),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -453,7 +455,7 @@ fun LiveChatOverlay(
                 ) {
                     Icon(
                         Icons.AutoMirrored.Rounded.Send,
-                        contentDescription = "Open live chat",
+                        contentDescription = stringResource(R.string.vp_open_live_chat),
                         tint = MaterialTheme.colorScheme.onPrimary,
                         modifier = Modifier.size(16.dp),
                     )
@@ -541,7 +543,7 @@ private fun JumpToLatestPill(missedCount: Int, onClick: () -> Unit) {
             )
             Text(
                 text = when {
-                    missedCount <= 0 -> "Latest"
+                    missedCount <= 0 -> stringResource(R.string.lc_latest)
                     missedCount == 1 -> "1 new message"
                     else -> "$missedCount new messages"
                 },
@@ -662,7 +664,7 @@ private fun LiveChatPaidRow(
             message.stickerUrl?.let { sticker ->
                 AsyncImage(
                     model = sticker,
-                    contentDescription = "Super Sticker",
+                    contentDescription = stringResource(R.string.lc_super_sticker),
                     modifier = Modifier
                         .padding(12.dp)
                         .size(if (compact) 56.dp else 72.dp),
@@ -1034,7 +1036,7 @@ private fun LiveChatComposer(
                     },
                     modifier = Modifier.weight(1f),
                     placeholder = {
-                        Text(if (canSend) "Chat..." else "Sign in to chat")
+                        Text(if (canSend) stringResource(R.string.lc_chat_hint) else stringResource(R.string.lc_sign_in_to_chat))
                     },
                     // Only worth the space once the limit is actually in reach.
                     suffix = if (remaining <= COUNTER_VISIBLE_AT) {
@@ -1075,7 +1077,7 @@ private fun LiveChatComposer(
                     ) {
                         Icon(
                             Icons.AutoMirrored.Rounded.Send,
-                            contentDescription = "Send message",
+                            contentDescription = stringResource(R.string.lc_send),
                             modifier = Modifier.size(20.dp),
                         )
                     }
@@ -1142,7 +1144,7 @@ fun LiveBadge(
             ) {
                 LiveDot(size = 7.dp)
                 Text(
-                    text = "LIVE",
+                    text = stringResource(R.string.badge_live),
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.Bold,
                 )
