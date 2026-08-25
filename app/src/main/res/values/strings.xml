@@ -416,6 +416,40 @@
     <string name="dl_failed">Failed</string>
     <string name="dl_waiting">Waiting</string>
     <string name="dl_preparing">Preparing</string>
+
+    <!-- Stats -->
+    <string name="st_top_songs">Top songs</string>
+    <string name="st_top_artists">Top artists</string>
+    <string name="st_empty_title">Nothing to crunch yet</string>
+    <string name="st_empty_body">Play some music and your stats will show up here</string>
+    <string name="st_legend">Legend</string>
+    <string name="st_every_milestone">Every milestone reached</string>
+
+    <!-- Listening history -->
+    <string name="lh_yesterday">Yesterday</string>
+    <string name="lh_all_time">All time</string>
+    <string name="lh_cd_search_history">Search history</string>
+    <string name="lh_pause_history">Pause history</string>
+    <string name="lh_resume_history">Resume history</string>
+    <string name="lh_clear_history">Clear history</string>
+    <string name="lh_removed_all_plays">Removed all plays of %1$s</string>
+    <string name="lh_removed_from_history">Removed from history</string>
+    <string name="lh_history_cleared">History cleared</string>
+    <string name="lh_not_on_device">Not on this device</string>
+    <string name="lh_remove_all_plays">Remove every play of this song</string>
+    <string name="lh_search_placeholder">Search titles, artists, albums</string>
+    <string name="lh_paused_banner">History is paused</string>
+    <string name="lh_paused_body">New plays are not being recorded. What is already here stays.</string>
+    <string name="lh_resume">Resume</string>
+    <string name="lh_no_matches_body">Nothing in this range matches that search.</string>
+    <string name="lh_range_empty_body">You have listened before, just not in this range.</string>
+    <string name="lh_off_title">History is off</string>
+    <string name="lh_off_body">Nothing has been recorded because history is paused. Resume it and songs you play will show up here.</string>
+    <string name="lh_empty_title">Nothing here yet</string>
+    <string name="lh_empty_body">Songs you play are logged here, so you can find that one track from Tuesday and play it again.</string>
+    <string name="lh_show_all_time">Show all time</string>
+    <string name="lh_clear_dialog_title">Clear listening history?</string>
+    <string name="action_clear">Clear</string>
     <plurals name="n_channels">
         <item quantity="one">%1$d channel</item>
         <item quantity="other">%1$d channels</item>
