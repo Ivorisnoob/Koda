@@ -1,4 +1,6 @@
 package com.ivor.ivormusic.ui.video
+import androidx.compose.ui.res.stringResource
+import com.ivor.ivormusic.R
 
 import android.app.Activity
 import android.content.Context
@@ -363,7 +365,7 @@ fun FullscreenPlayerContent(
         ) {
             Icon(
                 if (captionsActive) Icons.Rounded.ClosedCaption else Icons.Rounded.ClosedCaptionOff,
-                contentDescription = "Captions"
+                contentDescription = stringResource(R.string.vp_captions)
             )
         }
 
@@ -558,7 +560,7 @@ fun FullscreenPlayerContent(
                     if (showQueueControls) {
                         QueueSkipButton(
                             icon = Icons.Rounded.SkipPrevious,
-                            contentDescription = "Previous in playlist",
+                            contentDescription = stringResource(R.string.cd_previous),
                             enabled = hasPreviousInQueue,
                             onClick = onPreviousInQueue,
                             size = 54.dp
@@ -566,7 +568,7 @@ fun FullscreenPlayerContent(
                     } else {
                         PlayerIconButton(
                             icon = Icons.Rounded.Replay10,
-                            contentDescription = "Rewind 10 seconds",
+                            contentDescription = stringResource(R.string.vp_rewind),
                             onClick = onSeekBackward
                         )
                     }
@@ -579,7 +581,7 @@ fun FullscreenPlayerContent(
                     if (showQueueControls) {
                         QueueSkipButton(
                             icon = Icons.Rounded.SkipNext,
-                            contentDescription = "Next in playlist",
+                            contentDescription = stringResource(R.string.cd_next),
                             enabled = hasNextInQueue,
                             onClick = onNextInQueue,
                             size = 54.dp
@@ -587,7 +589,7 @@ fun FullscreenPlayerContent(
                     } else {
                         PlayerIconButton(
                             icon = Icons.Rounded.Forward10,
-                            contentDescription = "Forward 10 seconds",
+                            contentDescription = stringResource(R.string.vp_forward),
                             onClick = onSeekForward
                         )
                     }
@@ -831,7 +833,7 @@ fun PortraitPlayerContent(
                         ) {
                             Icon(
                                 if (captionsActive) Icons.Rounded.ClosedCaption else Icons.Rounded.ClosedCaptionOff,
-                                contentDescription = "Captions"
+                                contentDescription = stringResource(R.string.vp_captions)
                             )
                         }
                         FilledIconButton(
@@ -866,7 +868,7 @@ fun PortraitPlayerContent(
                     if (showQueueControls) {
                         QueueSkipButton(
                             icon = Icons.Rounded.SkipPrevious,
-                            contentDescription = "Previous in playlist",
+                            contentDescription = stringResource(R.string.cd_previous),
                             enabled = hasPreviousInQueue,
                             onClick = onPreviousInQueue
                         )
@@ -875,7 +877,7 @@ fun PortraitPlayerContent(
                     if (showQueueControls) {
                         QueueSkipButton(
                             icon = Icons.Rounded.SkipNext,
-                            contentDescription = "Next in playlist",
+                            contentDescription = stringResource(R.string.cd_next),
                             enabled = hasNextInQueue,
                             onClick = onNextInQueue
                         )
@@ -987,7 +989,7 @@ internal fun LiveEdgeChip(
                     )
             )
             Text(
-                text = "LIVE",
+                text = stringResource(R.string.badge_live),
                 color = if (atLiveEdge) contentTint else contentTint.copy(alpha = 0.6f),
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.Bold
@@ -1418,7 +1420,7 @@ private fun ChapterTitleChip(
             )
             Icon(
                 Icons.Rounded.ExpandMore,
-                contentDescription = "Chapters",
+                contentDescription = stringResource(R.string.vp_chapters),
                 tint = Color.White,
                 modifier = Modifier.size(16.dp)
             )
@@ -2108,7 +2110,7 @@ fun VideoInfoSection(
                 )
             } else if (isOffline) {
                 Text(
-                    text = "Available offline",
+                    text = stringResource(R.string.vh_available_offline),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.primary
                 )
@@ -2208,7 +2210,7 @@ fun VideoInfoSection(
                             ButtonDefaults.buttonColors()
                         }
                     ) {
-                        Text(if (isSubscribed) "Subscribed" else "Subscribe")
+                        Text(if (isSubscribed) stringResource(R.string.subscribed) else stringResource(R.string.subscribe))
                     }
                 },
                 colors = ListItemDefaults.colors(
@@ -2242,7 +2244,7 @@ fun VideoInfoSection(
                         tint = MaterialTheme.colorScheme.primary
                     )
                     Text(
-                        text = "Live chat",
+                        text = stringResource(R.string.vp_live_chat),
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.weight(1f)
@@ -2250,7 +2252,7 @@ fun VideoInfoSection(
                     LiveDot()
                     Icon(
                         Icons.Rounded.ExpandMore,
-                        contentDescription = "Open live chat",
+                        contentDescription = stringResource(R.string.vp_open_live_chat),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
@@ -2279,14 +2281,14 @@ fun VideoInfoSection(
                         tint = MaterialTheme.colorScheme.primary
                     )
                     Text(
-                        text = "Comments",
+                        text = stringResource(R.string.cd_comments),
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.weight(1f)
                     )
                     Icon(
                         Icons.Rounded.ExpandMore,
-                        contentDescription = "Open comments",
+                        contentDescription = stringResource(R.string.cd_comments),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
@@ -2302,7 +2304,7 @@ fun VideoInfoSection(
             ) {
                 Column(Modifier.padding(16.dp)) {
                     Text(
-                        text = "Description",
+                        text = stringResource(R.string.vp_description),
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
@@ -2349,7 +2351,7 @@ fun VideoInfoSection(
                                 // the whole block, which would now fight the
                                 // links inside the text for the same tap.
                                 Text(
-                                    text = if (isDescriptionExpanded) "Show less" else "Show more",
+                                    text = if (isDescriptionExpanded) stringResource(R.string.vp_show_less) else stringResource(R.string.action_show_more),
                                     style = MaterialTheme.typography.labelLarge,
                                     color = MaterialTheme.colorScheme.primary,
                                     fontWeight = FontWeight.Bold,
@@ -2372,7 +2374,7 @@ fun VideoInfoSection(
                     // and inside a playlist that promise belongs to the queue.
                     // These are then just recommendations, and saying so is the
                     // difference between the header being true and being wrong.
-                    text = if (queue != null) "Related videos" else "Up Next",
+                    text = if (queue != null) stringResource(R.string.vp_related_videos) else stringResource(R.string.ps_up_next),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
@@ -2555,7 +2557,7 @@ private fun PlayingFromPlaylistCard(
             }
             Icon(
                 Icons.Rounded.ExpandMore,
-                contentDescription = "Open the playlist queue",
+                contentDescription = stringResource(R.string.vp_open_queue),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
@@ -2580,12 +2582,12 @@ private fun SaveVideoButton(onClick: () -> Unit) {
         ) {
             Icon(
                 Icons.Rounded.WatchLater,
-                contentDescription = "Save to Watch Later",
+                contentDescription = stringResource(R.string.video_options_watch_later),
                 modifier = Modifier.size(20.dp),
                 tint = MaterialTheme.colorScheme.onSurface
             )
             Text(
-                text = "Save",
+                text = stringResource(R.string.action_save),
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurface
@@ -2649,9 +2651,9 @@ private fun DownloadVideoButton(
             )
             Text(
                 text = when {
-                    downloaded -> "Downloaded"
+                    downloaded -> stringResource(R.string.song_options_downloaded)
                     inFlight -> "${((progress?.progress ?: 0f) * 100).toInt()}%"
-                    else -> "Download"
+                    else -> stringResource(R.string.song_options_download)
                 },
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.SemiBold,
@@ -2676,7 +2678,7 @@ private fun ShareVideoButton(video: VideoItem) {
                 type = "text/plain"
                 putExtra(Intent.EXTRA_TEXT, "https://youtube.com/watch?v=${video.videoId}")
             }
-            context.startActivity(Intent.createChooser(send, "Share video"))
+            context.startActivity(Intent.createChooser(send, context.getString(R.string.video_options_share_chooser)))
         }
     ) {
         Row(
@@ -2686,12 +2688,12 @@ private fun ShareVideoButton(video: VideoItem) {
         ) {
             Icon(
                 Icons.Rounded.Share,
-                contentDescription = "Share",
+                contentDescription = stringResource(R.string.video_options_share),
                 modifier = Modifier.size(20.dp),
                 tint = MaterialTheme.colorScheme.onSurface
             )
             Text(
-                text = "Share",
+                text = stringResource(R.string.video_options_share),
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurface
@@ -2731,7 +2733,7 @@ private fun LikeDislikeBar(
             ) {
                 Icon(
                     imageVector = if (likeStatus == LikeStatus.LIKE) Icons.Rounded.ThumbUp else Icons.Outlined.ThumbUp,
-                    contentDescription = if (likeStatus == LikeStatus.LIKE) "Remove like" else "Like",
+                    contentDescription = if (likeStatus == LikeStatus.LIKE) stringResource(R.string.vp_remove_like) else stringResource(R.string.like),
                     modifier = Modifier.size(20.dp),
                     tint = if (likeStatus == LikeStatus.LIKE) MaterialTheme.colorScheme.primary
                         else MaterialTheme.colorScheme.onSurface
@@ -2764,7 +2766,7 @@ private fun LikeDislikeBar(
             ) {
                 Icon(
                     imageVector = if (likeStatus == LikeStatus.DISLIKE) Icons.Rounded.ThumbDown else Icons.Outlined.ThumbDown,
-                    contentDescription = if (likeStatus == LikeStatus.DISLIKE) "Remove dislike" else "Dislike",
+                    contentDescription = if (likeStatus == LikeStatus.DISLIKE) stringResource(R.string.vp_remove_dislike) else stringResource(R.string.cd_dislike),
                     modifier = Modifier.size(20.dp),
                     tint = if (likeStatus == LikeStatus.DISLIKE) MaterialTheme.colorScheme.primary
                         else MaterialTheme.colorScheme.onSurface
@@ -2852,7 +2854,7 @@ fun ExpressivePlayPauseButton(
                 val iconSize = size * 0.45f
                 Icon(
                     imageVector = if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                    contentDescription = if (isPlaying) "Pause" else "Play",
+                    contentDescription = if (isPlaying) stringResource(R.string.cd_pause) else stringResource(R.string.cd_play),
                     modifier = Modifier.size(iconSize)
                 )
             }
@@ -2880,7 +2882,7 @@ fun ErrorOverlay(message: String, onRetry: (() -> Unit)? = null) {
                 Button(onClick = onRetry) {
                     Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text("Retry")
+                    Text(stringResource(R.string.action_retry))
                 }
             }
         }

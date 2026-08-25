@@ -601,6 +601,20 @@
     <string name="unknown_album">Unknown Album</string>
     <string name="ab_tracks">Tracks</string>
     <string name="ab_download_all">Download all</string>
+
+    <!-- Video player -->
+    <string name="vp_captions">Captions</string>
+    <string name="vp_rewind">Rewind 10 seconds</string>
+    <string name="vp_forward">Forward 10 seconds</string>
+    <string name="vp_chapters">Chapters</string>
+    <string name="vp_live_chat">Live chat</string>
+    <string name="vp_open_live_chat">Open live chat</string>
+    <string name="vp_description">Description</string>
+    <string name="vp_show_less">Show less</string>
+    <string name="vp_related_videos">Related videos</string>
+    <string name="vp_open_queue">Open the playlist queue</string>
+    <string name="vp_remove_like">Remove like</string>
+    <string name="vp_remove_dislike">Remove dislike</string>
     <plurals name="n_channels">
         <item quantity="one">%1$d channel</item>
         <item quantity="other">%1$d channels</item>
