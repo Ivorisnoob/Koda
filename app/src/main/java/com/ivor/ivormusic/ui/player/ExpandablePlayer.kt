@@ -16,6 +16,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Cast
+import androidx.compose.material.icons.rounded.CastConnected
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -33,6 +39,7 @@ import com.ivor.ivormusic.data.PlayerStyle
 import com.ivor.ivormusic.ui.components.MiniPlayerContent
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import com.ivor.ivormusic.ui.video.MusicCastSheet
 import kotlin.math.absoluteValue
 import kotlin.math.roundToInt
 
@@ -78,6 +85,20 @@ fun ExpandablePlayer(
     modifier: Modifier = Modifier
 ) {
     if (currentSong == null) return
+
+    val isCasting by viewModel.isCasting.collectAsState()
+    val castDeviceName by viewModel.castDeviceName.collectAsState()
+    var showCastSheet by remember { mutableStateOf(false) }
+    LaunchedEffect(showCastSheet) {
+        if (showCastSheet) {
+            viewModel.startCastDiscovery()
+            try {
+                kotlinx.coroutines.awaitCancellation()
+            } finally {
+                viewModel.stopCastDiscovery()
+            }
+        }
+    }
 
     // Long-pressing the artwork in any style summons the style wheel; it
     // lives here, above whichever style is active, so the player can morph
@@ -316,6 +337,9 @@ fun ExpandablePlayer(
                             progress = progress,
                             onPlayPauseClick = onPlayPauseClick,
                             onNextClick = onNextClick,
+                            isCasting = isCasting,
+                            castDeviceName = castDeviceName,
+                            onCastClick = { showCastSheet = true },
                             onClick = { onExpandChange(true) }
                         )
                     }
@@ -462,6 +486,44 @@ fun ExpandablePlayer(
                         }
                         }
 
+                        // One shared Cast affordance for every player style.
+                        // It sits just below the styles' top action row: placing
+                        // it in the conventional top-end slot would cover the
+                        // sleep/add/menu button in several of the eight layouts.
+                        FilledIconButton(
+                            onClick = { showCastSheet = true },
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .windowInsetsPadding(WindowInsets.statusBars)
+                                .padding(top = 72.dp, end = 16.dp),
+                            shapes = IconButtonDefaults.shapes(),
+                            colors = IconButtonDefaults.filledIconButtonColors(
+                                containerColor = if (isCasting) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.surfaceContainerHigh
+                                },
+                                contentColor = if (isCasting) {
+                                    MaterialTheme.colorScheme.onPrimary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurface
+                                }
+                            )
+                        ) {
+                            Icon(
+                                imageVector = if (isCasting) {
+                                    Icons.Rounded.CastConnected
+                                } else {
+                                    Icons.Rounded.Cast
+                                },
+                                contentDescription = if (isCasting && castDeviceName != null) {
+                                    "Casting to $castDeviceName"
+                                } else {
+                                    "Cast"
+                                }
+                            )
+                        }
+
                         androidx.compose.animation.AnimatedVisibility(
                             visible = styleWheel.isOpen,
                             enter = fadeIn(MaterialTheme.motionScheme.fastEffectsSpec()),
@@ -479,5 +541,12 @@ fun ExpandablePlayer(
                 }
             }
         }
+    }
+
+    if (showCastSheet) {
+        MusicCastSheet(
+            viewModel = viewModel,
+            onDismiss = { showCastSheet = false }
+        )
     }
 }

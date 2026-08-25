@@ -8,6 +8,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
@@ -18,6 +19,9 @@ import com.ivor.ivormusic.data.LikedSongsRepository
 import com.ivor.ivormusic.data.LyricsRepository
 import com.ivor.ivormusic.data.LyricsResult
 import com.ivor.ivormusic.service.MusicService
+import com.ivor.ivormusic.ui.video.CastPlaybackKind
+import com.ivor.ivormusic.ui.video.CastRoute
+import com.ivor.ivormusic.ui.video.VideoCastManager
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -31,6 +35,7 @@ import kotlinx.coroutines.Job
 
 private const val QUEUE_ITEM_ID_EXTRA = "com.ivor.ivormusic.QUEUE_ITEM_ID"
 
+@UnstableApi
 class PlayerViewModel(private val context: Context) : ViewModel() {
 
     private var controllerFuture: ListenableFuture<MediaController>? = null
@@ -178,7 +183,20 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     val crossfadeEnabled = themePreferences.crossfadeEnabled
     val crossfadeDurationMs = themePreferences.crossfadeDurationMs
 
+    // Discovery lives with the screen; playback hand-off lives in MusicService.
+    // Both managers join the same framework session and are separated by the
+    // process-wide MUSIC/VIDEO ownership marker in VideoCastManager.
+    private val castManager = VideoCastManager(context, CastPlaybackKind.MUSIC)
+    val castAvailable: Boolean get() = castManager.available
+    val castReceivers: StateFlow<List<CastRoute>> = castManager.receivers
+    val castDeviceName: StateFlow<String?> = castManager.deviceName
+    val isCastConnecting: StateFlow<Boolean> = castManager.isConnecting
+    val isCasting: StateFlow<Boolean> = castManager.isSessionActive
+    private val _castUnavailableMessage = MutableStateFlow<String?>(null)
+    val castUnavailableMessage: StateFlow<String?> = _castUnavailableMessage.asStateFlow()
+
     init {
+        castManager.beginObservation()
         initializeController()
         startProgressUpdates()
         startBufferingWatchdog()
@@ -660,6 +678,28 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     private fun playQueueItems(queue: List<MusicQueueItem>, startIndex: Int) {
         if (queue.isEmpty()) return
 
+        val requestedIndex = startIndex.coerceIn(queue.indices)
+        val requestedItem = queue[requestedIndex]
+        if (isCasting.value &&
+            requestedItem.song.source == com.ivor.ivormusic.data.SongSource.LOCAL
+        ) {
+            val message = "Disconnect Cast to play files stored on this phone"
+            _castUnavailableMessage.value = message
+            android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show()
+            return
+        }
+
+        // The receiver cannot fetch content:// or file://. Remove local entries
+        // from both the controller timeline and the UI queue so their indices
+        // cannot drift after MusicService filters the same items.
+        val playbackQueue = if (isCasting.value) {
+            queue.filter { it.song.source != com.ivor.ivormusic.data.SongSource.LOCAL }
+        } else {
+            queue
+        }
+        val safeStartIndex = playbackQueue.indexOfFirst { it.id == requestedItem.id }
+            .coerceAtLeast(0)
+
         // Reset cleared flag - user is actively playing
         isPlayerCleared = false
 
@@ -667,11 +707,10 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         // undoable: putting it back would drop it into a queue it was never in.
         lastQueueRemoval = null
 
-        val safeStartIndex = startIndex.coerceIn(queue.indices)
-        _currentQueue.value = queue
+        _currentQueue.value = playbackQueue
         
         // Update current song immediately for UI responsiveness
-        val currentItem = queue[safeStartIndex]
+        val currentItem = playbackQueue[safeStartIndex]
         val currentSong = currentItem.song
         _currentQueueItemId.value = currentItem.id
         _currentSong.value = currentSong
@@ -682,12 +721,14 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         
         controller?.let { player ->
             // 1. Set the target song first (triggers URL resolution in MusicService)
-            val startItem = createMediaItem(currentItem)
+            val startItem = createMediaItem(currentItem, castResolveNow = true)
             player.setMediaItem(startItem)
             
             // 2. Add the rest of the queue BEFORE prepare (so notification sees full queue)
-            val otherItemsBefore = queue.subList(0, safeStartIndex).map { createMediaItem(it) }
-            val otherItemsAfter = queue.subList(safeStartIndex + 1, queue.size).map { createMediaItem(it) }
+            val otherItemsBefore = playbackQueue.subList(0, safeStartIndex).map { createMediaItem(it) }
+            val otherItemsAfter = playbackQueue
+                .subList(safeStartIndex + 1, playbackQueue.size)
+                .map { createMediaItem(it) }
             
             if (otherItemsBefore.isNotEmpty()) {
                 player.addMediaItems(0, otherItemsBefore)
@@ -848,7 +889,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                     addToQueue(newSongs)
                 }
             } catch (e: Exception) {
-                e.printStackTrace()
+                KLog.e("PlayerViewModel", "Could not extend the music queue", e)
             } finally {
                 _isLoadingMore.value = false
             }
@@ -858,7 +899,9 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     fun addToQueue(songs: List<Song>) {
         if (songs.isEmpty()) return
 
-        val added = songs.map { MusicQueueItem(song = it) }
+        val acceptedSongs = songsForCurrentOutput(songs)
+        if (acceptedSongs.isEmpty()) return
+        val added = acceptedSongs.map { MusicQueueItem(song = it) }
         val currentList = _currentQueue.value.toMutableList()
         currentList.addAll(added)
         _currentQueue.value = currentList
@@ -880,9 +923,11 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
      */
     fun playNext(songs: List<Song>) {
         if (songs.isEmpty()) return
+        val acceptedSongs = songsForCurrentOutput(songs)
+        if (acceptedSongs.isEmpty()) return
         val currentList = _currentQueue.value
         if (currentList.isEmpty() || _currentSong.value == null) {
-            playQueue(songs)
+            playQueue(acceptedSongs)
             return
         }
 
@@ -890,7 +935,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         val insertAt = ((player?.currentMediaItemIndex ?: currentIndexInQueue()) + 1)
             .coerceIn(0, currentList.size)
 
-        val added = songs.map { MusicQueueItem(song = it) }
+        val added = acceptedSongs.map { MusicQueueItem(song = it) }
         _currentQueue.value = currentList.toMutableList().apply { addAll(insertAt, added) }
         // The timeline can be shorter than the UI queue when the two have
         // drifted, and Media3 throws rather than clamping an out-of-range
@@ -908,6 +953,19 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     fun playNext(song: Song) = playNext(listOf(song))
 
     fun addToQueue(song: Song) = addToQueue(listOf(song))
+
+    private fun songsForCurrentOutput(songs: List<Song>): List<Song> {
+        if (!isCasting.value) return songs
+        val accepted = songs.filter {
+            it.source != com.ivor.ivormusic.data.SongSource.LOCAL
+        }
+        if (accepted.size != songs.size) {
+            val message = "Files stored on this phone were left out of the Cast queue"
+            _castUnavailableMessage.value = message
+            android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show()
+        }
+        return accepted
+    }
 
     /** Where the playing song sits in [_currentQueue], or 0 if it is not in it. */
     private fun currentIndexInQueue(): Int {
@@ -1028,10 +1086,15 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         savePlaybackSession()
     }
 
-    private fun createMediaItem(queueItem: MusicQueueItem): MediaItem {
+    private fun createMediaItem(
+        queueItem: MusicQueueItem,
+        castResolveNow: Boolean = false
+    ): MediaItem {
         val song = queueItem.song
         val extras = android.os.Bundle().apply {
             putString(QUEUE_ITEM_ID_EXTRA, queueItem.id)
+            putString(MusicService.EXTRA_SONG_SOURCE, song.source.name)
+            if (castResolveNow) putBoolean(MusicService.EXTRA_CAST_RESOLVE_NOW, true)
         }
         return if (song.source == com.ivor.ivormusic.data.SongSource.LOCAL && song.uri != null) {
             // For local songs, we still need to set mediaId for proper tracking
@@ -1441,9 +1504,42 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     }
 
     override fun onCleared() {
+        castManager.stopDiscovery()
+        castManager.endObservation()
         super.onCleared()
-        MediaController.releaseFuture(controllerFuture ?: return)
+        controllerFuture?.let(MediaController::releaseFuture)
     }
+
+    fun startCastDiscovery() = castManager.startDiscovery()
+
+    fun stopCastDiscovery() = castManager.stopDiscovery()
+
+    fun startCast(routeId: String) {
+        val song = _currentSong.value ?: return
+        if (song.source == com.ivor.ivormusic.data.SongSource.LOCAL) {
+            _castUnavailableMessage.value = "Local files can only play on this phone"
+            return
+        }
+        _castUnavailableMessage.value = null
+        // The service needs an up-to-date durable queue if the activity is
+        // recreated while the TV owns the MediaSession timeline.
+        savePlaybackSession()
+        viewModelScope.launch {
+            if (castManager.connect(routeId)) {
+                val castableQueue = _currentQueue.value.filter {
+                    it.song.source != com.ivor.ivormusic.data.SongSource.LOCAL
+                }
+                if (castableQueue.size != _currentQueue.value.size) {
+                    // MusicService makes the same receiver-side filter. Keep
+                    // the displayed indices in lockstep with its CastPlayer
+                    // timeline once the connection has actually succeeded.
+                    _currentQueue.value = castableQueue
+                }
+            }
+        }
+    }
+
+    fun stopCasting() = castManager.endSession(stopOnReceiver = true)
     
     // --- Settings Actions ---
     

@@ -33,6 +33,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.ivor.ivormusic.ui.player.PlayerViewModel
 
 /**
  * The cast device sheet: what is on the network, what is connected, and the
@@ -55,6 +56,52 @@ fun CastSheet(
     val receivers by viewModel.castReceivers.collectAsState()
     val deviceName by viewModel.castDeviceName.collectAsState()
     val isConnecting by viewModel.isCastConnecting.collectAsState()
+
+    CastSheetContent(
+        receivers = receivers,
+        deviceName = deviceName,
+        isConnecting = isConnecting,
+        unavailableMessage = null,
+        onConnect = viewModel::startCast,
+        onDisconnect = viewModel::stopCasting,
+        onDismiss = onDismiss
+    )
+}
+
+/** The same device surface for the service-owned music playback pipeline. */
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+fun MusicCastSheet(
+    viewModel: PlayerViewModel,
+    onDismiss: () -> Unit
+) {
+    val receivers by viewModel.castReceivers.collectAsState()
+    val deviceName by viewModel.castDeviceName.collectAsState()
+    val isConnecting by viewModel.isCastConnecting.collectAsState()
+    val unavailableMessage by viewModel.castUnavailableMessage.collectAsState()
+
+    CastSheetContent(
+        receivers = receivers,
+        deviceName = deviceName,
+        isConnecting = isConnecting,
+        unavailableMessage = unavailableMessage,
+        onConnect = viewModel::startCast,
+        onDisconnect = viewModel::stopCasting,
+        onDismiss = onDismiss
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun CastSheetContent(
+    receivers: List<CastRoute>,
+    deviceName: String?,
+    isConnecting: Boolean,
+    unavailableMessage: String?,
+    onConnect: (String) -> Unit,
+    onDisconnect: () -> Unit,
+    onDismiss: () -> Unit
+) {
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
@@ -111,7 +158,7 @@ fun CastSheet(
                             )
                         }
                         IconButton(onClick = {
-                            viewModel.stopCasting()
+                            onDisconnect()
                             onDismiss()
                         }) {
                             Icon(Icons.Rounded.Close, contentDescription = "Disconnect")
@@ -125,13 +172,22 @@ fun CastSheet(
                 ConnectingRow()
             }
 
+            if (unavailableMessage != null) {
+                Text(
+                    text = unavailableMessage,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp)
+                )
+            }
+
             receivers.forEach { route ->
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable {
-                            viewModel.startCast(route.id)
+                            onConnect(route.id)
                         }
                         .padding(horizontal = 4.dp, vertical = 12.dp)
                 ) {

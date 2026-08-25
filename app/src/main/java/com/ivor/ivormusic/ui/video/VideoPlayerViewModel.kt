@@ -2084,10 +2084,21 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      * re-resolves and reloads once before giving up.
      */
     private fun pickCastQuality(qualities: List<VideoQuality>): VideoQuality? {
-        qualities.firstOrNull { it.isDASH }?.let { return it }
-        return qualities.firstOrNull {
-            !it.isDASH && it.audioUrl == null && !it.url.isNullOrBlank()
-        }
+        // Live progressive entries are two-second segment endpoints, so HLS is
+        // mandatory there. For VOD, prefer a muxed MP4: it is the only source
+        // whose audio track Koda can prove exists before handing the URL to the
+        // Default Receiver. A DASH URL can be perfectly playable while its
+        // selected period exposes only video on some Cast firmware, which is
+        // the reported "video on TV, no audio" failure. The resolution ceiling
+        // of YouTube's muxed format is a better trade than silent high-res video.
+        qualities.firstOrNull { it.isLive && it.isDASH }?.let { return it }
+        qualities.firstOrNull {
+            !it.isDASH && it.audioUrl == null && it.isMp4Container && it.url.isNotBlank()
+        }?.let { return it }
+        qualities.firstOrNull {
+            !it.isDASH && it.audioUrl == null && it.url.isNotBlank()
+        }?.let { return it }
+        return qualities.firstOrNull { it.isDASH && it.url.isNotBlank() }
     }
 
     /**

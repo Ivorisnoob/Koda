@@ -22,6 +22,19 @@ import org.json.JSONObject
  */
 const val CAST_LIVE_TAG = "koda_live"
 
+/** Which of Koda's two independent playback pipelines owns the Cast session. */
+enum class CastPlaybackKind(val wireValue: String) {
+    MUSIC("music"),
+    VIDEO("video");
+
+    companion object {
+        fun fromWireValue(value: String?): CastPlaybackKind? =
+            entries.firstOrNull { it.wireValue == value }
+    }
+}
+
+const val CAST_PLAYBACK_KIND_KEY = "kodaPlaybackKind"
+
 /**
  * Media3 [MediaItem] -> Cast [MediaQueueItem] conversion for Koda's loads.
  *
@@ -40,7 +53,9 @@ const val CAST_LIVE_TAG = "koda_live"
  *   track selected on the phone plays on the TV without any receiver-side work.
  */
 @UnstableApi
-class KodaCastMediaItemConverter : MediaItemConverter {
+class KodaCastMediaItemConverter(
+    private val playbackKind: CastPlaybackKind = CastPlaybackKind.VIDEO
+) : MediaItemConverter {
 
     private val fallback = DefaultMediaItemConverter()
 
@@ -57,10 +72,17 @@ class KodaCastMediaItemConverter : MediaItemConverter {
         val isLive = local.tag == CAST_LIVE_TAG
 
         val metadata = MediaMetadata(
-            if (isLive) MediaMetadata.MEDIA_TYPE_TV_SHOW else MediaMetadata.MEDIA_TYPE_MOVIE
+            when {
+                playbackKind == CastPlaybackKind.MUSIC -> MediaMetadata.MEDIA_TYPE_MUSIC_TRACK
+                isLive -> MediaMetadata.MEDIA_TYPE_TV_SHOW
+                else -> MediaMetadata.MEDIA_TYPE_MOVIE
+            }
         )
         mediaItem.mediaMetadata.title?.let { metadata.putString(MediaMetadata.KEY_TITLE, it.toString()) }
         mediaItem.mediaMetadata.artist?.let { metadata.putString(MediaMetadata.KEY_ARTIST, it.toString()) }
+        mediaItem.mediaMetadata.albumTitle?.let {
+            metadata.putString(MediaMetadata.KEY_ALBUM_TITLE, it.toString())
+        }
         mediaItem.mediaMetadata.artworkUri?.let { metadata.addImage(WebImage(it)) }
 
         val builder = MediaInfo.Builder(
@@ -85,6 +107,7 @@ class KodaCastMediaItemConverter : MediaItemConverter {
                 .setSubtype(MediaTrack.SUBTYPE_SUBTITLES)
                 .setContentType(subtitle.mimeType ?: MimeTypes.TEXT_VTT)
                 .setContentId(subtitle.uri.toString())
+                .apply { subtitle.language?.let(::setLanguage) }
                 .build()
         }
         if (tracks.isNotEmpty()) {
@@ -92,7 +115,17 @@ class KodaCastMediaItemConverter : MediaItemConverter {
             builder.setMediaTracks(tracks)
         }
 
-        return MediaQueueItem.Builder(builder.build()).build()
+        return MediaQueueItem.Builder(builder.build())
+            // Declaring a text track and selecting it are separate Cast SDK
+            // operations. Without activeTrackIds the Default Receiver may show
+            // the track on one firmware revision and leave it disabled on
+            // another, even though Koda's CC button says it is on.
+            .apply {
+                if (tracks.isNotEmpty()) {
+                    setActiveTrackIds(tracks.map(MediaTrack::getId).toLongArray())
+                }
+            }
+            .build()
     }
 
     /**
@@ -107,5 +140,6 @@ class KodaCastMediaItemConverter : MediaItemConverter {
             .put("uri", local.uri.toString())
             .put("mimeType", local.mimeType)
         return JSONObject().put("mediaItem", itemJson)
+            .put(CAST_PLAYBACK_KIND_KEY, playbackKind.wireValue)
     }
 }

@@ -49,7 +49,10 @@ data class CastRoute(val id: String, val name: String)
  * and re-resolve logic the local player already has.
  */
 @UnstableApi
-class VideoCastManager(private val context: Context) {
+class VideoCastManager(
+    private val context: Context,
+    private val playbackKind: CastPlaybackKind = CastPlaybackKind.VIDEO
+) {
 
     /** False when Play services are missing: everything degrades to "no cast". */
     val available: Boolean = try {
@@ -186,7 +189,7 @@ class VideoCastManager(private val context: Context) {
         val ctx = castContext ?: return null
         return try {
             @Suppress("VisibleForTests")
-            CastPlayer(ctx, KodaCastMediaItemConverter())
+            CastPlayer(ctx, KodaCastMediaItemConverter(playbackKind))
         } catch (e: Exception) {
             KLog.w(TAG, "Could not create CastPlayer", e)
             null
@@ -207,6 +210,11 @@ class VideoCastManager(private val context: Context) {
         val route = router.routes.firstOrNull { it.id == routeId } ?: return false
         if (_isConnecting.value) return false
 
+        synchronized(ownerLock) {
+            val owner = activePlaybackKind
+            if (owner != null && owner != playbackKind) return false
+            activePlaybackKind = playbackKind
+        }
         _isConnecting.value = true
         try {
             router.selectRoute(route)
@@ -216,9 +224,11 @@ class VideoCastManager(private val context: Context) {
                 kotlinx.coroutines.delay(CONNECT_POLL_MS)
             }
             KLog.w(TAG, "Cast connect timed out for route $routeId")
+            clearOwnerIfMine()
             return false
         } catch (e: Exception) {
             KLog.w(TAG, "Cast connect failed", e)
+            clearOwnerIfMine()
             return false
         } finally {
             _isConnecting.value = false
@@ -267,6 +277,19 @@ class VideoCastManager(private val context: Context) {
     }
 
     private fun onSessionUp(session: CastSession) {
+        val statusOwner = CastPlaybackKind.fromWireValue(
+            session.remoteMediaClient?.mediaStatus?.mediaInfo?.customData
+                ?.optString(CAST_PLAYBACK_KIND_KEY)
+        )
+        synchronized(ownerLock) {
+            if (statusOwner != null) activePlaybackKind = statusOwner
+        }
+        if (activePlaybackKind != playbackKind) {
+            _deviceName.value = null
+            _isSessionActive.value = false
+            detachRemoteListener()
+            return
+        }
         expectingOwnTeardown = false
         _deviceName.value = session.castDevice?.friendlyName ?: _deviceName.value
         _isSessionActive.value = true
@@ -289,6 +312,13 @@ class VideoCastManager(private val context: Context) {
             onSessionLost?.invoke(position)
         }
         expectingOwnTeardown = false
+        clearOwnerIfMine()
+    }
+
+    private fun clearOwnerIfMine() {
+        synchronized(ownerLock) {
+            if (activePlaybackKind == playbackKind) activePlaybackKind = null
+        }
     }
 
     /** Installed by [beginObservation]; the ViewModel owns the whole lifecycle. */
@@ -377,5 +407,8 @@ class VideoCastManager(private val context: Context) {
 
         /** How often the remote position is sampled while it plays. */
         private const val PROGRESS_REFRESH_MS = 1_000L
+
+        private val ownerLock = Any()
+        @Volatile private var activePlaybackKind: CastPlaybackKind? = null
     }
 }

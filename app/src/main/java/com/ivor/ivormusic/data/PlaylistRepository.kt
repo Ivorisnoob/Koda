@@ -49,7 +49,7 @@ class PlaylistRepository(private val context: Context) {
             try {
                 json.decodeFromString<UserPlaylist>(file.readText())
             } catch (e: Exception) {
-                e.printStackTrace()
+                KLog.w("PlaylistRepository", "Skipping unreadable playlist ${file.name}", e)
                 null
             }
         }?.sortedByDescending { it.createdAt } ?: emptyList()
