@@ -31,6 +31,7 @@ import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.Contrast
 import androidx.compose.material.icons.rounded.Cookie
+import androidx.compose.material.icons.rounded.DirectionsCar
 import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.FilterList
 import androidx.compose.material.icons.rounded.FlashOn
@@ -422,6 +423,13 @@ internal fun buildSettingsSearchIndex(
         listOf(
             "battery", "background", "playback stops", "killed", "doze",
             "optimisation", "keep alive"
+        )
+    ) { onOpenPage(SettingsPage.ADVANCED) }
+    entry(
+        "android_auto", "Android Auto", "Advanced", Icons.Rounded.DirectionsCar,
+        listOf(
+            "auto", "car", "vehicle", "android auto", "sideload", "unknown sources",
+            "not showing in car", "play store"
         )
     ) { onOpenPage(SettingsPage.ADVANCED) }
     entry(

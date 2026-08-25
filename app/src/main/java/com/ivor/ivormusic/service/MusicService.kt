@@ -1288,54 +1288,98 @@ class MusicService : MediaLibraryService() {
             controller: MediaSession.ControllerInfo,
             mediaItems: MutableList<MediaItem>
         ): ListenableFuture<MutableList<MediaItem>> {
-            // This is called when user clicks a song or "Play All"
-            
-            val processedItems = mediaItems.map { item ->
-                val videoId = item.mediaId
-                val existingUri = item.localConfiguration?.uri
-                
-                // Check if this item already has a valid, non-placeholder URI.
-                // Local songs come with either content:// (MediaStore) or file:// (downloaded) URIs
-                // that ExoPlayer can play directly — we must NOT overwrite them with a placeholder.
-                val isLocalUri = existingUri != null 
-                    && !existingUri.toString().startsWith(PLACEHOLDER_PREFIX)
-                    && (existingUri.scheme == "content" || existingUri.scheme == "file")
-                
-                // Check if we have metadata in our browse cache to enrich the item immediately
-                var meta = item.mediaMetadata
-                if (meta.title == null) {
-                    val cached = findSongInCache(videoId)
-                    if (cached != null) {
-                        meta = MediaMetadata.Builder()
-                            .setTitle(cached.title)
-                            .setArtist(cached.artist)
-                            .setAlbumTitle(cached.album)
-                            .setArtworkUri(if (cached.thumbnailUrl != null) Uri.parse(cached.thumbnailUrl) else null)
-                            .setIsBrowsable(false)
-                            .setIsPlayable(true)
-                            .build()
+
+            // A voice request ("Hey Google, play X on Koda") arrives as an
+            // item carrying only a search query - no media id, no uri. Those
+            // need one network round trip to become playable, so the whole
+            // batch resolves asynchronously in that case and stays synchronous
+            // otherwise.
+            val needsSearchResolution = mediaItems.any {
+                it.mediaId.isBlank() && !it.requestMetadata.searchQuery.isNullOrBlank()
+            }
+            if (!needsSearchResolution) {
+                return Futures.immediateFuture(
+                    mediaItems.mapTo(mutableListOf(), ::preparePlaybackItem)
+                )
+            }
+
+            return serviceScope.future(Dispatchers.IO) {
+                val resolved = mutableListOf<MediaItem>()
+                for (item in mediaItems) {
+                    val query = item.requestMetadata.searchQuery?.trim()?.takeIf { it.isNotEmpty() }
+                    if (item.mediaId.isNotBlank() || query == null) {
+                        resolved.add(preparePlaybackItem(item))
+                        continue
                     }
+                    // Take the best song result for the query. A miss is
+                    // dropped rather than invented: handing the player an
+                    // empty id would surface as an unexplained playback error.
+                    val match = try {
+                        youtubeRepository.search(query).firstOrNull()
+                    } catch (e: Exception) {
+                        KLog.e(TAG, "Voice resolution failed for '$query'", e)
+                        null
+                    }
+                    if (match == null) {
+                        KLog.w(TAG, "Voice request '$query' matched nothing")
+                        continue
+                    }
+                    resolved.add(preparePlaybackItem(match.toPlaceholderMediaItem()))
                 }
+                if (resolved.isEmpty()) {
+                    throw IllegalStateException("No results for any requested media item")
+                }
+                resolved
+            }
+        }
 
-                if (isLocalUri) {
-                    // Local song: preserve the original content:// URI for direct playback
-                    KLog.d(TAG, "onAddMediaItems: Preserving local URI for $videoId: $existingUri")
-                    MediaItem.Builder()
-                        .setMediaId(videoId)
-                        .setUri(existingUri)
-                        .setMediaMetadata(meta)
-                        .build()
-                } else {
-                    // YouTube song: use placeholder — resolution will happen via prefetch system
-                    MediaItem.Builder()
-                        .setMediaId(videoId)
-                        .setUri("$PLACEHOLDER_PREFIX$videoId")
-                        .setMediaMetadata(meta)
+        /**
+         * Give every incoming item a concrete shape the playback pipeline can
+         * carry: local URIs preserved, YouTube ids turned into placeholders
+         * that [performResolution] swaps for a real stream.
+         */
+        private fun preparePlaybackItem(item: MediaItem): MediaItem {
+            val existingUri = item.localConfiguration?.uri
+
+            // Local songs come with either content:// (MediaStore) or file://
+            // (downloaded) URIs that ExoPlayer can play directly — we must NOT
+            // overwrite them with a placeholder.
+            val isLocalUri = existingUri != null
+                && !existingUri.toString().startsWith(PLACEHOLDER_PREFIX)
+                && (existingUri.scheme == "content" || existingUri.scheme == "file")
+
+            // Check if we have metadata in our browse cache to enrich the item immediately
+            var meta = item.mediaMetadata
+            if (meta.title == null) {
+                val cached = findSongInCache(item.mediaId)
+                if (cached != null) {
+                    meta = MediaMetadata.Builder()
+                        .setTitle(cached.title)
+                        .setArtist(cached.artist)
+                        .setAlbumTitle(cached.album)
+                        .setArtworkUri(if (cached.thumbnailUrl != null) Uri.parse(cached.thumbnailUrl) else null)
+                        .setIsBrowsable(false)
+                        .setIsPlayable(true)
                         .build()
                 }
-            }.toMutableList()
+            }
 
-            return Futures.immediateFuture(processedItems)
+            return if (isLocalUri) {
+                // Local song: preserve the original content:// URI for direct playback
+                KLog.d(TAG, "onAddMediaItems: Preserving local URI for ${item.mediaId}: $existingUri")
+                MediaItem.Builder()
+                    .setMediaId(item.mediaId)
+                    .setUri(existingUri)
+                    .setMediaMetadata(meta)
+                    .build()
+            } else {
+                // YouTube song: use placeholder — resolution will happen via prefetch system
+                MediaItem.Builder()
+                    .setMediaId(item.mediaId)
+                    .setUri("$PLACEHOLDER_PREFIX${item.mediaId}")
+                    .setMediaMetadata(meta)
+                    .build()
+            }
         }
         
         // --- Browsing Logic (Android Auto / Media Browser) ---
@@ -1670,6 +1714,23 @@ class MusicService : MediaLibraryService() {
 
     private fun String?.toArtworkUri(): Uri? =
         this?.takeIf { it.isNotBlank() }?.let(Uri::parse)
+
+    /** A search match shaped for the resolution pipeline: id plus placeholder,
+     *  exactly what a browse-served YouTube item looks like on arrival. */
+    private fun Song.toPlaceholderMediaItem(): MediaItem =
+        MediaItem.Builder()
+            .setMediaId(id)
+            .setUri("$PLACEHOLDER_PREFIX$id")
+            .setMediaMetadata(MediaMetadata.Builder()
+                .setTitle(title)
+                .setArtist(artist)
+                .setAlbumTitle(album)
+                .setDurationMs(duration.takeIf { it > 0L })
+                .setArtworkUri(thumbnailUrl.toArtworkUri())
+                .setIsBrowsable(false)
+                .setIsPlayable(true)
+                .build())
+            .build()
 
     private fun mapSongToMediaItem(song: Song): MediaItem {
         val builder = MediaItem.Builder()

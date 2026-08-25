@@ -32,6 +32,7 @@ import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.Contrast
 import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.Cookie
+import androidx.compose.material.icons.rounded.DirectionsCar
 import androidx.compose.material.icons.rounded.FilterList
 import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.BrightnessMedium
@@ -1129,6 +1130,7 @@ internal fun AdvancedSettingsPage(
     onManualScanEnabledToggle: (Boolean) -> Unit,
     onReportBug: () -> Unit,
     onOpenTimeLimit: () -> Unit,
+    onOpenAutoHelp: () -> Unit,
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
@@ -1233,6 +1235,20 @@ internal fun AdvancedSettingsPage(
                             }
                         },
                         tint = MaterialTheme.colorScheme.tertiary,
+                        showChevron = true
+                    )
+
+                    SettingsDivider()
+
+                    // The Auto sideload wall is the one Auto problem no code
+                    // can fix, and it fails silently: Auto simply never lists
+                    // Koda. Saying so converts a "the app is broken" into a
+                    // solvable toggle.
+                    SettingsRow(
+                        icon = Icons.Rounded.DirectionsCar,
+                        title = "Android Auto",
+                        subtitle = "Koda missing from your car? Start here",
+                        onClick = onOpenAutoHelp,
                         showChevron = true
                     )
                 }

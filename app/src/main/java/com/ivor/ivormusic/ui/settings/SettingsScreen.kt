@@ -69,6 +69,7 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Contrast
 import androidx.compose.material.icons.rounded.Cookie
 import androidx.compose.material.icons.rounded.DarkMode
+import androidx.compose.material.icons.rounded.DirectionsCar
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material.icons.rounded.Folder
@@ -487,6 +488,7 @@ fun SettingsScreen(
     // Dialog state for Folder Exclusion
     var showFolderExclusionDialog by remember { mutableStateOf(false) }
     var showShortsButtonsDialog by remember { mutableStateOf(false) }
+    var showAutoHelpDialog by remember { mutableStateOf(false) }
     var availableFolders by remember { mutableStateOf<List<FolderInfo>>(emptyList()) }
     var isFoldersLoading by remember { mutableStateOf(false) }
 
@@ -780,6 +782,7 @@ fun SettingsScreen(
                         onManualScanEnabledToggle = onManualScanEnabledToggle,
                         onReportBug = onNavigateToReportBug,
                         onOpenTimeLimit = onNavigateToTimeLimit,
+                        onOpenAutoHelp = { showAutoHelpDialog = true },
                         onBack = { page = SettingsPage.HUB }
                     )
                 }
@@ -888,6 +891,13 @@ fun SettingsScreen(
             hiddenActions = shortsHiddenActions,
             onHiddenActionsChange = onShortsHiddenActionsChange,
             onDismiss = { showShortsButtonsDialog = false }
+        )
+    }
+
+    // Android Auto help dialog
+    if (showAutoHelpDialog) {
+        AndroidAutoHelpDialog(
+            onDismiss = { showAutoHelpDialog = false }
         )
     }
 }
@@ -1972,6 +1982,138 @@ private fun AboutDetailRow(
 }
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun AndroidAutoHelpDialog(
+    onDismiss: () -> Unit
+) {
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val backgroundColor = MaterialTheme.colorScheme.surfaceContainerHigh
+    val textColor = MaterialTheme.colorScheme.onSurface
+    val secondaryTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+
+    var dialogVisible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        dialogVisible = true
+    }
+
+    AnimatedVisibility(
+        visible = dialogVisible,
+        enter = scaleIn(
+            initialScale = 0.8f,
+            animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy)
+        ) + fadeIn(tween(200)),
+        exit = scaleOut(targetScale = 0.8f) + fadeOut(tween(150))
+    ) {
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            containerColor = backgroundColor,
+            shape = RoundedCornerShape(32.dp),
+            icon = {
+                Box(
+                    modifier = Modifier
+                        .size(64.dp)
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(primaryColor.copy(alpha = 0.15f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.DirectionsCar,
+                        contentDescription = null,
+                        tint = primaryColor,
+                        modifier = Modifier.size(32.dp)
+                    )
+                }
+            },
+            title = {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "Android Auto",
+                        color = textColor,
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Why Koda may not appear in your car",
+                        color = secondaryTextColor,
+                        fontSize = 13.sp,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "Android Auto hides media apps that were not " +
+                            "installed from the Play Store. Koda ships as a " +
+                            "download from GitHub, so it stays invisible until " +
+                            "you allow it - this is Auto's rule, not a bug in Koda.",
+                        color = textColor,
+                        fontSize = 14.sp
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    val steps = listOf(
+                        "Open the Android Auto app on your phone and tap its version info repeatedly until developer mode is offered",
+                        "Open Developer settings from the menu",
+                        "Turn on \"Unknown sources\"",
+                        "Re-check the app launcher in your car"
+                    )
+                    steps.forEachIndexed { index, step ->
+                        Row(verticalAlignment = Alignment.Top) {
+                            Surface(
+                                shape = RoundedCornerShape(50),
+                                color = primaryColor.copy(alpha = 0.15f)
+                            ) {
+                                Text(
+                                    text = "${index + 1}",
+                                    color = primaryColor,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = step,
+                                color = secondaryTextColor,
+                                fontSize = 13.sp
+                            )
+                        }
+                        if (index < steps.lastIndex) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = "The exact wording and location of these options varies between phone brands and Auto versions.",
+                        color = secondaryTextColor,
+                        fontSize = 12.sp
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = onDismiss,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = primaryColor
+                    ),
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.height(48.dp)
+                ) {
+                    Text(
+                        text = "Got it",
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+        )
+    }
+}
+
 @Composable
 private fun FolderExclusionDialog(
     availableFolders: List<FolderInfo>,

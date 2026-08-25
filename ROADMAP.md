@@ -335,7 +335,7 @@ While the file is open, `material-icons-extended` is worth a look for a differen
 
 Auto is declared correctly and still does not work in practice. The manifest carries the `com.google.android.gms.car.application` meta-data, `automotive_app_desc.xml` declares `<uses name="media"/>`, and `MusicService` is an exported `MediaLibraryService` with both browser intent filters. On paper it is wired. In a car it is not usable, and there are four separate reasons stacked on top of each other.
 
-**The first is distribution, and it is probably the whole story for most users.** Android Auto refuses to list media apps that were not installed from the Play Store unless the user has switched on "Unknown sources" inside Auto's own developer settings. Koda ships as an APK from GitHub releases, so essentially every install is sideloaded, which means essentially every user has an Auto that will never show the app no matter how good the browse tree is. No amount of code fixes this. What can be done is documenting it plainly and putting the steps in the app. A row in Settings that explains the developer-settings toggle, near the Auto-related settings, would convert a silent failure into a solvable one.
+**The first is distribution, and it is probably the whole story for most users.** Android Auto refuses to list media apps that were not installed from the Play Store unless the user has switched on "Unknown sources" inside Auto's own developer settings. Koda ships as an APK from GitHub releases, so essentially every install is sideloaded, which means essentially every user has an Auto that will never show the app no matter how good the browse tree is. No amount of code fixes this. What can be done - **now done** - is documenting it plainly in the app: Settings, Advanced, "Android Auto" walks through the developer-settings toggle, because the failure is otherwise silent (Auto simply never lists Koda) and reads as a bug in Koda rather than a solvable toggle.
 
 ~~The second is that there is no search.~~ **Fixed.** `onSearch` and `onGetSearchResult` are implemented in `MusicService`, serving song results from `YouTubeRepository.search` through one cached result set both callbacks share, so a browser paging through results cannot see a different answer than the search that produced them.
 
@@ -349,9 +349,9 @@ Because Auto and Wear both consume this same browse tree, widening it pays twice
 
 #### Voice search
 
-~~There is no search entry point outside the app's own UI.~~ **Half fixed.** The session half is done: `onSearch`/`onGetSearchResult` in `MusicService` answer Auto's search box and any voice query routed to the library. Still missing is the manifest's search/voice intent declaration, without which "Hey Google, play something on Koda" cannot bind to the app at all from a phone assistant.
+~~There is no search entry point outside the app's own UI.~~ **Session half done.** `onSearch`/`onGetSearchResult` answer Auto's search box and any browse-side voice query, and `onAddMediaItems` now resolves assistant play requests: "Hey Google, play *X* on Koda" arrives as an item carrying only a search query, which is matched against song search results before playback. No manifest change was needed - assistants route through the exported `MediaLibraryService` binding, not an activity intent filter, which is why declaring one was deliberately skipped.
 
-The remaining work is small but real: declare the media intent filters, and handle `MediaItem.requestMetadata.searchQuery` when an assistant hands the app a play-with-search request rather than a browse query. The in-app half is separate and smaller: a microphone in the search bar using the platform speech recogniser, which is worth having on its own for anyone typing one-handed.
+What remains is small: the in-app microphone in the search bar using the platform speech recogniser, worth having on its own for anyone typing one-handed, and on-device verification of the assistant path against real hardware.
 
 #### A home screen widget
 
@@ -471,6 +471,8 @@ The milestones behind us, kept here so the direction of travel is visible.
 - A six-node media browse root, ordered to survive a bad connection: Downloaded, Liked Songs, Recently Played and On This Device - all offline-first device stores - ahead of Recommended For You and Your Playlists; device-local songs carry their content URI so they play without stream resolution
 - Browse answers that arrive instantly: recommendations and playlists serve a stale cache immediately while exactly one refresh runs behind it, so only a cold start ever waits on the network
 - AutoMix silence skip: recordings that continue past the music get profiled for trailing dead air (sparse probe, up to one minute), and AutoMix holds the next track ready and fades where the music actually stopped; manual skips keep their own timing
+- Assistant voice playback: "Hey Google, play X on Koda" resolves its search query to a real song in the media session instead of arriving as an unplayable empty item
+- An Android Auto help page in Settings, Advanced: explains the sideload wall - Auto hides non-Play-Store media apps until "Unknown sources" is on in Auto's own developer settings - with the steps to fix it
 
 Whole-playlist downloads deliberately reuse the same serial worker as a single-item download. A playlist page contributes a batch of requests, and the Downloads screen remains the one place that owns transfer progress, retry and cancellation; there is no second batch state to drift from the files actually being written. Re-running a partially completed playlist only queues the missing ids, duplicate rows share one offline file, device-local songs count as already offline, and live broadcasts are rejected before they can enter the progressive MP4 path. Video batches pin one quality cap onto every request so a retry cannot silently change the choice halfway through the playlist.
 
