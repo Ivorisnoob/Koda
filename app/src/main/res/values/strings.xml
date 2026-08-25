@@ -651,6 +651,29 @@
     <string name="pd_adding">Adding to downloads...</string>
     <string name="pd_already_complete">Already available offline</string>
     <string name="pd_download_full">Download full playlist</string>
+
+    <!-- Library detail -->
+    <string name="cd_close_menu">Close menu</string>
+    <string name="cd_library_actions">Library actions</string>
+    <string name="ready_offline">Ready offline</string>
+    <string name="lib_everything_in_order">Everything you play, in order</string>
+    <string name="lib_edit_playlist">Edit playlist</string>
+    <string name="lib_delete_body">It disappears everywhere you use YouTube, including youtube.com and the official apps.</string>
+    <string name="lib_search_in_playlist">Search in playlist</string>
+    <string name="lib_change_cover">Change cover</string>
+    <string name="lib_reset_cover">Reset cover</string>
+    <string name="lib_change_cover_art">Change cover art</string>
+    <string name="lib_drag_hint">Drag a handle to reorder</string>
+    <string name="lib_tap_remove_hint">Tap to remove tracks</string>
+    <string name="label_album">Album</string>
+    <string name="lib_saved_to_library">Saved to your library</string>
+    <string name="lib_removed_from_library">Removed from your library</string>
+    <string name="lib_load_failed_title">Couldn\'t load tracks</string>
+    <string name="lib_load_failed_body">This playlist came back empty. Check your connection and try again.</string>
+    <plurals name="n_plays">
+        <item quantity="one">%1$d play</item>
+        <item quantity="other">%1$d plays</item>
+    </plurals>
     <plurals name="n_channels">
         <item quantity="one">%1$d channel</item>
         <item quantity="other">%1$d channels</item>
