@@ -1,4 +1,6 @@
 package com.ivor.ivormusic.ui.settings
+import androidx.compose.ui.res.stringResource
+import com.ivor.ivormusic.R
 
 import android.content.Intent
 import android.net.Uri
@@ -109,13 +111,13 @@ fun UpdateScreen(
                     IconButton(onClick = onBack) {
                         Icon(
                             Icons.AutoMirrored.Rounded.ArrowBack,
-                            contentDescription = "Back",
+                            contentDescription = stringResource(R.string.cd_back),
                             tint = textColor
                         )
                     }
                     Spacer(modifier = Modifier.weight(1f))
                     Text(
-                        "Software Update",
+                        stringResource(R.string.us_title),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = textColor
@@ -155,7 +157,7 @@ fun UpdateScreen(
                                 )
                                 Spacer(modifier = Modifier.height(16.dp))
                                 Text(
-                                    "Checking for updates...",
+                                    stringResource(R.string.us_checking),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = secondaryTextColor
                                 )
@@ -242,7 +244,7 @@ fun UpdateScreen(
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                "No releases available yet.",
+                                stringResource(R.string.us_no_releases),
                                 color = secondaryTextColor,
                                 style = MaterialTheme.typography.bodyLarge,
                                 textAlign = TextAlign.Center
@@ -364,11 +366,11 @@ private fun UpdateHeroSection(
                 // Status Text
                 Text(
                     text = when (updateResult) {
-                        is UpdateResult.UpdateAvailable -> "Update Available!"
-                        is UpdateResult.UpToDate -> "You're Up to Date"
-                        is UpdateResult.Checking -> "Checking..."
-                        is UpdateResult.Error -> "Something Went Wrong"
-                        is UpdateResult.NoReleases -> "No Releases"
+                        is UpdateResult.UpdateAvailable -> stringResource(R.string.us_available)
+                        is UpdateResult.UpToDate -> stringResource(R.string.us_up_to_date)
+                        is UpdateResult.Checking -> stringResource(R.string.us_checking_short)
+                        is UpdateResult.Error -> stringResource(R.string.us_error)
+                        is UpdateResult.NoReleases -> stringResource(R.string.us_no_releases_short)
                     },
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
@@ -541,7 +543,7 @@ private fun WhatsNewSection(
             )
             Spacer(modifier = Modifier.width(10.dp))
             Text(
-                "What's New",
+                stringResource(R.string.us_whats_new),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = textColor
@@ -592,7 +594,7 @@ private fun WhatsNewSection(
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            "Show more",
+                            stringResource(R.string.action_show_more),
                             fontWeight = FontWeight.SemiBold
                         )
                     }
@@ -662,7 +664,7 @@ private fun RenderMarkdownItem(
             ) {
                 AsyncImage(
                     model = item.url,
-                    contentDescription = "Release Image",
+                    contentDescription = stringResource(R.string.us_release_image),
                     modifier = Modifier.fillMaxWidth(),
                     contentScale = ContentScale.Fit
                 )
@@ -748,7 +750,7 @@ private fun DownloadSection(
                     )
                     Spacer(modifier = Modifier.width(10.dp))
                     Text(
-                        "Your Device",
+                        stringResource(R.string.us_your_device),
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
                         color = textColor
@@ -758,14 +760,14 @@ private fun DownloadSection(
                 Spacer(modifier = Modifier.height(12.dp))
                 
                 // Device details
-                DeviceDetailRow("Architecture", deviceAbi, textColor, secondaryTextColor)
+                DeviceDetailRow(stringResource(R.string.us_architecture), deviceAbi, textColor, secondaryTextColor)
                 Spacer(modifier = Modifier.height(6.dp))
                 DeviceDetailRow("Android", "API ${android.os.Build.VERSION.SDK_INT}", textColor, secondaryTextColor)
                 
                 if (bestApk != null) {
                     Spacer(modifier = Modifier.height(6.dp))
                     DeviceDetailRow(
-                        "APK",
+                        stringResource(R.string.us_apk),
                         bestApk.name,
                         textColor,
                         secondaryTextColor
@@ -773,7 +775,7 @@ private fun DownloadSection(
                     if (bestApk.size > 0) {
                         Spacer(modifier = Modifier.height(6.dp))
                         DeviceDetailRow(
-                            "Size",
+                            stringResource(R.string.us_size),
                             formatFileSize(bestApk.size),
                             textColor,
                             secondaryTextColor
@@ -833,7 +835,7 @@ private fun DownloadSection(
             )
             Spacer(modifier = Modifier.width(8.dp))
             Text(
-                "View Release on GitHub",
+                stringResource(R.string.us_view_release),
                 fontWeight = FontWeight.SemiBold
             )
         }
@@ -843,7 +845,7 @@ private fun DownloadSection(
             Spacer(modifier = Modifier.height(16.dp))
             
             Text(
-                "All Variants",
+                stringResource(R.string.us_all_variants),
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.Bold,
                 color = secondaryTextColor,
@@ -901,7 +903,7 @@ private fun DownloadSection(
                                 color = primaryColor.copy(alpha = 0.15f)
                             ) {
                                 Text(
-                                    "Recommended",
+                                    stringResource(R.string.settings_advanced_value_xiaomi),
                                     color = primaryColor,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
@@ -912,7 +914,7 @@ private fun DownloadSection(
                         Spacer(modifier = Modifier.width(8.dp))
                         Icon(
                             Icons.Rounded.Download,
-                            contentDescription = "Download",
+                            contentDescription = stringResource(R.string.song_options_download),
                             tint = if (isBest) primaryColor else secondaryTextColor,
                             modifier = Modifier.size(20.dp)
                         )
@@ -1006,7 +1008,7 @@ private fun UpToDateSection(
                 Spacer(modifier = Modifier.height(20.dp))
                 
                 Text(
-                    "All Good!",
+                    stringResource(R.string.us_all_good),
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                     color = textColor,
@@ -1014,7 +1016,7 @@ private fun UpToDateSection(
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    "You're running the latest version of Koda.",
+                    stringResource(R.string.us_latest_body),
                     style = MaterialTheme.typography.bodyMedium,
                     color = secondaryTextColor,
                     textAlign = TextAlign.Center
@@ -1083,7 +1085,7 @@ private fun ErrorSection(
                 Spacer(modifier = Modifier.height(20.dp))
                 
                 Text(
-                    "Couldn't Check for Updates",
+                    stringResource(R.string.us_couldnt_check),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = textColor,

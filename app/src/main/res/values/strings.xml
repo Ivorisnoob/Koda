@@ -501,6 +501,50 @@
     <string name="bk_sign_in_again">Open Settings, Account when it comes back to sign in again.</string>
     <string name="bk_restart_now">Restart now</string>
     <string name="bk_failed_title">That didn\'t work</string>
+
+    <!-- Update screen -->
+    <string name="us_title">Software Update</string>
+    <string name="us_checking">Checking for updates...</string>
+    <string name="us_checking_short">Checking...</string>
+    <string name="us_no_releases">No releases available yet.</string>
+    <string name="us_no_releases_short">No Releases</string>
+    <string name="us_available">Update Available!</string>
+    <string name="us_up_to_date">You\'re Up to Date</string>
+    <string name="us_error">Something Went Wrong</string>
+    <string name="us_whats_new">What\'s New</string>
+    <string name="us_release_image">Release Image</string>
+    <string name="us_your_device">Your Device</string>
+    <string name="us_architecture">Architecture</string>
+    <string name="us_apk">APK</string>
+    <string name="us_size">Size</string>
+    <string name="us_view_release">View Release on GitHub</string>
+    <string name="us_all_variants">All Variants</string>
+    <string name="us_all_good">All Good!</string>
+    <string name="us_latest_body">You\'re running the latest version of Koda.</string>
+    <string name="us_couldnt_check">Couldn\'t Check for Updates</string>
+
+    <!-- Bug report -->
+    <string name="rb_copied">Report copied to clipboard</string>
+    <string name="rb_what_happened">What happened?</string>
+    <string name="rb_placeholder">What were you doing when it broke?</string>
+    <string name="rb_last_crash">Last crash</string>
+    <string name="rb_attach_crash">Attach crash details</string>
+    <string name="rb_device_info">Device &amp; app info</string>
+    <string name="rb_attach_device">Attach device info</string>
+    <string name="rb_attach_device_sub">Model, Android version, build and playback settings</string>
+    <string name="rb_log_detail">Log detail</string>
+    <string name="rb_errors">Errors</string>
+    <string name="rb_everything">Everything</string>
+    <string name="rb_recent_logs">Recent logs</string>
+    <string name="rb_nothing_logged">Nothing logged yet this session.</string>
+    <string name="rb_no_entries">No entries at this detail level.</string>
+    <string name="rb_preview">Preview</string>
+    <string name="rb_preview_hint">Exactly what will be copied:</string>
+    <string name="rb_copy_report">Copy report</string>
+    <string name="rb_open_telegram">Open Telegram chat</string>
+    <string name="rb_open_github">Open GitHub issue</string>
+    <string name="rb_privacy_note">The report never sends anything by itself - you paste or attach it yourself.</string>
+    <string name="rb_default_attachment">Stack trace and recent logs</string>
     <plurals name="n_channels">
         <item quantity="one">%1$d channel</item>
         <item quantity="other">%1$d channels</item>
