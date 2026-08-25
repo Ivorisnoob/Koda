@@ -1633,12 +1633,16 @@ internal fun PlayerGestureSurface(
     // The brightness gesture overrides the window brightness: re-apply the
     // level the user last dialed in so every fullscreen video looks the same,
     // and hand control back to the system when the surface goes away (the rest
-    // of the app must not stay stuck at the video's brightness).
+    // of the app must not stay stuck at the video's brightness). The
+    // remember setting turns the carry-over off; a fresh pref read rather than
+    // the flow, because this effect only runs on fullscreen entry anyway.
     if (fullscreenGesturesEnabled) {
         DisposableEffect(activity) {
             activity?.let { act ->
                 val saved = themePreferences.getVideoBrightness()
-                if (saved != ThemePreferences.VIDEO_BRIGHTNESS_UNSET) {
+                if (themePreferences.getRememberVideoBrightness() &&
+                    saved != ThemePreferences.VIDEO_BRIGHTNESS_UNSET
+                ) {
                     setWindowBrightness(act, saved.coerceAtLeast(0.01f))
                 }
             }
@@ -1874,8 +1878,11 @@ internal fun PlayerGestureSurface(
                             // Persist once the finger lifts, not on every frame of
                             // the drag. Volume is deliberately not stored: it is
                             // the system STREAM_MUSIC level, which already carries
-                            // over on its own.
-                            if (mode == 1 && leftSide) {
+                            // over on its own. The remember setting decides
+                            // whether the level survives to the next video.
+                            if (mode == 1 && leftSide &&
+                                themePreferences.getRememberVideoBrightness()
+                            ) {
                                 themePreferences.setVideoBrightness(level)
                             }
                         }

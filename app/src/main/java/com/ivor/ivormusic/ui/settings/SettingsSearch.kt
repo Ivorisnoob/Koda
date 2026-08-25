@@ -23,6 +23,7 @@ import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.Bedtime
+import androidx.compose.material.icons.rounded.BrightnessMedium
 import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.BookmarkAdd
@@ -284,6 +285,14 @@ internal fun buildSettingsSearchIndex(
         Icons.Rounded.SignalCellularAlt,
         listOf("resolution", "cellular", "data", "1080p", "720p", "roaming")
     ) { onOpenQualityPicker(QualityDialogTarget.VIDEO_MOBILE) }
+    entry(
+        "video_brightness", "Remember fullscreen brightness", "Playback and quality",
+        Icons.Rounded.BrightnessMedium,
+        listOf(
+            "brightness", "dim", "slider", "fullscreen", "gesture", "reset",
+            "system brightness"
+        )
+    ) { onOpenPage(SettingsPage.PLAYBACK) }
     // Content and feeds
     entry(
         "local_only", "Local Only", "Content and feeds", Icons.Rounded.CloudOff,

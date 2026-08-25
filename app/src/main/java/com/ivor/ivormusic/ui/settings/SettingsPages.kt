@@ -34,6 +34,7 @@ import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.Cookie
 import androidx.compose.material.icons.rounded.FilterList
 import androidx.compose.material.icons.rounded.Bedtime
+import androidx.compose.material.icons.rounded.BrightnessMedium
 import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.FlashOn
 import androidx.compose.material.icons.rounded.Folder
@@ -385,6 +386,8 @@ internal fun PlaybackSettingsPage(
     onCrossfadeDurationChange: (Int) -> Unit,
     normalizeVolume: Boolean,
     onNormalizeVolumeToggle: (Boolean) -> Unit,
+    rememberVideoBrightness: Boolean,
+    onRememberVideoBrightnessToggle: (Boolean) -> Unit,
     autoLoadQueue: Boolean,
     onAutoLoadQueueToggle: (Boolean) -> Unit,
     saveMusicHistory: Boolean,
@@ -646,6 +649,27 @@ internal fun PlaybackSettingsPage(
                             )
                         },
                         showChevron = true
+                    )
+                }
+            }
+        }
+
+        item {
+            SettingsSection(title = "Video") {
+                SettingsCard {
+                    // The fullscreen brightness drag. Default keeps the
+                    // behaviour the player has always had; off means every
+                    // fullscreen video reopens at the system level.
+                    SettingsToggleRow(
+                        icon = Icons.Rounded.BrightnessMedium,
+                        title = "Remember fullscreen brightness",
+                        subtitle = if (rememberVideoBrightness) {
+                            "Videos reopen at the brightness you last set"
+                        } else {
+                            "Videos reopen at the system brightness"
+                        },
+                        enabled = rememberVideoBrightness,
+                        onToggle = onRememberVideoBrightnessToggle
                     )
                 }
             }

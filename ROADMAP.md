@@ -309,13 +309,11 @@ The video position - called out as the one that matters most, since losing your 
 
 **Still open:** scroll positions and navigation state one layer deeper than Home - `PlaylistDetailScreen`, `ArtistScreen`, `ChannelScreen`'s grid, the queue sheets - and any open bottom sheet or dialog. None of those are wired to a `SavedStateHandle` or `rememberSaveable` yet, so a process death while one is open still rebuilds from nothing. Worth another pass, and still a prerequisite for the tablet work: large-screen resizing and multi-window produce real recreation that `MainActivity`'s `configChanges` will not absorb, so what is currently an intermittent gap becomes routine on the devices that work is meant to serve.
 
-#### One image loader
+#### Image polish
 
-There is no central Coil `ImageLoader`. Crossfade is configured per call site and inconsistently (`crossfade(300)` in one component, `crossfade(true)` in others, nothing at all elsewhere), and there is no shared memory or disk cache policy in an app that is almost entirely images.
+The central Coil `ImageLoader` has shipped (`IvorMusicApplication` implements Coil's `ImageLoaderFactory`, so `Context.imageLoader` resolves to one process-wide instance): every surface - Home thumbnails, search results, the queue, the media notification, downloads and the artwork-color extraction behind the player styles - now shares one memory cache, one disk cache and one connection pool instead of each caller building its own loader. Deliberately default-configured: the ad-hoc loaders it replaced were defaults too, so nothing about how an individual image loads changed, only that they share.
 
-`IvorMusicApplication` already exists and is the natural place for a single configured loader: one crossfade duration, one cache policy, one shared placeholder and error treatment, so a thumbnail that fails to load looks deliberate everywhere instead of looking different on each screen.
-
-The practical win beyond consistency is memory. Artwork is loaded on Home, in search results, in the queue, in the notification, in the widget when that exists, and behind three of the player styles, and today none of those share a tuned cache. It is also the single place any future image-sizing policy would live.
+Still open from the original entry: **crossfade is configured per call site and inconsistently** (`crossfade(300)` in one component, `crossfade(true)` in others, nothing elsewhere). A global default on the loader would silently animate every image in the app that does not override it, so it wants an audit of what should fade before it gets set, not a one-line change. A shared placeholder/error treatment would live in the same place once someone designs one.
 
 #### Dependency audit
 
@@ -355,15 +353,13 @@ Implementing the two session callbacks is the same work that unblocks Auto's sea
 
 The in-app half is separate and smaller: a microphone in the search bar using the platform speech recogniser, which is worth having on its own for anyone typing one-handed.
 
-#### A home screen widget and a Quick Settings tile
+#### A home screen widget
 
-There is no `AppWidgetProvider`, no Glance widget, and no `TileService` in the project. Playback can only be controlled from the app, the notification, or the lock screen.
+There is no `AppWidgetProvider` and no Glance widget in the project. The Quick Settings half of this entry has shipped (`PlaybackTileService`, music-only - see Shipped); playback can now also be controlled from the shade.
 
-**The widget** is the long-standing request: current artwork, title and artist, and transport controls, resizable, with the artwork colors it already extracts driving the widget's own theme so it does not look pasted on. Glance is the right tool since it is Compose-shaped, though it is a genuinely different rendering model with its own constraints, and the app's Expressive components do not carry over. The widget will need designing rather than porting.
+The widget is the long-standing request: current artwork, title and artist, and transport controls, resizable, with the artwork colors it already extracts driving the widget's own theme so it does not look pasted on. Glance is the right tool since it is Compose-shaped, though it is a genuinely different rendering model with its own constraints, and the app's Expressive components do not carry over. The widget will need designing rather than porting.
 
-**The Quick Settings tile** is the cheaper half almost nobody builds, and it is arguably the better fit for this app: a one-tap toggle in the shade to start or pause what was last playing, without unlocking or finding an icon. `PlaybackSessionRepository` already restores the last-played song, which is most of what a cold tile tap needs to do.
-
-Both are read-mostly surfaces over a `MediaController`, so neither needs changes to the playback pipeline. The main design question is what they show when nothing is playing and nothing has ever played. The empty state is the state a new user sees first.
+It is a read-mostly surface over a `MediaController`, so it needs no changes to the playback pipeline, and the tile work settled the pattern it would bind through. The main design question is what it shows when nothing is playing and nothing has ever played. The empty state is the state a new user sees first.
 
 #### Tablet optimisation, on every screen
 
@@ -468,6 +464,9 @@ The milestones behind us, kept here so the direction of travel is visible.
 - Whole-install backup and restore: one versioned file covering both modes - music and video playlists with their artwork, likes, saved playlists, stats, watch and search history, followed channels and the blocklist per profile, and every setting - written and read from Settings, offline, and carrying no sign-in
 - In-app bug reporting: recent logs and last-crash details previewed on-device and handed to Telegram or GitHub with device info attached, plus release builds that keep readable stack traces
 - An optional daily time limit with per-weekday budgets: Koda locks behind a full-screen "come back tomorrow" screen once the day's hours are used, offered at onboarding and in Settings > Advanced
+- A Quick Settings playback tile: play/pause plus the current track from the shade, bound to the music session as a MediaController client rather than a second player, so tile state and in-app state cannot disagree. Music-only on purpose - the video player has no service-backed queue, and a shade tap mid-video would fight PiP for the same screen
+- One process-wide Coil image loader (`ImageLoaderFactory` on `IvorMusicApplication`), so every image surface shares one memory/disk cache instead of building throwaway loaders per color extraction; default-configured so no individual image's loading changed
+- A "Remember fullscreen brightness" setting in Playback and quality (default on, the behaviour the player always had); off, every fullscreen video reopens at the system brightness instead of the last level dialed in
 
 Whole-playlist downloads deliberately reuse the same serial worker as a single-item download. A playlist page contributes a batch of requests, and the Downloads screen remains the one place that owns transfer progress, retry and cancellation; there is no second batch state to drift from the files actually being written. Re-running a partially completed playlist only queues the missing ids, duplicate rows share one offline file, device-local songs count as already offline, and live broadcasts are rejected before they can enter the progressive MP4 path. Video batches pin one quality cap onto every request so a retry cannot silently change the choice halfway through the playlist.
 

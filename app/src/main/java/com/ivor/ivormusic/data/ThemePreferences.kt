@@ -132,6 +132,10 @@ class ThemePreferences(context: Context) {
     private val _normalizeVolume = MutableStateFlow(getNormalizeVolumePreference())
     val normalizeVolume: StateFlow<Boolean> = _normalizeVolume.asStateFlow()
 
+    private val _rememberVideoBrightness =
+        MutableStateFlow(getRememberVideoBrightness())
+    val rememberVideoBrightness: StateFlow<Boolean> = _rememberVideoBrightness.asStateFlow()
+
     private val _oemFixEnabled = MutableStateFlow(getOemFixEnabledPreference())
     val oemFixEnabled: StateFlow<Boolean> = _oemFixEnabled.asStateFlow()
 
@@ -197,6 +201,8 @@ class ThemePreferences(context: Context) {
             KEY_CROSSFADE_AUTO -> _crossfadeAuto.value = getCrossfadeAutoPreference()
             KEY_CROSSFADE_DURATION -> _crossfadeDurationMs.value = getCrossfadeDurationPreference()
             KEY_NORMALIZE_VOLUME -> _normalizeVolume.value = getNormalizeVolumePreference()
+            KEY_REMEMBER_VIDEO_BRIGHTNESS ->
+                _rememberVideoBrightness.value = getRememberVideoBrightness()
             KEY_OEM_FIX_ENABLED -> _oemFixEnabled.value = getOemFixEnabledPreference()
             KEY_MANUAL_SCAN_ENABLED -> _manualScanEnabled.value = getManualScanEnabledPreference()
             KEY_ONBOARDING_COMPLETED -> _onboardingCompleted.value = getOnboardingCompletedPreference()
@@ -442,6 +448,7 @@ class ThemePreferences(context: Context) {
         private const val MIN_CROSSFADE_DURATION_MS = 1_000
         private const val MAX_CROSSFADE_DURATION_MS = 15_000
         private const val KEY_NORMALIZE_VOLUME = "normalize_volume"
+        private const val KEY_REMEMBER_VIDEO_BRIGHTNESS = "remember_video_brightness"
         private const val KEY_OEM_FIX_ENABLED = "oem_fix_enabled"
         private const val KEY_MANUAL_SCAN_ENABLED = "manual_scan_enabled"
         private const val KEY_ONBOARDING_COMPLETED = "onboarding_completed"
@@ -1090,6 +1097,21 @@ class ThemePreferences(context: Context) {
 
     fun setVideoBrightness(value: Float) {
         prefs.edit().putFloat(KEY_VIDEO_BRIGHTNESS, value.coerceIn(0f, 1f)).apply()
+    }
+
+    /**
+     * Whether the fullscreen brightness drag should carry over to the next
+     * fullscreen video (default). Off, every video reopens at the system
+     * brightness and the gesture's level dies with the surface. The stored
+     * level itself is kept either way so turning the setting back on restores
+     * what the user last dialed in.
+     */
+    fun getRememberVideoBrightness(): Boolean =
+        prefs.getBoolean(KEY_REMEMBER_VIDEO_BRIGHTNESS, true)
+
+    fun setRememberVideoBrightness(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_REMEMBER_VIDEO_BRIGHTNESS, enabled).apply()
+        _rememberVideoBrightness.value = enabled
     }
 
     /**

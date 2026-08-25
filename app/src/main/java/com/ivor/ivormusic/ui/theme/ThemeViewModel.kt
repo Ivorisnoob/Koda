@@ -53,6 +53,7 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
     val crossfadeAuto: StateFlow<Boolean> = themePreferences.crossfadeAuto
     val crossfadeDurationMs: StateFlow<Int> = themePreferences.crossfadeDurationMs
     val normalizeVolume: StateFlow<Boolean> = themePreferences.normalizeVolume
+    val rememberVideoBrightness: StateFlow<Boolean> = themePreferences.rememberVideoBrightness
 
     val oemFixEnabled: StateFlow<Boolean> = themePreferences.oemFixEnabled
     val manualScanEnabled: StateFlow<Boolean> = themePreferences.manualScanEnabled
@@ -223,6 +224,10 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setNormalizeVolume(enabled: Boolean) {
         themePreferences.setNormalizeVolume(enabled)
+    }
+
+    fun setRememberVideoBrightness(enabled: Boolean) {
+        themePreferences.setRememberVideoBrightness(enabled)
     }
     
     fun setCrossfadeDuration(durationMs: Int) {

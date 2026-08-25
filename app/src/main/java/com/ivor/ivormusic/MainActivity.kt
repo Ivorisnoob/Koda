@@ -188,6 +188,7 @@ class MainActivity : ComponentActivity() {
             val crossfadeAuto by themeViewModel.crossfadeAuto.collectAsState()
             val crossfadeDurationMs by themeViewModel.crossfadeDurationMs.collectAsState()
             val normalizeVolume by themeViewModel.normalizeVolume.collectAsState()
+            val rememberVideoBrightness by themeViewModel.rememberVideoBrightness.collectAsState()
             
             val isSystemDark = isSystemInDarkTheme()
             val isDarkTheme = remember(themeMode, isSystemDark) {
@@ -284,6 +285,9 @@ class MainActivity : ComponentActivity() {
                         onCrossfadeDurationChange = { themeViewModel.setCrossfadeDuration(it) },
                         normalizeVolume = normalizeVolume,
                         onNormalizeVolumeToggle = { themeViewModel.setNormalizeVolume(it) },
+                        rememberVideoBrightness = rememberVideoBrightness,
+                        onRememberVideoBrightnessToggle =
+                            { themeViewModel.setRememberVideoBrightness(it) },
                         onboardingCompleted = onboardingCompleted,
                         onOnboardingCompleted = { themeViewModel.setOnboardingCompleted(it) },
                         localOnlyMode = localOnlyMode,
@@ -485,6 +489,8 @@ fun MusicApp(
     onCrossfadeDurationChange: (Int) -> Unit,
     normalizeVolume: Boolean,
     onNormalizeVolumeToggle: (Boolean) -> Unit,
+    rememberVideoBrightness: Boolean,
+    onRememberVideoBrightnessToggle: (Boolean) -> Unit,
     oemFixEnabled: Boolean,
     onOemFixEnabledToggle: (Boolean) -> Unit,
     manualScanEnabled: Boolean,
@@ -840,6 +846,8 @@ fun MusicApp(
                     onCrossfadeDurationChange = onCrossfadeDurationChange,
                     normalizeVolume = normalizeVolume,
                     onNormalizeVolumeToggle = onNormalizeVolumeToggle,
+                    rememberVideoBrightness = rememberVideoBrightness,
+                    onRememberVideoBrightnessToggle = onRememberVideoBrightnessToggle,
                     oemFixEnabled = oemFixEnabled,
                     onOemFixEnabledToggle = onOemFixEnabledToggle,
                     manualScanEnabled = manualScanEnabled,

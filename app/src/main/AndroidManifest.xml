@@ -139,6 +139,22 @@
             android:name=".service.DownloadService"
             android:foregroundServiceType="dataSync"
             android:exported="false" />
+
+        <!--
+            Quick Settings playback tile. A pure session client: it binds a
+            MediaController to MusicService, so the tile's play/pause and its
+            state are the same playback the app shows. The BIND_QUICK_SETTINGS
+            _TILE permission is the system's own requirement for talking to it;
+            exported is mandatory for the same reason.
+        -->
+        <service
+            android:name=".service.PlaybackTileService"
+            android:exported="true"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
     </application>
 
 </manifest>
