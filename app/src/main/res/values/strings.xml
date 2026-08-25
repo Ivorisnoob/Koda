@@ -450,6 +450,57 @@
     <string name="lh_show_all_time">Show all time</string>
     <string name="lh_clear_dialog_title">Clear listening history?</string>
     <string name="action_clear">Clear</string>
+
+    <!-- Not interested -->
+    <string name="ni_unblock_all_q">Unblock all channels?</string>
+    <string name="ni_unhide_all_q">Unhide all videos?</string>
+    <string name="ni_unblock_body">Every channel you blocked can be recommended again.</string>
+    <string name="ni_unhide_body">Every video you hid can show up in your feeds again.</string>
+    <string name="ni_unblock_all">Unblock all</string>
+    <string name="ni_unhide_all">Unhide all</string>
+    <string name="ni_nothing_hidden">Nothing hidden</string>
+    <string name="ni_empty_title">Nothing hidden yet</string>
+    <string name="ni_empty_body">Long-press any video and choose \"Not interested\" or \"Don\'t recommend channel\" to keep it out of your feeds.</string>
+    <string name="cd_close_comments">Close comments</string>
+
+    <!-- Watch history -->
+    <string name="vhs_empty_body">Videos you watch will show up here. Log in to also sync your YouTube history.</string>
+    <string name="vhs_none_found">No history found</string>
+    <string name="vhs_pick_up">Pick up where you left off</string>
+
+    <!-- Backup and restore -->
+    <string name="bk_write_failed">That file could not be written. Pick another folder and try again.</string>
+    <string name="bk_read_failed">That file could not be read as a Koda backup.</string>
+    <string name="bk_this_install">This install</string>
+    <string name="bk_create">Create a backup</string>
+    <string name="bk_create_sub">Write everything to one file you can keep anywhere</string>
+    <string name="bk_restore">Restore from a backup</string>
+    <string name="bk_restore_sub">Replaces what is on this device</string>
+    <string name="bk_holds">What a backup holds</string>
+    <string name="bk_hold_1">Music and video playlists you built, with their artwork</string>
+    <string name="bk_hold_2">Liked songs, and the playlists and albums you saved in either mode</string>
+    <string name="bk_hold_3">Listening stats, watch history and searches</string>
+    <string name="bk_hold_4">Followed channels and their groups, per profile</string>
+    <string name="bk_hold_5">Channels and videos you asked not to be recommended</string>
+    <string name="bk_hold_6">Every setting in both modes, from palette and player style to per-network quality</string>
+    <string name="bk_not_holds">What it does not</string>
+    <string name="bk_not_1">Your Google sign-in. Accounts come back by name and ask to be signed into again, so the file is safe to keep in cloud storage or mail to yourself.</string>
+    <string name="bk_not_2">Downloaded audio and video. Those files live in Downloads/Koda and survive an uninstall on their own; putting them in here would make the backup gigabytes.</string>
+    <string name="bk_not_3">Cached audio, which rebuilds itself as you listen.</string>
+    <string name="bk_writing">Writing your backup</string>
+    <string name="bk_reading">Reading that file</string>
+    <string name="bk_restoring">Restoring</string>
+    <string name="bk_dont_leave">Don\'t leave this screen</string>
+    <string name="bk_confirm_title">Restore this backup?</string>
+    <string name="bk_empty_warn">This backup is empty. Restoring it would clear what is on this device and put nothing back.</string>
+    <string name="bk_replace_warn">Everything listed above replaces what is on this device. Playlists, liked songs, stats, history and settings that are here now and not in the backup will be gone.</string>
+    <string name="bk_restarts">Koda restarts when this finishes.</string>
+    <string name="bk_replace_restore">Replace and restore</string>
+    <string name="bk_restored">Restored</string>
+    <string name="bk_restart_needed">Koda needs to restart to load everything back.</string>
+    <string name="bk_sign_in_again">Open Settings, Account when it comes back to sign in again.</string>
+    <string name="bk_restart_now">Restart now</string>
+    <string name="bk_failed_title">That didn\'t work</string>
     <plurals name="n_channels">
         <item quantity="one">%1$d channel</item>
         <item quantity="other">%1$d channels</item>

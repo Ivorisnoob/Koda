@@ -1,4 +1,6 @@
 package com.ivor.ivormusic.ui.video
+import androidx.compose.ui.res.stringResource
+import com.ivor.ivormusic.R
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
@@ -122,14 +124,14 @@ fun VideoHistoryContent(
                 )
                 Spacer(modifier = Modifier.height(24.dp))
                 Text(
-                    text = "Watch History",
+                    text = stringResource(R.string.vl_watch_history),
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onBackground
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "Videos you watch will show up here. Log in to also sync your YouTube history.",
+                    text = stringResource(R.string.vhs_empty_body),
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center
@@ -145,7 +147,7 @@ fun VideoHistoryContent(
                 ) {
                     Icon(Icons.Rounded.Login, null)
                     Spacer(Modifier.width(8.dp))
-                    Text("Log in to YouTube")
+                    Text(stringResource(R.string.log_in_youtube))
                 }
             }
         }
@@ -200,7 +202,7 @@ fun VideoHistoryContent(
             } else if (historyVideos.isEmpty()) {
                  item {
                     Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
-                        Text("No history found", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(stringResource(R.string.vhs_none_found), color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             } else {
@@ -229,14 +231,14 @@ private fun HistoryHeroSection() {
             .padding(top = 16.dp)
     ) {
         Text(
-            text = "Watch History",
+            text = stringResource(R.string.vl_watch_history),
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onBackground
         )
         Spacer(modifier = Modifier.height(4.dp))
         Text(
-            text = "Pick up where you left off",
+            text = stringResource(R.string.vhs_pick_up),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )

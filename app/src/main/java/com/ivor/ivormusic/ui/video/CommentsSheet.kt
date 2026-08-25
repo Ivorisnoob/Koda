@@ -1,4 +1,6 @@
 package com.ivor.ivormusic.ui.video
+import androidx.compose.ui.res.stringResource
+import com.ivor.ivormusic.R
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -133,7 +135,7 @@ fun CommentsPanel(
                     .padding(start = 24.dp, end = 12.dp, top = 12.dp, bottom = 8.dp)
             ) {
                 Text(
-                    text = "Comments",
+                    text = stringResource(R.string.cd_comments),
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.weight(1f)
@@ -141,7 +143,7 @@ fun CommentsPanel(
                 IconButton(onClick = onDismiss) {
                     Icon(
                         Icons.Rounded.Close,
-                        contentDescription = "Close comments",
+                        contentDescription = stringResource(R.string.cd_close_comments),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
