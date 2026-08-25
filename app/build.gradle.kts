@@ -127,6 +127,9 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.compose.material.icons.extended)
     implementation(libs.coil.compose)
+    // The home screen widget. Compose-shaped (Glance), which is why the
+    // widget can share the app's design language without RemoteViews XML.
+    implementation(libs.androidx.glance.appwidget)
     implementation(libs.androidx.graphics.shapes)
     implementation(libs.androidx.ui.text.google.fonts)
     implementation(libs.androidx.palette.ktx)

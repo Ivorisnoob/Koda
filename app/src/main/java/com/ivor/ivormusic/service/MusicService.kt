@@ -49,6 +49,7 @@ import com.ivor.ivormusic.data.SongSource
 import com.ivor.ivormusic.data.StatsRepository
 import com.ivor.ivormusic.data.ThemePreferences
 import com.ivor.ivormusic.data.YouTubeRepository
+import com.ivor.ivormusic.widget.NowPlayingWidget
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -732,6 +733,9 @@ class MusicService : MediaLibraryService() {
 
             // 3. Robust Prefetching of FUTURE items
             prefetchUpcomingSongs()
+
+            // 4. The home screen widget shows what changed
+            NowPlayingWidget.push(this@MusicService)
         }
 
         override fun onPlaybackStateChanged(playbackState: Int) {
@@ -758,6 +762,7 @@ class MusicService : MediaLibraryService() {
             if (playbackState == Player.STATE_ENDED || playbackState == Player.STATE_IDLE) {
                 progressJob?.cancel()
                 musicProgressLiveUpdate?.hide()
+                NowPlayingWidget.push(this@MusicService)
             }
         }
 
@@ -802,6 +807,7 @@ class MusicService : MediaLibraryService() {
                 transitionJob?.cancel()
                 transitionJob = null
                 musicProgressLiveUpdate?.hide()
+                NowPlayingWidget.push(this@MusicService)
             }
         }
 

@@ -1,5 +1,12 @@
 package com.ivor.ivormusic.ui.search
 
+import android.app.Activity
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.speech.RecognizerIntent
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.MutableTransitionState
@@ -53,6 +60,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.rounded.ExpandMore
+import androidx.compose.material.icons.rounded.KeyboardVoice
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.TravelExplore
@@ -133,6 +141,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.material.icons.rounded.History
@@ -1405,6 +1414,38 @@ private fun SearchHeroHeader(
         keyboardController?.show()
     }
 
+    val context = LocalContext.current
+    val speechLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val spoken = result.data
+            ?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+            ?.firstOrNull()
+        if (!spoken.isNullOrBlank()) {
+            onQueryChange(spoken)
+            onSearch(spoken)
+        }
+        // A cancelled or empty recognition leaves the field exactly as it was:
+        // nothing to clear, nothing to search, nothing to explain.
+    }
+
+    fun launchVoiceSearch() {
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(
+                RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
+            )
+            putExtra(RecognizerIntent.EXTRA_PROMPT, "What do you want to listen to?")
+        }
+        try {
+            speechLauncher.launch(intent)
+        } catch (e: ActivityNotFoundException) {
+            // No recognizer on the device. A toast beats a silent dead button,
+            // and this is the one voice-search failure that is a device fact.
+            Toast.makeText(context, "Voice search is not available on this device", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     BoxWithConstraints(
         modifier = Modifier.fillMaxWidth()
     ) {
@@ -1472,17 +1513,40 @@ private fun SearchHeroHeader(
                         }
                     },
                     trailingIcon = {
-                        AnimatedVisibility(
-                            visible = query.isNotEmpty(),
-                            enter = fadeIn(),
-                            exit = fadeOut()
-                        ) {
-                            IconButton(onClick = { onQueryChange("") }) {
-                                Icon(
-                                    Icons.Default.Clear,
-                                    contentDescription = "Clear",
-                                    tint = secondaryTextColor
-                                )
+                        // Mic while the field is empty - the one-tap voice
+                        // entry point - morphing to a clear button the moment
+                        // there is something to clear. Same springy swap the
+                        // leading icon uses, so the two read as one system.
+                        AnimatedContent(
+                            targetState = query.isNotEmpty(),
+                            transitionSpec = {
+                                (scaleIn(
+                                    initialScale = 0.4f,
+                                    animationSpec = spring(
+                                        dampingRatio = Spring.DampingRatioMediumBouncy,
+                                        stiffness = Spring.StiffnessMediumLow
+                                    )
+                                ) + fadeIn(tween(120))) togetherWith
+                                    (scaleOut(targetScale = 0.4f, animationSpec = tween(120)) + fadeOut(tween(120)))
+                            },
+                            label = "searchTrailingIcon"
+                        ) { hasQuery ->
+                            if (hasQuery) {
+                                IconButton(onClick = { onQueryChange("") }) {
+                                    Icon(
+                                        Icons.Default.Clear,
+                                        contentDescription = "Clear",
+                                        tint = secondaryTextColor
+                                    )
+                                }
+                            } else {
+                                IconButton(onClick = { launchVoiceSearch() }) {
+                                    Icon(
+                                        Icons.Rounded.KeyboardVoice,
+                                        contentDescription = "Search by voice",
+                                        tint = primaryColor
+                                    )
+                                }
                             }
                         }
                     },

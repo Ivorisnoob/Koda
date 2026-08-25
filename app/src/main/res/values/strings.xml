@@ -16,4 +16,7 @@
       their shade should not have to silence both.
     -->
     <string name="video_playback_channel_name">Video playback</string>
+
+    <!-- The home screen widget's picker description. -->
+    <string name="widget_description">Current song with play, pause and skip controls</string>
 </resources>

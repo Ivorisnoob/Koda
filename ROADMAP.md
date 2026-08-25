@@ -343,17 +343,11 @@ Because Auto and Wear both consume this same browse tree, widening it pays twice
 
 #### Voice search
 
-~~There is no search entry point outside the app's own UI.~~ **Session half done.** `onSearch`/`onGetSearchResult` answer Auto's search box and any browse-side voice query, and `onAddMediaItems` now resolves assistant play requests: "Hey Google, play *X* on Koda" arrives as an item carrying only a search query, which is matched against song search results before playback. No manifest change was needed - assistants route through the exported `MediaLibraryService` binding, not an activity intent filter, which is why declaring one was deliberately skipped.
-
-What remains is small: the in-app microphone in the search bar using the platform speech recogniser, worth having on its own for anyone typing one-handed, and on-device verification of the assistant path against real hardware.
+~~There is no search entry point outside the app's own UI.~~ **Done, both halves.** The session side answers Auto's search box, browse-side voice queries, and assistant play requests ("Hey Google, play X on Koda") whose query arrives as an item with no media id; the app side has a microphone in the search field that runs the platform speech recogniser and searches what it hears - morphing into the clear button once there is text to clear, so the trailing slot always means exactly one action. No manifest intent filter was declared deliberately: assistants bind the exported `MediaLibraryService`, not an activity, and a dead filter would be one more thing pretending to work.
 
 #### A home screen widget
 
-There is no `AppWidgetProvider` and no Glance widget in the project. The Quick Settings half of this entry has shipped (`PlaybackTileService`, music-only - see Shipped); playback can now also be controlled from the shade.
-
-The widget is the long-standing request: current artwork, title and artist, and transport controls, resizable, with the artwork colors it already extracts driving the widget's own theme so it does not look pasted on. Glance is the right tool since it is Compose-shaped, though it is a genuinely different rendering model with its own constraints, and the app's Expressive components do not carry over. The widget will need designing rather than porting.
-
-It is a read-mostly surface over a `MediaController`, so it needs no changes to the playback pipeline, and the tile work settled the pattern it would bind through. The main design question is what it shows when nothing is playing and nothing has ever played. The empty state is the state a new user sees first.
+**Shipped** - both halves of this entry have landed. The Quick Settings tile (`PlaybackTileService`, music-only) and the Glance home screen widget (`widget/NowPlayingWidget.kt`) are described under Shipped. The design question this section used to pose - what to show when nothing has ever played - is answered with a brand mark and "Tap to listen" rather than an empty tile or a fake paused state.
 
 #### Tablet optimisation, on every screen
 
@@ -468,6 +462,8 @@ The milestones behind us, kept here so the direction of travel is visible.
 - Assistant voice playback: "Hey Google, play X on Koda" resolves its search query to a real song in the media session instead of arriving as an unplayable empty item
 - An Android Auto help page in Settings, Advanced: explains the sideload wall - Auto hides non-Play-Store media apps until "Unknown sources" is on in Auto's own developer settings - with the steps to fix it
 - Full single-item lookup in the browse surface (`onGetItem`) resolving against every store the tree serves, and per-item content-style hints so Auto renders categories as grids, playlists as lists, and songs as playable list rows
+- A home screen widget: current artwork, title and artist with play/pause and skip, drawn with Glance in Material You dynamic color, pushed updates from the service on every playback change, a throwaway-controller-per-tap action model so it never holds the service bound, and an honest "Tap to listen" empty state
+- A microphone in the search field: platform speech recognition that fills the query and searches it in one go
 
 Whole-playlist downloads deliberately reuse the same serial worker as a single-item download. A playlist page contributes a batch of requests, and the Downloads screen remains the one place that owns transfer progress, retry and cancellation; there is no second batch state to drift from the files actually being written. Re-running a partially completed playlist only queues the missing ids, duplicate rows share one offline file, device-local songs count as already offline, and live broadcasts are rejected before they can enter the progressive MP4 path. Video batches pin one quality cap onto every request so a retry cannot silently change the choice halfway through the playlist.
 
