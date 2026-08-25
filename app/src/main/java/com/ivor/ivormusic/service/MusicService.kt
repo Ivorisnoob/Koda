@@ -203,6 +203,9 @@ class MusicService : MediaLibraryService() {
         // Cap on the "Recently Played" browse node - a car screen does not
         // want thousands of history rows, just what you have been listening to.
         private const val RECENTLY_PLAYED_BROWSE_LIMIT = 50
+        // android.media.browse.ContentStyle values: how Auto renders items.
+        private const val LIST_ITEM = 1
+        private const val GRID_ITEM = 2
         // Safety margin before a googlevideo URL's `expire` timestamp, and the
         // fallback lifetime when the URL carries no readable expire param.
         private const val URI_EXPIRY_SAFETY_MS = 5 * 60 * 1000L
@@ -1389,24 +1392,43 @@ class MusicService : MediaLibraryService() {
             browser: MediaSession.ControllerInfo,
             params: MediaLibraryService.LibraryParams?
         ): ListenableFuture<LibraryResult<MediaItem>> {
-            val rootExtras = android.os.Bundle().apply {
-                putBoolean("android.media.browse.CONTENT_STYLE_SUPPORTED", true)
-                putInt("android.media.browse.CONTENT_STYLE_BROWSABLE_HINT", 1) // Grid
-                putInt("android.media.browse.CONTENT_STYLE_PLAYABLE_HINT", 1) // List
-            }
-            val rootItem = MediaItem.Builder()
-                .setMediaId("root")
-                .setMediaMetadata(
-                    MediaMetadata.Builder()
-                        .setTitle("Root")
-                        .setIsBrowsable(true)
-                        .setIsPlayable(false)
-                        .build()
-                )
-                .build()
             return Futures.immediateFuture(
-                LibraryResult.ofItem(rootItem, MediaLibraryService.LibraryParams.Builder().setExtras(rootExtras).build())
+                LibraryResult.ofItem(buildRootItem(), MediaLibraryService.LibraryParams.Builder().setExtras(contentStyleExtras(GRID_ITEM, LIST_ITEM)).build())
             )
+        }
+
+        override fun onGetItem(
+            session: MediaLibrarySession,
+            browser: MediaSession.ControllerInfo,
+            mediaId: String
+        ): ListenableFuture<LibraryResult<MediaItem>> {
+            // Clients use this to restore state or verify a single item after
+            // reconnecting. The default answer is an error, which some
+            // browsers treat as "this app's tree is gone" - so resolve real
+            // answers from the same stores the browse tree serves.
+            if (mediaId == "root") {
+                return Futures.immediateFuture(LibraryResult.ofItem(buildRootItem(), null))
+            }
+            return serviceScope.future(Dispatchers.IO) {
+                getRootItems().firstOrNull { it.mediaId == mediaId }?.let {
+                    return@future LibraryResult.ofItem(it, null)
+                }
+                if (mediaId.startsWith("PLAYLIST_")) {
+                    val playlistId = mediaId.removePrefix("PLAYLIST_")
+                    val playlist = (cachedPlaylists ?: youtubeRepository.getUserPlaylists()
+                        .also { if (it.isNotEmpty()) cachedPlaylists = it })
+                        .firstOrNull { it.url.substringAfter("list=") == playlistId }
+                    if (playlist != null) {
+                        return@future LibraryResult.ofItem(
+                            playlistEntry(playlist), null
+                        )
+                    }
+                }
+                findSongForBrowseId(mediaId)?.let { song ->
+                    return@future LibraryResult.ofItem(mapSongToMediaItem(song), null)
+                }
+                LibraryResult.ofError(SessionResult.RESULT_ERROR_BAD_VALUE)
+            }
         }
 
         override fun onGetChildren(
@@ -1511,37 +1533,35 @@ class MusicService : MediaLibraryService() {
     private fun getRootItems(): ImmutableList<MediaItem> {
         val items = mutableListOf<MediaItem>()
         // 1. Recommended
-        items.add(MediaItem.Builder()
-            .setMediaId("RECOMMENDED")
-            .setMediaMetadata(MediaMetadata.Builder().setTitle("Recommended For You").setIsBrowsable(true).setIsPlayable(false).build())
-            .build())
+        items.add(browsableCategoryItem("RECOMMENDED", "Recommended For You"))
         // 2. Playlists
-        items.add(MediaItem.Builder()
-            .setMediaId("PLAYLISTS")
-            .setMediaMetadata(MediaMetadata.Builder().setTitle("Your Playlists").setIsBrowsable(true).setIsPlayable(false).build())
-            .build())
+        items.add(browsableCategoryItem("PLAYLISTS", "Your Playlists"))
         // 3. Downloads - playable with no network at all
-        items.add(MediaItem.Builder()
-            .setMediaId("DOWNLOADS")
-            .setMediaMetadata(MediaMetadata.Builder().setTitle("Downloaded").setSubtitle("Offline").setIsBrowsable(true).setIsPlayable(false).build())
-            .build())
+        items.add(browsableCategoryItem("DOWNLOADS", "Downloaded", "Offline"))
         // 4. Liked - the device-side like store, not the account's
-        items.add(MediaItem.Builder()
-            .setMediaId("LIKED")
-            .setMediaMetadata(MediaMetadata.Builder().setTitle("Liked Songs").setIsBrowsable(true).setIsPlayable(false).build())
-            .build())
+        items.add(browsableCategoryItem("LIKED", "Liked Songs"))
         // 5. Recently played - from listening history
-        items.add(MediaItem.Builder()
-            .setMediaId("RECENT")
-            .setMediaMetadata(MediaMetadata.Builder().setTitle("Recently Played").setIsBrowsable(true).setIsPlayable(false).build())
-            .build())
+        items.add(browsableCategoryItem("RECENT", "Recently Played"))
         // 6. The device's own audio library
-        items.add(MediaItem.Builder()
-            .setMediaId("LOCAL_SONGS")
-            .setMediaMetadata(MediaMetadata.Builder().setTitle("On This Device").setIsBrowsable(true).setIsPlayable(false).build())
-            .build())
+        items.add(browsableCategoryItem("LOCAL_SONGS", "On This Device"))
         return ImmutableList.copyOf(items)
     }
+
+    private fun browsableCategoryItem(
+        mediaId: String,
+        title: String,
+        subtitle: String? = null,
+    ): MediaItem =
+        MediaItem.Builder()
+            .setMediaId(mediaId)
+            .setMediaMetadata(MediaMetadata.Builder()
+                .setTitle(title)
+                .setSubtitle(subtitle)
+                .setExtras(contentStyleExtras(GRID_ITEM, LIST_ITEM))
+                .setIsBrowsable(true)
+                .setIsPlayable(false)
+                .build())
+            .build()
 
     private suspend fun fetchChildrenForId(parentId: String): List<MediaItem> {
         val now = System.currentTimeMillis()
@@ -1555,8 +1575,7 @@ class MusicService : MediaLibraryService() {
             "DOWNLOADS" -> downloadRepository.downloadedSongs.value.map(::mapSongToMediaItem)
             "LIKED" -> likedSongsRepository.likedSongs.value.map(::mapSongToMediaItem)
             "RECENT" -> recentlyPlayedSongs().map(::mapSongToMediaItem)
-            "LOCAL_SONGS" -> localDeviceSongs().map(::mapSongToMediaItem)
-            else -> {
+            "LOCAL_SONGS" -> localDeviceSongs().map(::mapSongToMediaItem)            else -> {
                 if (parentId.startsWith("PLAYLIST_")) {
                     val playlistId = parentId.removePrefix("PLAYLIST_")
                     val songs = cachedPlaylistSongs[playlistId]?.takeIf { isCacheValid }
@@ -1634,19 +1653,22 @@ class MusicService : MediaLibraryService() {
                 emptyList()
             }
         }
-        return playlists.map { playlist ->
-            val playlistId = playlist.url.substringAfter("list=")
-            MediaItem.Builder()
-                .setMediaId("PLAYLIST_$playlistId")
-                .setMediaMetadata(MediaMetadata.Builder()
-                    .setTitle(playlist.name)
-                    .setSubtitle(playlist.uploaderName)
-                    .setArtworkUri(playlist.thumbnailUrl.toArtworkUri())
-                    .setIsBrowsable(true)
-                    .setIsPlayable(false)
-                    .build())
-                .build()
-        }
+        return playlists.map { playlist -> playlistEntry(playlist) }
+    }
+
+    private fun playlistEntry(playlist: PlaylistDisplayItem): MediaItem {
+        val playlistId = playlist.url.substringAfter("list=")
+        return MediaItem.Builder()
+            .setMediaId("PLAYLIST_$playlistId")
+            .setMediaMetadata(MediaMetadata.Builder()
+                .setTitle(playlist.name)
+                .setSubtitle(playlist.uploaderName)
+                .setArtworkUri(playlist.thumbnailUrl.toArtworkUri())
+                .setExtras(contentStyleExtras(LIST_ITEM, LIST_ITEM))
+                .setIsBrowsable(true)
+                .setIsPlayable(false)
+                .build())
+            .build()
     }
 
     private fun refreshPlaylistsInBackground() {
@@ -1715,6 +1737,43 @@ class MusicService : MediaLibraryService() {
     private fun String?.toArtworkUri(): Uri? =
         this?.takeIf { it.isNotBlank() }?.let(Uri::parse)
 
+    /**
+     * Content style hints tell Auto how to render each item: as a grid or a
+     * list, as browsable or playable. Set per item rather than only at the
+     * root, because the root hints alone leave deeper levels to the client's
+     * default - which is why every category renders as a grid and every song
+     * list as a list.
+     */
+    private fun contentStyleExtras(browsableHint: Int, playableHint: Int): android.os.Bundle =
+        android.os.Bundle().apply {
+            putBoolean("android.media.browse.CONTENT_STYLE_SUPPORTED", true)
+            putInt("android.media.browse.CONTENT_STYLE_BROWSABLE_HINT", browsableHint)
+            putInt("android.media.browse.CONTENT_STYLE_PLAYABLE_HINT", playableHint)
+        }
+
+    private fun buildRootItem(): MediaItem =
+        MediaItem.Builder()
+            .setMediaId("root")
+            .setMediaMetadata(
+                MediaMetadata.Builder()
+                    .setTitle("Root")
+                    .setIsBrowsable(true)
+                    .setIsPlayable(false)
+                    .build()
+            )
+            .build()
+
+    /** A single playable id looked up across every store the tree serves. */
+    private suspend fun findSongForBrowseId(mediaId: String): Song? {
+        findSongInCache(mediaId)?.let { return it }
+        downloadRepository.downloadedSongs.value.firstOrNull { it.id == mediaId }
+            ?.let { return it }
+        likedSongsRepository.likedSongs.value.firstOrNull { it.id == mediaId }
+            ?.let { return it }
+        recentlyPlayedSongs().firstOrNull { it.id == mediaId }?.let { return it }
+        return null
+    }
+
     /** A search match shaped for the resolution pipeline: id plus placeholder,
      *  exactly what a browse-served YouTube item looks like on arrival. */
     private fun Song.toPlaceholderMediaItem(): MediaItem =
@@ -1742,6 +1801,7 @@ class MusicService : MediaLibraryService() {
                 .setDurationMs(song.duration.takeIf { it > 0L })
                 .setArtworkUri(song.thumbnailUrl?.toArtworkUri()
                     ?: song.albumArtUri)
+                .setExtras(contentStyleExtras(LIST_ITEM, LIST_ITEM))
                 .setIsBrowsable(false)
                 .setIsPlayable(true)
                 .build())
