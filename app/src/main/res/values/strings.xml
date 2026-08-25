@@ -380,6 +380,42 @@
     <string name="sc_oldest_first">Oldest first</string>
     <string name="sc_on_device">%1$d on this device</string>
     <string name="sc_channels_on_device">%1$d channels - %2$d on this device</string>
+
+    <!-- Player sheet -->
+    <string name="ps_now_playing">Now Playing</string>
+    <string name="ps_lyrics">Lyrics</string>
+    <string name="cd_shuffle">Shuffle</string>
+    <string name="cd_previous">Previous</string>
+    <string name="cd_repeat">Repeat</string>
+    <string name="cd_local_file">Local File</string>
+    <string name="ps_up_next">Up Next</string>
+    <string name="ps_queue_empty">Queue is empty</string>
+    <string name="cd_now_playing">Now Playing</string>
+    <string name="ps_queue">QUEUE</string>
+    <string name="cd_playing">Playing</string>
+    <string name="cd_remove_from_queue">Remove from queue</string>
+    <string name="loading">Loading...</string>
+    <string name="load_more">Load More</string>
+
+    <!-- Shorts -->
+    <string name="sh_playback_failed">Playback failed</string>
+    <string name="cd_close_shorts">Close Shorts</string>
+    <string name="subscribed">Subscribed</string>
+    <string name="subscribe">Subscribe</string>
+    <string name="like">Like</string>
+    <string name="cd_dislike">Dislike</string>
+    <string name="cd_comments">Comments</string>
+    <string name="share_short">Share Short</string>
+    <string name="stop_recommending">Stop recommending</string>
+    <string name="sh_hide_short_sub">Hide this Short and move on</string>
+    <string name="sh_hide_channel_sub">Hide everything from this channel</string>
+
+    <!-- Downloads -->
+    <string name="stop_all">Stop all</string>
+    <string name="in_progress">In progress</string>
+    <string name="dl_failed">Failed</string>
+    <string name="dl_waiting">Waiting</string>
+    <string name="dl_preparing">Preparing</string>
     <plurals name="n_channels">
         <item quantity="one">%1$d channel</item>
         <item quantity="other">%1$d channels</item>

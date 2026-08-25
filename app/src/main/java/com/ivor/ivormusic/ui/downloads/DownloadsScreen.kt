@@ -1,4 +1,6 @@
 package com.ivor.ivormusic.ui.downloads
+import com.ivor.ivormusic.R
+import androidx.compose.ui.res.stringResource
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Spring
@@ -152,7 +154,7 @@ fun DownloadsScreen(
             TopAppBar(
                 title = {
                     Column {
-                        Text("Downloads")
+                        Text(stringResource(R.string.fab_downloads))
                         Text(
                             text = buildString {
                                 append("${downloadedSongs.size} songs")
@@ -171,7 +173,7 @@ fun DownloadsScreen(
                 },
                 actions = {
                     if (activeCount > 0) {
-                        TextButton(onClick = onCancelAll) { Text("Stop all") }
+                        TextButton(onClick = onCancelAll) { Text(stringResource(R.string.stop_all)) }
                     }
                 }
             )
@@ -279,7 +281,7 @@ private fun MusicTab(
         contentPadding = PaddingValues(16.dp)
     ) {
         if (progress.isNotEmpty()) {
-            item { SectionHeader("In progress") }
+            item { SectionHeader(stringResource(R.string.in_progress)) }
             itemsIndexed(progress, key = { _, it -> "p_${it.songId}" }) { index, item ->
                 ProgressCard(
                     item = item,
@@ -293,7 +295,7 @@ private fun MusicTab(
         }
 
         if (songs.isNotEmpty()) {
-            item { SectionHeader("Downloaded") }
+            item { SectionHeader(stringResource(R.string.song_options_downloaded)) }
             itemsIndexed(songs, key = { _, it -> "s_${it.id}" }) { index, song ->
                 DownloadedRow(
                     title = song.title,
@@ -328,7 +330,7 @@ private fun VideoTab(
         contentPadding = PaddingValues(16.dp)
     ) {
         if (progress.isNotEmpty()) {
-            item { SectionHeader("In progress") }
+            item { SectionHeader(stringResource(R.string.in_progress)) }
             itemsIndexed(progress, key = { _, it -> "p_${it.songId}" }) { index, item ->
                 ProgressCard(
                     item = item,
@@ -342,7 +344,7 @@ private fun VideoTab(
         }
 
         if (videos.isNotEmpty()) {
-            item { SectionHeader("Downloaded") }
+            item { SectionHeader(stringResource(R.string.song_options_downloaded)) }
             itemsIndexed(videos, key = { _, it -> "v_${it.id}" }) { index, video ->
                 DownloadedRow(
                     title = video.title,
@@ -417,13 +419,13 @@ private fun ProgressCard(
                     )
                     Text(
                         text = when {
-                            failed -> "Failed"
-                            queued -> "Waiting"
+                            failed -> stringResource(R.string.dl_failed)
+                            queued -> stringResource(R.string.dl_waiting)
                             item.totalBytes > 0 -> "%.1f / %.1f MB".format(
                                 item.bytesDownloaded / (1024 * 1024f),
                                 item.totalBytes / (1024 * 1024f)
                             )
-                            else -> "Preparing"
+                            else -> stringResource(R.string.dl_preparing)
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = if (failed) {
@@ -541,7 +543,7 @@ private fun DownloadedRow(
             IconButton(onClick = onDelete) {
                 Icon(
                     imageVector = Icons.Rounded.Delete,
-                    contentDescription = "Delete",
+                    contentDescription = stringResource(R.string.action_delete),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
