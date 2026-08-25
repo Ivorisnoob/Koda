@@ -1,4 +1,6 @@
 package com.ivor.ivormusic.ui.applock
+import androidx.compose.ui.res.stringResource
+import com.ivor.ivormusic.R
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -146,7 +148,7 @@ fun AppLockOverlay(
 
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
-                    text = "That's today's listening",
+                    text = stringResource(R.string.al_todays_listening),
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
                     textAlign = TextAlign.Center,
@@ -155,7 +157,7 @@ fun AppLockOverlay(
                 Spacer(Modifier.height(8.dp))
                 Text(
                     text = buildString {
-                        append("You've had ")
+                        append(stringResource(R.string.al_youve_had))
                         append(AppTimeLimit.formatBudget(budgetMinutes))
                         append(" with Koda today. Come back tomorrow - ")
                         append("the app unlocks in ")
@@ -169,7 +171,7 @@ fun AppLockOverlay(
             }
 
             Text(
-                text = "Resets every night at midnight",
+                text = stringResource(R.string.al_resets_midnight),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

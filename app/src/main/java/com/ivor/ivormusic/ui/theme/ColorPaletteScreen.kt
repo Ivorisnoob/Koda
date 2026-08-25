@@ -1,4 +1,6 @@
 package com.ivor.ivormusic.ui.theme
+import androidx.compose.ui.res.stringResource
+import com.ivor.ivormusic.R
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
@@ -100,7 +102,7 @@ fun ColorPaletteScreen(
         TopAppBar(
             title = {
                 Text(
-                    text = "Color palette",
+                    text = stringResource(R.string.sp_color_palette),
                     color = textColor,
                     fontWeight = FontWeight.Bold,
                     style = MaterialTheme.typography.headlineMedium
@@ -120,7 +122,7 @@ fun ColorPaletteScreen(
                 ) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                        contentDescription = "Back"
+                        contentDescription = stringResource(R.string.cd_back)
                     )
                 }
             },
@@ -334,7 +336,7 @@ private fun PaletteCard(
             ) {
                 Icon(
                     imageVector = Icons.Rounded.Check,
-                    contentDescription = "Selected",
+                    contentDescription = stringResource(R.string.cd_selected),
                     tint = roles.onPrimary,
                     modifier = Modifier.size(17.dp)
                 )
@@ -390,7 +392,7 @@ private fun DynamicPaletteCard(
             ) {
                 Icon(
                     imageVector = Icons.Rounded.AutoAwesome,
-                    contentDescription = "Dynamic (from wallpaper)",
+                    contentDescription = stringResource(R.string.cp_dynamic_cd),
                     tint = cs.onPrimary,
                     modifier = Modifier.size(24.dp)
                 )
@@ -416,7 +418,7 @@ private fun DynamicPaletteCard(
             ) {
                 Icon(
                     imageVector = Icons.Rounded.Check,
-                    contentDescription = "Selected",
+                    contentDescription = stringResource(R.string.cd_selected),
                     tint = cs.onPrimary,
                     modifier = Modifier.size(17.dp)
                 )

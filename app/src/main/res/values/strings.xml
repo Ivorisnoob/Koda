@@ -545,6 +545,45 @@
     <string name="rb_open_github">Open GitHub issue</string>
     <string name="rb_privacy_note">The report never sends anything by itself - you paste or attach it yourself.</string>
     <string name="rb_default_attachment">Stack trace and recent logs</string>
+
+    <!-- App lock / time limit -->
+    <string name="al_todays_listening">That\'s today\'s listening</string>
+    <string name="al_youve_had">You\'ve had </string>
+    <string name="al_resets_midnight">Resets every night at midnight</string>
+    <string name="tl_locked_until_midnight">Koda is locked until midnight</string>
+    <string name="tl_locks_when_budget">Koda locks when the day\'s budget runs out</string>
+    <string name="tl_off_subtitle">Off - Koda is always unlocked</string>
+    <string name="tl_enable">Enable daily time limit</string>
+    <string name="tl_enable_sub">Locks all of Koda once today\'s budget is used</string>
+    <string name="tl_quick_set">Quick set - same budget every day</string>
+    <string name="tl_per_day">Per-day budgets</string>
+    <string name="tl_counts_note">Counts only time Koda is open on screen, and resets at midnight. Setting a day to Unlimited leaves it untracked.</string>
+    <string name="tl_tracking_off">Tracking off</string>
+    <string name="tl_unlimited_today">Unlimited today - no budget set</string>
+    <string name="tl_turn_on_to_track">Turn on the limit below to start tracking</string>
+    <string name="tl_resets_tonight">Resets tonight at midnight</string>
+
+    <!-- Color palette -->
+    <string name="cd_selected">Selected</string>
+    <string name="cp_dynamic_cd">Dynamic (from wallpaper)</string>
+
+    <!-- Cookie paste sign-in -->
+    <string name="ck_title">Session Cookies</string>
+    <string name="ck_subtitle">Sign in by pasting a browser session</string>
+    <string name="ck_paste_clipboard">Paste from clipboard</string>
+    <string name="ck_cookie_header">Cookie header</string>
+    <string name="ck_how_to">How do I get this?</string>
+    <string name="ck_step_1">Open music.youtube.com on a desktop browser, signed in</string>
+    <string name="ck_step_2">Press F12 and open the Network tab</string>
+    <string name="ck_step_3">Type \"youtubei\" in the filter box, then reload</string>
+    <string name="ck_step_4">Click any request in the list</string>
+    <string name="ck_step_5">Under Request Headers, right-click \"cookie\" and Copy value</string>
+    <string name="ck_step_6">Send it to this device and paste it above</string>
+    <string name="ck_password_note">Treat this like a password</string>
+
+    <!-- Auth dialog -->
+    <string name="au_sign_in_title">Sign in to YouTube Music</string>
+    <string name="cd_close">Close</string>
     <plurals name="n_channels">
         <item quantity="one">%1$d channel</item>
         <item quantity="other">%1$d channels</item>
