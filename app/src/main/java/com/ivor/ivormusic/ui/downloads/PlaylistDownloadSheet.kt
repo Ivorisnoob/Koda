@@ -1,4 +1,6 @@
 package com.ivor.ivormusic.ui.downloads
+import androidx.compose.ui.res.stringResource
+import com.ivor.ivormusic.R
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
@@ -263,14 +265,14 @@ private fun PlaylistDownloadButton(
 ) {
     val canOpen = enabled && snapshot.eligibleIds.isNotEmpty() && !snapshot.isComplete
     val label = when {
-        snapshot.isComplete -> "Available offline"
-        snapshot.activeCount > 0 && kind == PlaylistDownloadKind.VIDEO -> "Downloading playlist"
+        snapshot.isComplete -> stringResource(R.string.vh_available_offline)
+        snapshot.activeCount > 0 && kind == PlaylistDownloadKind.VIDEO -> stringResource(R.string.pd_downloading_playlist)
         snapshot.activeCount > 0 -> "Downloading ${snapshot.activeCount}"
         snapshot.remainingCount > 0 && snapshot.remainingIds.all { it in snapshot.failedIds } ->
             "Retry ${snapshot.remainingCount}"
-        snapshot.remainingCount > 0 && kind == PlaylistDownloadKind.VIDEO -> "Download playlist"
+        snapshot.remainingCount > 0 && kind == PlaylistDownloadKind.VIDEO -> stringResource(R.string.pd_download_playlist)
         snapshot.remainingCount > 0 -> "Download ${snapshot.remainingCount}"
-        snapshot.skippedCount > 0 -> "Unavailable offline"
+        snapshot.skippedCount > 0 -> stringResource(R.string.pd_unavailable_offline)
         else -> "Download ${kind.itemNamePlural}"
     }
 
@@ -298,7 +300,7 @@ private fun PlaylistDownloadButton(
                         modifier = Modifier
                             .size(20.dp)
                             .semantics {
-                                contentDescription = "Downloading playlist"
+                                contentDescription = stringResource(R.string.pd_downloading_playlist)
                                 progressBarRangeInfo = ProgressBarRangeInfo(
                                     snapshot.overallProgress,
                                     0f..1f
@@ -398,7 +400,7 @@ private fun PlaylistDownloadSheet(
                         }
                         Spacer(Modifier.height(14.dp))
                         Text(
-                            text = "Download playlist",
+                            text = stringResource(R.string.pd_download_playlist),
                             style = MaterialTheme.typography.headlineSmall,
                             fontWeight = FontWeight.Bold,
                             textAlign = TextAlign.Center,
@@ -428,37 +430,37 @@ private fun PlaylistDownloadSheet(
                                 .padding(16.dp),
                             verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            DownloadSummaryRow("In playlist", playlistItemCountLabel)
+                            DownloadSummaryRow(stringResource(R.string.pd_in_playlist), playlistItemCountLabel)
                             if (kind == PlaylistDownloadKind.VIDEO) {
                                 DownloadSummaryRow(
-                                    "Loaded now",
+                                    stringResource(R.string.pd_loaded_now),
                                     itemCountLabel(
                                         snapshot.eligibleIds.size + snapshot.skippedCount,
                                         kind
                                     )
                                 )
                                 DownloadSummaryRow(
-                                    "Already offline here",
+                                    stringResource(R.string.pd_already_offline_here),
                                     itemCountLabel(snapshot.completedCount, kind)
                                 )
                                 Text(
-                                    text = "Every remaining playlist page is resolved after you confirm; existing downloads are skipped then too.",
+                                    text = stringResource(R.string.pd_pages_note),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             } else {
                                 DownloadSummaryRow(
-                                    "Already offline",
+                                    stringResource(R.string.pd_already_offline),
                                     itemCountLabel(snapshot.completedCount, kind)
                                 )
                                 DownloadSummaryRow(
-                                    "To download",
+                                    stringResource(R.string.pd_to_download),
                                     itemCountLabel(snapshot.remainingCount, kind)
                                 )
                             }
                             if (snapshot.activeCount > 0) {
                                 DownloadSummaryRow(
-                                    "In progress",
+                                    stringResource(R.string.in_progress),
                                     itemCountLabel(snapshot.activeCount, kind)
                                 )
                                 LinearWavyProgressIndicator(
@@ -466,7 +468,7 @@ private fun PlaylistDownloadSheet(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .semantics {
-                                            contentDescription = "Playlist download progress"
+                                            contentDescription = stringResource(R.string.pd_progress_cd)
                                             progressBarRangeInfo = ProgressBarRangeInfo(
                                                 snapshot.overallProgress,
                                                 0f..1f
@@ -485,12 +487,12 @@ private fun PlaylistDownloadSheet(
                             verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             Text(
-                                text = "Video quality",
+                                text = stringResource(R.string.sp_video_quality),
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.SemiBold
                             )
                             Text(
-                                text = "Each video uses the best MP4 quality at or below this limit.",
+                                text = stringResource(R.string.pd_quality_note),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -502,7 +504,7 @@ private fun PlaylistDownloadSheet(
                                 ThemePreferences.VIDEO_QUALITY_OPTIONS.forEach { quality ->
                                     BatchQualityPill(
                                         label = if (quality == ThemePreferences.VIDEO_QUALITY_AUTO) {
-                                            "Best available"
+                                            stringResource(R.string.pd_best_available)
                                         } else quality,
                                         selected = selectedQuality == quality,
                                         onClick = { selectedQuality = quality }
@@ -518,12 +520,12 @@ private fun PlaylistDownloadSheet(
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        text = "Remember this quality",
+                                        text = stringResource(R.string.vd_remember_quality),
                                         style = MaterialTheme.typography.titleSmall,
                                         fontWeight = FontWeight.SemiBold
                                     )
                                     Text(
-                                        text = "Use it for future video downloads",
+                                        text = stringResource(R.string.pd_remember_sub),
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -569,7 +571,7 @@ private fun PlaylistDownloadSheet(
                                 )
                                 Text(
                                     text = when {
-                                        localOnly -> "Turn off Local only mode before starting a download."
+                                        localOnly -> stringResource(R.string.pd_local_only_block)
                                         kind == PlaylistDownloadKind.VIDEO ->
                                             "${itemCountLabel(snapshot.skippedCount, kind)} can't be downloaded while live and will be skipped."
                                         else ->
@@ -603,7 +605,7 @@ private fun PlaylistDownloadSheet(
                                     tint = MaterialTheme.colorScheme.onErrorContainer
                                 )
                                 Text(
-                                    text = "Couldn't load the complete playlist. Check your connection and try again.",
+                                    text = stringResource(R.string.pd_load_failed),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onErrorContainer,
                                     modifier = Modifier.weight(1f)
@@ -615,7 +617,7 @@ private fun PlaylistDownloadSheet(
 
                 item {
                     Text(
-                        text = "Downloads continue in the background. Existing downloads and repeated items are skipped automatically.",
+                        text = stringResource(R.string.pd_background_note),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.fillMaxWidth()
@@ -656,16 +658,16 @@ private fun PlaylistDownloadSheet(
                         .height(56.dp)
                 ) {
                     val label = when {
-                        queued -> "Added to downloads"
+                        queued -> stringResource(R.string.vd_added)
                         queueing -> if (kind == PlaylistDownloadKind.VIDEO) {
-                            "Loading full playlist..."
-                        } else "Adding to downloads..."
-                        localOnly -> "Local only mode is on"
-                        snapshot.isComplete -> "Already available offline"
-                        snapshot.remainingCount == 0 && snapshot.activeCount > 0 -> "Downloading"
+                            stringResource(R.string.pd_loading_full)
+                        } else stringResource(R.string.pd_adding)
+                        localOnly -> stringResource(R.string.local_only_title)
+                        snapshot.isComplete -> stringResource(R.string.pd_already_complete)
+                        snapshot.remainingCount == 0 && snapshot.activeCount > 0 -> stringResource(R.string.dl_preparing)
                         snapshot.remainingIds.all { it in snapshot.failedIds } ->
                             "Retry ${itemCountLabel(snapshot.remainingCount, kind)}"
-                        kind == PlaylistDownloadKind.VIDEO -> "Download full playlist"
+                        kind == PlaylistDownloadKind.VIDEO -> stringResource(R.string.pd_download_full)
                         else -> "Download ${itemCountLabel(snapshot.remainingCount, kind)}"
                     }
                     if (queueing) {

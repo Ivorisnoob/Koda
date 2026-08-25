@@ -1,4 +1,6 @@
 package com.ivor.ivormusic.ui.video
+import androidx.compose.ui.res.stringResource
+import com.ivor.ivormusic.R
 
 import com.ivor.ivormusic.util.KLog
 
@@ -181,7 +183,7 @@ fun VideoDownloadSheet(
                 .padding(bottom = 32.dp)
         ) {
             Text(
-                text = "Download video",
+                text = stringResource(R.string.vd_title),
                 style = MaterialTheme.typography.headlineSmall,
                 color = MaterialTheme.colorScheme.onSurface
             )
@@ -223,7 +225,7 @@ fun VideoDownloadSheet(
             Spacer(modifier = Modifier.height(20.dp))
 
             Text(
-                text = "Quality",
+                text = stringResource(R.string.sp_video_quality),
                 style = MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -250,8 +252,8 @@ fun VideoDownloadSheet(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = if (loadFailed) "Couldn't load qualities. Check your connection."
-                            else "No downloadable stream for this video",
+                        text = if (loadFailed) stringResource(R.string.vd_load_failed)
+                            else stringResource(R.string.vd_no_stream),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -286,15 +288,15 @@ fun VideoDownloadSheet(
                     )
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "Estimated download",
+                            text = stringResource(R.string.vd_estimated),
                             style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Text(
                             text = when {
-                                sizeLoading -> "Calculating size…"
+                                sizeLoading -> stringResource(R.string.vd_calculating)
                                 estimatedBytes != null -> formatDownloadSize(estimatedBytes!!)
-                                sizeResolved -> "Size unavailable"
+                                sizeResolved -> stringResource(R.string.vd_size_unavailable)
                                 else -> ""
                             },
                             style = MaterialTheme.typography.titleMedium,
@@ -318,13 +320,13 @@ fun VideoDownloadSheet(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Remember this quality",
+                        text = stringResource(R.string.vd_remember_quality),
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = "Use it as the default for future downloads",
+                        text = stringResource(R.string.vd_remember_sub),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -360,13 +362,13 @@ fun VideoDownloadSheet(
                             modifier = Modifier.size(22.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text(text = "Already downloaded", fontWeight = FontWeight.SemiBold)
+                        Text(text = stringResource(R.string.vd_already), fontWeight = FontWeight.SemiBold)
                     }
                     queued || inFlight -> {
                         LoadingIndicator(modifier = Modifier.size(22.dp))
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = if (queued) "Added to downloads" else "Downloading...",
+                            text = if (queued) stringResource(R.string.vd_added) else stringResource(R.string.dl_preparing),
                             fontWeight = FontWeight.SemiBold
                         )
                     }
@@ -380,7 +382,7 @@ fun VideoDownloadSheet(
                         Text(
                             text = estimatedBytes?.let {
                                 "Download • ${formatDownloadSize(it)}"
-                            } ?: "Download",
+                            } ?: stringResource(R.string.song_options_download),
                             fontWeight = FontWeight.SemiBold
                         )
                     }
