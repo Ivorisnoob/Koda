@@ -1,4 +1,6 @@
 package com.ivor.ivormusic.ui.video
+import androidx.compose.ui.res.stringResource
+import com.ivor.ivormusic.R
 
 import android.view.ViewGroup
 import android.widget.FrameLayout
@@ -361,13 +363,13 @@ fun VerticalLivePlayerContent(
                             } else {
                                 Icons.Rounded.ClosedCaptionOff
                             },
-                            contentDescription = "Captions",
+                            contentDescription = stringResource(R.string.vp_captions),
                             active = captionsActive,
                             onClick = onCaptionsClick,
                         )
                         ChromeGroupButton(
                             icon = Icons.Rounded.Settings,
-                            contentDescription = "Quality",
+                            contentDescription = stringResource(R.string.sp_video_quality),
                             onClick = onSettings,
                         )
                         ChromeGroupButton(
@@ -375,7 +377,7 @@ fun VerticalLivePlayerContent(
                             // the description. The counterpart button on that
                             // page returns here.
                             icon = Icons.Rounded.CloseFullscreen,
-                            contentDescription = "Show video details",
+                            contentDescription = stringResource(R.string.vl_show_details),
                             onClick = onExitToPage,
                         )
                     }
@@ -493,7 +495,7 @@ fun VerticalLivePlayerContent(
                             modifier = Modifier.height(36.dp),
                         ) {
                             Text(
-                                text = if (isSubscribed) "Subscribed" else "Subscribe",
+                                text = if (isSubscribed) stringResource(R.string.subscribed) else stringResource(R.string.subscribe),
                                 style = MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.SemiBold,
                             )
@@ -504,7 +506,7 @@ fun VerticalLivePlayerContent(
                             } else {
                                 Icons.Outlined.ThumbUp
                             },
-                            contentDescription = "Like",
+                            contentDescription = stringResource(R.string.like),
                             active = likeStatus == LikeStatus.LIKE,
                             onClick = onLikeClick,
                             size = 36.dp,

@@ -616,6 +616,41 @@
     <string name="vp_remove_like">Remove like</string>
     <string name="vp_remove_dislike">Remove dislike</string>
 
+    <!-- Playback settings / captions sheets -->
+    <string name="vpc_playback_settings">Playback settings</string>
+    <string name="vpc_autoplay">Autoplay</string>
+    <string name="vpc_autoplay_on">Play the next playlist or related video</string>
+    <string name="vpc_autoplay_off">Stop and stay on this video</string>
+    <string name="vpc_loop">Loop video</string>
+    <string name="vpc_loop_note">Turning this on also enables Autoplay</string>
+    <string name="vpc_loop_off">Repeat this video instead of moving on</string>
+    <string name="vpc_loop_on">Repeat this video when it ends</string>
+    <string name="vpc_no_qualities">No qualities available</string>
+    <string name="vpc_normal">Normal</string>
+    <string name="vpc_pip">Picture in picture</string>
+    <string name="vpc_pip_sub">Keep watching over other apps</string>
+    <string name="vpc_return_to_video">Return to the full video</string>
+    <string name="vpc_browse_conversation">Browse the conversation</string>
+    <string name="vpc_queue_sub">See and choose what plays next</string>
+    <string name="vpc_timed_comments_sub">Show comments at their video moments</string>
+    <string name="vpc_live_chat_sub">Show the conversation beside the stream</string>
+    <string name="vpc_vertical_live">Vertical live view</string>
+    <string name="vpc_vertical_live_sub">Return to the full-height stream</string>
+    <string name="vpc_language">Language</string>
+    <string name="vpc_no_captions">No captions available for this video</string>
+    <string name="vpc_white">White</string>
+    <string name="vpc_yellow">Yellow</string>
+    <string name="vpc_none">None</string>
+    <string name="vpc_soft">Soft</string>
+    <string name="vpc_solid">Solid</string>
+    <string name="vpc_text_size">Text size</string>
+
+    <!-- Mini video player -->
+    <string name="mv_close_player">Close video player</string>
+
+    <!-- Vertical live -->
+    <string name="vl_show_details">Show video details</string>
+
     <!-- Queue / notifications / download sheets -->
     <string name="vq_playing_from">Playing from</string>
     <string name="ns_none_yet">No notifications yet</string>
