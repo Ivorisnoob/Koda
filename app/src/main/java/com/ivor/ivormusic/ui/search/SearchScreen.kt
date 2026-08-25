@@ -1,4 +1,7 @@
 package com.ivor.ivormusic.ui.search
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import com.ivor.ivormusic.R
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -526,8 +529,8 @@ fun SearchScreen(
                             focusManager.clearFocus()
                         }
                     },
-                    placeholderText = if (videoMode) "Search videos, channels..."
-                    else "Search songs, artists, albums...",
+                    placeholderText = if (videoMode) stringResource(R.string.search_placeholder_videos)
+                    else stringResource(R.string.search_placeholder_music),
                     isLinkDetected = parsedLink != null,
                     primaryColor = primaryColor,
                     primaryContainerColor = primaryContainerColor,
@@ -608,7 +611,7 @@ fun SearchScreen(
                                     subtitle = subtitle,
                                     thumbnailUrl = video.highResThumbnailUrl ?: video.thumbnailUrl,
                                     durationText = video.formattedDuration.takeIf { it.isNotBlank() },
-                                    badgeText = if (videoMode) "Video" else "Song",
+                                    badgeText = if (videoMode) stringResource(R.string.badge_video) else stringResource(R.string.badge_song),
                                     accentColor = primaryColor,
                                     cardColor = cardColor,
                                     textColor = textColor,
@@ -628,7 +631,7 @@ fun SearchScreen(
                             item {
                                 LinkPlaylistHeader(
                                     count = state.songs.size,
-                                    itemLabel = "songs",
+                                    isVideos = false,
                                     thumbnailUrl = state.songs.firstOrNull()?.highResThumbnailUrl
                                         ?: state.songs.firstOrNull()?.thumbnailUrl,
                                     accentColor = primaryColor,
@@ -664,7 +667,7 @@ fun SearchScreen(
                             item {
                                 LinkPlaylistHeader(
                                     count = state.videos.size,
-                                    itemLabel = "videos",
+                                    isVideos = true,
                                     thumbnailUrl = state.videos.firstOrNull()?.thumbnailUrl,
                                     accentColor = primaryColor,
                                     cardColor = cardColor,
@@ -744,12 +747,12 @@ fun SearchScreen(
                                 Spacer(modifier = Modifier.height(16.dp))
                                 Text(
                                     when {
-                                        videoMode && selectedVideoCategory == VideoSearchCategory.PLAYLISTS -> "Searching Playlists..."
-                                        videoMode -> "Searching Videos..."
-                                        selectedCategory == SearchCategory.ARTISTS -> "Searching Artists..."
-                                        selectedCategory == SearchCategory.ALBUMS -> "Searching Albums..."
-                                        selectedCategory == SearchCategory.PLAYLISTS -> "Searching Playlists..."
-                                        else -> "Searching Music..."
+                                        videoMode && selectedVideoCategory == VideoSearchCategory.PLAYLISTS -> stringResource(R.string.searching_playlists)
+                                        videoMode -> stringResource(R.string.searching_videos)
+                                        selectedCategory == SearchCategory.ARTISTS -> stringResource(R.string.searching_artists)
+                                        selectedCategory == SearchCategory.ALBUMS -> stringResource(R.string.searching_albums)
+                                        selectedCategory == SearchCategory.PLAYLISTS -> stringResource(R.string.searching_playlists)
+                                        else -> stringResource(R.string.searching_music)
                                     },
                                     color = secondaryTextColor,
                                     style = MaterialTheme.typography.bodyMedium
@@ -763,7 +766,7 @@ fun SearchScreen(
                 videoMode && query.isEmpty() -> {
                     item {
                         Text(
-                            "Explore",
+                            stringResource(R.string.search_explore_title),
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
                             color = textColor,
@@ -798,11 +801,11 @@ fun SearchScreen(
                                             tint = primaryColor,
                                             modifier = Modifier.size(16.dp)
                                         )
-                                        Text(
-                                            topic,
-                                            style = MaterialTheme.typography.labelLarge,
-                                            color = textColor
-                                        )
+                                         Text(
+                                             exploreTopicLabel(topic),
+                                             style = MaterialTheme.typography.labelLarge,
+                                             color = textColor
+                                         )
                                     }
                                 }
                             }
@@ -811,7 +814,7 @@ fun SearchScreen(
 
                     item {
                         Text(
-                            "Trending now",
+                            stringResource(R.string.trending_now),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = textColor,
@@ -849,7 +852,7 @@ fun SearchScreen(
                     // Browse section when no search
                     item {
                         Text(
-                            "Browse Your Library",
+                            stringResource(R.string.browse_your_library),
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
                             color = textColor,
@@ -981,7 +984,7 @@ fun SearchScreen(
                                 }
                                 Spacer(modifier = Modifier.size(12.dp))
                                 Text(
-                                    "YouTube Videos",
+                                    stringResource(R.string.source_youtube_videos),
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold,
                                     color = textColor
@@ -1146,7 +1149,7 @@ fun SearchScreen(
                             }
                             Spacer(modifier = Modifier.size(12.dp))
                             Text(
-                                "YouTube Music",
+                                stringResource(R.string.source_youtube_music),
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = textColor
@@ -1225,7 +1228,7 @@ fun SearchScreen(
                                 }
                                 Spacer(modifier = Modifier.size(12.dp))
                                 Text(
-                                    "Local Library",
+                                    stringResource(R.string.source_local_library),
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold,
                                     color = textColor
@@ -1307,14 +1310,14 @@ fun SearchScreen(
                                 }
                                 Spacer(modifier = Modifier.height(20.dp))
                                 Text(
-                                    "No results found",
+                                    stringResource(R.string.search_no_results),
                                     style = MaterialTheme.typography.titleLarge,
                                     fontWeight = FontWeight.SemiBold,
                                     color = textColor
                                 )
                                 Spacer(modifier = Modifier.height(8.dp))
                                 Text(
-                                    "Try different keywords or filters",
+                                    stringResource(R.string.search_no_results_hint),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = secondaryTextColor
                                 )
@@ -1423,7 +1426,7 @@ private fun SearchHeroHeader(
             
             // Title
             Text(
-                "Search",
+                stringResource(R.string.search_title),
                 style = MaterialTheme.typography.headlineLarge,
                 fontWeight = FontWeight.Bold,
                 color = textColor
@@ -1480,7 +1483,7 @@ private fun SearchHeroHeader(
                             IconButton(onClick = { onQueryChange("") }) {
                                 Icon(
                                     Icons.Default.Clear,
-                                    contentDescription = "Clear",
+                                    contentDescription = stringResource(R.string.cd_clear),
                                     tint = secondaryTextColor
                                 )
                             }
@@ -1548,7 +1551,7 @@ private fun ShowMoreButton(
             )
             Spacer(modifier = Modifier.size(8.dp))
             Text(
-                "Show More",
+                stringResource(R.string.action_show_more),
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.SemiBold,
                 color = primaryColor
@@ -1585,7 +1588,7 @@ private fun SearchSongCard(
         ListItem(
             headlineContent = {
                 Text(
-                    text = song.title.takeIf { !it.isNullOrBlank() && !it.startsWith("Unknown", ignoreCase = true) } ?: "Untitled Song",
+                    text = song.title.takeIf { !it.isNullOrBlank() && !it.startsWith("Unknown", ignoreCase = true) } ?: stringResource(R.string.untitled_song),
                     color = textColor,
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.SemiBold,
@@ -1595,7 +1598,7 @@ private fun SearchSongCard(
             },
             supportingContent = {
                 Text(
-                    text = song.artist.takeIf { !it.isNullOrBlank() && !it.startsWith("Unknown", ignoreCase = true) } ?: "Unknown Artist",
+                    text = song.artist.takeIf { !it.isNullOrBlank() && !it.startsWith("Unknown", ignoreCase = true) } ?: stringResource(R.string.unknown_artist),
                     color = secondaryTextColor,
                     style = MaterialTheme.typography.bodySmall,
                     maxLines = 1,
@@ -1642,7 +1645,7 @@ private fun SearchSongCard(
             trailingContent = {
                 Icon(
                     Icons.Rounded.PlayArrow,
-                    contentDescription = "Play",
+                    contentDescription = stringResource(R.string.cd_play),
                     tint = accentColor,
                     modifier = Modifier.size(24.dp)
                 )
@@ -1692,7 +1695,11 @@ fun VideoSearchFilterChips(
                 contentPadding = PaddingValues(horizontal = 8.dp)
             ) {
                 Text(
-                    category.name.lowercase().capitalize(),
+                    when (category) {
+                        VideoSearchCategory.VIDEOS -> stringResource(R.string.cat_videos)
+                        VideoSearchCategory.PLAYLISTS -> stringResource(R.string.cat_playlists)
+                        VideoSearchCategory.CHANNELS -> stringResource(R.string.cat_channels)
+                    },
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
                     maxLines = 1
@@ -1778,7 +1785,12 @@ fun SearchFilterChips(
                 contentPadding = PaddingValues(horizontal = 8.dp)
             ) {
                 Text(
-                    category.name.lowercase().capitalize(),
+                    when (category) {
+                        SearchCategory.SONGS -> stringResource(R.string.cat_songs)
+                        SearchCategory.ARTISTS -> stringResource(R.string.cat_artists)
+                        SearchCategory.ALBUMS -> stringResource(R.string.cat_albums)
+                        SearchCategory.PLAYLISTS -> stringResource(R.string.cat_playlists)
+                    },
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
                     maxLines = 1
@@ -1906,7 +1918,7 @@ fun ArtistResultCard(
             if (artist.isVerified) {
                 Icon(
                     androidx.compose.material.icons.Icons.Default.CheckCircle, 
-                    contentDescription = "Verified",
+                    contentDescription = stringResource(R.string.cd_verified),
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(14.dp)
                 )
@@ -1992,13 +2004,13 @@ fun PlaylistResultCard(
                       )
                       Spacer(modifier = Modifier.size(6.dp))
                       val metadata = if (isAlbum) {
-                          "Album • ${item.uploaderName}"
+                          stringResource(R.string.album_metadata, item.uploaderName)
                       } else {
                           buildList {
-                              add("Playlist")
+                              add(stringResource(R.string.label_playlist))
                               item.uploaderName.takeIf { it.isNotBlank() }?.let(::add)
                               item.itemCount.takeIf { it >= 0 }?.let { count ->
-                                  add(if (count == 1) "1 song" else "$count songs")
+                                  add(pluralStringResource(R.plurals.n_songs, count, count))
                               }
                           }.joinToString(" • ")
                       }
@@ -2023,8 +2035,8 @@ fun PlaylistResultCard(
                      Icon(
                          imageVector = if (isSaved) Icons.Rounded.Bookmark
                              else Icons.Rounded.BookmarkBorder,
-                         contentDescription = if (isSaved) "Remove from library"
-                             else "Save to library",
+                         contentDescription = if (isSaved) stringResource(R.string.cd_remove_from_library)
+                             else stringResource(R.string.cd_save_to_library),
                          tint = if (isSaved) MaterialTheme.colorScheme.primary
                              else secondaryTextColor
                      )
@@ -2058,14 +2070,14 @@ fun SearchHistoryList(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                "Recent searches",
+                stringResource(R.string.recent_searches),
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Bold,
                 color = secondaryTextColor
             )
             TextButton(onClick = onClearAll) {
                 Text(
-                    "Clear all",
+                    stringResource(R.string.action_clear_all),
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.primary
                 )
@@ -2107,7 +2119,7 @@ fun SearchHistoryList(
                     ) {
                         Icon(
                             Icons.Rounded.Close,
-                            contentDescription = "Remove",
+                            contentDescription = stringResource(R.string.cd_remove),
                             tint = secondaryTextColor,
                             modifier = Modifier.size(18.dp)
                         )
@@ -2224,11 +2236,11 @@ private fun LinkDetectedBanner(
                     )
                     AnimatedContent(
                         targetState = when (state) {
-                            is LinkLookupState.MediaResult -> "Ready to play"
+                            is LinkLookupState.MediaResult -> stringResource(R.string.link_ready_to_play)
                             is LinkLookupState.PlaylistSongsResult,
-                            is LinkLookupState.PlaylistVideosResult -> "Playlist loaded"
-                            LinkLookupState.Error -> "Couldn't load link"
-                            else -> "YouTube link detected"
+                            is LinkLookupState.PlaylistVideosResult -> stringResource(R.string.link_playlist_loaded)
+                            LinkLookupState.Error -> stringResource(R.string.link_error_banner)
+                            else -> stringResource(R.string.link_detected)
                         },
                         transitionSpec = {
                             (fadeIn(tween(200)) + slideInVertically { it / 2 }) togetherWith
@@ -2313,14 +2325,14 @@ private fun LinkResolvingCard(
             }
             Spacer(modifier = Modifier.height(24.dp))
             Text(
-                "Fetching from YouTube",
+                stringResource(R.string.link_fetching),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
                 color = textColor
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                if (videoMode) "Getting the video ready" else "Getting the song ready",
+                if (videoMode) stringResource(R.string.link_preparing_video) else stringResource(R.string.link_preparing_song),
                 style = MaterialTheme.typography.bodyMedium,
                 color = secondaryTextColor
             )
@@ -2454,7 +2466,7 @@ private fun LinkHeroCard(
                         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             Icon(
                                 Icons.Rounded.PlayArrow,
-                                contentDescription = "Play",
+                                contentDescription = stringResource(R.string.cd_play),
                                 tint = MaterialTheme.colorScheme.onPrimary,
                                 modifier = Modifier.size(34.dp)
                             )
@@ -2493,7 +2505,7 @@ private fun LinkHeroCard(
 @Composable
 private fun LinkPlaylistHeader(
     count: Int,
-    itemLabel: String,
+    isVideos: Boolean,
     thumbnailUrl: String?,
     accentColor: Color,
     cardColor: Color,
@@ -2545,14 +2557,15 @@ private fun LinkPlaylistHeader(
                 Spacer(modifier = Modifier.width(14.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        "YouTube Playlist",
+                        stringResource(R.string.link_header_playlist),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = textColor
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        "$count $itemLabel • Tap to play",
+                        if (isVideos) stringResource(R.string.link_tap_to_play_videos, count)
+                        else stringResource(R.string.link_tap_to_play_songs, count),
                         style = MaterialTheme.typography.bodySmall,
                         color = secondaryTextColor
                     )
@@ -2616,14 +2629,14 @@ private fun LinkErrorCard(
                 }
                 Spacer(modifier = Modifier.height(16.dp))
                 Text(
-                    "Couldn't load this link",
+                    stringResource(R.string.link_error_title),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = textColor
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    "The content may be private, or you're offline",
+                    stringResource(R.string.link_error_body),
                     style = MaterialTheme.typography.bodyMedium,
                     color = secondaryTextColor,
                     textAlign = TextAlign.Center
@@ -2636,7 +2649,7 @@ private fun LinkErrorCard(
                         modifier = Modifier.size(18.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Try again")
+                    Text(stringResource(R.string.action_try_again))
                 }
             }
         }
@@ -2733,7 +2746,7 @@ private fun VideoPlaylistRow(
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = buildString {
-                        append("Playlist")
+                        append(stringResource(R.string.label_playlist))
                         playlist.subtitle?.let { append(" • ").append(it) }
                         playlist.videoCountText?.let { append(" • ").append(it) }
                     },
@@ -2758,8 +2771,8 @@ private fun VideoPlaylistRow(
                     Icon(
                         imageVector = if (isSaved) Icons.Rounded.Bookmark
                             else Icons.Rounded.BookmarkBorder,
-                        contentDescription = if (isSaved) "Remove from library"
-                            else "Save to library",
+                        contentDescription = if (isSaved) stringResource(R.string.cd_remove_from_library)
+                            else stringResource(R.string.cd_save_to_library),
                         tint = if (isSaved) MaterialTheme.colorScheme.primary
                             else secondaryTextColor
                     )
@@ -2816,7 +2829,7 @@ private fun CompactVideoRow(
                         color = Color(0xFFFF0000)
                     ) {
                         Text(
-                            text = "LIVE",
+                            text = stringResource(R.string.badge_live),
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
                             color = Color.White,
@@ -2911,7 +2924,7 @@ private fun SearchPagingFooter(
                 )
             } else {
                 Text(
-                    "That's everything",
+                    stringResource(R.string.thats_everything),
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.SemiBold,
                     color = secondaryTextColor
@@ -2985,4 +2998,18 @@ private fun ChannelResultRow(
             )
         }
     }
+}
+
+
+@Composable
+private fun exploreTopicLabel(topic: String): String = when (topic) {
+    "Gaming" -> stringResource(R.string.topic_gaming)
+    "Music" -> stringResource(R.string.topic_music)
+    "News" -> stringResource(R.string.topic_news)
+    "Live" -> stringResource(R.string.topic_live)
+    "Podcasts" -> stringResource(R.string.topic_podcasts)
+    "Movies" -> stringResource(R.string.topic_movies)
+    "Tech" -> stringResource(R.string.topic_tech)
+    "Sports" -> stringResource(R.string.topic_sports)
+    else -> stringResource(R.string.topic_learning)
 }

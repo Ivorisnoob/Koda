@@ -1,4 +1,6 @@
 package com.ivor.ivormusic.ui.video
+import androidx.compose.ui.res.stringResource
+import com.ivor.ivormusic.R
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
@@ -247,9 +249,9 @@ fun VideoHomeContent(
                     ) {
                         Text(
                             text = when {
-                                showOfflineDownloads -> "Available offline"
-                                isYouTubeConnected -> "Recommended For You"
-                                else -> "Trending Videos"
+                                showOfflineDownloads -> stringResource(R.string.vh_available_offline)
+                                isYouTubeConnected -> stringResource(R.string.vh_recommended_for_you)
+                                else -> stringResource(R.string.vh_trending_videos)
                             },
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
@@ -321,14 +323,14 @@ fun VideoHomeContent(
                                 )
                                 Spacer(modifier = Modifier.height(16.dp))
                                 Text(
-                                    text = if (isOffline) "You're offline" else "No videos found",
+                                    text = if (isOffline) stringResource(R.string.vh_youre_offline) else stringResource(R.string.vh_no_videos_found),
                                     style = MaterialTheme.typography.bodyLarge,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                                 if (isOffline) {
                                     Spacer(modifier = Modifier.height(4.dp))
                                     Text(
-                                        text = "Downloaded videos will appear here",
+                                        text = stringResource(R.string.vh_downloaded_hint),
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -409,14 +411,14 @@ private fun VideoTopBarSection(
             if (userAvatar != null) {
                 AsyncImage(
                     model = userAvatar,
-                    contentDescription = "Profile",
+                    contentDescription = stringResource(R.string.cd_profile),
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop
                 )
             } else {
                 Icon(
                     imageVector = Icons.Default.Person,
-                    contentDescription = "Profile",
+                    contentDescription = stringResource(R.string.cd_profile),
                     tint = iconColor,
                     modifier = Modifier.size(26.dp)
                 )
@@ -440,7 +442,7 @@ private fun VideoTopBarSection(
             ) {
                 Icon(
                     imageVector = Icons.Rounded.Notifications,
-                    contentDescription = "Notifications",
+                    contentDescription = stringResource(R.string.settings_notifications),
                     modifier = Modifier.size(22.dp)
                 )
             }
@@ -458,7 +460,7 @@ private fun VideoTopBarSection(
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.Download,
-                        contentDescription = "Downloads",
+                        contentDescription = stringResource(R.string.cd_downloads),
                         modifier = Modifier.size(22.dp)
                     )
                 }
@@ -485,7 +487,7 @@ private fun VideoTopBarSection(
             ) {
                 Icon(
                     imageVector = Icons.Default.Settings,
-                    contentDescription = "Settings",
+                    contentDescription = stringResource(R.string.cd_settings),
                     modifier = Modifier.size(22.dp)
                 )
             }
@@ -538,7 +540,7 @@ fun ShortsShelf(
             }
             Spacer(modifier = Modifier.width(12.dp))
             Text(
-                text = "Shorts",
+                text = stringResource(R.string.sp_shorts),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground
@@ -701,7 +703,7 @@ fun VideoCard(
                         color = Color(0xFFFF0000)
                     ) {
                         Text(
-                            text = "LIVE",
+                            text = stringResource(R.string.badge_live),
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
                             color = Color.White,
