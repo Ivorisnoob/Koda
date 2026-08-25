@@ -1,0 +1,195 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Koda</string>
+    <string name="now_playing_channel_name">מתנגן כעת</string>
+    <string name="video_playback_channel_name">הפעלת וידאו</string>
+
+    <string name="undo">ביטול</string>
+    <string name="action_cancel">ביטול</string>
+    <string name="action_done">בוצע</string>
+    <string name="action_create">יצירה</string>
+    <string name="action_save">שמירה</string>
+    <string name="action_delete">מחיקה</string>
+    <string name="action_edit">עריכה</string>
+    <string name="action_share">שיתוף</string>
+    <string name="action_retry">נסה שוב</string>
+    <string name="action_see_all">הצג הכול</string>
+    <string name="action_play_all">נגן הכול</string>
+    <string name="action_show_more">הצג עוד</string>
+    <string name="action_try_again">נסה שוב</string>
+    <string name="action_open_settings">פתח הגדרות</string>
+    <string name="action_clear_all">נקה הכול</string>
+    <string name="action_new_playlist">רשימת השמעה חדשה</string>
+    <string name="action_grant_permission">מתן הרשאה</string>
+    <string name="unknown_artist">אמן לא מוכר</string>
+    <string name="untitled_song">שיר ללא כותרת</string>
+    <string name="label_playlist">רשימת השמעה</string>
+
+    <string name="tab_home">בית</string>
+    <string name="tab_search">חיפוש</string>
+    <string name="tab_subs">מינויים</string>
+    <string name="tab_library">ספרייה</string>
+
+    <string name="local_only_title">מצב מקומי בלבד מופעל</string>
+    <string name="local_only_default_subtitle">האזור הזה דורש אינטרנט. כבה מקומי בלבד בהגדרות כדי להשתמש בו.</string>
+    <string name="local_only_video_mode_subtitle">מצב הווידאו דורש אינטרנט. כבה מקומי בלבד בהגדרות כדי לצפות בסרטונים.</string>
+    <string name="local_only_video_search_subtitle">חיפוש סרטונים דורש אינטרנט. כבה מקומי בלבד בהגדרות כדי לחפש סרטונים.</string>
+    <string name="local_only_subscriptions_subtitle">המינויים דורשים אינטרנט. כבה מקומי בלבד בהגדרות כדי לראות אותם.</string>
+    <string name="local_only_video_library_subtitle">ספריית הווידאו דורשת אינטרנט. כבה מקומי בלבד בהגדרות כדי לראות אותה.</string>
+    <string name="local_only_update_subtitle">בדיקת עדכונים דורשת אינטרנט. כבה מקומי בלבד בהגדרות כדי לבדוק עדכונים.</string>
+
+    <string name="crash_dialog_title">Koda קרס בפעם הקודמת</string>
+    <string name="crash_dialog_message">משהו השתבש בהפעלה הקודמת שלך. אפשר לשלוח דוח באג עם הפרטים - שום דבר לא יוצא מהמכשיר שלך אלא אם תבחר לשתף.</string>
+    <string name="crash_dialog_view_report">הצג ודווח</string>
+    <string name="crash_dialog_not_now">לא עכשיו</string>
+
+    <string name="permission_required_title">נדרשת הרשאה לטעינת שירים</string>
+
+    <string name="home_section_recent_albums">אלבומים אחרונים</string>
+    <string name="home_section_jump_back_in">המשך להאזין</string>
+    <string name="your_mix_line1">המיקס</string>
+    <string name="your_mix_line2">שלך</string>
+    <string name="update_badge_version">v%1$s</string>
+    <string name="artists_joined">%1$s, %2$s</string>
+    <string name="cd_profile">פרופיל</string>
+    <string name="cd_downloads">הורדות</string>
+    <string name="cd_settings">הגדרות</string>
+    <string name="cd_play">נגן</string>
+    <string name="cd_pause">השהה</string>
+    <string name="cd_next">הבא</string>
+    <string name="cd_album_art">עטיפת אלבום</string>
+    <string name="cd_show_all">הצג הכול: %1$s</string>
+
+    <string name="spotlight_quick_picks">בחירות מהירות</string>
+    <string name="spotlight_your_playlists">רשימות ההשמעה שלך</string>
+    <string name="spotlight_from_your_library">מהספרייה שלך</string>
+    <string name="spotlight_caption_liked">משירים שאהבת</string>
+    <string name="spotlight_caption_recent">ממה שהאזנת לו לאחרונה</string>
+    <string name="shortcut_liked_songs">שירים שאהבת</string>
+    <string name="filter_all">הכול</string>
+    <string name="filter_liked">אהבתי</string>
+    <string name="filter_recent">אחרונים</string>
+    <string name="filter_playlists">רשימות</string>
+    <string name="spotlight_empty_no_liked">עדיין אין שירים שאהבת</string>
+    <string name="spotlight_empty_no_recent">עדיין לא נוגן כלום</string>
+    <string name="spotlight_empty_no_playlists">עדיין אין רשימות השמעה</string>
+    <string name="spotlight_empty_generic">עדיין אין כלום להציג כאן</string>
+    <string name="spotlight_hint_liked">שירים שתאהב יתאספו כאן.</string>
+    <string name="spotlight_hint_playlists">רשימות שתיצור או תשמור יופיעו כאן.</string>
+    <string name="spotlight_hint_all">נגן משהו ודף הבית שלך יתמלא.</string>
+
+    <string name="sleep_timer_title">טיימר שינה</string>
+    <string name="sleep_timer_status_track">הרצועה הזאת</string>
+    <string name="sleep_timer_detail_track">ההשמעה תיעצר כשהשיר הנוכחי יסתיים</string>
+    <string name="sleep_timer_detail_duration">ההשמעה תדעך ותושהה כשהטיימר יסתיים</string>
+    <string name="minutes_short">%1$d דק\'</string>
+    <string name="sleep_timer_end_of_track">סוף הרצועה הזאת</string>
+    <string name="sleep_timer_turn_off">כיבוי</string>
+
+    <string name="cd_switch_to_music">החלף למצב מוזיקה</string>
+    <string name="cd_switch_to_video">החלף למצב וידאו</string>
+    <string name="cd_drag_to_reorder">גרור כדי לסדר מחדש</string>
+    <string name="cd_favorite">מועדף</string>
+    <string name="cd_clear_search">נקה חיפוש</string>
+    <string name="queue_removed_snackbar">%1$s הוסר</string>
+
+    <string name="song_options_play_next">נגן הבא</string>
+    <string name="song_options_play_next_subtitle">מיד אחרי השיר הזה</string>
+    <string name="song_options_add_to_queue">הוסף לתור</string>
+    <string name="song_options_add_to_queue_subtitle">בסוף</string>
+    <string name="song_options_add_to_playlist">הוסף לרשימת השמעה</string>
+    <string name="song_options_remove_from_liked">הסר מהאהובים</string>
+    <string name="song_options_like">אהבתי</string>
+    <string name="song_options_download">הורד</string>
+    <string name="song_options_download_subtitle">שמור במכשיר הזה</string>
+    <string name="song_options_downloaded">הורד</string>
+    <string name="song_options_go_to_artist">עבור אל %1$s</string>
+
+    <string name="add_to_playlist_title">הוסף לרשימת השמעה</string>
+    <string name="new_playlist_label">רשימת השמעה חדשה</string>
+    <string name="name_label">שם</string>
+    <string name="description_optional_label">תיאור (אופציונלי)</string>
+
+    <string name="video_options_watch_later">צפה מאוחר יותר</string>
+    <string name="video_options_kept_on_device">נשמר במכשיר הזה</string>
+    <string name="video_options_save_to_playlist">שמור ברשימת השמעה</string>
+    <string name="video_options_download">הורד</string>
+    <string name="video_options_go_to_channel">עבור לערוץ</string>
+    <string name="video_options_share">שתף</string>
+    <string name="video_options_share_chooser">שיתוף סרטון</string>
+    <string name="video_options_not_interested">לא מעוניין</string>
+    <string name="video_options_dont_recommend_channel">אל תמליץ על הערוץ הזה</string>
+    <string name="video_options_dont_recommend_channel_name">אל תמליץ על %1$s</string>
+    <string name="cd_back">חזרה</string>
+    <string name="search_playlists_placeholder">חיפוש רשימות השמעה</string>
+    <string name="no_playlist_matches">אין רשימות השמעה שתואמות ל \"%1$s\"</string>
+    <string name="no_playlists_yet_hint">עדיין אין רשימות השמעה. צור אחת והסרטון הזה ייכנס אליה ישירות.</string>
+    <string name="cd_saved">נשמר</string>
+    <string name="cd_couldnt_save">לא ניתן היה לשמור</string>
+    <string name="cd_in_this_playlist">כבר ברשימה הזאת</string>
+
+    <string name="settings_section_you">אתה</string>
+    <string name="settings_section_look_and_feel">מראה ותחושה</string>
+    <string name="settings_section_playback_and_content">השמעה ותוכן</string>
+    <string name="settings_section_system">מערכת</string>
+    <string name="settings_section_about">אודות</string>
+    <string name="settings_account">חשבון</string>
+    <string name="settings_appearance">מראה</string>
+    <string name="settings_player">נגן</string>
+    <string name="settings_playback_and_quality">השמעה ואיכות</string>
+    <string name="settings_content_and_feeds">תוכן ופידים</string>
+    <string name="settings_subscriptions">מינויים</string>
+    <string name="settings_storage_and_cache">אחסון ומטמון</string>
+    <string name="settings_notifications">התראות</string>
+    <string name="settings_local_library">ספרייה מקומית</string>
+    <string name="settings_backup_and_restore">גיבוי ושחזור</string>
+    <string name="settings_advanced">מתקדם</string>
+    <string name="settings_advanced_value_xiaomi">מומלץ במכשיר הזה</string>
+    <string name="settings_advanced_value_other">תיקוני סריקה וסוללה</string>
+    <string name="settings_version_subtitle">גרסה %1$s (%2$d)</string>
+
+    <string name="profiles_title">פרופילים</string>
+    <string name="profiles_description">מינויים והמלצות מוסתרות נשמרים לכל פרופיל בנפרד. רשימות השמעה, שירים שאהבת והורדות משותפים.</string>
+    <string name="add_youtube_account">הוסף חשבון YouTube</string>
+    <string name="add_youtube_account_subtitle">התחבר עם חשבון Google אחר</string>
+    <string name="add_device_profile">הוסף פרופיל במכשיר הזה</string>
+    <string name="add_device_profile_subtitle">מינויים נפרדים, בלי צורך בחשבון</string>
+    <string name="profile_signed_out">מנותק - הקש כדי להתחבר</string>
+    <string name="profile_session_expired">ההפעלה פגה - הקש כדי להתחבר מחדש</string>
+    <string name="profile_on_this_device">במכשיר הזה</string>
+    <string name="profile_youtube_account">חשבון YouTube</string>
+    <string name="cd_active_profile">הפרופיל הפעיל</string>
+    <string name="cd_remove_profile">הסר את %1$s</string>
+    <string name="new_profile_dialog_title">פרופיל חדש במכשיר הזה</string>
+    <string name="sign_out_confirm_title">להתנתק מ-%1$s?</string>
+    <string name="remove_profile_confirm_title">להסיר את %1$s?</string>
+    <string name="sign_out">התנתקות</string>
+    <string name="remove">הסרה</string>
+
+    <string name="library_empty_title">הספרייה שלך ריקה</string>
+    <string name="library_empty_subtitle">שירים שתוריד או תאהב יופיעו כאן</string>
+    <string name="library_create_playlist_hint">צור אחת עם כפתור + למטה</string>
+    <string name="fab_downloads">הורדות</string>
+    <string name="fab_listening_history">היסטוריית האזנה</string>
+    <string name="fab_statistics">סטטיסטיקות</string>
+    <string name="cd_listening_stats">סטטיסטיקות האזנה</string>
+    <string name="recently_played">הושמעו לאחרונה</string>
+    <string name="liked_songs">שירים שאהבת</string>
+    <string name="no_artists_yet">עדיין אין אמנים</string>
+    <string name="no_artists_yet_subtitle">אמנים מהשירים שלך יופיעו כאן</string>
+    <string name="no_albums_yet">עדיין אין אלבומים</string>
+    <string name="no_albums_yet_subtitle">אלבומים מהשירים שלך יופיעו כאן</string>
+
+    <plurals name="n_songs">
+        <item quantity="one">שיר %1$d</item>
+        <item quantity="two">%1$d שירים</item>
+        <item quantity="many">%1$d שירים</item>
+        <item quantity="other">%1$d שירים</item>
+    </plurals>
+    <plurals name="n_playlists">
+        <item quantity="one">רשימת השמעה %1$d</item>
+        <item quantity="two">%1$d רשימות השמעה</item>
+        <item quantity="many">%1$d רשימות השמעה</item>
+        <item quantity="other">%1$d רשימות השמעה</item>
+    </plurals>
+</resources>

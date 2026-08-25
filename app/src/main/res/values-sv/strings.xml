@@ -1,0 +1,191 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Koda</string>
+    <string name="now_playing_channel_name">Spelas nu</string>
+    <string name="video_playback_channel_name">Videouppspelning</string>
+
+    <string name="undo">Ångra</string>
+    <string name="action_cancel">Avbryt</string>
+    <string name="action_done">Klar</string>
+    <string name="action_create">Skapa</string>
+    <string name="action_save">Spara</string>
+    <string name="action_delete">Ta bort</string>
+    <string name="action_edit">Redigera</string>
+    <string name="action_share">Dela</string>
+    <string name="action_retry">Försök igen</string>
+    <string name="action_see_all">Visa alla</string>
+    <string name="action_play_all">Spela upp allt</string>
+    <string name="action_show_more">Visa mer</string>
+    <string name="action_try_again">Försök igen</string>
+    <string name="action_open_settings">Öppna inställningar</string>
+    <string name="action_clear_all">Rensa allt</string>
+    <string name="action_new_playlist">Ny spellista</string>
+    <string name="action_grant_permission">Bevilja behörighet</string>
+    <string name="unknown_artist">Okänd artist</string>
+    <string name="untitled_song">Namnlös låt</string>
+    <string name="label_playlist">Spellista</string>
+
+    <string name="tab_home">Hem</string>
+    <string name="tab_search">Sök</string>
+    <string name="tab_subs">Prenumerationer</string>
+    <string name="tab_library">Bibliotek</string>
+
+    <string name="local_only_title">Läget Endast lokalt är på</string>
+    <string name="local_only_default_subtitle">Det här avsnittet kräver internet. Stäng av Endast lokalt i inställningarna för att använda det.</string>
+    <string name="local_only_video_mode_subtitle">Videoläget kräver internet. Stäng av Endast lokalt i inställningarna för att titta på videor.</string>
+    <string name="local_only_video_search_subtitle">Videosökning kräver internet. Stäng av Endast lokalt i inställningarna för att söka videor.</string>
+    <string name="local_only_subscriptions_subtitle">Prenumerationer kräver internet. Stäng av Endast lokalt i inställningarna för att se dem.</string>
+    <string name="local_only_video_library_subtitle">Videobiblioteket kräver internet. Stäng av Endast lokalt i inställningarna för att se det.</string>
+    <string name="local_only_update_subtitle">Att söka efter uppdateringar kräver internet. Stäng av Endast lokalt i inställningarna för att söka efter uppdateringar.</string>
+
+    <string name="crash_dialog_title">Koda kraschade förra gången</string>
+    <string name="crash_dialog_message">Något gick fel under din förra session. Du kan skicka en felrapport med detaljer - inget lämnar din enhet om du inte väljer att dela det.</string>
+    <string name="crash_dialog_view_report">Visa &amp; rapportera</string>
+    <string name="crash_dialog_not_now">Inte nu</string>
+
+    <string name="permission_required_title">Behörighet krävs för att läsa in låtar</string>
+
+    <string name="home_section_recent_albums">Senaste albumen</string>
+    <string name="home_section_jump_back_in">Fortsätt lyssna</string>
+    <string name="your_mix_line1">Din</string>
+    <string name="your_mix_line2">mix</string>
+    <string name="update_badge_version">v%1$s</string>
+    <string name="artists_joined">%1$s, %2$s</string>
+    <string name="cd_profile">Profil</string>
+    <string name="cd_downloads">Nedladdningar</string>
+    <string name="cd_settings">Inställningar</string>
+    <string name="cd_play">Spela upp</string>
+    <string name="cd_pause">Pausa</string>
+    <string name="cd_next">Nästa</string>
+    <string name="cd_album_art">Albumomslag</string>
+    <string name="cd_show_all">Visa hela %1$s</string>
+
+    <string name="spotlight_quick_picks">Snabbval</string>
+    <string name="spotlight_your_playlists">Dina spellistor</string>
+    <string name="spotlight_from_your_library">Från ditt bibliotek</string>
+    <string name="spotlight_caption_liked">Från låtar du gillar</string>
+    <string name="spotlight_caption_recent">Från vad du nyligen lyssnade på</string>
+    <string name="shortcut_liked_songs">Gillade låtar</string>
+    <string name="filter_all">Allt</string>
+    <string name="filter_liked">Gillade</string>
+    <string name="filter_recent">Senaste</string>
+    <string name="filter_playlists">Spellistor</string>
+    <string name="spotlight_empty_no_liked">Inga gillade låtar ännu</string>
+    <string name="spotlight_empty_no_recent">Inget spelat ännu</string>
+    <string name="spotlight_empty_no_playlists">Inga spellistor ännu</string>
+    <string name="spotlight_empty_generic">Ingenting att visa ännu</string>
+    <string name="spotlight_hint_liked">Låtar du gillar samlas här.</string>
+    <string name="spotlight_hint_playlists">Spellistor du skapar eller sparar visas här.</string>
+    <string name="spotlight_hint_all">Spela något så fylls ditt hem på.</string>
+
+    <string name="sleep_timer_title">Insomningstimer</string>
+    <string name="sleep_timer_status_track">Det här spåret</string>
+    <string name="sleep_timer_detail_track">Uppspelningen stoppar när den aktuella låten är slut</string>
+    <string name="sleep_timer_detail_duration">Uppspelningen tonar ut och pausar när timern löper ut</string>
+    <string name="minutes_short">%1$d min</string>
+    <string name="sleep_timer_end_of_track">Slutet av detta spår</string>
+    <string name="sleep_timer_turn_off">Stäng av</string>
+
+    <string name="cd_switch_to_music">Växla till musikläge</string>
+    <string name="cd_switch_to_video">Växla till videoläge</string>
+    <string name="cd_drag_to_reorder">Dra för att ordna om</string>
+    <string name="cd_favorite">Favorit</string>
+    <string name="cd_clear_search">Rensa sökningen</string>
+    <string name="queue_removed_snackbar">Tog bort %1$s</string>
+
+    <string name="song_options_play_next">Spela härnäst</string>
+    <string name="song_options_play_next_subtitle">Direkt efter denna låt</string>
+    <string name="song_options_add_to_queue">Lägg till i kön</string>
+    <string name="song_options_add_to_queue_subtitle">På slutet</string>
+    <string name="song_options_add_to_playlist">Lägg till i spellista</string>
+    <string name="song_options_remove_from_liked">Ta bort från gillade</string>
+    <string name="song_options_like">Gilla</string>
+    <string name="song_options_download">Ladda ned</string>
+    <string name="song_options_download_subtitle">Behåll på den här enheten</string>
+    <string name="song_options_downloaded">Nedladdad</string>
+    <string name="song_options_go_to_artist">Till %1$s</string>
+
+    <string name="add_to_playlist_title">Lägg till i spellista</string>
+    <string name="new_playlist_label">Ny spellista</string>
+    <string name="name_label">Namn</string>
+    <string name="description_optional_label">Beskrivning (valfritt)</string>
+
+    <string name="video_options_watch_later">Spara till senare</string>
+    <string name="video_options_kept_on_device">Sparad på enheten</string>
+    <string name="video_options_save_to_playlist">Spara i spellista</string>
+    <string name="video_options_download">Ladda ned</string>
+    <string name="video_options_go_to_channel">Gå till kanalen</string>
+    <string name="video_options_share">Dela</string>
+    <string name="video_options_share_chooser">Dela video</string>
+    <string name="video_options_not_interested">Inte intresserad</string>
+    <string name="video_options_dont_recommend_channel">Rekommendera inte kanalen</string>
+    <string name="video_options_dont_recommend_channel_name">Rekommendera inte %1$s</string>
+    <string name="cd_back">Tillbaka</string>
+    <string name="search_playlists_placeholder">Sök spellistor</string>
+    <string name="no_playlist_matches">Ingen spellista matchar \"%1$s\"</string>
+    <string name="no_playlists_yet_hint">Inga spellistor ännu. Skapa en och den här videon hamnar direkt i den.</string>
+    <string name="cd_saved">Sparad</string>
+    <string name="cd_couldnt_save">Kunde inte spara</string>
+    <string name="cd_in_this_playlist">Finns i den här listan</string>
+
+    <string name="settings_section_you">Du</string>
+    <string name="settings_section_look_and_feel">Utseende</string>
+    <string name="settings_section_playback_and_content">Uppspelning och innehåll</string>
+    <string name="settings_section_system">System</string>
+    <string name="settings_section_about">Om</string>
+    <string name="settings_account">Konto</string>
+    <string name="settings_appearance">Utseende</string>
+    <string name="settings_player">Spelare</string>
+    <string name="settings_playback_and_quality">Uppspelning och kvalitet</string>
+    <string name="settings_content_and_feeds">Innehåll och flöden</string>
+    <string name="settings_subscriptions">Prenumerationer</string>
+    <string name="settings_storage_and_cache">Lagring och cache</string>
+    <string name="settings_notifications">Aviseringar</string>
+    <string name="settings_local_library">Lokalt bibliotek</string>
+    <string name="settings_backup_and_restore">Säkerhetskopiering och återställning</string>
+    <string name="settings_advanced">Avancerat</string>
+    <string name="settings_advanced_value_xiaomi">Rekommenderas på den här enheten</string>
+    <string name="settings_advanced_value_other">Skannings- och batterifix</string>
+    <string name="settings_version_subtitle">Version %1$s (%2$d)</string>
+
+    <string name="profiles_title">Profiler</string>
+    <string name="profiles_description">Prenumerationer och dolda rekommendationer sparas per profil. Spellistor, gillade låtar och nedladdningar delas.</string>
+    <string name="add_youtube_account">Lägg till YouTube-konto</string>
+    <string name="add_youtube_account_subtitle">Logga in med ett annat Google-konto</string>
+    <string name="add_device_profile">Lägg till profil på den här enheten</string>
+    <string name="add_device_profile_subtitle">Separata prenumerationer, inget konto krävs</string>
+    <string name="profile_signed_out">Utloggad - tryck för att logga in</string>
+    <string name="profile_session_expired">Sessionen har upphört - tryck för att ansluta igen</string>
+    <string name="profile_on_this_device">På den här enheten</string>
+    <string name="profile_youtube_account">YouTube-konto</string>
+    <string name="cd_active_profile">Aktiv profil</string>
+    <string name="cd_remove_profile">Ta bort %1$s</string>
+    <string name="new_profile_dialog_title">Ny profil på den här enheten</string>
+    <string name="sign_out_confirm_title">Logga ut från %1$s?</string>
+    <string name="remove_profile_confirm_title">Ta bort %1$s?</string>
+    <string name="sign_out">Logga ut</string>
+    <string name="remove">Ta bort</string>
+
+    <string name="library_empty_title">Ditt bibliotek är tomt</string>
+    <string name="library_empty_subtitle">Låtar du laddar ned eller gillar visas här</string>
+    <string name="library_create_playlist_hint">Skapa en med +-knappen nedan</string>
+    <string name="fab_downloads">Nedladdningar</string>
+    <string name="fab_listening_history">Lyssningshistorik</string>
+    <string name="fab_statistics">Statistik</string>
+    <string name="cd_listening_stats">Lyssningsstatistik</string>
+    <string name="recently_played">Nyligen spelat</string>
+    <string name="liked_songs">Gillade låtar</string>
+    <string name="no_artists_yet">Inga artister ännu</string>
+    <string name="no_artists_yet_subtitle">Artister från dina låtar visas här</string>
+    <string name="no_albums_yet">Inga album ännu</string>
+    <string name="no_albums_yet_subtitle">Album från dina låtar visas här</string>
+
+    <plurals name="n_songs">
+        <item quantity="one">%1$d låt</item>
+        <item quantity="other">%1$d låtar</item>
+    </plurals>
+    <plurals name="n_playlists">
+        <item quantity="one">%1$d spellista</item>
+        <item quantity="other">%1$d spellistor</item>
+    </plurals>
+</resources>

@@ -1,0 +1,193 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Koda</string>
+    <string name="now_playing_channel_name">در حال پخش</string>
+    <string name="video_playback_channel_name">پخش ویدیو</string>
+
+    <string name="undo">واگرد</string>
+    <string name="action_cancel">لغو</string>
+    <string name="action_done">انجام شد</string>
+    <string name="action_create">ایجاد</string>
+    <string name="action_save">ذخیره</string>
+    <string name="action_delete">حذف</string>
+    <string name="action_edit">ویرایش</string>
+    <string name="action_share">اشتراک‌گذاری</string>
+    <string name="action_retry">تلاش دوباره</string>
+    <string name="action_see_all">مشاهده همه</string>
+    <string name="action_play_all">پخش همه</string>
+    <string name="action_show_more">نمایش بیشتر</string>
+    <string name="action_try_again">دوباره تلاش کنید</string>
+    <string name="action_open_settings">باز کردن تنظیمات</string>
+    <string name="action_clear_all">پاک کردن همه</string>
+    <string name="action_new_playlist">فهرست پخش جدید</string>
+    <string name="action_grant_permission">اعطای مجوز</string>
+    <string name="unknown_artist">هنرمند ناشناس</string>
+    <string name="untitled_song">آهنگ بدون عنوان</string>
+    <string name="label_playlist">فهرست پخش</string>
+
+    <string name="tab_home">خانه</string>
+    <string name="tab_search">جستجو</string>
+    <string name="tab_subs">اشتراک‌ها</string>
+    <string name="tab_library">کتابخانه</string>
+
+    <string name="local_only_title">حالت «فقط محلی» روشن است</string>
+    <string name="local_only_default_subtitle">این بخش به اینترنت نیاز دارد. برای استفاده، «فقط محلی» را در تنظیمات خاموش کنید.</string>
+    <string name="local_only_video_mode_subtitle">حالت ویدیو به اینترنت نیاز دارد. برای تماشای ویدیوها، «فقط محلی» را در تنظیمات خاموش کنید.</string>
+    <string name="local_only_video_search_subtitle">جستجوی ویدیو به اینترنت نیاز دارد. برای جستجو، «فقط محلی» را در تنظیمات خاموش کنید.</string>
+    <string name="local_only_subscriptions_subtitle">اشتراک‌ها به اینترنت نیاز دارند. برای دیدن آن‌ها، «فقط محلی» را در تنظیمات خاموش کنید.</string>
+    <string name="local_only_video_library_subtitle">کتابخانه ویدیو به اینترنت نیاز دارد. برای دیدن آن، «فقط محلی» را در تنظیمات خاموش کنید.</string>
+    <string name="local_only_update_subtitle">بررسی به‌روزرسانی به اینترنت نیاز دارد. برای بررسی، «فقط محلی» را در تنظیمات خاموش کنید.</string>
+
+    <string name="crash_dialog_title">Koda بار گذشته کرش کرد</string>
+    <string name="crash_dialog_message">در جلسه قبلی شما مشکلی پیش آمد. می‌توانید گزارش اشکال همراه با جزئیات بفرستید - مادامی که انتخاب به اشتراک‌گذاری نکنید، چیزی از دستگاه شما خارج نمی‌شود.</string>
+    <string name="crash_dialog_view_report">مشاهده و گزارش</string>
+    <string name="crash_dialog_not_now">فعلاً نه</string>
+
+    <string name="permission_required_title">برای بارگذاری آهنگ‌ها مجوز لازم است</string>
+
+    <string name="home_section_recent_albums">آلبوم‌های اخیر</string>
+    <string name="home_section_jump_back_in">ادامه گوش دادن</string>
+    <string name="your_mix_line1">میکس</string>
+    <string name="your_mix_line2">شما</string>
+    <string name="update_badge_version">v%1$s</string>
+    <string name="artists_joined">%1$s، %2$s</string>
+    <string name="cd_profile">نمایه</string>
+    <string name="cd_downloads">دانلودها</string>
+    <string name="cd_settings">تنظیمات</string>
+    <string name="cd_play">پخش</string>
+    <string name="cd_pause">مکث</string>
+    <string name="cd_next">بعدی</string>
+    <string name="cd_album_art">جلد آلبوم</string>
+    <string name="cd_show_all">نمایش همه: %1$s</string>
+
+    <string name="spotlight_quick_picks">انتخاب‌های سریع</string>
+    <string name="spotlight_your_playlists">فهرست‌های پخش شما</string>
+    <string name="spotlight_from_your_library">از کتابخانه شما</string>
+    <string name="spotlight_caption_liked">از آهنگ‌هایی که پسندیده‌اید</string>
+    <string name="spotlight_caption_recent">از آنچه اخیراً گوش داده‌اید</string>
+    <string name="shortcut_liked_songs">آهنگ‌های مورد علاقه</string>
+    <string name="filter_all">همه</string>
+    <string name="filter_liked">پسندیده‌شده‌ها</string>
+    <string name="filter_recent">اخیر</string>
+    <string name="filter_playlists">فهرست‌های پخش</string>
+    <string name="spotlight_empty_no_liked">هنوز آهنگی نپسندیده‌اید</string>
+    <string name="spotlight_empty_no_recent">هنوز چیزی پخش نشده است</string>
+    <string name="spotlight_empty_no_playlists">هنوز فهرست پخشی وجود ندارد</string>
+    <string name="spotlight_empty_generic">هنوز چیزی برای نمایش نیست</string>
+    <string name="spotlight_hint_liked">آهنگ‌هایی که می‌پسندید اینجا جمع می‌شوند.</string>
+    <string name="spotlight_hint_playlists">فهرست‌های پخشی که می‌سازید یا ذخیره می‌کنید اینجا ظاهر می‌شوند.</string>
+    <string name="spotlight_hint_all">چیزی پخش کنید تا صفحه اصلی‌تان پر شود.</string>
+
+    <string name="sleep_timer_title">تایمر خواب</string>
+    <string name="sleep_timer_status_track">این قطعه</string>
+    <string name="sleep_timer_detail_track">پخش وقتی تمام شود متوقف می‌شود</string>
+    <string name="sleep_timer_detail_duration">پخش در پایان تایمر محو شده و متوقف می‌شود</string>
+    <string name="minutes_short">%1$d دقیقه</string>
+    <string name="sleep_timer_end_of_track">پایان این قطعه</string>
+    <string name="sleep_timer_turn_off">خاموش کردن</string>
+
+    <string name="cd_switch_to_music">رفتن به حالت موسیقی</string>
+    <string name="cd_switch_to_video">رفتن به حالت ویدیو</string>
+    <string name="cd_drag_to_reorder">برای تغییر ترتیب بکشید</string>
+    <string name="cd_favorite">مورد علاقه</string>
+    <string name="cd_clear_search">پاک کردن جستجو</string>
+    <string name="queue_removed_snackbar">%1$s حذف شد</string>
+
+    <string name="song_options_play_next">پخش بعدی</string>
+    <string name="song_options_play_next_subtitle">بلافاصله بعد این آهنگ</string>
+    <string name="song_options_add_to_queue">افزودن به صف</string>
+    <string name="song_options_add_to_queue_subtitle">در انتها</string>
+    <string name="song_options_add_to_playlist">افزودن به فهرست پخش</string>
+    <string name="song_options_remove_from_liked">حذف از پسندیده‌ها</string>
+    <string name="song_options_like">پسندیدم</string>
+    <string name="song_options_download">دانلود</string>
+    <string name="song_options_download_subtitle">نگه داشتن روی این دستگاه</string>
+    <string name="song_options_downloaded">دانلود شده</string>
+    <string name="song_options_go_to_artist">رفتن به %1$s</string>
+
+    <string name="add_to_playlist_title">افزودن به فهرست پخش</string>
+    <string name="new_playlist_label">فهرست پخش جدید</string>
+    <string name="name_label">نام</string>
+    <string name="description_optional_label">توضیحات (اختیاری)</string>
+
+    <string name="video_options_watch_later">تماشا بعداً</string>
+    <string name="video_options_kept_on_device">روی این دستگاه ذخیره شد</string>
+    <string name="video_options_save_to_playlist">ذخیره در فهرست پخش</string>
+    <string name="video_options_download">دانلود</string>
+    <string name="video_options_go_to_channel">رفتن به کانال</string>
+    <string name="video_options_share">اشتراک‌گذاری</string>
+    <string name="video_options_share_chooser">اشتراک‌گذاری ویدیو</string>
+    <string name="video_options_not_interested">علاقه‌ای ندارم</string>
+    <string name="video_options_dont_recommend_channel">این کانال توصیه نشود</string>
+    <string name="video_options_dont_recommend_channel_name">%1$s توصیه نشود</string>
+    <string name="cd_back">بازگشت</string>
+    <string name="search_playlists_placeholder">جستجوی فهرست‌های پخش</string>
+    <string name="no_playlist_matches">هیچ فهرست پخشی با \"%1$s\" مطابقت ندارد</string>
+    <string name="no_playlists_yet_hint">هنوز فهرست پخشی نیست. یکی بسازید تا این ویدیو مستقیم داخلش قرار بگیرد.</string>
+    <string name="cd_saved">ذخیره شد</string>
+    <string name="cd_couldnt_save">ذخیره نشد</string>
+    <string name="cd_in_this_playlist">قبلاً در این فهرست است</string>
+
+    <string name="settings_section_you">شما</string>
+    <string name="settings_section_look_and_feel">ظاهر</string>
+    <string name="settings_section_playback_and_content">پخش و محتوا</string>
+    <string name="settings_section_system">سیستم</string>
+    <string name="settings_section_about">درباره</string>
+    <string name="settings_account">حساب</string>
+    <string name="settings_appearance">ظاهر</string>
+    <string name="settings_player">پخش‌کننده</string>
+    <string name="settings_playback_and_quality">پخش و کیفیت</string>
+    <string name="settings_content_and_feeds">محتوا و خوراک‌ها</string>
+    <string name="settings_subscriptions">اشتراک‌ها</string>
+    <string name="settings_storage_and_cache">فضای ذخیره‌سازی و حافظه پنهان</string>
+    <string name="settings_notifications">اعلان‌ها</string>
+    <string name="settings_local_library">کتابخانه محلی</string>
+    <string name="settings_backup_and_restore">پشتیبان‌گیری و بازیابی</string>
+    <string name="settings_advanced">پیشرفته</string>
+    <string name="settings_advanced_value_xiaomi">روی این دستگاه توصیه می‌شود</string>
+    <string name="settings_advanced_value_other">اصلاحات اسکن و باتری</string>
+    <string name="settings_version_subtitle">نسخه %1$s (%2$d)</string>
+
+    <string name="profiles_title">نمایه‌ها</string>
+    <string name="profiles_description">اشتراک‌ها و پیشنهادهای پنهان برای هر نمایه جداگانه نگهداری می‌شوند. فهرست‌های پخش، آهنگ‌های مورد علاقه و دانلودها مشترک‌اند.</string>
+    <string name="add_youtube_account">افزودن حساب YouTube</string>
+    <string name="add_youtube_account_subtitle">با حساب Google دیگری وارد شوید</string>
+    <string name="add_device_profile">افزودن نمایه روی این دستگاه</string>
+    <string name="add_device_profile_subtitle">اشتراک‌های جداگانه، بدون نیاز به حساب</string>
+    <string name="profile_signed_out">خارج شده - برای ورود ضربه بزنید</string>
+    <string name="profile_session_expired">نشست منقضی شده - برای اتصال مجدد ضربه بزنید</string>
+    <string name="profile_on_this_device">روی این دستگاه</string>
+    <string name="profile_youtube_account">حساب YouTube</string>
+    <string name="cd_active_profile">نمایه فعال</string>
+    <string name="cd_remove_profile">حذف %1$s</string>
+    <string name="new_profile_dialog_title">نمایه جدید روی این دستگاه</string>
+    <string name="sign_out_confirm_title">خروج از %1$s؟</string>
+    <string name="remove_profile_confirm_title">حذف %1$s؟</string>
+    <string name="sign_out">خروج</string>
+    <string name="remove">حذف</string>
+
+    <string name="library_empty_title">کتابخانه شما خالی است</string>
+    <string name="library_empty_subtitle">آهنگ‌هایی که دانلود یا لایک کنید اینجا نمایش داده می‌شوند</string>
+    <string name="library_create_playlist_hint">با دکمه + پایین بسازید</string>
+    <string name="fab_downloads">دانلودها</string>
+    <string name="fab_listening_history">تاریخچه شنیدار</string>
+    <string name="fab_statistics">آمار</string>
+    <string name="cd_listening_stats">آمار شنیدار</string>
+    <string name="recently_played">اخیراً پخش‌شده</string>
+    <string name="liked_songs">آهنگ‌های مورد علاقه</string>
+    <string name="no_artists_yet">هنوز هنرمندی نیست</string>
+    <string name="no_artists_yet_subtitle">هنرمندان آهنگ‌هایتان اینجا نمایش داده می‌شوند</string>
+    <string name="no_albums_yet">هنوز آلبومی نیست</string>
+    <string name="no_albums_yet_subtitle">آلبوم‌های آهنگ‌هایتان اینجا نمایش داده می‌شوند</string>
+
+    <plurals name="n_songs">
+        <item quantity="zero">%1$d آهنگ</item>
+        <item quantity="one">%1$d آهنگ</item>
+        <item quantity="other">%1$d آهنگ</item>
+    </plurals>
+    <plurals name="n_playlists">
+        <item quantity="zero">%1$d فهرست پخش</item>
+        <item quantity="one">%1$d فهرست پخش</item>
+        <item quantity="other">%1$d فهرست پخش</item>
+    </plurals>
+</resources>
