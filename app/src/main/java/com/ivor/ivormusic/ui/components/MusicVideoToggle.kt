@@ -82,7 +82,7 @@ fun MusicVideoToggle(
     state: MusicVideoToggleState,
     modifier: Modifier = Modifier
 ) {
-    val haptics = LocalHapticFeedback.current
+    val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
     val segmentWidth = 38.dp
     val segmentHeight = 36.dp
 

@@ -539,10 +539,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
      * genuinely the user's would otherwise sit in the list twice, once as
      * theirs and once as a reference offering to remove it from the library.
      *
-     * Albums are the one thing that does not cross over: they are saved by
-     * browse id ("MPRE..."), which is not a playlist and does not resolve
-     * through the video playlist call, so a saved album shown here would open
-     * an empty page. Video mode has no album page to send it to either.
+     * Albums cross over too: they are kept by browse id ("MPRE..."), which a
+     * video-mode open resolves through [loadPlaylistVideos]'s album branch -
+     * the tracks are ordinary YouTube video ids and play as videos - rather
+     * than the playlist call an MPRE id would silently fail against.
      *
      * Declared here rather than beside the other saved-playlist members because
      * it reads [_videoPlaylists], and a property initialized before the one it
@@ -553,7 +553,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         _videoPlaylists
     ) { saved, accountPlaylists ->
         val accountIds = accountPlaylists.map { it.playlistId }.toSet()
-        saved.filterNot { it.isAlbum || it.id in accountIds }.map { it.toVideoPlaylist() }
+        saved.filterNot { it.id in accountIds }.map { it.toVideoPlaylist() }
     }.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000), emptyList())
 
     /** Ids of [savedVideoPlaylists], for marking a row or a page as kept. */
@@ -1149,7 +1149,25 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             _playlistVideos.value = emptyList()
             _isPlaylistVideosLoading.value = true
             try {
-                _playlistVideos.value = youtubeRepository.getPlaylistVideos(playlistId)
+                _playlistVideos.value =
+                    if (playlistId.startsWith("MPRE")) {
+                        // A saved album. Its browse id is not a playlist id, so
+                        // the playlist call would answer garbage; the album
+                        // tracks themselves are ordinary YouTube video ids and
+                        // play fine as videos.
+                        youtubeRepository.getAlbumSongs(playlistId).map { song ->
+                            VideoItem(
+                                videoId = song.id,
+                                title = song.title,
+                                channelName = song.artist,
+                                thumbnailUrl = song.thumbnailUrl ?: song.highResThumbnailUrl,
+                                duration = song.duration / 1000,
+                                viewCount = ""
+                            )
+                        }
+                    } else {
+                        youtubeRepository.getPlaylistVideos(playlistId)
+                    }
             } finally {
                 _isPlaylistVideosLoading.value = false
             }

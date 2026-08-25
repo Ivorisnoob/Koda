@@ -1173,7 +1173,7 @@ fun VideoPlaylistDetail(
     val canSave = !isLocal &&
         playlist.playlistId !in NON_SAVABLE_VIDEO_PLAYLIST_IDS &&
         (isSaved || accountPlaylists.none { it.playlistId == playlist.playlistId })
-    val haptics = LocalHapticFeedback.current
+    val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
 
     Column(
         modifier = Modifier
@@ -1182,9 +1182,15 @@ fun VideoPlaylistDetail(
     ) {
         // Watch Later ("WL") and Liked ("LL") are private, non-shareable feeds,
         // and a device playlist was never published at all; only real YouTube
-        // playlists have a public URL.
+        // playlists have a public URL. Albums (MPRE browse ids) share as their
+        // /browse/ address - a playlist URL built from a browse id is dead.
         val isShareable = !isLocal &&
             playlist.playlistId != "WL" && playlist.playlistId != "LL"
+        val shareUrl = if (playlist.playlistId.startsWith("MPRE")) {
+            "https://youtube.com/browse/${playlist.playlistId}"
+        } else {
+            "https://youtube.com/playlist?list=${playlist.playlistId}"
+        }
         SubPageTopBar(
             title = playlist.title,
             onBack = onBack,
@@ -1221,7 +1227,7 @@ fun VideoPlaylistDetail(
                             type = "text/plain"
                             putExtra(
                                 android.content.Intent.EXTRA_TEXT,
-                                "https://youtube.com/playlist?list=${playlist.playlistId}"
+                                shareUrl
                             )
                         }
                         shareContext.startActivity(

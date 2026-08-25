@@ -194,7 +194,7 @@ fun VideoPlayerOverlay(
     // Context and Activity
     val context = LocalContext.current
     val activity = context as? androidx.activity.ComponentActivity
-    val haptics = LocalHapticFeedback.current
+    val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
 
     if (currentVideo == null) return
 

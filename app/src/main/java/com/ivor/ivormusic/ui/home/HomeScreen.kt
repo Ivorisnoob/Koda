@@ -811,7 +811,7 @@ fun HomeScreen(
         
         // Both navigation variants use the same destinations and interaction
         // contract. Only their Material container and item presentation differ.
-        val navBarHaptics = LocalHapticFeedback.current
+        val navBarHaptics = com.ivor.ivormusic.util.rememberKodaHaptics()
         val navTabs = if (videoMode) listOf(
             Triple(0, "Home", Pair(Icons.Rounded.Home, Icons.Outlined.Home)),
             Triple(1, "Search", Pair(Icons.Filled.Search, Icons.Outlined.Search)),
@@ -1299,7 +1299,7 @@ fun TopBarSection(
         // Profile avatar. Tap opens the switcher; long-press flips straight
         // back to the last profile, which is the whole point of a switcher for
         // someone bouncing between two accounts.
-        val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
+        val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
         val accountSwitcher = remember(context) {
             com.ivor.ivormusic.data.AccountSwitcher(context)
         }

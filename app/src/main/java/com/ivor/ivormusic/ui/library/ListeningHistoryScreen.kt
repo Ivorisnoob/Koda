@@ -170,7 +170,7 @@ fun ListeningHistoryScreen(
     contentPadding: PaddingValues
 ) {
     val context = LocalContext.current
-    val haptics = LocalHapticFeedback.current
+    val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
     val focusManager = LocalFocusManager.current
     val scope = rememberCoroutineScope()
 
@@ -779,7 +779,7 @@ private fun HistoryRunRow(
     onRemove: (allPlays: Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val haptics = LocalHapticFeedback.current
+    val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
     var menuOpen by remember { mutableStateOf(false) }
 
     // confirmValueChange can be asked more than once for the same gesture, and

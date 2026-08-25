@@ -19,4 +19,9 @@
 
     <!-- The home screen widget's picker description. -->
     <string name="widget_description">Current song with play, pause and skip controls</string>
+
+    <!-- Background upload check (#137): its notification channel and grouped title. -->
+    <string name="upload_check_channel_name">New uploads</string>
+    <string name="upload_check_channel_description">Tells you when a channel you follow on this device uploads</string>
+    <string name="upload_notification_title">%1$s: %2$d new uploads</string>
 </resources>

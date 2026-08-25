@@ -2077,7 +2077,7 @@ fun PlaylistResultCard(
              }
 
              if (isSaved != null) {
-                 val haptics = LocalHapticFeedback.current
+                 val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
                  IconButton(
                      onClick = {
                          haptics.performHapticFeedback(HapticFeedbackType.Confirm)
@@ -2809,7 +2809,7 @@ private fun VideoPlaylistRow(
             }
 
             if (isSaved != null) {
-                val haptics = LocalHapticFeedback.current
+                val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
                 IconButton(
                     onClick = {
                         haptics.performHapticFeedback(HapticFeedbackType.Confirm)

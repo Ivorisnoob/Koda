@@ -331,7 +331,7 @@ private fun PlaylistDownloadSheet(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val haptics = LocalHapticFeedback.current
+    val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
     val preferences = remember(context) { ThemePreferences(context) }
     // This is a compact task with its own scrolling body and pinned action. Opening
     // halfway hides the quality and summary context while making the first scroll

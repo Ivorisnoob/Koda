@@ -136,6 +136,13 @@ class ThemePreferences(context: Context) {
         MutableStateFlow(getRememberVideoBrightness())
     val rememberVideoBrightness: StateFlow<Boolean> = _rememberVideoBrightness.asStateFlow()
 
+    private val _hapticsLevel = MutableStateFlow(getHapticsLevelPreference())
+    val hapticsLevel: StateFlow<String> = _hapticsLevel.asStateFlow()
+
+    private val _uploadNotificationsEnabled =
+        MutableStateFlow(getUploadNotificationsEnabledPreference())
+    val uploadNotificationsEnabled: StateFlow<Boolean> = _uploadNotificationsEnabled.asStateFlow()
+
     private val _oemFixEnabled = MutableStateFlow(getOemFixEnabledPreference())
     val oemFixEnabled: StateFlow<Boolean> = _oemFixEnabled.asStateFlow()
 
@@ -203,6 +210,9 @@ class ThemePreferences(context: Context) {
             KEY_NORMALIZE_VOLUME -> _normalizeVolume.value = getNormalizeVolumePreference()
             KEY_REMEMBER_VIDEO_BRIGHTNESS ->
                 _rememberVideoBrightness.value = getRememberVideoBrightness()
+            KEY_HAPTICS_LEVEL -> _hapticsLevel.value = getHapticsLevelPreference()
+            KEY_UPLOAD_NOTIFICATIONS_ENABLED ->
+                _uploadNotificationsEnabled.value = getUploadNotificationsEnabledPreference()
             KEY_OEM_FIX_ENABLED -> _oemFixEnabled.value = getOemFixEnabledPreference()
             KEY_MANUAL_SCAN_ENABLED -> _manualScanEnabled.value = getManualScanEnabledPreference()
             KEY_ONBOARDING_COMPLETED -> _onboardingCompleted.value = getOnboardingCompletedPreference()
@@ -449,6 +459,8 @@ class ThemePreferences(context: Context) {
         private const val MAX_CROSSFADE_DURATION_MS = 15_000
         private const val KEY_NORMALIZE_VOLUME = "normalize_volume"
         private const val KEY_REMEMBER_VIDEO_BRIGHTNESS = "remember_video_brightness"
+        private const val KEY_HAPTICS_LEVEL = "haptics_level"
+        private const val KEY_UPLOAD_NOTIFICATIONS_ENABLED = "upload_notifications_enabled"
         private const val KEY_OEM_FIX_ENABLED = "oem_fix_enabled"
         private const val KEY_MANUAL_SCAN_ENABLED = "manual_scan_enabled"
         private const val KEY_ONBOARDING_COMPLETED = "onboarding_completed"
@@ -1112,6 +1124,36 @@ class ThemePreferences(context: Context) {
     fun setRememberVideoBrightness(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_REMEMBER_VIDEO_BRIGHTNESS, enabled).apply()
         _rememberVideoBrightness.value = enabled
+    }
+
+    /**
+     * Touch feedback intensity for the whole app - one of the values
+     * [com.ivor.ivormusic.util.HapticsLevel] writes via [toPref]. Every
+     * haptic in the app routes through it, so this is the single switch.
+     */
+    private fun getHapticsLevelPreference(): String =
+        prefs.getString(KEY_HAPTICS_LEVEL, com.ivor.ivormusic.util.HapticsLevel.DEFAULT)
+            ?: com.ivor.ivormusic.util.HapticsLevel.DEFAULT
+
+    fun setHapticsLevel(value: String) {
+        prefs.edit().putString(KEY_HAPTICS_LEVEL, value).apply()
+        _hapticsLevel.value = value
+    }
+
+    /**
+     * Whether the background check may notify about new uploads from channels
+     * followed on this device. Off by default: it is a battery-and-attention
+     * commitment, and the worker no-ops (cheaply) when this is false.
+     */
+    fun getUploadNotificationsEnabled(): Boolean =
+        prefs.getBoolean(KEY_UPLOAD_NOTIFICATIONS_ENABLED, false)
+
+    private fun getUploadNotificationsEnabledPreference(): Boolean =
+        prefs.getBoolean(KEY_UPLOAD_NOTIFICATIONS_ENABLED, false)
+
+    fun setUploadNotificationsEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_UPLOAD_NOTIFICATIONS_ENABLED, enabled).apply()
+        _uploadNotificationsEnabled.value = enabled
     }
 
     /**

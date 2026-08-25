@@ -133,6 +133,7 @@ internal fun SettingsRow(
         animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
         label = "rowScale"
     )
+    val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
 
     Row(
         modifier = Modifier
@@ -142,7 +143,10 @@ internal fun SettingsRow(
             .clickable(
                 interactionSource = interactionSource,
                 indication = null,
-                onClick = onClick
+                onClick = {
+                    haptics.subtle()
+                    onClick()
+                }
             )
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -197,6 +201,7 @@ internal fun SettingsToggleRow(
         animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
         label = "toggleScale"
     )
+    val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
 
     Row(
         modifier = Modifier
@@ -206,7 +211,10 @@ internal fun SettingsToggleRow(
             .clickable(
                 interactionSource = interactionSource,
                 indication = null
-            ) { onToggle(!enabled) }
+            ) {
+                haptics.toggle(!enabled)
+                onToggle(!enabled)
+            }
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {

@@ -204,7 +204,7 @@ fun PlayerStyleWheel(
 ) {
     BackHandler(enabled = true) { onDismiss() }
     val entries = rememberPlayerStyleWheelEntries()
-    val haptics = LocalHapticFeedback.current
+    val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
     val density = LocalDensity.current
 
     // Mark the open with the long-press haptic the gesture earned.

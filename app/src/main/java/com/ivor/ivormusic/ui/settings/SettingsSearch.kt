@@ -25,6 +25,7 @@ import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.BrightnessMedium
 import androidx.compose.material.icons.rounded.BugReport
+import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.BookmarkAdd
 import androidx.compose.material.icons.rounded.CheckCircle
@@ -53,6 +54,7 @@ import androidx.compose.material.icons.rounded.SettingsBackupRestore
 import androidx.compose.material.icons.rounded.SignalCellularAlt
 import androidx.compose.material.icons.rounded.Subscriptions
 import androidx.compose.material.icons.rounded.ToggleOn
+import androidx.compose.material.icons.rounded.Vibration
 import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material3.Icon
@@ -294,6 +296,22 @@ internal fun buildSettingsSearchIndex(
             "system brightness"
         )
     ) { onOpenPage(SettingsPage.PLAYBACK) }
+    entry(
+        "haptics", "Haptics", "Playback and quality",
+        Icons.Rounded.Vibration,
+        listOf(
+            "haptics", "vibration", "vibrate", "feedback", "touch", "buzz",
+            "rumble", "feel", "silent"
+        )
+    ) { onOpenPage(SettingsPage.PLAYBACK) }
+    entry(
+        "upload_notifications", "Notify about new uploads", "Notifications",
+        Icons.Rounded.NotificationsActive,
+        listOf(
+            "upload", "new video", "subscription notification", "background check",
+            "channel alert", "notify me"
+        )
+    ) { onOpenPage(SettingsPage.NOTIFICATIONS) }
     // Content and feeds
     entry(
         "local_only", "Local Only", "Content and feeds", Icons.Rounded.CloudOff,

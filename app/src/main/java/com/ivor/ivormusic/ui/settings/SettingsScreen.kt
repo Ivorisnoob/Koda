@@ -134,6 +134,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
@@ -324,6 +325,10 @@ fun SettingsScreen(
     onNormalizeVolumeToggle: (Boolean) -> Unit,
     rememberVideoBrightness: Boolean,
     onRememberVideoBrightnessToggle: (Boolean) -> Unit,
+    hapticsLevel: String,
+    onHapticsLevelChange: (String) -> Unit,
+    uploadNotificationsEnabled: Boolean,
+    onUploadNotificationsToggle: (Boolean) -> Unit,
     oemFixEnabled: Boolean,
     onOemFixEnabledToggle: (Boolean) -> Unit,
     manualScanEnabled: Boolean,
@@ -336,6 +341,17 @@ fun SettingsScreen(
     val context = LocalContext.current
     val sessionManager = remember { SessionManager(context) }
     val coroutineScope = rememberCoroutineScope()
+
+    // The upload-notification channel list reads the stores directly (no DI
+    // house style): the mute toggles write through the same instances.
+    val localSubscriptionsRepository = remember {
+        com.ivor.ivormusic.data.LocalSubscriptionsRepository(context)
+    }
+    val uploadCheckRepository = remember {
+        com.ivor.ivormusic.data.UploadCheckRepository(context)
+    }
+    val followedChannels by localSubscriptionsRepository.subscriptions.collectAsState()
+    val mutedChannelIds by uploadCheckRepository.mutedChannelIds.collectAsState()
 
     // Check actual login status
     var isLoggedIn by remember { mutableStateOf(sessionManager.isLoggedIn()) }
@@ -706,6 +722,8 @@ fun SettingsScreen(
                     onNormalizeVolumeToggle = onNormalizeVolumeToggle,
                     rememberVideoBrightness = rememberVideoBrightness,
                     onRememberVideoBrightnessToggle = onRememberVideoBrightnessToggle,
+                    hapticsLevel = hapticsLevel,
+                    onHapticsLevelChange = onHapticsLevelChange,
                     autoLoadQueue = autoLoadQueue,
                     onAutoLoadQueueToggle = onAutoLoadQueueToggle,
                     saveMusicHistory = saveMusicHistory,
@@ -761,6 +779,13 @@ fun SettingsScreen(
                     livePlaybackUpdates = livePlaybackUpdates,
                     onLivePlaybackUpdatesToggle = onLivePlaybackUpdatesToggle,
                     canPostPromoted = canPostPromoted,
+                    uploadNotificationsEnabled = uploadNotificationsEnabled,
+                    onUploadNotificationsToggle = onUploadNotificationsToggle,
+                    followedChannels = followedChannels,
+                    mutedChannelIds = mutedChannelIds,
+                    onChannelMutedChange = { channelId, muted ->
+                        uploadCheckRepository.setMuted(channelId, muted)
+                    },
                     onOpenSystemSettings = {
                         notificationHelper
                             .promotedNotificationSettingsIntent()

@@ -1588,7 +1588,7 @@ internal fun PlayerGestureSurface(
     // Both fullscreen swipes commit while the finger is still down and have no
     // dragged preview behind them, so a tick is the only thing that tells the
     // user the gesture took before the screen turns.
-    val haptics = LocalHapticFeedback.current
+    val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
 
     // Hide the badge a short while after the last tap. Re-runs (and so resets
     // the timer) every double tap because it is keyed on `pulse`.

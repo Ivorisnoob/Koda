@@ -1943,7 +1943,7 @@ internal fun Modifier.songRowClick(
     onLongClick: (() -> Unit)?
 ): Modifier {
     if (onLongClick == null) return this.clickable(onClick = onClick)
-    val haptics = LocalHapticFeedback.current
+    val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
     return this.combinedClickable(
         onClick = onClick,
         onLongClick = {
@@ -2416,7 +2416,7 @@ fun PlaylistDetailScreen(
 
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
-    val haptics = LocalHapticFeedback.current
+    val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
     val focusManager = LocalFocusManager.current
     val snackbarHostState = remember { SnackbarHostState() }
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()

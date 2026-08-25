@@ -180,7 +180,7 @@ fun VideoOptionsSheet(
     // sheet's drag-to-expand fight over scroll gestures, which reads as janky
     // scrolling.
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val haptics = LocalHapticFeedback.current
+    val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
 
     var pane by remember { mutableStateOf(OptionsPane.ACTIONS) }
     // Sets rather than single ids: the picker saves to several targets and a

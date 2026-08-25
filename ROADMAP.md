@@ -68,17 +68,11 @@ There are no diagnosed, still-open defects recorded here for version 4.6. Fixed 
 
 #### Per-channel notification settings
 
-The bell, as YouTube has it: for each channel you follow, choose whether new uploads notify you for everything, only occasionally, or not at all. There is now a channel page for one to live on, but no bell on it, and no per-channel state to put behind one.
+~~The bell is an output control for something that does not run.~~ **The device-local half now runs.** The background upload check is built (`work/UploadCheckWorker.kt`): a periodic WorkManager job (six hours, network-connected constraint, scheduled idempotently from Application.onCreate) walks the locally-followed channels' RSS feeds - the same cheap per-channel source as in-app fast refresh - remembers a last-seen timestamp per channel, and notifies what arrived since. First sight of a channel sets its baseline silently instead of greeting you with forty uploads. One Android notification channel carries everything, grouped; `POST_NOTIFICATIONS` is honoured at post time.
 
-**The uncomfortable part is that the bell is an output control for something that does not run.** `getNotifications()` exists and reads YouTube's own inbox through `notification/get_notification_menu`, but it is a pull that only happens when the notifications sheet is opened, and it needs an account. Nothing in Koda checks for new uploads in the background, and nothing ever posts an Android notification. Adding a per-channel preference without that is building a volume knob with no speaker attached. The setting would be recorded and never consulted.
+The preference lives in Settings, Notifications: one master switch ("Notify about new uploads", off by default because it is a battery-and-attention commitment), above a per-channel list where every locally-followed channel can be muted individually (`data/UploadCheckRepository.kt`, profile-scoped like the subscriptions it filters).
 
-So this item really contains two, and the order matters: **a background upload check has to come first**, and the data for it already exists. `getLocalSubscriptionsFeed` merges each followed channel's Atom feed and is cheap by design, roughly 50 KB per channel against about 1 MB for the equivalent browse. A periodic `WorkManager` job over that feed, remembering the last-seen timestamp per channel, is the whole delivery mechanism. The per-channel preference then becomes the filter it consults.
-
-**The two-store split shapes what the bell can honestly offer.** For an account subscription the preference can be written to YouTube, so it also affects notifications on youtube.com and in the official apps. For a device-local subscription there is no account to record it against, so it is a device preference driving a device-side check. YouTube's middle setting, "Personalized", is a server-side judgement about which uploads are worth surfacing. There is no local equivalent, and offering it signed out would be a lie. Signed out, the honest set is All or None; signed in, all three.
-
-`SubscriptionGroup` already exists (user-defined bundles of local channels like "Music" or "Tech"), and it is the obvious place to set this in bulk rather than channel by channel. Someone following two hundred channels will not tap two hundred bells.
-
-Two Android specifics worth deciding early. `POST_NOTIFICATIONS` is already declared but is a runtime permission from Android 13, and the request should come when the user first enables a bell rather than at startup, so it arrives with a reason attached. And notifications should share one Android notification channel for uploads with grouping, not one Android channel per YouTube channel. The latter looks tempting and becomes unusable at any real subscription count.
+**What remains is the account half of the bell.** For an *account* subscription the preference could be written to YouTube so it also affects youtube.com and the official apps, and `SubscriptionGroup` remains the right place for bulk changes. The device-side check deliberately reads local follows only: YouTube's own notifications already cover the signed-in surface, and duplicating them would mean two notifications for one upload.
 
 #### Saving playlists to the YouTube account
 
@@ -175,13 +169,7 @@ Two details it carries that are easy to get wrong alone. The child's own exit ha
 
 #### Haptics, more than eight files
 
-Haptic feedback is still thin on the ground, almost all of it in the video gesture surface and the tab bar. Everything else is silent: the player style wheel spins without detents, drag-to-reorder in playlists gives nothing when an item locks into place, and likes and toggles have no confirmation.
-
-For an app built this heavily on touch (roughly 97 springs, gesture-driven players, a spinnable style wheel), that is a whole sensory channel going unused, and it is the channel that makes physical-feeling UI feel physical.
-
-**The existing use already demonstrates the right instinct, and it should be written down as a rule rather than repeated by memory.** The fullscreen swipes tick because they commit while the finger is still down with no dragged preview behind them, so the tick is the only confirmation the gesture took. Generalised: haptics belong on **commits the user cannot yet see** and on **detents and thresholds:** the wheel clicking to the next style, a reorder locking in, a drag passing the point where releasing will do something. They do not belong on every tap, which is how apps end up buzzing constantly and getting the feature switched off.
-
-Worth routing through one small helper rather than calling `performHapticFeedback` ad hoc, so the vocabulary stays consistent and there is a single place to respect the system haptic setting.
+~~Haptic feedback is still thin on the ground.~~ **Shipped, with a dial.** Every haptic in the app now routes through one helper (`util/KodaHaptics.kt`) that speaks intent - confirm, tick, threshold, long-press, toggle, reject - and maps each onto a pattern at the user's chosen intensity: Off, Subtle (commitments only, lighter patterns; detents and thresholds go silent), Balanced, and Rich (everything one step heavier). The rule this section argued for is enforced by construction now: fifteen files' worth of ad-hoc `performHapticFeedback` calls were migrated onto the vocabulary, settings rows and toggles got their first feedback, and the setting lives in Settings, Playback and quality with a search-index entry. The wrapper reads the level through a state holder rather than capturing it, because long-lived holders like the queue-reorder state would otherwise keep the old intensity forever.
 
 #### One heading system, applied everywhere
 
@@ -464,6 +452,9 @@ The milestones behind us, kept here so the direction of travel is visible.
 - Full single-item lookup in the browse surface (`onGetItem`) resolving against every store the tree serves, and per-item content-style hints so Auto renders categories as grids, playlists as lists, and songs as playable list rows
 - A home screen widget: current artwork, title and artist with play/pause and skip, drawn with Glance in Material You dynamic color, pushed updates from the service on every playback change, a throwaway-controller-per-tap action model so it never holds the service bound, and an honest "Tap to listen" empty state
 - A microphone in the search field: platform speech recognition that fills the query and searches it in one go
+- Haptics everywhere, on one vocabulary and a four-level dial (Off / Subtle / Balanced / Rich) in Playback and quality - every surface from the style wheel to settings toggles now answers the hand at your chosen intensity
+- A background upload check over channels you follow on this device: periodic RSS sweep with per-channel last-seen memory, silent baselines, grouped notifications on one channel - plus a per-channel mute list in Settings, Notifications
+- Saved albums now open in video mode too: an MPRE browse id resolves through the album branch instead of failing against the playlist call, and shares as its /browse/ address
 
 Whole-playlist downloads deliberately reuse the same serial worker as a single-item download. A playlist page contributes a batch of requests, and the Downloads screen remains the one place that owns transfer progress, retry and cancellation; there is no second batch state to drift from the files actually being written. Re-running a partially completed playlist only queues the missing ids, duplicate rows share one offline file, device-local songs count as already offline, and live broadcasts are rejected before they can enter the progressive MP4 path. Video batches pin one quality cap onto every request so a retry cannot silently change the choice halfway through the playlist.
 

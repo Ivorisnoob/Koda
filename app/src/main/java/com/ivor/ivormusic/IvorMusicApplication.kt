@@ -13,6 +13,10 @@ class IvorMusicApplication : Application(), ImageLoaderFactory {
         // file to offer on the next launch. It wraps - never replaces - the
         // platform handler.
         CrashReporter.install(this)
+        // Idempotent: converges on one periodic job across installs and
+        // updates. The worker itself no-ops when the setting is off, so this
+        // can be unconditional rather than chasing every toggle.
+        com.ivor.ivormusic.work.UploadCheckWorker.schedule(this)
     }
 
     /**

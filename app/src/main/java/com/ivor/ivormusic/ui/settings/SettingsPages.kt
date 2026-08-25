@@ -48,6 +48,7 @@ import androidx.compose.material.icons.rounded.HighQuality
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.NotInterested
+import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.Security
@@ -389,6 +390,8 @@ internal fun PlaybackSettingsPage(
     onNormalizeVolumeToggle: (Boolean) -> Unit,
     rememberVideoBrightness: Boolean,
     onRememberVideoBrightnessToggle: (Boolean) -> Unit,
+    hapticsLevel: String,
+    onHapticsLevelChange: (String) -> Unit,
     autoLoadQueue: Boolean,
     onAutoLoadQueueToggle: (Boolean) -> Unit,
     saveMusicHistory: Boolean,
@@ -651,6 +654,54 @@ internal fun PlaybackSettingsPage(
                         },
                         showChevron = true
                     )
+                }
+            }
+        }
+
+        item {
+            SettingsSection(title = "Touch feedback") {
+                SettingsCard {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 14.dp)
+                    ) {
+                        Text(
+                            text = "Haptics",
+                            color = MaterialTheme.colorScheme.onBackground,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        val levelSubtitle = when (hapticsLevel) {
+                            "off" -> "Silent: nothing vibrates"
+                            "subtle" -> "Only the moments that matter"
+                            "expressive" -> "Every touch, felt clearly"
+                            else -> "A tick for every action"
+                        }
+                        Text(
+                            text = levelSubtitle,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 13.sp
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                            val levels = listOf("off", "subtle", "balanced", "expressive")
+                            val labels = listOf("Off", "Subtle", "Balanced", "Rich")
+                            levels.forEachIndexed { index, value ->
+                                SegmentedButton(
+                                    selected = hapticsLevel == value,
+                                    onClick = { onHapticsLevelChange(value) },
+                                    shape = SegmentedButtonDefaults.itemShape(
+                                        index = index,
+                                        count = levels.size,
+                                    ),
+                                ) {
+                                    Text(labels[index])
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -1016,10 +1067,61 @@ internal fun NotificationsSettingsPage(
     livePlaybackUpdates: Boolean,
     onLivePlaybackUpdatesToggle: (Boolean) -> Unit,
     canPostPromoted: Boolean,
+    uploadNotificationsEnabled: Boolean,
+    onUploadNotificationsToggle: (Boolean) -> Unit,
+    followedChannels: List<com.ivor.ivormusic.data.LocalSubscription>,
+    mutedChannelIds: Set<String>,
+    onChannelMutedChange: (String, Boolean) -> Unit,
     onOpenSystemSettings: () -> Unit,
     onBack: () -> Unit
 ) {
     SettingsDetailScaffold(title = "Notifications", onBack = onBack) {
+        item {
+            SettingsSection(title = "New uploads") {
+                SettingsCard {
+                    // Off by default and opt-in here: it is a battery-and-
+                    // attention commitment the user has to ask for.
+                    SettingsToggleRow(
+                        icon = Icons.Rounded.NotificationsActive,
+                        title = "Notify about new uploads",
+                        subtitle = if (uploadNotificationsEnabled) {
+                            "Checks channels you follow on this device"
+                        } else {
+                            "Off: Koda only checks while you are using it"
+                        },
+                        enabled = uploadNotificationsEnabled,
+                        onToggle = onUploadNotificationsToggle
+                    )
+                }
+            }
+        }
+
+        if (uploadNotificationsEnabled && followedChannels.isNotEmpty()) {
+            item {
+                SettingsSection(title = "Channels") {
+                    SettingsCard {
+                        Text(
+                            text = "Choose who may notify you",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 13.sp,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
+                        )
+                        followedChannels.forEachIndexed { index, channel ->
+                            if (index > 0) SettingsDivider()
+                            val muted = channel.channelId in mutedChannelIds
+                            SettingsToggleRow(
+                                icon = Icons.Rounded.Subscriptions,
+                                title = channel.name,
+                                subtitle = if (muted) "Muted" else "Notifying",
+                                enabled = !muted,
+                                onToggle = { onChannelMutedChange(channel.channelId, !muted) }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
         item {
             SettingsSection(title = "Live updates") {
                 SettingsCard {

@@ -130,6 +130,8 @@ dependencies {
     // The home screen widget. Compose-shaped (Glance), which is why the
     // widget can share the app's design language without RemoteViews XML.
     implementation(libs.androidx.glance.appwidget)
+    // The background upload check over the local subscriptions feed.
+    implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.androidx.graphics.shapes)
     implementation(libs.androidx.ui.text.google.fonts)
     implementation(libs.androidx.palette.ktx)

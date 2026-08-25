@@ -101,7 +101,7 @@ fun SongOptionsSheet(
     }
 
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val haptics = LocalHapticFeedback.current
+    val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
     val likedIds by viewModel.likedSongIds.collectAsState()
     val isLiked = song.id in likedIds
     val isDownloaded = remember(song.id) { viewModel.isDownloaded(song.id) }

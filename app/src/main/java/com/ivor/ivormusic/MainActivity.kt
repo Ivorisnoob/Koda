@@ -189,6 +189,8 @@ class MainActivity : ComponentActivity() {
             val crossfadeDurationMs by themeViewModel.crossfadeDurationMs.collectAsState()
             val normalizeVolume by themeViewModel.normalizeVolume.collectAsState()
             val rememberVideoBrightness by themeViewModel.rememberVideoBrightness.collectAsState()
+            val hapticsLevel by themeViewModel.hapticsLevel.collectAsState()
+            val uploadNotificationsEnabled by themeViewModel.uploadNotificationsEnabled.collectAsState()
             
             val isSystemDark = isSystemInDarkTheme()
             val isDarkTheme = remember(themeMode, isSystemDark) {
@@ -288,6 +290,11 @@ class MainActivity : ComponentActivity() {
                         rememberVideoBrightness = rememberVideoBrightness,
                         onRememberVideoBrightnessToggle =
                             { themeViewModel.setRememberVideoBrightness(it) },
+                        hapticsLevel = hapticsLevel,
+                        onHapticsLevelChange = { themeViewModel.setHapticsLevel(it) },
+                        uploadNotificationsEnabled = uploadNotificationsEnabled,
+                        onUploadNotificationsToggle =
+                            { themeViewModel.setUploadNotificationsEnabled(it) },
                         onboardingCompleted = onboardingCompleted,
                         onOnboardingCompleted = { themeViewModel.setOnboardingCompleted(it) },
                         localOnlyMode = localOnlyMode,
@@ -491,6 +498,10 @@ fun MusicApp(
     onNormalizeVolumeToggle: (Boolean) -> Unit,
     rememberVideoBrightness: Boolean,
     onRememberVideoBrightnessToggle: (Boolean) -> Unit,
+    hapticsLevel: String,
+    onHapticsLevelChange: (String) -> Unit,
+    uploadNotificationsEnabled: Boolean,
+    onUploadNotificationsToggle: (Boolean) -> Unit,
     oemFixEnabled: Boolean,
     onOemFixEnabledToggle: (Boolean) -> Unit,
     manualScanEnabled: Boolean,
@@ -848,6 +859,10 @@ fun MusicApp(
                     onNormalizeVolumeToggle = onNormalizeVolumeToggle,
                     rememberVideoBrightness = rememberVideoBrightness,
                     onRememberVideoBrightnessToggle = onRememberVideoBrightnessToggle,
+                    hapticsLevel = hapticsLevel,
+                    onHapticsLevelChange = onHapticsLevelChange,
+                    uploadNotificationsEnabled = uploadNotificationsEnabled,
+                    onUploadNotificationsToggle = onUploadNotificationsToggle,
                     oemFixEnabled = oemFixEnabled,
                     onOemFixEnabledToggle = onOemFixEnabledToggle,
                     manualScanEnabled = manualScanEnabled,
