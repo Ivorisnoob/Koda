@@ -12,8 +12,18 @@ data class TransitionPlan(
     val harmonicMatch: HarmonicMatch = HarmonicMatch.UNKNOWN,
     /** Wall-clock delay from overlap start to the incoming downbeat. */
     val incomingDownbeatDelayMs: Long = 0L,
+    /**
+     * How far before the track's end the transition may be prepared and held
+     * ready, when that distance is larger than [overlapMs]. Only the silence
+     * skip sets this: the engine waits out the dead air, then runs a normal
+     * length fade at the point the music actually stopped.
+     */
+    val prepareLeadMs: Long = 0L,
 ) {
     val shouldOverlap: Boolean get() = overlapMs > 0L
+
+    val effectivePrepareLeadMs: Long
+        get() = if (prepareLeadMs > overlapMs) prepareLeadMs else overlapMs
 
     enum class Reason {
         FALLBACK,
@@ -22,6 +32,7 @@ data class TransitionPlan(
         NATURAL_FADE,
         ABRUPT_END,
         PRESERVE_ABRUPT_END,
+        SILENCE_SKIP,
     }
 
     enum class HarmonicMatch { COMPATIBLE, NEUTRAL, CLASH, UNKNOWN }
@@ -107,6 +118,26 @@ object TransitionPlanner {
         if (outgoing.tailFadeMs >= NATURAL_FADE_THRESHOLD_MS) {
             val overlap = minOf(fallback, NATURAL_FADE_OVERLAP_MS)
             return result(overlap, TransitionPlan.Reason.NATURAL_FADE)
+        }
+
+        // Dead air. The music has stopped and what follows is measured
+        // silence, so the transition belongs at the point the music actually
+        // ended - up to a minute before the track's nominal end - with the
+        // fade running its usual short length once there. This is AutoMix's
+        // alone: manual skips keep their own timing and never wait out dead
+        // air they chose to skip through.
+        if (outgoing.trailingSilenceMs >= MIN_SILENCE_SKIP_MS) {
+            val lead = minOf(outgoing.trailingSilenceMs, MAX_SILENCE_SKIP_MS)
+            return TransitionPlan(
+                overlapMs = maxOf(minOf(fallback, NATURAL_FADE_OVERLAP_MS), MIN_OVERLAP_MS),
+                incomingStartMs = cue.startMs,
+                reason = TransitionPlan.Reason.SILENCE_SKIP,
+                incomingSpeed = tempo.speed,
+                filterSweepStrength = filterStrength,
+                harmonicMatch = harmonic,
+                incomingDownbeatDelayMs = cue.downbeatDelayMs,
+                prepareLeadMs = lead,
+            )
         }
 
         val phrase = outgoing.phraseOutroLeadMs
@@ -242,4 +273,9 @@ object TransitionPlanner {
     private const val MIN_TEMPO_SPEED = 0.96f
     private const val MAX_TEMPO_SPEED = 1.04f
     private const val CLASH_MAX_OVERLAP_MS = 3_000L
+
+    /** Dead air worth special handling starts where the ordinary outro
+     *  boundary search gives up; it may extend to a full minute. */
+    private const val MIN_SILENCE_SKIP_MS = 16_000L
+    private const val MAX_SILENCE_SKIP_MS = 60_000L
 }
