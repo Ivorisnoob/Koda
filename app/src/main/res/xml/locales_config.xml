@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Languages Koda ships translations for. Referenced from the manifest's
+  android:localeConfig so Android 13+ offers per-app language selection in
+  system settings, and so the app follows the choice without a restart.
+-->
+<locale-config xmlns:android="http://schemas.android.com/apk/res/android">
+    <locale android:name="en" />
+    <locale android:name="pt-BR" />
+    <locale android:name="es" />
+    <locale android:name="fr" />
+    <locale android:name="de" />
+    <locale android:name="it" />
+    <locale android:name="ru" />
+    <locale android:name="uk" />
+    <locale android:name="pl" />
+    <locale android:name="tr" />
+    <locale android:name="ar" />
+    <locale android:name="hi" />
+    <locale android:name="id" />
+    <locale android:name="ja" />
+    <locale android:name="ko" />
+    <locale android:name="zh-CN" />
+</locale-config>

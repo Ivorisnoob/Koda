@@ -1,4 +1,6 @@
 package com.ivor.ivormusic.ui.components
+import androidx.compose.ui.res.stringResource
+import com.ivor.ivormusic.R
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -29,7 +31,7 @@ import androidx.compose.ui.unit.dp
  */
 @Composable
 fun LocalOnlyNotice(
-    subtitle: String = "This section needs the internet. Turn off Local only in Settings to use it.",
+    subtitle: String? = null,
     onOpenSettings: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
@@ -62,7 +64,7 @@ fun LocalOnlyNotice(
             }
             Spacer(modifier = Modifier.height(24.dp))
             Text(
-                text = "Local only mode is on",
+                text = stringResource(R.string.local_only_title),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground,
@@ -70,7 +72,7 @@ fun LocalOnlyNotice(
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = subtitle,
+                text = subtitle ?: stringResource(R.string.local_only_default_subtitle),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center
@@ -78,7 +80,7 @@ fun LocalOnlyNotice(
             if (onOpenSettings != null) {
                 Spacer(modifier = Modifier.height(20.dp))
                 FilledTonalButton(onClick = onOpenSettings) {
-                    Text("Open Settings")
+                    Text(stringResource(R.string.action_open_settings))
                 }
             }
         }

@@ -1,4 +1,6 @@
 package com.ivor.ivormusic.ui.library
+import androidx.compose.ui.res.stringResource
+import com.ivor.ivormusic.R
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
@@ -511,7 +513,7 @@ fun LibraryMainScreen(
                 // title, and dropping the title a step would split Home and
                 // Library, the only two screens that share this scale.
                 Text(
-                    text = "Library",
+                    text = stringResource(R.string.tab_library),
                     style = MaterialTheme.typography.displayLarge,
                     color = MaterialTheme.colorScheme.onBackground,
                     maxLines = 1,
@@ -524,7 +526,7 @@ fun LibraryMainScreen(
                     modifier = Modifier.size(56.dp),
                     shapes = IconButtonDefaults.shapes()
                 ) {
-                    Icon(Icons.Rounded.Insights, contentDescription = "Listening stats", modifier = Modifier.size(24.dp))
+                    Icon(Icons.Rounded.Insights, contentDescription = stringResource(R.string.cd_listening_stats), modifier = Modifier.size(24.dp))
                 }
             }
 
@@ -709,7 +711,7 @@ fun LibraryMainScreen(
                 showCreatePlaylistDialog = true
             },
             icon = { Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, null) },
-            text = { Text("New playlist") },
+            text = { Text(stringResource(R.string.action_new_playlist)) },
             containerColor = MaterialTheme.colorScheme.secondaryContainer,
             contentColor = MaterialTheme.colorScheme.onSecondaryContainer
         )
@@ -719,7 +721,7 @@ fun LibraryMainScreen(
                 onDownloadsClick()
             },
             icon = { Icon(Icons.Rounded.DownloadDone, null) },
-            text = { Text("Downloads") },
+            text = { Text(stringResource(R.string.fab_downloads)) },
             containerColor = MaterialTheme.colorScheme.secondaryContainer,
             contentColor = MaterialTheme.colorScheme.onSecondaryContainer
         )
@@ -729,7 +731,7 @@ fun LibraryMainScreen(
                 onNavigateToHistory()
             },
             icon = { Icon(Icons.Rounded.History, null) },
-            text = { Text("Listening history") },
+            text = { Text(stringResource(R.string.fab_listening_history)) },
             containerColor = MaterialTheme.colorScheme.secondaryContainer,
             contentColor = MaterialTheme.colorScheme.onSecondaryContainer
         )
@@ -739,7 +741,7 @@ fun LibraryMainScreen(
                 onNavigateToStats()
             },
             icon = { Icon(Icons.Rounded.Insights, null) },
-            text = { Text("Statistics") },
+            text = { Text(stringResource(R.string.fab_statistics)) },
             containerColor = MaterialTheme.colorScheme.secondaryContainer,
             contentColor = MaterialTheme.colorScheme.onSecondaryContainer
         )
@@ -747,7 +749,7 @@ fun LibraryMainScreen(
 
     if (showCreatePlaylistDialog) {
         EditPlaylistDialog(
-            title = "New playlist",
+            title = stringResource(R.string.action_new_playlist),
             initialName = "",
             initialDescription = null,
             onDismiss = { showCreatePlaylistDialog = false },
@@ -974,8 +976,8 @@ fun AllSongsList(
             item(key = "empty_state") {
                 EmptyLibraryState(
                     icon = Icons.Rounded.MusicNote,
-                    title = "Your library is empty",
-                    subtitle = "Songs you download or like will show up here"
+                    title = stringResource(R.string.library_empty_title),
+                    subtitle = stringResource(R.string.library_empty_subtitle)
                 )
             }
         } else {
@@ -1337,8 +1339,8 @@ fun PlaylistsGrid(
             item(key = "playlists_empty", span = { GridItemSpan(maxLineSpan) }) {
                 EmptyLibraryState(
                     icon = Icons.AutoMirrored.Rounded.PlaylistAdd,
-                    title = "No playlists yet",
-                    subtitle = "Create one with the + button below"
+                    title = stringResource(R.string.spotlight_empty_no_playlists),
+                    subtitle = stringResource(R.string.library_create_playlist_hint)
                 )
             }
         }
@@ -1393,8 +1395,8 @@ fun ArtistsGrid(
     if (artists.isEmpty()) {
         EmptyLibraryState(
             icon = Icons.Rounded.Person,
-            title = "No artists yet",
-            subtitle = "Artists from your songs will show up here"
+            title = stringResource(R.string.no_artists_yet),
+            subtitle = stringResource(R.string.no_artists_yet_subtitle)
         )
         return
     }
@@ -1464,8 +1466,8 @@ fun AlbumsGrid(
     if (albums.isEmpty()) {
         EmptyLibraryState(
             icon = Icons.Rounded.Album,
-            title = "No albums yet",
-            subtitle = "Albums from your songs will show up here"
+            title = stringResource(R.string.no_albums_yet),
+            subtitle = stringResource(R.string.no_albums_yet_subtitle)
         )
         return
     }
@@ -1540,7 +1542,7 @@ fun ExpressiveLikedSongsCard(count: Int, onClick: () -> Unit) {
             }
             Spacer(Modifier.width(24.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text("Liked Songs", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                Text(stringResource(R.string.liked_songs), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
                 Text(
                     if (count == 1) "1 track • Auto-playlist" else "$count tracks • Auto-playlist",
                     style = MaterialTheme.typography.bodyMedium,

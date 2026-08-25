@@ -1,4 +1,6 @@
 package com.ivor.ivormusic.ui.components
+import androidx.compose.ui.res.stringResource
+import com.ivor.ivormusic.R
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
@@ -107,7 +109,7 @@ fun MusicVideoToggle(
             Row {
                 ToggleSegment(
                     icon = Icons.Rounded.MusicNote,
-                    contentDescription = "Switch to music mode",
+                    contentDescription = stringResource(R.string.cd_switch_to_music),
                     selected = !videoMode,
                     segmentWidth = segmentWidth,
                     segmentHeight = segmentHeight,
@@ -120,7 +122,7 @@ fun MusicVideoToggle(
                 )
                 ToggleSegment(
                     icon = Icons.Rounded.VideoLibrary,
-                    contentDescription = "Switch to video mode",
+                    contentDescription = stringResource(R.string.cd_switch_to_video),
                     selected = videoMode,
                     segmentWidth = segmentWidth,
                     segmentHeight = segmentHeight,

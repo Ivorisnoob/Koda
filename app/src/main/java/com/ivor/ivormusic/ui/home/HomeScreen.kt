@@ -139,6 +139,7 @@ import com.ivor.ivormusic.ui.library.LibraryContent
 import androidx.compose.animation.ExperimentalAnimationApi
 import com.ivor.ivormusic.BuildConfig
 import com.ivor.ivormusic.R
+import androidx.compose.ui.res.stringResource
 import com.ivor.ivormusic.data.UpdateRepository
 import com.ivor.ivormusic.data.UpdateResult
 
@@ -529,7 +530,7 @@ fun HomeScreen(
                             // Video Mode: Show video content
                             if (videoModeContent && localOnly) {
                                 com.ivor.ivormusic.ui.components.LocalOnlyNotice(
-                                    subtitle = "Video mode needs the internet. Turn off Local only in Settings to watch videos.",
+                                    subtitle = stringResource(R.string.local_only_video_mode_subtitle),
                                     onOpenSettings = onNavigateToSettings
                                 )
                             } else if (videoModeContent) {
@@ -666,7 +667,7 @@ fun HomeScreen(
                     }
                     1 -> if (videoMode && localOnly) {
                         com.ivor.ivormusic.ui.components.LocalOnlyNotice(
-                            subtitle = "Video search needs the internet. Turn off Local only in Settings to search videos.",
+                            subtitle = stringResource(R.string.local_only_video_search_subtitle),
                             onOpenSettings = onNavigateToSettings
                         )
                     } else SearchContent(
@@ -704,7 +705,7 @@ fun HomeScreen(
                     2 -> {
                         if (videoMode && localOnly) {
                             com.ivor.ivormusic.ui.components.LocalOnlyNotice(
-                                subtitle = "Subscriptions need the internet. Turn off Local only in Settings to see them.",
+                                subtitle = stringResource(R.string.local_only_subscriptions_subtitle),
                                 onOpenSettings = onNavigateToSettings
                             )
                         } else if (videoMode) {
@@ -756,7 +757,7 @@ fun HomeScreen(
                         // liked videos, watch history)
                         if (videoMode && localOnly) {
                             com.ivor.ivormusic.ui.components.LocalOnlyNotice(
-                                subtitle = "The video library needs the internet. Turn off Local only in Settings to see it.",
+                                subtitle = stringResource(R.string.local_only_video_library_subtitle),
                                 onOpenSettings = onNavigateToSettings
                             )
                         } else if (videoMode) {
@@ -784,10 +785,10 @@ fun HomeScreen(
                 contentAlignment = Alignment.Center
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Permission required to load songs", color = MaterialTheme.colorScheme.onBackground)
+                    Text(stringResource(R.string.permission_required_title), color = MaterialTheme.colorScheme.onBackground)
                     Spacer(modifier = Modifier.height(16.dp))
                     Button(onClick = { permissionState.launchPermissionRequest() }) {
-                        Text("Grant Permission")
+                        Text(stringResource(R.string.action_grant_permission))
                     }
                 }
             }
@@ -813,14 +814,14 @@ fun HomeScreen(
         // contract. Only their Material container and item presentation differ.
         val navBarHaptics = LocalHapticFeedback.current
         val navTabs = if (videoMode) listOf(
-            Triple(0, "Home", Pair(Icons.Rounded.Home, Icons.Outlined.Home)),
-            Triple(1, "Search", Pair(Icons.Filled.Search, Icons.Outlined.Search)),
-            Triple(2, "Subs", Pair(Icons.Filled.Subscriptions, Icons.Outlined.Subscriptions)),
-            Triple(3, "Library", Pair(Icons.Filled.VideoLibrary, Icons.Outlined.VideoLibrary))
+            Triple(0, stringResource(R.string.tab_home), Pair(Icons.Rounded.Home, Icons.Outlined.Home)),
+            Triple(1, stringResource(R.string.tab_search), Pair(Icons.Filled.Search, Icons.Outlined.Search)),
+            Triple(2, stringResource(R.string.tab_subs), Pair(Icons.Filled.Subscriptions, Icons.Outlined.Subscriptions)),
+            Triple(3, stringResource(R.string.tab_library), Pair(Icons.Filled.VideoLibrary, Icons.Outlined.VideoLibrary))
         ) else listOf(
-            Triple(0, "Home", Pair(Icons.Rounded.Home, Icons.Outlined.Home)),
-            Triple(1, "Search", Pair(Icons.Filled.Search, Icons.Outlined.Search)),
-            Triple(2, "Library", Pair(Icons.Filled.LibraryMusic, Icons.Outlined.LibraryMusic))
+            Triple(0, stringResource(R.string.tab_home), Pair(Icons.Rounded.Home, Icons.Outlined.Home)),
+            Triple(1, stringResource(R.string.tab_search), Pair(Icons.Filled.Search, Icons.Outlined.Search)),
+            Triple(2, stringResource(R.string.tab_library), Pair(Icons.Filled.LibraryMusic, Icons.Outlined.LibraryMusic))
         )
         val selectNavTab: (Int) -> Unit = { index ->
             if (selectedTab == index) {
@@ -1002,7 +1003,7 @@ fun HomeScreen(
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "v$latestVersion",
+                        text = stringResource(R.string.update_badge_version, latestVersion),
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onPrimaryContainer
@@ -1217,7 +1218,7 @@ fun YourMixContent(
                     Spacer(modifier = Modifier.height(32.dp))
                     if (isInitialLoading) {
                         HomeCarouselSkeleton(
-                            title = "Recent Albums",
+                            title = stringResource(R.string.home_section_recent_albums),
                             itemWidth = 200.dp,
                             itemHeight = 240.dp,
                             skeletonAlpha = skeletonAlpha
@@ -1244,7 +1245,7 @@ fun YourMixContent(
                     if (isInitialLoading) {
                         Spacer(modifier = Modifier.height(24.dp))
                         HomeCarouselSkeleton(
-                            title = "Jump back in",
+                            title = stringResource(R.string.home_section_jump_back_in),
                             itemWidth = 140.dp,
                             itemHeight = 140.dp,
                             captionLines = true,
@@ -1327,14 +1328,14 @@ fun TopBarSection(
             if (userAvatar != null) {
                 AsyncImage(
                     model = userAvatar,
-                    contentDescription = "Profile",
+                    contentDescription = stringResource(R.string.cd_profile),
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop
                 )
             } else {
                 Icon(
                     imageVector = Icons.Default.Person,
-                    contentDescription = "Profile",
+                    contentDescription = stringResource(R.string.cd_profile),
                     tint = iconColor,
                     modifier = Modifier.size(26.dp)
                 )
@@ -1373,7 +1374,7 @@ fun TopBarSection(
                 ) {
                     Icon(
                         imageVector = androidx.compose.material.icons.Icons.Rounded.Download,
-                        contentDescription = "Downloads",
+                        contentDescription = stringResource(R.string.cd_downloads),
                         modifier = Modifier.size(22.dp)
                     )
                 }
@@ -1401,7 +1402,7 @@ fun TopBarSection(
             ) {
                 Icon(
                     imageVector = Icons.Default.Settings,
-                    contentDescription = "Settings",
+                    contentDescription = stringResource(R.string.cd_settings),
                     modifier = Modifier.size(22.dp)
                 )
             }
@@ -1447,12 +1448,12 @@ fun HeroSection(
         // Left side - Title and subtitle
         Column {
             Text(
-                text = "Your",
+                text = stringResource(R.string.your_mix_line1),
                 style = MaterialTheme.typography.displayLarge,
                 color = textColor
             )
             Text(
-                text = "Mix",
+                text = stringResource(R.string.your_mix_line2),
                 style = MaterialTheme.typography.displayLarge,
                 color = textColor
             )
@@ -1470,8 +1471,8 @@ fun HeroSection(
                 )
             } else {
                 Text(
-                    text = (firstSong?.artist.takeIf { !it.isNullOrBlank() && !it.startsWith("Unknown", ignoreCase = true) } ?: "Unknown Artist").let { artist ->
-                        (secondSong?.artist.takeIf { !it.isNullOrBlank() && !it.startsWith("Unknown", ignoreCase = true) })?.let { second -> "$artist, $second" } ?: artist
+                    text = (firstSong?.artist.takeIf { !it.isNullOrBlank() && !it.startsWith("Unknown", ignoreCase = true) } ?: stringResource(R.string.unknown_artist)).let { artist ->
+                        (secondSong?.artist.takeIf { !it.isNullOrBlank() && !it.startsWith("Unknown", ignoreCase = true) })?.let { second -> stringResource(R.string.artists_joined, artist, second) } ?: artist
                     },
                     style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
                     color = secondaryTextColor,
@@ -1494,7 +1495,7 @@ fun HeroSection(
             ) {
                 Icon(
                     imageVector = Icons.Default.PlayArrow,
-                    contentDescription = "Play",
+                    contentDescription = stringResource(R.string.cd_play),
                     modifier = Modifier.size(IconButtonDefaults.largeIconSize)
                 )
             }
@@ -2098,7 +2099,7 @@ fun RecentAlbumsSection(
     val state = rememberCarouselState { songs.size }
 
     Column(modifier = Modifier.fillMaxWidth()) {
-        HomeSectionHeader(title = "Recent Albums", onShowAll = onShowAll)
+        HomeSectionHeader(title = stringResource(R.string.home_section_recent_albums), onShowAll = onShowAll)
 
         HorizontalMultiBrowseCarousel(
             state = state,
@@ -2177,7 +2178,7 @@ private fun HomeSectionHeader(
             ) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Rounded.ArrowForward,
-                    contentDescription = "Show all $title",
+                    contentDescription = stringResource(R.string.cd_show_all, title),
                     modifier = Modifier.size(20.dp)
                 )
             }
@@ -2217,7 +2218,7 @@ fun JumpBackInSection(
     val cardBgColor = MaterialTheme.colorScheme.surfaceContainerHigh
 
     Column(modifier = Modifier.fillMaxWidth()) {
-        HomeSectionHeader(title = "Jump back in", onShowAll = onShowAll)
+        HomeSectionHeader(title = stringResource(R.string.home_section_jump_back_in), onShowAll = onShowAll)
 
         LazyRow(
             modifier = Modifier.fillMaxWidth(),
@@ -2267,14 +2268,14 @@ fun JumpBackInSection(
                     // captions grow with the user's font scale instead of being
                     // cut off by a hardcoded carousel height.
                     Text(
-                        text = song.title.takeIf { it.isNotBlank() && !it.startsWith("Unknown", ignoreCase = true) } ?: "Untitled Song",
+                        text = song.title.takeIf { it.isNotBlank() && !it.startsWith("Unknown", ignoreCase = true) } ?: stringResource(R.string.untitled_song),
                         maxLines = 1,
                         overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                         style = MaterialTheme.typography.bodyLarge,
                         color = textColor
                     )
                     Text(
-                        text = song.artist.takeIf { it.isNotBlank() && !it.startsWith("Unknown", ignoreCase = true) } ?: "Unknown Artist",
+                        text = song.artist.takeIf { it.isNotBlank() && !it.startsWith("Unknown", ignoreCase = true) } ?: stringResource(R.string.unknown_artist),
                         maxLines = 1,
                         overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                         style = MaterialTheme.typography.labelMedium,

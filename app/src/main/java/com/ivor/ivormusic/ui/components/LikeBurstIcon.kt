@@ -1,4 +1,6 @@
 package com.ivor.ivormusic.ui.components
+import androidx.compose.ui.res.stringResource
+import com.ivor.ivormusic.R
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -92,7 +94,7 @@ fun LikeBurstIcon(
         }
         Icon(
             imageVector = if (isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
-            contentDescription = "Favorite",
+            contentDescription = stringResource(R.string.cd_favorite),
             tint = tint,
             modifier = Modifier
                 .size(iconSize)

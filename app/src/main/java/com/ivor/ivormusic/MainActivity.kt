@@ -27,6 +27,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -1031,7 +1032,7 @@ fun MusicApp(
             ) {
                 if (localOnlyMode) {
                     com.ivor.ivormusic.ui.components.LocalOnlyNotice(
-                        subtitle = "Update checks need the internet. Turn off Local only in Settings to check for updates."
+                        subtitle = stringResource(R.string.local_only_update_subtitle)
                     )
                 } else {
                     com.ivor.ivormusic.ui.settings.UpdateScreen(
@@ -1198,7 +1199,7 @@ private fun NotInterestedUndoHost(modifier: Modifier = Modifier) {
         val action = lastAction ?: return@LaunchedEffect
         val result = snackbarHostState.showSnackbar(
             message = action.message,
-            actionLabel = "Undo",
+            actionLabel = context.getString(R.string.undo),
             withDismissAction = false,
             duration = SnackbarDuration.Short
         )
@@ -1249,27 +1250,25 @@ private fun CrashReportPrompt(
         },
         title = {
             Text(
-                text = "Koda crashed last time",
+                text = stringResource(R.string.crash_dialog_title),
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.fillMaxWidth()
             )
         },
         text = {
             Text(
-                text = "Something went wrong on your previous session. " +
-                    "You can send a bug report with the details - nothing " +
-                    "leaves your device unless you choose to share it.",
+                text = stringResource(R.string.crash_dialog_message),
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         },
         confirmButton = {
             Button(onClick = onViewReport) {
-                Text("View & report")
+                Text(stringResource(R.string.crash_dialog_view_report))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Not now")
+                Text(stringResource(R.string.crash_dialog_not_now))
             }
         }
     )

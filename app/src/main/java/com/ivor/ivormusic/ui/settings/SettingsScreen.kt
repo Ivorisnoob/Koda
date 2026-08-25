@@ -1,4 +1,6 @@
 package com.ivor.ivormusic.ui.settings
+import androidx.compose.ui.res.stringResource
+import com.ivor.ivormusic.R
 
 import android.content.Intent
 import android.net.Uri
@@ -1060,11 +1062,11 @@ private fun SettingsHub(
             } else {
 
             item {
-                SettingsSection(title = "You") {
+                SettingsSection(title = stringResource(R.string.settings_section_you)) {
                     SettingsCard {
                         SettingsHubRow(
                             icon = Icons.Rounded.AccountCircle,
-                            title = "Account",
+                            title = stringResource(R.string.settings_account),
                             value = accountValue,
                             onClick = { onOpenPage(SettingsPage.ACCOUNT) }
                         )
@@ -1073,11 +1075,11 @@ private fun SettingsHub(
             }
 
             item {
-                SettingsSection(title = "Look and feel") {
+                SettingsSection(title = stringResource(R.string.settings_section_look_and_feel)) {
                     SettingsCard {
                         SettingsHubRow(
                             icon = Icons.Rounded.Palette,
-                            title = "Appearance",
+                            title = stringResource(R.string.settings_appearance),
                             value = if (spotlightHome) {
                                 "$themeLabel, $paletteName, Spotlight"
                             } else {
@@ -1088,7 +1090,7 @@ private fun SettingsHub(
                         SettingsDivider()
                         SettingsHubRow(
                             icon = Icons.Rounded.PlayCircle,
-                            title = "Player",
+                            title = stringResource(R.string.settings_player),
                             value = playerStyleLabel,
                             onClick = { onOpenPage(SettingsPage.PLAYER) }
                         )
@@ -1097,11 +1099,11 @@ private fun SettingsHub(
             }
 
             item {
-                SettingsSection(title = "Playback and content") {
+                SettingsSection(title = stringResource(R.string.settings_section_playback_and_content)) {
                     SettingsCard {
                         SettingsHubRow(
                             icon = Icons.Rounded.GraphicEq,
-                            title = "Playback and quality",
+                            title = stringResource(R.string.settings_playback_and_quality),
                             value = "${musicQualityLabel(musicQualityWifi)} music, " +
                                 "${videoQualityLabel(videoQualityWifi)} video on Wi-Fi",
                             onClick = { onOpenPage(SettingsPage.PLAYBACK) }
@@ -1109,14 +1111,14 @@ private fun SettingsHub(
                         SettingsDivider()
                         SettingsHubRow(
                             icon = Icons.Rounded.VideoLibrary,
-                            title = "Content and feeds",
+                            title = stringResource(R.string.settings_content_and_feeds),
                             value = contentValue,
                             onClick = { onOpenPage(SettingsPage.CONTENT) }
                         )
                         SettingsDivider()
                         SettingsHubRow(
                             icon = Icons.Rounded.Subscriptions,
-                            title = "Subscriptions",
+                            title = stringResource(R.string.settings_subscriptions),
                             value = subscriptionSourceLabel(subscriptionSource),
                             onClick = { onOpenPage(SettingsPage.SUBSCRIPTIONS) }
                         )
@@ -1125,11 +1127,11 @@ private fun SettingsHub(
             }
 
             item {
-                SettingsSection(title = "System") {
+                SettingsSection(title = stringResource(R.string.settings_section_system)) {
                     SettingsCard {
                         SettingsHubRow(
                             icon = Icons.Rounded.Folder,
-                            title = "Storage and cache",
+                            title = stringResource(R.string.settings_storage_and_cache),
                             value = storageValue,
                             onClick = { onOpenPage(SettingsPage.STORAGE) }
                         )
@@ -1137,7 +1139,7 @@ private fun SettingsHub(
                             SettingsDivider()
                             SettingsHubRow(
                                 icon = Icons.Rounded.Bolt,
-                                title = "Notifications",
+                                title = stringResource(R.string.settings_notifications),
                                 value = notificationsValue,
                                 onClick = { onOpenPage(SettingsPage.NOTIFICATIONS) },
                                 tint = if (!canPostPromoted && (liveDownloadUpdates || livePlaybackUpdates)) {
@@ -1150,25 +1152,25 @@ private fun SettingsHub(
                         SettingsDivider()
                         SettingsHubRow(
                             icon = Icons.Rounded.MusicNote,
-                            title = "Local library",
+                            title = stringResource(R.string.settings_local_library),
                             value = localLibraryValue,
                             onClick = { onOpenPage(SettingsPage.LOCAL_LIBRARY) }
                         )
                         SettingsDivider()
                         SettingsHubRow(
                             icon = Icons.Rounded.SettingsBackupRestore,
-                            title = "Backup and restore",
+                            title = stringResource(R.string.settings_backup_and_restore),
                             value = backupValue,
                             onClick = onNavigateToBackup
                         )
                         SettingsDivider()
                         SettingsHubRow(
                             icon = Icons.Rounded.Security,
-                            title = "Advanced",
+                            title = stringResource(R.string.settings_advanced),
                             value = if (isXiaomiDevice()) {
-                                "Recommended on this device"
+                                stringResource(R.string.settings_advanced_value_xiaomi)
                             } else {
-                                "Scanning and battery fixes"
+                                stringResource(R.string.settings_advanced_value_other)
                             },
                             onClick = { onOpenPage(SettingsPage.ADVANCED) },
                             tint = if (isXiaomiDevice()) {
@@ -1182,12 +1184,12 @@ private fun SettingsHub(
             }
 
             item {
-                SettingsSection(title = "About") {
+                SettingsSection(title = stringResource(R.string.settings_section_about)) {
                     SettingsCard {
                         SettingsRow(
                             icon = Icons.Rounded.Info,
                             title = "Koda",
-                            subtitle = "Version ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+                            subtitle = stringResource(R.string.settings_version_subtitle, BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE),
                             onClick = onShowAbout,
                             showChevron = true
                         )

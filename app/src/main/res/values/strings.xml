@@ -16,4 +16,205 @@
       their shade should not have to silence both.
     -->
     <string name="video_playback_channel_name">Video playback</string>
+
+    <!-- ============ Common actions ============ -->
+    <string name="undo">Undo</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_done">Done</string>
+    <string name="action_create">Create</string>
+    <string name="action_save">Save</string>
+    <string name="action_delete">Delete</string>
+    <string name="action_edit">Edit</string>
+    <string name="action_share">Share</string>
+    <string name="action_retry">Retry</string>
+    <string name="action_see_all">See all</string>
+    <string name="action_play_all">Play all</string>
+    <string name="action_show_more">Show More</string>
+    <string name="action_try_again">Try again</string>
+    <string name="action_open_settings">Open Settings</string>
+    <string name="action_clear_all">Clear all</string>
+    <string name="action_new_playlist">New playlist</string>
+    <string name="action_grant_permission">Grant Permission</string>
+    <string name="unknown_artist">Unknown Artist</string>
+    <string name="untitled_song">Untitled Song</string>
+    <string name="label_playlist">Playlist</string>
+
+    <!-- Bottom navigation tabs. Doubles as each tab icon's contentDescription. -->
+    <string name="tab_home">Home</string>
+    <string name="tab_search">Search</string>
+    <string name="tab_subs">Subs</string>
+    <string name="tab_library">Library</string>
+
+    <!-- Local only mode notices -->
+    <string name="local_only_title">Local only mode is on</string>
+    <string name="local_only_default_subtitle">This section needs the internet. Turn off Local only in Settings to use it.</string>
+    <string name="local_only_video_mode_subtitle">Video mode needs the internet. Turn off Local only in Settings to watch videos.</string>
+    <string name="local_only_video_search_subtitle">Video search needs the internet. Turn off Local only in Settings to search videos.</string>
+    <string name="local_only_subscriptions_subtitle">Subscriptions need the internet. Turn off Local only in Settings to see them.</string>
+    <string name="local_only_video_library_subtitle">The video library needs the internet. Turn off Local only in Settings to see it.</string>
+    <string name="local_only_update_subtitle">Update checks need the internet. Turn off Local only in Settings to check for updates.</string>
+
+    <!-- Crash report prompt (MainActivity) -->
+    <string name="crash_dialog_title">Koda crashed last time</string>
+    <string name="crash_dialog_message">Something went wrong on your previous session. You can send a bug report with the details - nothing leaves your device unless you choose to share it.</string>
+    <string name="crash_dialog_view_report">View &amp; report</string>
+    <string name="crash_dialog_not_now">Not now</string>
+
+    <!-- Storage permission (Home) -->
+    <string name="permission_required_title">Permission required to load songs</string>
+
+    <!-- Home screen -->
+    <string name="home_section_recent_albums">Recent Albums</string>
+    <string name="home_section_jump_back_in">Jump back in</string>
+    <string name="your_mix_line1">Your</string>
+    <string name="your_mix_line2">Mix</string>
+    <string name="update_badge_version">v%1$s</string>
+    <string name="artists_joined">%1$s, %2$s</string>
+    <string name="cd_profile">Profile</string>
+    <string name="cd_downloads">Downloads</string>
+    <string name="cd_settings">Settings</string>
+    <string name="cd_play">Play</string>
+    <string name="cd_pause">Pause</string>
+    <string name="cd_next">Next</string>
+    <string name="cd_album_art">Album Art</string>
+    <string name="cd_show_all">Show all %1$s</string>
+
+    <!-- Spotlight home -->
+    <string name="spotlight_quick_picks">Quick picks</string>
+    <string name="spotlight_your_playlists">Your playlists</string>
+    <string name="spotlight_from_your_library">From your library</string>
+    <string name="spotlight_caption_liked">From songs you liked</string>
+    <string name="spotlight_caption_recent">From what you played lately</string>
+    <string name="shortcut_liked_songs">Liked songs</string>
+    <string name="filter_all">All</string>
+    <string name="filter_liked">Liked</string>
+    <string name="filter_recent">Recent</string>
+    <string name="filter_playlists">Playlists</string>
+    <string name="spotlight_empty_no_liked">No liked songs yet</string>
+    <string name="spotlight_empty_no_recent">Nothing played yet</string>
+    <string name="spotlight_empty_no_playlists">No playlists yet</string>
+    <string name="spotlight_empty_generic">Nothing to show yet</string>
+    <string name="spotlight_hint_liked">Songs you like will collect here.</string>
+    <string name="spotlight_hint_playlists">Playlists you make or save show up here.</string>
+    <string name="spotlight_hint_all">Play something and your home fills in around it.</string>
+
+    <!-- Sleep timer -->
+    <string name="sleep_timer_title">Sleep timer</string>
+    <string name="sleep_timer_status_track">This track</string>
+    <string name="sleep_timer_detail_track">Playback stops when the song playing now finishes</string>
+    <string name="sleep_timer_detail_duration">Playback fades out and pauses when the timer ends</string>
+    <string name="minutes_short">%1$d min</string>
+    <string name="sleep_timer_end_of_track">End of this track</string>
+    <string name="sleep_timer_turn_off">Turn off</string>
+
+    <!-- Mini player / shared component content descriptions -->
+    <string name="cd_switch_to_music">Switch to music mode</string>
+    <string name="cd_switch_to_video">Switch to video mode</string>
+    <string name="cd_drag_to_reorder">Drag to reorder</string>
+    <string name="cd_favorite">Favorite</string>
+    <string name="cd_clear_search">Clear search</string>
+    <string name="queue_removed_snackbar">Removed %1$s</string>
+
+    <!-- Song options sheet (music long-press) -->
+    <string name="song_options_play_next">Play next</string>
+    <string name="song_options_play_next_subtitle">Right after this song</string>
+    <string name="song_options_add_to_queue">Add to queue</string>
+    <string name="song_options_add_to_queue_subtitle">At the end</string>
+    <string name="song_options_add_to_playlist">Add to playlist</string>
+    <string name="song_options_remove_from_liked">Remove from liked</string>
+    <string name="song_options_like">Like</string>
+    <string name="song_options_download">Download</string>
+    <string name="song_options_download_subtitle">Keep on this device</string>
+    <string name="song_options_downloaded">Downloaded</string>
+    <string name="song_options_go_to_artist">Go to %1$s</string>
+
+    <!-- Add to playlist sheet -->
+    <string name="add_to_playlist_title">Add to Playlist</string>
+    <string name="new_playlist_label">New Playlist</string>
+    <string name="name_label">Name</string>
+    <string name="description_optional_label">Description (Optional)</string>
+
+    <!-- Video options sheet (video long-press) -->
+    <string name="video_options_watch_later">Watch later</string>
+    <string name="video_options_kept_on_device">Kept on this device</string>
+    <string name="video_options_save_to_playlist">Save to playlist</string>
+    <string name="video_options_download">Download</string>
+    <string name="video_options_go_to_channel">Go to channel</string>
+    <string name="video_options_share">Share</string>
+    <string name="video_options_share_chooser">Share video</string>
+    <string name="video_options_not_interested">Not interested</string>
+    <string name="video_options_dont_recommend_channel">Don\'t recommend channel</string>
+    <string name="video_options_dont_recommend_channel_name">Don\'t recommend %1$s</string>
+    <string name="cd_back">Back</string>
+    <string name="search_playlists_placeholder">Search playlists</string>
+    <string name="no_playlist_matches">No playlist matches \"%1$s\"</string>
+    <string name="no_playlists_yet_hint">No playlists yet. Make one and this video goes straight into it.</string>
+    <string name="cd_saved">Saved</string>
+    <string name="cd_couldnt_save">Couldn\'t save</string>
+    <string name="cd_in_this_playlist">In this playlist</string>
+
+    <!-- Settings hub -->
+    <string name="settings_section_you">You</string>
+    <string name="settings_section_look_and_feel">Look and feel</string>
+    <string name="settings_section_playback_and_content">Playback and content</string>
+    <string name="settings_section_system">System</string>
+    <string name="settings_section_about">About</string>
+    <string name="settings_account">Account</string>
+    <string name="settings_appearance">Appearance</string>
+    <string name="settings_player">Player</string>
+    <string name="settings_playback_and_quality">Playback and quality</string>
+    <string name="settings_content_and_feeds">Content and feeds</string>
+    <string name="settings_subscriptions">Subscriptions</string>
+    <string name="settings_storage_and_cache">Storage and cache</string>
+    <string name="settings_notifications">Notifications</string>
+    <string name="settings_local_library">Local library</string>
+    <string name="settings_backup_and_restore">Backup and restore</string>
+    <string name="settings_advanced">Advanced</string>
+    <string name="settings_advanced_value_xiaomi">Recommended on this device</string>
+    <string name="settings_advanced_value_other">Scanning and battery fixes</string>
+    <string name="settings_version_subtitle">Version %1$s (%2$d)</string>
+
+    <!-- Profile switcher -->
+    <string name="profiles_title">Profiles</string>
+    <string name="profiles_description">Subscriptions and hidden recommendations are kept per profile. Playlists, liked songs and downloads are shared.</string>
+    <string name="add_youtube_account">Add YouTube account</string>
+    <string name="add_youtube_account_subtitle">Sign in to another Google account</string>
+    <string name="add_device_profile">Add profile on this device</string>
+    <string name="add_device_profile_subtitle">Separate subscriptions, no account needed</string>
+    <string name="profile_signed_out">Signed out - tap to sign in</string>
+    <string name="profile_session_expired">Session expired - tap to reconnect</string>
+    <string name="profile_on_this_device">On this device</string>
+    <string name="profile_youtube_account">YouTube account</string>
+    <string name="cd_active_profile">Active profile</string>
+    <string name="cd_remove_profile">Remove %1$s</string>
+    <string name="new_profile_dialog_title">New profile on this device</string>
+    <string name="sign_out_confirm_title">Sign out of %1$s?</string>
+    <string name="remove_profile_confirm_title">Remove %1$s?</string>
+    <string name="sign_out">Sign out</string>
+    <string name="remove">Remove</string>
+
+    <!-- Library top level -->
+    <string name="library_empty_title">Your library is empty</string>
+    <string name="library_empty_subtitle">Songs you download or like will show up here</string>
+    <string name="library_create_playlist_hint">Create one with the + button below</string>
+    <string name="fab_downloads">Downloads</string>
+    <string name="fab_listening_history">Listening history</string>
+    <string name="fab_statistics">Statistics</string>
+    <string name="cd_listening_stats">Listening stats</string>
+    <string name="recently_played">Recently played</string>
+    <string name="liked_songs">Liked Songs</string>
+    <string name="no_artists_yet">No artists yet</string>
+    <string name="no_artists_yet_subtitle">Artists from your songs will show up here</string>
+    <string name="no_albums_yet">No albums yet</string>
+    <string name="no_albums_yet_subtitle">Albums from your songs will show up here</string>
+
+    <!-- Counts -->
+    <plurals name="n_songs">
+        <item quantity="one">%1$d song</item>
+        <item quantity="other">%1$d songs</item>
+    </plurals>
+    <plurals name="n_playlists">
+        <item quantity="one">%1$d playlist</item>
+        <item quantity="other">%1$d playlists</item>
+    </plurals>
 </resources>

@@ -1,5 +1,8 @@
 package com.ivor.ivormusic.ui.components
 
+import com.ivor.ivormusic.R
+
+import android.content.Context
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -34,6 +37,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import kotlinx.coroutines.CoroutineScope
@@ -212,6 +216,7 @@ fun QueueDragHandle(
 class QueueRemovalController internal constructor(
     val hostState: SnackbarHostState,
     private val scope: CoroutineScope,
+    private val context: Context,
     private val onUndo: () -> Unit
 ) {
     fun onRemoved(title: String) {
@@ -220,8 +225,8 @@ class QueueRemovalController internal constructor(
             // leave one snackbar about the last of them, not three in sequence.
             hostState.currentSnackbarData?.dismiss()
             val result = hostState.showSnackbar(
-                message = "Removed $title",
-                actionLabel = "Undo",
+                message = context.getString(R.string.queue_removed_snackbar, title),
+                actionLabel = context.getString(R.string.undo),
                 withDismissAction = false,
                 duration = SnackbarDuration.Short
             )
@@ -234,8 +239,9 @@ class QueueRemovalController internal constructor(
 fun rememberQueueRemoval(onUndo: () -> Unit): QueueRemovalController {
     val hostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     val currentUndo by rememberUpdatedState(onUndo)
-    return remember(hostState, scope) {
-        QueueRemovalController(hostState, scope) { currentUndo() }
+    return remember(hostState, scope, context) {
+        QueueRemovalController(hostState, scope, context) { currentUndo() }
     }
 }

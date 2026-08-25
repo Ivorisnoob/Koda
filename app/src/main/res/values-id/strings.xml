@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Koda</string>
+    <string name="now_playing_channel_name">Sedang diputar</string>
+    <string name="video_playback_channel_name">Pemutaran video</string>
+
+    <string name="undo">Urungkan</string>
+    <string name="action_cancel">Batal</string>
+    <string name="action_done">Selesai</string>
+    <string name="action_create">Buat</string>
+    <string name="action_save">Simpan</string>
+    <string name="action_delete">Hapus</string>
+    <string name="action_edit">Edit</string>
+    <string name="action_share">Bagikan</string>
+    <string name="action_retry">Coba lagi</string>
+    <string name="action_see_all">Lihat semua</string>
+    <string name="action_play_all">Putar semua</string>
+    <string name="action_show_more">Tampilkan lebih banyak</string>
+    <string name="action_try_again">Coba lagi</string>
+    <string name="action_open_settings">Buka Setelan</string>
+    <string name="action_clear_all">Hapus semua</string>
+    <string name="action_new_playlist">Playlist baru</string>
+    <string name="action_grant_permission">Berikan izin</string>
+    <string name="unknown_artist">Artis tidak dikenal</string>
+    <string name="untitled_song">Lagu tanpa judul</string>
+    <string name="label_playlist">Playlist</string>
+
+    <string name="tab_home">Beranda</string>
+    <string name="tab_search">Telusuri</string>
+    <string name="tab_subs">Subscription</string>
+    <string name="tab_library">Koleksi</string>
+
+    <string name="local_only_title">Mode khusus lokal aktif</string>
+    <string name="local_only_default_subtitle">Bagian ini butuh internet. Matikan mode khusus lokal di Setelan untuk memakainya.</string>
+    <string name="local_only_video_mode_subtitle">Mode video butuh internet. Matikan mode khusus lokal di Setelan untuk menonton video.</string>
+    <string name="local_only_video_search_subtitle">Penelusuran video butuh internet. Matikan mode khusus lokal di Setelan untuk menelusuri video.</string>
+    <string name="local_only_subscriptions_subtitle">Subscription butuh internet. Matikan mode khusus lokal di Setelan untuk melihatnya.</string>
+    <string name="local_only_video_library_subtitle">Koleksi video butuh internet. Matikan mode khusus lokal di Setelan untuk melihatnya.</string>
+    <string name="local_only_update_subtitle">Pemeriksaan pembaruan butuh internet. Matikan mode khusus lokal di Setelan untuk memeriksa pembaruan.</string>
+
+    <string name="crash_dialog_title">Koda crash pada sesi sebelumnya</string>
+    <string name="crash_dialog_message">Terjadi masalah pada sesi terakhir Anda. Anda bisa mengirim laporan bug dengan detailnya - tidak ada yang keluar dari perangkat Anda kecuali Anda memilih untuk membagikannya.</string>
+    <string name="crash_dialog_view_report">Lihat &amp; laporkan</string>
+    <string name="crash_dialog_not_now">Nanti saja</string>
+
+    <string name="permission_required_title">Izin diperlukan untuk memuat lagu</string>
+
+    <string name="home_section_recent_albums">Album terbaru</string>
+    <string name="home_section_jump_back_in">Lanjutkan</string>
+    <string name="your_mix_line1">Mix</string>
+    <string name="your_mix_line2">kamu</string>
+    <string name="update_badge_version">v%1$s</string>
+    <string name="artists_joined">%1$s, %2$s</string>
+    <string name="cd_profile">Profil</string>
+    <string name="cd_downloads">Download</string>
+    <string name="cd_settings">Setelan</string>
+    <string name="cd_play">Putar</string>
+    <string name="cd_pause">Jeda</string>
+    <string name="cd_next">Berikutnya</string>
+    <string name="cd_album_art">Sampul album</string>
+    <string name="cd_show_all">Tampilkan semua: %1$s</string>
+
+    <string name="spotlight_quick_picks">Pilihan cepat</string>
+    <string name="spotlight_your_playlists">Playlist kamu</string>
+    <string name="spotlight_from_your_library">Dari koleksimu</string>
+    <string name="spotlight_caption_liked">Dari lagu yang kamu sukai</string>
+    <string name="spotlight_caption_recent">Dari yang baru saja kamu putar</string>
+    <string name="shortcut_liked_songs">Lagu yang disukai</string>
+    <string name="filter_all">Semua</string>
+    <string name="filter_liked">Disukai</string>
+    <string name="filter_recent">Terbaru</string>
+    <string name="filter_playlists">Playlist</string>
+    <string name="spotlight_empty_no_liked">Belum ada lagu yang disukai</string>
+    <string name="spotlight_empty_no_recent">Belum ada yang diputar</string>
+    <string name="spotlight_empty_no_playlists">Belum ada playlist</string>
+    <string name="spotlight_empty_generic">Belum ada apa pun di sini</string>
+    <string name="spotlight_hint_liked">Lagu yang kamu sukai akan terkumpul di sini.</string>
+    <string name="spotlight_hint_playlists">Playlist yang kamu buat atau simpan muncul di sini.</string>
+    <string name="spotlight_hint_all">Putar sesuatu dan berandamu akan terisi.</string>
+
+    <string name="sleep_timer_title">Timer tidur</string>
+    <string name="sleep_timer_status_track">Lagu ini</string>
+    <string name="sleep_timer_detail_track">Pemutaran berhenti saat lagu yang sedang diputar selesai</string>
+    <string name="sleep_timer_detail_duration">Pemutaran memudar dan jeda saat timer berakhir</string>
+    <string name="minutes_short">%1$d mnt</string>
+    <string name="sleep_timer_end_of_track">Akhir lagu ini</string>
+    <string name="sleep_timer_turn_off">Matikan</string>
+
+    <string name="cd_switch_to_music">Beralih ke mode musik</string>
+    <string name="cd_switch_to_video">Beralih ke mode video</string>
+    <string name="cd_drag_to_reorder">Tarik untuk mengurutkan ulang</string>
+    <string name="cd_favorite">Favorit</string>
+    <string name="cd_clear_search">Hapus penelusuran</string>
+    <string name="queue_removed_snackbar">%1$s dihapus</string>
+
+    <string name="song_options_play_next">Putar berikutnya</string>
+    <string name="song_options_play_next_subtitle">Lagu ini langsung setelahnya</string>
+    <string name="song_options_add_to_queue">Tambahkan ke antrean</string>
+    <string name="song_options_add_to_queue_subtitle">Di bagian akhir</string>
+    <string name="song_options_add_to_playlist">Tambahkan ke playlist</string>
+    <string name="song_options_remove_from_liked">Hapus dari disukai</string>
+    <string name="song_options_like">Suka</string>
+    <string name="song_options_download">Download</string>
+    <string name="song_options_download_subtitle">Simpan di perangkat ini</string>
+    <string name="song_options_downloaded">Terdownload</string>
+    <string name="song_options_go_to_artist">Buka %1$s</string>
+
+    <string name="add_to_playlist_title">Tambahkan ke playlist</string>
+    <string name="new_playlist_label">Playlist baru</string>
+    <string name="name_label">Nama</string>
+    <string name="description_optional_label">Deskripsi (opsional)</string>
+
+    <string name="video_options_watch_later">Tonton nanti</string>
+    <string name="video_options_kept_on_device">Disimpan di perangkat ini</string>
+    <string name="video_options_save_to_playlist">Simpan ke playlist</string>
+    <string name="video_options_download">Download</string>
+    <string name="video_options_go_to_channel">Buka channel</string>
+    <string name="video_options_share">Bagikan</string>
+    <string name="video_options_share_chooser">Bagikan video</string>
+    <string name="video_options_not_interested">Tidak tertarik</string>
+    <string name="video_options_dont_recommend_channel">Jangan rekomendasikan channel ini</string>
+    <string name="video_options_dont_recommend_channel_name">Jangan rekomendasikan %1$s</string>
+    <string name="cd_back">Kembali</string>
+    <string name="search_playlists_placeholder">Telusuri playlist</string>
+    <string name="no_playlist_matches">Tidak ada playlist yang cocok dengan \"%1$s\"</string>
+    <string name="no_playlists_yet_hint">Belum ada playlist. Buat satu dan video ini langsung masuk ke dalamnya.</string>
+    <string name="cd_saved">Tersimpan</string>
+    <string name="cd_couldnt_save">Tidak bisa menyimpan</string>
+    <string name="cd_in_this_playlist">Ada di playlist ini</string>
+
+    <string name="settings_section_you">Anda</string>
+    <string name="settings_section_look_and_feel">Tampilan</string>
+    <string name="settings_section_playback_and_content">Pemutaran dan konten</string>
+    <string name="settings_section_system">Sistem</string>
+    <string name="settings_section_about">Tentang</string>
+    <string name="settings_account">Akun</string>
+    <string name="settings_appearance">Tampilan</string>
+    <string name="settings_player">Pemutar</string>
+    <string name="settings_playback_and_quality">Pemutaran dan kualitas</string>
+    <string name="settings_content_and_feeds">Konten dan feed</string>
+    <string name="settings_subscriptions">Subscription</string>
+    <string name="settings_storage_and_cache">Penyimpanan dan cache</string>
+    <string name="settings_notifications">Notifikasi</string>
+    <string name="settings_local_library">Koleksi lokal</string>
+    <string name="settings_backup_and_restore">Backup dan pulihkan</string>
+    <string name="settings_advanced">Lanjutan</string>
+    <string name="settings_advanced_value_xiaomi">Direkomendasikan di perangkat ini</string>
+    <string name="settings_advanced_value_other">Perbaikan pemindaian dan baterai</string>
+    <string name="settings_version_subtitle">Versi %1$s (%2$d)</string>
+
+    <string name="profiles_title">Profil</string>
+    <string name="profiles_description">Subscription dan rekomendasi tersembunyi disimpan per profil. Playlist, lagu yang disukai, dan download dibersamakan.</string>
+    <string name="add_youtube_account">Tambahkan akun YouTube</string>
+    <string name="add_youtube_account_subtitle">Masuk dengan akun Google lain</string>
+    <string name="add_device_profile">Tambahkan profil di perangkat ini</string>
+    <string name="add_device_profile_subtitle">Subscription terpisah, tanpa perlu akun</string>
+    <string name="profile_signed_out">Belum masuk - ketuk untuk masuk</string>
+    <string name="profile_session_expired">Sesi berakhir - ketuk untuk menyambung ulang</string>
+    <string name="profile_on_this_device">Di perangkat ini</string>
+    <string name="profile_youtube_account">Akun YouTube</string>
+    <string name="cd_active_profile">Profil aktif</string>
+    <string name="cd_remove_profile">Hapus %1$s</string>
+    <string name="new_profile_dialog_title">Profil baru di perangkat ini</string>
+    <string name="sign_out_confirm_title">Keluar dari %1$s?</string>
+    <string name="remove_profile_confirm_title">Hapus %1$s?</string>
+    <string name="sign_out">Keluar</string>
+    <string name="remove">Hapus</string>
+
+    <string name="library_empty_title">Koleksimu masih kosong</string>
+    <string name="library_empty_subtitle">Lagu yang kamu download atau sukai akan muncul di sini</string>
+    <string name="library_create_playlist_hint">Buat dengan tombol + di bawah</string>
+    <string name="fab_downloads">Download</string>
+    <string name="fab_listening_history">Riwayat dengar</string>
+    <string name="fab_statistics">Statistik</string>
+    <string name="cd_listening_stats">Statistik dengar</string>
+    <string name="recently_played">Baru diputar</string>
+    <string name="liked_songs">Lagu yang disukai</string>
+    <string name="no_artists_yet">Belum ada artis</string>
+    <string name="no_artists_yet_subtitle">Artis dari lagumu akan muncul di sini</string>
+    <string name="no_albums_yet">Belum ada album</string>
+    <string name="no_albums_yet_subtitle">Album dari lagumu akan muncul di sini</string>
+
+    <plurals name="n_songs">
+        <item quantity="other">%1$d lagu</item>
+    </plurals>
+    <plurals name="n_playlists">
+        <item quantity="other">%1$d playlist</item>
+    </plurals>
+</resources>

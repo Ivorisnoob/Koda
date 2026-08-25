@@ -1,4 +1,6 @@
 package com.ivor.ivormusic.ui.account
+import androidx.compose.ui.res.stringResource
+import com.ivor.ivormusic.R
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
@@ -124,15 +126,14 @@ fun AccountSwitcherSheet(
                 .navigationBarsPadding()
         ) {
             Text(
-                text = "Profiles",
+                text = stringResource(R.string.profiles_title),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.padding(start = 4.dp, bottom = 4.dp)
             )
             Text(
-                text = "Subscriptions and hidden recommendations are kept per profile. " +
-                    "Playlists, liked songs and downloads are shared.",
+                text = stringResource(R.string.profiles_description),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(start = 4.dp, bottom = 16.dp)
@@ -168,8 +169,8 @@ fun AccountSwitcherSheet(
 
             AddRow(
                 icon = Icons.Rounded.Add,
-                title = "Add YouTube account",
-                subtitle = "Sign in to another Google account",
+                title = stringResource(R.string.add_youtube_account),
+                subtitle = stringResource(R.string.add_youtube_account_subtitle),
                 onClick = {
                     onDismiss()
                     onAddYouTubeAccount()
@@ -178,8 +179,8 @@ fun AccountSwitcherSheet(
             Spacer(Modifier.height(8.dp))
             AddRow(
                 icon = Icons.Rounded.PhoneAndroid,
-                title = "Add profile on this device",
-                subtitle = "Separate subscriptions, no account needed",
+                title = stringResource(R.string.add_device_profile),
+                subtitle = stringResource(R.string.add_device_profile_subtitle),
                 onClick = { showAddLocal = true }
             )
         }
@@ -269,10 +270,10 @@ private fun ProfileRow(
                 // Order matters: a restored profile is also flagged expired,
                 // and "signed out" is the accurate half of that. Nothing
                 // expired on a phone the account was never signed into.
-                needsSignIn -> "Signed out - tap to sign in"
-                profile.expired -> "Session expired - tap to reconnect"
-                profile.isLocal -> "On this device"
-                else -> profile.handle ?: "YouTube account"
+                needsSignIn -> stringResource(R.string.profile_signed_out)
+                profile.expired -> stringResource(R.string.profile_session_expired)
+                profile.isLocal -> stringResource(R.string.profile_on_this_device)
+                else -> profile.handle ?: stringResource(R.string.profile_youtube_account)
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (flagged) {
@@ -298,7 +299,7 @@ private fun ProfileRow(
         AnimatedVisibility(visible = isActive, enter = fadeIn(), exit = fadeOut()) {
             Icon(
                 imageVector = Icons.Rounded.Check,
-                contentDescription = "Active profile",
+                contentDescription = stringResource(R.string.cd_active_profile),
                 tint = MaterialTheme.colorScheme.onSecondaryContainer,
                 modifier = Modifier.size(22.dp)
             )
@@ -315,7 +316,7 @@ private fun ProfileRow(
             ) {
                 Icon(
                     imageVector = Icons.Rounded.DeleteOutline,
-                    contentDescription = "Remove ${profile.name}",
+                    contentDescription = stringResource(R.string.cd_remove_profile, profile.name),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(20.dp)
                 )
@@ -424,7 +425,7 @@ private fun NameProfileDialog(onConfirm: (String) -> Unit, onDismiss: () -> Unit
         onDismissRequest = onDismiss,
         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         shape = RoundedCornerShape(32.dp),
-        title = { Text("New profile on this device") },
+        title = { Text(stringResource(R.string.new_profile_dialog_title)) },
         text = {
             Column {
                 Text(
@@ -438,7 +439,7 @@ private fun NameProfileDialog(onConfirm: (String) -> Unit, onDismiss: () -> Unit
                     value = name,
                     onValueChange = { name = it },
                     singleLine = true,
-                    label = { Text("Name") },
+                    label = { Text(stringResource(R.string.name_label)) },
                     shape = RoundedCornerShape(16.dp)
                 )
             }
@@ -447,7 +448,7 @@ private fun NameProfileDialog(onConfirm: (String) -> Unit, onDismiss: () -> Unit
             TextButton(
                 onClick = { onConfirm(name) },
                 enabled = name.isNotBlank()
-            ) { Text("Create") }
+            ) { Text(stringResource(R.string.action_create)) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
@@ -465,7 +466,7 @@ private fun RemoveProfileDialog(
         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         shape = RoundedCornerShape(32.dp),
         title = {
-            Text(if (isSignOutOnly) "Sign out of ${profile.name}?" else "Remove ${profile.name}?")
+            Text(if (isSignOutOnly) stringResource(R.string.sign_out_confirm_title, profile.name) else stringResource(R.string.remove_profile_confirm_title, profile.name))
         },
         text = {
             Text(
@@ -485,7 +486,7 @@ private fun RemoveProfileDialog(
             )
         },
         confirmButton = {
-            TextButton(onClick = onConfirm) { Text(if (isSignOutOnly) "Sign out" else "Remove") }
+            TextButton(onClick = onConfirm) { Text(if (isSignOutOnly) stringResource(R.string.sign_out) else stringResource(R.string.remove)) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
