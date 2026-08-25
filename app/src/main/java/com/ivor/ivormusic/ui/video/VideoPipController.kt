@@ -47,6 +47,7 @@ fun VideoPipController(viewModel: VideoPlayerViewModel) {
     val currentVideo by viewModel.currentVideo.collectAsState()
     val isPlaying by viewModel.isPlaying.collectAsState()
     val isExpanded by viewModel.isExpanded.collectAsState()
+    val isCasting by viewModel.isCasting.collectAsState()
     val videoAspectRatio by viewModel.videoAspectRatio.collectAsState()
     val videoBounds by viewModel.videoSurfaceBounds.collectAsState()
 
@@ -59,8 +60,10 @@ fun VideoPipController(viewModel: VideoPlayerViewModel) {
         val receiver = object : android.content.BroadcastReceiver() {
             override fun onReceive(ctx: android.content.Context?, intent: Intent?) {
                 when (intent?.action) {
-                    "$packageName.$ACTION_PLAY" -> viewModel.exoPlayer?.play()
-                    "$packageName.$ACTION_PAUSE" -> viewModel.exoPlayer?.pause()
+                    // Routed through the ViewModel, not straight at exoPlayer:
+                    // while casting these buttons drive the receiver.
+                    "$packageName.$ACTION_PLAY" -> viewModel.playFromExternal()
+                    "$packageName.$ACTION_PAUSE" -> viewModel.pause()
                     "$packageName.$ACTION_REWIND" ->
                         viewModel.seekBy(-VideoPlayerViewModel.SEEK_STEP_MS)
                     "$packageName.$ACTION_FORWARD" ->
@@ -95,17 +98,21 @@ fun VideoPipController(viewModel: VideoPlayerViewModel) {
         currentVideo?.videoId,
         isPlaying,
         isExpanded,
+        isCasting,
         videoAspectRatio,
         videoBounds
     ) {
         val builder = PictureInPictureParams.Builder()
         val validBounds = videoBounds?.takeIf { !it.isEmpty }
-        val autoEnterEligible = currentVideo != null && isExpanded
+        // Casting disarms PiP entirely: the picture lives on the receiver and
+        // a PiP window would show only the casting card.
+        val autoEnterEligible = currentVideo != null && isExpanded && !isCasting
+        val hasContent = currentVideo != null && !isCasting
 
-        if (currentVideo == null) {
-            // No video: disarm. Auto-enter is sticky, so a player closed while
-            // it was armed would otherwise put the app into an empty PiP window
-            // the next time the user swiped home.
+        if (!hasContent) {
+            // No local video: disarm. Auto-enter is sticky, so leaving it armed
+            // through a cast would open a window onto the casting card when the
+            // user swiped home.
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 builder.setAutoEnterEnabled(false)
             }
