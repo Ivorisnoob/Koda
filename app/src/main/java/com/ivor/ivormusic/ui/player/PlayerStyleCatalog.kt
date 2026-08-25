@@ -1,4 +1,5 @@
 package com.ivor.ivormusic.ui.player
+import com.ivor.ivormusic.R
 
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
@@ -242,7 +243,7 @@ private fun PlayerStyleTile(
         Spacer(modifier = Modifier.height(8.dp))
 
         Text(
-            text = info.label,
+            text = playerStyleLabel(info.style),
             color = labelColor,
             fontSize = 14.sp,
             fontWeight = FontWeight.SemiBold,
@@ -250,7 +251,7 @@ private fun PlayerStyleTile(
             overflow = TextOverflow.Ellipsis
         )
         Text(
-            text = info.subtitle,
+            text = playerStyleSubtitle(info.style),
             color = if (selected) {
                 MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.75f)
             } else {
@@ -520,4 +521,29 @@ private fun PreviewPolygon(
             .clip(shape)
             .background(color)
     )
+}
+
+
+@Composable
+internal fun playerStyleLabel(style: PlayerStyle): String = when (style) {
+    PlayerStyle.CLASSIC -> stringResource(R.string.ps_style_classic)
+    PlayerStyle.GESTURE -> stringResource(R.string.ps_style_gesture)
+    PlayerStyle.EDITORIAL -> stringResource(R.string.ps_style_editorial)
+    PlayerStyle.POSTER -> stringResource(R.string.ps_style_canvas)
+    PlayerStyle.BENTO -> stringResource(R.string.ps_style_bento)
+    PlayerStyle.STICKER -> stringResource(R.string.ps_style_sticker)
+    PlayerStyle.MORPH -> stringResource(R.string.ps_style_morph)
+    PlayerStyle.DIAL -> stringResource(R.string.ps_style_dial)
+}
+
+@Composable
+internal fun playerStyleSubtitle(style: PlayerStyle): String = when (style) {
+    PlayerStyle.CLASSIC -> stringResource(R.string.ps_sub_classic)
+    PlayerStyle.GESTURE -> stringResource(R.string.ps_sub_gesture)
+    PlayerStyle.EDITORIAL -> stringResource(R.string.ps_sub_editorial)
+    PlayerStyle.POSTER -> stringResource(R.string.ps_sub_canvas)
+    PlayerStyle.BENTO -> stringResource(R.string.ps_sub_bento)
+    PlayerStyle.STICKER -> stringResource(R.string.ps_sub_sticker)
+    PlayerStyle.MORPH -> stringResource(R.string.ps_sub_morph)
+    PlayerStyle.DIAL -> stringResource(R.string.ps_sub_dial)
 }
