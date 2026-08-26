@@ -214,6 +214,9 @@ class MusicService : MediaLibraryService() {
         // Stream head pre-cached for upcoming songs: ~30s of opus audio, enough
         // to cover the 0.5s start buffer plus the first ranged chunk's RTT.
         private const val WARM_CACHE_BYTES = 512L * 1024
+        // Tail warm for AutoMix: comfortably more than the profiler's
+        // twenty-second outro window at any audio bitrate YouTube serves.
+        private const val WARM_TAIL_BYTES = 1024L * 1024
 
         /**
          * The short ramp a manual skip and a non-overlapped advance get.
@@ -920,11 +923,13 @@ class MusicService : MediaLibraryService() {
     }
 
     /**
-     * Write the first [WARM_CACHE_BYTES] of an upcoming song's stream into
-     * the disk cache, so the eventual transition or skip starts playing from
-     * disk instead of waiting on the network. Only warms real network
-     * streams: local files, already-cached songs, and the resolver's
-     * sentinel URIs (placeholder / cached / error) are skipped.
+     * Write the first [WARM_CACHE_BYTES] - and, unmetered, the last
+     * [WARM_TAIL_BYTES] - of an upcoming song's stream into the disk cache,
+     * so the eventual transition or skip starts playing from disk instead of
+     * waiting on the network, and AutoMix can read the track's outro without
+     * a network crawl. Only warms real network streams: local files,
+     * already-cached songs, and the resolver's sentinel URIs (placeholder /
+     * cached / error) are skipped.
      */
     private fun warmStreamCache(videoId: String, uri: Uri?) {
         val factory = cacheDataSourceFactory ?: return
@@ -951,6 +956,33 @@ class MusicService : MediaLibraryService() {
                     factory.createDataSource(), dataSpec, null, null
                 ).cache()
                 KLog.d(TAG, "Warm: cached stream head for $videoId")
+
+                // The tail matters as much as the head, for a different
+                // reason: AutoMix reads the last twenty seconds to decide how
+                // to transition out of this track, and without these bytes
+                // every read crawls over the network and profiling loses its
+                // race with the song itself - which is why every transition
+                // used to degrade to FALLBACK. googlevideo carries the full
+                // size in `clen`; without it there is no honest end to seek
+                // from. Metered networks skip it, matching the profiler's own
+                // guard, so warming never spends data AutoMix would refuse to
+                // use anyway.
+                val totalBytes = uri.getQueryParameter("clen")?.toLongOrNull() ?: 0L
+                val canWarmTail = totalBytes > WARM_CACHE_BYTES + WARM_TAIL_BYTES &&
+                    !CacheManager.isFullyCached(videoId) &&
+                    !ThemePreferences.isNetworkMetered(this@MusicService)
+                if (canWarmTail) {
+                    val tailSpec = DataSpec.Builder()
+                        .setUri(uri)
+                        .setPosition(totalBytes - WARM_TAIL_BYTES)
+                        .setLength(WARM_TAIL_BYTES)
+                        .setKey(videoId)
+                        .build()
+                    androidx.media3.datasource.cache.CacheWriter(
+                        factory.createDataSource(), tailSpec, null, null
+                    ).cache()
+                    KLog.d(TAG, "Warm: cached stream tail for $videoId")
+                }
             } catch (e: Exception) {
                 // Retryable on the next prefetch round (e.g. an expired URL
                 // that resolution will refresh).
