@@ -471,7 +471,7 @@ internal fun PlaybackSettingsPage(
                                         else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
                                     },
                                     colors = ToggleButtonDefaults.toggleButtonColors(
-                                        containerColor = MaterialTheme.colorScheme.surface,
+                                        containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
                                         checkedContainerColor = MaterialTheme.colorScheme.primary,
                                         contentColor = MaterialTheme.colorScheme.onSurface,
                                         checkedContentColor = MaterialTheme.colorScheme.onPrimary,
@@ -618,7 +618,7 @@ internal fun PlaybackSettingsPage(
                                         else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
                                     },
                                     colors = ToggleButtonDefaults.toggleButtonColors(
-                                        containerColor = MaterialTheme.colorScheme.surface,
+                                        containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
                                         checkedContainerColor = MaterialTheme.colorScheme.primary,
                                         contentColor = MaterialTheme.colorScheme.onSurface,
                                         checkedContentColor = MaterialTheme.colorScheme.onPrimary,
@@ -719,7 +719,7 @@ internal fun PlaybackSettingsPage(
                                         else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
                                     },
                                     colors = ToggleButtonDefaults.toggleButtonColors(
-                                        containerColor = MaterialTheme.colorScheme.surface,
+                                        containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
                                         checkedContainerColor = MaterialTheme.colorScheme.primary,
                                         contentColor = MaterialTheme.colorScheme.onSurface,
                                         checkedContentColor = MaterialTheme.colorScheme.onPrimary,
@@ -1010,9 +1010,9 @@ internal fun StorageSettingsPage(
                         onToggle = onPrivateDownloadsEnabledToggle
                     )
                 }
-                SettingsNotice(
+                SettingsFootnote(
                     icon = Icons.Rounded.Visibility,
-                    text = "Album art stays out of Gallery in both storage modes. Existing downloads keep their current location."
+                    text = "Album art stays hidden from Gallery in either mode. Existing downloads stay where they are."
                 )
             }
         }
@@ -1091,7 +1091,7 @@ internal fun StorageSettingsPage(
                                         else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
                                     },
                                     colors = ToggleButtonDefaults.toggleButtonColors(
-                                        containerColor = MaterialTheme.colorScheme.surface,
+                                        containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
                                         checkedContainerColor = MaterialTheme.colorScheme.primary,
                                         contentColor = MaterialTheme.colorScheme.onSurface,
                                         checkedContentColor = MaterialTheme.colorScheme.onPrimary,
@@ -1459,5 +1459,33 @@ private fun SettingsNotice(
                 fontWeight = FontWeight.Medium
             )
         }
+    }
+}
+
+/** Quiet supporting copy that belongs to the setting above it, not a separate alert. */
+@Composable
+private fun SettingsFootnote(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    text: String
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 14.dp, top = 10.dp, end = 14.dp),
+        verticalAlignment = Alignment.Top
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(18.dp)
+        )
+        Spacer(modifier = Modifier.width(10.dp))
+        Text(
+            text = text,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall,
+            lineHeight = 17.sp
+        )
     }
 }

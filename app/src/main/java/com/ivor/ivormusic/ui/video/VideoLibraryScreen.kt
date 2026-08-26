@@ -585,7 +585,7 @@ private fun CreateVideoPlaylistDialog(
                                     else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
                                 },
                                 colors = ToggleButtonDefaults.toggleButtonColors(
-                                    containerColor = MaterialTheme.colorScheme.surface,
+                                    containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
                                     checkedContainerColor = MaterialTheme.colorScheme.primary,
                                     contentColor = MaterialTheme.colorScheme.onSurface,
                                     checkedContentColor = MaterialTheme.colorScheme.onPrimary
