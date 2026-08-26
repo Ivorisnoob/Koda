@@ -325,6 +325,8 @@ fun SettingsScreen(
     onOemFixEnabledToggle: (Boolean) -> Unit,
     manualScanEnabled: Boolean,
     onManualScanEnabledToggle: (Boolean) -> Unit,
+    privateDownloadsEnabled: Boolean,
+    onPrivateDownloadsEnabledToggle: (Boolean) -> Unit,
     onNavigateToUpdate: () -> Unit = {},
     localOnlyMode: Boolean = false,
     onLocalOnlyModeToggle: (Boolean) -> Unit = {},
@@ -570,6 +572,7 @@ fun SettingsScreen(
                 localOnlyMode = localOnlyMode,
                 videoMode = videoMode,
                 subscriptionSource = subscriptionSource,
+                privateDownloadsEnabled = privateDownloadsEnabled,
                 cacheEnabled = cacheEnabled,
                 currentCacheSize = currentCacheSize,
                 liveDownloadUpdates = liveDownloadUpdates,
@@ -740,6 +743,8 @@ fun SettingsScreen(
                 )
 
                 SettingsPage.STORAGE -> StorageSettingsPage(
+                    privateDownloadsEnabled = privateDownloadsEnabled,
+                    onPrivateDownloadsEnabledToggle = onPrivateDownloadsEnabledToggle,
                     cacheEnabled = cacheEnabled,
                     onCacheEnabledToggle = onCacheEnabledToggle,
                     maxCacheSizeMb = maxCacheSizeMb,
@@ -911,6 +916,7 @@ private fun SettingsHub(
     localOnlyMode: Boolean,
     videoMode: Boolean,
     subscriptionSource: String,
+    privateDownloadsEnabled: Boolean,
     cacheEnabled: Boolean,
     currentCacheSize: Long,
     liveDownloadUpdates: Boolean,
@@ -958,10 +964,16 @@ private fun SettingsHub(
         else -> "Music mode"
     }
 
-    val storageValue = if (cacheEnabled) {
-        "${com.ivor.ivormusic.data.CacheManager.formatSize(currentCacheSize)} cached"
-    } else {
-        "Caching off"
+    val storageValue = buildString {
+        append(if (privateDownloadsEnabled) "Private downloads" else "Downloads/Koda")
+        append(" · ")
+        append(
+            if (cacheEnabled) {
+                "${com.ivor.ivormusic.data.CacheManager.formatSize(currentCacheSize)} cached"
+            } else {
+                "Caching off"
+            }
+        )
     }
 
     val notificationsValue = when {

@@ -16,12 +16,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.FilledIconButton
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButtonDefaults
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Cast
-import androidx.compose.material.icons.rounded.CastConnected
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -51,6 +45,19 @@ import kotlin.math.roundToInt
  * to do.
  */
 private const val PLAYER_BACK_PEEK = 0.72f
+
+/**
+ * Shared Cast action for the eight music-player styles. Keeping the action in
+ * a CompositionLocal lets every style place it inside its own top action row
+ * without threading four Cast parameters through each player API.
+ */
+internal data class MusicCastAction(
+    val isCasting: Boolean,
+    val deviceName: String?,
+    val onClick: () -> Unit
+)
+
+internal val LocalMusicCastAction = staticCompositionLocalOf<MusicCastAction?> { null }
 
 /**
  * A container that expands from a MiniPlayer (floating pill) to a Full Screen Player.
@@ -339,7 +346,6 @@ fun ExpandablePlayer(
                             onNextClick = onNextClick,
                             isCasting = isCasting,
                             castDeviceName = castDeviceName,
-                            onCastClick = { showCastSheet = true },
                             onClick = { onExpandChange(true) }
                         )
                     }
@@ -383,7 +389,12 @@ fun ExpandablePlayer(
                         // Any artwork can host the wheel's hold gesture
                         // through this local, without per-style plumbing.
                         CompositionLocalProvider(
-                            LocalPlayerStyleWheelController provides styleWheel
+                            LocalPlayerStyleWheelController provides styleWheel,
+                            LocalMusicCastAction provides MusicCastAction(
+                                isCasting = isCasting,
+                                deviceName = castDeviceName,
+                                onClick = { showCastSheet = true }
+                            )
                         ) {
                         // Crossfade makes a live style swap (from the style
                         // wheel or Settings) a soft morph instead of a cut.
@@ -484,44 +495,6 @@ fun ExpandablePlayer(
                         }
                         }
                         }
-                        }
-
-                        // One shared Cast affordance for every player style.
-                        // It sits just below the styles' top action row: placing
-                        // it in the conventional top-end slot would cover the
-                        // sleep/add/menu button in several of the eight layouts.
-                        FilledIconButton(
-                            onClick = { showCastSheet = true },
-                            modifier = Modifier
-                                .align(Alignment.TopEnd)
-                                .windowInsetsPadding(WindowInsets.statusBars)
-                                .padding(top = 72.dp, end = 16.dp),
-                            shapes = IconButtonDefaults.shapes(),
-                            colors = IconButtonDefaults.filledIconButtonColors(
-                                containerColor = if (isCasting) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    MaterialTheme.colorScheme.surfaceContainerHigh
-                                },
-                                contentColor = if (isCasting) {
-                                    MaterialTheme.colorScheme.onPrimary
-                                } else {
-                                    MaterialTheme.colorScheme.onSurface
-                                }
-                            )
-                        ) {
-                            Icon(
-                                imageVector = if (isCasting) {
-                                    Icons.Rounded.CastConnected
-                                } else {
-                                    Icons.Rounded.Cast
-                                },
-                                contentDescription = if (isCasting && castDeviceName != null) {
-                                    "Casting to $castDeviceName"
-                                } else {
-                                    "Cast"
-                                }
-                            )
                         }
 
                         androidx.compose.animation.AnimatedVisibility(

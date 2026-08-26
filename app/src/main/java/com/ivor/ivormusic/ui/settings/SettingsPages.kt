@@ -880,6 +880,8 @@ internal fun SubscriptionsSettingsPage(
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 internal fun StorageSettingsPage(
+    privateDownloadsEnabled: Boolean,
+    onPrivateDownloadsEnabledToggle: (Boolean) -> Unit,
     cacheEnabled: Boolean,
     onCacheEnabledToggle: (Boolean) -> Unit,
     maxCacheSizeMb: Long,
@@ -889,6 +891,28 @@ internal fun StorageSettingsPage(
     onBack: () -> Unit
 ) {
     SettingsDetailScaffold(title = "Storage and cache", onBack = onBack) {
+        item {
+            SettingsSection(title = "Downloads") {
+                SettingsCard {
+                    SettingsToggleRow(
+                        icon = Icons.Rounded.Security,
+                        title = "Private downloads",
+                        subtitle = if (privateDownloadsEnabled) {
+                            "New audio and video stay inside Koda and are removed on uninstall"
+                        } else {
+                            "New audio and video appear in Downloads/Koda"
+                        },
+                        enabled = privateDownloadsEnabled,
+                        onToggle = onPrivateDownloadsEnabledToggle
+                    )
+                }
+                SettingsNotice(
+                    icon = Icons.Rounded.Visibility,
+                    text = "Album art stays out of Gallery in both storage modes. Existing downloads keep their current location."
+                )
+            }
+        }
+
         item {
             SettingsSection(title = "Cache") {
                 SettingsCard {

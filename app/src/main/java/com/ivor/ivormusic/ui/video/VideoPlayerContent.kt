@@ -794,6 +794,8 @@ fun VideoPlayerContent(
                     // engagement.isSubscribed only knows about the account.
                     isSubscribed = isSubscribedToChannel,
                     likeStatus = engagement?.likeStatus ?: LikeStatus.INDIFFERENT,
+                    casting = isCasting,
+                    castDeviceName = castDeviceName,
                     onPlayPause = { viewModel.togglePlayPause() },
                     onSeek = { newProgress -> exoPlayer.seekTo((newProgress * duration).toLong()) },
                     onScrubbingChanged = { isSeekScrubbing = it },
@@ -807,6 +809,7 @@ fun VideoPlayerContent(
                         viewModel.ensureCaptionsLoaded()
                         showCaptionsSheet = true
                     },
+                    onCastClick = { showCastSheet = true },
                     onSettings = { showPlaybackSettings = true },
                     onSubscribeClick = { requireSubscribeLogin { viewModel.toggleSubscribe() } },
                     onLikeClick = { requireLogin { viewModel.toggleLike() } },

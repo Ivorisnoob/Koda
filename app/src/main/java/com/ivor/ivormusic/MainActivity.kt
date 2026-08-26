@@ -177,6 +177,8 @@ class MainActivity : ComponentActivity() {
             val excludedFolders by themeViewModel.excludedFolders.collectAsState()
             val oemFixEnabled by themeViewModel.oemFixEnabled.collectAsState()
             val manualScanEnabled by themeViewModel.manualScanEnabled.collectAsState()
+            val privateDownloadsEnabled by
+                themeViewModel.privateDownloadsEnabled.collectAsState()
             val onboardingCompleted by themeViewModel.onboardingCompleted.collectAsState()
             val localOnlyMode by themeViewModel.localOnlyMode.collectAsState()
             
@@ -268,6 +270,10 @@ class MainActivity : ComponentActivity() {
                         onOemFixEnabledToggle = { themeViewModel.setOemFixEnabled(it) },
                         manualScanEnabled = manualScanEnabled,
                         onManualScanEnabledToggle = { themeViewModel.setManualScanEnabled(it) },
+                        privateDownloadsEnabled = privateDownloadsEnabled,
+                        onPrivateDownloadsEnabledToggle = {
+                            themeViewModel.setPrivateDownloadsEnabled(it)
+                        },
                         cacheEnabled = cacheEnabled,
                         onCacheEnabledToggle = { themeViewModel.setCacheEnabled(it) },
                         maxCacheSizeMb = maxCacheSizeMb,
@@ -489,6 +495,8 @@ fun MusicApp(
     onOemFixEnabledToggle: (Boolean) -> Unit,
     manualScanEnabled: Boolean,
     onManualScanEnabledToggle: (Boolean) -> Unit,
+    privateDownloadsEnabled: Boolean,
+    onPrivateDownloadsEnabledToggle: (Boolean) -> Unit,
     onboardingCompleted: Boolean,
     onOnboardingCompleted: (Boolean) -> Unit,
     localOnlyMode: Boolean,
@@ -844,6 +852,8 @@ fun MusicApp(
                     onOemFixEnabledToggle = onOemFixEnabledToggle,
                     manualScanEnabled = manualScanEnabled,
                     onManualScanEnabledToggle = onManualScanEnabledToggle,
+                    privateDownloadsEnabled = privateDownloadsEnabled,
+                    onPrivateDownloadsEnabledToggle = onPrivateDownloadsEnabledToggle,
                     onNavigateToUpdate = { navController.navigate("update") },
                     localOnlyMode = localOnlyMode,
                     onLocalOnlyModeToggle = onLocalOnlyModeToggle

@@ -56,6 +56,7 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
 
     val oemFixEnabled: StateFlow<Boolean> = themePreferences.oemFixEnabled
     val manualScanEnabled: StateFlow<Boolean> = themePreferences.manualScanEnabled
+    val privateDownloadsEnabled: StateFlow<Boolean> = themePreferences.privateDownloadsEnabled
     val onboardingCompleted: StateFlow<Boolean> = themePreferences.onboardingCompleted
     val localOnlyMode: StateFlow<Boolean> = themePreferences.localOnlyMode
     
@@ -235,6 +236,10 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setManualScanEnabled(enabled: Boolean) {
         themePreferences.setManualScanEnabled(enabled)
+    }
+
+    fun setPrivateDownloadsEnabled(enabled: Boolean) {
+        themePreferences.setPrivateDownloadsEnabled(enabled)
     }
 
     fun setOnboardingCompleted(completed: Boolean) {

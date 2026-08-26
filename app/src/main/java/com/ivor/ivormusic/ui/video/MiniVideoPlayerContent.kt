@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Cast
 import androidx.compose.material.icons.rounded.CastConnected
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
@@ -28,18 +27,14 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.ContainedLoadingIndicator
 import androidx.compose.material3.FilledIconButton
-import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -96,16 +91,6 @@ fun MiniVideoPlayerContent(viewModel: VideoPlayerViewModel) {
     val isPortrait by viewModel.isPortraitVideo.collectAsState()
     val isCasting by viewModel.isCasting.collectAsState()
     val castDeviceName by viewModel.castDeviceName.collectAsState()
-
-    // Discovery runs only while the sheet it feeds is open.
-    var showCastSheet by remember { mutableStateOf(false) }
-    LaunchedEffect(showCastSheet) {
-        if (showCastSheet) {
-            viewModel.startCastDiscovery()
-        } else {
-            viewModel.stopCastDiscovery()
-        }
-    }
 
     val video = currentVideo ?: return
     val haptics = rememberPlayerHaptics()
@@ -166,35 +151,6 @@ fun MiniVideoPlayerContent(viewModel: VideoPlayerViewModel) {
 
         Spacer(modifier = Modifier.width(6.dp))
 
-        // Cast entry point from the collapsed bar. Reachable whether or not
-        // the player is expanded, which is the point: handing a video to the
-        // TV usually happens after the phone has already been pocketed.
-        FilledTonalIconButton(
-            onClick = { showCastSheet = true },
-            modifier = Modifier.size(44.dp),
-            shapes = IconButtonDefaults.shapes(),
-            colors = IconButtonDefaults.filledTonalIconButtonColors(
-                containerColor = if (isCasting) {
-                    MaterialTheme.colorScheme.primaryContainer
-                } else {
-                    MaterialTheme.colorScheme.surfaceVariant
-                },
-                contentColor = if (isCasting) {
-                    MaterialTheme.colorScheme.onPrimaryContainer
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                }
-            )
-        ) {
-            Icon(
-                imageVector = if (isCasting) Icons.Rounded.CastConnected else Icons.Rounded.Cast,
-                contentDescription = if (isCasting) "Cast settings" else "Cast",
-                modifier = Modifier.size(20.dp)
-            )
-        }
-
-        Spacer(modifier = Modifier.width(6.dp))
-
         // Play/pause stays live while buffering rather than being
         // replaced by a spinner the way the music pill's is. Buffering is
         // already reported on the video itself a few dp to the left, and
@@ -238,12 +194,6 @@ fun MiniVideoPlayerContent(viewModel: VideoPlayerViewModel) {
         }
     }
 
-    if (showCastSheet) {
-        CastSheet(
-            viewModel = viewModel,
-            onDismiss = { showCastSheet = false }
-        )
-    }
 }
 
 /**

@@ -30,8 +30,6 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.rounded.MusicNote
-import androidx.compose.material.icons.rounded.Cast
-import androidx.compose.material.icons.rounded.CastConnected
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.FilledIconButton
@@ -74,7 +72,6 @@ fun MiniPlayerContent(
     onNextClick: () -> Unit,
     isCasting: Boolean,
     castDeviceName: String?,
-    onCastClick: () -> Unit,
     onClick: () -> Unit
 ) {
     val playerHaptics = rememberPlayerHaptics()
@@ -224,43 +221,23 @@ fun MiniPlayerContent(
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = currentSong.artist,
+                    text = if (isCasting && castDeviceName != null) {
+                        "Casting to $castDeviceName"
+                    } else {
+                        currentSong.artist
+                    },
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = if (isCasting) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
             }
 
             Spacer(modifier = Modifier.width(8.dp))
-
-            FilledIconButton(
-                onClick = onCastClick,
-                modifier = Modifier.size(44.dp),
-                shapes = IconButtonDefaults.shapes(),
-                colors = IconButtonDefaults.filledIconButtonColors(
-                    containerColor = if (isCasting) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.surfaceVariant
-                    },
-                    contentColor = if (isCasting) {
-                        MaterialTheme.colorScheme.onPrimary
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    }
-                )
-            ) {
-                Icon(
-                    imageVector = if (isCasting) Icons.Rounded.CastConnected else Icons.Rounded.Cast,
-                    contentDescription = if (isCasting && castDeviceName != null) {
-                        "Casting to $castDeviceName"
-                    } else {
-                        "Cast"
-                    },
-                    modifier = Modifier.size(22.dp)
-                )
-            }
 
             // Play/Pause Button with shape morphing or Loading
             if (isBuffering && playWhenReady) {

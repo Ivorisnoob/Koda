@@ -1162,7 +1162,12 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             // fullscreen player would be a jump-scare, not a convenience. The
             // mini player is enough of a "you left this running" cue, and it
             // is paused, so nothing streams until they tap it.
-            startVideo(target, resumePositionMs = session.positionMs, expand = false)
+            startVideo(
+                target,
+                resumePositionMs = session.positionMs,
+                resumePaused = true,
+                expand = false
+            )
         }
     }
 
@@ -1758,7 +1763,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         video: VideoItem,
         forceRestart: Boolean = false,
         resumePositionMs: Long? = null,
-        resumePaused: Boolean = true,
+        resumePaused: Boolean = false,
         expand: Boolean = true
     ) {
         if (!forceRestart && _currentVideo.value?.videoId == video.videoId) {

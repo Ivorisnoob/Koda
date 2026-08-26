@@ -138,6 +138,11 @@ class ThemePreferences(context: Context) {
     private val _manualScanEnabled = MutableStateFlow(getManualScanEnabledPreference())
     val manualScanEnabled: StateFlow<Boolean> = _manualScanEnabled.asStateFlow()
 
+    private val _privateDownloadsEnabled =
+        MutableStateFlow(getPrivateDownloadsEnabledPreference())
+    val privateDownloadsEnabled: StateFlow<Boolean> =
+        _privateDownloadsEnabled.asStateFlow()
+
     private val _onboardingCompleted = MutableStateFlow(getOnboardingCompletedPreference())
     val onboardingCompleted: StateFlow<Boolean> = _onboardingCompleted.asStateFlow()
 
@@ -199,6 +204,8 @@ class ThemePreferences(context: Context) {
             KEY_NORMALIZE_VOLUME -> _normalizeVolume.value = getNormalizeVolumePreference()
             KEY_OEM_FIX_ENABLED -> _oemFixEnabled.value = getOemFixEnabledPreference()
             KEY_MANUAL_SCAN_ENABLED -> _manualScanEnabled.value = getManualScanEnabledPreference()
+            KEY_PRIVATE_DOWNLOADS ->
+                _privateDownloadsEnabled.value = getPrivateDownloadsEnabledPreference()
             KEY_ONBOARDING_COMPLETED -> _onboardingCompleted.value = getOnboardingCompletedPreference()
             KEY_LOCAL_ONLY_MODE -> _localOnlyMode.value = getLocalOnlyModePreference()
             KEY_TIME_LIMIT_ENABLED -> _timeLimitEnabled.value = getTimeLimitEnabledPreference()
@@ -391,6 +398,17 @@ class ThemePreferences(context: Context) {
          * StateFlow — the sheet and the download worker both read it fresh.
          */
         private const val KEY_DOWNLOAD_VIDEO_QUALITY = "download_video_quality"
+
+        /**
+         * App-only download storage. Off preserves Koda's existing public
+         * Downloads/Koda behavior; callers fresh-read this when a transfer
+         * starts so separate ThemePreferences instances cannot go stale.
+         */
+        private const val KEY_PRIVATE_DOWNLOADS = "private_downloads"
+
+        fun usePrivateDownloadStorage(context: Context): Boolean =
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getBoolean(KEY_PRIVATE_DOWNLOADS, false)
 
         /**
          * Static fresh read of the download quality for DownloadRepository,
@@ -1054,6 +1072,14 @@ class ThemePreferences(context: Context) {
 
     fun setDownloadVideoQuality(quality: String) {
         prefs.edit().putString(KEY_DOWNLOAD_VIDEO_QUALITY, quality).apply()
+    }
+
+    private fun getPrivateDownloadsEnabledPreference(): Boolean =
+        prefs.getBoolean(KEY_PRIVATE_DOWNLOADS, false)
+
+    fun setPrivateDownloadsEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_PRIVATE_DOWNLOADS, enabled).apply()
+        _privateDownloadsEnabled.value = enabled
     }
 
     /**

@@ -50,6 +50,19 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         }
     private var connectRetryAttempts = 0
 
+    /**
+     * A tap can beat the asynchronous MediaController connection on cold
+     * start. Keep only the latest request: a second tap means the user changed
+     * their mind, and replaying both after connection would flash the wrong
+     * song before landing on the right one.
+     */
+    private data class PendingPlayRequest(
+        val queue: List<MusicQueueItem>,
+        val startIndex: Int
+    )
+
+    private var pendingPlayRequest: PendingPlayRequest? = null
+
     private val _currentSong = MutableStateFlow<Song?>(null)
     val currentSong: StateFlow<Song?> = _currentSong.asStateFlow()
 
@@ -340,9 +353,6 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
             // This runs when we reconnect to an already-playing session
             syncStateFromController(ctrl)
 
-            // Restore the previous session if there's nothing currently playing
-            restoreLastSession()
-            
             ctrl.addListener(object : Player.Listener {
                 override fun onIsPlayingChanged(isPlaying: Boolean) {
                     _isPlaying.value = isPlaying
@@ -511,6 +521,15 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                     }
                 }
             })
+
+            // A user tap wins over cold-start restoration. Previously a tap
+            // made during controller connection updated the mini player but
+            // silently lost the actual play command, leaving the song paused
+            // until Play was tapped a second time.
+            pendingPlayRequest?.let { pending ->
+                pendingPlayRequest = null
+                playQueueItems(pending.queue, pending.startIndex)
+            } ?: restoreLastSession()
         }, MoreExecutors.directExecutor())
     }
     
@@ -719,10 +738,16 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         updateCurrentSongLikedStatus()
         fetchLyrics(currentSong)
         
-        controller?.let { player ->
+        val player = controller
+        if (player == null) {
+            pendingPlayRequest = PendingPlayRequest(playbackQueue, safeStartIndex)
+            return
+        }
+        pendingPlayRequest = null
+        player.let {
             // 1. Set the target song first (triggers URL resolution in MusicService)
             val startItem = createMediaItem(currentItem, castResolveNow = true)
-            player.setMediaItem(startItem)
+            it.setMediaItem(startItem)
             
             // 2. Add the rest of the queue BEFORE prepare (so notification sees full queue)
             val otherItemsBefore = playbackQueue.subList(0, safeStartIndex).map { createMediaItem(it) }
@@ -731,17 +756,17 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                 .map { createMediaItem(it) }
             
             if (otherItemsBefore.isNotEmpty()) {
-                player.addMediaItems(0, otherItemsBefore)
+                it.addMediaItems(0, otherItemsBefore)
             }
             if (otherItemsAfter.isNotEmpty()) {
                 // Start item is now at index otherItemsBefore.size
-                player.addMediaItems(otherItemsBefore.size + 1, otherItemsAfter)
+                it.addMediaItems(otherItemsBefore.size + 1, otherItemsAfter)
             }
             
             // 3. NOW prepare and play - notification will see complete queue
             // (the buffering watchdog in init covers the stuck-spinner case)
-            player.prepare()
-            player.play()
+            it.prepare()
+            it.play()
         }
     }
     
@@ -1477,6 +1502,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     fun clearPlayer() {
         // Set flag BEFORE clearing to prevent listener from restoring
         isPlayerCleared = true
+        pendingPlayRequest = null
         
         controller?.let { player ->
             player.stop()
