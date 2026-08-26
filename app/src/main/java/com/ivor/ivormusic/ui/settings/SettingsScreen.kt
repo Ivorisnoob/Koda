@@ -1982,7 +1982,7 @@ private fun ExpressiveAboutDialog(
                     )
                     Spacer(modifier = Modifier.width(10.dp))
                     Text(
-                        text = stringResource(R.string.action_close),
+                        text = stringResource(R.string.action_check_updates),
                         fontWeight = FontWeight.SemiBold
                     )
                 }
@@ -2151,7 +2151,7 @@ private fun AndroidAutoHelpDialog(
                     modifier = Modifier.height(48.dp)
                 ) {
                     Text(
-                        text = stringResource(R.string.action_done),
+                        text = stringResource(R.string.action_got_it),
                         fontWeight = FontWeight.SemiBold
                     )
                 }
@@ -2526,7 +2526,7 @@ private fun ShortsButtonsDialog(
                     )
                     ShortsButtonShapeToggle(
                         icon = Icons.Rounded.NotInterested,
-                        label = stringResource(R.string.not_interested),
+                        label = stringResource(R.string.video_options_not_interested),
                         shown = ThemePreferences.SHORTS_ACTION_NOT_INTERESTED !in hiddenActions,
                         onToggle = { toggle(ThemePreferences.SHORTS_ACTION_NOT_INTERESTED) }
                     )
