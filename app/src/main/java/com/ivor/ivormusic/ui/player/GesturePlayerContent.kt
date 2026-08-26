@@ -1,4 +1,6 @@
 package com.ivor.ivormusic.ui.player
+import com.ivor.ivormusic.R
+import androidx.compose.ui.res.stringResource
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.Crossfade
@@ -1507,7 +1509,7 @@ private fun GestureQueueView(
                                         )
                                     )
                                     Spacer(modifier = Modifier.width(12.dp))
-                                    Text("Loading...", style = MaterialTheme.typography.titleSmall)
+                                    Text(stringResource(R.string.loading), style = MaterialTheme.typography.titleSmall)
                                 } else {
                                     Icon(
                                         Icons.AutoMirrored.Filled.QueueMusic, 
@@ -1515,7 +1517,7 @@ private fun GestureQueueView(
                                         modifier = Modifier.size(20.dp)
                                     )
                                     Spacer(modifier = Modifier.width(12.dp))
-                                    Text("Load More", style = MaterialTheme.typography.titleSmall)
+                                    Text(stringResource(R.string.load_more), style = MaterialTheme.typography.titleSmall)
                                 }
                             }
                         }

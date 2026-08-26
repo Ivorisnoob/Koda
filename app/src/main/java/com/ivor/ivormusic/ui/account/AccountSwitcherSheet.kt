@@ -450,7 +450,7 @@ private fun NameProfileDialog(onConfirm: (String) -> Unit, onDismiss: () -> Unit
                 enabled = name.isNotBlank()
             ) { Text(stringResource(R.string.action_create)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } }
     )
 }
 
@@ -488,6 +488,6 @@ private fun RemoveProfileDialog(
         confirmButton = {
             TextButton(onClick = onConfirm) { Text(if (isSignOutOnly) stringResource(R.string.sign_out) else stringResource(R.string.remove)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } }
     )
 }

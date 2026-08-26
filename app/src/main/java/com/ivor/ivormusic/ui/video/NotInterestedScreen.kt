@@ -195,6 +195,7 @@ fun NotInterestedScreen(
 
 private enum class ClearTarget { VIDEOS, CHANNELS }
 
+@Composable
 private fun summaryLine(hiddenCount: Int, blockedCount: Int): String = when {
     hiddenCount == 0 && blockedCount == 0 -> stringResource(R.string.ni_nothing_hidden)
     blockedCount == 0 -> "$hiddenCount video${if (hiddenCount == 1) "" else "s"}"

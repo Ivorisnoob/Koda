@@ -295,8 +295,8 @@ fun CommentsPanel(
             commentPendingDelete?.let { pending ->
                 AlertDialog(
                     onDismissRequest = { commentPendingDelete = null },
-                    title = { Text("Delete comment?") },
-                    text = { Text("Your comment will be permanently deleted.") },
+                    title = { Text(stringResource(R.string.cm_delete_q)) },
+                    text = { Text(stringResource(R.string.cm_delete_body)) },
                     confirmButton = {
                         TextButton(
                             onClick = {
@@ -304,12 +304,12 @@ fun CommentsPanel(
                                 commentPendingDelete = null
                             }
                         ) {
-                            Text("Delete", color = MaterialTheme.colorScheme.error)
+                            Text(stringResource(R.string.action_delete), color = MaterialTheme.colorScheme.error)
                         }
                     },
                     dismissButton = {
                         TextButton(onClick = { commentPendingDelete = null }) {
-                            Text("Cancel")
+                            Text(stringResource(R.string.action_cancel))
                         }
                     }
                 )

@@ -792,6 +792,8 @@ fun AllSongsList(
     onSongLongPress: ((Song) -> Unit)? = null,
     listState: LazyListState = rememberLazyListState()
 ) {
+    val todayLabel = stringResource(R.string.sc_today)
+    val yesterdayLabel = stringResource(R.string.lh_yesterday)
     val likedIds = remember(likedSongs) { likedSongs.map { it.id }.toSet() }
     val downloadedIds = remember(downloadedSongs) { downloadedSongs.map { it.id }.toSet() }
 
@@ -2763,7 +2765,7 @@ fun PlaylistDetailScreen(
                                                         putExtra(android.content.Intent.EXTRA_TEXT, shareUrl)
                                                     }
                                                     shareContext.startActivity(
-                                                        android.content.Intent.createChooser(send, context.getString(R.string.share_playlist_chooser))
+                                                        android.content.Intent.createChooser(send, shareContext.getString(R.string.share_playlist_chooser))
                                                     )
                                                 }
                                             )
@@ -3068,10 +3070,10 @@ fun PlaylistDetailScreen(
                                     )
                                     haptics.performHapticFeedback(HapticFeedbackType.Confirm)
                                     scope.launch {
-                                        snackbarHostState.showSnackbar(
-                                            if (nowSaved) stringResource(R.string.lib_saved_to_library)
-                                            else stringResource(R.string.lib_removed_from_library)
-                                        )
+                                        val snackbarMsg =
+                                            if (nowSaved) shareContext.getString(R.string.lib_saved_to_library)
+                                            else shareContext.getString(R.string.lib_removed_from_library)
+                                        snackbarHostState.showSnackbar(snackbarMsg)
                                     }
                                 },
                                 modifier = Modifier.padding(top = 20.dp)
@@ -3329,7 +3331,7 @@ fun PlaylistDetailScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showDeleteDialog = false }) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.action_cancel))
                 }
             }
         )
@@ -3374,7 +3376,7 @@ fun PlaylistDetailScreen(
             },
             dismissButton = {
                 TextButton(onClick = { songPendingRemoval = null }) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.action_cancel))
                 }
             }
         )

@@ -363,6 +363,7 @@ fun ReportBugScreen(onBack: () -> Unit) {
 }
 
 /** First meaningful line of the crash file, for the toggle's subtitle. */
+@Composable
 private fun crashPreviewLine(crashText: String): String =
     crashText.lineSequence().firstOrNull { it.startsWith("Version:") }
         ?.let { version -> "$version - stack trace and recent logs" }

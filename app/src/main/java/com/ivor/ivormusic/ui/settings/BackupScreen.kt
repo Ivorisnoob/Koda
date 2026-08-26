@@ -123,7 +123,7 @@ fun BackupScreen(
             val manifest = repository.writeTo(uri)
             phase = BackupPhase.IDLE
             if (manifest == null) {
-                failure = stringResource(R.string.bk_write_failed)
+                failure = context.getString(R.string.bk_write_failed)
             } else {
                 lastBackupAt = manifest.createdAt
                 snackbarHostState.showSnackbar(backupWrittenMessage(manifest))
@@ -151,7 +151,7 @@ fun BackupScreen(
             }
             phase = BackupPhase.IDLE
             if (snapshot == null) {
-                failure = stringResource(R.string.bk_read_failed)
+                failure = context.getString(R.string.bk_read_failed)
             } else {
                 preview = snapshot
             }

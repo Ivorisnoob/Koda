@@ -592,7 +592,7 @@ internal fun PlaybackSettingsPage(
                                     }
                                 }
                             ) {
-                                Text("Wi-Fi")
+                                Text(stringResource(R.string.wifi))
                             }
                             SegmentedButton(
                                 selected = !showingWifi,
@@ -608,7 +608,7 @@ internal fun PlaybackSettingsPage(
                                     }
                                 }
                             ) {
-                                Text("Mobile data")
+                                Text(stringResource(R.string.mobile_data))
                             }
                         }
                     }

@@ -1116,7 +1116,7 @@ private fun ErrorSection(
                         modifier = Modifier.size(18.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Retry", fontWeight = FontWeight.SemiBold)
+                    Text(stringResource(R.string.action_retry), fontWeight = FontWeight.SemiBold)
                 }
             }
         }

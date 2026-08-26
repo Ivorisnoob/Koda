@@ -282,6 +282,7 @@ private fun PlaylistDownloadButton(
         modifier = modifier,
         shapes = ButtonDefaults.shapes()
     ) {
+        val downloadingCd = stringResource(R.string.pd_downloading_playlist)
         AnimatedContent(
             targetState = when {
                 snapshot.isComplete -> "complete"
@@ -300,7 +301,7 @@ private fun PlaylistDownloadButton(
                         modifier = Modifier
                             .size(20.dp)
                             .semantics {
-                                contentDescription = stringResource(R.string.pd_downloading_playlist)
+                                contentDescription = downloadingCd
                                 progressBarRangeInfo = ProgressBarRangeInfo(
                                     snapshot.overallProgress,
                                     0f..1f
@@ -463,12 +464,13 @@ private fun PlaylistDownloadSheet(
                                     stringResource(R.string.in_progress),
                                     itemCountLabel(snapshot.activeCount, kind)
                                 )
+                                val progressCd = stringResource(R.string.pd_progress_cd)
                                 LinearWavyProgressIndicator(
                                     progress = { snapshot.overallProgress },
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .semantics {
-                                            contentDescription = stringResource(R.string.pd_progress_cd)
+                                            contentDescription = progressCd
                                             progressBarRangeInfo = ProgressBarRangeInfo(
                                                 snapshot.overallProgress,
                                                 0f..1f

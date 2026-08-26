@@ -238,7 +238,7 @@ class DownloadNotificationHelper(private val context: Context) {
             .setSmallIcon(R.drawable.ic_download_notification)
             .setContentTitle(songTitle)
             .setContentText(artistName)
-            .setSubText("Downloaded")
+            .setSubText(context.getString(R.string.song_options_downloaded))
             .setLargeIcon(artwork)
             .setAutoCancel(true)
             .setContentIntent(contentIntent)

@@ -620,7 +620,7 @@ private fun VideoModePage(
 
         ShortsWarningCard()
 
-        HintText("Off keeps a cleaner, music-first layout. The video player stays available either way.")
+        HintText(stringResource(R.string.ob_off_hint))
     }
 }
 

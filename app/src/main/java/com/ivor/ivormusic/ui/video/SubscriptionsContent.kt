@@ -365,7 +365,7 @@ fun SubscriptionsContent(
                 }) { Text(stringResource(R.string.unfollow)) }
             },
             dismissButton = {
-                TextButton(onClick = { channelToUnfollow = null }) { Text("Cancel") }
+                TextButton(onClick = { channelToUnfollow = null }) { Text(stringResource(R.string.action_cancel)) }
             }
         )
     }
