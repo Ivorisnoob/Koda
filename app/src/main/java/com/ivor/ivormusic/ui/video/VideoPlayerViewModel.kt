@@ -1918,7 +1918,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                 // out. The downloader's connect/read timeouts are the actual
                 // network bounds, while the generation checks below still
                 // prevent a cancelled load from touching a newer video.
-                resolve@ run {
+                run resolve@ {
                     // FAST: Get stream URLs only (no metadata, no related, no channel avatar)
                     val streamResult = youtubeRepository.getVideoStreamResult(video.videoId)
                     if (!isCurrentVideoLoad(video.videoId, loadGeneration)) return@resolve
