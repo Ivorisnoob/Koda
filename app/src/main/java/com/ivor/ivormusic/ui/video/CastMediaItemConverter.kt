@@ -1,6 +1,6 @@
 package com.ivor.ivormusic.ui.video
 
-import androidx.media3.common.C
+import android.net.Uri
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.util.UnstableApi
@@ -44,10 +44,12 @@ const val CAST_PLAYBACK_KIND_KEY = "kodaPlaybackKind"
  * builds the [MediaInfo] itself and keeps two contracts:
  *
  * - **The round trip.** The customData JSON is written in exactly the shape
- *   [DefaultMediaItemConverter.getMediaItem] reads back, because CastPlayer's
- *   timeline tracker re-derives its [androidx.media3.common.Timeline] from the
- *   receiver's queue items through `toMediaItem`. A foreign customData shape
- *   would crash that path with a JSONException on every status update.
+ *   [DefaultMediaItemConverter] reads back, because CastPlayer's timeline
+ *   tracker re-derives its [androidx.media3.common.Timeline] from the
+ *   receiver's queue items through `toMediaItem`. Incoming queue entries are
+ *   guarded as well: Media3 1.5 assumes they all came from its own converter,
+ *   while real receivers can publish transient or foreign entries without
+ *   MediaInfo/customData.
  * - **Captions ride the load.** The item's SubtitleConfigurations become
  *   TEXT-type MediaTracks. The Default Receiver renders WebVTT natively, so a
  *   track selected on the phone plays on the TV without any receiver-side work.
@@ -59,8 +61,82 @@ class KodaCastMediaItemConverter(
 
     private val fallback = DefaultMediaItemConverter()
 
-    override fun toMediaItem(mediaQueueItem: MediaQueueItem): MediaItem =
-        fallback.toMediaItem(mediaQueueItem)
+    override fun toMediaItem(mediaQueueItem: MediaQueueItem): MediaItem {
+        val mediaInfo = mediaQueueItem.media ?: return MediaItem.EMPTY
+
+        // Media3 1.5.0's DefaultMediaItemConverter asserts that both MediaInfo
+        // and its customData are non-null. Those assumptions do not hold for a
+        // real Cast session: a receiver may briefly publish a queue entry with
+        // no MediaInfo while replacing a load, and an item left by another
+        // sender usually has no Media3 customData at all. CastPlayer calls this
+        // method from its main-thread status callback, so either assertion
+        // takes the whole app down instead of merely producing an incomplete
+        // timeline item.
+        //
+        // Keep the stock round-trip for entries Koda produced, but only after
+        // validating its envelope. A malformed/stale envelope and every
+        // foreign item fall back to the public MediaInfo fields below.
+        val itemJson = mediaInfo.customData?.optJSONObject("mediaItem")
+        if (itemJson != null &&
+            itemJson.nonBlankString("mediaId") != null &&
+            itemJson.nonBlankString("uri") != null
+        ) {
+            runCatching { fallback.toMediaItem(mediaQueueItem) }
+                .getOrNull()
+                ?.let { return it }
+        }
+
+        return mediaInfo.toFallbackMediaItem()
+    }
+
+    /**
+     * Rebuild enough of a foreign or partially-published queue item for
+     * CastPlayer's timeline. This item is never sent back to the receiver as a
+     * new load; it exists so status updates, media controls and disconnect can
+     * remain alive until Koda installs its own fully-described item.
+     */
+    private fun MediaInfo.toFallbackMediaItem(): MediaItem {
+        val castMetadata = metadata
+        val metadataBuilder = androidx.media3.common.MediaMetadata.Builder()
+        castMetadata?.getString(MediaMetadata.KEY_TITLE)
+            ?.takeIf(String::isNotBlank)
+            ?.let(metadataBuilder::setTitle)
+        castMetadata?.getString(MediaMetadata.KEY_SUBTITLE)
+            ?.takeIf(String::isNotBlank)
+            ?.let(metadataBuilder::setSubtitle)
+        castMetadata?.getString(MediaMetadata.KEY_ARTIST)
+            ?.takeIf(String::isNotBlank)
+            ?.let(metadataBuilder::setArtist)
+        castMetadata?.getString(MediaMetadata.KEY_ALBUM_TITLE)
+            ?.takeIf(String::isNotBlank)
+            ?.let(metadataBuilder::setAlbumTitle)
+        castMetadata?.images?.firstOrNull()?.url
+            ?.let(metadataBuilder::setArtworkUri)
+
+        val itemJson = customData?.optJSONObject("mediaItem")
+        val uri = itemJson?.nonBlankString("uri")
+            ?: contentUrl?.takeIf(String::isNotBlank)
+        val id = itemJson?.nonBlankString("mediaId")
+            ?: contentId?.takeIf(String::isNotBlank)
+            ?: uri
+            ?: MediaItem.DEFAULT_MEDIA_ID
+        val mime = itemJson?.nonBlankString("mimeType")
+            ?: contentType?.takeIf(String::isNotBlank)
+
+        return MediaItem.Builder()
+            .setMediaId(id)
+            .setMediaMetadata(metadataBuilder.build())
+            .apply {
+                uri?.let { setUri(Uri.parse(it)) }
+                mime?.let(::setMimeType)
+            }
+            .build()
+    }
+
+    private fun JSONObject.nonBlankString(key: String): String? =
+        takeUnless { isNull(key) }
+            ?.optString(key)
+            ?.takeIf { it.isNotBlank() && it != "null" }
 
     override fun toMediaQueueItem(mediaItem: MediaItem): MediaQueueItem {
         val local = requireNotNull(mediaItem.localConfiguration) {
