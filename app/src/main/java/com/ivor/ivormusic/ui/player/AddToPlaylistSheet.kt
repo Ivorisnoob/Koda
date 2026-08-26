@@ -1,4 +1,7 @@
 package com.ivor.ivormusic.ui.player
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import com.ivor.ivormusic.R
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -89,7 +92,7 @@ fun AddToPlaylistSheet(
                 .padding(bottom = 16.dp)
         ) {
             Text(
-                "Add to Playlist",
+                stringResource(R.string.add_to_playlist_title),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp)
@@ -107,7 +110,7 @@ fun AddToPlaylistSheet(
                 item {
                     ListItem(
                         headlineContent = {
-                            Text("New Playlist", fontWeight = FontWeight.SemiBold)
+                            Text(stringResource(R.string.new_playlist_label), fontWeight = FontWeight.SemiBold)
                         },
                         leadingContent = {
                             Surface(
@@ -139,8 +142,8 @@ fun AddToPlaylistSheet(
                         },
                         supportingContent = {
                             Text(
-                                if (playlist.itemCount >= 0) "${playlist.itemCount} songs"
-                                else playlist.uploaderName.ifBlank { "Playlist" }
+                                if (playlist.itemCount >= 0) pluralStringResource(R.plurals.n_songs, playlist.itemCount, playlist.itemCount)
+                                else playlist.uploaderName.ifBlank { stringResource(R.string.label_playlist) }
                             )
                         },
                         leadingContent = {
@@ -195,13 +198,13 @@ fun CreatePlaylistDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("New Playlist") },
+        title = { Text(stringResource(R.string.new_playlist_label)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
-                    label = { Text("Name") },
+                    label = { Text(stringResource(R.string.name_label)) },
                     singleLine = true,
                     shape = RoundedCornerShape(16.dp),
                     modifier = Modifier.fillMaxWidth()
@@ -209,7 +212,7 @@ fun CreatePlaylistDialog(
                 OutlinedTextField(
                     value = description,
                     onValueChange = { description = it },
-                    label = { Text("Description (Optional)") },
+                    label = { Text(stringResource(R.string.description_optional_label)) },
                     shape = RoundedCornerShape(16.dp),
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -220,12 +223,12 @@ fun CreatePlaylistDialog(
                 onClick = { onCreate(name, description.ifBlank { null }) },
                 enabled = name.isNotBlank()
             ) {
-                Text("Create")
+                Text(stringResource(R.string.action_create))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(R.string.action_cancel))
             }
         }
     )

@@ -1,0 +1,195 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Koda</string>
+    <string name="now_playing_channel_name">Přehrává se</string>
+    <string name="video_playback_channel_name">Přehrávání videa</string>
+
+    <string name="undo">Zpět</string>
+    <string name="action_cancel">Zrušit</string>
+    <string name="action_done">Hotovo</string>
+    <string name="action_create">Vytvořit</string>
+    <string name="action_save">Uložit</string>
+    <string name="action_delete">Smazat</string>
+    <string name="action_edit">Upravit</string>
+    <string name="action_share">Sdílet</string>
+    <string name="action_retry">Zkusit znovu</string>
+    <string name="action_see_all">Zobrazit vše</string>
+    <string name="action_play_all">Přehrát vše</string>
+    <string name="action_show_more">Zobrazit více</string>
+    <string name="action_try_again">Zkuste to znovu</string>
+    <string name="action_open_settings">Otevřít nastavení</string>
+    <string name="action_clear_all">Vymazat vše</string>
+    <string name="action_new_playlist">Nový playlist</string>
+    <string name="action_grant_permission">Udělit oprávnění</string>
+    <string name="unknown_artist">Neznámý interpret</string>
+    <string name="untitled_song">Nepojmenovaná skladba</string>
+    <string name="label_playlist">Playlist</string>
+
+    <string name="tab_home">Domů</string>
+    <string name="tab_search">Hledat</string>
+    <string name="tab_subs">Odběry</string>
+    <string name="tab_library">Knihovna</string>
+
+    <string name="local_only_title">Režim Jen offline je zapnutý</string>
+    <string name="local_only_default_subtitle">Tato sekce potřebuje internet. Vypněte režim Jen offline v nastavení, abyste ji mohli použít.</string>
+    <string name="local_only_video_mode_subtitle">Režim videa potřebuje internet. Vypněte režim Jen offline v nastavení, abyste mohli sledovat videa.</string>
+    <string name="local_only_video_search_subtitle">Vyhledávání videí potřebuje internet. Vypněte režim Jen offline v nastavení, abyste mohli videa hledat.</string>
+    <string name="local_only_subscriptions_subtitle">Odběry potřebují internet. Vypněte režim Jen offline v nastavení, abyste je viděli.</string>
+    <string name="local_only_video_library_subtitle">Video knihovna potřebuje internet. Vypněte režim Jen offline v nastavení, abyste ji viděli.</string>
+    <string name="local_only_update_subtitle">Kontrola aktualizací potřebuje internet. Vypněte režim Jen offline v nastavení, abyste zkontrolovali aktualizace.</string>
+
+    <string name="crash_dialog_title">Koda se naposledy zhroutil</string>
+    <string name="crash_dialog_message">Ve vaší předchozí relaci se něco pokazilo. Můžete odeslat hlášení chyby s podrobnostmi - nic neopustí vaše zařízení, pokud se nerozhodnete ho sdílet.</string>
+    <string name="crash_dialog_view_report">Zobrazit a nahlásit</string>
+    <string name="crash_dialog_not_now">Teď ne</string>
+
+    <string name="permission_required_title">Pro načtení skladeb je potřeba oprávnění</string>
+
+    <string name="home_section_recent_albums">Nedávná alba</string>
+    <string name="home_section_jump_back_in">Pokračovat v poslechu</string>
+    <string name="your_mix_line1">Vaše</string>
+    <string name="your_mix_line2">mixy</string>
+    <string name="update_badge_version">v%1$s</string>
+    <string name="artists_joined">%1$s, %2$s</string>
+    <string name="cd_profile">Profil</string>
+    <string name="cd_downloads">Stažené</string>
+    <string name="cd_settings">Nastavení</string>
+    <string name="cd_play">Přehrát</string>
+    <string name="cd_pause">Pozastavit</string>
+    <string name="cd_next">Další</string>
+    <string name="cd_album_art">Obal alba</string>
+    <string name="cd_show_all">Zobrazit vše: %1$s</string>
+
+    <string name="spotlight_quick_picks">Rychlé tipy</string>
+    <string name="spotlight_your_playlists">Vaše playlisty</string>
+    <string name="spotlight_from_your_library">Z vaší knihovny</string>
+    <string name="spotlight_caption_liked">Ze skladeb, které se vám líbí</string>
+    <string name="spotlight_caption_recent">Z toho, co jste nedávno poslouchali</string>
+    <string name="shortcut_liked_songs">Oblíbené skladby</string>
+    <string name="filter_all">Vše</string>
+    <string name="filter_liked">Oblíbené</string>
+    <string name="filter_recent">Nedávné</string>
+    <string name="filter_playlists">Playlisty</string>
+    <string name="spotlight_empty_no_liked">Zatím žádné oblíbené skladby</string>
+    <string name="spotlight_empty_no_recent">Ještě nic nepřehráváno</string>
+    <string name="spotlight_empty_no_playlists">Zatím žádné playlisty</string>
+    <string name="spotlight_empty_generic">Zatím tu není nic k zobrazení</string>
+    <string name="spotlight_hint_liked">Skladby, které se vám líbí, se zde shromáždí.</string>
+    <string name="spotlight_hint_playlists">Playlisty, které vytvoříte nebo uložíte, se zobrazí zde.</string>
+    <string name="spotlight_hint_all">Něco si přehrajte a vaše domácí stránka se zaplní.</string>
+
+    <string name="sleep_timer_title">Časovač spánku</string>
+    <string name="sleep_timer_status_track">Tato skladba</string>
+    <string name="sleep_timer_detail_track">Přehrávání se zastaví po dokončení aktuální skladby</string>
+    <string name="sleep_timer_detail_duration">Přehrávání postupně zeslabí a pozastaví se po vypršení časovače</string>
+    <string name="minutes_short">%1$d min</string>
+    <string name="sleep_timer_end_of_track">Konec této skladby</string>
+    <string name="sleep_timer_turn_off">Vypnout</string>
+
+    <string name="cd_switch_to_music">Přepnout do hudebního režimu</string>
+    <string name="cd_switch_to_video">Přepnout do video režimu</string>
+    <string name="cd_drag_to_reorder">Přetažením změníte pořadí</string>
+    <string name="cd_favorite">Oblíbené</string>
+    <string name="cd_clear_search">Vymazat hledání</string>
+    <string name="queue_removed_snackbar">Odstraněno: %1$s</string>
+
+    <string name="song_options_play_next">Přehrát jako další</string>
+    <string name="song_options_play_next_subtitle">Hned po této skladbě</string>
+    <string name="song_options_add_to_queue">Přidat do fronty</string>
+    <string name="song_options_add_to_queue_subtitle">Na konec</string>
+    <string name="song_options_add_to_playlist">Přidat do playlistu</string>
+    <string name="song_options_remove_from_liked">Odebrat z oblíbených</string>
+    <string name="song_options_like">Líbí se mi</string>
+    <string name="song_options_download">Stáhnout</string>
+    <string name="song_options_download_subtitle">Ponechat v tomto zařízení</string>
+    <string name="song_options_downloaded">Staženo</string>
+    <string name="song_options_go_to_artist">Přejít na %1$s</string>
+
+    <string name="add_to_playlist_title">Přidat do playlistu</string>
+    <string name="new_playlist_label">Nový playlist</string>
+    <string name="name_label">Název</string>
+    <string name="description_optional_label">Popis (volitelné)</string>
+
+    <string name="video_options_watch_later">Podívat se později</string>
+    <string name="video_options_kept_on_device">Uloženo v tomto zařízení</string>
+    <string name="video_options_save_to_playlist">Uložit do playlistu</string>
+    <string name="video_options_download">Stáhnout</string>
+    <string name="video_options_go_to_channel">Přejít na kanál</string>
+    <string name="video_options_share">Sdílet</string>
+    <string name="video_options_share_chooser">Sdílet video</string>
+    <string name="video_options_not_interested">Nezajímá mě</string>
+    <string name="video_options_dont_recommend_channel">Nedoporučovat tento kanál</string>
+    <string name="video_options_dont_recommend_channel_name">Nedoporučovat %1$s</string>
+    <string name="cd_back">Zpět</string>
+    <string name="search_playlists_placeholder">Hledat playlisty</string>
+    <string name="no_playlist_matches">Žádný playlist neodpovídá „%1$s“</string>
+    <string name="no_playlists_yet_hint">Zatím žádné playlisty. Vytvořte jeden a toto video se do něj okamžitě přidá.</string>
+    <string name="cd_saved">Uloženo</string>
+    <string name="cd_couldnt_save">Nelze uložit</string>
+    <string name="cd_in_this_playlist">Již je v tomto playlistu</string>
+
+    <string name="settings_section_you">Vy</string>
+    <string name="settings_section_look_and_feel">Vzhled</string>
+    <string name="settings_section_playback_and_content">Přehrávání a obsah</string>
+    <string name="settings_section_system">Systém</string>
+    <string name="settings_section_about">O aplikaci</string>
+    <string name="settings_account">Účet</string>
+    <string name="settings_appearance">Vzhled</string>
+    <string name="settings_player">Přehrávač</string>
+    <string name="settings_playback_and_quality">Přehrávání a kvalita</string>
+    <string name="settings_content_and_feeds">Obsah a kanály</string>
+    <string name="settings_subscriptions">Odběry</string>
+    <string name="settings_storage_and_cache">Úložiště a mezipaměť</string>
+    <string name="settings_notifications">Upozornění</string>
+    <string name="settings_local_library">Místní knihovna</string>
+    <string name="settings_backup_and_restore">Zálohování a obnovení</string>
+    <string name="settings_advanced">Rozšířené</string>
+    <string name="settings_advanced_value_xiaomi">Doporučeno pro toto zařízení</string>
+    <string name="settings_advanced_value_other">Opravy skenování a baterie</string>
+    <string name="settings_version_subtitle">Verze %1$s (%2$d)</string>
+
+    <string name="profiles_title">Profily</string>
+    <string name="profiles_description">Odběry a skrytá doporučení se uchovávají podle profilu. Playlisty, oblíbené skladby a stažené soubory jsou sdílené.</string>
+    <string name="add_youtube_account">Přidat účet YouTube</string>
+    <string name="add_youtube_account_subtitle">Přihlaste se pomocí jiného účtu Google</string>
+    <string name="add_device_profile">Přidat profil do tohoto zařízení</string>
+    <string name="add_device_profile_subtitle">Samostatné odběry, bez nutnosti účtu</string>
+    <string name="profile_signed_out">Odhlášeno - klepnutím se přihlásíte</string>
+    <string name="profile_session_expired">Relace vypršela - klepnutím se znovu připojíte</string>
+    <string name="profile_on_this_device">V tomto zařízení</string>
+    <string name="profile_youtube_account">Účet YouTube</string>
+    <string name="cd_active_profile">Aktivní profil</string>
+    <string name="cd_remove_profile">Odebrat %1$s</string>
+    <string name="new_profile_dialog_title">Nový profil v tomto zařízení</string>
+    <string name="sign_out_confirm_title">Odhlásit se z %1$s?</string>
+    <string name="remove_profile_confirm_title">Odebrat %1$s?</string>
+    <string name="sign_out">Odhlásit se</string>
+    <string name="remove">Odebrat</string>
+
+    <string name="library_empty_title">Vaše knihovna je prázdná</string>
+    <string name="library_empty_subtitle">Skladby, které si stáhnete nebo kterým dáte líbíko, se zobrazí zde</string>
+    <string name="library_create_playlist_hint">Vytvořte jej tlačítkem + níže</string>
+    <string name="fab_downloads">Stažené</string>
+    <string name="fab_listening_history">Historie poslechu</string>
+    <string name="fab_statistics">Statistiky</string>
+    <string name="cd_listening_stats">Statistiky poslechu</string>
+    <string name="recently_played">Nedávno přehráno</string>
+    <string name="liked_songs">Oblíbené skladby</string>
+    <string name="no_artists_yet">Zatím žádní interpreti</string>
+    <string name="no_artists_yet_subtitle">Interpreti z vašich skladeb se zobrazí zde</string>
+    <string name="no_albums_yet">Zatím žádná alba</string>
+    <string name="no_albums_yet_subtitle">Alba z vašich skladeb se zobrazí zde</string>
+
+    <plurals name="n_songs">
+        <item quantity="one">%1$d skladba</item>
+        <item quantity="few">%1$d skladby</item>
+        <item quantity="many">%1$d skladeb</item>
+        <item quantity="other">%1$d skladby</item>
+    </plurals>
+    <plurals name="n_playlists">
+        <item quantity="one">%1$d playlist</item>
+        <item quantity="few">%1$d playlisty</item>
+        <item quantity="many">%1$d playlistů</item>
+        <item quantity="other">%1$d playlisty</item>
+    </plurals>
+</resources>

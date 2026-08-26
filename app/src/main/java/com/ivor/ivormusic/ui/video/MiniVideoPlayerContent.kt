@@ -1,4 +1,5 @@
 package com.ivor.ivormusic.ui.video
+import androidx.compose.ui.res.stringResource
 
 import android.view.LayoutInflater
 import androidx.compose.animation.core.Spring
@@ -94,6 +95,9 @@ fun MiniVideoPlayerContent(viewModel: VideoPlayerViewModel) {
 
     val video = currentVideo ?: return
     val haptics = rememberPlayerHaptics()
+    val liveLabel = stringResource(R.string.badge_live)
+    val playLabel = stringResource(R.string.cd_play)
+    val pauseLabel = stringResource(R.string.cd_pause)
 
     Row(
         modifier = Modifier
@@ -131,9 +135,9 @@ fun MiniVideoPlayerContent(viewModel: VideoPlayerViewModel) {
                 // prevent, and the word already reads as live on its own.
                 text = when {
                     isCasting && castDeviceName != null ->
-                        "Casting to $castDeviceName"
+                        stringResource(R.string.mini_casting_to, castDeviceName ?: "")
                     isLive ->
-                        listOf("LIVE", video.channelName)
+                        listOf(liveLabel, video.channelName)
                             .filter { it.isNotBlank() }
                             .joinToString("  •  ")
                     else -> video.channelName
@@ -171,7 +175,7 @@ fun MiniVideoPlayerContent(viewModel: VideoPlayerViewModel) {
             Icon(
                 imageVector = if (isPlaying) Icons.Rounded.Pause
                     else Icons.Rounded.PlayArrow,
-                contentDescription = if (isPlaying) "Pause" else "Play",
+                contentDescription = if (isPlaying) pauseLabel else playLabel,
                 modifier = Modifier.size(24.dp)
             )
         }
@@ -188,7 +192,7 @@ fun MiniVideoPlayerContent(viewModel: VideoPlayerViewModel) {
         ) {
             Icon(
                 imageVector = Icons.Rounded.Close,
-                contentDescription = "Close video player",
+                contentDescription = stringResource(R.string.mv_close_player),
                 modifier = Modifier.size(22.dp)
             )
         }

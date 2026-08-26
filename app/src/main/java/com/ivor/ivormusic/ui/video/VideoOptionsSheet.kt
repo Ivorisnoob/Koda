@@ -1,4 +1,7 @@
 package com.ivor.ivormusic.ui.video
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import com.ivor.ivormusic.R
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
@@ -378,14 +381,14 @@ private fun ActionsPane(
             if (onEnqueue != null) {
                 OptionRow(
                     icon = Icons.AutoMirrored.Rounded.PlaylistPlay,
-                    title = "Play next",
+                    title = stringResource(R.string.song_options_play_next),
                     state = playNextState,
                     onClick = { onEnqueue(true) }
                 )
                 OptionRowDivider()
                 OptionRow(
                     icon = Icons.AutoMirrored.Rounded.QueueMusic,
-                    title = "Add to queue",
+                    title = stringResource(R.string.song_options_add_to_queue),
                     state = addToQueueState,
                     onClick = { onEnqueue(false) }
                 )
@@ -394,22 +397,21 @@ private fun ActionsPane(
 
             OptionRow(
                 icon = Icons.Rounded.WatchLater,
-                title = "Watch later",
+                title = stringResource(R.string.video_options_watch_later),
                 // The one place the signed-out story has to be told: the save
                 // lands on the device, not on the account the user may well
                 // think they are saving to.
-                subtitle = if (isSignedOut) "Kept on this device" else null,
+                subtitle = if (isSignedOut) stringResource(R.string.video_options_kept_on_device) else null,
                 state = watchLaterState,
                 onClick = onWatchLater
             )
             OptionRowDivider()
             OptionRow(
                 icon = Icons.Rounded.PlaylistAdd,
-                title = "Save to playlist",
+                title = stringResource(R.string.video_options_save_to_playlist),
                 subtitle = when (playlistCount) {
                     0 -> null
-                    1 -> "1 playlist"
-                    else -> "$playlistCount playlists"
+                    else -> pluralStringResource(R.plurals.n_playlists, playlistCount, playlistCount)
                 },
                 trailing = OptionRowTrailing.CHEVRON,
                 onClick = onOpenPlaylists
@@ -417,7 +419,7 @@ private fun ActionsPane(
             OptionRowDivider()
             OptionRow(
                 icon = Icons.Rounded.Download,
-                title = "Download",
+                title = stringResource(R.string.video_options_download),
                 trailing = OptionRowTrailing.CHEVRON,
                 onClick = onDownload
             )
@@ -433,8 +435,8 @@ private fun ActionsPane(
                 OptionRow(
                     icon = Icons.Rounded.AccountCircle,
                     title = video.channelName.takeIf { it.isNotBlank() }
-                        ?.let { "Go to $it" }
-                        ?: "Go to channel",
+                        ?.let { stringResource(R.string.song_options_go_to_artist, it) }
+                        ?: stringResource(R.string.video_options_go_to_channel),
                     trailing = OptionRowTrailing.CHEVRON,
                     onClick = action
                 )
@@ -442,7 +444,7 @@ private fun ActionsPane(
             OptionRowDivider()
             OptionRow(
                 icon = Icons.Rounded.Share,
-                title = "Share",
+                title = stringResource(R.string.video_options_share),
                 onClick = {
                     val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
                         type = "text/plain"
@@ -452,7 +454,7 @@ private fun ActionsPane(
                         )
                     }
                     context.startActivity(
-                        android.content.Intent.createChooser(send, "Share video")
+                        android.content.Intent.createChooser(send, context.getString(R.string.video_options_share_chooser))
                     )
                 }
             )
@@ -468,7 +470,7 @@ private fun ActionsPane(
                 onNotInterested?.let { action ->
                     OptionRow(
                         icon = Icons.Rounded.NotInterested,
-                        title = "Not interested",
+                        title = stringResource(R.string.video_options_not_interested),
                         muted = true,
                         onClick = action
                     )
@@ -478,8 +480,8 @@ private fun ActionsPane(
                     OptionRow(
                         icon = Icons.Rounded.RemoveCircleOutline,
                         title = video.channelName.takeIf { it.isNotBlank() }
-                            ?.let { "Don't recommend $it" }
-                            ?: "Don't recommend channel",
+                            ?.let { stringResource(R.string.video_options_dont_recommend_channel_name, it) }
+                            ?: stringResource(R.string.video_options_dont_recommend_channel),
                         muted = true,
                         onClick = action
                     )
@@ -540,11 +542,11 @@ private fun PlaylistPickerPane(
             IconButton(onClick = onBack) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                    contentDescription = "Back"
+                    contentDescription = stringResource(R.string.cd_back)
                 )
             }
             Text(
-                text = "Save to playlist",
+                text = stringResource(R.string.video_options_save_to_playlist),
                 style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.weight(1f)
@@ -557,7 +559,7 @@ private fun PlaylistPickerPane(
             OutlinedTextField(
                 value = query,
                 onValueChange = { query = it },
-                placeholder = { Text("Search playlists") },
+                placeholder = { Text(stringResource(R.string.search_playlists_placeholder)) },
                 leadingIcon = {
                     Icon(imageVector = Icons.Rounded.Search, contentDescription = null)
                 },
@@ -586,10 +588,10 @@ private fun PlaylistPickerPane(
             filtered.isEmpty() -> {
                 Text(
                     text = when {
-                        query.isNotBlank() -> "No playlist matches \"${query.trim()}\""
+                        query.isNotBlank() -> stringResource(R.string.no_playlist_matches, query.trim())
                         onCreatePlaylist != null ->
-                            "No playlists yet. Make one and this video goes straight into it."
-                        else -> "No playlists yet"
+                            stringResource(R.string.no_playlists_yet_hint)
+                        else -> stringResource(R.string.spotlight_empty_no_playlists)
                     },
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -633,11 +635,11 @@ private fun PlaylistPickerPane(
                         modifier = Modifier.size(20.dp)
                     )
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("New playlist")
+                    Text(stringResource(R.string.action_new_playlist))
                 }
             }
             Spacer(modifier = Modifier.weight(1f))
-            Button(onClick = onDone) { Text("Done") }
+            Button(onClick = onDone) { Text(stringResource(R.string.action_done)) }
         }
     }
 }
@@ -792,14 +794,14 @@ private fun OptionRow(
 
             state == SaveRowState.SAVED -> Icon(
                 imageVector = Icons.Rounded.Check,
-                contentDescription = "Saved",
+                contentDescription = stringResource(R.string.cd_saved),
                 tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(22.dp)
             )
 
             state == SaveRowState.FAILED -> Icon(
                 imageVector = Icons.Rounded.ErrorOutline,
-                contentDescription = "Couldn't save",
+                contentDescription = stringResource(R.string.cd_couldnt_save),
                 tint = MaterialTheme.colorScheme.error,
                 modifier = Modifier.size(22.dp)
             )
@@ -916,14 +918,14 @@ private fun PlaylistPickRow(
 
                 SaveRowState.SAVED -> Icon(
                     imageVector = Icons.Rounded.Check,
-                    contentDescription = "In this playlist",
+                    contentDescription = stringResource(R.string.cd_in_this_playlist),
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(22.dp)
                 )
 
                 SaveRowState.FAILED -> Icon(
                     imageVector = Icons.Rounded.ErrorOutline,
-                    contentDescription = "Couldn't save",
+                    contentDescription = stringResource(R.string.cd_couldnt_save),
                     tint = MaterialTheme.colorScheme.error,
                     modifier = Modifier.size(22.dp)
                 )
@@ -958,12 +960,12 @@ private fun NewPlaylistDialog(
         onDismissRequest = onDismiss,
         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         shape = RoundedCornerShape(32.dp),
-        title = { Text("New playlist") },
+        title = { Text(stringResource(R.string.action_new_playlist)) },
         text = {
             OutlinedTextField(
                 value = name,
                 onValueChange = { name = it },
-                label = { Text("Name") },
+                label = { Text(stringResource(R.string.name_label)) },
                 singleLine = true,
                 shape = RoundedCornerShape(16.dp),
                 modifier = Modifier.fillMaxWidth()
@@ -971,11 +973,11 @@ private fun NewPlaylistDialog(
         },
         confirmButton = {
             Button(onClick = { onCreate(name) }, enabled = name.isNotBlank()) {
-                Text("Create")
+                Text(stringResource(R.string.action_create))
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
         }
     )
 }

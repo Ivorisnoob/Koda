@@ -1,0 +1,191 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Koda</string>
+    <string name="now_playing_channel_name">Speelt nu</string>
+    <string name="video_playback_channel_name">Videoweergave</string>
+
+    <string name="undo">Ongedaan maken</string>
+    <string name="action_cancel">Annuleren</string>
+    <string name="action_done">Gereed</string>
+    <string name="action_create">Maken</string>
+    <string name="action_save">Opslaan</string>
+    <string name="action_delete">Verwijderen</string>
+    <string name="action_edit">Bewerken</string>
+    <string name="action_share">Delen</string>
+    <string name="action_retry">Opnieuw proberen</string>
+    <string name="action_see_all">Alles bekijken</string>
+    <string name="action_play_all">Alles afspelen</string>
+    <string name="action_show_more">Meer weergeven</string>
+    <string name="action_try_again">Probeer het opnieuw</string>
+    <string name="action_open_settings">Instellingen openen</string>
+    <string name="action_clear_all">Alles wissen</string>
+    <string name="action_new_playlist">Nieuwe afspeellijst</string>
+    <string name="action_grant_permission">Toestemming geven</string>
+    <string name="unknown_artist">Onbekende artiest</string>
+    <string name="untitled_song">Nummer zonder titel</string>
+    <string name="label_playlist">Afspeellijst</string>
+
+    <string name="tab_home">Start</string>
+    <string name="tab_search">Zoeken</string>
+    <string name="tab_subs">Abonnementen</string>
+    <string name="tab_library">Bibliotheek</string>
+
+    <string name="local_only_title">De modus Alleen lokaal staat aan</string>
+    <string name="local_only_default_subtitle">Dit gedeelte heeft internet nodig. Zet Alleen lokaal uit in de instellingen om het te gebruiken.</string>
+    <string name="local_only_video_mode_subtitle">De videomodus heeft internet nodig. Zet Alleen lokaal uit in de instellingen om video\'s te bekijken.</string>
+    <string name="local_only_video_search_subtitle">Videozoeken heeft internet nodig. Zet Alleen lokaal uit in de instellingen om video\'s te zoeken.</string>
+    <string name="local_only_subscriptions_subtitle">Abonnementen hebben internet nodig. Zet Alleen lokaal uit in de instellingen om ze te zien.</string>
+    <string name="local_only_video_library_subtitle">De videobibliotheek heeft internet nodig. Zet Alleen lokaal uit in de instellingen om hem te zien.</string>
+    <string name="local_only_update_subtitle">Controleren op updates heeft internet nodig. Zet Alleen lokaal uit in de instellingen om op updates te controleren.</string>
+
+    <string name="crash_dialog_title">Koda is de vorige keer gecrasht</string>
+    <string name="crash_dialog_message">Er ging iets mis in je vorige sessie. Je kunt een bugrapport met details sturen - er verlaat niets je apparaat tenzij je zelf kiest om het te delen.</string>
+    <string name="crash_dialog_view_report">Bekijken &amp; melden</string>
+    <string name="crash_dialog_not_now">Niet nu</string>
+
+    <string name="permission_required_title">Toestemming nodig om nummers te laden</string>
+
+    <string name="home_section_recent_albums">Recente albums</string>
+    <string name="home_section_jump_back_in">Doorgaan waar je was</string>
+    <string name="your_mix_line1">Jouw</string>
+    <string name="your_mix_line2">mix</string>
+    <string name="update_badge_version">v%1$s</string>
+    <string name="artists_joined">%1$s, %2$s</string>
+    <string name="cd_profile">Profiel</string>
+    <string name="cd_downloads">Downloads</string>
+    <string name="cd_settings">Instellingen</string>
+    <string name="cd_play">Afspelen</string>
+    <string name="cd_pause">Pauzeren</string>
+    <string name="cd_next">Volgende</string>
+    <string name="cd_album_art">Albumhoes</string>
+    <string name="cd_show_all">%1$s volledig weergeven</string>
+
+    <string name="spotlight_quick_picks">Snelle keuzes</string>
+    <string name="spotlight_your_playlists">Jouw afspeellijsten</string>
+    <string name="spotlight_from_your_library">Uit jouw bibliotheek</string>
+    <string name="spotlight_caption_liked">Van nummers die je leuk vindt</string>
+    <string name="spotlight_caption_recent">Van wat je laatst hebt beluisterd</string>
+    <string name="shortcut_liked_songs">Favoriete nummers</string>
+    <string name="filter_all">Alles</string>
+    <string name="filter_liked">Leuk</string>
+    <string name="filter_recent">Recent</string>
+    <string name="filter_playlists">Afspeellijsten</string>
+    <string name="spotlight_empty_no_liked">Nog geen nummers die je leuk vindt</string>
+    <string name="spotlight_empty_no_recent">Nog niets afgespeeld</string>
+    <string name="spotlight_empty_no_playlists">Nog geen afspeellijsten</string>
+    <string name="spotlight_empty_generic">Hier is nog niets te zien</string>
+    <string name="spotlight_hint_liked">Nummers die je leuk vindt, komen hier bij elkaar.</string>
+    <string name="spotlight_hint_playlists">Afspeellijsten die je maakt of opslaat verschijnen hier.</string>
+    <string name="spotlight_hint_all">Speel iets af en je startpagina vult zich.</string>
+
+    <string name="sleep_timer_title">Slaaptimer</string>
+    <string name="sleep_timer_status_track">Dit nummer</string>
+    <string name="sleep_timer_detail_track">Het afspelen stopt als het huidige nummer is afgelopen</string>
+    <string name="sleep_timer_detail_duration">Het afspelen fadet uit en pauzeert wanneer de timer eindigt</string>
+    <string name="minutes_short">%1$d min</string>
+    <string name="sleep_timer_end_of_track">Einde van dit nummer</string>
+    <string name="sleep_timer_turn_off">Uitschakelen</string>
+
+    <string name="cd_switch_to_music">Wisselen naar muziekmodus</string>
+    <string name="cd_switch_to_video">Wisselen naar videomodus</string>
+    <string name="cd_drag_to_reorder">Sleep om te herordenen</string>
+    <string name="cd_favorite">Favoriet</string>
+    <string name="cd_clear_search">Zoekopdracht wissen</string>
+    <string name="queue_removed_snackbar">%1$s verwijderd</string>
+
+    <string name="song_options_play_next">Volgende afspelen</string>
+    <string name="song_options_play_next_subtitle">Direct na dit nummer</string>
+    <string name="song_options_add_to_queue">Toevoegen aan wachtrij</string>
+    <string name="song_options_add_to_queue_subtitle">Onderaan</string>
+    <string name="song_options_add_to_playlist">Toevoegen aan afspeellijst</string>
+    <string name="song_options_remove_from_liked">Verwijderen uit favorieten</string>
+    <string name="song_options_like">Leuk</string>
+    <string name="song_options_download">Downloaden</string>
+    <string name="song_options_download_subtitle">Op dit apparaat bewaren</string>
+    <string name="song_options_downloaded">Gedownload</string>
+    <string name="song_options_go_to_artist">Naar %1$s</string>
+
+    <string name="add_to_playlist_title">Toevoegen aan afspeellijst</string>
+    <string name="new_playlist_label">Nieuwe afspeellijst</string>
+    <string name="name_label">Naam</string>
+    <string name="description_optional_label">Beschrijving (optioneel)</string>
+
+    <string name="video_options_watch_later">Later bekijken</string>
+    <string name="video_options_kept_on_device">Bewaard op dit apparaat</string>
+    <string name="video_options_save_to_playlist">Opslaan in afspeellijst</string>
+    <string name="video_options_download">Downloaden</string>
+    <string name="video_options_go_to_channel">Naar het kanaal</string>
+    <string name="video_options_share">Delen</string>
+    <string name="video_options_share_chooser">Video delen</string>
+    <string name="video_options_not_interested">Geen interesse</string>
+    <string name="video_options_dont_recommend_channel">Dit kanaal niet aanbevelen</string>
+    <string name="video_options_dont_recommend_channel_name">%1$s niet aanbevelen</string>
+    <string name="cd_back">Terug</string>
+    <string name="search_playlists_placeholder">Afspeellijsten zoeken</string>
+    <string name="no_playlist_matches">Geen afspeellijsten die passen bij \"%1$s\"</string>
+    <string name="no_playlists_yet_hint">Nog geen afspeellijsten. Maak er een en deze video gaat er meteen in.</string>
+    <string name="cd_saved">Opgeslagen</string>
+    <string name="cd_couldnt_save">Kon niet worden opgeslagen</string>
+    <string name="cd_in_this_playlist">Zit al in deze lijst</string>
+
+    <string name="settings_section_you">Jij</string>
+    <string name="settings_section_look_and_feel">Uiterlijk</string>
+    <string name="settings_section_playback_and_content">Afspelen en inhoud</string>
+    <string name="settings_section_system">Systeem</string>
+    <string name="settings_section_about">Over</string>
+    <string name="settings_account">Account</string>
+    <string name="settings_appearance">Uiterlijk</string>
+    <string name="settings_player">Speler</string>
+    <string name="settings_playback_and_quality">Afspelen en kwaliteit</string>
+    <string name="settings_content_and_feeds">Inhoud en feeds</string>
+    <string name="settings_subscriptions">Abonnementen</string>
+    <string name="settings_storage_and_cache">Opslag en cache</string>
+    <string name="settings_notifications">Meldingen</string>
+    <string name="settings_local_library">Lokale bibliotheek</string>
+    <string name="settings_backup_and_restore">Back-up en herstellen</string>
+    <string name="settings_advanced">Geavanceerd</string>
+    <string name="settings_advanced_value_xiaomi">Aanbevolen op dit apparaat</string>
+    <string name="settings_advanced_value_other">Scan- en batterijoplossingen</string>
+    <string name="settings_version_subtitle">Versie %1$s (%2$d)</string>
+
+    <string name="profiles_title">Profielen</string>
+    <string name="profiles_description">Abonnementen en verborgen aanbevelingen worden per profiel bewaard. Afspeellijsten, favorieten en downloads worden gedeeld.</string>
+    <string name="add_youtube_account">YouTube-account toevoegen</string>
+    <string name="add_youtube_account_subtitle">Log in met een ander Google-account</string>
+    <string name="add_device_profile">Profiel op dit apparaat toevoegen</string>
+    <string name="add_device_profile_subtitle">Aparte abonnementen, geen account nodig</string>
+    <string name="profile_signed_out">Uitgelogd - tik om in te loggen</string>
+    <string name="profile_session_expired">Sessie verlopen - tik om opnieuw te verbinden</string>
+    <string name="profile_on_this_device">Op dit apparaat</string>
+    <string name="profile_youtube_account">YouTube-account</string>
+    <string name="cd_active_profile">Actief profiel</string>
+    <string name="cd_remove_profile">%1$s verwijderen</string>
+    <string name="new_profile_dialog_title">Nieuw profiel op dit apparaat</string>
+    <string name="sign_out_confirm_title">Uitloggen bij %1$s?</string>
+    <string name="remove_profile_confirm_title">%1$s verwijderen?</string>
+    <string name="sign_out">Uitloggen</string>
+    <string name="remove">Verwijderen</string>
+
+    <string name="library_empty_title">Je bibliotheek is leeg</string>
+    <string name="library_empty_subtitle">Nummers die je downloadt of leuk vindt, verschijnen hier</string>
+    <string name="library_create_playlist_hint">Maak er een met de +-knop hieronder</string>
+    <string name="fab_downloads">Downloads</string>
+    <string name="fab_listening_history">Luistergeschiedenis</string>
+    <string name="fab_statistics">Statistieken</string>
+    <string name="cd_listening_stats">Beluisterstatistieken</string>
+    <string name="recently_played">Onlangs afgespeeld</string>
+    <string name="liked_songs">Favoriete nummers</string>
+    <string name="no_artists_yet">Nog geen artiesten</string>
+    <string name="no_artists_yet_subtitle">Artiesten uit je nummers verschijnen hier</string>
+    <string name="no_albums_yet">Nog geen albums</string>
+    <string name="no_albums_yet_subtitle">Albums uit je nummers verschijnen hier</string>
+
+    <plurals name="n_songs">
+        <item quantity="one">%1$d nummer</item>
+        <item quantity="other">%1$d nummers</item>
+    </plurals>
+    <plurals name="n_playlists">
+        <item quantity="one">%1$d afspeellijst</item>
+        <item quantity="other">%1$d afspeellijsten</item>
+    </plurals>
+</resources>

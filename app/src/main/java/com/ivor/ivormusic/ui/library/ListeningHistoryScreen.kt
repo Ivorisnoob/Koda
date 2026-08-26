@@ -1,4 +1,6 @@
 package com.ivor.ivormusic.ui.library
+import androidx.compose.ui.res.stringResource
+import com.ivor.ivormusic.R
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
@@ -209,12 +211,16 @@ fun ListeningHistoryScreen(
     // Grouped, filtered, collapsed. Keyed on everything that can change it so a
     // scroll or an unrelated recomposition does not redo the whole log; 5,000
     // entries is the ceiling StatsRepository trims to.
-    val days = remember(history, range, query, localSongs) {
+    val todayLabel = stringResource(R.string.sc_today)
+    val yesterdayLabel = stringResource(R.string.lh_yesterday)
+    val days = remember(history, range, query, localSongs, todayLabel, yesterdayLabel) {
         buildHistoryDays(
             history = history,
             range = range,
             query = query,
             localSongs = localSongs,
+            todayLabel = todayLabel,
+            yesterdayLabel = yesterdayLabel,
             weekdayFormat = weekdayFormat,
             dateFormat = dateFormat,
             datedYearFormat = datedYearFormat
@@ -241,7 +247,7 @@ fun ListeningHistoryScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { Text("Listening history", fontWeight = FontWeight.Bold) },
+                title = { Text(stringResource(R.string.fab_listening_history), fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back")
@@ -259,7 +265,7 @@ fun ListeningHistoryScreen(
                     ) {
                         Icon(
                             if (searchOpen) Icons.Rounded.Close else Icons.Rounded.Search,
-                            contentDescription = if (searchOpen) "Close search" else "Search history"
+                            contentDescription = if (searchOpen) stringResource(R.string.cd_clear_search) else stringResource(R.string.lh_cd_search_history)
                         )
                     }
                     Box {
@@ -272,7 +278,7 @@ fun ListeningHistoryScreen(
                         ) {
                             DropdownMenuItem(
                                 text = {
-                                    Text(if (saveHistory) "Pause history" else "Resume history")
+                                    Text(if (saveHistory) stringResource(R.string.lh_pause_history) else stringResource(R.string.lh_resume_history))
                                 },
                                 leadingIcon = {
                                     Icon(
@@ -289,7 +295,7 @@ fun ListeningHistoryScreen(
                             DropdownMenuItem(
                                 text = {
                                     Text(
-                                        "Clear history",
+                                        stringResource(R.string.lh_clear_history),
                                         color = MaterialTheme.colorScheme.error
                                     )
                                 },
@@ -345,7 +351,7 @@ fun ListeningHistoryScreen(
                         listenedMs = visibleListenedMs,
                         plays = visiblePlays,
                         songs = visibleSongs,
-                        rangeLabel = range.label,
+                        rangeLabel = historyRangeLabel(range),
                         streakDays = globalStats.currentStreakDays,
                         isFiltered = query.isNotBlank()
                     )
@@ -385,7 +391,7 @@ fun ListeningHistoryScreen(
                             hasAnyHistory = history.isNotEmpty(),
                             isSearching = query.isNotBlank(),
                             isPaused = !saveHistory,
-                            rangeLabel = range.label,
+                            rangeLabel = historyRangeLabel(range),
                             onShowAllTime = { range = HistoryRange.All },
                             onClearSearch = {
                                 query = ""
@@ -415,9 +421,9 @@ fun ListeningHistoryScreen(
                                         scope.launch {
                                             val result = snackbarHostState.showSnackbar(
                                                 message = if (allPlays) {
-                                                    "Removed all plays of ${run.entry.title}"
+                                                    context.getString(R.string.lh_removed_all_plays, run.entry.title)
                                                 } else {
-                                                    "Removed from history"
+                                                    context.getString(R.string.lh_removed_from_history)
                                                 },
                                                 actionLabel = "Undo",
                                                 withDismissAction = true
@@ -447,7 +453,7 @@ fun ListeningHistoryScreen(
                 showClearDialog = false
                 scope.launch {
                     val result = snackbarHostState.showSnackbar(
-                        message = "History cleared",
+                        message = context.getString(R.string.lh_history_cleared),
                         actionLabel = "Undo",
                         withDismissAction = true
                     )
@@ -477,6 +483,8 @@ private fun buildHistoryDays(
     range: HistoryRange,
     query: String,
     localSongs: List<Song>,
+    todayLabel: String,
+    yesterdayLabel: String,
     weekdayFormat: SimpleDateFormat,
     dateFormat: SimpleDateFormat,
     datedYearFormat: SimpleDateFormat
@@ -536,6 +544,8 @@ private fun buildHistoryDays(
                 label = dayLabel(
                     epochDay = epochDay,
                     today = today,
+                    todayLabel = todayLabel,
+                    yesterdayLabel = yesterdayLabel,
                     timestamp = entries.first().timestamp,
                     thisYear = thisYear,
                     weekdayFormat = weekdayFormat,
@@ -573,6 +583,8 @@ private fun dayLabel(
     today: Long,
     timestamp: Long,
     thisYear: Int,
+    todayLabel: String,
+    yesterdayLabel: String,
     weekdayFormat: SimpleDateFormat,
     dateFormat: SimpleDateFormat,
     datedYearFormat: SimpleDateFormat
@@ -580,8 +592,8 @@ private fun dayLabel(
     val date = Date(timestamp)
     val calendar = Calendar.getInstance().apply { time = date }
     return when {
-        epochDay == today -> "Today"
-        epochDay == today - 1 -> "Yesterday"
+        epochDay == today -> todayLabel
+        epochDay == today - 1 -> yesterdayLabel
         // Inside the last week a weekday name is the fastest thing to read.
         // Past that it stops being unambiguous and the date has to take over.
         epochDay > today - 7 -> weekdayFormat.format(date)
@@ -718,7 +730,7 @@ private fun RangeSelector(
                 contentPadding = PaddingValues(horizontal = 8.dp)
             ) {
                 Text(
-                    entry.label,
+                    historyRangeLabel(entry),
                     style = MaterialTheme.typography.labelLarge,
                     maxLines = 1
                 )
@@ -875,7 +887,7 @@ private fun HistoryRunRow(
                         Text(
                             // A local file that is no longer on the device says
                             // so instead of silently doing nothing when tapped.
-                            if (run.song == null) "Not on this device" else run.entry.artist,
+                            if (run.song == null) stringResource(R.string.lh_not_on_device) else run.entry.artist,
                             style = MaterialTheme.typography.bodyMedium,
                             maxLines = 1,
                             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
@@ -915,7 +927,7 @@ private fun HistoryRunRow(
             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                 if (run.song != null) {
                     DropdownMenuItem(
-                        text = { Text("Play") },
+                        text = { Text(stringResource(R.string.cd_play)) },
                         leadingIcon = { Icon(Icons.Rounded.PlayArrow, contentDescription = null) },
                         onClick = {
                             menuOpen = false
@@ -934,7 +946,7 @@ private fun HistoryRunRow(
                     }
                 )
                 DropdownMenuItem(
-                    text = { Text("Remove every play of this song") },
+                    text = { Text(stringResource(R.string.lh_remove_all_plays)) },
                     leadingIcon = { Icon(Icons.Rounded.DeleteSweep, contentDescription = null) },
                     onClick = {
                         menuOpen = false
@@ -994,7 +1006,7 @@ private fun HistorySearchField(
             .fillMaxWidth()
             .padding(horizontal = 20.dp, vertical = 4.dp)
             .focusRequester(focusRequester),
-        placeholder = { Text("Search titles, artists, albums") },
+        placeholder = { Text(stringResource(R.string.lh_search_placeholder)) },
         leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
         trailingIcon = {
             if (query.isNotEmpty()) {
@@ -1029,19 +1041,19 @@ private fun PausedBanner(onResume: () -> Unit) {
             Spacer(Modifier.width(14.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    "History is paused",
+                    stringResource(R.string.lh_paused_banner),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onTertiaryContainer
                 )
                 Text(
-                    "New plays are not being recorded. What is already here stays.",
+                    stringResource(R.string.lh_paused_body),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.85f)
                 )
             }
             Spacer(Modifier.width(8.dp))
-            TextButton(onClick = onResume) { Text("Resume") }
+            TextButton(onClick = onResume) { Text(stringResource(R.string.lh_resume)) }
         }
     }
 }
@@ -1063,21 +1075,20 @@ private fun HistoryEmptyState(
     val body: String
     when {
         isSearching -> {
-            title = "No matches"
-            body = "Nothing in this range matches that search."
+            title = stringResource(R.string.search_no_results)
+            body = stringResource(R.string.lh_no_matches_body)
         }
         hasAnyHistory -> {
             title = "Nothing ${rangeLabel.lowercase()}"
-            body = "You have listened before, just not in this range."
+            body = stringResource(R.string.lh_range_empty_body)
         }
         isPaused -> {
-            title = "History is off"
-            body = "Nothing has been recorded because history is paused. " +
-                "Resume it and songs you play will show up here."
+            title = stringResource(R.string.lh_off_title)
+            body = stringResource(R.string.lh_off_body)
         }
         else -> {
-            title = "Nothing here yet"
-            body = "Songs you play are logged here, so you can find that one " +
+            title = stringResource(R.string.lh_empty_title)
+            body = stringResource(R.string.lh_empty_body) +
                 "track from Tuesday and play it again."
         }
     }
@@ -1123,7 +1134,7 @@ private fun HistoryEmptyState(
             FilledTonalButton(
                 onClick = if (isSearching) onClearSearch else onShowAllTime
             ) {
-                Text(if (isSearching) "Clear search" else "Show all time")
+                Text(if (isSearching) stringResource(R.string.cd_clear_search) else stringResource(R.string.lh_show_all_time))
             }
         }
     }
@@ -1154,7 +1165,7 @@ private fun ClearHistoryDialog(
                 }
             }
         },
-        title = { Text("Clear listening history?") },
+        title = { Text(stringResource(R.string.lh_clear_dialog_title)) },
         text = {
             Text(
                 "This removes all $entryCount plays. Your recently played row, " +
@@ -1164,11 +1175,19 @@ private fun ClearHistoryDialog(
         },
         confirmButton = {
             TextButton(onClick = onConfirm) {
-                Text("Clear", color = MaterialTheme.colorScheme.error)
+                Text(stringResource(R.string.action_clear), color = MaterialTheme.colorScheme.error)
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
         }
     )
+}
+
+
+@Composable
+private fun historyRangeLabel(range: HistoryRange): String = when (range) {
+    HistoryRange.Today -> stringResource(R.string.sc_today)
+    HistoryRange.Week -> stringResource(R.string.sc_this_week)
+    HistoryRange.All -> stringResource(R.string.lh_all_time)
 }

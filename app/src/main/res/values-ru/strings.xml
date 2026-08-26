@@ -1,0 +1,195 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Koda</string>
+    <string name="now_playing_channel_name">Сейчас играет</string>
+    <string name="video_playback_channel_name">Воспроизведение видео</string>
+
+    <string name="undo">Отменить</string>
+    <string name="action_cancel">Отмена</string>
+    <string name="action_done">Готово</string>
+    <string name="action_create">Создать</string>
+    <string name="action_save">Сохранить</string>
+    <string name="action_delete">Удалить</string>
+    <string name="action_edit">Изменить</string>
+    <string name="action_share">Поделиться</string>
+    <string name="action_retry">Повторить</string>
+    <string name="action_see_all">Показать все</string>
+    <string name="action_play_all">Слушать всё</string>
+    <string name="action_show_more">Показать ещё</string>
+    <string name="action_try_again">Попробовать снова</string>
+    <string name="action_open_settings">Открыть настройки</string>
+    <string name="action_clear_all">Очистить всё</string>
+    <string name="action_new_playlist">Новый плейлист</string>
+    <string name="action_grant_permission">Разрешить доступ</string>
+    <string name="unknown_artist">Неизвестный исполнитель</string>
+    <string name="untitled_song">Трек без названия</string>
+    <string name="label_playlist">Плейлист</string>
+
+    <string name="tab_home">Главная</string>
+    <string name="tab_search">Поиск</string>
+    <string name="tab_subs">Подписки</string>
+    <string name="tab_library">Медиатека</string>
+
+    <string name="local_only_title">Включён режим «Только локально»</string>
+    <string name="local_only_default_subtitle">Этому разделу нужен интернет. Отключите режим «Только локально» в настройках, чтобы воспользоваться им.</string>
+    <string name="local_only_video_mode_subtitle">Видеорежиму нужен интернет. Отключите режим «Только локально» в настройках, чтобы смотреть видео.</string>
+    <string name="local_only_video_search_subtitle">Поиску видео нужен интернет. Отключите режим «Только локально» в настройках, чтобы искать видео.</string>
+    <string name="local_only_subscriptions_subtitle">Подпискам нужен интернет. Отключите режим «Только локально» в настройках, чтобы увидеть их.</string>
+    <string name="local_only_video_library_subtitle">Видеомедиатеке нужен интернет. Отключите режим «Только локально» в настройках, чтобы увидеть её.</string>
+    <string name="local_only_update_subtitle">Проверке обновлений нужен интернет. Отключите режим «Только локально» в настройках, чтобы проверить обновления.</string>
+
+    <string name="crash_dialog_title">В прошлый раз Koda аварийно завершился</string>
+    <string name="crash_dialog_message">В прошлом сеансе что-то пошло не так. Вы можете отправить отчёт об ошибке с подробностями — ничего не покинет ваше устройство, если вы сами не решите поделиться.</string>
+    <string name="crash_dialog_view_report">Посмотреть и отправить</string>
+    <string name="crash_dialog_not_now">Не сейчас</string>
+
+    <string name="permission_required_title">Нужно разрешение для загрузки песен</string>
+
+    <string name="home_section_recent_albums">Недавние альбомы</string>
+    <string name="home_section_jump_back_in">Продолжить</string>
+    <string name="your_mix_line1">Ваша</string>
+    <string name="your_mix_line2">подборка</string>
+    <string name="update_badge_version">v%1$s</string>
+    <string name="artists_joined">%1$s, %2$s</string>
+    <string name="cd_profile">Профиль</string>
+    <string name="cd_downloads">Загрузки</string>
+    <string name="cd_settings">Настройки</string>
+    <string name="cd_play">Слушать</string>
+    <string name="cd_pause">Пауза</string>
+    <string name="cd_next">Далее</string>
+    <string name="cd_album_art">Обложка альбома</string>
+    <string name="cd_show_all">Показать всё: %1$s</string>
+
+    <string name="spotlight_quick_picks">Быстрый выбор</string>
+    <string name="spotlight_your_playlists">Ваши плейлисты</string>
+    <string name="spotlight_from_your_library">Из вашей медиатеки</string>
+    <string name="spotlight_caption_liked">Из треков, которые вам понравились</string>
+    <string name="spotlight_caption_recent">Из того, что вы недавно слушали</string>
+    <string name="shortcut_liked_songs">Понравившиеся</string>
+    <string name="filter_all">Все</string>
+    <string name="filter_liked">Понравившиеся</string>
+    <string name="filter_recent">Недавние</string>
+    <string name="filter_playlists">Плейлисты</string>
+    <string name="spotlight_empty_no_liked">Пока нет понравившихся треков</string>
+    <string name="spotlight_empty_no_recent">Вы пока ничего не слушали</string>
+    <string name="spotlight_empty_no_playlists">Пока нет плейлистов</string>
+    <string name="spotlight_empty_generic">Здесь пока ничего нет</string>
+    <string name="spotlight_hint_liked">Понравившиеся треки соберутся здесь.</string>
+    <string name="spotlight_hint_playlists">Созданные и сохранённые плейлисты появятся здесь.</string>
+    <string name="spotlight_hint_all">Включите музыку, и главная заполнится.</string>
+
+    <string name="sleep_timer_title">Таймер сна</string>
+    <string name="sleep_timer_status_track">Этот трек</string>
+    <string name="sleep_timer_detail_track">Воспроизведение остановится, когда закончится текущая песня</string>
+    <string name="sleep_timer_detail_duration">Воспроизведение плавно затухнет и остановится по окончании таймера</string>
+    <string name="minutes_short">%1$d мин</string>
+    <string name="sleep_timer_end_of_track">Конец этого трека</string>
+    <string name="sleep_timer_turn_off">Выключить</string>
+
+    <string name="cd_switch_to_music">Переключить в музыкальный режим</string>
+    <string name="cd_switch_to_video">Переключить в видеорежим</string>
+    <string name="cd_drag_to_reorder">Потяните, чтобы изменить порядок</string>
+    <string name="cd_favorite">Избранное</string>
+    <string name="cd_clear_search">Очистить поиск</string>
+    <string name="queue_removed_snackbar">%1$s удалён</string>
+
+    <string name="song_options_play_next">Играть следующим</string>
+    <string name="song_options_play_next_subtitle">Сразу после этой песни</string>
+    <string name="song_options_add_to_queue">Добавить в очередь</string>
+    <string name="song_options_add_to_queue_subtitle">В конец</string>
+    <string name="song_options_add_to_playlist">Добавить в плейлист</string>
+    <string name="song_options_remove_from_liked">Убрать из понравившихся</string>
+    <string name="song_options_like">Нравится</string>
+    <string name="song_options_download">Скачать</string>
+    <string name="song_options_download_subtitle">Сохранить на устройстве</string>
+    <string name="song_options_downloaded">Скачано</string>
+    <string name="song_options_go_to_artist">Перейти к %1$s</string>
+
+    <string name="add_to_playlist_title">Добавить в плейлист</string>
+    <string name="new_playlist_label">Новый плейлист</string>
+    <string name="name_label">Название</string>
+    <string name="description_optional_label">Описание (необязательно)</string>
+
+    <string name="video_options_watch_later">Смотреть позже</string>
+    <string name="video_options_kept_on_device">Сохранено на устройстве</string>
+    <string name="video_options_save_to_playlist">Сохранить в плейлист</string>
+    <string name="video_options_download">Скачать</string>
+    <string name="video_options_go_to_channel">Перейти на канал</string>
+    <string name="video_options_share">Поделиться</string>
+    <string name="video_options_share_chooser">Поделиться видео</string>
+    <string name="video_options_not_interested">Не интересно</string>
+    <string name="video_options_dont_recommend_channel">Не рекомендовать канал</string>
+    <string name="video_options_dont_recommend_channel_name">Не рекомендовать %1$s</string>
+    <string name="cd_back">Назад</string>
+    <string name="search_playlists_placeholder">Поиск плейлистов</string>
+    <string name="no_playlist_matches">Нет плейлистов по запросу \"%1$s\"</string>
+    <string name="no_playlists_yet_hint">Пока нет плейлистов. Создайте один, и это видео сразу попадёт в него.</string>
+    <string name="cd_saved">Сохранено</string>
+    <string name="cd_couldnt_save">Не удалось сохранить</string>
+    <string name="cd_in_this_playlist">Уже в этом плейлисте</string>
+
+    <string name="settings_section_you">Профиль</string>
+    <string name="settings_section_look_and_feel">Оформление</string>
+    <string name="settings_section_playback_and_content">Воспроизведение и контент</string>
+    <string name="settings_section_system">Система</string>
+    <string name="settings_section_about">О приложении</string>
+    <string name="settings_account">Аккаунт</string>
+    <string name="settings_appearance">Оформление</string>
+    <string name="settings_player">Плеер</string>
+    <string name="settings_playback_and_quality">Воспроизведение и качество</string>
+    <string name="settings_content_and_feeds">Контент и ленты</string>
+    <string name="settings_subscriptions">Подписки</string>
+    <string name="settings_storage_and_cache">Хранилище и кеш</string>
+    <string name="settings_notifications">Уведомления</string>
+    <string name="settings_local_library">Локальная медиатека</string>
+    <string name="settings_backup_and_restore">Резервная копия и восстановление</string>
+    <string name="settings_advanced">Расширенные</string>
+    <string name="settings_advanced_value_xiaomi">Рекомендуется на этом устройстве</string>
+    <string name="settings_advanced_value_other">Исправления сканирования и батареи</string>
+    <string name="settings_version_subtitle">Версия %1$s (%2$d)</string>
+
+    <string name="profiles_title">Профили</string>
+    <string name="profiles_description">Подписки и скрытые рекомендации хранятся отдельно для каждого профиля. Плейлисты, понравившиеся песни и загрузки общие.</string>
+    <string name="add_youtube_account">Добавить аккаунт YouTube</string>
+    <string name="add_youtube_account_subtitle">Войти через другой аккаунт Google</string>
+    <string name="add_device_profile">Добавить профиль на этом устройстве</string>
+    <string name="add_device_profile_subtitle">Отдельные подписки, без аккаунта</string>
+    <string name="profile_signed_out">Выход выполнен — нажмите, чтобы войти</string>
+    <string name="profile_session_expired">Сессия истекла — нажмите, чтобы переподключиться</string>
+    <string name="profile_on_this_device">На этом устройстве</string>
+    <string name="profile_youtube_account">Аккаунт YouTube</string>
+    <string name="cd_active_profile">Активный профиль</string>
+    <string name="cd_remove_profile">Удалить %1$s</string>
+    <string name="new_profile_dialog_title">Новый профиль на этом устройстве</string>
+    <string name="sign_out_confirm_title">Выйти из %1$s?</string>
+    <string name="remove_profile_confirm_title">Удалить %1$s?</string>
+    <string name="sign_out">Выйти</string>
+    <string name="remove">Удалить</string>
+
+    <string name="library_empty_title">Ваша медиатека пуста</string>
+    <string name="library_empty_subtitle">Скачанные и понравившиеся песни появятся здесь</string>
+    <string name="library_create_playlist_hint">Создайте его кнопкой «+» ниже</string>
+    <string name="fab_downloads">Загрузки</string>
+    <string name="fab_listening_history">История прослушиваний</string>
+    <string name="fab_statistics">Статистика</string>
+    <string name="cd_listening_stats">Статистика прослушиваний</string>
+    <string name="recently_played">Недавно прослушанные</string>
+    <string name="liked_songs">Понравившиеся треки</string>
+    <string name="no_artists_yet">Пока нет исполнителей</string>
+    <string name="no_artists_yet_subtitle">Исполнители из ваших песен появятся здесь</string>
+    <string name="no_albums_yet">Пока нет альбомов</string>
+    <string name="no_albums_yet_subtitle">Альбомы из ваших песен появятся здесь</string>
+
+    <plurals name="n_songs">
+        <item quantity="one">%1$d песня</item>
+        <item quantity="few">%1$d песни</item>
+        <item quantity="many">%1$d песен</item>
+        <item quantity="other">%1$d песни</item>
+    </plurals>
+    <plurals name="n_playlists">
+        <item quantity="one">%1$d плейлист</item>
+        <item quantity="few">%1$d плейлиста</item>
+        <item quantity="many">%1$d плейлистов</item>
+        <item quantity="other">%1$d плейлиста</item>
+    </plurals>
+</resources>

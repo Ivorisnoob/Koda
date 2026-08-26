@@ -1,4 +1,6 @@
 package com.ivor.ivormusic.ui.video
+import androidx.compose.ui.res.stringResource
+import com.ivor.ivormusic.R
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -104,7 +106,7 @@ fun VideoQueueSheet(
 
         Column(modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 12.dp)) {
             Text(
-                text = "Playing from",
+                text = stringResource(R.string.vq_playing_from),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -211,7 +213,7 @@ private fun QueueRow(
             if (isCurrent) {
                 Icon(
                     Icons.Rounded.Equalizer,
-                    contentDescription = "Now playing",
+                    contentDescription = stringResource(R.string.cd_now_playing),
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(18.dp)
                 )

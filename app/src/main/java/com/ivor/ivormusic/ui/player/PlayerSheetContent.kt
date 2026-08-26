@@ -1,4 +1,6 @@
 package com.ivor.ivormusic.ui.player
+import com.ivor.ivormusic.R
+import androidx.compose.ui.res.stringResource
 
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.Spring
@@ -92,6 +94,8 @@ fun PlayerSheetContent(
     val currentQueueItemId by viewModel.currentQueueItemId.collectAsState()
     val playWhenReady by viewModel.playWhenReady.collectAsState()
     val isFavorite by viewModel.isCurrentSongLiked.collectAsState()
+    val playLabel = stringResource(R.string.cd_play)
+    val pauseLabel = stringResource(R.string.cd_pause)
     
     // Download states
     val downloadingIds by viewModel.downloadingIds.collectAsState()
@@ -297,20 +301,25 @@ private fun ExpressiveNowPlayingView(
                 Icon(Icons.Default.KeyboardArrowDown, "Collapse", modifier = Modifier.size(28.dp))
             }
             
-            Spacer(modifier = Modifier.width(8.dp))
-
-            // Flexible so the complete top action group still fits compact
-            // phones after Cast joined it. "Player" avoids truncating a
-            // decorative "Now Playing" label at the narrowest width.
+            // Expressive center toggle - morphs between "Now Playing" and "Lyrics" with animation
+            val pillWidth by animateFloatAsState(
+                targetValue = if (showLyrics) 140f else 160f,
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                    stiffness = Spring.StiffnessMedium
+                ),
+                label = "PillWidth"
+            )
+            
             Surface(
                 modifier = Modifier
-                    .weight(1f)
+                    .width(pillWidth.dp)
                     .clickable { showLyrics = !showLyrics },
                 shape = RoundedCornerShape(24.dp),
                 color = if (showLyrics) MaterialTheme.colorScheme.surfaceContainerHigh else primaryColor
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center
                 ) {
@@ -325,26 +334,19 @@ private fun ExpressiveNowPlayingView(
                     Spacer(modifier = Modifier.width(8.dp))
                     Crossfade(targetState = showLyrics, label = "PillText") { isLyrics ->
                         Text(
-                            text = if (isLyrics) "Player" else "Lyrics",
+                            text = if (isLyrics) stringResource(R.string.ps_now_playing) else stringResource(R.string.ps_lyrics),
                             style = MaterialTheme.typography.labelLarge,
                             color = if (isLyrics) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onPrimary
                         )
                     }
                 }
             }
-
-            Spacer(modifier = Modifier.width(8.dp))
-
-            // Right side group: Cast + Add to Playlist + Queue.
+            
+            // Right Side Group: Add to Playlist + Queue
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                MusicCastIconButton(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    contentColor = MaterialTheme.colorScheme.onSurface,
-                    size = 48.dp
-                )
                 FilledIconButton(
                     onClick = onShowAddToPlaylist,
                     shape = CircleShape,
@@ -426,7 +428,7 @@ private fun ExpressiveNowPlayingView(
                                     if (artSong != null) {
                                         SongArtwork(
                                             song = artSong,
-                                            contentDescription = "Album Art",
+                                            contentDescription = stringResource(R.string.cd_album_art),
                                             modifier = Modifier
                                                 .fillMaxSize()
                                                 .clip(RoundedCornerShape(cornerRadius)),
@@ -554,7 +556,7 @@ private fun ExpressiveNowPlayingView(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    text = currentSong?.title?.takeIf { !it.startsWith("Unknown") } ?: "Untitled",
+                    text = currentSong?.title?.takeIf { !it.startsWith("Unknown") } ?: stringResource(R.string.untitled_song),
                     style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -615,7 +617,7 @@ private fun ExpressiveNowPlayingView(
                         ) {
                             Icon(
                                 Icons.Default.Shuffle,
-                                contentDescription = "Shuffle",
+                                contentDescription = stringResource(R.string.cd_shuffle),
                                 modifier = Modifier.size(28.dp)
                             )
                         }
@@ -637,7 +639,7 @@ private fun ExpressiveNowPlayingView(
                         ) {
                             Icon(
                                 Icons.Default.SkipPrevious,
-                                contentDescription = "Previous",
+                                contentDescription = stringResource(R.string.cd_previous),
                                 modifier = Modifier.size(36.dp)
                             )
                         }
@@ -680,7 +682,7 @@ private fun ExpressiveNowPlayingView(
                             } else {
                                 Icon(
                                     imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                                    contentDescription = if (isPlaying) "Pause" else "Play",
+                                    contentDescription = if (isPlaying) stringResource(R.string.cd_pause) else stringResource(R.string.cd_play),
                                     modifier = Modifier.size(48.dp)
                                 )
                             }
@@ -703,7 +705,7 @@ private fun ExpressiveNowPlayingView(
                         ) {
                             Icon(
                                 Icons.Default.SkipNext,
-                                contentDescription = "Next",
+                                contentDescription = stringResource(R.string.cd_next),
                                 modifier = Modifier.size(36.dp)
                             )
                         }
@@ -728,7 +730,7 @@ private fun ExpressiveNowPlayingView(
                                     Player.REPEAT_MODE_ONE -> Icons.Default.RepeatOne
                                     else -> Icons.Default.Repeat
                                 },
-                                contentDescription = "Repeat",
+                                contentDescription = stringResource(R.string.cd_repeat),
                                 modifier = Modifier.size(28.dp)
                             )
                         }
@@ -784,7 +786,7 @@ private fun ExpressiveNowPlayingView(
                     when {
                         isLocalOriginal -> Icon(
                             imageVector = Icons.Rounded.Smartphone,
-                            contentDescription = "Local File",
+                            contentDescription = stringResource(R.string.cd_local_file),
                             modifier = Modifier.size(22.dp)
                         )
                         isDownloading -> CircularWavyProgressIndicator(
@@ -793,7 +795,7 @@ private fun ExpressiveNowPlayingView(
                         )
                         else -> Icon(
                             imageVector = if (isDownloaded) Icons.Rounded.CheckCircle else Icons.Rounded.Download,
-                            contentDescription = if (isDownloaded) "Downloaded" else "Download",
+                            contentDescription = if (isDownloaded) stringResource(R.string.song_options_downloaded) else stringResource(R.string.song_options_download),
                             modifier = Modifier.size(22.dp)
                         )
                     }
@@ -811,7 +813,7 @@ private fun ExpressiveNowPlayingView(
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.Bedtime,
-                        contentDescription = "Sleep timer",
+                        contentDescription = stringResource(R.string.sleep_timer_title),
                         modifier = Modifier.size(22.dp)
                     )
                 }
@@ -911,7 +913,7 @@ private fun ExpressiveQueueView(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Up Next",
+                        text = stringResource(R.string.ps_up_next),
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.onSurface
                     )
@@ -953,7 +955,7 @@ private fun ExpressiveQueueView(
                         )
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(
-                            "Queue is empty",
+                            stringResource(R.string.ps_queue_empty),
                             style = MaterialTheme.typography.titleMedium,
                             color = onSurfaceVariantColor
                         )
@@ -993,7 +995,7 @@ private fun ExpressiveQueueView(
                                             if (song.albumArtUri != null || song.thumbnailUrl != null) {
                                                 SongArtwork(
                                                     song = song,
-                                                    contentDescription = "Now Playing",
+                                                    contentDescription = stringResource(R.string.cd_now_playing),
                                                     modifier = Modifier
                                                         .fillMaxSize()
                                                         .clip(RoundedCornerShape(32.dp)),
@@ -1042,7 +1044,7 @@ private fun ExpressiveQueueView(
                                 
                                 // Song info
                                 Text(
-                                    text = song.title.takeIf { !it.startsWith("Unknown") } ?: "Untitled",
+                                    text = song.title.takeIf { !it.startsWith("Unknown") } ?: stringResource(R.string.untitled_song),
                                     style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
@@ -1069,7 +1071,7 @@ private fun ExpressiveQueueView(
                                         color = onSurfaceVariantColor.copy(alpha = 0.1f)
                                     )
                                     Text(
-                                        text = "QUEUE",
+                                        text = stringResource(R.string.ps_queue),
                                         style = MaterialTheme.typography.labelSmall,
                                         color = onSurfaceVariantColor,
                                         modifier = Modifier.padding(horizontal = 16.dp)
@@ -1132,7 +1134,7 @@ private fun ExpressiveQueueView(
                                     if (isCurrent) {
                                         Icon(
                                             imageVector = Icons.Rounded.GraphicEq,
-                                            contentDescription = "Playing",
+                                            contentDescription = stringResource(R.string.cd_playing),
                                             tint = primaryColor,
                                             modifier = Modifier.size(20.dp)
                                         )
@@ -1197,7 +1199,7 @@ private fun ExpressiveQueueView(
                                 } else if (isDownloaded(song.id)) {
                                     Icon(
                                         imageVector = Icons.Rounded.CheckCircle,
-                                        contentDescription = "Downloaded",
+                                        contentDescription = stringResource(R.string.song_options_downloaded),
                                         tint = if (isCurrent) primaryColor else onSurfaceVariantColor,
                                         modifier = Modifier.size(18.dp)
                                     )
@@ -1205,7 +1207,7 @@ private fun ExpressiveQueueView(
                                 } else if (isLocalOriginal(song)) {
                                     Icon(
                                         imageVector = Icons.Rounded.Smartphone,
-                                        contentDescription = "Local",
+                                        contentDescription = stringResource(R.string.cd_local_file),
                                         tint = if (isCurrent) primaryColor.copy(alpha=0.7f) else onSurfaceVariantColor.copy(alpha=0.7f),
                                         modifier = Modifier.size(16.dp)
                                     )
@@ -1228,7 +1230,7 @@ private fun ExpressiveQueueView(
                                 ) {
                                     Icon(
                                         imageVector = Icons.Filled.Close,
-                                        contentDescription = "Remove from queue",
+                                        contentDescription = stringResource(R.string.cd_remove_from_queue),
                                         tint = onSurfaceVariantColor
                                     )
                                 }
@@ -1266,7 +1268,7 @@ private fun ExpressiveQueueView(
                                         )
                                     )
                                     Spacer(modifier = Modifier.width(12.dp))
-                                    Text("Loading...", style = MaterialTheme.typography.titleSmall)
+                                    Text(stringResource(R.string.loading), style = MaterialTheme.typography.titleSmall)
                                 } else {
                                     Icon(
                                         Icons.AutoMirrored.Filled.QueueMusic, 
@@ -1274,7 +1276,7 @@ private fun ExpressiveQueueView(
                                         modifier = Modifier.size(20.dp)
                                     )
                                     Spacer(modifier = Modifier.width(12.dp))
-                                    Text("Load More", style = MaterialTheme.typography.titleSmall)
+                                    Text(stringResource(R.string.load_more), style = MaterialTheme.typography.titleSmall)
                                 }
                             }
                         }

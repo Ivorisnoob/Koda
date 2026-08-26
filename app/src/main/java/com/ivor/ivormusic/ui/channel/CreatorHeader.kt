@@ -1,4 +1,6 @@
 package com.ivor.ivormusic.ui.channel
+import androidx.compose.ui.res.stringResource
+import com.ivor.ivormusic.R
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
@@ -134,7 +136,7 @@ fun CreatorHeader(
                         Spacer(Modifier.size(6.dp))
                         Icon(
                             imageVector = Icons.Rounded.CheckCircle,
-                            contentDescription = "Verified",
+                            contentDescription = stringResource(R.string.cd_verified),
                             tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(18.dp)
                         )
@@ -380,7 +382,7 @@ fun SubscribeButton(
                 }
             }
             Text(
-                text = if (isSubscribed) "Subscribed" else "Subscribe",
+                text = if (isSubscribed) stringResource(R.string.subscribed) else stringResource(R.string.subscribe),
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1

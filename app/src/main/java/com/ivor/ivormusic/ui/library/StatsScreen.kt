@@ -1,4 +1,6 @@
 package com.ivor.ivormusic.ui.library
+import androidx.compose.ui.res.stringResource
+import com.ivor.ivormusic.R
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -101,7 +103,7 @@ fun StatsScreen(
             .windowInsetsPadding(WindowInsets.statusBars)
     ) {
         TopAppBar(
-            title = { Text("Statistics", fontWeight = FontWeight.Bold) },
+            title = { Text(stringResource(R.string.fab_statistics), fontWeight = FontWeight.Bold) },
             navigationIcon = {
                 IconButton(onClick = onBack) {
                     Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back")
@@ -237,7 +239,7 @@ fun StatsScreen(
             if (globalStats.topSongs.isNotEmpty()) {
                 item {
                     Text(
-                        "Top songs",
+                        stringResource(R.string.st_top_songs),
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         color = onBg,
@@ -314,7 +316,7 @@ fun StatsScreen(
             if (globalStats.topArtists.isNotEmpty()) {
                 item {
                     Text(
-                        "Top artists",
+                        stringResource(R.string.st_top_artists),
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         color = onBg,
@@ -386,13 +388,13 @@ fun StatsScreen(
                         }
                         Spacer(Modifier.height(16.dp))
                         Text(
-                            "Nothing to crunch yet",
+                            stringResource(R.string.st_empty_title),
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
                             color = onBg
                         )
                         Text(
-                            "Play some music and your stats will show up here",
+                            stringResource(R.string.st_empty_body),
                             style = MaterialTheme.typography.bodyMedium,
                             color = secondaryText,
                             textAlign = TextAlign.Center
@@ -646,13 +648,13 @@ private fun StreakAndMilestoneRow(
                 } else {
                     Column {
                         Text(
-                            "Legend",
+                            stringResource(R.string.st_legend),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            "Every milestone reached",
+                            stringResource(R.string.st_every_milestone),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

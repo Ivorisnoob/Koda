@@ -1,0 +1,191 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Koda</string>
+    <string name="now_playing_channel_name">Şimdi çalıyor</string>
+    <string name="video_playback_channel_name">Video oynatma</string>
+
+    <string name="undo">Geri al</string>
+    <string name="action_cancel">İptal</string>
+    <string name="action_done">Bitti</string>
+    <string name="action_create">Oluştur</string>
+    <string name="action_save">Kaydet</string>
+    <string name="action_delete">Sil</string>
+    <string name="action_edit">Düzenle</string>
+    <string name="action_share">Paylaş</string>
+    <string name="action_retry">Yeniden dene</string>
+    <string name="action_see_all">Tümünü gör</string>
+    <string name="action_play_all">Tümünü çal</string>
+    <string name="action_show_more">Daha fazla göster</string>
+    <string name="action_try_again">Tekrar dene</string>
+    <string name="action_open_settings">Ayarları aç</string>
+    <string name="action_clear_all">Tümünü temizle</string>
+    <string name="action_new_playlist">Yeni oynatma listesi</string>
+    <string name="action_grant_permission">İzin ver</string>
+    <string name="unknown_artist">Bilinmeyen sanatçı</string>
+    <string name="untitled_song">Adsız parça</string>
+    <string name="label_playlist">Oynatma listesi</string>
+
+    <string name="tab_home">Ana sayfa</string>
+    <string name="tab_search">Ara</string>
+    <string name="tab_subs">Abonelikler</string>
+    <string name="tab_library">Kitaplık</string>
+
+    <string name="local_only_title">Yalnızca yerel modu açık</string>
+    <string name="local_only_default_subtitle">Bu bölüm internet gerektirir. Kullanmak için Ayarlar\'dan Yalnızca yerel modunu kapatın.</string>
+    <string name="local_only_video_mode_subtitle">Video modu internet gerektirir. Video izlemek için Ayarlar\'dan Yalnızca yerel modunu kapatın.</string>
+    <string name="local_only_video_search_subtitle">Video araması internet gerektirir. Video aramak için Ayarlar\'dan Yalnızca yerel modunu kapatın.</string>
+    <string name="local_only_subscriptions_subtitle">Abonelikler internet gerektirir. Görmek için Ayarlar\'dan Yalnızca yerel modunu kapatın.</string>
+    <string name="local_only_video_library_subtitle">Video kitaplığı internet gerektirir. Görmek için Ayarlar\'dan Yalnızca yerel modunu kapatın.</string>
+    <string name="local_only_update_subtitle">Güncelleme kontrolü internet gerektirir. Kontrol etmek için Ayarlar\'dan Yalnızca yerel modunu kapatın.</string>
+
+    <string name="crash_dialog_title">Koda geçen sefer çöktü</string>
+    <string name="crash_dialog_message">Önceki oturumunuzda bir şeyler ters gitti. Ayrıntılarla bir hata raporu gönderebilirsiniz - paylaşmayı seçmediğiniz sürece hiçbir şey cihazınızdan ayrılmaz.</string>
+    <string name="crash_dialog_view_report">Görüntüle ve bildir</string>
+    <string name="crash_dialog_not_now">Şimdi değil</string>
+
+    <string name="permission_required_title">Şarkıları yüklemek için izin gerekli</string>
+
+    <string name="home_section_recent_albums">Son albümler</string>
+    <string name="home_section_jump_back_in">Kaldığın yerden devam et</string>
+    <string name="your_mix_line1">Senin</string>
+    <string name="your_mix_line2">miks</string>
+    <string name="update_badge_version">v%1$s</string>
+    <string name="artists_joined">%1$s, %2$s</string>
+    <string name="cd_profile">Profil</string>
+    <string name="cd_downloads">İndirilenler</string>
+    <string name="cd_settings">Ayarlar</string>
+    <string name="cd_play">Çal</string>
+    <string name="cd_pause">Duraklat</string>
+    <string name="cd_next">Sonraki</string>
+    <string name="cd_album_art">Albüm kapağı</string>
+    <string name="cd_show_all">Tümünü göster: %1$s</string>
+
+    <string name="spotlight_quick_picks">Hızlı seçimler</string>
+    <string name="spotlight_your_playlists">Oynatma listelerin</string>
+    <string name="spotlight_from_your_library">Kitaplığından</string>
+    <string name="spotlight_caption_liked">Beğendiğin şarkılardan</string>
+    <string name="spotlight_caption_recent">Son zamanlarda dinlediklerinden</string>
+    <string name="shortcut_liked_songs">Beğenilen şarkılar</string>
+    <string name="filter_all">Tümü</string>
+    <string name="filter_liked">Beğenilenler</string>
+    <string name="filter_recent">Son dinlenenler</string>
+    <string name="filter_playlists">Listeler</string>
+    <string name="spotlight_empty_no_liked">Henüz beğenilen şarkı yok</string>
+    <string name="spotlight_empty_no_recent">Henüz bir şey çalınmadı</string>
+    <string name="spotlight_empty_no_playlists">Henüz oynatma listesi yok</string>
+    <string name="spotlight_empty_generic">Burada henüz bir şey yok</string>
+    <string name="spotlight_hint_liked">Beğendiğin şarkılar burada toplanacak.</string>
+    <string name="spotlight_hint_playlists">Oluşturduğun veya kaydettiğin listeler burada görünür.</string>
+    <string name="spotlight_hint_all">Bir şey çal, ana sayfan dolmaya başlasın.</string>
+
+    <string name="sleep_timer_title">Uyku zamanlayıcısı</string>
+    <string name="sleep_timer_status_track">Bu parça</string>
+    <string name="sleep_timer_detail_track">Çalan şarkı bittiğinde oynatma durur</string>
+    <string name="sleep_timer_detail_duration">Süre dolduğunda oynatma kısılır ve duraklar</string>
+    <string name="minutes_short">%1$d dk</string>
+    <string name="sleep_timer_end_of_track">Bu parçanın sonu</string>
+    <string name="sleep_timer_turn_off">Kapat</string>
+
+    <string name="cd_switch_to_music">Müzik moduna geç</string>
+    <string name="cd_switch_to_video">Video moduna geç</string>
+    <string name="cd_drag_to_reorder">Yeniden sıralamak için sürükle</string>
+    <string name="cd_favorite">Favori</string>
+    <string name="cd_clear_search">Aramayı temizle</string>
+    <string name="queue_removed_snackbar">%1$s kaldırıldı</string>
+
+    <string name="song_options_play_next">Sonraki çal</string>
+    <string name="song_options_play_next_subtitle">Bu şarkının hemen ardından</string>
+    <string name="song_options_add_to_queue">Sıraya ekle</string>
+    <string name="song_options_add_to_queue_subtitle">Sona</string>
+    <string name="song_options_add_to_playlist">Oynatma listesine ekle</string>
+    <string name="song_options_remove_from_liked">Beğenilenlerden çıkar</string>
+    <string name="song_options_like">Beğen</string>
+    <string name="song_options_download">İndir</string>
+    <string name="song_options_download_subtitle">Bu cihazda tut</string>
+    <string name="song_options_downloaded">İndirildi</string>
+    <string name="song_options_go_to_artist">%1$s\'a git</string>
+
+    <string name="add_to_playlist_title">Oynatma listesine ekle</string>
+    <string name="new_playlist_label">Yeni oynatma listesi</string>
+    <string name="name_label">Ad</string>
+    <string name="description_optional_label">Açıklama (isteğe bağlı)</string>
+
+    <string name="video_options_watch_later">Daha sonra izle</string>
+    <string name="video_options_kept_on_device">Bu cihazda saklandı</string>
+    <string name="video_options_save_to_playlist">Oynatma listesine kaydet</string>
+    <string name="video_options_download">İndir</string>
+    <string name="video_options_go_to_channel">Kanala git</string>
+    <string name="video_options_share">Paylaş</string>
+    <string name="video_options_share_chooser">Videoyu paylaş</string>
+    <string name="video_options_not_interested">İlgimi çekmiyor</string>
+    <string name="video_options_dont_recommend_channel">Bu kanalı önerme</string>
+    <string name="video_options_dont_recommend_channel_name">%1$s önerme</string>
+    <string name="cd_back">Geri</string>
+    <string name="search_playlists_placeholder">Oynatma listelerinde ara</string>
+    <string name="no_playlist_matches">\"%1$s\" ile eşleşen oynatma listesi yok</string>
+    <string name="no_playlists_yet_hint">Henüz liste yok. Bir tane oluştur, bu video doğrudan içine gitsin.</string>
+    <string name="cd_saved">Kaydedildi</string>
+    <string name="cd_couldnt_save">Kaydedilemedi</string>
+    <string name="cd_in_this_playlist">Bu listede var</string>
+
+    <string name="settings_section_you">Sen</string>
+    <string name="settings_section_look_and_feel">Görünüm</string>
+    <string name="settings_section_playback_and_content">Oynatma ve içerik</string>
+    <string name="settings_section_system">Sistem</string>
+    <string name="settings_section_about">Hakkında</string>
+    <string name="settings_account">Hesap</string>
+    <string name="settings_appearance">Görünüm</string>
+    <string name="settings_player">Oynatıcı</string>
+    <string name="settings_playback_and_quality">Oynatma ve kalite</string>
+    <string name="settings_content_and_feeds">İçerik ve akışlar</string>
+    <string name="settings_subscriptions">Abonelikler</string>
+    <string name="settings_storage_and_cache">Depolama ve önbellek</string>
+    <string name="settings_notifications">Bildirimler</string>
+    <string name="settings_local_library">Yerel kitaplık</string>
+    <string name="settings_backup_and_restore">Yedekleme ve geri yükleme</string>
+    <string name="settings_advanced">Gelişmiş</string>
+    <string name="settings_advanced_value_xiaomi">Bu cihazda önerilir</string>
+    <string name="settings_advanced_value_other">Tarama ve pil düzeltmeleri</string>
+    <string name="settings_version_subtitle">Sürüm %1$s (%2$d)</string>
+
+    <string name="profiles_title">Profiller</string>
+    <string name="profiles_description">Abonelikler ve gizlenen öneriler profil başına tutulur. Oynatma listeleri, beğeniler ve indirilenler ortaktır.</string>
+    <string name="add_youtube_account">YouTube hesabı ekle</string>
+    <string name="add_youtube_account_subtitle">Başka bir Google hesabıyla giriş yap</string>
+    <string name="add_device_profile">Bu cihaza profil ekle</string>
+    <string name="add_device_profile_subtitle">Ayrı abonelikler, hesaba gerek yok</string>
+    <string name="profile_signed_out">Çıkış yapılmış - giriş yapmak için dokun</string>
+    <string name="profile_session_expired">Oturum süresi doldu - yeniden bağlanmak için dokun</string>
+    <string name="profile_on_this_device">Bu cihazda</string>
+    <string name="profile_youtube_account">YouTube hesabı</string>
+    <string name="cd_active_profile">Etkin profil</string>
+    <string name="cd_remove_profile">%1$s hesabını kaldır</string>
+    <string name="new_profile_dialog_title">Bu cihazda yeni profil</string>
+    <string name="sign_out_confirm_title">%1$s oturumu kapatılsın mı?</string>
+    <string name="remove_profile_confirm_title">%1$s kaldırılsın mı?</string>
+    <string name="sign_out">Çıkış yap</string>
+    <string name="remove">Kaldır</string>
+
+    <string name="library_empty_title">Kitaplığın boş</string>
+    <string name="library_empty_subtitle">İndirdiğin veya beğendiğin şarkılar burada görünür</string>
+    <string name="library_create_playlist_hint">Aşağıdaki + düğmesiyle oluştur</string>
+    <string name="fab_downloads">İndirilenler</string>
+    <string name="fab_listening_history">Dinleme geçmişi</string>
+    <string name="fab_statistics">İstatistikler</string>
+    <string name="cd_listening_stats">Dinleme istatistikleri</string>
+    <string name="recently_played">Son çalınanlar</string>
+    <string name="liked_songs">Beğenilen şarkılar</string>
+    <string name="no_artists_yet">Henüz sanatçı yok</string>
+    <string name="no_artists_yet_subtitle">Şarklarındaki sanatçılar burada görünür</string>
+    <string name="no_albums_yet">Henüz albüm yok</string>
+    <string name="no_albums_yet_subtitle">Şarklarındaki albümler burada görünür</string>
+
+    <plurals name="n_songs">
+        <item quantity="one">%1$d şarkı</item>
+        <item quantity="other">%1$d şarkı</item>
+    </plurals>
+    <plurals name="n_playlists">
+        <item quantity="one">%1$d liste</item>
+        <item quantity="other">%1$d oynatma listesi</item>
+    </plurals>
+</resources>

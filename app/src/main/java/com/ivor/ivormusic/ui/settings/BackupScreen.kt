@@ -1,4 +1,6 @@
 package com.ivor.ivormusic.ui.settings
+import androidx.compose.ui.res.stringResource
+import com.ivor.ivormusic.R
 
 import android.content.Intent
 import androidx.activity.compose.BackHandler
@@ -121,7 +123,7 @@ fun BackupScreen(
             val manifest = repository.writeTo(uri)
             phase = BackupPhase.IDLE
             if (manifest == null) {
-                failure = "That file could not be written. Pick another folder and try again."
+                failure = context.getString(R.string.bk_write_failed)
             } else {
                 lastBackupAt = manifest.createdAt
                 snackbarHostState.showSnackbar(backupWrittenMessage(manifest))
@@ -149,7 +151,7 @@ fun BackupScreen(
             }
             phase = BackupPhase.IDLE
             if (snapshot == null) {
-                failure = "That file could not be read as a Koda backup."
+                failure = context.getString(R.string.bk_read_failed)
             } else {
                 preview = snapshot
             }
@@ -163,7 +165,7 @@ fun BackupScreen(
             TopAppBar(
                 title = {
                     Column {
-                        Text("Backup and restore", fontWeight = FontWeight.Bold)
+                        Text(stringResource(R.string.settings_backup_and_restore), fontWeight = FontWeight.Bold)
                         Text(
                             text = lastBackupLine(lastBackupAt),
                             style = MaterialTheme.typography.bodySmall,
@@ -209,12 +211,12 @@ fun BackupScreen(
             }
 
             item(key = "actions") {
-                SettingsSection(title = "This install") {
+                SettingsSection(title = stringResource(R.string.bk_this_install)) {
                     SettingsCard {
                         SettingsRow(
                             icon = Icons.Rounded.Save,
-                            title = "Create a backup",
-                            subtitle = "Write everything to one file you can keep anywhere",
+                            title = stringResource(R.string.bk_create),
+                            subtitle = stringResource(R.string.bk_create_sub),
                             onClick = {
                                 if (!busy) createLauncher.launch(BackupRepository.suggestedFileName())
                             },
@@ -223,8 +225,8 @@ fun BackupScreen(
                         SettingsDivider()
                         SettingsRow(
                             icon = Icons.Rounded.Restore,
-                            title = "Restore from a backup",
-                            subtitle = "Replaces what is on this device",
+                            title = stringResource(R.string.bk_restore),
+                            subtitle = stringResource(R.string.bk_restore_sub),
                             onClick = {
                                 if (!busy) {
                                     openLauncher.launch(
@@ -244,19 +246,17 @@ fun BackupScreen(
             }
 
             item(key = "included") {
-                SettingsSection(title = "What a backup holds") {
+                SettingsSection(title = stringResource(R.string.bk_holds)) {
                     SettingsCard {
                         InfoBlock(
                             icon = Icons.Rounded.Info,
                             lines = listOf(
-                                "Music and video playlists you built, with their artwork",
-                                "Liked songs, and the playlists and albums you saved " +
-                                    "in either mode",
-                                "Listening stats, watch history and searches",
-                                "Followed channels and their groups, per profile",
-                                "Channels and videos you asked not to be recommended",
-                                "Every setting in both modes, from palette and player " +
-                                    "style to per-network quality"
+                                stringResource(R.string.bk_hold_1),
+                                stringResource(R.string.bk_hold_2),
+                                stringResource(R.string.bk_hold_3),
+                                stringResource(R.string.bk_hold_4),
+                                stringResource(R.string.bk_hold_5),
+                                stringResource(R.string.bk_hold_6)
                             )
                         )
                     }
@@ -264,18 +264,14 @@ fun BackupScreen(
             }
 
             item(key = "excluded") {
-                SettingsSection(title = "What it does not") {
+                SettingsSection(title = stringResource(R.string.bk_not_holds)) {
                     SettingsCard {
                         InfoBlock(
                             icon = Icons.Rounded.CloudOff,
                             lines = listOf(
-                                "Your Google sign-in. Accounts come back by name and " +
-                                    "ask to be signed into again, so the file is safe to " +
-                                    "keep in cloud storage or mail to yourself.",
-                                "Downloaded audio and video. Those files live in " +
-                                    "Downloads/Koda and survive an uninstall on their own; " +
-                                    "putting them in here would make the backup gigabytes.",
-                                "Cached audio, which rebuilds itself as you listen."
+                                stringResource(R.string.bk_not_1),
+                                stringResource(R.string.bk_not_2),
+                                stringResource(R.string.bk_not_3)
                             )
                         )
                     }
@@ -332,9 +328,9 @@ private fun BusyCard(phase: BackupPhase) {
             Column {
                 Text(
                     text = when (phase) {
-                        BackupPhase.BACKING_UP -> "Writing your backup"
-                        BackupPhase.READING -> "Reading that file"
-                        BackupPhase.RESTORING -> "Restoring"
+                        BackupPhase.BACKING_UP -> stringResource(R.string.bk_writing)
+                        BackupPhase.READING -> stringResource(R.string.bk_reading)
+                        BackupPhase.RESTORING -> stringResource(R.string.bk_restoring)
                         BackupPhase.IDLE -> ""
                     },
                     fontSize = 16.sp,
@@ -344,7 +340,7 @@ private fun BusyCard(phase: BackupPhase) {
                 if (phase == BackupPhase.RESTORING) {
                     Spacer(Modifier.height(2.dp))
                     Text(
-                        text = "Don't leave this screen",
+                        text = stringResource(R.string.bk_dont_leave),
                         fontSize = 13.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -425,7 +421,7 @@ private fun RestoreConfirmDialog(
         },
         title = {
             Text(
-                text = "Restore this backup?",
+                text = stringResource(R.string.bk_confirm_title),
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center,
@@ -452,8 +448,7 @@ private fun RestoreConfirmDialog(
                     // saying out loud: restoring it would wipe this device for
                     // nothing, and that is exactly the mistake to catch here.
                     Text(
-                        text = "This backup is empty. Restoring it would clear what is on " +
-                            "this device and put nothing back.",
+                        text = stringResource(R.string.bk_empty_warn),
                         fontSize = 13.sp,
                         lineHeight = 18.sp,
                         color = MaterialTheme.colorScheme.error
@@ -469,9 +464,7 @@ private fun RestoreConfirmDialog(
                     }
                 }
                 Text(
-                    text = "Everything listed above replaces what is on this device. " +
-                        "Playlists, liked songs, stats, history and settings that are " +
-                        "here now and not in the backup will be gone.",
+                    text = stringResource(R.string.bk_replace_warn),
                     fontSize = 13.sp,
                     lineHeight = 18.sp,
                     color = MaterialTheme.colorScheme.error
@@ -488,7 +481,7 @@ private fun RestoreConfirmDialog(
                     )
                 }
                 Text(
-                    text = "Koda restarts when this finishes.",
+                    text = stringResource(R.string.bk_restarts),
                     fontSize = 13.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -496,11 +489,11 @@ private fun RestoreConfirmDialog(
         },
         confirmButton = {
             TextButton(onClick = onConfirm) {
-                Text("Replace and restore", color = MaterialTheme.colorScheme.error)
+                Text(stringResource(R.string.bk_replace_restore), color = MaterialTheme.colorScheme.error)
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
         }
     )
 }
@@ -537,7 +530,7 @@ private fun RestartDialog(result: RestoreResult, onRestart: () -> Unit) {
         },
         title = {
             Text(
-                text = "Restored",
+                text = stringResource(R.string.bk_restored),
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center,
@@ -548,14 +541,14 @@ private fun RestartDialog(result: RestoreResult, onRestart: () -> Unit) {
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
-                    text = "Koda needs to restart to load everything back.",
+                    text = stringResource(R.string.bk_restart_needed),
                     fontSize = 13.sp,
                     lineHeight = 18.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 if (result.signInNeeded > 0) {
                     Text(
-                        text = "Open Settings, Account when it comes back to sign in again.",
+                        text = stringResource(R.string.bk_sign_in_again),
                         fontSize = 13.sp,
                         lineHeight = 18.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -564,7 +557,7 @@ private fun RestartDialog(result: RestoreResult, onRestart: () -> Unit) {
             }
         },
         confirmButton = {
-            TextButton(onClick = onRestart) { Text("Restart now") }
+            TextButton(onClick = onRestart) { Text(stringResource(R.string.bk_restart_now)) }
         }
     )
 }
@@ -594,7 +587,7 @@ private fun FailureDialog(message: String, onDismiss: () -> Unit) {
         },
         title = {
             Text(
-                text = "That didn't work",
+                text = stringResource(R.string.bk_failed_title),
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center,
@@ -610,7 +603,7 @@ private fun FailureDialog(message: String, onDismiss: () -> Unit) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("OK") } }
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_done)) } }
     )
 }
 

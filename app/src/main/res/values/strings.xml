@@ -17,6 +17,7 @@
     -->
     <string name="video_playback_channel_name">Video playback</string>
 
+
     <!-- The home screen widget's picker description. -->
     <string name="widget_description">Current song with play, pause and skip controls</string>
 
@@ -24,4 +25,908 @@
     <string name="upload_check_channel_name">New uploads</string>
     <string name="upload_check_channel_description">Tells you when a channel you follow on this device uploads</string>
     <string name="upload_notification_title">%1$s: %2$d new uploads</string>
+</resources>
+    <!-- ============ Common actions ============ -->
+    <string name="undo">Undo</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_done">Done</string>
+    <string name="action_create">Create</string>
+    <string name="action_save">Save</string>
+    <string name="action_delete">Delete</string>
+    <string name="action_edit">Edit</string>
+    <string name="action_share">Share</string>
+    <string name="action_retry">Retry</string>
+    <string name="action_see_all">See all</string>
+    <string name="action_play_all">Play all</string>
+    <string name="action_show_more">Show More</string>
+    <string name="action_try_again">Try again</string>
+    <string name="action_open_settings">Open Settings</string>
+    <string name="action_clear_all">Clear all</string>
+    <string name="action_new_playlist">New playlist</string>
+    <string name="action_grant_permission">Grant Permission</string>
+    <string name="unknown_artist">Unknown Artist</string>
+    <string name="untitled_song">Untitled Song</string>
+    <string name="label_playlist">Playlist</string>
+
+    <!-- Bottom navigation tabs. Doubles as each tab icon's contentDescription. -->
+    <string name="tab_home">Home</string>
+    <string name="tab_search">Search</string>
+    <string name="tab_subs">Subs</string>
+    <string name="tab_library">Library</string>
+
+    <!-- Local only mode notices -->
+    <string name="local_only_title">Local only mode is on</string>
+    <string name="local_only_default_subtitle">This section needs the internet. Turn off Local only in Settings to use it.</string>
+    <string name="local_only_video_mode_subtitle">Video mode needs the internet. Turn off Local only in Settings to watch videos.</string>
+    <string name="local_only_video_search_subtitle">Video search needs the internet. Turn off Local only in Settings to search videos.</string>
+    <string name="local_only_subscriptions_subtitle">Subscriptions need the internet. Turn off Local only in Settings to see them.</string>
+    <string name="local_only_video_library_subtitle">The video library needs the internet. Turn off Local only in Settings to see it.</string>
+    <string name="local_only_update_subtitle">Update checks need the internet. Turn off Local only in Settings to check for updates.</string>
+
+    <!-- Crash report prompt (MainActivity) -->
+    <string name="crash_dialog_title">Koda crashed last time</string>
+    <string name="crash_dialog_message">Something went wrong on your previous session. You can send a bug report with the details - nothing leaves your device unless you choose to share it.</string>
+    <string name="crash_dialog_view_report">View &amp; report</string>
+    <string name="crash_dialog_not_now">Not now</string>
+
+    <!-- Storage permission (Home) -->
+    <string name="permission_required_title">Permission required to load songs</string>
+
+    <!-- Home screen -->
+    <string name="home_section_recent_albums">Recent Albums</string>
+    <string name="home_section_jump_back_in">Jump back in</string>
+    <string name="your_mix_line1">Your</string>
+    <string name="your_mix_line2">Mix</string>
+    <string name="update_badge_version">v%1$s</string>
+    <string name="artists_joined">%1$s, %2$s</string>
+    <string name="cd_profile">Profile</string>
+    <string name="cd_downloads">Downloads</string>
+    <string name="cd_settings">Settings</string>
+    <string name="cd_play">Play</string>
+    <string name="cd_pause">Pause</string>
+    <string name="cd_next">Next</string>
+    <string name="cd_album_art">Album Art</string>
+    <string name="cd_show_all">Show all %1$s</string>
+
+    <!-- Spotlight home -->
+    <string name="spotlight_quick_picks">Quick picks</string>
+    <string name="spotlight_your_playlists">Your playlists</string>
+    <string name="spotlight_from_your_library">From your library</string>
+    <string name="spotlight_caption_liked">From songs you liked</string>
+    <string name="spotlight_caption_recent">From what you played lately</string>
+    <string name="shortcut_liked_songs">Liked songs</string>
+    <string name="filter_all">All</string>
+    <string name="filter_liked">Liked</string>
+    <string name="filter_recent">Recent</string>
+    <string name="filter_playlists">Playlists</string>
+    <string name="spotlight_empty_no_liked">No liked songs yet</string>
+    <string name="spotlight_empty_no_recent">Nothing played yet</string>
+    <string name="spotlight_empty_no_playlists">No playlists yet</string>
+    <string name="spotlight_empty_generic">Nothing to show yet</string>
+    <string name="spotlight_hint_liked">Songs you like will collect here.</string>
+    <string name="spotlight_hint_playlists">Playlists you make or save show up here.</string>
+    <string name="spotlight_hint_all">Play something and your home fills in around it.</string>
+
+    <!-- Sleep timer -->
+    <string name="sleep_timer_title">Sleep timer</string>
+    <string name="sleep_timer_status_track">This track</string>
+    <string name="sleep_timer_detail_track">Playback stops when the song playing now finishes</string>
+    <string name="sleep_timer_detail_duration">Playback fades out and pauses when the timer ends</string>
+    <string name="minutes_short">%1$d min</string>
+    <string name="sleep_timer_end_of_track">End of this track</string>
+    <string name="sleep_timer_turn_off">Turn off</string>
+
+    <!-- Mini player / shared component content descriptions -->
+    <string name="cd_switch_to_music">Switch to music mode</string>
+    <string name="cd_switch_to_video">Switch to video mode</string>
+    <string name="cd_drag_to_reorder">Drag to reorder</string>
+    <string name="cd_favorite">Favorite</string>
+    <string name="cd_clear_search">Clear search</string>
+    <string name="queue_removed_snackbar">Removed %1$s</string>
+
+    <!-- Song options sheet (music long-press) -->
+    <string name="song_options_play_next">Play next</string>
+    <string name="song_options_play_next_subtitle">Right after this song</string>
+    <string name="song_options_add_to_queue">Add to queue</string>
+    <string name="song_options_add_to_queue_subtitle">At the end</string>
+    <string name="song_options_add_to_playlist">Add to playlist</string>
+    <string name="song_options_remove_from_liked">Remove from liked</string>
+    <string name="song_options_like">Like</string>
+    <string name="song_options_download">Download</string>
+    <string name="song_options_download_subtitle">Keep on this device</string>
+    <string name="song_options_downloaded">Downloaded</string>
+    <string name="song_options_go_to_artist">Go to %1$s</string>
+
+    <!-- Add to playlist sheet -->
+    <string name="add_to_playlist_title">Add to Playlist</string>
+    <string name="new_playlist_label">New Playlist</string>
+    <string name="name_label">Name</string>
+    <string name="description_optional_label">Description (Optional)</string>
+
+    <!-- Video options sheet (video long-press) -->
+    <string name="video_options_watch_later">Watch later</string>
+    <string name="video_options_kept_on_device">Kept on this device</string>
+    <string name="video_options_save_to_playlist">Save to playlist</string>
+    <string name="video_options_download">Download</string>
+    <string name="video_options_go_to_channel">Go to channel</string>
+    <string name="video_options_share">Share</string>
+    <string name="video_options_share_chooser">Share video</string>
+    <string name="video_options_not_interested">Not interested</string>
+    <string name="video_options_dont_recommend_channel">Don\'t recommend channel</string>
+    <string name="video_options_dont_recommend_channel_name">Don\'t recommend %1$s</string>
+    <string name="cd_back">Back</string>
+    <string name="search_playlists_placeholder">Search playlists</string>
+    <string name="no_playlist_matches">No playlist matches \"%1$s\"</string>
+    <string name="no_playlists_yet_hint">No playlists yet. Make one and this video goes straight into it.</string>
+    <string name="cd_saved">Saved</string>
+    <string name="cd_couldnt_save">Couldn\'t save</string>
+    <string name="cd_in_this_playlist">In this playlist</string>
+
+    <!-- Settings hub -->
+    <string name="settings_section_you">You</string>
+    <string name="settings_section_look_and_feel">Look and feel</string>
+    <string name="settings_section_playback_and_content">Playback and content</string>
+    <string name="settings_section_system">System</string>
+    <string name="settings_section_about">About</string>
+    <string name="settings_account">Account</string>
+    <string name="settings_appearance">Appearance</string>
+    <string name="settings_player">Player</string>
+    <string name="settings_playback_and_quality">Playback and quality</string>
+    <string name="settings_content_and_feeds">Content and feeds</string>
+    <string name="settings_subscriptions">Subscriptions</string>
+    <string name="settings_storage_and_cache">Storage and cache</string>
+    <string name="settings_notifications">Notifications</string>
+    <string name="settings_local_library">Local library</string>
+    <string name="settings_backup_and_restore">Backup and restore</string>
+    <string name="settings_advanced">Advanced</string>
+    <string name="settings_advanced_value_xiaomi">Recommended on this device</string>
+    <string name="settings_advanced_value_other">Scanning and battery fixes</string>
+    <string name="settings_version_subtitle">Version %1$s (%2$d)</string>
+
+    <!-- Settings detail pages -->
+    <string name="settings_section_youtube_music">YouTube Music</string>
+    <string name="sp_save_watch_history">Save Watch History</string>
+    <string name="sp_replace_session_cookies">Replace Session Cookies</string>
+    <string name="sp_replace_session_cookies_sub">Paste a fresh cookie header if your session goes stale</string>
+    <string name="sp_sign_out_sub">Disconnect your YouTube account</string>
+    <string name="sp_signed_out_info">Koda works signed out. Signing in adds your playlists, liked songs, subscriptions and watch history.</string>
+    <string name="sp_connect_youtube_music">Connect YouTube Music</string>
+    <string name="sp_connect_youtube_music_sub">Sign in to access your playlists and liked songs</string>
+    <string name="sp_sign_in_cookies">Sign In With Cookies</string>
+    <string name="sp_sign_in_cookies_sub">Paste a cookie header instead of using the web sign-in</string>
+    <string name="sp_theme">Theme</string>
+    <string name="sp_color_palette">Color palette</string>
+    <string name="sp_amoled_black">AMOLED Black</string>
+    <string name="sp_backgrounds">Backgrounds</string>
+    <string name="sp_ambient_background">Ambient Background</string>
+    <string name="sp_navigation">Navigation</string>
+    <string name="sp_non_expressive_nav">Non-expressive navigation bar</string>
+    <string name="sp_spotlight_home">Spotlight Home</string>
+    <string name="sp_style">Style</string>
+    <string name="sp_style_note">Every style plays the same music - they differ in layout and how you control it.</string>
+    <string name="sp_style_switch_hint">Long-press the artwork in any player to switch styles from the wheel without coming back here.</string>
+    <string name="sp_colors">Colors</string>
+    <string name="sp_album_art_colors">Album Art Colors</string>
+    <string name="sp_album_art_colors_sub">Color the expanded player\'s buttons from the current cover</string>
+    <string name="sp_playback">Playback</string>
+    <string name="sp_song_transitions">Song transitions</string>
+    <string name="sp_normalise_volume">Normalise volume</string>
+    <string name="sp_normalise_volume_sub">Even out loud and quiet tracks</string>
+    <string name="sp_auto_load_queue">Auto-load Queue</string>
+    <string name="sp_auto_load_queue_sub">Add recommended songs when the queue runs low</string>
+    <string name="sp_save_listening_history">Save Listening History</string>
+    <string name="sp_streaming_quality">Streaming quality</string>
+    <string name="sp_quality_per_network">Quality per network</string>
+    <string name="sp_quality_network_hint">Koda picks these based on the connection in use</string>
+    <string name="sp_music_quality">Music quality</string>
+    <string name="sp_video_quality">Video quality</string>
+    <string name="sp_mode">Mode</string>
+    <string name="sp_local_only">Local Only</string>
+    <string name="sp_home_mode_toggle">Home Screen Mode Toggle</string>
+    <string name="sp_timed_comments">Timed Comments</string>
+    <string name="sp_shorts">Shorts</string>
+    <string name="sp_shorts_buttons">Shorts Buttons</string>
+    <string name="sp_recommendations">Recommendations</string>
+    <string name="sp_not_recommended">Not Recommended</string>
+    <string name="sp_not_recommended_sub">Videos and channels you\'ve hidden from your feeds</string>
+    <string name="sp_manage_subscriptions">Manage Subscriptions</string>
+    <string name="sp_manage_subscriptions_sub">Import, export and group the channels you follow</string>
+    <string name="sp_where_they_live">Where they live</string>
+    <string name="sp_subscriptions_shown">Subscriptions Shown</string>
+    <string name="sp_subscribe_saves_to">Subscribe Saves To</string>
+    <string name="sp_feed">Feed</string>
+    <string name="sp_fast_refresh">Fast Subscription Refresh</string>
+    <string name="sp_fast_refresh_on">Much less data and exact upload times, but no duration badges</string>
+    <string name="sp_fast_refresh_off">Full details for every video - slow on a large subscription list</string>
+    <string name="sp_downloads">Downloads</string>
+    <string name="sp_private_downloads">Private downloads</string>
+    <string name="sp_private_downloads_on">New audio and video stay inside Koda and are removed on uninstall</string>
+    <string name="sp_private_downloads_off">New audio and video appear in Downloads/Koda</string>
+    <string name="sp_private_downloads_note">Album art stays hidden from Gallery in either mode. Existing downloads stay where they are.</string>
+    <string name="sp_cache">Cache</string>
+    <string name="sp_cache_music">Cache Music</string>
+    <string name="sp_cache_music_sub">Store streamed songs for instant replay</string>
+    <string name="sp_local_cache">Local Cache</string>
+    <string name="sp_max_cache_size">Max Cache Size</string>
+    <string name="sp_clear_cache">Clear Cache</string>
+    <string name="sp_clear_cache_sub">Free up storage space</string>
+    <string name="sp_live_updates">Live updates</string>
+    <string name="sp_live_download_updates">Live download updates</string>
+    <string name="sp_live_download_updates_sub">Show download progress as a live status bar chip</string>
+    <string name="sp_live_playback_updates">Live playback updates</string>
+    <string name="sp_live_playback_updates_sub">Show what\'s playing as a live status bar chip</string>
+    <string name="sp_blocked_by_system">Blocked by system settings</string>
+    <string name="sp_blocked_by_system_sub">Allow live updates for Koda in Android settings</string>
+    <string name="sp_new_uploads">New uploads</string>
+    <string name="sp_notify_new_uploads">Notify about new uploads</string>
+    <string name="sp_notify_new_uploads_on">Checks channels you follow on this device</string>
+    <string name="sp_notify_new_uploads_off">Off: Koda only checks while you are using it</string>
+    <string name="sp_channels">Channels</string>
+    <string name="sp_choose_notifiers">Choose who may notify you</string>
+    <string name="sp_muted">Muted</string>
+    <string name="sp_notifying">Notifying</string>
+    <string name="sp_device_music">Device music</string>
+    <string name="sp_load_local_songs">Load Local Songs</string>
+    <string name="sp_excluded_folders">Excluded Folders</string>
+    <string name="sp_xiaomi_notice">Xiaomi device detected. Enabling both of these is highly recommended.</string>
+    <string name="sp_wellbeing">Wellbeing</string>
+    <string name="sp_daily_time_limit">Daily time limit</string>
+    <string name="sp_daily_time_limit_sub">Lock Koda after a set amount of listening per day</string>
+    <string name="sp_feedback">Feedback</string>
+    <string name="sp_report_bug">Report a bug</string>
+    <string name="sp_android_auto">Android Auto</string>
+    <string name="sp_report_bug_sub">Attach recent logs and device info to a report</string>
+    <string name="sp_compatibility">Compatibility</string>
+    <string name="sp_high_compat_scanning">High Compatibility Scanning</string>
+    <string name="sp_high_compat_scanning_sub">Bypasses MediaStore (Fixes missing music on HyperOS)</string>
+    <string name="sp_ignore_battery">Ignore Battery Optimizations</string>
+    <string name="sp_ignore_battery_sub">Prevents playback from stopping in background</string>
+
+    <!-- Onboarding -->
+    <string name="ob_skip">Skip</string>
+    <string name="ob_continue">Continue</string>
+    <string name="ob_start_listening">Start listening</string>
+    <string name="ob_welcome_title">Welcome to Koda</string>
+    <string name="ob_welcome_body">Music and videos, your local files, and a player that adapts to you. A few quick choices and you are in.</string>
+    <string name="ob_feat_stream_title">Stream anything</string>
+    <string name="ob_feat_stream_sub">Music and videos powered by YouTube Music</string>
+    <string name="ob_feat_local_title">Your local library</string>
+    <string name="ob_feat_local_sub">Songs already on this device play right alongside</string>
+    <string name="ob_feat_custom_title">Made yours</string>
+    <string name="ob_feat_custom_sub">Dynamic color, ambient artwork and player styles</string>
+    <string name="ob_page_your_music">Your music</string>
+    <string name="ob_page_your_music_body">Bring the songs already stored on this device into Home, Search and Library. Skip it if you want a streaming-first setup.</string>
+    <string name="ob_scan_device_audio">Scan device audio</string>
+    <string name="ob_scan_device_audio_sub">Show local songs across the app</string>
+    <string name="ob_music_access">Music access</string>
+    <string name="ob_audio_access_allowed">Koda can read your audio library.</string>
+    <string name="ob_audio_access_needed">Needed to find songs on this device.</string>
+    <string name="ob_allow">Allow</string>
+    <string name="ob_hint_only_audio">Only your audio files are read. Nothing leaves the device.</string>
+    <string name="ob_page_ytmusic">YouTube Music</string>
+    <string name="ob_page_ytmusic_body">Connect your account for personalized recommendations, liked songs and playlists. Search and streaming work without it.</string>
+    <string name="ob_account_connected">Account connected</string>
+    <string name="ob_not_connected">Not connected</string>
+    <string name="ob_recs_ready">Personalized recommendations are ready.</string>
+    <string name="ob_optional_sign_in_later">Optional, and you can sign in later from Settings.</string>
+    <string name="ob_hint_session_secure">Your session is stored securely on this device only.</string>
+    <string name="ob_page_video_mode">Video mode</string>
+    <string name="ob_page_video_mode_body">Turn the Home tab into a video feed with an in-app player, mini player and picture-in-picture. You can flip between music and video any time.</string>
+    <string name="ob_enable_video_mode">Enable video mode</string>
+    <string name="ob_enable_video_mode_sub">Video home, video search and watch history</string>
+    <string name="ob_home_switch">Home screen switch</string>
+    <string name="ob_home_switch_sub">Quick music/video toggle in the Home top bar</string>
+    <string name="ob_shorts_sub">A Shorts shelf and vertical swipe player in video mode</string>
+    <string name="ob_page_look_and_feel">Look and feel</string>
+    <string name="ob_look_and_feel_body">Koda uses Material You dynamic color. Choose how it should behave on this device.</string>
+    <string name="theme_system">System</string>
+    <string name="theme_dark">Dark</string>
+    <string name="theme_light">Light</string>
+    <string name="ob_theme_card">Theme</string>
+    <string name="ob_ambient_artwork">Ambient artwork</string>
+    <string name="ob_ambient_artwork_sub">Let album art color the player background</string>
+    <string name="ob_home_screen_card">Home screen</string>
+    <string name="ob_home_screen_body">Classic leads with one big hero. Spotlight opens with a grid of the things you reach for most, then quick picks and shelves. Either can be changed later in Settings.</string>
+    <string name="ob_player_style_card">Player style</string>
+    <string name="ob_player_style_body">Pick the player you want. You can change it any time in Settings, or by long-pressing the artwork while a song plays.</string>
+    <string name="ob_page_final_touches">Final touches</string>
+    <string name="ob_page_final_touches_body">A few optional extras. All of this lives in Settings if you change your mind later.</string>
+    <string name="ob_crossfade">Crossfade</string>
+    <string name="ob_crossfade_sub">Blend songs into each other during playback</string>
+    <string name="ob_playback_notifications">Playback notifications</string>
+    <string name="ob_notif_ready">Lock screen controls are ready.</string>
+    <string name="ob_notif_enable">Enables lock screen and background controls.</string>
+    <string name="ob_enable">Enable</string>
+    <string name="ob_high_compat_scan">High compatibility scan</string>
+    <string name="ob_high_compat_scan_sub">Only for devices that hide music from the system index, like some HyperOS builds</string>
+    <string name="ob_page_daily_limit">Daily time limit</string>
+    <string name="ob_page_daily_limit_body">Completely optional, and off by default. Decide how much Koda you get each day - when it\'s used up, the app locks until midnight.</string>
+    <string name="ob_limit_my_listening">Limit my listening</string>
+    <string name="ob_limit_my_listening_sub">Locks Koda once today\'s budget runs out</string>
+    <string name="ob_every_day">Every day:</string>
+    <string name="ob_hint_weekday_hours">Different hours per weekday can be set later in Settings > Advanced.</string>
+    <string name="cd_granted">Granted</string>
+
+    <!-- Video home -->
+    <string name="vh_available_offline">Available offline</string>
+    <string name="vh_recommended_for_you">Recommended For You</string>
+    <string name="vh_trending_videos">Trending Videos</string>
+    <string name="vh_youre_offline">You\'re offline</string>
+    <string name="vh_no_videos_found">No videos found</string>
+    <string name="vh_downloaded_hint">Downloaded videos will appear here</string>
+
+    <!-- Video library -->
+    <string name="vl_watch_history">Watch History</string>
+    <string name="vl_library_sub">Your playlists, history and saved videos</string>
+    <string name="liked_videos">Liked Videos</string>
+    <string name="history">History</string>
+    <string name="view_all">View all</string>
+    <string name="your_playlists">Your Playlists</string>
+    <string name="action_new">New</string>
+    <string name="vl_no_playlists_hint">No playlists yet. Tap New to make one.</string>
+    <string name="vl_target_youtube">YouTube</string>
+    <string name="vl_target_device">This device</string>
+    <string name="vl_local_playlist_note">Stays on this phone. Works signed out, and is not visible on youtube.com.</string>
+    <string name="vl_account_playlist_note">Added to your YouTube account, so it shows up everywhere you are signed in.</string>
+    <string name="rename_playlist">Rename playlist</string>
+    <string name="action_rename">Rename</string>
+    <string name="delete_playlist_q">Delete playlist?</string>
+    <string name="delete_playlist">Delete playlist</string>
+    <string name="cd_playlist_options">Playlist options</string>
+    <string name="vl_login_wall">Log in to see your playlists, Watch Later and liked videos</string>
+    <string name="log_in_youtube">Log in to YouTube</string>
+    <string name="remove_from_account_q">Remove from your YouTube account?</string>
+    <string name="share_playlist_chooser">Share playlist</string>
+    <string name="vl_no_videos">No videos in this playlist</string>
+    <string name="remove_from_watch_later">Remove from Watch Later</string>
+    <string name="remove_from_liked_videos">Remove from Liked videos</string>
+    <string name="remove_from_playlist">Remove from playlist</string>
+    <string name="cd_video_options">Video options</string>
+
+    <!-- Subscriptions -->
+    <string name="sc_unfollow_body">Removes it from this device. Your YouTube account isn\'t touched.</string>
+    <string name="unfollow">Unfollow</string>
+    <string name="cd_all_channels">All channels</string>
+    <string name="sc_no_uploads_match">No uploads match these filters.</string>
+    <string name="search_channels">Search channels</string>
+    <string name="sc_none_found">No subscriptions found</string>
+    <string name="sc_search_hint">Try part of the name, or the @handle.</string>
+    <string name="sc_empty_body">Follow channels on this device, or sign in to bring your YouTube subscriptions across.</string>
+    <string name="import_subscriptions">Import subscriptions</string>
+    <string name="sc_group_empty">No recent uploads from this group.</string>
+    <string name="sc_not_following">You aren\'t following any channels yet.</string>
+    <string name="sc_no_uploads">No recent uploads from your channels.</string>
+    <string name="show_all_channels">Show all channels</string>
+    <string name="sc_latest_from_channels">Latest from channels you follow</string>
+    <string name="sc_any_time">Any time</string>
+    <string name="sc_today">Today</string>
+    <string name="sc_this_week">This week</string>
+    <string name="sc_newest_first">Newest first</string>
+    <string name="sc_oldest_first">Oldest first</string>
+    <string name="sc_on_device">%1$d on this device</string>
+    <string name="sc_channels_on_device">%1$d channels - %2$d on this device</string>
+
+    <!-- Player sheet -->
+    <string name="ps_now_playing">Now Playing</string>
+    <string name="ps_lyrics">Lyrics</string>
+    <string name="cd_shuffle">Shuffle</string>
+    <string name="cd_previous">Previous</string>
+    <string name="cd_repeat">Repeat</string>
+    <string name="cd_local_file">Local File</string>
+    <string name="ps_up_next">Up Next</string>
+    <string name="ps_queue_empty">Queue is empty</string>
+    <string name="cd_now_playing">Now Playing</string>
+    <string name="ps_queue">QUEUE</string>
+    <string name="cd_playing">Playing</string>
+    <string name="cd_remove_from_queue">Remove from queue</string>
+    <string name="loading">Loading...</string>
+    <string name="load_more">Load More</string>
+
+    <!-- Shorts -->
+    <string name="sh_playback_failed">Playback failed</string>
+    <string name="cd_close_shorts">Close Shorts</string>
+    <string name="subscribed">Subscribed</string>
+    <string name="subscribe">Subscribe</string>
+    <string name="like">Like</string>
+    <string name="cd_dislike">Dislike</string>
+    <string name="cd_comments">Comments</string>
+    <string name="share_short">Share Short</string>
+    <string name="stop_recommending">Stop recommending</string>
+    <string name="sh_hide_short_sub">Hide this Short and move on</string>
+    <string name="sh_hide_channel_sub">Hide everything from this channel</string>
+
+    <!-- Downloads -->
+    <string name="stop_all">Stop all</string>
+    <string name="in_progress">In progress</string>
+    <string name="dl_failed">Failed</string>
+    <string name="dl_waiting">Waiting</string>
+    <string name="dl_preparing">Preparing</string>
+
+    <!-- Stats -->
+    <string name="st_top_songs">Top songs</string>
+    <string name="st_top_artists">Top artists</string>
+    <string name="st_empty_title">Nothing to crunch yet</string>
+    <string name="st_empty_body">Play some music and your stats will show up here</string>
+    <string name="st_legend">Legend</string>
+    <string name="st_every_milestone">Every milestone reached</string>
+
+    <!-- Listening history -->
+    <string name="lh_yesterday">Yesterday</string>
+    <string name="lh_all_time">All time</string>
+    <string name="lh_cd_search_history">Search history</string>
+    <string name="lh_pause_history">Pause history</string>
+    <string name="lh_resume_history">Resume history</string>
+    <string name="lh_clear_history">Clear history</string>
+    <string name="lh_removed_all_plays">Removed all plays of %1$s</string>
+    <string name="lh_removed_from_history">Removed from history</string>
+    <string name="lh_history_cleared">History cleared</string>
+    <string name="lh_not_on_device">Not on this device</string>
+    <string name="lh_remove_all_plays">Remove every play of this song</string>
+    <string name="lh_search_placeholder">Search titles, artists, albums</string>
+    <string name="lh_paused_banner">History is paused</string>
+    <string name="lh_paused_body">New plays are not being recorded. What is already here stays.</string>
+    <string name="lh_resume">Resume</string>
+    <string name="lh_no_matches_body">Nothing in this range matches that search.</string>
+    <string name="lh_range_empty_body">You have listened before, just not in this range.</string>
+    <string name="lh_off_title">History is off</string>
+    <string name="lh_off_body">Nothing has been recorded because history is paused. Resume it and songs you play will show up here.</string>
+    <string name="lh_empty_title">Nothing here yet</string>
+    <string name="lh_empty_body">Songs you play are logged here, so you can find that one track from Tuesday and play it again.</string>
+    <string name="lh_show_all_time">Show all time</string>
+    <string name="lh_clear_dialog_title">Clear listening history?</string>
+    <string name="action_clear">Clear</string>
+
+    <!-- Not interested -->
+    <string name="ni_unblock_all_q">Unblock all channels?</string>
+    <string name="ni_unhide_all_q">Unhide all videos?</string>
+    <string name="ni_unblock_body">Every channel you blocked can be recommended again.</string>
+    <string name="ni_unhide_body">Every video you hid can show up in your feeds again.</string>
+    <string name="ni_unblock_all">Unblock all</string>
+    <string name="ni_unhide_all">Unhide all</string>
+    <string name="ni_nothing_hidden">Nothing hidden</string>
+    <string name="ni_empty_title">Nothing hidden yet</string>
+    <string name="ni_empty_body">Long-press any video and choose \"Not interested\" or \"Don\'t recommend channel\" to keep it out of your feeds.</string>
+    <string name="cd_close_comments">Close comments</string>
+
+    <!-- Watch history -->
+    <string name="vhs_empty_body">Videos you watch will show up here. Log in to also sync your YouTube history.</string>
+    <string name="vhs_none_found">No history found</string>
+    <string name="vhs_pick_up">Pick up where you left off</string>
+
+    <!-- Backup and restore -->
+    <string name="bk_write_failed">That file could not be written. Pick another folder and try again.</string>
+    <string name="bk_read_failed">That file could not be read as a Koda backup.</string>
+    <string name="bk_this_install">This install</string>
+    <string name="bk_create">Create a backup</string>
+    <string name="bk_create_sub">Write everything to one file you can keep anywhere</string>
+    <string name="bk_restore">Restore from a backup</string>
+    <string name="bk_restore_sub">Replaces what is on this device</string>
+    <string name="bk_holds">What a backup holds</string>
+    <string name="bk_hold_1">Music and video playlists you built, with their artwork</string>
+    <string name="bk_hold_2">Liked songs, and the playlists and albums you saved in either mode</string>
+    <string name="bk_hold_3">Listening stats, watch history and searches</string>
+    <string name="bk_hold_4">Followed channels and their groups, per profile</string>
+    <string name="bk_hold_5">Channels and videos you asked not to be recommended</string>
+    <string name="bk_hold_6">Every setting in both modes, from palette and player style to per-network quality</string>
+    <string name="bk_not_holds">What it does not</string>
+    <string name="bk_not_1">Your Google sign-in. Accounts come back by name and ask to be signed into again, so the file is safe to keep in cloud storage or mail to yourself.</string>
+    <string name="bk_not_2">Downloaded audio and video. Those files live in Downloads/Koda and survive an uninstall on their own; putting them in here would make the backup gigabytes.</string>
+    <string name="bk_not_3">Cached audio, which rebuilds itself as you listen.</string>
+    <string name="bk_writing">Writing your backup</string>
+    <string name="bk_reading">Reading that file</string>
+    <string name="bk_restoring">Restoring</string>
+    <string name="bk_dont_leave">Don\'t leave this screen</string>
+    <string name="bk_confirm_title">Restore this backup?</string>
+    <string name="bk_empty_warn">This backup is empty. Restoring it would clear what is on this device and put nothing back.</string>
+    <string name="bk_replace_warn">Everything listed above replaces what is on this device. Playlists, liked songs, stats, history and settings that are here now and not in the backup will be gone.</string>
+    <string name="bk_restarts">Koda restarts when this finishes.</string>
+    <string name="bk_replace_restore">Replace and restore</string>
+    <string name="bk_restored">Restored</string>
+    <string name="bk_restart_needed">Koda needs to restart to load everything back.</string>
+    <string name="bk_sign_in_again">Open Settings, Account when it comes back to sign in again.</string>
+    <string name="bk_restart_now">Restart now</string>
+    <string name="bk_failed_title">That didn\'t work</string>
+
+    <!-- Update screen -->
+    <string name="us_title">Software Update</string>
+    <string name="us_checking">Checking for updates...</string>
+    <string name="us_checking_short">Checking...</string>
+    <string name="us_no_releases">No releases available yet.</string>
+    <string name="us_no_releases_short">No Releases</string>
+    <string name="us_available">Update Available!</string>
+    <string name="us_up_to_date">You\'re Up to Date</string>
+    <string name="us_error">Something Went Wrong</string>
+    <string name="us_whats_new">What\'s New</string>
+    <string name="us_release_image">Release Image</string>
+    <string name="us_your_device">Your Device</string>
+    <string name="us_architecture">Architecture</string>
+    <string name="us_apk">APK</string>
+    <string name="us_size">Size</string>
+    <string name="us_view_release">View Release on GitHub</string>
+    <string name="us_all_variants">All Variants</string>
+    <string name="us_all_good">All Good!</string>
+    <string name="us_latest_body">You\'re running the latest version of Koda.</string>
+    <string name="us_couldnt_check">Couldn\'t Check for Updates</string>
+
+    <!-- Bug report -->
+    <string name="rb_copied">Report copied to clipboard</string>
+    <string name="rb_what_happened">What happened?</string>
+    <string name="rb_placeholder">What were you doing when it broke?</string>
+    <string name="rb_last_crash">Last crash</string>
+    <string name="rb_attach_crash">Attach crash details</string>
+    <string name="rb_device_info">Device &amp; app info</string>
+    <string name="rb_attach_device">Attach device info</string>
+    <string name="rb_attach_device_sub">Model, Android version, build and playback settings</string>
+    <string name="rb_log_detail">Log detail</string>
+    <string name="rb_errors">Errors</string>
+    <string name="rb_warnings">+ Warnings</string>
+    <string name="rb_everything">Everything</string>
+    <string name="rb_recent_logs">Recent logs</string>
+    <string name="rb_nothing_logged">Nothing logged yet this session.</string>
+    <string name="rb_no_entries">No entries at this detail level.</string>
+    <string name="rb_preview">Preview</string>
+    <string name="rb_preview_hint">Exactly what will be copied:</string>
+    <string name="rb_copy_report">Copy report</string>
+    <string name="rb_open_telegram">Open Telegram chat</string>
+    <string name="rb_open_github">Open GitHub issue</string>
+    <string name="rb_privacy_note">The report never sends anything by itself - you paste or attach it yourself.</string>
+    <string name="rb_default_attachment">Stack trace and recent logs</string>
+
+    <!-- App lock / time limit -->
+    <string name="al_todays_listening">That\'s today\'s listening</string>
+    <string name="al_youve_had">You\'ve had </string>
+    <string name="al_resets_midnight">Resets every night at midnight</string>
+    <string name="tl_locked_until_midnight">Koda is locked until midnight</string>
+    <string name="tl_locks_when_budget">Koda locks when the day\'s budget runs out</string>
+    <string name="tl_off_subtitle">Off - Koda is always unlocked</string>
+    <string name="tl_enable">Enable daily time limit</string>
+    <string name="tl_enable_sub">Locks all of Koda once today\'s budget is used</string>
+    <string name="tl_quick_set">Quick set - same budget every day</string>
+    <string name="tl_per_day">Per-day budgets</string>
+    <string name="tl_counts_note">Counts only time Koda is open on screen, and resets at midnight. Setting a day to Unlimited leaves it untracked.</string>
+    <string name="tl_tracking_off">Tracking off</string>
+    <string name="tl_unlimited_today">Unlimited today - no budget set</string>
+    <string name="tl_turn_on_to_track">Turn on the limit below to start tracking</string>
+    <string name="tl_resets_tonight">Resets tonight at midnight</string>
+
+    <!-- Color palette -->
+    <string name="cd_selected">Selected</string>
+    <string name="cp_dynamic_cd">Dynamic (from wallpaper)</string>
+
+    <!-- Cookie paste sign-in -->
+    <string name="ck_title">Session Cookies</string>
+    <string name="ck_subtitle">Sign in by pasting a browser session</string>
+    <string name="ck_paste_clipboard">Paste from clipboard</string>
+    <string name="ck_cookie_header">Cookie header</string>
+    <string name="ck_how_to">How do I get this?</string>
+    <string name="ck_step_1">Open music.youtube.com on a desktop browser, signed in</string>
+    <string name="ck_step_2">Press F12 and open the Network tab</string>
+    <string name="ck_step_3">Type \"youtubei\" in the filter box, then reload</string>
+    <string name="ck_step_4">Click any request in the list</string>
+    <string name="ck_step_5">Under Request Headers, right-click \"cookie\" and Copy value</string>
+    <string name="ck_step_6">Send it to this device and paste it above</string>
+    <string name="ck_password_note">Treat this like a password</string>
+
+    <!-- Auth dialog -->
+    <string name="au_sign_in_title">Sign in to YouTube Music</string>
+    <string name="cd_close">Close</string>
+
+    <!-- Channel / artist / album -->
+    <string name="ch_search_channel">Search this channel</string>
+    <string name="ch_share_channel">Share channel</string>
+    <string name="ch_share_chooser">Share channel</string>
+    <string name="cd_more_options">More options</string>
+    <string name="ch_open_artist_page">Open music artist page</string>
+    <string name="ch_recommend_again">Recommend this channel again</string>
+    <string name="ch_unavailable_title">This channel isn\'t available</string>
+    <string name="ch_unavailable_body">It may have been renamed, removed, or restricted in your region.</string>
+    <string name="ar_open_youtube_channel">Open YouTube channel</string>
+    <string name="ar_no_songs">No songs found for this artist</string>
+    <string name="ar_more_play_options">More play options</string>
+    <string name="ar_start_radio">Start radio</string>
+    <string name="unknown_album">Unknown Album</string>
+    <string name="ab_tracks">Tracks</string>
+    <string name="ab_download_all">Download all</string>
+
+    <!-- Video player -->
+    <string name="vp_captions">Captions</string>
+    <string name="vp_rewind">Rewind 10 seconds</string>
+    <string name="vp_forward">Forward 10 seconds</string>
+    <string name="vp_chapters">Chapters</string>
+    <string name="vp_live_chat">Live chat</string>
+    <string name="vp_open_live_chat">Open live chat</string>
+    <string name="vp_description">Description</string>
+    <string name="vp_show_less">Show less</string>
+    <string name="vp_related_videos">Related videos</string>
+    <string name="vp_open_queue">Open the playlist queue</string>
+    <string name="vp_remove_like">Remove like</string>
+    <string name="vp_remove_dislike">Remove dislike</string>
+
+    <!-- Playback settings / captions sheets -->
+    <string name="vpc_playback_settings">Playback settings</string>
+    <string name="vpc_autoplay">Autoplay</string>
+    <string name="vpc_autoplay_on">Play the next playlist or related video</string>
+    <string name="vpc_autoplay_off">Stop and stay on this video</string>
+    <string name="vpc_loop">Loop video</string>
+    <string name="vpc_loop_note">Turning this on also enables Autoplay</string>
+    <string name="vpc_loop_off">Repeat this video instead of moving on</string>
+    <string name="vpc_loop_on">Repeat this video when it ends</string>
+    <string name="vpc_no_qualities">No qualities available</string>
+    <string name="vpc_normal">Normal</string>
+    <string name="vpc_pip">Picture in picture</string>
+    <string name="vpc_pip_sub">Keep watching over other apps</string>
+    <string name="vpc_return_to_video">Return to the full video</string>
+    <string name="vpc_browse_conversation">Browse the conversation</string>
+    <string name="vpc_queue_sub">See and choose what plays next</string>
+    <string name="vpc_timed_comments_sub">Show comments at their video moments</string>
+    <string name="vpc_live_chat_sub">Show the conversation beside the stream</string>
+    <string name="vpc_vertical_live">Vertical live view</string>
+    <string name="vpc_vertical_live_sub">Return to the full-height stream</string>
+    <string name="vpc_language">Language</string>
+    <string name="vpc_no_captions">No captions available for this video</string>
+    <string name="vpc_white">White</string>
+    <string name="vpc_yellow">Yellow</string>
+    <string name="vpc_none">None</string>
+    <string name="vpc_soft">Soft</string>
+    <string name="vpc_solid">Solid</string>
+    <string name="vpc_text_size">Text size</string>
+
+    <!-- Mini video player -->
+    <string name="mv_close_player">Close video player</string>
+
+    <!-- Vertical live -->
+    <string name="vl_show_details">Show video details</string>
+
+    <!-- Live chat -->
+    <string name="lc_close_chat">Close live chat</string>
+    <string name="lc_turned_off">Live chat is turned off for this stream</string>
+    <string name="lc_waiting">Waiting for messages</string>
+    <string name="lc_say_something">Say something...</string>
+    <string name="lc_latest">Latest</string>
+    <string name="lc_super_sticker">Super Sticker</string>
+    <string name="lc_chat_hint">Chat...</string>
+    <string name="lc_sign_in_to_chat">Sign in to chat</string>
+    <string name="lc_send">Send message</string>
+
+    <!-- Subscriptions manager -->
+    <string name="sm_write_failed">Couldn\'t write that file</string>
+    <string name="sm_nothing_followed">Nothing followed on this device</string>
+    <string name="sm_transfer">Transfer</string>
+    <string name="sm_import_file">Import from a file</string>
+    <string name="sm_import_file_sub">A NewPipe, PipePipe or Tubular export or backup, or a Google Takeout file</string>
+    <string name="sm_copy_account">Copy from YouTube account</string>
+    <string name="sm_copy_sub">Keeps following these channels after you sign out</string>
+    <string name="sm_sign_in_first">Sign in to YouTube first</string>
+    <string name="sm_export">Export to a file</string>
+    <string name="sm_nothing_to_export">Nothing to export yet</string>
+    <string name="sm_readable_by_newpipe">Readable by NewPipe and its forks</string>
+    <string name="sp_groups">Groups</string>
+    <string name="sm_groups_note">Groups let you narrow the Subscriptions feed to a slice of your channels.</string>
+    <string name="sm_new_group">New group</string>
+    <string name="sm_remove_all">Remove all local subscriptions</string>
+    <string name="sm_delete_group_body">The channels in it stay subscribed - only the group goes.</string>
+    <string name="sm_remove_all_q">Remove all?</string>
+    <string name="sm_remove_all_body">This clears every channel and group stored on this device. Subscriptions on your YouTube account are not touched.</string>
+    <string name="sm_importing">Importing subscriptions</string>
+    <string name="sm_none_yet">No channels on this device yet</string>
+    <string name="sm_empty_body">Import a list from another app, copy your YouTube account, or just tap Subscribe on any channel.</string>
+    <string name="sm_import_failed">Import failed</string>
+    <string name="sm_import_finished">Import finished</string>
+    <string name="sm_foreign_skipped">Channels from BiliBili, NicoNico and the like were skipped - Koda only plays YouTube.</string>
+
+    <!-- Player styles / home styles -->
+    <string name="ps_style_classic">Classic</string>
+    <string name="ps_style_gesture">Gesture</string>
+    <string name="ps_style_editorial">Editorial</string>
+    <string name="ps_style_canvas">Canvas</string>
+    <string name="ps_style_bento">Bento</string>
+    <string name="ps_style_sticker">Sticker</string>
+    <string name="ps_style_morph">Morph</string>
+    <string name="ps_style_dial">Dial</string>
+    <string name="ps_sub_classic">Button controls for playback</string>
+    <string name="ps_sub_gesture">Swipe album art to navigate</string>
+    <string name="ps_sub_editorial">Two-tone magazine layout</string>
+    <string name="ps_sub_canvas">Full-bleed album art</string>
+    <string name="ps_sub_bento">Squishy grid of flat tiles</string>
+    <string name="ps_sub_sticker">Die-cut art with toy physics</string>
+    <string name="ps_sub_morph">Living shape that breathes</string>
+    <string name="ps_sub_dial">Rotary ring, spin to scrub</string>
+    <string name="hs_classic">Classic</string>
+    <string name="hs_classic_desc">One big hero, then rows</string>
+    <string name="hs_spotlight_desc">Shortcuts, quick picks, shelves</string>
+
+    <!-- Settings search / quality dialogs -->
+    <string name="sp_music_quality_wifi">Music quality on Wi-Fi</string>
+    <string name="sp_music_quality_mobile">Music quality on mobile data</string>
+    <string name="sp_video_quality_wifi">Video quality on Wi-Fi</string>
+    <string name="sp_video_quality_mobile">Video quality on mobile data</string>
+    <string name="ss_search_settings">Search settings</string>
+    <string name="hvm_subs_feed_empty">No recent uploads from the channels you follow.</string>
+    <string name="hvm_subs_feed_error">Couldn\'t load recent uploads. Check your connection and try again.</string>
+    <string name="hvm_channel_feed_error">Couldn\'t load uploads from %1$s. Pull to try again.</string>
+    <string name="hvm_import_empty">That file was empty or could not be opened.</string>
+    <string name="hvm_import_foreign">That file only had channels from services Koda can\'t play.</string>
+    <string name="hvm_import_no_channels">Couldn\'t find any channels in that file.</string>
+    <string name="hvm_import_read">Couldn\'t read that file.</string>
+    <string name="hvm_copy_empty">Your account has no subscriptions to copy.</string>
+    <string name="hvm_network">Couldn\'t reach YouTube.</string>
+    <string name="sm_exported">Exported %1$d channels</string>
+    <string name="wifi">Wi-Fi</string>
+    <string name="mobile_data">Mobile data</string>
+    <string name="cm_delete_q">Delete comment?</string>
+    <string name="cm_delete_body">Your comment will be permanently deleted.</string>
+    <string name="ob_off_hint">Off keeps a cleaner, music-first layout. The video player stays available either way.</string>
+
+    <!-- Queue / notifications / download sheets -->
+    <string name="vq_playing_from">Playing from</string>
+    <string name="ns_none_yet">No notifications yet</string>
+    <string name="vd_title">Download video</string>
+    <string name="vd_load_failed">Couldn\'t load qualities. Check your connection.</string>
+    <string name="vd_no_stream">No downloadable stream for this video</string>
+    <string name="vd_estimated">Estimated download</string>
+    <string name="vd_calculating">Calculating size…</string>
+    <string name="vd_size_unavailable">Size unavailable</string>
+    <string name="vd_remember_quality">Remember this quality</string>
+    <string name="vd_remember_sub">Use it as the default for future downloads</string>
+    <string name="vd_already">Already downloaded</string>
+    <string name="vd_added">Added to downloads</string>
+    <string name="sd_title">Download song</string>
+    <string name="sd_artwork_note">Artwork and lyrics may add a little to the final size.</string>
+    <string name="pd_downloading_playlist">Downloading playlist</string>
+    <string name="pd_download_playlist">Download playlist</string>
+    <string name="pd_unavailable_offline">Unavailable offline</string>
+    <string name="pd_in_playlist">In playlist</string>
+    <string name="pd_loaded_now">Loaded now</string>
+    <string name="pd_already_offline_here">Already offline here</string>
+    <string name="pd_pages_note">Every remaining playlist page is resolved after you confirm; existing downloads are skipped then too.</string>
+    <string name="pd_already_offline">Already offline</string>
+    <string name="pd_to_download">To download</string>
+    <string name="pd_progress_cd">Playlist download progress</string>
+    <string name="pd_quality_note">Each video uses the best MP4 quality at or below this limit.</string>
+    <string name="pd_best_available">Best available</string>
+    <string name="pd_remember_sub">Use it for future video downloads</string>
+    <string name="pd_local_only_block">Turn off Local only mode before starting a download.</string>
+    <string name="pd_load_failed">Couldn\'t load the complete playlist. Check your connection and try again.</string>
+    <string name="pd_background_note">Downloads continue in the background. Existing downloads and repeated items are skipped automatically.</string>
+    <string name="pd_loading_full">Loading full playlist...</string>
+    <string name="pd_adding">Adding to downloads...</string>
+    <string name="pd_already_complete">Already available offline</string>
+    <string name="pd_download_full">Download full playlist</string>
+
+    <!-- Library detail -->
+    <string name="cd_close_menu">Close menu</string>
+    <string name="cd_library_actions">Library actions</string>
+    <string name="ready_offline">Ready offline</string>
+    <string name="lib_everything_in_order">Everything you play, in order</string>
+    <string name="lib_edit_playlist">Edit playlist</string>
+    <string name="lib_delete_body">It disappears everywhere you use YouTube, including youtube.com and the official apps.</string>
+    <string name="lib_search_in_playlist">Search in playlist</string>
+    <string name="lib_change_cover">Change cover</string>
+    <string name="lib_reset_cover">Reset cover</string>
+    <string name="lib_change_cover_art">Change cover art</string>
+    <string name="lib_drag_hint">Drag a handle to reorder</string>
+    <string name="lib_tap_remove_hint">Tap to remove tracks</string>
+    <string name="label_album">Album</string>
+    <string name="lib_saved_to_library">Saved to your library</string>
+    <string name="lib_removed_from_library">Removed from your library</string>
+    <string name="lib_load_failed_title">Couldn\'t load tracks</string>
+    <string name="lib_load_failed_body">This playlist came back empty. Check your connection and try again.</string>
+    <plurals name="n_plays">
+        <item quantity="one">%1$d play</item>
+        <item quantity="other">%1$d plays</item>
+    </plurals>
+    <plurals name="n_channels">
+        <item quantity="one">%1$d channel</item>
+        <item quantity="other">%1$d channels</item>
+    </plurals>
+
+    <!-- Profile switcher -->
+    <string name="profiles_title">Profiles</string>
+    <string name="profiles_description">Subscriptions and hidden recommendations are kept per profile. Playlists, liked songs and downloads are shared.</string>
+    <string name="add_youtube_account">Add YouTube account</string>
+    <string name="add_youtube_account_subtitle">Sign in to another Google account</string>
+    <string name="add_device_profile">Add profile on this device</string>
+    <string name="add_device_profile_subtitle">Separate subscriptions, no account needed</string>
+    <string name="profile_signed_out">Signed out - tap to sign in</string>
+    <string name="profile_session_expired">Session expired - tap to reconnect</string>
+    <string name="profile_on_this_device">On this device</string>
+    <string name="profile_youtube_account">YouTube account</string>
+    <string name="cd_active_profile">Active profile</string>
+    <string name="cd_remove_profile">Remove %1$s</string>
+    <string name="new_profile_dialog_title">New profile on this device</string>
+    <string name="sign_out_confirm_title">Sign out of %1$s?</string>
+    <string name="remove_profile_confirm_title">Remove %1$s?</string>
+    <string name="sign_out">Sign out</string>
+    <string name="remove">Remove</string>
+
+    <!-- Library top level -->
+    <string name="library_empty_title">Your library is empty</string>
+    <string name="library_empty_subtitle">Songs you download or like will show up here</string>
+    <string name="library_create_playlist_hint">Create one with the + button below</string>
+    <string name="fab_downloads">Downloads</string>
+    <string name="fab_listening_history">Listening history</string>
+    <string name="fab_statistics">Statistics</string>
+    <string name="cd_listening_stats">Listening stats</string>
+    <string name="recently_played">Recently played</string>
+    <string name="liked_songs">Liked Songs</string>
+    <string name="no_artists_yet">No artists yet</string>
+    <string name="no_artists_yet_subtitle">Artists from your songs will show up here</string>
+    <string name="no_albums_yet">No albums yet</string>
+    <string name="no_albums_yet_subtitle">Albums from your songs will show up here</string>
+
+    <!-- Search -->
+    <string name="search_title">Search</string>
+    <string name="search_placeholder_music">Search songs, artists, albums...</string>
+    <string name="search_placeholder_videos">Search videos, channels...</string>
+    <string name="badge_song">Song</string>
+    <string name="badge_video">Video</string>
+    <string name="badge_live">LIVE</string>
+    <string name="searching_music">Searching Music...</string>
+    <string name="searching_artists">Searching Artists...</string>
+    <string name="searching_albums">Searching Albums...</string>
+    <string name="searching_playlists">Searching Playlists...</string>
+    <string name="searching_videos">Searching Videos...</string>
+    <string name="topic_gaming">Gaming</string>
+    <string name="topic_music">Music</string>
+    <string name="topic_news">News</string>
+    <string name="topic_live">Live</string>
+    <string name="topic_podcasts">Podcasts</string>
+    <string name="topic_movies">Movies</string>
+    <string name="topic_tech">Tech</string>
+    <string name="topic_sports">Sports</string>
+    <string name="topic_learning">Learning</string>
+    <string name="search_explore_title">Explore</string>
+    <string name="trending_now">Trending now</string>
+    <string name="browse_your_library">Browse Your Library</string>
+    <string name="section_channels">Channels</string>
+    <string name="section_playlists">Playlists</string>
+    <string name="section_artists">Artists</string>
+    <string name="section_albums">Albums</string>
+    <string name="source_youtube_videos">YouTube Videos</string>
+    <string name="source_youtube_music">YouTube Music</string>
+    <string name="source_local_library">Local Library</string>
+    <string name="search_no_results">No results found</string>
+    <string name="search_no_results_hint">Try different keywords or filters</string>
+    <string name="thats_everything">That\'s everything</string>
+    <string name="cd_clear">Clear</string>
+    <string name="cd_voice_search">Search by voice</string>
+    <string name="mini_casting_to">Casting to %1$s</string>
+    <string name="cd_verified">Verified</string>
+    <string name="cd_remove">Remove</string>
+    <string name="cd_save_to_library">Save to library</string>
+    <string name="cd_remove_from_library">Remove from library</string>
+    <string name="recent_searches">Recent searches</string>
+    <string name="album_metadata">Album • %1$s</string>
+    <string name="cat_songs">Songs</string>
+    <string name="cat_artists">Artists</string>
+    <string name="cat_albums">Albums</string>
+    <string name="cat_playlists">Playlists</string>
+    <string name="cat_videos">Videos</string>
+    <string name="cat_channels">Channels</string>
+    <string name="link_detected">YouTube link detected</string>
+    <string name="link_ready_to_play">Ready to play</string>
+    <string name="link_playlist_loaded">Playlist loaded</string>
+    <string name="link_error_banner">Couldn\'t load link</string>
+    <string name="link_fetching">Fetching from YouTube</string>
+    <string name="link_preparing_video">Getting the video ready</string>
+    <string name="link_preparing_song">Getting the song ready</string>
+    <string name="link_header_playlist">YouTube Playlist</string>
+    <string name="link_tap_to_play_songs">%1$d songs • Tap to play</string>
+    <string name="link_tap_to_play_videos">%1$d videos • Tap to play</string>
+    <string name="link_error_title">Couldn\'t load this link</string>
+    <string name="link_error_body">The content may be private, or you\'re offline</string>
+
+    <!-- Counts -->
+    <plurals name="n_songs">
+        <item quantity="one">%1$d song</item>
+        <item quantity="other">%1$d songs</item>
+    </plurals>
+    <plurals name="n_playlists">
+        <item quantity="one">%1$d playlist</item>
+        <item quantity="other">%1$d playlists</item>
+    </plurals>
+    <plurals name="n_results">
+        <item quantity="one">%1$d result</item>
+        <item quantity="other">%1$d results</item>
+    </plurals>
 </resources>

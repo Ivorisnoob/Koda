@@ -1,4 +1,6 @@
 package com.ivor.ivormusic.ui.applock
+import androidx.compose.ui.res.stringResource
+import com.ivor.ivormusic.R
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -87,13 +89,13 @@ fun AppTimeLimitScreen(onBack: () -> Unit) {
             TopAppBar(
                 title = {
                     Column {
-                        Text("Daily time limit", fontWeight = FontWeight.Bold)
+                        Text(stringResource(R.string.sp_daily_time_limit), fontWeight = FontWeight.Bold)
                         Text(
                             text = if (enabled) {
-                                if (lockedNow) "Koda is locked until midnight"
-                                else "Koda locks when the day's budget runs out"
+                                if (lockedNow) stringResource(R.string.tl_locked_until_midnight)
+                                else stringResource(R.string.tl_locks_when_budget)
                             } else {
-                                "Off - Koda is always unlocked"
+                                stringResource(R.string.tl_off_subtitle)
                             },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -131,8 +133,8 @@ fun AppTimeLimitScreen(onBack: () -> Unit) {
                 SettingsCard {
                     SettingsToggleRow(
                         icon = Icons.Rounded.Bedtime,
-                        title = "Enable daily time limit",
-                        subtitle = "Locks all of Koda once today's budget is used",
+                        title = stringResource(R.string.tl_enable),
+                        subtitle = stringResource(R.string.tl_enable_sub),
                         enabled = enabled,
                         onToggle = { prefs.setTimeLimitEnabled(it) }
                     )
@@ -143,7 +145,7 @@ fun AppTimeLimitScreen(onBack: () -> Unit) {
                 item(key = "presets") {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text(
-                            text = "Quick set - same budget every day",
+                            text = stringResource(R.string.tl_quick_set),
                             style = MaterialTheme.typography.titleSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -164,7 +166,7 @@ fun AppTimeLimitScreen(onBack: () -> Unit) {
                 }
 
                 item(key = "week-header") {
-                    SettingsSection(title = "Per-day budgets") {}
+                    SettingsSection(title = stringResource(R.string.tl_per_day)) {}
                 }
 
                 items(count = 7, key = { "day-$it" }) { day ->
@@ -179,8 +181,7 @@ fun AppTimeLimitScreen(onBack: () -> Unit) {
 
                 item(key = "note") {
                     Text(
-                        text = "Counts only time Koda is open on screen, and resets at midnight. " +
-                            "Setting a day to Unlimited leaves it untracked.",
+                        text = stringResource(R.string.tl_counts_note),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(horizontal = 4.dp)
@@ -199,7 +200,7 @@ private fun TodayCard(
     budgetMinutes: Int,
     lockedNow: Boolean
 ) {
-    SettingsSection(title = "Today") {
+    SettingsSection(title = stringResource(R.string.sc_today)) {
         SettingsCard {
             Row(
                 modifier = Modifier
@@ -226,9 +227,9 @@ private fun TodayCard(
                 Column {
                     Text(
                         text = when {
-                            !enabled -> "Tracking off"
+                            !enabled -> stringResource(R.string.tl_tracking_off)
                             budgetMinutes <= 0 ->
-                                "Unlimited today - no budget set"
+                                stringResource(R.string.tl_unlimited_today)
                             lockedNow ->
                                 "${AppTimeLimit.formatBudget(budgetMinutes)} used - locked until midnight"
                             else ->
@@ -241,8 +242,8 @@ private fun TodayCard(
                     Spacer(Modifier.height(2.dp))
                     Text(
                         text = when {
-                            !enabled -> "Turn on the limit below to start tracking"
-                            else -> "Resets tonight at midnight"
+                            !enabled -> stringResource(R.string.tl_turn_on_to_track)
+                            else -> stringResource(R.string.tl_resets_tonight)
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant

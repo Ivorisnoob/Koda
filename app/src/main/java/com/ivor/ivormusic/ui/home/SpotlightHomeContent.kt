@@ -1,4 +1,6 @@
 package com.ivor.ivormusic.ui.home
+import androidx.compose.ui.res.stringResource
+import com.ivor.ivormusic.R
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -190,9 +192,9 @@ fun SpotlightHomeContent(
             if (quickPicks.isNotEmpty()) {
                 item(key = "quick-header") {
                     SpotlightSectionHeader(
-                        title = "Quick picks",
-                        subtitle = filter.quickPickCaption,
-                        actionLabel = "Play all",
+                        title = stringResource(R.string.spotlight_quick_picks),
+                        subtitle = spotlightQuickPickCaption(filter),
+                        actionLabel = stringResource(R.string.action_play_all),
                         onAction = { onPlaySongs(quickPicks, quickPicks.firstOrNull()) },
                     )
                 }
@@ -207,7 +209,7 @@ fun SpotlightHomeContent(
 
             if (filter != SpotlightFilter.Playlists && recentlyPlayed.isNotEmpty()) {
                 item(key = "recent-header") {
-                    SpotlightSectionHeader(title = "Jump back in")
+                    SpotlightSectionHeader(title = stringResource(R.string.home_section_jump_back_in))
                 }
                 item(key = "recent-shelf") {
                     SpotlightShelf(
@@ -224,7 +226,7 @@ fun SpotlightHomeContent(
             if (filter == SpotlightFilter.All || filter == SpotlightFilter.Playlists) {
                 if (ownPlaylists.isNotEmpty()) {
                     item(key = "playlists-header") {
-                        SpotlightSectionHeader(title = "Your playlists")
+                        SpotlightSectionHeader(title = stringResource(R.string.spotlight_your_playlists))
                     }
                     item(key = "playlists-shelf") {
                         SpotlightShelf(
@@ -247,8 +249,8 @@ fun SpotlightHomeContent(
             if (filter == SpotlightFilter.All && songs.isNotEmpty()) {
                 item(key = "library-header") {
                     SpotlightSectionHeader(
-                        title = "From your library",
-                        actionLabel = "See all",
+                        title = stringResource(R.string.spotlight_from_your_library),
+                        actionLabel = stringResource(R.string.action_see_all),
                         onAction = onShowAllInLibrary,
                     )
                 }
@@ -332,7 +334,7 @@ private fun SpotlightFilterChips(
             FilterChip(
                 selected = entry == selected,
                 onClick = { onSelect(entry) },
-                label = { Text(entry.label) },
+                label = { Text(spotlightFilterLabel(entry)) },
                 shape = RoundedCornerShape(14.dp),
                 colors = FilterChipDefaults.filterChipColors(
                     selectedContainerColor = MaterialTheme.colorScheme.primary,
@@ -341,6 +343,21 @@ private fun SpotlightFilterChips(
             )
         }
     }
+}
+
+@Composable
+private fun spotlightFilterLabel(filter: SpotlightFilter): String = when (filter) {
+    SpotlightFilter.All -> stringResource(R.string.filter_all)
+    SpotlightFilter.Liked -> stringResource(R.string.filter_liked)
+    SpotlightFilter.Recent -> stringResource(R.string.filter_recent)
+    SpotlightFilter.Playlists -> stringResource(R.string.filter_playlists)
+}
+
+@Composable
+private fun spotlightQuickPickCaption(filter: SpotlightFilter): String? = when (filter) {
+    SpotlightFilter.Liked -> stringResource(R.string.spotlight_caption_liked)
+    SpotlightFilter.Recent -> stringResource(R.string.spotlight_caption_recent)
+    else -> null
 }
 
 /* ------------------------------------------------------------------ */
@@ -458,7 +475,7 @@ private fun SpotlightShortcutTile(
                 }
             }
             Text(
-                text = shortcut.title,
+                text = if (shortcut is Shortcut.Liked) stringResource(R.string.shortcut_liked_songs) else shortcut.title,
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurface,
@@ -755,10 +772,10 @@ private fun SpotlightEmptyState(filter: SpotlightFilter) {
         Spacer(Modifier.height(12.dp))
         Text(
             text = when (filter) {
-                SpotlightFilter.Liked -> "No liked songs yet"
-                SpotlightFilter.Recent -> "Nothing played yet"
-                SpotlightFilter.Playlists -> "No playlists yet"
-                SpotlightFilter.All -> "Nothing to show yet"
+                SpotlightFilter.Liked -> stringResource(R.string.spotlight_empty_no_liked)
+                SpotlightFilter.Recent -> stringResource(R.string.spotlight_empty_no_recent)
+                SpotlightFilter.Playlists -> stringResource(R.string.spotlight_empty_no_playlists)
+                SpotlightFilter.All -> stringResource(R.string.spotlight_empty_generic)
             },
             style = MaterialTheme.typography.titleSmall,
             color = MaterialTheme.colorScheme.onSurface,
@@ -766,9 +783,9 @@ private fun SpotlightEmptyState(filter: SpotlightFilter) {
         Spacer(Modifier.height(4.dp))
         Text(
             text = when (filter) {
-                SpotlightFilter.Liked -> "Songs you like will collect here."
-                SpotlightFilter.Playlists -> "Playlists you make or save show up here."
-                else -> "Play something and your home fills in around it."
+                SpotlightFilter.Liked -> stringResource(R.string.spotlight_hint_liked)
+                SpotlightFilter.Playlists -> stringResource(R.string.spotlight_hint_playlists)
+                else -> stringResource(R.string.spotlight_hint_all)
             },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,

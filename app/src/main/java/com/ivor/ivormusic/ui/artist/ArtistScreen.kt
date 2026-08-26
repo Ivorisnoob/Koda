@@ -1,4 +1,6 @@
 package com.ivor.ivormusic.ui.artist
+import androidx.compose.ui.res.stringResource
+import com.ivor.ivormusic.R
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
@@ -261,7 +263,7 @@ fun ArtistScreen(
                     Box(modifier = Modifier.fillMaxWidth()) {
                         CreatorHeader(
                             name = artistName.takeIf { !it.startsWith("Unknown") }
-                                ?: "Unknown Artist",
+                                ?: stringResource(R.string.unknown_artist),
                             // The channel avatar when there is one, and the
                             // artwork of what they made when there is not -
                             // which is every local-library artist.
@@ -321,7 +323,7 @@ fun ArtistScreen(
                                         ) {
                                             Icon(
                                                 Icons.Rounded.SmartDisplay,
-                                                contentDescription = "Open YouTube channel",
+                                                contentDescription = stringResource(R.string.ar_open_youtube_channel),
                                                 modifier = Modifier.size(22.dp)
                                             )
                                         }
@@ -349,7 +351,7 @@ fun ArtistScreen(
                         ) {
                             Icon(
                                 Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "Back",
+                                contentDescription = stringResource(R.string.cd_back),
                                 modifier = Modifier.size(22.dp)
                             )
                         }
@@ -361,7 +363,7 @@ fun ArtistScreen(
                     item {
                         Spacer(modifier = Modifier.height(24.dp))
                         Text(
-                            "Albums",
+                            stringResource(R.string.section_albums),
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
                             color = textColor,
@@ -384,7 +386,7 @@ fun ArtistScreen(
                                 val albumSubtitle = if (hasLocalSongs) {
                                     "${albumSongs.size} songs"
                                 } else {
-                                    fetchedAlbum?.uploaderName?.takeIf { it.isNotBlank() } ?: "Album"
+                                    fetchedAlbum?.uploaderName?.takeIf { it.isNotBlank() } ?: stringResource(R.string.label_playlist)
                                 }
                                 val thumbnailUrl = if (hasLocalSongs) {
                                     albumSongs.firstOrNull()?.let { it.highResThumbnailUrl ?: it.thumbnailUrl ?: it.albumArtUri?.toString() }
@@ -427,7 +429,7 @@ fun ArtistScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                "Songs",
+                                stringResource(R.string.cat_songs),
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold,
                                 color = textColor
@@ -519,7 +521,7 @@ fun ArtistScreen(
                                         )
                                     } else {
                                         Text(
-                                            "Show More",
+                                            stringResource(R.string.action_show_more),
                                             style = MaterialTheme.typography.labelLarge,
                                             fontWeight = FontWeight.SemiBold,
                                             color = primaryColor
@@ -538,7 +540,7 @@ fun ArtistScreen(
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                "No songs found for this artist",
+                                stringResource(R.string.ar_no_songs),
                                 color = secondaryTextColor,
                                 style = MaterialTheme.typography.bodyLarge
                             )
@@ -579,7 +581,7 @@ internal fun PlaySplitButton(
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    "Play",
+                    stringResource(R.string.cd_play),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold
                 )
@@ -598,7 +600,7 @@ internal fun PlaySplitButton(
                     )
                     Icon(
                         Icons.Rounded.KeyboardArrowDown,
-                        contentDescription = "More play options",
+                        contentDescription = stringResource(R.string.ar_more_play_options),
                         modifier = Modifier.graphicsLayer { rotationZ = rotation }
                     )
                 }
@@ -607,7 +609,7 @@ internal fun PlaySplitButton(
                     onDismissRequest = { menuOpen = false }
                 ) {
                     androidx.compose.material3.DropdownMenuItem(
-                        text = { Text("Shuffle") },
+                        text = { Text(stringResource(R.string.cd_shuffle)) },
                         leadingIcon = { Icon(Icons.Rounded.Shuffle, null) },
                         onClick = {
                             menuOpen = false
@@ -616,7 +618,7 @@ internal fun PlaySplitButton(
                     )
                     if (onStartRadio != null) {
                         androidx.compose.material3.DropdownMenuItem(
-                            text = { Text("Start radio") },
+                            text = { Text(stringResource(R.string.ar_start_radio)) },
                             leadingIcon = { Icon(Icons.Rounded.Radio, null) },
                             onClick = {
                                 menuOpen = false
@@ -739,7 +741,7 @@ private fun ArtistSongCard(
         ListItem(
             headlineContent = {
                 Text(
-                    text = song.title.takeIf { !it.isNullOrBlank() && !it.startsWith("Unknown", ignoreCase = true) } ?: "Untitled Song",
+                    text = song.title.takeIf { !it.isNullOrBlank() && !it.startsWith("Unknown", ignoreCase = true) } ?: stringResource(R.string.untitled_song),
                     color = textColor,
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.SemiBold,
@@ -749,7 +751,7 @@ private fun ArtistSongCard(
             },
             supportingContent = {
                 Text(
-                    text = song.album.takeIf { !it.isNullOrBlank() && !it.startsWith("Unknown", ignoreCase = true) } ?: "Unknown Album",
+                    text = song.album.takeIf { !it.isNullOrBlank() && !it.startsWith("Unknown", ignoreCase = true) } ?: stringResource(R.string.unknown_album),
                     color = secondaryTextColor,
                     style = MaterialTheme.typography.bodySmall,
                     maxLines = 1,
@@ -794,7 +796,7 @@ private fun ArtistSongCard(
             trailingContent = {
                 Icon(
                     Icons.Rounded.PlayArrow,
-                    contentDescription = "Play",
+                    contentDescription = stringResource(R.string.cd_play),
                     tint = primaryColor,
                     modifier = Modifier.size(24.dp)
                 )
