@@ -207,6 +207,7 @@ class DownloadRepository private constructor(private val context: Context) {
             if (DownloadMigration.migrateIfNeeded(context)) {
                 loadDownloadedSongs()
             }
+            moveSharedArtworkOutOfGallery()
         }
     }
 
@@ -324,6 +325,33 @@ class DownloadRepository private constructor(private val context: Context) {
         }
     }
 
+    /**
+     * Older releases published one JPEG beside every M4A. Move those copies
+     * off MediaStore on the I/O scope so Gallery loses them without making a
+     * large offline library block app startup.
+     */
+    private fun moveSharedArtworkOutOfGallery() {
+        _downloadedSongs.value.forEach { song ->
+            val source = song.albumArtUri ?: return@forEach
+            val privateArtwork = storage.moveSharedArtworkToPrivate(source, song.id)
+                ?: return@forEach
+
+            _downloadedSongs.value = _downloadedSongs.value.map { current ->
+                if (current.id == song.id && current.albumArtUri == source) {
+                    current.copy(
+                        albumArtUri = privateArtwork,
+                        thumbnailUrl = privateArtwork.toString()
+                    )
+                } else {
+                    current
+                }
+            }
+            // Persist each successful move. A process kill can at worst leave
+            // later covers for the next launch, never a deleted URI in JSON.
+            saveMetadata()
+        }
+    }
+
     private fun saveMetadata() {
         try {
             val jsonArray = JSONArray()
@@ -335,9 +363,12 @@ class DownloadRepository private constructor(private val context: Context) {
                     put("artist", song.artist)
                     put("album", song.album)
                     put("duration", song.duration)
-                    // Downloads live in MediaStore now; a file:// uri here only
-                    // happens for entries awaiting migration.
-                    if (uri.scheme == "file") {
+                    // Private downloads are deliberately stored as file:// URIs
+                    // under noBackupFilesDir/downloads. The old localPath shape remains
+                    // only for pre-MediaStore entries awaiting migration.
+                    if (uri.scheme == "file" &&
+                        !storage.isPrivateDownload(uri, DownloadMediaType.MUSIC)
+                    ) {
                         put("localPath", uri.path)
                     } else {
                         put("mediaUri", uri.toString())
@@ -345,7 +376,7 @@ class DownloadRepository private constructor(private val context: Context) {
                     song.thumbnailUrl?.takeIf { url ->
                         Uri.parse(url).scheme in setOf("http", "https")
                     }?.let { put("albumArtUrl", it) }
-                    song.albumArtUri?.takeIf { it.scheme == "content" }?.let {
+                    song.albumArtUri?.takeIf(storage::isMusicCompanion)?.let {
                         put("albumArtUri", it.toString())
                     }
                     song.lyricsUri?.let { put("lyricsUri", it.toString()) }
@@ -740,6 +771,7 @@ class DownloadRepository private constructor(private val context: Context) {
             var audioTemp: File? = null
             var taggedAudioTemp: File? = null
             var artworkTemp: File? = null
+            val privateStorage = ThemePreferences.usePrivateDownloadStorage(context)
             updateProgress(request, 0.02f, DownloadStatus.DOWNLOADING)
 
             try {
@@ -809,18 +841,17 @@ class DownloadRepository private constructor(private val context: Context) {
                         request.subtitle,
                         DownloadMediaType.MUSIC
                     )
-                    val audioTarget = storage.createPending(audioName, DownloadMediaType.MUSIC)
+                    val audioTarget = storage.createPending(
+                        audioName,
+                        DownloadMediaType.MUSIC,
+                        privateStorage
+                    )
                         ?: throw java.io.IOException("Could not create audio storage entry")
                     pendingTargets += audioTarget
                     copyToPending(audioToPublish, audioTarget)
 
                     val artworkTarget = artworkTemp?.let { cover ->
-                        val name = storage.buildMusicCompanionFileName(
-                            request.title,
-                            request.subtitle,
-                            "jpg"
-                        )
-                        storage.createPendingMusicCompanion(name, "image/jpeg")?.also { target ->
+                        storage.createPrivateMusicArtwork(request.id)?.also { target ->
                             pendingTargets += target
                             copyToPending(cover, target)
                         } ?: throw java.io.IOException("Could not create artwork storage entry")
@@ -832,7 +863,11 @@ class DownloadRepository private constructor(private val context: Context) {
                             request.subtitle,
                             "lrc"
                         )
-                        storage.createPendingMusicCompanion(name, "text/plain")?.also { target ->
+                        storage.createPendingMusicCompanion(
+                            name,
+                            "text/plain",
+                            privateStorage
+                        )?.also { target ->
                             pendingTargets += target
                             storage.openOutput(target)?.bufferedWriter(Charsets.UTF_8)?.use {
                                 it.write(body)
@@ -946,6 +981,7 @@ class DownloadRepository private constructor(private val context: Context) {
             var pendingTarget: Uri? = null
             var videoTemp: File? = null
             var audioTemp: File? = null
+            val privateStorage = ThemePreferences.usePrivateDownloadStorage(context)
             updateProgress(request, 0.02f, DownloadStatus.DOWNLOADING)
 
             try {
@@ -983,7 +1019,11 @@ class DownloadRepository private constructor(private val context: Context) {
 
                 val fileName =
                     storage.buildFileName(request.title, request.subtitle, DownloadMediaType.VIDEO)
-                val target = storage.createPending(fileName, DownloadMediaType.VIDEO)
+                val target = storage.createPending(
+                    fileName,
+                    DownloadMediaType.VIDEO,
+                    privateStorage
+                )
                     ?: throw java.io.IOException("Could not create storage entry")
                 pendingTarget = target
 
@@ -1022,7 +1062,11 @@ class DownloadRepository private constructor(private val context: Context) {
                     // Re-create the row: a failed mux may have written a partial
                     // container into the existing one.
                     storage.delete(target)
-                    val retryTarget = storage.createPending(fileName, DownloadMediaType.VIDEO)
+                    val retryTarget = storage.createPending(
+                        fileName,
+                        DownloadMediaType.VIDEO,
+                        privateStorage
+                    )
                         ?: throw java.io.IOException("Could not recreate storage entry")
                     pendingTarget = retryTarget
 

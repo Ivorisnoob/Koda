@@ -297,25 +297,20 @@ private fun ExpressiveNowPlayingView(
                 Icon(Icons.Default.KeyboardArrowDown, "Collapse", modifier = Modifier.size(28.dp))
             }
             
-            // Expressive center toggle - morphs between "Now Playing" and "Lyrics" with animation
-            val pillWidth by animateFloatAsState(
-                targetValue = if (showLyrics) 140f else 160f,
-                animationSpec = spring(
-                    dampingRatio = Spring.DampingRatioMediumBouncy,
-                    stiffness = Spring.StiffnessMedium
-                ),
-                label = "PillWidth"
-            )
-            
+            Spacer(modifier = Modifier.width(8.dp))
+
+            // Flexible so the complete top action group still fits compact
+            // phones after Cast joined it. "Player" avoids truncating a
+            // decorative "Now Playing" label at the narrowest width.
             Surface(
                 modifier = Modifier
-                    .width(pillWidth.dp)
+                    .weight(1f)
                     .clickable { showLyrics = !showLyrics },
                 shape = RoundedCornerShape(24.dp),
                 color = if (showLyrics) MaterialTheme.colorScheme.surfaceContainerHigh else primaryColor
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center
                 ) {
@@ -330,19 +325,26 @@ private fun ExpressiveNowPlayingView(
                     Spacer(modifier = Modifier.width(8.dp))
                     Crossfade(targetState = showLyrics, label = "PillText") { isLyrics ->
                         Text(
-                            text = if (isLyrics) "Now Playing" else "Lyrics",
+                            text = if (isLyrics) "Player" else "Lyrics",
                             style = MaterialTheme.typography.labelLarge,
                             color = if (isLyrics) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onPrimary
                         )
                     }
                 }
             }
-            
-            // Right Side Group: Add to Playlist + Queue
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            // Right side group: Cast + Add to Playlist + Queue.
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                MusicCastIconButton(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                    size = 48.dp
+                )
                 FilledIconButton(
                     onClick = onShowAddToPlaylist,
                     shape = CircleShape,

@@ -369,6 +369,13 @@ internal fun buildSettingsSearchIndex(
 
     // Storage
     entry(
+        "private_downloads", "Private downloads", "Storage and cache", Icons.Rounded.Security,
+        listOf(
+            "hidden", "hide files", "file manager", "downloads folder", "app only",
+            "private storage", "gallery", "album art", "thumbnail"
+        )
+    ) { onOpenPage(SettingsPage.STORAGE) }
+    entry(
         "cache_music", "Cache Music", "Storage and cache", Icons.Rounded.Save,
         listOf("cache", "store", "replay", "offline songs", "buffer")
     ) { onOpenPage(SettingsPage.STORAGE) }

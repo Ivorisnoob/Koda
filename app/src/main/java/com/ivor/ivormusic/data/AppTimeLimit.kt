@@ -1,7 +1,7 @@
 package com.ivor.ivormusic.data
 
 import android.content.Context
-import android.util.Log
+import com.ivor.ivormusic.util.KLog
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
@@ -57,7 +57,7 @@ object AppTimeLimit {
             if (day != null && minutes != null && day in 0..6 && minutes >= 0) {
                 put(day, minutes)
             } else {
-                Log.w(TAG, "Skipping malformed budget entry: $entry")
+                KLog.w(TAG, "Skipping malformed budget entry: $entry")
             }
         }
     }
@@ -89,7 +89,7 @@ object AppTimeLimit {
                 .putLong(KEY_USED_SECONDS, usedToday + millis / 1000L)
                 .apply()
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to record usage", e)
+            KLog.e(TAG, "Failed to record usage", e)
         }
     }
 

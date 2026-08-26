@@ -9,6 +9,7 @@ import android.os.Bundle
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
@@ -22,6 +23,7 @@ import androidx.media3.datasource.TransferListener
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.cast.CastPlayer
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
@@ -50,6 +52,8 @@ import com.ivor.ivormusic.data.StatsRepository
 import com.ivor.ivormusic.data.ThemePreferences
 import com.ivor.ivormusic.data.YouTubeRepository
 import com.ivor.ivormusic.widget.NowPlayingWidget
+import com.ivor.ivormusic.ui.video.CastPlaybackKind
+import com.ivor.ivormusic.ui.video.VideoCastManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -80,6 +84,12 @@ class MusicService : MediaLibraryService() {
      */
     private lateinit var engine: CrossfadeEngine
     private lateinit var audioFocus: AudioFocusController
+    private lateinit var castManager: VideoCastManager
+    private var castPlayer: CastPlayer? = null
+    private var castStartJob: Job? = null
+    private var castPrefetchJob: Job? = null
+    private var castEndOfTrackJob: Job? = null
+    private var castSourceRetryCount = 0
 
     /**
      * The audible engine. Everything outside the transition itself addresses
@@ -260,6 +270,8 @@ class MusicService : MediaLibraryService() {
         const val CMD_SKIP_PREVIOUS = "com.ivor.ivormusic.SKIP_PREVIOUS"
         const val CMD_SKIP_TO_INDEX = "com.ivor.ivormusic.SKIP_TO_INDEX"
         const val ARG_SKIP_INDEX = "skip_index"
+        const val EXTRA_SONG_SOURCE = "com.ivor.ivormusic.SONG_SOURCE"
+        const val EXTRA_CAST_RESOLVE_NOW = "com.ivor.ivormusic.CAST_RESOLVE_NOW"
 
         /** Session-extras keys the timer state is published under. */
         const val EXTRA_SLEEP_TIMER_ENDS_AT = "sleep_timer_ends_at"
@@ -334,6 +346,11 @@ class MusicService : MediaLibraryService() {
 
         // 5. Initialize Session
         initializeSession()
+
+        // Cast is service-owned for the same reason local playback is: the
+        // queue, notification, sleep timer and process lifetime must not depend
+        // on whether the now-playing Compose screen happens to exist.
+        initializeCast()
 
         // 6. Pre-warm caches
         preWarmAutoCache()
@@ -412,6 +429,12 @@ class MusicService : MediaLibraryService() {
         transitionJob?.cancel()
         manualTransitionJob?.cancel()
         sleepTimerJob?.cancel()
+        castStartJob?.cancel()
+        castPrefetchJob?.cancel()
+        castEndOfTrackJob?.cancel()
+        if (::castManager.isInitialized) castManager.endObservation()
+        castPlayer?.let { runCatching { it.release() } }
+        castPlayer = null
         audioFocus.abandon()
         // Cancel the scopes themselves — they host the preference collectors and
         // any in-flight resolutions, which would otherwise outlive the service.
@@ -609,6 +632,304 @@ class MusicService : MediaLibraryService() {
         mediaLibrarySession = MediaLibrarySession.Builder(this, engine.active, LibrarySessionCallback())
             .setSessionActivity(sessionIntent)
             .build()
+    }
+
+    // --- Chromecast -------------------------------------------------------
+
+    private fun initializeCast() {
+        castManager = VideoCastManager(this, CastPlaybackKind.MUSIC).apply {
+            onRemoteFailed = { recoverCastCurrentItem() }
+            onRemoteFinished = {
+                // The receiver only reports FINISHED after the last queue item.
+                // Keep the service state honest instead of treating IDLE as a
+                // local ExoPlayer error.
+                castPlayer?.pause()
+            }
+            onSessionLost = { positionMs ->
+                val shouldPlay = castPlayer?.playWhenReady == true
+                resumeLocalAfterCast(positionMs, shouldPlay)
+            }
+            beginObservation()
+        }
+        serviceScope.launch {
+            castManager.isSessionActive.collect { active ->
+                if (active && castPlayer == null) startMusicCast()
+            }
+        }
+    }
+
+    /**
+     * Hand the audible queue to the receiver without making it resolve local
+     * files, cache pseudo-URIs or Koda's placeholders.
+     *
+     * Only the current item blocks the hand-off. The next three are resolved in
+     * the background and replaced in CastPlayer's queue before the receiver's
+     * preloader reaches them, matching the local player's bounded prefetch
+     * policy without turning a 300-song queue into 300 extraction calls.
+     */
+    private fun startMusicCast() {
+        if (castStartJob?.isActive == true || castPlayer != null) return
+        castStartJob = serviceScope.launch {
+            val remoteAlreadyPlaying = castManager.currentMediaStatus()?.mediaInfo != null
+            val remote = castManager.createPlayer() ?: run {
+                castManager.endSession(stopOnReceiver = true)
+                return@launch
+            }
+            attachCastPlayerListener(remote)
+            castPlayer = remote
+
+            // Snapshot the phone state before pausing it. Reading
+            // playWhenReady after pause() would always make a newly connected
+            // receiver start paused even when music was already playing.
+            val local = player
+            val wasPlaying = local.playWhenReady
+            val originalItems = (0 until local.mediaItemCount).map(local::getMediaItemAt)
+            val originalIndex = local.currentMediaItemIndex.coerceIn(
+                0,
+                originalItems.lastIndex.coerceAtLeast(0)
+            )
+            val positionMs = local.currentPosition.coerceAtLeast(0L)
+
+            engine.cancelTransition()
+            manualTransitionJob?.cancel()
+            fadeVolumeJob?.cancel()
+            player.pause()
+            audioFocus.abandon()
+
+            mediaLibrarySession?.let { session ->
+                runCatching { session.setPlayer(remote) }
+                    .onFailure { KLog.e(TAG, "Could not point music session at CastPlayer", it) }
+            }
+
+            // Process recreation while the TV is already playing: CastPlayer's
+            // timeline tracker adopts the receiver queue. Reloading would jump
+            // back to the phone's stale checkpoint and interrupt the room.
+            if (remoteAlreadyPlaying) {
+                castSourceRetryCount = 0
+                // CastPlayer receives the existing status asynchronously after
+                // construction; let its timeline tracker publish the queue
+                // before asking which entries need prefetch.
+                delay(300L)
+                prefetchCastUpcoming()
+                armCastEndOfTrackTimerIfNeeded()
+                return@launch
+            }
+
+            val originalCurrent = originalItems.getOrNull(originalIndex)
+            if (originalCurrent == null || !isCastableMusicItem(originalCurrent)) {
+                // A receiver cannot read MediaStore/content URIs. Do not silently
+                // skip the song someone is listening to just to make the icon
+                // turn blue; leave local playback exactly where it was.
+                castPlayer = null
+                runCatching { remote.release() }
+                mediaLibrarySession?.let { runCatching { it.setPlayer(local) } }
+                castManager.endSession(stopOnReceiver = true)
+                if (wasPlaying) local.play()
+                return@launch
+            }
+
+            val castable = originalItems.withIndex()
+                .filter { isCastableMusicItem(it.value) }
+            val castIndex = castable.indexOfFirst { it.index == originalIndex }
+                .coerceAtLeast(0)
+            val currentResolved = resolveCastMusicItem(castable[castIndex].value)
+            if (currentResolved == null) {
+                castPlayer = null
+                runCatching { remote.release() }
+                mediaLibrarySession?.let { runCatching { it.setPlayer(local) } }
+                castManager.endSession(stopOnReceiver = true)
+                if (wasPlaying) local.play()
+                return@launch
+            }
+
+            val receiverQueue = castable.mapIndexed { index, indexed ->
+                if (index == castIndex) currentResolved
+                else castPlaceholder(indexed.value)
+            }
+            remote.repeatMode = playbackRepeatMode
+            remote.shuffleModeEnabled = playbackShuffleEnabled
+            remote.setMediaItems(receiverQueue, castIndex, positionMs)
+            remote.prepare()
+            if (wasPlaying) remote.play() else remote.pause()
+            castSourceRetryCount = 0
+            prefetchCastUpcoming()
+            armCastEndOfTrackTimerIfNeeded()
+        }
+    }
+
+    private fun attachCastPlayerListener(remote: CastPlayer) {
+        remote.addListener(object : Player.Listener {
+            override fun onTimelineChanged(timeline: Timeline, reason: Int) {
+                prefetchCastUpcoming()
+            }
+
+            override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
+                playbackShuffleEnabled = shuffleModeEnabled
+                themePreferences.setPlaybackShuffle(shuffleModeEnabled)
+            }
+
+            override fun onRepeatModeChanged(repeatMode: Int) {
+                playbackRepeatMode = repeatMode
+                themePreferences.setPlaybackRepeatMode(repeatMode)
+            }
+
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                castSourceRetryCount = 0
+                prefetchCastUpcoming()
+                if (sleepTimerEndOfTrack) {
+                    // The progress guard normally pauses before the boundary;
+                    // this is the race backstop for a receiver that advanced
+                    // between polls.
+                    remote.pause()
+                    remote.seekTo(0L)
+                    clearSleepTimer()
+                }
+            }
+
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                if (playbackState == Player.STATE_READY) castSourceRetryCount = 0
+            }
+        })
+    }
+
+    private fun isCastableMusicItem(item: MediaItem): Boolean =
+        item.mediaMetadata.extras?.getString(EXTRA_SONG_SOURCE) !=
+            com.ivor.ivormusic.data.SongSource.LOCAL.name
+
+    private fun castPlaceholder(item: MediaItem): MediaItem = item.buildUpon()
+        .setUri("$PLACEHOLDER_PREFIX${item.mediaId}")
+        // The converter requires a MIME type for every queue entry, including
+        // future entries which are replaced before the receiver opens them.
+        .setMimeType(MimeTypes.AUDIO_MP4)
+        .build()
+
+    /** Resolve AAC/M4A specifically: broad receiver support and a truthful MIME. */
+    private suspend fun resolveCastMusicItem(item: MediaItem): MediaItem? {
+        val url = withTimeoutOrNull(RESOLVE_TIMEOUT_MS) {
+            youtubeRepository.getDownloadAudioStreamUrl(item.mediaId).getOrNull()
+        }?.takeIf { it.isNotBlank() } ?: return null
+        return item.buildUpon()
+            .setUri(url)
+            .setMimeType(MimeTypes.AUDIO_MP4)
+            .setCustomCacheKey(null)
+            .build()
+    }
+
+    private fun prefetchCastUpcoming() {
+        if (castPrefetchJob?.isActive == true) return
+        castPrefetchJob = serviceScope.launch {
+            val remote = castPlayer ?: return@launch
+            val seen = mutableSetOf<Int>()
+            var index = remote.currentMediaItemIndex
+            repeat(PREFETCH_AHEAD_COUNT) {
+                index = remote.currentTimeline.getNextWindowIndex(
+                    index,
+                    remote.repeatMode,
+                    remote.shuffleModeEnabled
+                )
+                if (index == C.INDEX_UNSET || !seen.add(index) || index >= remote.mediaItemCount) {
+                    return@launch
+                }
+                val original = remote.getMediaItemAt(index)
+                if (!isPlaceholder(original.localConfiguration?.uri)) return@repeat
+                val resolved = resolveCastMusicItem(original) ?: return@repeat
+                if (castPlayer === remote && index < remote.mediaItemCount &&
+                    remote.getMediaItemAt(index).mediaId == original.mediaId
+                ) {
+                    remote.replaceMediaItem(index, resolved)
+                }
+            }
+        }
+    }
+
+    private fun recoverCastCurrentItem() {
+        val remote = castPlayer ?: return
+        val index = remote.currentMediaItemIndex
+        val original = remote.currentMediaItem ?: return
+        serviceScope.launch {
+            if (castSourceRetryCount < 1) {
+                castSourceRetryCount++
+                youtubeRepository.refreshVisitorDataAfterPlaybackFailure()
+                val resolved = resolveCastMusicItem(castPlaceholder(original))
+                if (resolved != null && castPlayer === remote && index < remote.mediaItemCount) {
+                    val position = remote.currentPosition.coerceAtLeast(0L)
+                    remote.replaceMediaItem(index, resolved)
+                    remote.seekTo(index, position)
+                    remote.play()
+                    return@launch
+                }
+            }
+            requestCastTransition(remote.getNextMediaItemIndex())
+        }
+    }
+
+    private fun requestCastTransition(targetIndex: Int) {
+        val remote = castPlayer ?: return
+        if (targetIndex !in 0 until remote.mediaItemCount) return
+        serviceScope.launch {
+            val original = remote.getMediaItemAt(targetIndex)
+            val target = if (isPlaceholder(original.localConfiguration?.uri)) {
+                resolveCastMusicItem(original)
+            } else original
+            if (target == null || castPlayer !== remote || targetIndex >= remote.mediaItemCount) {
+                return@launch
+            }
+            if (target !== original) remote.replaceMediaItem(targetIndex, target)
+            remote.seekTo(targetIndex, 0L)
+            remote.play()
+            prefetchCastUpcoming()
+        }
+    }
+
+    private fun resumeLocalAfterCast(positionMs: Long, playWhenReady: Boolean) {
+        serviceScope.launch {
+            val remote = castPlayer ?: return@launch
+            val remoteItems = (0 until remote.mediaItemCount).map(remote::getMediaItemAt)
+            val remoteIndex = remote.currentMediaItemIndex
+                .coerceIn(0, remoteItems.lastIndex.coerceAtLeast(0))
+
+            castPrefetchJob?.cancel()
+            castEndOfTrackJob?.cancel()
+            castPlayer = null
+            runCatching { remote.release() }
+
+            val local = player
+            engine.cancelTransition()
+            if (remoteItems.isNotEmpty()) {
+                // Re-resolve under the phone's client/quality policy. Receiver
+                // URLs were selected as AAC and may be UA-bound or near expiry.
+                val placeholders = remoteItems.map(::castPlaceholder)
+                local.setMediaItems(placeholders, remoteIndex, positionMs.coerceAtLeast(0L))
+                local.prepare()
+            }
+            engine.setShuffleState(playbackShuffleEnabled, playbackShuffleSeed)
+            engine.setRepeatMode(playbackRepeatMode)
+            mediaLibrarySession?.let { runCatching { it.setPlayer(local) } }
+            if (playWhenReady) {
+                audioFocus.request()
+                local.play()
+            } else {
+                local.pause()
+            }
+            prefetchUpcomingSongs()
+        }
+    }
+
+    private fun armCastEndOfTrackTimerIfNeeded() {
+        castEndOfTrackJob?.cancel()
+        if (!sleepTimerEndOfTrack || castPlayer == null) return
+        castEndOfTrackJob = serviceScope.launch {
+            while (isActive && sleepTimerEndOfTrack) {
+                val remote = castPlayer ?: return@launch
+                val duration = remote.duration
+                if (duration > 0 && duration - remote.currentPosition <= 500L) {
+                    remote.pause()
+                    clearSleepTimer()
+                    return@launch
+                }
+                delay(200L)
+            }
+        }
     }
 
     private fun restorePlaybackModes() {
@@ -1097,7 +1418,9 @@ class MusicService : MediaLibraryService() {
         val videoId = currentItem.mediaId
         val uri = currentItem.localConfiguration?.uri
         
-        KLog.w(TAG, "Handling Error for $videoId (uri=$uri)")
+        // Stream URLs carry short-lived signatures and local URIs may expose
+        // device paths. The media id is sufficient for a user-shared report.
+        KLog.w(TAG, "Handling playback error for $videoId")
 
         // Local songs (content:// or file://) — errors are typically unrecoverable
         // (file deleted, permission revoked, corrupt file). Don't try YouTube resolution.
@@ -1329,19 +1652,21 @@ class MusicService : MediaLibraryService() {
             controller: MediaSession.ControllerInfo,
             mediaItems: MutableList<MediaItem>
         ): ListenableFuture<MutableList<MediaItem>> {
-
             // A voice request ("Hey Google, play X on Koda") arrives as an
             // item carrying only a search query - no media id, no uri. Those
             // need one network round trip to become playable, so the whole
             // batch resolves asynchronously in that case and stays synchronous
             // otherwise.
+            val casting = castPlayer != null
             val needsSearchResolution = mediaItems.any {
                 it.mediaId.isBlank() && !it.requestMetadata.searchQuery.isNullOrBlank()
             }
             if (!needsSearchResolution) {
-                return Futures.immediateFuture(
-                    mediaItems.mapTo(mutableListOf(), ::preparePlaybackItem)
-                )
+                val prepared = mediaItems.mapNotNullTo(mutableListOf()) { item ->
+                    if (casting && isDeviceLocalSong(item)) null
+                    else preparePlaybackItem(item, casting)
+                }
+                return finishIncomingCastItems(prepared, casting)
             }
 
             return serviceScope.future(Dispatchers.IO) {
@@ -1349,7 +1674,9 @@ class MusicService : MediaLibraryService() {
                 for (item in mediaItems) {
                     val query = item.requestMetadata.searchQuery?.trim()?.takeIf { it.isNotEmpty() }
                     if (item.mediaId.isNotBlank() || query == null) {
-                        resolved.add(preparePlaybackItem(item))
+                        if (!casting || !isDeviceLocalSong(item)) {
+                            resolved.add(preparePlaybackItem(item, casting))
+                        }
                         continue
                     }
                     // Take the best song result for the query. A miss is
@@ -1365,12 +1692,12 @@ class MusicService : MediaLibraryService() {
                         KLog.w(TAG, "Voice request '$query' matched nothing")
                         continue
                     }
-                    resolved.add(preparePlaybackItem(match.toPlaceholderMediaItem()))
+                    resolved.add(preparePlaybackItem(match.toPlaceholderMediaItem(), casting))
                 }
                 if (resolved.isEmpty()) {
                     throw IllegalStateException("No results for any requested media item")
                 }
-                resolved
+                resolveIncomingCastItems(resolved, casting)
             }
         }
 
@@ -1379,7 +1706,7 @@ class MusicService : MediaLibraryService() {
          * carry: local URIs preserved, YouTube ids turned into placeholders
          * that [performResolution] swaps for a real stream.
          */
-        private fun preparePlaybackItem(item: MediaItem): MediaItem {
+        private fun preparePlaybackItem(item: MediaItem, casting: Boolean): MediaItem {
             val existingUri = item.localConfiguration?.uri
 
             // Local songs come with either content:// (MediaStore) or file://
@@ -1419,8 +1746,38 @@ class MusicService : MediaLibraryService() {
                     .setMediaId(item.mediaId)
                     .setUri("$PLACEHOLDER_PREFIX${item.mediaId}")
                     .setMediaMetadata(meta)
+                    .apply { if (casting) setMimeType(MimeTypes.AUDIO_MP4) }
                     .build()
             }
+        }
+
+        private fun isDeviceLocalSong(item: MediaItem): Boolean =
+            item.mediaMetadata.extras?.getString(EXTRA_SONG_SOURCE) == SongSource.LOCAL.name
+
+        private fun finishIncomingCastItems(
+            items: MutableList<MediaItem>,
+            casting: Boolean,
+        ): ListenableFuture<MutableList<MediaItem>> = if (casting) {
+            serviceScope.future { resolveIncomingCastItems(items, casting = true) }
+        } else {
+            Futures.immediateFuture(items)
+        }
+
+        private suspend fun resolveIncomingCastItems(
+            items: MutableList<MediaItem>,
+            casting: Boolean,
+        ): MutableList<MediaItem> {
+            if (!casting) return items
+            val singleItemRequest = items.size == 1
+            return items.map { item ->
+                val resolveNow = singleItemRequest ||
+                    item.mediaMetadata.extras?.getBoolean(EXTRA_CAST_RESOLVE_NOW, false) == true
+                if (resolveNow && isPlaceholder(item.localConfiguration?.uri)) {
+                    resolveCastMusicItem(item) ?: item
+                } else {
+                    item
+                }
+            }.toMutableList()
         }
         
         // --- Browsing Logic (Android Auto / Media Browser) ---
@@ -1918,6 +2275,7 @@ class MusicService : MediaLibraryService() {
             // later play() still moves on to the next track normally.
             sleepTimerEndOfTrack = true
             engine.setPauseAtEndOfMediaItems(true)
+            armCastEndOfTrackTimerIfNeeded()
             themePreferences.saveSleepTimer(endsAt = 0L, endOfTrack = true)
         } else {
             val durationMs = minutes * 60_000L
@@ -1968,6 +2326,13 @@ class MusicService : MediaLibraryService() {
      * the crossfade fade-in can never drive the volume at the same time.
      */
     private fun fadeOutAndPause() {
+        castPlayer?.let { remote ->
+            // CastPlayer.volume is the receiver device volume, not a per-item
+            // gain. Fading it would turn the television itself down and then
+            // back up, affecting every app on it. Pause cleanly instead.
+            remote.pause()
+            return
+        }
         fadeVolumeJob?.cancel()
         fadeVolumeJob = serviceScope.launch {
             val steps = 20
@@ -1988,6 +2353,8 @@ class MusicService : MediaLibraryService() {
         sleepTimerJob = null
         sleepTimerEndsAt = 0L
         sleepTimerEndOfTrack = false
+        castEndOfTrackJob?.cancel()
+        castEndOfTrackJob = null
         // Both engines matter. The standby becomes audible at the next
         // crossfade and must not carry an old end-of-track instruction.
         engine.setPauseAtEndOfMediaItems(false)
@@ -2113,6 +2480,20 @@ class MusicService : MediaLibraryService() {
 
     /** Resolve Previous/Next against the audible queue, including rapid taps. */
     private fun requestManualSkip(forward: Boolean) {
+        castPlayer?.let { remote ->
+            if (!forward && remote.currentPosition > PREVIOUS_RESTART_MS) {
+                remote.seekTo(0L)
+                remote.play()
+                return
+            }
+            val targetIndex = if (forward) {
+                remote.getNextMediaItemIndex()
+            } else {
+                remote.getPreviousMediaItemIndex()
+            }
+            requestCastTransition(targetIndex)
+            return
+        }
         val current = player
         val pendingIndex = engine.pendingTargetIndex
         val baseIndex = pendingIndex ?: current.currentMediaItemIndex
@@ -2141,6 +2522,10 @@ class MusicService : MediaLibraryService() {
      * ordinary immediate player jump.
      */
     private fun requestManualTransition(targetIndex: Int) {
+        if (castPlayer != null) {
+            requestCastTransition(targetIndex)
+            return
+        }
         val current = player
         if (targetIndex !in 0 until current.mediaItemCount) return
         if (targetIndex == current.currentMediaItemIndex) {

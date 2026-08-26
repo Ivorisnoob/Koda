@@ -362,17 +362,27 @@ private fun GestureNowPlayingView(
                     }
                 }
                 
-                // Queue button
-                FilledIconButton(
-                    onClick = onShowQueue,
-                    shape = CircleShape,
-                    colors = IconButtonDefaults.filledIconButtonColors(
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    MusicCastIconButton(
                         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        contentColor = MaterialTheme.colorScheme.onSurface
-                    ),
-                    modifier = Modifier.size(48.dp)
-                ) {
-                    Icon(Icons.AutoMirrored.Filled.QueueMusic, "Queue", modifier = Modifier.size(24.dp))
+                        contentColor = MaterialTheme.colorScheme.onSurface,
+                        size = 48.dp
+                    )
+                    FilledIconButton(
+                        onClick = onShowQueue,
+                        shape = CircleShape,
+                        colors = IconButtonDefaults.filledIconButtonColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            contentColor = MaterialTheme.colorScheme.onSurface
+                        ),
+                        modifier = Modifier.size(48.dp)
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.QueueMusic,
+                            "Queue",
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
                 }
             }
             

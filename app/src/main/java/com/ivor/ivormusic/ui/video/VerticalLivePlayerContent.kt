@@ -38,6 +38,8 @@ import androidx.compose.material.icons.outlined.ThumbUp
 import androidx.compose.material.icons.rounded.ClosedCaption
 import androidx.compose.material.icons.rounded.ClosedCaptionOff
 import androidx.compose.material.icons.rounded.CloseFullscreen
+import androidx.compose.material.icons.rounded.Cast
+import androidx.compose.material.icons.rounded.CastConnected
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.ThumbUp
@@ -152,6 +154,8 @@ fun VerticalLivePlayerContent(
     videoAspectRatio: Float?,
     isSubscribed: Boolean,
     likeStatus: LikeStatus,
+    casting: Boolean,
+    castDeviceName: String?,
     onPlayPause: () -> Unit,
     onSeek: (Float) -> Unit,
     onScrubbingChanged: (Boolean) -> Unit = {},
@@ -162,6 +166,7 @@ fun VerticalLivePlayerContent(
     onExitToPage: () -> Unit,
     onOpenFullChat: () -> Unit,
     onCaptionsClick: () -> Unit,
+    onCastClick: () -> Unit,
     onSettings: () -> Unit,
     onSubscribeClick: () -> Unit,
     onLikeClick: () -> Unit,
@@ -352,6 +357,16 @@ fun VerticalLivePlayerContent(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
                     ) {
+                        ChromeToggleButton(
+                            icon = if (casting) Icons.Rounded.CastConnected else Icons.Rounded.Cast,
+                            contentDescription = if (casting) {
+                                "Casting to ${castDeviceName ?: "device"}"
+                            } else {
+                                "Cast"
+                            },
+                            active = casting,
+                            onClick = onCastClick,
+                        )
                         // Shape carries the state as well as color: a filled
                         // circle that only changes hue is the least legible
                         // toggle available on top of moving video.

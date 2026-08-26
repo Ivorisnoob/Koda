@@ -70,6 +70,8 @@ fun MiniPlayerContent(
     progress: Float,
     onPlayPauseClick: () -> Unit,
     onNextClick: () -> Unit,
+    isCasting: Boolean,
+    castDeviceName: String?,
     onClick: () -> Unit
 ) {
     val playerHaptics = rememberPlayerHaptics()
@@ -219,13 +221,23 @@ fun MiniPlayerContent(
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = currentSong.artist,
+                    text = if (isCasting && castDeviceName != null) {
+                        "Casting to $castDeviceName"
+                    } else {
+                        currentSong.artist
+                    },
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = if (isCasting) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
             }
+
+            Spacer(modifier = Modifier.width(8.dp))
 
             // Play/Pause Button with shape morphing or Loading
             if (isBuffering && playWhenReady) {

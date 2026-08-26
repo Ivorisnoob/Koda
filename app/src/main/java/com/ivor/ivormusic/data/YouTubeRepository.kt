@@ -1356,7 +1356,6 @@ class YouTubeRepository(private val context: Context) {
             }
         } catch (e: Exception) {
             KLog.e("YouTubeRepo", "Error fetching liked music", e)
-            e.printStackTrace()
         }
         
         // Fallback to NewPipe method
@@ -1398,7 +1397,7 @@ class YouTubeRepository(private val context: Context) {
             val response = okHttpClient.newCall(request).execute()
             (response.body?.string() ?: "").also { noteSessionState(it) }
         } catch (e: Exception) {
-            e.printStackTrace()
+            KLog.e("YouTubeRepo", "Music continuation request failed", e)
             ""
         }
     }
@@ -1557,7 +1556,7 @@ class YouTubeRepository(private val context: Context) {
                 if (internalSongs.isNotEmpty()) return@withContext internalSongs
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            KLog.e("YouTubeRepo", "Anonymous playlist browse failed for $playlistId", e)
         }
 
         // Do not throw away useful rows if every complete path failed, but log
@@ -1639,7 +1638,9 @@ class YouTubeRepository(private val context: Context) {
                 KLog.w("YouTubeRepo", "fetchAccountInfo: empty response from account/account_menu")
                 return@withContext
             }
-            KLog.d("YouTubeRepo", "fetchAccountInfo response: ${jsonResponse.take(400)}")
+            // Account payloads include identity details. Keep them out of the
+            // release diagnostic ring buffer; success/failure is enough here.
+            KLog.d("YouTubeRepo", "fetchAccountInfo response received")
             
             var avatarUrl: String? = null
             var userName: String? = null
@@ -1739,7 +1740,7 @@ class YouTubeRepository(private val context: Context) {
             }
             
         } catch (e: Exception) {
-            e.printStackTrace()
+            KLog.e("YouTubeRepo", "Account identity refresh failed", e)
         }
     }
 
@@ -1988,7 +1989,7 @@ class YouTubeRepository(private val context: Context) {
             if (code !in 200..299) {
                 KLog.w(
                     "YouTubeRepository",
-                    "Resolve[InnerTube/$clientName] HTTP $code videoId=$videoId body=${json.take(160)}",
+                    "Resolve[InnerTube/$clientName] HTTP $code videoId=$videoId",
                 )
                 return@withContext PlayerResponse(null, false)
             }
@@ -2105,7 +2106,7 @@ class YouTubeRepository(private val context: Context) {
             val response = okHttpClient.newCall(request).execute()
             (response.body?.string() ?: "").also { noteSessionState(it) }
         } catch (e: Exception) {
-            e.printStackTrace()
+            KLog.e("YouTubeRepo", "Music browse request failed", e)
             ""
         }
     }
@@ -2149,7 +2150,7 @@ class YouTubeRepository(private val context: Context) {
                 }
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            KLog.e("YouTubeRepo", "Could not parse music song shelf", e)
         }
         return if (preserveDuplicates) songs else songs.distinctBy { it.id }
     }
@@ -2510,7 +2511,7 @@ class YouTubeRepository(private val context: Context) {
                 }
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            KLog.e("YouTubeRepo", "Could not parse music playlist shelf", e)
         }
         return playlists 
     }
@@ -3119,12 +3120,15 @@ class YouTubeRepository(private val context: Context) {
             .build()
 
         try {
-            KLog.d("YouTubeRepo", "Making personalized video request with auth: ${authHeader.take(30)}...")
+            // Never place Authorization material or response bodies in KLog:
+            // users can deliberately attach its release ring buffer to a bug
+            // report, and these values may carry account/feed information.
+            KLog.d("YouTubeRepo", "Making personalized video request")
             val response = okHttpClient.newCall(request).execute()
             val responseBody = response.body?.string() ?: return@withContext empty
             response.close()
 
-            KLog.d("YouTubeRepo", "Got personalized response: ${responseBody.take(500)}...")
+            KLog.d("YouTubeRepo", "Personalized response received")
             val root = org.json.JSONObject(responseBody)
             val videos = parseVideosFromYouTubeJson(responseBody)
             KLog.d("YouTubeRepo", "Parsed ${videos.size} personalized videos")
@@ -3409,7 +3413,7 @@ class YouTubeRepository(private val context: Context) {
             }
             
         } catch (e: Exception) {
-            e.printStackTrace()
+            KLog.e("YouTubeRepo", "Could not parse watch history", e)
         }
         return videos.distinctBy { it.videoId }.take(30)
     }

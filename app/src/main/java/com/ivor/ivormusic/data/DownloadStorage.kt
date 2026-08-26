@@ -8,6 +8,7 @@ import android.content.Context
 import android.net.Uri
 import android.os.Environment
 import android.provider.MediaStore
+import java.io.File
 import java.io.OutputStream
 
 /**
@@ -63,6 +64,13 @@ class DownloadStorage(private val context: Context) {
 
     private val resolver get() = context.contentResolver
 
+    /**
+     * App-only downloads. Files here are not indexed by MediaStore, are not
+     * reachable from ordinary file managers, are excluded from cloud backup,
+     * and are removed with Koda.
+     */
+    private val privateRoot = File(context.noBackupFilesDir, "downloads")
+
     private val collection: Uri
         get() = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
 
@@ -94,16 +102,47 @@ class DownloadStorage(private val context: Context) {
      * Create a pending entry and return its URI, or null if MediaStore refused.
      * The file stays invisible to other apps until [publish].
      */
-    fun createPending(displayName: String, type: DownloadMediaType): Uri? {
-        return createPending(displayName, type.mimeType, type.relativePath)
+    fun createPending(
+        displayName: String,
+        type: DownloadMediaType,
+        privateStorage: Boolean = false
+    ): Uri? {
+        return if (privateStorage) {
+            createPrivatePending(displayName, type)
+        } else {
+            createMediaStorePending(displayName, type.mimeType, type.relativePath)
+        }
     }
 
-    /** Create album-art or lyric data beside a music download. */
-    fun createPendingMusicCompanion(displayName: String, mimeType: String): Uri? {
-        return createPending(displayName, mimeType, DownloadMediaType.MUSIC.relativePath)
+    /**
+     * Create lyric data beside a music download. It follows the audio's chosen
+     * visibility, unlike artwork which is always private.
+     */
+    fun createPendingMusicCompanion(
+        displayName: String,
+        mimeType: String,
+        privateStorage: Boolean = false
+    ): Uri? {
+        return if (privateStorage) {
+            createPrivatePending(displayName, DownloadMediaType.MUSIC)
+        } else {
+            createMediaStorePending(displayName, mimeType, DownloadMediaType.MUSIC.relativePath)
+        }
     }
 
-    private fun createPending(displayName: String, mimeType: String, relativePath: String): Uri? {
+    /**
+     * Album artwork never belongs in shared storage. The cover is embedded in
+     * the M4A for other players; this copy only exists for Koda's offline UI.
+     * Publishing it as image/jpeg was what made every cover appear in Gallery.
+     */
+    fun createPrivateMusicArtwork(id: String): Uri? =
+        createPrivatePending("artwork_${safePrivateId(id)}.jpg", DownloadMediaType.MUSIC)
+
+    private fun createMediaStorePending(
+        displayName: String,
+        mimeType: String,
+        relativePath: String
+    ): Uri? {
         return try {
             val values = ContentValues().apply {
                 put(MediaStore.MediaColumns.DISPLAY_NAME, displayName)
@@ -118,9 +157,36 @@ class DownloadStorage(private val context: Context) {
         }
     }
 
+    private fun createPrivatePending(displayName: String, type: DownloadMediaType): Uri? {
+        return try {
+            val directory = privateDirectory(type).apply { mkdirs() }
+            if (!directory.isDirectory) return null
+
+            val requested = File(directory, displayName)
+            val target = if (!requested.exists()) {
+                requested
+            } else {
+                val stem = requested.nameWithoutExtension
+                val extension = requested.extension.takeIf(String::isNotBlank)?.let { ".$it" }.orEmpty()
+                generateSequence(1) { it + 1 }
+                    .map { index -> File(directory, "$stem ($index)$extension") }
+                    .first { !it.exists() }
+            }
+            if (!target.createNewFile()) return null
+            Uri.fromFile(target)
+        } catch (e: Exception) {
+            KLog.e(TAG, "Failed to create private download for $displayName", e)
+            null
+        }
+    }
+
     fun openOutput(uri: Uri): OutputStream? {
         return try {
-            resolver.openOutputStream(uri)
+            if (uri.scheme == "file") {
+                uri.path?.let(::File)?.outputStream()
+            } else {
+                resolver.openOutputStream(uri)
+            }
         } catch (e: Exception) {
             KLog.e(TAG, "Failed to open output for $uri", e)
             null
@@ -129,6 +195,9 @@ class DownloadStorage(private val context: Context) {
 
     /** Clear IS_PENDING, making the file visible in the Files app. */
     fun publish(uri: Uri): Boolean {
+        if (uri.scheme == "file") {
+            return uri.path?.let(::File)?.let { it.isFile && it.length() > 0L } == true
+        }
         return try {
             val values = ContentValues().apply {
                 put(MediaStore.MediaColumns.IS_PENDING, 0)
@@ -146,7 +215,11 @@ class DownloadStorage(private val context: Context) {
      */
     fun delete(uri: Uri): Boolean {
         return try {
-            resolver.delete(uri, null, null) > 0
+            if (uri.scheme == "file") {
+                uri.path?.let(::File)?.delete() == true
+            } else {
+                resolver.delete(uri, null, null) > 0
+            }
         } catch (e: Exception) {
             KLog.e(TAG, "Failed to delete $uri", e)
             false
@@ -158,6 +231,9 @@ class DownloadStorage(private val context: Context) {
      * removed outside the app.
      */
     fun exists(uri: Uri): Boolean {
+        if (uri.scheme == "file") {
+            return uri.path?.let(::File)?.isFile == true
+        }
         return try {
             resolver.query(
                 uri,
@@ -173,6 +249,13 @@ class DownloadStorage(private val context: Context) {
 
     /** Guard companion cleanup so an old external artwork URI is never deleted. */
     fun isMusicCompanion(uri: Uri): Boolean {
+        if (uri.scheme == "file") {
+            val file = uri.path?.let(::File) ?: return false
+            return runCatching {
+                file.canonicalFile.parentFile == privateDirectory(DownloadMediaType.MUSIC).canonicalFile &&
+                    (file.extension.lowercase() in setOf("jpg", "jpeg", "png", "webp", "lrc", "ttml"))
+            }.getOrDefault(false)
+        }
         if (uri.scheme != "content") return false
         return try {
             resolver.query(
@@ -199,6 +282,62 @@ class DownloadStorage(private val context: Context) {
         } catch (e: Exception) {
             false
         }
+    }
+
+    fun isPrivateDownload(uri: Uri, type: DownloadMediaType): Boolean {
+        if (uri.scheme != "file") return false
+        val file = uri.path?.let(::File) ?: return false
+        return runCatching {
+            file.canonicalFile.parentFile == privateDirectory(type).canonicalFile
+        }.getOrDefault(false)
+    }
+
+    /** Whether an old shared companion is the standalone cover leaked to Gallery. */
+    fun isSharedMusicArtwork(uri: Uri): Boolean {
+        if (uri.scheme != "content") return false
+        return try {
+            resolver.query(
+                uri,
+                arrayOf(
+                    MediaStore.MediaColumns.RELATIVE_PATH,
+                    MediaStore.MediaColumns.MIME_TYPE
+                ),
+                null,
+                null,
+                null
+            )?.use { cursor ->
+                cursor.moveToFirst() &&
+                    cursor.getString(0).orEmpty()
+                        .startsWith(DownloadMediaType.MUSIC.relativePath) &&
+                    cursor.getString(1).orEmpty().startsWith("image/")
+            } ?: false
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /**
+     * Copy a previously published cover into app-only storage, then remove its
+     * MediaStore row so gallery apps stop indexing it. Copy-before-delete keeps
+     * offline artwork intact if either side fails.
+     */
+    fun moveSharedArtworkToPrivate(source: Uri, id: String): Uri? {
+        if (!isSharedMusicArtwork(source)) return null
+        val target = createPrivateMusicArtwork(id) ?: return null
+        val copied = runCatching {
+            resolver.openInputStream(source)?.use { input ->
+                openOutput(target)?.use { output -> input.copyTo(output) }
+            } != null
+        }.getOrDefault(false)
+        if (!copied || !publish(target)) {
+            delete(target)
+            return null
+        }
+        if (!delete(source)) {
+            delete(target)
+            return null
+        }
+        return target
     }
 
     /**
@@ -230,6 +369,17 @@ class DownloadStorage(private val context: Context) {
         } catch (e: Exception) {
             KLog.e(TAG, "Failed to list ${type.relativePath}", e)
         }
+
+        privateDirectory(type).listFiles()
+            ?.asSequence()
+            ?.filter(File::isFile)
+            ?.forEach { file -> result[Uri.fromFile(file)] = file.name }
         return result
     }
+
+    private fun privateDirectory(type: DownloadMediaType): File =
+        File(privateRoot, type.folderName.lowercase())
+
+    private fun safePrivateId(id: String): String =
+        id.replace(Regex("[^A-Za-z0-9_-]"), "_").ifBlank { "download" }
 }
