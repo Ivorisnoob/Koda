@@ -440,7 +440,11 @@ internal fun PlaybackSettingsPage(
                             crossfadeAuto -> 1
                             else -> 2
                         }
-                        val labels = listOf("Off", "AutoMix", "Manual")
+                        val labels = listOf(
+                            stringResource(R.string.haptic_level_off),
+                            stringResource(R.string.sp_crossfade_automix),
+                            stringResource(R.string.sp_crossfade_manual)
+                        )
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(
@@ -681,17 +685,17 @@ internal fun PlaybackSettingsPage(
                             .padding(horizontal = 16.dp, vertical = 14.dp)
                     ) {
                         Text(
-                            text = "Haptics",
+                            text = stringResource(R.string.sp_haptics),
                             color = MaterialTheme.colorScheme.onBackground,
                             fontSize = 16.sp,
                             fontWeight = FontWeight.SemiBold
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         val levelSubtitle = when (hapticsLevel) {
-                            "off" -> "Silent: nothing vibrates"
-                            "subtle" -> "Only the moments that matter"
-                            "expressive" -> "Every touch, felt clearly"
-                            else -> "A tick for every action"
+                            "off" -> stringResource(R.string.sp_haptics_sub_off)
+                            "subtle" -> stringResource(R.string.sp_haptics_sub_subtle)
+                            "expressive" -> stringResource(R.string.sp_haptics_sub_expressive)
+                            else -> stringResource(R.string.sp_haptics_sub_balanced)
                         }
                         Text(
                             text = levelSubtitle,
@@ -700,7 +704,12 @@ internal fun PlaybackSettingsPage(
                         )
                         Spacer(modifier = Modifier.height(12.dp))
                         val levels = listOf("off", "subtle", "balanced", "expressive")
-                        val labels = listOf("Off", "Subtle", "Balanced", "Rich")
+                        val labels = listOf(
+                            stringResource(R.string.haptic_level_off),
+                            stringResource(R.string.haptic_level_subtle),
+                            stringResource(R.string.haptic_level_balanced),
+                            stringResource(R.string.haptic_level_rich)
+                        )
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(

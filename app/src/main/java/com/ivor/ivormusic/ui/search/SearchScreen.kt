@@ -1489,7 +1489,15 @@ private fun SearchHeroHeader(
                     value = query,
                     onValueChange = onQueryChange,
                     placeholder = {
-                        Text(placeholderText, color = secondaryTextColor)
+                        // Small and single-line: the placeholder is a hint, not
+                        // content, and on narrow screens the full phrase wraps
+                        // and stretches the field's height.
+                        Text(
+                            placeholderText,
+                            color = secondaryTextColor,
+                            style = MaterialTheme.typography.labelMedium,
+                            maxLines = 1
+                        )
                     },
                     leadingIcon = {
                         // Morph the magnifier into a link icon (with a springy

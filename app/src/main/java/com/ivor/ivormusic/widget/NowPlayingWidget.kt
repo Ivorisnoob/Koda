@@ -6,6 +6,7 @@ import android.graphics.Bitmap
 import android.net.Uri
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -205,7 +206,7 @@ private fun EmptyState() {
         )
         Spacer(modifier = GlanceModifier.width(12.dp))
         Text(
-            text = "Tap to listen",
+            text = stringResource(R.string.widget_tap_to_listen),
             style = TextStyle(
                 color = GlanceTheme.colors.onSurfaceVariant,
                 fontSize = 15.sp,

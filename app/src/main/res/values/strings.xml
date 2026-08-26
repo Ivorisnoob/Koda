@@ -20,12 +20,13 @@
 
     <!-- The home screen widget's picker description. -->
     <string name="widget_description">Current song with play, pause and skip controls</string>
+    <string name="widget_tap_to_listen">Tap to listen</string>
 
     <!-- Background upload check (#137): its notification channel and grouped title. -->
     <string name="upload_check_channel_name">New uploads</string>
     <string name="upload_check_channel_description">Tells you when a channel you follow on this device uploads</string>
     <string name="upload_notification_title">%1$s: %2$d new uploads</string>
-</resources>
+
     <!-- ============ Common actions ============ -->
     <string name="undo">Undo</string>
     <string name="action_cancel">Cancel</string>
@@ -44,6 +45,10 @@
     <string name="action_clear_all">Clear all</string>
     <string name="action_new_playlist">New playlist</string>
     <string name="action_grant_permission">Grant Permission</string>
+    <string name="action_close">Close</string>
+    <string name="action_check_updates">Check Updates</string>
+    <string name="action_got_it">Got it</string>
+    <string name="action_like">Like</string>
     <string name="unknown_artist">Unknown Artist</string>
     <string name="untitled_song">Untitled Song</string>
     <string name="label_playlist">Playlist</string>
@@ -195,6 +200,20 @@
     <string name="sp_sign_in_cookies">Sign In With Cookies</string>
     <string name="sp_sign_in_cookies_sub">Paste a cookie header instead of using the web sign-in</string>
     <string name="sp_theme">Theme</string>
+    <string name="settings_title">Settings</string>
+    <string name="about_tagline">A modern, open-source music player with YouTube Music integration.</string>
+    <string name="about_version">Version</string>
+    <string name="about_build">Build</string>
+    <string name="about_build_type">Build Type</string>
+    <string name="about_developer">Developer</string>
+    <string name="cd_profile_picture">Profile Picture</string>
+    <string name="cd_developer_avatar">Developer Avatar</string>
+    <string name="sp_connected">Connected</string>
+    <string name="sp_mode_music">Music</string>
+    <string name="sp_mode_video">Video</string>
+    <string name="sp_content_mode">Content Mode</string>
+    <string name="sp_content_mode_music">Showing music content</string>
+    <string name="sp_content_mode_video">Showing YouTube videos</string>
     <string name="sp_color_palette">Color palette</string>
     <string name="sp_amoled_black">AMOLED Black</string>
     <string name="sp_backgrounds">Backgrounds</string>
@@ -226,6 +245,29 @@
     <string name="sp_timed_comments">Timed Comments</string>
     <string name="sp_shorts">Shorts</string>
     <string name="sp_shorts_buttons">Shorts Buttons</string>
+    <string name="sp_shorts_buttons_sub">Tap a button to show or hide it in Shorts</string>
+    <string name="sp_excluded_folders_sub">Songs from selected folders won\'t appear in your library</string>
+    <string name="sp_scanning_folders">Scanning folders...</string>
+    <string name="sp_no_music_folders">No music folders found</string>
+
+    <!-- Per-network quality pickers -->
+    <string name="qd_video_wifi">Video Quality on Wi-Fi</string>
+    <string name="qd_video_wifi_desc">Videos start at this quality on Wi-Fi when available, falling back to the closest lower one.</string>
+    <string name="qd_video_mobile">Video Quality on Mobile Data</string>
+    <string name="qd_video_mobile_desc">Videos start at this quality on mobile data when available, falling back to the closest lower one.</string>
+    <string name="qd_music_wifi">Music Quality on Wi-Fi</string>
+    <string name="qd_music_wifi_desc">Songs stream at this quality on Wi-Fi.</string>
+    <string name="qd_music_mobile">Music Quality on Mobile Data</string>
+    <string name="qd_music_mobile_desc">Songs stream at this quality on mobile data.</string>
+
+    <!-- Android Auto help -->
+    <string name="auto_help_subtitle">Why Koda may not appear in your car</string>
+    <string name="auto_help_intro">Android Auto hides media apps that were not installed from the Play Store. Koda ships as a download from GitHub, so it stays invisible until you allow it - this is Auto\'s rule, not a bug in Koda.</string>
+    <string name="auto_help_step1">Open the Android Auto app on your phone and tap its version info repeatedly until developer mode is offered</string>
+    <string name="auto_help_step2">Open Developer settings from the menu</string>
+    <string name="auto_help_step3">Turn on \u0022Unknown sources\u0022</string>
+    <string name="auto_help_step4">Re-check the app launcher in your car</string>
+    <string name="auto_help_note">The exact wording and location of these options varies between phone brands and Auto versions.</string>
     <string name="sp_recommendations">Recommendations</string>
     <string name="sp_not_recommended">Not Recommended</string>
     <string name="sp_not_recommended_sub">Videos and channels you\'ve hidden from your feeds</string>
@@ -233,7 +275,9 @@
     <string name="sp_manage_subscriptions_sub">Import, export and group the channels you follow</string>
     <string name="sp_where_they_live">Where they live</string>
     <string name="sp_subscriptions_shown">Subscriptions Shown</string>
+    <string name="sp_subs_source_desc">Which list the Subscriptions tab builds its feed from.</string>
     <string name="sp_subscribe_saves_to">Subscribe Saves To</string>
+    <string name="sp_subs_target_desc">Where tapping Subscribe stores the channel. Saving on this device works signed out and never tells YouTube.</string>
     <string name="sp_feed">Feed</string>
     <string name="sp_fast_refresh">Fast Subscription Refresh</string>
     <string name="sp_fast_refresh_on">Much less data and exact upload times, but no duration badges</string>
@@ -333,6 +377,24 @@
     <string name="ob_page_final_touches_body">A few optional extras. All of this lives in Settings if you change your mind later.</string>
     <string name="ob_crossfade">Crossfade</string>
     <string name="ob_crossfade_sub">Blend songs into each other during playback</string>
+    <string name="sp_crossfade_automix">AutoMix</string>
+    <string name="sp_crossfade_manual">Manual</string>
+    <string name="sp_haptics">Haptics</string>
+    <string name="haptic_level_off">Off</string>
+    <string name="haptic_level_subtle">Subtle</string>
+    <string name="haptic_level_balanced">Balanced</string>
+    <string name="haptic_level_rich">Rich</string>
+    <string name="sp_haptics_sub_off">Silent: nothing vibrates</string>
+    <string name="sp_haptics_sub_subtle">Only the moments that matter</string>
+    <string name="sp_haptics_sub_balanced">A tick for every action</string>
+    <string name="sp_haptics_sub_expressive">Every touch, felt clearly</string>
+
+    <!-- Cast -->
+    <string name="cast_to">Cast to</string>
+    <string name="cast_connected">Connected</string>
+    <string name="cast_disconnect">Disconnect</string>
+    <string name="cast_looking_for_devices">Looking for devices nearby...</string>
+    <string name="cast_connecting">Connecting...</string>
     <string name="ob_playback_notifications">Playback notifications</string>
     <string name="ob_notif_ready">Lock screen controls are ready.</string>
     <string name="ob_notif_enable">Enables lock screen and background controls.</string>

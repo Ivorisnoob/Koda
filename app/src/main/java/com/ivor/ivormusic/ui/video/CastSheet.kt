@@ -31,6 +31,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.ivor.ivormusic.ui.player.PlayerViewModel
@@ -117,7 +118,7 @@ private fun CastSheetContent(
                 )
                 Spacer(Modifier.width(12.dp))
                 Text(
-                    text = "Cast to",
+                    text = stringResource(R.string.cast_to),
                     style = MaterialTheme.typography.titleLarge,
                     modifier = Modifier.weight(1f)
                 )
@@ -153,7 +154,7 @@ private fun CastSheetContent(
                                 overflow = TextOverflow.Ellipsis
                             )
                             Text(
-                                text = "Connected",
+                                text = stringResource(R.string.cast_connected),
                                 style = MaterialTheme.typography.bodySmall
                             )
                         }
@@ -161,7 +162,7 @@ private fun CastSheetContent(
                             onDisconnect()
                             onDismiss()
                         }) {
-                            Icon(Icons.Rounded.Close, contentDescription = "Disconnect")
+                            Icon(Icons.Rounded.Close, contentDescription = stringResource(R.string.cast_disconnect))
                         }
                     }
                 }
@@ -220,7 +221,7 @@ private fun CastSheetContent(
                     )
                     Spacer(Modifier.width(16.dp))
                     Text(
-                        text = "Looking for devices nearby...",
+                        text = stringResource(R.string.cast_looking_for_devices),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -241,7 +242,7 @@ private fun ConnectingRow() {
         ContainedLoadingIndicator(modifier = Modifier.size(22.dp))
         Spacer(Modifier.width(16.dp))
         Text(
-            text = "Connecting...",
+            text = stringResource(R.string.cast_connecting),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
