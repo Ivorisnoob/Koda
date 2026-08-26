@@ -58,21 +58,22 @@ import androidx.compose.material.icons.rounded.WatchLater
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.ToggleButton
+import androidx.compose.material3.ToggleButtonDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -537,7 +538,7 @@ private fun SectionHeader(
  * what syncs everywhere; signed out the device is the only answer and the
  * dialog says so in a line of helper text rather than a disabled toggle.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun CreateVideoPlaylistDialog(
     canUseAccount: Boolean,
@@ -564,17 +565,38 @@ private fun CreateVideoPlaylistDialog(
                 )
                 Spacer(modifier = Modifier.height(16.dp))
                 if (canUseAccount) {
-                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                        SegmentedButton(
-                            selected = !onDevice,
-                            onClick = { onDevice = false },
-                            shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
-                        ) { Text("YouTube") }
-                        SegmentedButton(
-                            selected = onDevice,
-                            onClick = { onDevice = true },
-                            shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
-                        ) { Text("This device") }
+                    val storageOptions = listOf(false, true)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(
+                            ButtonGroupDefaults.ConnectedSpaceBetween
+                        )
+                    ) {
+                        storageOptions.forEachIndexed { index, deviceOnly ->
+                            val selected = onDevice == deviceOnly
+                            ToggleButton(
+                                checked = selected,
+                                onCheckedChange = { onDevice = deviceOnly },
+                                modifier = Modifier.weight(1f),
+                                shapes = when (index) {
+                                    0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                                    storageOptions.lastIndex ->
+                                        ButtonGroupDefaults.connectedTrailingButtonShapes()
+                                    else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+                                },
+                                colors = ToggleButtonDefaults.toggleButtonColors(
+                                    containerColor = MaterialTheme.colorScheme.surface,
+                                    checkedContainerColor = MaterialTheme.colorScheme.primary,
+                                    contentColor = MaterialTheme.colorScheme.onSurface,
+                                    checkedContentColor = MaterialTheme.colorScheme.onPrimary
+                                )
+                            ) {
+                                Text(
+                                    text = if (deviceOnly) "This device" else "YouTube",
+                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
+                                )
+                            }
+                        }
                     }
                     Spacer(modifier = Modifier.height(8.dp))
                 }

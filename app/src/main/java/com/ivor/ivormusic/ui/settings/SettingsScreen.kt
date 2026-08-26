@@ -122,9 +122,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -1451,28 +1448,36 @@ internal fun ExpressiveVideoModeToggleItem(
         
         Spacer(modifier = Modifier.height(16.dp))
         
-        // Segmented Button Row
-        SingleChoiceSegmentedButtonRow(
-            modifier = Modifier.fillMaxWidth()
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(
+                ButtonGroupDefaults.ConnectedSpaceBetween
+            ),
         ) {
             options.forEachIndexed { index, label ->
-                SegmentedButton(
-                    selected = selectedIndex == index,
-                    onClick = { onToggle(index == 1) },
-                    shape = SegmentedButtonDefaults.itemShape(
-                        index = index,
-                        count = options.size
+                ToggleButton(
+                    checked = selectedIndex == index,
+                    onCheckedChange = { onToggle(index == 1) },
+                    modifier = Modifier.weight(1f),
+                    shapes = when (index) {
+                        0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                        options.lastIndex ->
+                            ButtonGroupDefaults.connectedTrailingButtonShapes()
+                        else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+                    },
+                    colors = ToggleButtonDefaults.toggleButtonColors(
+                        containerColor = MaterialTheme.colorScheme.surface,
+                        checkedContainerColor = accentColor,
+                        contentColor = textColor,
+                        checkedContentColor = MaterialTheme.colorScheme.onPrimary,
                     ),
-                    icon = {
-                        SegmentedButtonDefaults.Icon(active = selectedIndex == index) {
-                            Icon(
-                                imageVector = if (index == 0) Icons.Rounded.MusicNote else Icons.Rounded.VideoLibrary,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-                    }
                 ) {
+                    Icon(
+                        imageVector = if (index == 0) Icons.Rounded.MusicNote
+                        else Icons.Rounded.VideoLibrary,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
                     Text(label)
                 }
             }

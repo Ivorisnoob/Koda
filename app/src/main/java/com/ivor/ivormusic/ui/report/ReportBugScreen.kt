@@ -7,6 +7,7 @@ import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -26,6 +27,7 @@ import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Troubleshoot
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalButton
@@ -34,14 +36,13 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.ToggleButton
+import androidx.compose.material3.ToggleButtonDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -233,25 +234,41 @@ fun ReportBugScreen(onBack: () -> Unit) {
                         style = MaterialTheme.typography.titleSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(
+                            ButtonGroupDefaults.ConnectedSpaceBetween
+                        )
+                    ) {
                         LogLevelFilter.entries.forEachIndexed { index, filter ->
-                            SegmentedButton(
-                                selected = logFilter == filter,
-                                onClick = {
+                            val selected = logFilter == filter
+                            ToggleButton(
+                                checked = selected,
+                                onCheckedChange = {
                                     logFilter = filter
                                     prefs.setReportVerboseLogs(filter == LogLevelFilter.ALL)
                                 },
-                                shape = SegmentedButtonDefaults.itemShape(
-                                    index = index,
-                                    count = LogLevelFilter.entries.size
+                                modifier = Modifier.weight(1f),
+                                shapes = when (index) {
+                                    0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                                    LogLevelFilter.entries.lastIndex ->
+                                        ButtonGroupDefaults.connectedTrailingButtonShapes()
+                                    else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+                                },
+                                colors = ToggleButtonDefaults.toggleButtonColors(
+                                    containerColor = MaterialTheme.colorScheme.surface,
+                                    checkedContainerColor = MaterialTheme.colorScheme.primary,
+                                    contentColor = MaterialTheme.colorScheme.onSurface,
+                                    checkedContentColor = MaterialTheme.colorScheme.onPrimary
                                 )
                             ) {
                                 Text(
-                                    when (filter) {
+                                    text = when (filter) {
                                         LogLevelFilter.ERRORS -> "Errors"
                                         LogLevelFilter.WARNINGS -> "+ Warnings"
                                         LogLevelFilter.ALL -> "Everything"
-                                    }
+                                    },
+                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
                                 )
                             }
                         }

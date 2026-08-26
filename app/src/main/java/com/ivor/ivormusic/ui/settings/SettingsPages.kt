@@ -60,15 +60,15 @@ import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.ToggleButton
+import androidx.compose.material3.ToggleButtonDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -441,11 +441,16 @@ internal fun PlaybackSettingsPage(
                             else -> 2
                         }
                         val labels = listOf("Off", "AutoMix", "Manual")
-                        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(
+                                ButtonGroupDefaults.ConnectedSpaceBetween
+                            ),
+                        ) {
                             labels.forEachIndexed { index, label ->
-                                SegmentedButton(
-                                    selected = selectedIndex == index,
-                                    onClick = {
+                                ToggleButton(
+                                    checked = selectedIndex == index,
+                                    onCheckedChange = {
                                         when (index) {
                                             0 -> onCrossfadeEnabledToggle(false)
                                             1 -> {
@@ -458,13 +463,19 @@ internal fun PlaybackSettingsPage(
                                             }
                                         }
                                     },
-                                    shape = SegmentedButtonDefaults.itemShape(
-                                        index = index,
-                                        count = labels.size,
-                                    ),
-                                    icon = {
-                                        SegmentedButtonDefaults.Icon(active = selectedIndex == index) {}
+                                    modifier = Modifier.weight(1f),
+                                    shapes = when (index) {
+                                        0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                                        labels.lastIndex ->
+                                            ButtonGroupDefaults.connectedTrailingButtonShapes()
+                                        else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
                                     },
+                                    colors = ToggleButtonDefaults.toggleButtonColors(
+                                        containerColor = MaterialTheme.colorScheme.surface,
+                                        checkedContainerColor = MaterialTheme.colorScheme.primary,
+                                        contentColor = MaterialTheme.colorScheme.onSurface,
+                                        checkedContentColor = MaterialTheme.colorScheme.onPrimary,
+                                    ),
                                 ) {
                                     Text(label)
                                 }
@@ -585,38 +596,41 @@ internal fun PlaybackSettingsPage(
 
                         Spacer(modifier = Modifier.height(14.dp))
 
-                        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                            SegmentedButton(
-                                selected = showingWifi,
-                                onClick = { showingWifi = true },
-                                shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
-                                icon = {
-                                    SegmentedButtonDefaults.Icon(active = showingWifi) {
-                                        Icon(
-                                            imageVector = Icons.Rounded.Wifi,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                    }
+                        val networkOptions = listOf(
+                            true to Pair(Icons.Rounded.Wifi, "Wi-Fi"),
+                            false to Pair(Icons.Rounded.SignalCellularAlt, "Mobile data"),
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(
+                                ButtonGroupDefaults.ConnectedSpaceBetween
+                            ),
+                        ) {
+                            networkOptions.forEachIndexed { index, (wifi, presentation) ->
+                                ToggleButton(
+                                    checked = showingWifi == wifi,
+                                    onCheckedChange = { showingWifi = wifi },
+                                    modifier = Modifier.weight(1f),
+                                    shapes = when (index) {
+                                        0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                                        networkOptions.lastIndex ->
+                                            ButtonGroupDefaults.connectedTrailingButtonShapes()
+                                        else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+                                    },
+                                    colors = ToggleButtonDefaults.toggleButtonColors(
+                                        containerColor = MaterialTheme.colorScheme.surface,
+                                        checkedContainerColor = MaterialTheme.colorScheme.primary,
+                                        contentColor = MaterialTheme.colorScheme.onSurface,
+                                        checkedContentColor = MaterialTheme.colorScheme.onPrimary,
+                                    ),
+                                ) {
+                                    Icon(
+                                        imageVector = presentation.first,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp),
+                                    )
+                                    Text(presentation.second)
                                 }
-                            ) {
-                                Text("Wi-Fi")
-                            }
-                            SegmentedButton(
-                                selected = !showingWifi,
-                                onClick = { showingWifi = false },
-                                shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
-                                icon = {
-                                    SegmentedButtonDefaults.Icon(active = !showingWifi) {
-                                        Icon(
-                                            imageVector = Icons.Rounded.SignalCellularAlt,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                    }
-                                }
-                            ) {
-                                Text("Mobile data")
                             }
                         }
                     }
@@ -685,16 +699,30 @@ internal fun PlaybackSettingsPage(
                             fontSize = 13.sp
                         )
                         Spacer(modifier = Modifier.height(12.dp))
-                        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                            val levels = listOf("off", "subtle", "balanced", "expressive")
-                            val labels = listOf("Off", "Subtle", "Balanced", "Rich")
+                        val levels = listOf("off", "subtle", "balanced", "expressive")
+                        val labels = listOf("Off", "Subtle", "Balanced", "Rich")
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(
+                                ButtonGroupDefaults.ConnectedSpaceBetween
+                            ),
+                        ) {
                             levels.forEachIndexed { index, value ->
-                                SegmentedButton(
-                                    selected = hapticsLevel == value,
-                                    onClick = { onHapticsLevelChange(value) },
-                                    shape = SegmentedButtonDefaults.itemShape(
-                                        index = index,
-                                        count = levels.size,
+                                ToggleButton(
+                                    checked = hapticsLevel == value,
+                                    onCheckedChange = { onHapticsLevelChange(value) },
+                                    modifier = Modifier.weight(1f),
+                                    shapes = when (index) {
+                                        0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                                        levels.lastIndex ->
+                                            ButtonGroupDefaults.connectedTrailingButtonShapes()
+                                        else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+                                    },
+                                    colors = ToggleButtonDefaults.toggleButtonColors(
+                                        containerColor = MaterialTheme.colorScheme.surface,
+                                        checkedContainerColor = MaterialTheme.colorScheme.primary,
+                                        contentColor = MaterialTheme.colorScheme.onSurface,
+                                        checkedContentColor = MaterialTheme.colorScheme.onPrimary,
                                     ),
                                 ) {
                                     Text(labels[index])
@@ -1043,18 +1071,31 @@ internal fun StorageSettingsPage(
                             fontWeight = FontWeight.Medium,
                             modifier = Modifier.padding(bottom = 8.dp)
                         )
-                        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                            val options = listOf(256L, 512L, 1024L, 2048L)
-                            val labels = listOf("256MB", "512MB", "1GB", "2GB")
-
+                        val options = listOf(256L, 512L, 1024L, 2048L)
+                        val labels = listOf("256MB", "512MB", "1GB", "2GB")
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(
+                                ButtonGroupDefaults.ConnectedSpaceBetween
+                            ),
+                        ) {
                             options.forEachIndexed { index, size ->
-                                SegmentedButton(
-                                    selected = maxCacheSizeMb == size,
-                                    onClick = { onMaxCacheSizeMbChange(size) },
-                                    shape = SegmentedButtonDefaults.itemShape(
-                                        index = index,
-                                        count = options.size
-                                    )
+                                ToggleButton(
+                                    checked = maxCacheSizeMb == size,
+                                    onCheckedChange = { onMaxCacheSizeMbChange(size) },
+                                    modifier = Modifier.weight(1f),
+                                    shapes = when (index) {
+                                        0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                                        options.lastIndex ->
+                                            ButtonGroupDefaults.connectedTrailingButtonShapes()
+                                        else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+                                    },
+                                    colors = ToggleButtonDefaults.toggleButtonColors(
+                                        containerColor = MaterialTheme.colorScheme.surface,
+                                        checkedContainerColor = MaterialTheme.colorScheme.primary,
+                                        contentColor = MaterialTheme.colorScheme.onSurface,
+                                        checkedContentColor = MaterialTheme.colorScheme.onPrimary,
+                                    ),
                                 ) {
                                     Text(text = labels[index])
                                 }
