@@ -1987,7 +1987,7 @@ private fun ExpressiveAboutDialog(
                     )
                 }
             },
-            confirmButton = {
+            dismissButton = {
                 OutlinedButton(
                     onClick = onDismiss,
                     shape = RoundedCornerShape(16.dp),
