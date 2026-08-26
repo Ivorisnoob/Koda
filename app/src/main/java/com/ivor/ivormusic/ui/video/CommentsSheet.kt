@@ -1,4 +1,6 @@
 package com.ivor.ivormusic.ui.video
+import androidx.compose.ui.res.stringResource
+import com.ivor.ivormusic.R
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -133,7 +135,7 @@ fun CommentsPanel(
                     .padding(start = 24.dp, end = 12.dp, top = 12.dp, bottom = 8.dp)
             ) {
                 Text(
-                    text = "Comments",
+                    text = stringResource(R.string.cd_comments),
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.weight(1f)
@@ -141,7 +143,7 @@ fun CommentsPanel(
                 IconButton(onClick = onDismiss) {
                     Icon(
                         Icons.Rounded.Close,
-                        contentDescription = "Close comments",
+                        contentDescription = stringResource(R.string.cd_close_comments),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
@@ -293,8 +295,8 @@ fun CommentsPanel(
             commentPendingDelete?.let { pending ->
                 AlertDialog(
                     onDismissRequest = { commentPendingDelete = null },
-                    title = { Text("Delete comment?") },
-                    text = { Text("Your comment will be permanently deleted.") },
+                    title = { Text(stringResource(R.string.cm_delete_q)) },
+                    text = { Text(stringResource(R.string.cm_delete_body)) },
                     confirmButton = {
                         TextButton(
                             onClick = {
@@ -302,12 +304,12 @@ fun CommentsPanel(
                                 commentPendingDelete = null
                             }
                         ) {
-                            Text("Delete", color = MaterialTheme.colorScheme.error)
+                            Text(stringResource(R.string.action_delete), color = MaterialTheme.colorScheme.error)
                         }
                     },
                     dismissButton = {
                         TextButton(onClick = { commentPendingDelete = null }) {
-                            Text("Cancel")
+                            Text(stringResource(R.string.action_cancel))
                         }
                     }
                 )

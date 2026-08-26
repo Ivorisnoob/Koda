@@ -1,4 +1,6 @@
 package com.ivor.ivormusic.ui.shorts
+import com.ivor.ivormusic.R
+import androidx.compose.ui.res.stringResource
 
 import android.content.Intent
 import androidx.activity.compose.PredictiveBackHandler
@@ -361,7 +363,7 @@ fun ShortsPlayerOverlay(
                         ) {
                             Icon(
                                 imageVector = Icons.Rounded.PlayArrow,
-                                contentDescription = "Play",
+                                contentDescription = stringResource(R.string.cd_play),
                                 tint = MaterialTheme.colorScheme.onPrimaryContainer,
                                 modifier = Modifier.size(40.dp)
                             )
@@ -396,7 +398,7 @@ fun ShortsPlayerOverlay(
                                 }
                                 Spacer(modifier = Modifier.height(14.dp))
                                 Text(
-                                    text = playbackError?.message ?: "Playback failed",
+                                    text = playbackError?.message ?: stringResource(R.string.sh_playback_failed),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurface,
                                     textAlign = TextAlign.Center
@@ -409,7 +411,7 @@ fun ShortsPlayerOverlay(
                                         modifier = Modifier.size(18.dp)
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
-                                    Text("Retry")
+                                    Text(stringResource(R.string.action_retry))
                                 }
                             }
                         }
@@ -459,12 +461,12 @@ fun ShortsPlayerOverlay(
             ) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                    contentDescription = "Close Shorts"
+                    contentDescription = stringResource(R.string.cd_close_shorts)
                 )
             }
             Spacer(modifier = Modifier.width(10.dp))
             Text(
-                text = "Shorts",
+                text = stringResource(R.string.sp_shorts),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
                 color = Color.White
@@ -551,7 +553,7 @@ fun ShortsPlayerOverlay(
                             modifier = Modifier.height(34.dp)
                         ) {
                             Text(
-                                text = if (isSubscribed) "Subscribed" else "Subscribe",
+                                text = if (isSubscribed) stringResource(R.string.subscribed) else stringResource(R.string.subscribe),
                                 style = MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.SemiBold
                             )
@@ -582,10 +584,10 @@ fun ShortsPlayerOverlay(
                     ShortsAction(
                         icon = if (likeStatus == LikeStatus.LIKE) Icons.Rounded.ThumbUp
                             else Icons.Outlined.ThumbUp,
-                        label = engagement?.likeCount ?: "Like",
+                        label = engagement?.likeCount ?: stringResource(R.string.like),
                         active = likeStatus == LikeStatus.LIKE,
                         burstOnActivate = true,
-                        contentDescription = "Like",
+                        contentDescription = stringResource(R.string.like),
                         onClick = { requireLogin { viewModel.toggleLike() } }
                     )
                 }
@@ -595,7 +597,7 @@ fun ShortsPlayerOverlay(
                             else Icons.Outlined.ThumbDown,
                         label = "Dislike",
                         active = likeStatus == LikeStatus.DISLIKE,
-                        contentDescription = "Dislike",
+                        contentDescription = stringResource(R.string.cd_dislike),
                         onClick = { requireLogin { viewModel.toggleDislike() } }
                     )
                 }
@@ -603,7 +605,7 @@ fun ShortsPlayerOverlay(
                     ShortsAction(
                         icon = Icons.Rounded.ChatBubble,
                         label = "Comments",
-                        contentDescription = "Comments",
+                        contentDescription = stringResource(R.string.cd_comments),
                         onClick = {
                             viewModel.ensureCommentsLoaded()
                             showCommentsSheet = true
@@ -614,14 +616,14 @@ fun ShortsPlayerOverlay(
                     ShortsAction(
                         icon = Icons.Rounded.Share,
                         label = "Share",
-                        contentDescription = "Share",
+                        contentDescription = stringResource(R.string.video_options_share),
                         onClick = {
                             val videoId = currentVideo?.videoId ?: return@ShortsAction
                             val send = Intent(Intent.ACTION_SEND).apply {
                                 type = "text/plain"
                                 putExtra(Intent.EXTRA_TEXT, "https://youtube.com/shorts/$videoId")
                             }
-                            context.startActivity(Intent.createChooser(send, "Share Short"))
+                            context.startActivity(Intent.createChooser(send, context.getString(R.string.share_short)))
                         }
                     )
                 }
@@ -629,7 +631,7 @@ fun ShortsPlayerOverlay(
                     ShortsAction(
                         icon = Icons.Rounded.NotInterested,
                         label = "Not interested",
-                        contentDescription = "Not interested",
+                        contentDescription = stringResource(R.string.video_options_not_interested),
                         // Opens a chooser rather than acting straight away: this
                         // button sits in a rail the thumb rests on while
                         // swiping, and a one-tap irreversible-looking dismissal
@@ -839,7 +841,7 @@ private fun ShortsDismissSheet(
                 .padding(bottom = 32.dp)
         ) {
             Text(
-                text = "Stop recommending",
+                text = stringResource(R.string.stop_recommending),
                 style = MaterialTheme.typography.headlineSmall,
                 color = MaterialTheme.colorScheme.onSurface
             )
@@ -847,17 +849,17 @@ private fun ShortsDismissSheet(
 
             ShortsDismissRow(
                 icon = Icons.Rounded.NotInterested,
-                title = "Not interested",
-                subtitle = "Hide this Short and move on",
+                title = stringResource(R.string.video_options_not_interested),
+                subtitle = stringResource(R.string.sh_hide_short_sub),
                 onClick = onNotInterested
             )
             Spacer(modifier = Modifier.height(8.dp))
             ShortsDismissRow(
                 icon = Icons.Rounded.RemoveCircleOutline,
-                title = "Don't recommend channel",
+                title = stringResource(R.string.video_options_dont_recommend_channel),
                 subtitle = channelName.takeIf { it.isNotBlank() }
                     ?.let { "Hide everything from $it" }
-                    ?: "Hide everything from this channel",
+                    ?: stringResource(R.string.sh_hide_channel_sub),
                 onClick = onBlockChannel
             )
         }

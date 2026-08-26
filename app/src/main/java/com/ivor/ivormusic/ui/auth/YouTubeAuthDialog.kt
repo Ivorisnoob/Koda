@@ -1,4 +1,6 @@
 package com.ivor.ivormusic.ui.auth
+import androidx.compose.ui.res.stringResource
+import com.ivor.ivormusic.R
 
 import android.webkit.CookieManager
 import android.webkit.WebView
@@ -66,14 +68,14 @@ fun YouTubeAuthDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Sign in to YouTube Music",
+                        text = stringResource(R.string.au_sign_in_title),
                         modifier = Modifier.weight(1f),
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     IconButton(onClick = onDismiss) {
                         Icon(
                             imageVector = Icons.Rounded.Close,
-                            contentDescription = "Close",
+                            contentDescription = stringResource(R.string.cd_close),
                             tint = MaterialTheme.colorScheme.onSurface
                         )
                     }

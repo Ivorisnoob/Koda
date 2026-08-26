@@ -1,4 +1,5 @@
 package com.ivor.ivormusic.ui.home
+import com.ivor.ivormusic.R
 
 import com.ivor.ivormusic.util.KLog
 
@@ -39,6 +40,8 @@ internal fun shouldWarmSubscriptionFeed(
 }
 
 class HomeViewModel(application: Application) : AndroidViewModel(application) {
+
+    private val app get() = getApplication<Application>()
     private val localRepository = SongRepository(application)
     private val youtubeRepository = YouTubeRepository(application)
     private val playlistRepository = com.ivor.ivormusic.data.PlaylistRepository(application)
@@ -775,15 +778,15 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     // empty feed, and telling someone to check a connection that
                     // is plainly working sends them fixing the wrong thing.
                     _subscriptionFeedError.value = if (hasNetworkConnection()) {
-                        "No recent uploads from the channels you follow."
+                        app.getString(R.string.hvm_subs_feed_empty)
                     } else {
-                        "Couldn't load recent uploads. Check your connection and try again."
+                        app.getString(R.string.hvm_subs_feed_error)
                     }
                 }
             } catch (e: Exception) {
                 KLog.e("HomeViewModel", "Subscription feed refresh failed", e)
                 _subscriptionFeedError.value =
-                    "Couldn't load recent uploads. Check your connection and try again."
+                    app.getString(R.string.hvm_subs_feed_error)
             } finally {
                 _subscriptionFeedProgress.value = null
                 _isSubscriptionFeedLoading.value = false
@@ -811,12 +814,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 _selectedChannelFeed.value = videos
                 if (videos.isEmpty()) {
                     _selectedChannelFeedError.value =
-                        "Couldn't load uploads from ${channel.name}. Pull to try again."
+                        app.getString(R.string.hvm_channel_feed_error, channel.name)
                 }
             } catch (e: Exception) {
                 KLog.e("HomeViewModel", "Selected channel feed failed", e)
                 _selectedChannelFeedError.value =
-                    "Couldn't load uploads from ${channel.name}. Pull to try again."
+                    app.getString(R.string.hvm_channel_feed_error, channel.name)
             } finally {
                 _isSelectedChannelFeedLoading.value = false
             }
@@ -936,7 +939,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 if (imported == null) {
                     onResult(
                         com.ivor.ivormusic.data.SubscriptionImportResult(
-                            0, 0, 0, error = "That file was empty or could not be opened."
+                            0, 0, 0, error = app.getString(R.string.hvm_import_empty)
                         )
                     )
                     return@launch
@@ -949,9 +952,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                         com.ivor.ivormusic.data.SubscriptionImportResult(
                             0, 0, 0, foreign,
                             error = if (foreign > 0) {
-                                "That file only had channels from services Koda can't play."
+                                app.getString(R.string.hvm_import_foreign)
                             } else {
-                                "Couldn't find any channels in that file."
+                                app.getString(R.string.hvm_import_no_channels)
                             }
                         )
                     )
@@ -992,7 +995,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 KLog.e("HomeViewModel", "Subscription import failed", e)
                 onResult(
                     com.ivor.ivormusic.data.SubscriptionImportResult(
-                        0, 0, 0, error = "Couldn't read that file."
+                        0, 0, 0, error = app.getString(R.string.hvm_import_read)
                     )
                 )
             } finally {
@@ -1014,7 +1017,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         if (!sessionManager.isLoggedIn()) {
             onResult(
                 com.ivor.ivormusic.data.SubscriptionImportResult(
-                    0, 0, 0, error = "Sign in to YouTube first."
+                    0, 0, 0, error = app.getString(R.string.sm_sign_in_first)
                 )
             )
             return
@@ -1026,7 +1029,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 if (channels.isEmpty()) {
                     onResult(
                         com.ivor.ivormusic.data.SubscriptionImportResult(
-                            0, 0, 0, error = "Your account has no subscriptions to copy."
+                            0, 0, 0, error = app.getString(R.string.hvm_copy_empty)
                         )
                     )
                     return@launch
@@ -1052,7 +1055,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 KLog.e("HomeViewModel", "Account subscription copy failed", e)
                 onResult(
                     com.ivor.ivormusic.data.SubscriptionImportResult(
-                        0, 0, 0, error = "Couldn't reach YouTube."
+                        0, 0, 0, error = app.getString(R.string.hvm_network)
                     )
                 )
             } finally {

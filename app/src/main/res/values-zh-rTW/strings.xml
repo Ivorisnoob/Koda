@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Koda</string>
+    <string name="now_playing_channel_name">正在播放</string>
+    <string name="video_playback_channel_name">影片播放</string>
+
+    <string name="undo">復原</string>
+    <string name="action_cancel">取消</string>
+    <string name="action_done">完成</string>
+    <string name="action_create">建立</string>
+    <string name="action_save">儲存</string>
+    <string name="action_delete">刪除</string>
+    <string name="action_edit">編輯</string>
+    <string name="action_share">分享</string>
+    <string name="action_retry">重試</string>
+    <string name="action_see_all">查看全部</string>
+    <string name="action_play_all">全部播放</string>
+    <string name="action_show_more">顯示更多</string>
+    <string name="action_try_again">請再試一次</string>
+    <string name="action_open_settings">開啟設定</string>
+    <string name="action_clear_all">全部清除</string>
+    <string name="action_new_playlist">新增播放清單</string>
+    <string name="action_grant_permission">授權權限</string>
+    <string name="unknown_artist">未知演出者</string>
+    <string name="untitled_song">未命名歌曲</string>
+    <string name="label_playlist">播放清單</string>
+
+    <string name="tab_home">首頁</string>
+    <string name="tab_search">搜尋</string>
+    <string name="tab_subs">訂閱項目</string>
+    <string name="tab_library">媒體庫</string>
+
+    <string name="local_only_title">「僅本機」模式已開啟</string>
+    <string name="local_only_default_subtitle">此區塊需要網際網路。請前往設定關閉「僅本機」模式才能使用。</string>
+    <string name="local_only_video_mode_subtitle">影片模式需要網際網路。請前往設定關閉「僅本機」模式以觀看影片。</string>
+    <string name="local_only_video_search_subtitle">影片搜尋需要網際網路。請前往設定關閉「僅本機」模式以搜尋影片。</string>
+    <string name="local_only_subscriptions_subtitle">訂閱內容需要網際網路。請前往設定關閉「僅本機」模式以查看。</string>
+    <string name="local_only_video_library_subtitle">影片媒體庫需要網際網路。請前往設定關閉「僅本機」模式以查看。</string>
+    <string name="local_only_update_subtitle">檢查更新需要網際網路。請前往設定關閉「僅本機」模式以檢查更新。</string>
+
+    <string name="crash_dialog_title">Koda 上次發生當機</string>
+    <string name="crash_dialog_message">上一次工作階段發生錯誤。你可以傳送含有詳細資訊的錯誤報告——除非你選擇分享，否則不會有任何資料離開你的裝置。</string>
+    <string name="crash_dialog_view_report">檢視並回報</string>
+    <string name="crash_dialog_not_now">暫不處理</string>
+
+    <string name="permission_required_title">需要權限才能載入歌曲</string>
+
+    <string name="home_section_recent_albums">最近專輯</string>
+    <string name="home_section_jump_back_in">接著聽</string>
+    <string name="your_mix_line1">你的</string>
+    <string name="your_mix_line2">合輯</string>
+    <string name="update_badge_version">v%1$s</string>
+    <string name="artists_joined">%1$s、%2$s</string>
+    <string name="cd_profile">個人資料</string>
+    <string name="cd_downloads">下載</string>
+    <string name="cd_settings">設定</string>
+    <string name="cd_play">播放</string>
+    <string name="cd_pause">暫停</string>
+    <string name="cd_next">下一首</string>
+    <string name="cd_album_art">專輯封面</string>
+    <string name="cd_show_all">顯示全部：%1$s</string>
+
+    <string name="spotlight_quick_picks">快速精選</string>
+    <string name="spotlight_your_playlists">你的播放清單</string>
+    <string name="spotlight_from_your_library">來自你的媒體庫</string>
+    <string name="spotlight_caption_liked">來自你喜歡的歌曲</string>
+    <string name="spotlight_caption_recent">來自你最近聆聽的內容</string>
+    <string name="shortcut_liked_songs">喜歡的歌曲</string>
+    <string name="filter_all">全部</string>
+    <string name="filter_liked">喜歡</string>
+    <string name="filter_recent">最近</string>
+    <string name="filter_playlists">播放清單</string>
+    <string name="spotlight_empty_no_liked">還沒有喜歡的歌曲</string>
+    <string name="spotlight_empty_no_recent">還沒有播放紀錄</string>
+    <string name="spotlight_empty_no_playlists">還沒有播放清單</string>
+    <string name="spotlight_empty_generic">這裡目前空無一物</string>
+    <string name="spotlight_hint_liked">你喜歡的歌曲會收藏在這裡。</string>
+    <string name="spotlight_hint_playlists">你建立或儲存的播放清單會顯示在這裡。</string>
+    <string name="spotlight_hint_all">播放一些音樂，你的首頁就會豐富起來。</string>
+
+    <string name="sleep_timer_title">睡眠計時器</string>
+    <string name="sleep_timer_status_track">這首曲目</string>
+    <string name="sleep_timer_detail_track">目前歌曲播畢後停止播放</string>
+    <string name="sleep_timer_detail_duration">計時結束時，播放會淡出並暫停</string>
+    <string name="minutes_short">%1$d 分鐘</string>
+    <string name="sleep_timer_end_of_track">這首曲目結束時</string>
+    <string name="sleep_timer_turn_off">關閉</string>
+
+    <string name="cd_switch_to_music">切換至音樂模式</string>
+    <string name="cd_switch_to_video">切換至影片模式</string>
+    <string name="cd_drag_to_reorder">拖曳以重新排序</string>
+    <string name="cd_favorite">收藏</string>
+    <string name="cd_clear_search">清除搜尋</string>
+    <string name="queue_removed_snackbar">已移除 %1$s</string>
+
+    <string name="song_options_play_next">接著播放</string>
+    <string name="song_options_play_next_subtitle">緊接在這首歌之後</string>
+    <string name="song_options_add_to_queue">加入待播清單</string>
+    <string name="song_options_add_to_queue_subtitle">加到結尾</string>
+    <string name="song_options_add_to_playlist">加入播放清單</string>
+    <string name="song_options_remove_from_liked">從喜歡的內容中移除</string>
+    <string name="song_options_like">喜歡</string>
+    <string name="song_options_download">下載</string>
+    <string name="song_options_download_subtitle">保存在這部裝置上</string>
+    <string name="song_options_downloaded">已下載</string>
+    <string name="song_options_go_to_artist">前往 %1$s</string>
+
+    <string name="add_to_playlist_title">加入播放清單</string>
+    <string name="new_playlist_label">新增播放清單</string>
+    <string name="name_label">名稱</string>
+    <string name="description_optional_label">說明（選填）</string>
+
+    <string name="video_options_watch_later">稍後觀看</string>
+    <string name="video_options_kept_on_device">已保存在這部裝置上</string>
+    <string name="video_options_save_to_playlist">儲存到播放清單</string>
+    <string name="video_options_download">下載</string>
+    <string name="video_options_go_to_channel">前往頻道</string>
+    <string name="video_options_share">分享</string>
+    <string name="video_options_share_chooser">分享影片</string>
+    <string name="video_options_not_interested">沒興趣</string>
+    <string name="video_options_dont_recommend_channel">不建議這個頻道</string>
+    <string name="video_options_dont_recommend_channel_name">不建議 %1$s</string>
+    <string name="cd_back">返回</string>
+    <string name="search_playlists_placeholder">搜尋播放清單</string>
+    <string name="no_playlist_matches">沒有符合「%1$s」的播放清單</string>
+    <string name="no_playlists_yet_hint">還沒有播放清單。建立一個，這部影片就會直接加入其中。</string>
+    <string name="cd_saved">已儲存</string>
+    <string name="cd_couldnt_save">無法儲存</string>
+    <string name="cd_in_this_playlist">已在這份播放清單中</string>
+
+    <string name="settings_section_you">帳戶</string>
+    <string name="settings_section_look_and_feel">外觀</string>
+    <string name="settings_section_playback_and_content">播放與內容</string>
+    <string name="settings_section_system">系統</string>
+    <string name="settings_section_about">關於</string>
+    <string name="settings_account">帳號</string>
+    <string name="settings_appearance">外觀</string>
+    <string name="settings_player">播放器</string>
+    <string name="settings_playback_and_quality">播放與畫質</string>
+    <string name="settings_content_and_feeds">內容與動態消息</string>
+    <string name="settings_subscriptions">訂閱項目</string>
+    <string name="settings_storage_and_cache">儲存空間與快取</string>
+    <string name="settings_notifications">通知</string>
+    <string name="settings_local_library">本機媒體庫</string>
+    <string name="settings_backup_and_restore">備份與還原</string>
+    <string name="settings_advanced">進階</string>
+    <string name="settings_advanced_value_xiaomi">建議在此裝置上啟用</string>
+    <string name="settings_advanced_value_other">掃描與電池修正</string>
+    <string name="settings_version_subtitle">版本 %1$s (%2$d)</string>
+
+    <string name="profiles_title">個人資料</string>
+    <string name="profiles_description">訂閱項目與隱藏的推薦內容會依個人資料分開保存。播放清單、喜歡的歌曲和下載內容則為共用。</string>
+    <string name="add_youtube_account">新增 YouTube 帳戶</string>
+    <string name="add_youtube_account_subtitle">登入另一個 Google 帳戶</string>
+    <string name="add_device_profile">在這部裝置上新增資料</string>
+    <string name="add_device_profile_subtitle">獨立的訂閱項目，不需帳戶</string>
+    <string name="profile_signed_out">尚未登入 - 輕觸以登入</string>
+    <string name="profile_session_expired">工作階段已過期 - 輕觸以重新連線</string>
+    <string name="profile_on_this_device">在這部裝置上</string>
+    <string name="profile_youtube_account">YouTube 帳戶</string>
+    <string name="cd_active_profile">目前的個人資料</string>
+    <string name="cd_remove_profile">移除 %1$s</string>
+    <string name="new_profile_dialog_title">在這部裝置上新增個人資料</string>
+    <string name="sign_out_confirm_title">要登出 %1$s 嗎？</string>
+    <string name="remove_profile_confirm_title">要移除 %1$s 嗎？</string>
+    <string name="sign_out">登出</string>
+    <string name="remove">移除</string>
+
+    <string name="library_empty_title">你的媒體庫是空的</string>
+    <string name="library_empty_subtitle">你下載或喜歡的歌曲會顯示在這裡</string>
+    <string name="library_create_playlist_hint">使用下方的 + 按鈕建立</string>
+    <string name="fab_downloads">下載</string>
+    <string name="fab_listening_history">收聽記錄</string>
+    <string name="fab_statistics">統計資料</string>
+    <string name="cd_listening_stats">收聽統計</string>
+    <string name="recently_played">最近播放</string>
+    <string name="liked_songs">喜歡的歌曲</string>
+    <string name="no_artists_yet">還沒有演出者</string>
+    <string name="no_artists_yet_subtitle">歌曲中的演出者會顯示在這裡</string>
+    <string name="no_albums_yet">還沒有專輯</string>
+    <string name="no_albums_yet_subtitle">歌曲中的專輯會顯示在這裡</string>
+
+    <plurals name="n_songs">
+        <item quantity="other">%1$d 首歌曲</item>
+    </plurals>
+    <plurals name="n_playlists">
+        <item quantity="other">%1$d 份播放清單</item>
+    </plurals>
+</resources>

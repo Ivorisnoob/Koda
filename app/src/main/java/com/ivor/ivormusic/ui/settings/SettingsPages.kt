@@ -1,4 +1,6 @@
 package com.ivor.ivormusic.ui.settings
+import androidx.compose.ui.res.stringResource
+import com.ivor.ivormusic.R
 
 import android.content.Intent
 import android.net.Uri
@@ -116,10 +118,10 @@ internal fun AccountSettingsPage(
     onSignOut: () -> Unit,
     onBack: () -> Unit
 ) {
-    SettingsDetailScaffold(title = "Account", onBack = onBack) {
+    SettingsDetailScaffold(title = stringResource(R.string.settings_account), onBack = onBack) {
         if (isLoggedIn) {
             item {
-                SettingsSection(title = "YouTube Music") {
+                SettingsSection(title = stringResource(R.string.settings_section_youtube_music)) {
                     SettingsCard {
                         key(accountRefreshKey) {
                             ExpressiveAccountItem(
@@ -131,7 +133,7 @@ internal fun AccountSettingsPage(
                         SettingsDivider()
                         SettingsToggleRow(
                             icon = Icons.Rounded.CheckCircle,
-                            title = "Save Watch History",
+                            title = stringResource(R.string.sp_save_watch_history),
                             subtitle = if (saveVideoHistory) {
                                 "Videos you watch are added to your YouTube history"
                             } else {
@@ -143,8 +145,8 @@ internal fun AccountSettingsPage(
                         SettingsDivider()
                         SettingsRow(
                             icon = Icons.Rounded.Cookie,
-                            title = "Replace Session Cookies",
-                            subtitle = "Paste a fresh cookie header if your session goes stale",
+                            title = stringResource(R.string.sp_replace_session_cookies),
+                            subtitle = stringResource(R.string.sp_replace_session_cookies_sub),
                             onClick = onShowCookieSheet,
                             showChevron = true
                         )
@@ -156,8 +158,8 @@ internal fun AccountSettingsPage(
                 SettingsCard {
                     SettingsRow(
                         icon = Icons.AutoMirrored.Rounded.Logout,
-                        title = "Sign Out",
-                        subtitle = "Disconnect your YouTube account",
+                        title = stringResource(R.string.sign_out),
+                        subtitle = stringResource(R.string.sp_sign_out_sub),
                         onClick = onSignOut,
                         tint = SettingsRowDefaults.destructiveTint,
                         titleColor = SettingsRowDefaults.destructiveTint
@@ -170,26 +172,25 @@ internal fun AccountSettingsPage(
             item {
                 SettingsNotice(
                     icon = Icons.Rounded.Info,
-                    text = "Koda works signed out. Signing in adds your playlists, " +
-                        "liked songs, subscriptions and watch history."
+                    text = stringResource(R.string.sp_signed_out_info),
                 )
             }
 
             item {
-                SettingsSection(title = "YouTube Music") {
+                SettingsSection(title = stringResource(R.string.settings_section_youtube_music)) {
                     SettingsCard {
                         SettingsRow(
                             icon = Icons.Rounded.MusicNote,
-                            title = "Connect YouTube Music",
-                            subtitle = "Sign in to access your playlists and liked songs",
+                            title = stringResource(R.string.sp_connect_youtube_music),
+                            subtitle = stringResource(R.string.sp_connect_youtube_music_sub),
                             onClick = onShowAuthDialog,
                             showChevron = true
                         )
                         SettingsDivider()
                         SettingsRow(
                             icon = Icons.Rounded.Cookie,
-                            title = "Sign In With Cookies",
-                            subtitle = "Paste a cookie header instead of using the web sign-in",
+                            title = stringResource(R.string.sp_sign_in_cookies),
+                            subtitle = stringResource(R.string.sp_sign_in_cookies_sub),
                             onClick = onShowCookieSheet,
                             showChevron = true
                         )
@@ -226,9 +227,9 @@ internal fun AppearanceSettingsPage(
         com.ivor.ivormusic.ui.theme.findPalette(colorPalette)?.name ?: "Dynamic"
     }
 
-    SettingsDetailScaffold(title = "Appearance", onBack = onBack) {
+    SettingsDetailScaffold(title = stringResource(R.string.settings_appearance), onBack = onBack) {
         item {
-            SettingsSection(title = "Theme") {
+            SettingsSection(title = stringResource(R.string.sp_theme)) {
                 SettingsCard {
                     ExpressiveThemeSelectGroup(
                         currentMode = currentThemeMode,
@@ -239,7 +240,7 @@ internal fun AppearanceSettingsPage(
                     SettingsDivider()
                     SettingsRow(
                         icon = Icons.Rounded.Palette,
-                        title = "Color palette",
+                        title = stringResource(R.string.sp_color_palette),
                         subtitle = paletteName,
                         onClick = onNavigateToColorPalette,
                         showChevron = true
@@ -247,7 +248,7 @@ internal fun AppearanceSettingsPage(
                     SettingsDivider()
                     SettingsToggleRow(
                         icon = Icons.Rounded.Contrast,
-                        title = "AMOLED Black",
+                        title = stringResource(R.string.sp_amoled_black),
                         subtitle = if (amoledTheme) {
                             "Pure black backgrounds in dark theme"
                         } else {
@@ -261,11 +262,11 @@ internal fun AppearanceSettingsPage(
         }
 
         item {
-            SettingsSection(title = "Backgrounds") {
+            SettingsSection(title = stringResource(R.string.sp_backgrounds)) {
                 SettingsCard {
                     SettingsToggleRow(
                         icon = Icons.Rounded.Palette,
-                        title = "Ambient Background",
+                        title = stringResource(R.string.sp_ambient_background),
                         subtitle = if (ambientBackground) {
                             "Dynamic colors from album art"
                         } else {
@@ -279,11 +280,11 @@ internal fun AppearanceSettingsPage(
         }
 
         item {
-            SettingsSection(title = "Navigation") {
+            SettingsSection(title = stringResource(R.string.sp_navigation)) {
                 SettingsCard {
                     SettingsToggleRow(
                         icon = Icons.Rounded.Dashboard,
-                        title = "Non-expressive navigation bar",
+                        title = stringResource(R.string.sp_non_expressive_nav),
                         subtitle = if (nonExpressiveNavigationBar) {
                             "Standard Material 3 bar with fixed labels"
                         } else {
@@ -297,11 +298,11 @@ internal fun AppearanceSettingsPage(
         }
 
         item {
-            SettingsSection(title = "Home") {
+            SettingsSection(title = stringResource(R.string.tab_home)) {
                 SettingsCard {
                     SettingsToggleRow(
                         icon = Icons.Rounded.Dashboard,
-                        title = "Spotlight Home",
+                        title = stringResource(R.string.sp_spotlight_home),
                         subtitle = if (spotlightHome) {
                             "Shortcut grid, quick picks and artwork shelves"
                         } else {
@@ -328,14 +329,13 @@ internal fun PlayerSettingsPage(
     onPlayerArtworkColorsToggle: (Boolean) -> Unit,
     onBack: () -> Unit
 ) {
-    SettingsDetailScaffold(title = "Player", onBack = onBack) {
+    SettingsDetailScaffold(title = stringResource(R.string.settings_player), onBack = onBack) {
         item {
-            SettingsSection(title = "Style") {
+            SettingsSection(title = stringResource(R.string.sp_style)) {
                 SettingsCard {
                     Column(modifier = Modifier.padding(10.dp)) {
                         Text(
-                            text = "Every style plays the same music - they differ in " +
-                                "layout and how you control it.",
+                            text = stringResource(R.string.sp_style_note),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 13.sp,
                             lineHeight = 18.sp,
@@ -353,18 +353,17 @@ internal fun PlayerSettingsPage(
         item {
             SettingsNotice(
                 icon = Icons.Rounded.Info,
-                text = "Long-press the artwork in any player to switch styles from " +
-                    "the wheel without coming back here."
+                text = stringResource(R.string.sp_style_switch_hint),
             )
         }
 
         item {
-            SettingsSection(title = "Colors") {
+            SettingsSection(title = stringResource(R.string.sp_colors)) {
                 SettingsCard {
                     SettingsToggleRow(
                         icon = Icons.Rounded.Palette,
-                        title = "Album Art Colors",
-                        subtitle = "Color the expanded player's buttons from the current cover",
+                        title = stringResource(R.string.sp_album_art_colors),
+                        subtitle = stringResource(R.string.sp_album_art_colors_sub),
                         enabled = playerArtworkColors,
                         onToggle = onPlayerArtworkColorsToggle
                     )
@@ -409,13 +408,13 @@ internal fun PlaybackSettingsPage(
     // in the title.
     var showingWifi by remember { mutableStateOf(true) }
 
-    SettingsDetailScaffold(title = "Playback and quality", onBack = onBack) {
+    SettingsDetailScaffold(title = stringResource(R.string.settings_playback_and_quality), onBack = onBack) {
         item {
-            SettingsSection(title = "Playback") {
+            SettingsSection(title = stringResource(R.string.sp_playback)) {
                 SettingsCard {
                     SettingsRow(
                         icon = Icons.Rounded.GraphicEq,
-                        title = "Song transitions",
+                        title = stringResource(R.string.sp_song_transitions),
                         subtitle = when {
                             !crossfadeEnabled -> "Songs change without an overlap"
                             crossfadeAuto -> "AutoMix adapts to each song, up to 15s"
@@ -441,7 +440,11 @@ internal fun PlaybackSettingsPage(
                             crossfadeAuto -> 1
                             else -> 2
                         }
-                        val labels = listOf("Off", "AutoMix", "Manual")
+                        val labels = listOf(
+                            stringResource(R.string.haptic_level_off),
+                            stringResource(R.string.sp_crossfade_automix),
+                            stringResource(R.string.sp_crossfade_manual)
+                        )
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(
@@ -516,12 +519,12 @@ internal fun PlaybackSettingsPage(
 
                     SettingsToggleRow(
                         icon = Icons.Rounded.VolumeUp,
-                        title = "Normalise volume",
+                        title = stringResource(R.string.sp_normalise_volume),
                         // Says what it does to the sound rather than naming the
                         // mechanism: nobody is looking for "loudness
                         // normalisation to -14 LKFS", they are looking for the
                         // reason one song is twice as loud as the last.
-                        subtitle = "Even out loud and quiet tracks",
+                        subtitle = stringResource(R.string.sp_normalise_volume_sub),
                         enabled = normalizeVolume,
                         onToggle = onNormalizeVolumeToggle
                     )
@@ -530,8 +533,8 @@ internal fun PlaybackSettingsPage(
 
                     SettingsToggleRow(
                         icon = Icons.AutoMirrored.Rounded.QueueMusic,
-                        title = "Auto-load Queue",
-                        subtitle = "Add recommended songs when the queue runs low",
+                        title = stringResource(R.string.sp_auto_load_queue),
+                        subtitle = stringResource(R.string.sp_auto_load_queue_sub),
                         enabled = autoLoadQueue,
                         onToggle = onAutoLoadQueueToggle
                     )
@@ -544,7 +547,7 @@ internal fun PlaybackSettingsPage(
                     // stops growing, because this feeds four other surfaces.
                     SettingsToggleRow(
                         icon = Icons.Rounded.History,
-                        title = "Save Listening History",
+                        title = stringResource(R.string.sp_save_listening_history),
                         subtitle = if (saveMusicHistory) {
                             "Songs you play are logged on this device"
                         } else {
@@ -558,7 +561,7 @@ internal fun PlaybackSettingsPage(
         }
 
         item {
-            SettingsSection(title = "Streaming quality") {
+            SettingsSection(title = stringResource(R.string.sp_streaming_quality)) {
                 SettingsCard {
                     Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -581,14 +584,14 @@ internal fun PlaybackSettingsPage(
                             Spacer(modifier = Modifier.width(16.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = "Quality per network",
+                                    text = stringResource(R.string.sp_quality_per_network),
                                     color = MaterialTheme.colorScheme.onBackground,
                                     fontSize = 16.sp,
                                     fontWeight = FontWeight.SemiBold
                                 )
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
-                                    text = "Koda picks these based on the connection in use",
+                                    text = stringResource(R.string.sp_quality_network_hint),
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     fontSize = 13.sp
                                 )
@@ -598,8 +601,8 @@ internal fun PlaybackSettingsPage(
                         Spacer(modifier = Modifier.height(14.dp))
 
                         val networkOptions = listOf(
-                            true to Pair(Icons.Rounded.Wifi, "Wi-Fi"),
-                            false to Pair(Icons.Rounded.SignalCellularAlt, "Mobile data"),
+                            true to Pair(Icons.Rounded.Wifi, stringResource(R.string.wifi)),
+                            false to Pair(Icons.Rounded.SignalCellularAlt, stringResource(R.string.mobile_data)),
                         )
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -640,7 +643,7 @@ internal fun PlaybackSettingsPage(
 
                     SettingsRow(
                         icon = Icons.Rounded.MusicNote,
-                        title = "Music quality",
+                        title = stringResource(R.string.sp_music_quality),
                         subtitle = musicQualityLabel(
                             if (showingWifi) musicQualityWifi else musicQualityMobile
                         ),
@@ -657,7 +660,7 @@ internal fun PlaybackSettingsPage(
 
                     SettingsRow(
                         icon = Icons.Rounded.VideoLibrary,
-                        title = "Video quality",
+                        title = stringResource(R.string.sp_video_quality),
                         subtitle = videoQualityLabel(
                             if (showingWifi) videoQualityWifi else videoQualityMobile
                         ),
@@ -682,17 +685,17 @@ internal fun PlaybackSettingsPage(
                             .padding(horizontal = 16.dp, vertical = 14.dp)
                     ) {
                         Text(
-                            text = "Haptics",
+                            text = stringResource(R.string.sp_haptics),
                             color = MaterialTheme.colorScheme.onBackground,
                             fontSize = 16.sp,
                             fontWeight = FontWeight.SemiBold
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         val levelSubtitle = when (hapticsLevel) {
-                            "off" -> "Silent: nothing vibrates"
-                            "subtle" -> "Only the moments that matter"
-                            "expressive" -> "Every touch, felt clearly"
-                            else -> "A tick for every action"
+                            "off" -> stringResource(R.string.sp_haptics_sub_off)
+                            "subtle" -> stringResource(R.string.sp_haptics_sub_subtle)
+                            "expressive" -> stringResource(R.string.sp_haptics_sub_expressive)
+                            else -> stringResource(R.string.sp_haptics_sub_balanced)
                         }
                         Text(
                             text = levelSubtitle,
@@ -701,7 +704,12 @@ internal fun PlaybackSettingsPage(
                         )
                         Spacer(modifier = Modifier.height(12.dp))
                         val levels = listOf("off", "subtle", "balanced", "expressive")
-                        val labels = listOf("Off", "Subtle", "Balanced", "Rich")
+                        val labels = listOf(
+                            stringResource(R.string.haptic_level_off),
+                            stringResource(R.string.haptic_level_subtle),
+                            stringResource(R.string.haptic_level_balanced),
+                            stringResource(R.string.haptic_level_rich)
+                        )
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(
@@ -780,13 +788,13 @@ internal fun ContentSettingsPage(
     onNavigateToNotInterested: () -> Unit,
     onBack: () -> Unit
 ) {
-    SettingsDetailScaffold(title = "Content and feeds", onBack = onBack) {
+    SettingsDetailScaffold(title = stringResource(R.string.settings_content_and_feeds), onBack = onBack) {
         item {
-            SettingsSection(title = "Mode") {
+            SettingsSection(title = stringResource(R.string.sp_mode)) {
                 SettingsCard {
                     SettingsToggleRow(
                         icon = Icons.Rounded.CloudOff,
-                        title = "Local Only",
+                        title = stringResource(R.string.sp_local_only),
                         subtitle = if (localOnlyMode) {
                             "Offline: device library only, no internet"
                         } else {
@@ -818,7 +826,7 @@ internal fun ContentSettingsPage(
                             SettingsDivider()
                             SettingsToggleRow(
                                 icon = Icons.Rounded.ToggleOn,
-                                title = "Home Screen Mode Toggle",
+                                title = stringResource(R.string.sp_home_mode_toggle),
                                 subtitle = if (homeModeToggleEnabled) {
                                     "Switch music and video from the Home header"
                                 } else {
@@ -835,11 +843,11 @@ internal fun ContentSettingsPage(
 
         if (!localOnlyMode) {
             item {
-                SettingsSection(title = "Video") {
+                SettingsSection(title = stringResource(R.string.cat_videos)) {
                     SettingsCard {
                         SettingsToggleRow(
                             icon = Icons.AutoMirrored.Rounded.Comment,
-                            title = "Timed Comments",
+                            title = stringResource(R.string.sp_timed_comments),
                             subtitle = if (timedCommentsEnabled) {
                                 "Comments appear on the seek bar where they were posted"
                             } else {
@@ -853,7 +861,7 @@ internal fun ContentSettingsPage(
 
                         SettingsToggleRow(
                             icon = Icons.Rounded.Bolt,
-                            title = "Shorts",
+                            title = stringResource(R.string.sp_shorts),
                             subtitle = if (shortsEnabled) {
                                 "Shorts shelves appear in your feeds"
                             } else {
@@ -876,7 +884,7 @@ internal fun ContentSettingsPage(
                                 SettingsDivider()
                                 SettingsRow(
                                     icon = Icons.Rounded.Visibility,
-                                    title = "Shorts Buttons",
+                                    title = stringResource(R.string.sp_shorts_buttons),
                                     subtitle = if (shortsHiddenActions.isEmpty()) {
                                         "All buttons shown"
                                     } else {
@@ -892,12 +900,12 @@ internal fun ContentSettingsPage(
             }
 
             item {
-                SettingsSection(title = "Recommendations") {
+                SettingsSection(title = stringResource(R.string.sp_recommendations)) {
                     SettingsCard {
                         SettingsRow(
                             icon = Icons.Rounded.NotInterested,
-                            title = "Not Recommended",
-                            subtitle = "Videos and channels you've hidden from your feeds",
+                            title = stringResource(R.string.sp_not_recommended),
+                            subtitle = stringResource(R.string.sp_not_recommended_sub),
                             onClick = onNavigateToNotInterested,
                             showChevron = true
                         )
@@ -922,14 +930,14 @@ internal fun SubscriptionsSettingsPage(
     onOpenRoutingPicker: (SubscriptionDialogTarget) -> Unit,
     onBack: () -> Unit
 ) {
-    SettingsDetailScaffold(title = "Subscriptions", onBack = onBack) {
+    SettingsDetailScaffold(title = stringResource(R.string.settings_subscriptions), onBack = onBack) {
         item {
-            SettingsSection(title = "Channels") {
+            SettingsSection(title = stringResource(R.string.section_channels)) {
                 SettingsCard {
                     SettingsRow(
                         icon = Icons.Rounded.Subscriptions,
-                        title = "Manage Subscriptions",
-                        subtitle = "Import, export and group the channels you follow",
+                        title = stringResource(R.string.sp_manage_subscriptions),
+                        subtitle = stringResource(R.string.sp_manage_subscriptions_sub),
                         onClick = onNavigateToSubscriptions,
                         showChevron = true
                     )
@@ -938,11 +946,11 @@ internal fun SubscriptionsSettingsPage(
         }
 
         item {
-            SettingsSection(title = "Where they live") {
+            SettingsSection(title = stringResource(R.string.sp_where_they_live)) {
                 SettingsCard {
                     SettingsRow(
                         icon = Icons.Rounded.FilterList,
-                        title = "Subscriptions Shown",
+                        title = stringResource(R.string.sp_subscriptions_shown),
                         subtitle = subscriptionSourceLabel(subscriptionSource),
                         onClick = { onOpenRoutingPicker(SubscriptionDialogTarget.SOURCE) },
                         showChevron = true
@@ -950,7 +958,7 @@ internal fun SubscriptionsSettingsPage(
                     SettingsDivider()
                     SettingsRow(
                         icon = Icons.Rounded.BookmarkAdd,
-                        title = "Subscribe Saves To",
+                        title = stringResource(R.string.sp_subscribe_saves_to),
                         subtitle = subscribeTargetLabel(subscribeTarget),
                         onClick = { onOpenRoutingPicker(SubscriptionDialogTarget.TARGET) },
                         showChevron = true
@@ -960,15 +968,15 @@ internal fun SubscriptionsSettingsPage(
         }
 
         item {
-            SettingsSection(title = "Feed") {
+            SettingsSection(title = stringResource(R.string.sp_feed)) {
                 SettingsCard {
                     SettingsToggleRow(
                         icon = Icons.Rounded.Bolt,
-                        title = "Fast Subscription Refresh",
+                        title = stringResource(R.string.sp_fast_refresh),
                         subtitle = if (fastSubscriptionFeed) {
-                            "Much less data and exact upload times, but no duration badges"
+                            stringResource(R.string.sp_fast_refresh_on)
                         } else {
-                            "Full details for every video - slow on a large subscription list"
+                            stringResource(R.string.sp_fast_refresh_off)
                         },
                         enabled = fastSubscriptionFeed,
                         onToggle = onFastSubscriptionFeedToggle
@@ -996,17 +1004,17 @@ internal fun StorageSettingsPage(
     onClearCacheClick: () -> Unit,
     onBack: () -> Unit
 ) {
-    SettingsDetailScaffold(title = "Storage and cache", onBack = onBack) {
+    SettingsDetailScaffold(title = stringResource(R.string.settings_storage_and_cache), onBack = onBack) {
         item {
-            SettingsSection(title = "Downloads") {
+            SettingsSection(title = stringResource(R.string.sp_downloads)) {
                 SettingsCard {
                     SettingsToggleRow(
                         icon = Icons.Rounded.Security,
-                        title = "Private downloads",
+                        title = stringResource(R.string.sp_private_downloads),
                         subtitle = if (privateDownloadsEnabled) {
-                            "New audio and video stay inside Koda and are removed on uninstall"
+                            stringResource(R.string.sp_private_downloads_on)
                         } else {
-                            "New audio and video appear in Downloads/Koda"
+                            stringResource(R.string.sp_private_downloads_off)
                         },
                         enabled = privateDownloadsEnabled,
                         onToggle = onPrivateDownloadsEnabledToggle
@@ -1014,18 +1022,18 @@ internal fun StorageSettingsPage(
                 }
                 SettingsFootnote(
                     icon = Icons.Rounded.Visibility,
-                    text = "Album art stays hidden from Gallery in either mode. Existing downloads stay where they are."
+                    text = stringResource(R.string.sp_private_downloads_note)
                 )
             }
         }
 
         item {
-            SettingsSection(title = "Cache") {
+            SettingsSection(title = stringResource(R.string.sp_cache)) {
                 SettingsCard {
                     SettingsToggleRow(
                         icon = Icons.Rounded.Save,
-                        title = "Cache Music",
-                        subtitle = "Store streamed songs for instant replay",
+                        title = stringResource(R.string.sp_cache_music),
+                        subtitle = stringResource(R.string.sp_cache_music_sub),
                         enabled = cacheEnabled,
                         onToggle = onCacheEnabledToggle
                     )
@@ -1050,7 +1058,7 @@ internal fun StorageSettingsPage(
                             Spacer(modifier = Modifier.width(16.dp))
                             Column {
                                 Text(
-                                    text = "Local Cache",
+                                    text = stringResource(R.string.sp_local_cache),
                                     color = MaterialTheme.colorScheme.onBackground,
                                     fontWeight = FontWeight.SemiBold,
                                     fontSize = 16.sp
@@ -1067,7 +1075,7 @@ internal fun StorageSettingsPage(
 
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text(
-                            text = "Max Cache Size",
+                            text = stringResource(R.string.sp_max_cache_size),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Medium,
@@ -1112,8 +1120,8 @@ internal fun StorageSettingsPage(
             SettingsCard {
                 SettingsRow(
                     icon = Icons.Rounded.FolderOff,
-                    title = "Clear Cache",
-                    subtitle = "Free up storage space",
+                    title = stringResource(R.string.sp_clear_cache),
+                    subtitle = stringResource(R.string.sp_clear_cache_sub),
                     onClick = onClearCacheClick,
                     tint = SettingsRowDefaults.destructiveTint,
                     titleColor = SettingsRowDefaults.destructiveTint
@@ -1142,19 +1150,19 @@ internal fun NotificationsSettingsPage(
     onOpenSystemSettings: () -> Unit,
     onBack: () -> Unit
 ) {
-    SettingsDetailScaffold(title = "Notifications", onBack = onBack) {
+    SettingsDetailScaffold(title = stringResource(R.string.settings_notifications), onBack = onBack) {
         item {
-            SettingsSection(title = "New uploads") {
+            SettingsSection(title = stringResource(R.string.sp_new_uploads)) {
                 SettingsCard {
                     // Off by default and opt-in here: it is a battery-and-
                     // attention commitment the user has to ask for.
                     SettingsToggleRow(
                         icon = Icons.Rounded.NotificationsActive,
-                        title = "Notify about new uploads",
+                        title = stringResource(R.string.sp_notify_new_uploads),
                         subtitle = if (uploadNotificationsEnabled) {
-                            "Checks channels you follow on this device"
+                            stringResource(R.string.sp_notify_new_uploads_on)
                         } else {
-                            "Off: Koda only checks while you are using it"
+                            stringResource(R.string.sp_notify_new_uploads_off)
                         },
                         enabled = uploadNotificationsEnabled,
                         onToggle = onUploadNotificationsToggle
@@ -1165,10 +1173,10 @@ internal fun NotificationsSettingsPage(
 
         if (uploadNotificationsEnabled && followedChannels.isNotEmpty()) {
             item {
-                SettingsSection(title = "Channels") {
+                SettingsSection(title = stringResource(R.string.sp_channels)) {
                     SettingsCard {
                         Text(
-                            text = "Choose who may notify you",
+                            text = stringResource(R.string.sp_choose_notifiers),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 13.sp,
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
@@ -1179,7 +1187,11 @@ internal fun NotificationsSettingsPage(
                             SettingsToggleRow(
                                 icon = Icons.Rounded.Subscriptions,
                                 title = channel.name,
-                                subtitle = if (muted) "Muted" else "Notifying",
+                                subtitle = if (muted) {
+                                    stringResource(R.string.sp_muted)
+                                } else {
+                                    stringResource(R.string.sp_notifying)
+                                },
                                 enabled = !muted,
                                 onToggle = { onChannelMutedChange(channel.channelId, !muted) }
                             )
@@ -1190,12 +1202,11 @@ internal fun NotificationsSettingsPage(
         }
 
         item {
-            SettingsSection(title = "Live updates") {
-                SettingsCard {
+            SettingsSection(title = stringResource(R.string.sp_live_updates)) {                SettingsCard {
                     SettingsToggleRow(
                         icon = Icons.Rounded.Bolt,
-                        title = "Live download updates",
-                        subtitle = "Show download progress as a live status bar chip",
+                        title = stringResource(R.string.sp_live_download_updates),
+                        subtitle = stringResource(R.string.sp_live_download_updates_sub),
                         enabled = liveDownloadUpdates,
                         onToggle = onLiveDownloadUpdatesToggle
                     )
@@ -1204,8 +1215,8 @@ internal fun NotificationsSettingsPage(
 
                     SettingsToggleRow(
                         icon = Icons.Rounded.GraphicEq,
-                        title = "Live playback updates",
-                        subtitle = "Show what's playing as a live status bar chip",
+                        title = stringResource(R.string.sp_live_playback_updates),
+                        subtitle = stringResource(R.string.sp_live_playback_updates_sub),
                         enabled = livePlaybackUpdates,
                         onToggle = onLivePlaybackUpdatesToggle
                     )
@@ -1217,8 +1228,8 @@ internal fun NotificationsSettingsPage(
                         SettingsDivider()
                         SettingsRow(
                             icon = Icons.Rounded.Security,
-                            title = "Blocked by system settings",
-                            subtitle = "Allow live updates for Koda in Android settings",
+                            title = stringResource(R.string.sp_blocked_by_system),
+                            subtitle = stringResource(R.string.sp_blocked_by_system_sub),
                             onClick = onOpenSystemSettings,
                             tint = SettingsRowDefaults.destructiveTint,
                             titleColor = SettingsRowDefaults.destructiveTint,
@@ -1243,13 +1254,13 @@ internal fun LocalLibrarySettingsPage(
     onOpenFolderExclusion: () -> Unit,
     onBack: () -> Unit
 ) {
-    SettingsDetailScaffold(title = "Local library", onBack = onBack) {
+    SettingsDetailScaffold(title = stringResource(R.string.settings_local_library), onBack = onBack) {
         item {
-            SettingsSection(title = "Device music") {
+            SettingsSection(title = stringResource(R.string.sp_device_music)) {
                 SettingsCard {
                     SettingsToggleRow(
                         icon = Icons.Rounded.Folder,
-                        title = "Load Local Songs",
+                        title = stringResource(R.string.sp_load_local_songs),
                         subtitle = if (loadLocalSongs) {
                             "Shows songs from your device"
                         } else {
@@ -1271,7 +1282,7 @@ internal fun LocalLibrarySettingsPage(
                             SettingsDivider()
                             SettingsRow(
                                 icon = Icons.Rounded.FolderOff,
-                                title = "Excluded Folders",
+                                title = stringResource(R.string.sp_excluded_folders),
                                 subtitle = if (excludedFolderCount == 0) {
                                     "All folders included"
                                 } else {
@@ -1304,7 +1315,7 @@ internal fun AdvancedSettingsPage(
 ) {
     val context = LocalContext.current
 
-    SettingsDetailScaffold(title = "Advanced", onBack = onBack) {
+    SettingsDetailScaffold(title = stringResource(R.string.settings_advanced), onBack = onBack) {
         // The old screen showed this section to everyone. It only means
         // anything on the OEMs that break background playback and MediaStore,
         // so lead with why it is here.
@@ -1312,19 +1323,19 @@ internal fun AdvancedSettingsPage(
             item {
                 SettingsNotice(
                     icon = Icons.Rounded.Info,
-                    text = "Xiaomi device detected. Enabling both of these is highly recommended.",
+                    text = stringResource(R.string.sp_xiaomi_notice),
                     tint = MaterialTheme.colorScheme.tertiary
                 )
             }
         }
 
         item {
-            SettingsSection(title = "Wellbeing") {
+            SettingsSection(title = stringResource(R.string.sp_wellbeing)) {
                 SettingsCard {
                     SettingsRow(
                         icon = Icons.Rounded.Bedtime,
-                        title = "Daily time limit",
-                        subtitle = "Lock Koda after a set amount of listening per day",
+                        title = stringResource(R.string.sp_daily_time_limit),
+                        subtitle = stringResource(R.string.sp_daily_time_limit_sub),
                         onClick = onOpenTimeLimit,
                         showChevron = true
                     )
@@ -1333,12 +1344,12 @@ internal fun AdvancedSettingsPage(
         }
 
         item {
-            SettingsSection(title = "Feedback") {
+            SettingsSection(title = stringResource(R.string.sp_feedback)) {
                 SettingsCard {
                     SettingsRow(
                         icon = Icons.Rounded.BugReport,
-                        title = "Report a bug",
-                        subtitle = "Attach recent logs and device info to a report",
+                        title = stringResource(R.string.sp_report_bug),
+                        subtitle = stringResource(R.string.sp_report_bug_sub),
                         onClick = onReportBug,
                         tint = MaterialTheme.colorScheme.primary,
                         showChevron = true
@@ -1348,12 +1359,12 @@ internal fun AdvancedSettingsPage(
         }
 
         item {
-            SettingsSection(title = "Compatibility") {
+            SettingsSection(title = stringResource(R.string.sp_compatibility)) {
                 SettingsCard {
                     SettingsToggleRow(
                         icon = Icons.Rounded.Security,
-                        title = "High Compatibility Scanning",
-                        subtitle = "Bypasses MediaStore (Fixes missing music on HyperOS)",
+                        title = stringResource(R.string.sp_high_compat_scanning),
+                        subtitle = stringResource(R.string.sp_high_compat_scanning_sub),
                         enabled = manualScanEnabled,
                         onToggle = { enabled ->
                             if (enabled && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
@@ -1374,8 +1385,8 @@ internal fun AdvancedSettingsPage(
 
                     SettingsRow(
                         icon = Icons.Rounded.FlashOn,
-                        title = "Ignore Battery Optimizations",
-                        subtitle = "Prevents playback from stopping in background",
+                        title = stringResource(R.string.sp_ignore_battery),
+                        subtitle = stringResource(R.string.sp_ignore_battery_sub),
                         onClick = {
                             val packageName = context.packageName
                             val intent = Intent(

@@ -1,4 +1,6 @@
 package com.ivor.ivormusic.ui.video
+import androidx.compose.ui.res.stringResource
+import com.ivor.ivormusic.R
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -83,7 +85,7 @@ fun NotInterestedScreen(
             TopAppBar(
                 title = {
                     Column {
-                        Text("Not recommended", fontWeight = FontWeight.Bold)
+                        Text(stringResource(R.string.sp_not_recommended), fontWeight = FontWeight.Bold)
                         Text(
                             text = summaryLine(hiddenVideos.size, blockedChannels.size),
                             style = MaterialTheme.typography.bodySmall,
@@ -126,7 +128,7 @@ fun NotInterestedScreen(
             if (blockedChannels.isNotEmpty()) {
                 item(key = "channels-header") {
                     SectionHeader(
-                        title = "Channels",
+                        title = stringResource(R.string.section_channels),
                         subtitle = "${blockedChannels.size} won't appear in your feeds",
                         onClear = { confirmClear = ClearTarget.CHANNELS }
                     )
@@ -142,7 +144,7 @@ fun NotInterestedScreen(
             if (hiddenVideos.isNotEmpty()) {
                 item(key = "videos-header") {
                     SectionHeader(
-                        title = "Videos",
+                        title = stringResource(R.string.cat_videos),
                         subtitle = "${hiddenVideos.size} hidden",
                         onClear = { confirmClear = ClearTarget.VIDEOS }
                     )
@@ -165,16 +167,16 @@ fun NotInterestedScreen(
             shape = RoundedCornerShape(32.dp),
             title = {
                 Text(
-                    if (isChannels) "Unblock all channels?" else "Unhide all videos?",
+                    if (isChannels) stringResource(R.string.ni_unblock_all_q) else stringResource(R.string.ni_unhide_all_q),
                     fontWeight = FontWeight.Bold
                 )
             },
             text = {
                 Text(
                     if (isChannels) {
-                        "Every channel you blocked can be recommended again."
+                        stringResource(R.string.ni_unblock_body)
                     } else {
-                        "Every video you hid can show up in your feeds again."
+                        stringResource(R.string.ni_unhide_body)
                     }
                 )
             },
@@ -182,10 +184,10 @@ fun NotInterestedScreen(
                 TextButton(onClick = {
                     if (isChannels) viewModel.clearBlockedChannels() else viewModel.clearHiddenVideos()
                     confirmClear = null
-                }) { Text(if (isChannels) "Unblock all" else "Unhide all") }
+                }) { Text(if (isChannels) stringResource(R.string.ni_unblock_all) else stringResource(R.string.ni_unhide_all)) }
             },
             dismissButton = {
-                TextButton(onClick = { confirmClear = null }) { Text("Cancel") }
+                TextButton(onClick = { confirmClear = null }) { Text(stringResource(R.string.action_cancel)) }
             }
         )
     }
@@ -193,8 +195,9 @@ fun NotInterestedScreen(
 
 private enum class ClearTarget { VIDEOS, CHANNELS }
 
+@Composable
 private fun summaryLine(hiddenCount: Int, blockedCount: Int): String = when {
-    hiddenCount == 0 && blockedCount == 0 -> "Nothing hidden"
+    hiddenCount == 0 && blockedCount == 0 -> stringResource(R.string.ni_nothing_hidden)
     blockedCount == 0 -> "$hiddenCount video${if (hiddenCount == 1) "" else "s"}"
     hiddenCount == 0 -> "$blockedCount channel${if (blockedCount == 1) "" else "s"}"
     else -> "$blockedCount channel${if (blockedCount == 1) "" else "s"}, $hiddenCount video${if (hiddenCount == 1) "" else "s"}"
@@ -221,7 +224,7 @@ private fun SectionHeader(title: String, subtitle: String, onClear: () -> Unit) 
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        OutlinedButton(onClick = onClear) { Text("Clear") }
+        OutlinedButton(onClick = onClear) { Text(stringResource(R.string.action_clear)) }
     }
 }
 
@@ -351,15 +354,14 @@ private fun EmptyState(modifier: Modifier = Modifier) {
             )
             Spacer(Modifier.height(20.dp))
             Text(
-                text = "Nothing hidden yet",
+                text = stringResource(R.string.ni_empty_title),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onBackground
             )
             Spacer(Modifier.height(6.dp))
             Text(
-                text = "Long-press any video and choose \"Not interested\" or " +
-                    "\"Don't recommend channel\" to keep it out of your feeds.",
+                text = stringResource(R.string.ni_empty_body),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center

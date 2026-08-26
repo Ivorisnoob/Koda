@@ -1,4 +1,6 @@
 package com.ivor.ivormusic.ui.downloads
+import androidx.compose.ui.res.stringResource
+import com.ivor.ivormusic.R
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -70,7 +72,7 @@ fun SongDownloadSheet(
                 .padding(bottom = 32.dp)
         ) {
             Text(
-                text = "Download song",
+                text = stringResource(R.string.sd_title),
                 style = MaterialTheme.typography.headlineSmall
             )
 
@@ -118,7 +120,7 @@ fun SongDownloadSheet(
                 )
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Estimated download",
+                        text = stringResource(R.string.vd_estimated),
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -130,7 +132,7 @@ fun SongDownloadSheet(
                             fontWeight = FontWeight.Bold
                         )
                         else -> Text(
-                            text = "Size unavailable",
+                            text = stringResource(R.string.vd_size_unavailable),
                             style = MaterialTheme.typography.titleMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -139,7 +141,7 @@ fun SongDownloadSheet(
             }
 
             Text(
-                text = "Artwork and lyrics may add a little to the final size.",
+                text = stringResource(R.string.sd_artwork_note),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 8.dp)

@@ -1,4 +1,6 @@
 package com.ivor.ivormusic.ui.channel
+import androidx.compose.ui.res.stringResource
+import com.ivor.ivormusic.R
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
@@ -496,19 +498,19 @@ private fun ChannelHeaderActions(
         if (canSearch) {
             ChannelIconAction(
                 icon = Icons.Rounded.Search,
-                contentDescription = "Search this channel",
+                contentDescription = stringResource(R.string.ch_search_channel),
                 onClick = onSearchClick
             )
         }
         ChannelIconAction(
             icon = Icons.Rounded.Share,
-            contentDescription = "Share channel",
+            contentDescription = stringResource(R.string.ch_share_channel),
             onClick = onShareClick
         )
         Box {
             ChannelIconAction(
                 icon = Icons.Rounded.MoreVert,
-                contentDescription = "More options",
+                contentDescription = stringResource(R.string.cd_more_options),
                 onClick = { menuOpen = true }
             )
             DropdownMenu(
@@ -517,7 +519,7 @@ private fun ChannelHeaderActions(
             ) {
                 if (onOpenMusicArtist != null) {
                     DropdownMenuItem(
-                        text = { Text("Open music artist page") },
+                        text = { Text(stringResource(R.string.ch_open_artist_page)) },
                         leadingIcon = { Icon(Icons.Rounded.MusicNote, contentDescription = null) },
                         onClick = {
                             menuOpen = false
@@ -527,7 +529,7 @@ private fun ChannelHeaderActions(
                 }
                 DropdownMenuItem(
                     text = {
-                        Text(if (isBlocked) "Recommend this channel again" else "Don't recommend channel")
+                        Text(if (isBlocked) stringResource(R.string.ch_recommend_again) else stringResource(R.string.video_options_dont_recommend_channel))
                     },
                     leadingIcon = { Icon(Icons.Rounded.Block, contentDescription = null) },
                     onClick = {
@@ -660,7 +662,7 @@ private fun ChannelUnavailable(onBack: () -> Unit) {
         }
         Spacer(Modifier.height(20.dp))
         Text(
-            text = "This channel isn't available",
+            text = stringResource(R.string.ch_unavailable_title),
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurface,
@@ -668,7 +670,7 @@ private fun ChannelUnavailable(onBack: () -> Unit) {
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            text = "It may have been renamed, removed, or restricted in your region.",
+            text = stringResource(R.string.ch_unavailable_body),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center
@@ -681,7 +683,7 @@ private fun ChannelUnavailable(onBack: () -> Unit) {
             contentColor = MaterialTheme.colorScheme.onPrimary
         ) {
             Text(
-                text = "Go back",
+                text = stringResource(R.string.cd_back),
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp)
@@ -695,7 +697,7 @@ private fun shareChannel(context: android.content.Context, url: String) {
         .setType("text/plain")
         .putExtra(android.content.Intent.EXTRA_TEXT, url)
     runCatching {
-        context.startActivity(android.content.Intent.createChooser(intent, "Share channel"))
+        context.startActivity(android.content.Intent.createChooser(intent, context.getString(R.string.ch_share_chooser)))
     }
 }
 

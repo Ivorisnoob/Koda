@@ -1,4 +1,6 @@
 package com.ivor.ivormusic.ui.video
+import androidx.compose.ui.res.stringResource
+import com.ivor.ivormusic.R
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.snap
@@ -256,7 +258,7 @@ fun VideoLibraryContent(
                     .fillMaxSize()
                     .background(MaterialTheme.colorScheme.background)
             ) {
-                SubPageTopBar(title = "Watch History", onBack = { page = LibraryPage.Root })
+                SubPageTopBar(title = stringResource(R.string.vl_watch_history), onBack = { page = LibraryPage.Root })
                 VideoHistoryContent(
                     viewModel = viewModel,
                     onVideoClick = onVideoClick,
@@ -349,14 +351,14 @@ private fun LibraryRoot(
                         .padding(top = 16.dp)
                 ) {
                     Text(
-                        text = "Library",
+                        text = stringResource(R.string.tab_library),
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onBackground
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "Your playlists, history and saved videos",
+                        text = stringResource(R.string.vl_library_sub),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -373,7 +375,7 @@ private fun LibraryRoot(
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         PinnedLibraryCard(
-                            title = "Watch Later",
+                            title = stringResource(R.string.video_options_watch_later),
                             icon = Icons.Rounded.WatchLater,
                             tint = MaterialTheme.colorScheme.primary,
                             onClick = {
@@ -382,7 +384,7 @@ private fun LibraryRoot(
                             modifier = Modifier.weight(1f)
                         )
                         PinnedLibraryCard(
-                            title = "Liked Videos",
+                            title = stringResource(R.string.liked_videos),
                             icon = Icons.Rounded.ThumbUp,
                             tint = MaterialTheme.colorScheme.tertiary,
                             onClick = {
@@ -398,8 +400,8 @@ private fun LibraryRoot(
             if (historyVideos.isNotEmpty()) {
                 item {
                     SectionHeader(
-                        title = "History",
-                        actionLabel = "View all",
+                        title = stringResource(R.string.history),
+                        actionLabel = stringResource(R.string.view_all),
                         onAction = onOpenHistory
                     )
                 }
@@ -415,7 +417,7 @@ private fun LibraryRoot(
                 }
             } else {
                 item {
-                    SectionHeader(title = "History", actionLabel = "View all", onAction = onOpenHistory)
+                    SectionHeader(title = stringResource(R.string.history), actionLabel = stringResource(R.string.view_all), onAction = onOpenHistory)
                 }
             }
 
@@ -423,8 +425,8 @@ private fun LibraryRoot(
             // goes on the device, which is the whole point of the local store.
             item {
                 SectionHeader(
-                    title = "Your Playlists",
-                    actionLabel = "New",
+                    title = stringResource(R.string.your_playlists),
+                    actionLabel = stringResource(R.string.action_new),
                     actionIcon = Icons.Rounded.Add,
                     onAction = { showCreateDialog = true }
                 )
@@ -463,7 +465,7 @@ private fun LibraryRoot(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = "No playlists yet. Tap New to make one.",
+                            text = stringResource(R.string.vl_no_playlists_hint),
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
@@ -552,13 +554,13 @@ private fun CreateVideoPlaylistDialog(
         onDismissRequest = onDismiss,
         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         shape = RoundedCornerShape(32.dp),
-        title = { Text("New playlist") },
+        title = { Text(stringResource(R.string.action_new_playlist)) },
         text = {
             Column {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
-                    label = { Text("Name") },
+                    label = { Text(stringResource(R.string.name_label)) },
                     singleLine = true,
                     shape = RoundedCornerShape(16.dp),
                     modifier = Modifier.fillMaxWidth()
@@ -592,7 +594,11 @@ private fun CreateVideoPlaylistDialog(
                                 )
                             ) {
                                 Text(
-                                    text = if (deviceOnly) "This device" else "YouTube",
+                                    text = if (deviceOnly) {
+                                        stringResource(R.string.vl_target_device)
+                                    } else {
+                                        stringResource(R.string.vl_target_youtube)
+                                    },
                                     fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
                                 )
                             }
@@ -602,9 +608,9 @@ private fun CreateVideoPlaylistDialog(
                 }
                 Text(
                     text = if (onDevice) {
-                        "Stays on this phone. Works signed out, and is not visible on youtube.com."
+                        stringResource(R.string.vl_local_playlist_note)
                     } else {
-                        "Added to your YouTube account, so it shows up everywhere you are signed in."
+                        stringResource(R.string.vl_account_playlist_note)
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -616,12 +622,12 @@ private fun CreateVideoPlaylistDialog(
                 onClick = { onCreate(name, onDevice) },
                 enabled = name.isNotBlank()
             ) {
-                Text("Create")
+                Text(stringResource(R.string.action_create))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(R.string.action_cancel))
             }
         }
     )
@@ -640,12 +646,12 @@ private fun RenamePlaylistDialog(
         onDismissRequest = onDismiss,
         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         shape = RoundedCornerShape(32.dp),
-        title = { Text("Rename playlist") },
+        title = { Text(stringResource(R.string.rename_playlist)) },
         text = {
             OutlinedTextField(
                 value = name,
                 onValueChange = { name = it },
-                label = { Text("Name") },
+                label = { Text(stringResource(R.string.name_label)) },
                 singleLine = true,
                 shape = RoundedCornerShape(16.dp),
                 modifier = Modifier.fillMaxWidth()
@@ -656,11 +662,11 @@ private fun RenamePlaylistDialog(
                 onClick = { onRename(name) },
                 enabled = name.isNotBlank() && name.trim() != currentName
             ) {
-                Text("Rename")
+                Text(stringResource(R.string.action_rename))
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
         }
     )
 }
@@ -810,7 +816,7 @@ private fun PlaylistRow(
     if (showDeleteConfirm) {
         AlertDialog(
             onDismissRequest = { showDeleteConfirm = false },
-            title = { Text("Delete playlist?") },
+            title = { Text(stringResource(R.string.delete_playlist_q)) },
             text = {
                 Text(
                     if (isLocal) {
@@ -825,11 +831,11 @@ private fun PlaylistRow(
                     showDeleteConfirm = false
                     onDelete?.invoke()
                 }) {
-                    Text("Delete")
+                    Text(stringResource(R.string.action_delete))
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showDeleteConfirm = false }) { Text("Cancel") }
+                TextButton(onClick = { showDeleteConfirm = false }) { Text(stringResource(R.string.action_cancel)) }
             }
         )
     }
@@ -921,7 +927,7 @@ private fun PlaylistRow(
                         )
                         Text(
                             text = listOfNotNull(
-                                "Saved",
+                                stringResource(R.string.cd_saved),
                                 playlist.subtitle?.takeIf { it.isNotBlank() }
                             ).joinToString(" • "),
                             style = MaterialTheme.typography.bodySmall,
@@ -946,7 +952,7 @@ private fun PlaylistRow(
                     IconButton(onClick = { showMenu = true }) {
                         Icon(
                             imageVector = Icons.Rounded.MoreVert,
-                            contentDescription = "Playlist options",
+                            contentDescription = stringResource(R.string.cd_playlist_options),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
@@ -958,7 +964,7 @@ private fun PlaylistRow(
                         // confirmation, because nothing is destroyed and saving
                         // it again is one tap on its page.
                         DropdownMenuItem(
-                            text = { Text("Remove from library") },
+                            text = { Text(stringResource(R.string.cd_remove_from_library)) },
                             onClick = {
                                 showMenu = false
                                 onRemoveSaved()
@@ -974,7 +980,7 @@ private fun PlaylistRow(
                     IconButton(onClick = { showMenu = true }) {
                         Icon(
                             imageVector = Icons.Rounded.MoreVert,
-                            contentDescription = "Playlist options",
+                            contentDescription = stringResource(R.string.cd_playlist_options),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
@@ -984,7 +990,7 @@ private fun PlaylistRow(
                     ) {
                         if (onRename != null) {
                             DropdownMenuItem(
-                                text = { Text("Rename") },
+                                text = { Text(stringResource(R.string.action_rename)) },
                                 onClick = {
                                     showMenu = false
                                     showRenameDialog = true
@@ -995,7 +1001,7 @@ private fun PlaylistRow(
                             )
                         }
                         DropdownMenuItem(
-                            text = { Text("Delete playlist") },
+                            text = { Text(stringResource(R.string.delete_playlist)) },
                             onClick = {
                                 showMenu = false
                                 showDeleteConfirm = true
@@ -1037,7 +1043,7 @@ private fun LibraryLoginCard(onLoginClick: () -> Unit) {
             )
             Spacer(modifier = Modifier.height(16.dp))
             Text(
-                text = "Log in to see your playlists, Watch Later and liked videos",
+                text = stringResource(R.string.vl_login_wall),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center
@@ -1052,7 +1058,7 @@ private fun LibraryLoginCard(onLoginClick: () -> Unit) {
             ) {
                 Icon(Icons.Rounded.Login, null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("Log in to YouTube")
+                Text(stringResource(R.string.log_in_youtube))
             }
         }
     }
@@ -1149,7 +1155,7 @@ fun VideoPlaylistDetail(
             onDismissRequest = { videoPendingRemoval = null },
             shape = RoundedCornerShape(32.dp),
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            title = { Text("Remove from your YouTube account?") },
+            title = { Text(stringResource(R.string.remove_from_account_q)) },
             text = {
                 Text(
                     when (playlist.playlistId) {
@@ -1170,12 +1176,12 @@ fun VideoPlaylistDetail(
                         contentColor = MaterialTheme.colorScheme.onError
                     )
                 ) {
-                    Text("Remove")
+                    Text(stringResource(R.string.remove))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { videoPendingRemoval = null }) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.action_cancel))
                 }
             }
         )
@@ -1234,8 +1240,8 @@ fun VideoPlaylistDetail(
                             Icon(
                                 imageVector = if (saved) Icons.Rounded.BookmarkAdded
                                     else Icons.Rounded.BookmarkAdd,
-                                contentDescription = if (saved) "Remove from library"
-                                    else "Save to library",
+                                contentDescription = if (saved) stringResource(R.string.cd_remove_from_library)
+                                    else stringResource(R.string.cd_save_to_library),
                                 tint = if (saved) MaterialTheme.colorScheme.primary
                                     else MaterialTheme.colorScheme.onBackground
                             )
@@ -1253,7 +1259,7 @@ fun VideoPlaylistDetail(
                             )
                         }
                         shareContext.startActivity(
-                            android.content.Intent.createChooser(send, "Share playlist")
+                            android.content.Intent.createChooser(send, shareContext.getString(R.string.share_playlist_chooser))
                         )
                     }) {
                         Icon(Icons.Rounded.Share, contentDescription = "Share playlist")
@@ -1272,7 +1278,7 @@ fun VideoPlaylistDetail(
         } else if (videos.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(
-                    text = "No videos in this playlist",
+                    text = stringResource(R.string.vl_no_videos),
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
@@ -1331,9 +1337,9 @@ fun VideoPlaylistDetail(
                             }
                         } else null,
                         removeLabel = when (playlist.playlistId) {
-                            "WL" -> "Remove from Watch Later"
-                            "LL" -> "Remove from Liked videos"
-                            else -> "Remove from playlist"
+                            "WL" -> stringResource(R.string.remove_from_watch_later)
+                            "LL" -> stringResource(R.string.remove_from_liked_videos)
+                            else -> stringResource(R.string.remove_from_playlist)
                         },
                         modifier = Modifier.padding(horizontal = 16.dp)
                     )
@@ -1351,7 +1357,7 @@ private fun PlaylistVideoRow(
     modifier: Modifier = Modifier,
     onLongClick: (() -> Unit)? = null,
     onRemove: (() -> Unit)? = null,
-    removeLabel: String = "Remove from playlist"
+    removeLabel: String? = null
 ) {
     var showMenu by remember { mutableStateOf(false) }
 
@@ -1435,7 +1441,7 @@ private fun PlaylistVideoRow(
                     IconButton(onClick = { showMenu = true }) {
                         Icon(
                             imageVector = Icons.Rounded.MoreVert,
-                            contentDescription = "Video options",
+                            contentDescription = stringResource(R.string.cd_video_options),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
@@ -1444,7 +1450,7 @@ private fun PlaylistVideoRow(
                         onDismissRequest = { showMenu = false }
                     ) {
                         DropdownMenuItem(
-                            text = { Text(removeLabel) },
+                            text = { Text(removeLabel ?: stringResource(R.string.remove_from_playlist)) },
                             onClick = {
                                 showMenu = false
                                 onRemove()

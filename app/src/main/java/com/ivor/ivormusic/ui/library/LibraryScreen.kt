@@ -1,4 +1,7 @@
 package com.ivor.ivormusic.ui.library
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import com.ivor.ivormusic.R
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
@@ -438,6 +441,8 @@ fun LibraryMainScreen(
     // rememberSaveable. Matched by name instead of valueOf so an option
     // removed in a later version falls back to Title instead of throwing.
     val context = LocalContext.current
+    val todayLabel = stringResource(R.string.sc_today)
+    val yesterdayLabel = stringResource(R.string.lh_yesterday)
     val themePreferences = remember(context) { ThemePreferences(context) }
     val storedSortName by themePreferences.librarySortOption.collectAsState()
     val sortOption = remember(storedSortName) {
@@ -511,7 +516,7 @@ fun LibraryMainScreen(
                 // title, and dropping the title a step would split Home and
                 // Library, the only two screens that share this scale.
                 Text(
-                    text = "Library",
+                    text = stringResource(R.string.tab_library),
                     style = MaterialTheme.typography.displayLarge,
                     color = MaterialTheme.colorScheme.onBackground,
                     maxLines = 1,
@@ -524,7 +529,7 @@ fun LibraryMainScreen(
                     modifier = Modifier.size(56.dp),
                     shapes = IconButtonDefaults.shapes()
                 ) {
-                    Icon(Icons.Rounded.Insights, contentDescription = "Listening stats", modifier = Modifier.size(24.dp))
+                    Icon(Icons.Rounded.Insights, contentDescription = stringResource(R.string.cd_listening_stats), modifier = Modifier.size(24.dp))
                 }
             }
 
@@ -691,7 +696,7 @@ fun LibraryMainScreen(
             ) {
                 Icon(
                     Icons.Rounded.Add,
-                    contentDescription = if (fabMenuExpanded) "Close menu" else "Library actions",
+                    contentDescription = if (fabMenuExpanded) stringResource(R.string.cd_close_menu) else stringResource(R.string.cd_library_actions),
                     // + rotates into × as the menu blossoms open
                     tint = lerp(
                         MaterialTheme.colorScheme.onPrimaryContainer,
@@ -709,7 +714,7 @@ fun LibraryMainScreen(
                 showCreatePlaylistDialog = true
             },
             icon = { Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, null) },
-            text = { Text("New playlist") },
+            text = { Text(stringResource(R.string.action_new_playlist)) },
             containerColor = MaterialTheme.colorScheme.secondaryContainer,
             contentColor = MaterialTheme.colorScheme.onSecondaryContainer
         )
@@ -719,7 +724,7 @@ fun LibraryMainScreen(
                 onDownloadsClick()
             },
             icon = { Icon(Icons.Rounded.DownloadDone, null) },
-            text = { Text("Downloads") },
+            text = { Text(stringResource(R.string.fab_downloads)) },
             containerColor = MaterialTheme.colorScheme.secondaryContainer,
             contentColor = MaterialTheme.colorScheme.onSecondaryContainer
         )
@@ -729,7 +734,7 @@ fun LibraryMainScreen(
                 onNavigateToHistory()
             },
             icon = { Icon(Icons.Rounded.History, null) },
-            text = { Text("Listening history") },
+            text = { Text(stringResource(R.string.fab_listening_history)) },
             containerColor = MaterialTheme.colorScheme.secondaryContainer,
             contentColor = MaterialTheme.colorScheme.onSecondaryContainer
         )
@@ -739,7 +744,7 @@ fun LibraryMainScreen(
                 onNavigateToStats()
             },
             icon = { Icon(Icons.Rounded.Insights, null) },
-            text = { Text("Statistics") },
+            text = { Text(stringResource(R.string.fab_statistics)) },
             containerColor = MaterialTheme.colorScheme.secondaryContainer,
             contentColor = MaterialTheme.colorScheme.onSecondaryContainer
         )
@@ -747,7 +752,7 @@ fun LibraryMainScreen(
 
     if (showCreatePlaylistDialog) {
         EditPlaylistDialog(
-            title = "New playlist",
+            title = stringResource(R.string.action_new_playlist),
             initialName = "",
             initialDescription = null,
             onDismiss = { showCreatePlaylistDialog = false },
@@ -787,6 +792,8 @@ fun AllSongsList(
     onSongLongPress: ((Song) -> Unit)? = null,
     listState: LazyListState = rememberLazyListState()
 ) {
+    val todayLabel = stringResource(R.string.sc_today)
+    val yesterdayLabel = stringResource(R.string.lh_yesterday)
     val likedIds = remember(likedSongs) { likedSongs.map { it.id }.toSet() }
     val downloadedIds = remember(downloadedSongs) { downloadedSongs.map { it.id }.toSet() }
 
@@ -854,13 +861,13 @@ fun AllSongsList(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
-                        "Recently played",
+                        stringResource(R.string.recently_played),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onBackground
                     )
                     TextButton(onClick = onNavigateToHistory) {
-                        Text("See all")
+                        Text(stringResource(R.string.action_see_all))
                         Spacer(Modifier.width(4.dp))
                         Icon(
                             Icons.AutoMirrored.Rounded.ArrowForward,
@@ -913,7 +920,7 @@ fun AllSongsList(
                         ) {
                             Icon(
                                 Icons.Rounded.Shuffle,
-                                contentDescription = "Shuffle all tracks",
+                                contentDescription = stringResource(R.string.cd_shuffle),
                                 modifier = Modifier.size(20.dp)
                             )
                         }
@@ -974,8 +981,8 @@ fun AllSongsList(
             item(key = "empty_state") {
                 EmptyLibraryState(
                     icon = Icons.Rounded.MusicNote,
-                    title = "Your library is empty",
-                    subtitle = "Songs you download or like will show up here"
+                    title = stringResource(R.string.library_empty_title),
+                    subtitle = stringResource(R.string.library_empty_subtitle)
                 )
             }
         } else {
@@ -986,8 +993,8 @@ fun AllSongsList(
                 val sortLabel = when (sortOption) {
                     LibrarySortOption.MostPlayed -> playCounts[song.id]
                         ?.takeIf { it > 0 }
-                        ?.let { if (it == 1) "1 play" else "$it plays" }
-                    LibrarySortOption.RecentlyAdded -> song.dateAdded?.let(::formatRelativeDate)
+                        ?.let { pluralStringResource(R.plurals.n_plays, it, it) }
+                    LibrarySortOption.RecentlyAdded -> song.dateAdded?.let { formatRelativeDate(it, todayLabel, yesterdayLabel) }
                     else -> null
                 }
                 SongListItem(
@@ -1040,7 +1047,7 @@ private fun DownloadsQuickCard(count: Int, onClick: () -> Unit) {
             Spacer(Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    "Downloads",
+                    stringResource(R.string.fab_downloads),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSecondaryContainer
@@ -1136,7 +1143,7 @@ private fun ReadyOfflineQuickCard(
             Spacer(Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    "Ready offline",
+                    stringResource(R.string.ready_offline),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
@@ -1209,7 +1216,7 @@ private fun ListeningHistoryQuickCard(playCount: Int, onClick: () -> Unit) {
             Spacer(Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    "Listening history",
+                    stringResource(R.string.fab_listening_history),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onTertiaryContainer
@@ -1219,9 +1226,8 @@ private fun ListeningHistoryQuickCard(playCount: Int, onClick: () -> Unit) {
                     // card that says nothing about what is inside is a worse
                     // version of the link it replaced.
                     when {
-                        playCount <= 0 -> "Everything you play, in order"
-                        playCount == 1 -> "1 play so far"
-                        else -> "$playCount plays so far"
+                        playCount <= 0 -> stringResource(R.string.lib_everything_in_order)
+                        else -> pluralStringResource(R.plurals.n_plays, playCount, playCount)
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.8f)
@@ -1337,8 +1343,8 @@ fun PlaylistsGrid(
             item(key = "playlists_empty", span = { GridItemSpan(maxLineSpan) }) {
                 EmptyLibraryState(
                     icon = Icons.AutoMirrored.Rounded.PlaylistAdd,
-                    title = "No playlists yet",
-                    subtitle = "Create one with the + button below"
+                    title = stringResource(R.string.spotlight_empty_no_playlists),
+                    subtitle = stringResource(R.string.library_create_playlist_hint)
                 )
             }
         }
@@ -1354,13 +1360,13 @@ fun PlaylistsGrid(
             val isYouTubeEditable = !isLocalPlaylist && !isSavedPlaylist &&
                 playlist.id != "RTM" && playlist.id != "LM"
             ExpressivePlaylistCard(
-                name = playlist.name ?: "Untitled",
+                name = playlist.name ?: stringResource(R.string.untitled_song),
                 count = playlist.itemCount,
                 // A saved playlist's author is the thing that tells it apart
                 // from the user's own at a glance, so it wins the subtitle.
                 subtitle = when {
-                    isSavedPlaylist -> playlist.uploaderName.ifBlank { "Playlist" }
-                    playlist.itemCount < 0 -> playlist.uploaderName.ifBlank { "Playlist" }
+                    isSavedPlaylist -> playlist.uploaderName.ifBlank { stringResource(R.string.label_playlist) }
+                    playlist.itemCount < 0 -> playlist.uploaderName.ifBlank { stringResource(R.string.label_playlist) }
                     else -> null
                 },
                 thumbnailUrl = playlist.thumbnailUrl,
@@ -1393,8 +1399,8 @@ fun ArtistsGrid(
     if (artists.isEmpty()) {
         EmptyLibraryState(
             icon = Icons.Rounded.Person,
-            title = "No artists yet",
-            subtitle = "Artists from your songs will show up here"
+            title = stringResource(R.string.no_artists_yet),
+            subtitle = stringResource(R.string.no_artists_yet_subtitle)
         )
         return
     }
@@ -1464,8 +1470,8 @@ fun AlbumsGrid(
     if (albums.isEmpty()) {
         EmptyLibraryState(
             icon = Icons.Rounded.Album,
-            title = "No albums yet",
-            subtitle = "Albums from your songs will show up here"
+            title = stringResource(R.string.no_albums_yet),
+            subtitle = stringResource(R.string.no_albums_yet_subtitle)
         )
         return
     }
@@ -1540,7 +1546,7 @@ fun ExpressiveLikedSongsCard(count: Int, onClick: () -> Unit) {
             }
             Spacer(Modifier.width(24.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text("Liked Songs", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                Text(stringResource(R.string.liked_songs), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
                 Text(
                     if (count == 1) "1 track • Auto-playlist" else "$count tracks • Auto-playlist",
                     style = MaterialTheme.typography.bodyMedium,
@@ -1648,7 +1654,7 @@ fun ExpressivePlaylistCard(
                 ) {
                     Icon(
                         Icons.Rounded.Bookmark,
-                        contentDescription = "Saved to library",
+                        contentDescription = stringResource(R.string.cd_save_to_library),
                         tint = MaterialTheme.colorScheme.onPrimaryContainer,
                         modifier = Modifier
                             .padding(6.dp)
@@ -1713,7 +1719,7 @@ fun ExpressivePlaylistCard(
                             // confirmation dialog, because nothing is destroyed
                             // and saving it again is one tap on its page.
                             DropdownMenuItem(
-                                text = { Text("Remove from library") },
+                                text = { Text(stringResource(R.string.cd_remove_from_library)) },
                                 onClick = {
                                     showMenu = false
                                     onRemoveSaved()
@@ -1724,7 +1730,7 @@ fun ExpressivePlaylistCard(
                             )
                         } else {
                             DropdownMenuItem(
-                                text = { Text("Edit") },
+                                text = { Text(stringResource(R.string.action_edit)) },
                                 onClick = {
                                     showMenu = false
                                     showEditDialog = true
@@ -1732,7 +1738,7 @@ fun ExpressivePlaylistCard(
                                 leadingIcon = { Icon(Icons.Rounded.Edit, contentDescription = null) }
                             )
                             DropdownMenuItem(
-                                text = { Text("Delete") },
+                                text = { Text(stringResource(R.string.action_delete)) },
                                 onClick = {
                                     showMenu = false
                                     showDeleteDialog = true
@@ -1760,12 +1766,12 @@ fun ExpressivePlaylistCard(
     if (showDeleteDialog) {
         AlertDialog(
             onDismissRequest = { showDeleteDialog = false },
-            title = { Text("Delete playlist?") },
+            title = { Text(stringResource(R.string.delete_playlist_q)) },
             text = {
                 Text(
                     if (affectsYouTubeAccount) {
                         "This will permanently remove \"$name\" from your YouTube account. " +
-                            "It disappears everywhere you use YouTube, including youtube.com and the official apps."
+                            stringResource(R.string.lib_delete_body)
                     } else {
                         "This will permanently remove \"$name\"."
                     }
@@ -1776,11 +1782,11 @@ fun ExpressivePlaylistCard(
                     onDeleteConfirmed()
                     showDeleteDialog = false
                 }) {
-                    Text("Delete")
+                    Text(stringResource(R.string.action_delete))
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") }
+                TextButton(onClick = { showDeleteDialog = false }) { Text(stringResource(R.string.action_cancel)) }
             }
         )
     }
@@ -1792,7 +1798,7 @@ private fun EditPlaylistDialog(
     initialDescription: String?,
     onDismiss: () -> Unit,
     onConfirm: (name: String, description: String?) -> Unit,
-    title: String = "Edit playlist"
+    title: String? = null
 ) {
     var name by remember(initialName) { mutableStateOf(initialName) }
     var description by remember(initialDescription) { mutableStateOf(initialDescription ?: "") }
@@ -1816,19 +1822,19 @@ private fun EditPlaylistDialog(
                 }
             }
         },
-        title = { Text(title) },
+        title = { Text(title ?: stringResource(R.string.lib_edit_playlist)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
-                    label = { Text("Name") },
+                    label = { Text(stringResource(R.string.name_label)) },
                     singleLine = true
                 )
                 OutlinedTextField(
                     value = description,
                     onValueChange = { description = it },
-                    label = { Text("Description") },
+                    label = { Text(stringResource(R.string.description_optional_label)) },
                     maxLines = 2
                 )
             }
@@ -1837,10 +1843,10 @@ private fun EditPlaylistDialog(
             TextButton(
                 onClick = { onConfirm(name.trim(), description.trim().ifBlank { null }) },
                 enabled = name.isNotBlank()
-            ) { Text("Save") }
+            ) { Text(stringResource(R.string.action_save)) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
         }
     )
 }
@@ -1894,7 +1900,7 @@ fun SongListItem(
                         if (isDownloaded) {
                             Icon(
                                 Icons.Rounded.DownloadDone,
-                                contentDescription = "Downloaded",
+                                contentDescription = stringResource(R.string.song_options_downloaded),
                                 modifier = Modifier.size(16.dp),
                                 tint = MaterialTheme.colorScheme.primary
                             )
@@ -1902,7 +1908,7 @@ fun SongListItem(
                         if (isLiked) {
                             Icon(
                                 Icons.Rounded.Favorite,
-                                contentDescription = "Liked",
+                                contentDescription = stringResource(R.string.cd_favorite),
                                 modifier = Modifier.size(16.dp),
                                 tint = MaterialTheme.colorScheme.primary
                             )
@@ -1954,12 +1960,16 @@ internal fun Modifier.songRowClick(
 }
 
 /** Compact "when was this added" label for the Recently added sort. */
-private fun formatRelativeDate(timestamp: Long): String {
+private fun formatRelativeDate(
+    timestamp: Long,
+    todayLabel: String,
+    yesterdayLabel: String
+): String {
     val days = (System.currentTimeMillis() - timestamp) / 86_400_000L
     return when {
-        days < 0L -> "Today" // Clock skew or a file dated in the future
-        days == 0L -> "Today"
-        days == 1L -> "Yesterday"
+        days < 0L -> todayLabel // Clock skew or a file dated in the future
+        days == 0L -> todayLabel
+        days == 1L -> yesterdayLabel
         days < 7L -> "${days}d ago"
         days < 30L -> "${days / 7}w ago"
         days < 365L -> "${days / 30}mo ago"
@@ -2102,7 +2112,7 @@ private fun TrackSectionHeader(
                     modifier = Modifier.size(18.dp)
                 )
                 Spacer(Modifier.width(8.dp))
-                Text(if (manageEnabled) "Done" else "Edit")
+                Text(if (manageEnabled) stringResource(R.string.action_done) else stringResource(R.string.action_edit))
             }
         }
     }
@@ -2637,7 +2647,7 @@ fun PlaylistDetailScreen(
             scope.launch {
                 val result = snackbarHostState.showSnackbar(
                     message = "Removed ${song.title}",
-                    actionLabel = "Undo",
+                    actionLabel = shareContext.getString(R.string.undo),
                     duration = SnackbarDuration.Short
                 )
                 if (result == SnackbarResult.ActionPerformed) {
@@ -2688,7 +2698,7 @@ fun PlaylistDetailScreen(
                             }) {
                                 Icon(
                                     imageVector = if (isSearchActive) Icons.Rounded.Close else Icons.Rounded.Search,
-                                    contentDescription = if (isSearchActive) "Close search" else "Search in playlist"
+                                    contentDescription = if (isSearchActive) stringResource(R.string.cd_clear_search) else stringResource(R.string.lib_search_in_playlist)
                                 )
                             }
                             // Page-level actions live behind one overflow so the
@@ -2708,7 +2718,7 @@ fun PlaylistDetailScreen(
                                     ) {
                                         if (hasRename) {
                                             DropdownMenuItem(
-                                                text = { Text("Rename") },
+                                                text = { Text(stringResource(R.string.action_rename)) },
                                                 leadingIcon = { Icon(Icons.Rounded.Edit, null) },
                                                 onClick = {
                                                     showOverflow = false
@@ -2718,7 +2728,7 @@ fun PlaylistDetailScreen(
                                         }
                                         if (isLocalPlaylist) {
                                             DropdownMenuItem(
-                                                text = { Text("Change cover") },
+                                                text = { Text(stringResource(R.string.lib_change_cover)) },
                                                 leadingIcon = { Icon(Icons.Rounded.PhotoCamera, null) },
                                                 onClick = {
                                                     showOverflow = false
@@ -2730,7 +2740,7 @@ fun PlaylistDetailScreen(
                                             // cover it would do nothing visible.
                                             if (hasCustomCover) {
                                                 DropdownMenuItem(
-                                                    text = { Text("Reset cover") },
+                                                    text = { Text(stringResource(R.string.lib_reset_cover)) },
                                                     leadingIcon = { Icon(Icons.Rounded.Refresh, null) },
                                                     onClick = {
                                                         showOverflow = false
@@ -2741,7 +2751,7 @@ fun PlaylistDetailScreen(
                                         }
                                         if (hasShare) {
                                             DropdownMenuItem(
-                                                text = { Text("Share") },
+                                                text = { Text(stringResource(R.string.video_options_share)) },
                                                 leadingIcon = { Icon(Icons.Rounded.Share, null) },
                                                 onClick = {
                                                     showOverflow = false
@@ -2755,7 +2765,7 @@ fun PlaylistDetailScreen(
                                                         putExtra(android.content.Intent.EXTRA_TEXT, shareUrl)
                                                     }
                                                     shareContext.startActivity(
-                                                        android.content.Intent.createChooser(send, "Share playlist")
+                                                        android.content.Intent.createChooser(send, shareContext.getString(R.string.share_playlist_chooser))
                                                     )
                                                 }
                                             )
@@ -2765,7 +2775,7 @@ fun PlaylistDetailScreen(
                                             DropdownMenuItem(
                                                 text = {
                                                     Text(
-                                                        "Delete playlist",
+                                                        stringResource(R.string.delete_playlist),
                                                         color = MaterialTheme.colorScheme.error
                                                     )
                                                 },
@@ -2848,7 +2858,7 @@ fun PlaylistDetailScreen(
                 // temporary edit mode; stays reachable however far the list scrolls
                 val canReorder = isLocalPlaylist || (canReorderRemote && setVideoIds.isNotEmpty())
                 ManageModeToolbar(
-                    hint = if (canReorder) "Drag a handle to reorder" else "Tap to remove tracks",
+                    hint = if (canReorder) stringResource(R.string.lib_drag_hint) else stringResource(R.string.lib_tap_remove_hint),
                     icon = if (canReorder) Icons.Rounded.DragIndicator else Icons.Rounded.RemoveCircleOutline,
                     onDone = exitReorderMode,
                     modifier = Modifier.padding(
@@ -2991,7 +3001,7 @@ fun PlaylistDetailScreen(
                                 ) {
                                     Icon(
                                         Icons.Rounded.PhotoCamera,
-                                        contentDescription = "Change cover art",
+                                        contentDescription = stringResource(R.string.lib_change_cover_art),
                                         tint = MaterialTheme.colorScheme.onPrimaryContainer,
                                         modifier = Modifier
                                             .padding(10.dp)
@@ -3018,7 +3028,7 @@ fun PlaylistDetailScreen(
                         }
                         Text(
                             text = listOfNotNull(
-                                if (isAlbum) "Album" else "Playlist",
+                                if (isAlbum) stringResource(R.string.label_album) else stringResource(R.string.label_playlist),
                                 resolvedPlaylist.uploaderName.takeIf { isAlbum && it.isNotBlank() },
                                 if (songs.size == 1) "1 track" else "${songs.size} tracks",
                                 totalDurationLabel
@@ -3060,10 +3070,10 @@ fun PlaylistDetailScreen(
                                     )
                                     haptics.performHapticFeedback(HapticFeedbackType.Confirm)
                                     scope.launch {
-                                        snackbarHostState.showSnackbar(
-                                            if (nowSaved) "Saved to your library"
-                                            else "Removed from your library"
-                                        )
+                                        val snackbarMsg =
+                                            if (nowSaved) shareContext.getString(R.string.lib_saved_to_library)
+                                            else shareContext.getString(R.string.lib_removed_from_library)
+                                        snackbarHostState.showSnackbar(snackbarMsg)
                                     }
                                 },
                                 modifier = Modifier.padding(top = 20.dp)
@@ -3084,7 +3094,7 @@ fun PlaylistDetailScreen(
                                             modifier = Modifier.size(18.dp)
                                         )
                                         Spacer(Modifier.width(8.dp))
-                                        Text(if (saved) "Saved" else "Save")
+                                        Text(if (saved) stringResource(R.string.cd_saved) else stringResource(R.string.action_save))
                                     }
                                 }
                             }
@@ -3144,7 +3154,7 @@ fun PlaylistDetailScreen(
                 filteredSongs.isEmpty() && searchQuery.isNotBlank() -> item {
                     EmptyLibraryState(
                         icon = Icons.Rounded.SearchOff,
-                        title = "No matches",
+                        title = stringResource(R.string.search_no_results),
                         subtitle = "Nothing in this ${if (isAlbum) "album" else "playlist"} matches \"$searchQuery\""
                     )
                 }
@@ -3155,8 +3165,8 @@ fun PlaylistDetailScreen(
                     // state offers the recovery instead of dead-ending.
                     EmptyLibraryState(
                         icon = Icons.Rounded.CloudOff,
-                        title = "Couldn't load tracks",
-                        subtitle = "This playlist came back empty. Check your connection and try again.",
+                        title = stringResource(R.string.lib_load_failed_title),
+                        subtitle = stringResource(R.string.lib_load_failed_body),
                         action = {
                             Button(onClick = {
                                 scope.launch {
@@ -3167,7 +3177,7 @@ fun PlaylistDetailScreen(
                             }) {
                                 Icon(Icons.Rounded.Refresh, null, Modifier.size(18.dp))
                                 Spacer(Modifier.width(8.dp))
-                                Text("Retry")
+                                Text(stringResource(R.string.action_retry))
                             }
                         }
                     )
@@ -3176,7 +3186,7 @@ fun PlaylistDetailScreen(
                 songs.isEmpty() -> item {
                     EmptyLibraryState(
                         icon = Icons.Rounded.MusicNote,
-                        title = "Nothing in here yet",
+                        title = stringResource(R.string.vl_no_videos),
                         subtitle = "Songs you add to this ${if (isAlbum) "album" else "playlist"} will show up here"
                     )
                 }
@@ -3286,14 +3296,14 @@ fun PlaylistDetailScreen(
                     }
                 }
             },
-            title = { Text("Delete playlist?") },
+            title = { Text(stringResource(R.string.delete_playlist_q)) },
             text = {
                 Text(
                     // Only reached for the account's own playlists when it can
                     // actually be deleted there; a local one stays device-only.
                     if (!isLocalPlaylist) {
                         "This will permanently delete \"${resolvedPlaylist.name}\" from your YouTube account. " +
-                            "It disappears everywhere you use YouTube, including youtube.com and the official apps."
+                            stringResource(R.string.lib_delete_body)
                     } else {
                         "This will permanently remove \"${resolvedPlaylist.name}\" from this device."
                     },
@@ -3316,12 +3326,12 @@ fun PlaylistDetailScreen(
                         contentColor = MaterialTheme.colorScheme.onError
                     )
                 ) {
-                    Text("Delete")
+                    Text(stringResource(R.string.action_delete))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showDeleteDialog = false }) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.action_cancel))
                 }
             }
         )
@@ -3334,7 +3344,7 @@ fun PlaylistDetailScreen(
             onDismissRequest = { songPendingRemoval = null },
             shape = RoundedCornerShape(32.dp),
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            title = { Text("Remove from your YouTube account?") },
+            title = { Text(stringResource(R.string.remove_from_account_q)) },
             text = {
                 Text(
                     if (resolvedPlaylist.id == "LM") {
@@ -3361,12 +3371,12 @@ fun PlaylistDetailScreen(
                         contentColor = MaterialTheme.colorScheme.onError
                     )
                 ) {
-                    Text("Remove")
+                    Text(stringResource(R.string.remove))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { songPendingRemoval = null }) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.action_cancel))
                 }
             }
         )

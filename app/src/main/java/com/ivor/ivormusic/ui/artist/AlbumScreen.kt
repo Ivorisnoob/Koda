@@ -1,4 +1,6 @@
 package com.ivor.ivormusic.ui.artist
+import androidx.compose.ui.res.stringResource
+import com.ivor.ivormusic.R
 
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
@@ -167,7 +169,7 @@ fun AlbumScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        "Tracks",
+                        stringResource(R.string.ab_tracks),
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         color = textColor
@@ -253,7 +255,7 @@ private fun AlbumHeroHeader(
             ) {
                 Icon(
                     Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Back",
+                    contentDescription = stringResource(R.string.cd_back),
                     modifier = Modifier.size(24.dp)
                 )
             }
@@ -300,7 +302,7 @@ private fun AlbumHeroHeader(
             
             // Album name
             Text(
-                text = albumName.takeIf { it.isNotBlank() && !it.startsWith("Unknown") } ?: "Unknown Album",
+                text = albumName.takeIf { it.isNotBlank() && !it.startsWith("Unknown") } ?: stringResource(R.string.unknown_album),
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
                 color = textColor,
@@ -314,7 +316,7 @@ private fun AlbumHeroHeader(
             
             // Artist name
             Text(
-                text = artistName.takeIf { it.isNotBlank() && !it.startsWith("Unknown") } ?: "Unknown Artist",
+                text = artistName.takeIf { it.isNotBlank() && !it.startsWith("Unknown") } ?: stringResource(R.string.unknown_artist),
                 style = MaterialTheme.typography.bodyLarge,
                 color = secondaryTextColor,
                 textAlign = TextAlign.Center,
@@ -372,7 +374,7 @@ private fun AlbumHeroHeader(
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.PlayArrow,
-                        contentDescription = "Play All",
+                        contentDescription = stringResource(R.string.action_play_all),
                         modifier = Modifier.size(40.dp),
                         tint = MaterialTheme.colorScheme.onPrimary
                     )
@@ -425,16 +427,16 @@ private fun DownloadAllButton(
                 } else {
                     Icons.Rounded.Download
                 },
-                contentDescription = "Download all",
+                contentDescription = stringResource(R.string.ab_download_all),
                 modifier = Modifier.size(18.dp),
                 tint = if (allDone) primaryColor else primaryColor
             )
             Spacer(modifier = Modifier.width(6.dp))
             Text(
                 text = when {
-                    allDone -> "Downloaded"
+                    allDone -> stringResource(R.string.song_options_downloaded)
                     activeHere > 0 -> "Downloading $activeHere"
-                    else -> "Download all"
+                    else -> stringResource(R.string.ab_download_all)
                 },
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.SemiBold,
@@ -518,7 +520,7 @@ private fun AlbumSongCard(
             trailingContent = {
                 Icon(
                     Icons.Rounded.PlayArrow,
-                    contentDescription = "Play",
+                    contentDescription = stringResource(R.string.cd_play),
                     tint = primaryColor,
                     modifier = Modifier.size(24.dp)
                 )

@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Koda</string>
+    <string name="now_playing_channel_name">Đang phát</string>
+    <string name="video_playback_channel_name">Phát video</string>
+
+    <string name="undo">Hoàn tác</string>
+    <string name="action_cancel">Hủy</string>
+    <string name="action_done">Xong</string>
+    <string name="action_create">Tạo</string>
+    <string name="action_save">Lưu</string>
+    <string name="action_delete">Xóa</string>
+    <string name="action_edit">Chỉnh sửa</string>
+    <string name="action_share">Chia sẻ</string>
+    <string name="action_retry">Thử lại</string>
+    <string name="action_see_all">Xem tất cả</string>
+    <string name="action_play_all">Phát tất cả</string>
+    <string name="action_show_more">Hiện thêm</string>
+    <string name="action_try_again">Thử lại nhé</string>
+    <string name="action_open_settings">Mở cài đặt</string>
+    <string name="action_clear_all">Xóa tất cả</string>
+    <string name="action_new_playlist">Danh sách phát mới</string>
+    <string name="action_grant_permission">Cấp quyền</string>
+    <string name="unknown_artist">Nghệ sĩ không rõ</string>
+    <string name="untitled_song">Bài hát không tên</string>
+    <string name="label_playlist">Danh sách phát</string>
+
+    <string name="tab_home">Trang chủ</string>
+    <string name="tab_search">Tìm kiếm</string>
+    <string name="tab_subs">Đăng ký</string>
+    <string name="tab_library">Thư viện</string>
+
+    <string name="local_only_title">Chế độ chỉ phát nội bộ đang bật</string>
+    <string name="local_only_default_subtitle">Mục này cần internet. Tắt chế độ chỉ phát nội bộ trong Cài đặt để dùng.</string>
+    <string name="local_only_video_mode_subtitle">Chế độ video cần internet. Tắt chế độ chỉ phát nội bộ trong Cài đặt để xem video.</string>
+    <string name="local_only_video_search_subtitle">Tìm kiếm video cần internet. Tắt chế độ chỉ phát nội bộ trong Cài đặt để tìm video.</string>
+    <string name="local_only_subscriptions_subtitle">Đăng ký kênh cần internet. Tắt chế độ chỉ phát nội bộ trong Cài đặt để xem.</string>
+    <string name="local_only_video_library_subtitle">Thư viện video cần internet. Tắt chế độ chỉ phát nội bộ trong Cài đặt để xem.</string>
+    <string name="local_only_update_subtitle">Kiểm tra cập nhật cần internet. Tắt chế độ chỉ phát nội bộ trong Cài đặt để kiểm tra.</string>
+
+    <string name="crash_dialog_title">Koda đã gặp lỗi ở lần trước</string>
+    <string name="crash_dialog_message">Đã có sự cố trong phiên trước của bạn. Bạn có thể gửi báo cáo lỗi kèm chi tiết - không có gì rời khỏi thiết bị trừ khi bạn chọn chia sẻ.</string>
+    <string name="crash_dialog_view_report">Xem và báo cáo</string>
+    <string name="crash_dialog_not_now"> Để sau</string>
+
+    <string name="permission_required_title">Cần cấp quyền để tải danh sách bài hát</string>
+
+    <string name="home_section_recent_albums">Album gần đây</string>
+    <string name="home_section_jump_back_in">Nghe tiếp</string>
+    <string name="your_mix_line1">Mix</string>
+    <string name="your_mix_line2">của bạn</string>
+    <string name="update_badge_version">v%1$s</string>
+    <string name="artists_joined">%1$s, %2$s</string>
+    <string name="cd_profile">Hồ sơ</string>
+    <string name="cd_downloads">Tải xuống</string>
+    <string name="cd_settings">Cài đặt</string>
+    <string name="cd_play">Phát</string>
+    <string name="cd_pause">Tạm dừng</string>
+    <string name="cd_next">Tiếp theo</string>
+    <string name="cd_album_art">Ảnh bìa album</string>
+    <string name="cd_show_all">Xem tất cả: %1$s</string>
+
+    <string name="spotlight_quick_picks">Gợi ý nhanh</string>
+    <string name="spotlight_your_playlists">Danh sách phát của bạn</string>
+    <string name="spotlight_from_your_library">Từ thư viện của bạn</string>
+    <string name="spotlight_caption_liked">Từ các bài bạn đã thích</string>
+    <string name="spotlight_caption_recent">Từ những gì bạn vừa nghe</string>
+    <string name="shortcut_liked_songs">Bài hát đã thích</string>
+    <string name="filter_all">Tất cả</string>
+    <string name="filter_liked">Đã thích</string>
+    <string name="filter_recent">Gần đây</string>
+    <string name="filter_playlists">Danh sách phát</string>
+    <string name="spotlight_empty_no_liked">Chưa có bài hát nào được thích</string>
+    <string name="spotlight_empty_no_recent">Chưa phát gì cả</string>
+    <string name="spotlight_empty_no_playlists">Chưa có danh sách phát</string>
+    <string name="spotlight_empty_generic">Chưa có gì để hiển thị</string>
+    <string name="spotlight_hint_liked">Các bài bạn thích sẽ tập hợp tại đây.</string>
+    <string name="spotlight_hint_playlists">Danh sách phát bạn tạo hoặc lưu sẽ hiện ở đây.</string>
+    <string name="spotlight_hint_all">Phát một bản nhạc và trang chủ sẽ dần đầy lên.</string>
+
+    <string name="sleep_timer_title">Hẹn giờ ngủ</string>
+    <string name="sleep_timer_status_track">Bản này</string>
+    <string name="sleep_timer_detail_track">Phát sẽ dừng khi bài hiện tại kết thúc</string>
+    <string name="sleep_timer_detail_duration">Âm lượng sẽ giảm dần và tạm dừng khi hết giờ</string>
+    <string name="minutes_short">%1$d phút</string>
+    <string name="sleep_timer_end_of_track">Kết thúc bản này</string>
+    <string name="sleep_timer_turn_off">Tắt</string>
+
+    <string name="cd_switch_to_music">Chuyển sang chế độ nhạc</string>
+    <string name="cd_switch_to_video">Chuyển sang chế độ video</string>
+    <string name="cd_drag_to_reorder">Kéo để sắp xếp lại</string>
+    <string name="cd_favorite">Yêu thích</string>
+    <string name="cd_clear_search">Xóa từ tìm kiếm</string>
+    <string name="queue_removed_snackbar">Đã xóa %1$s</string>
+
+    <string name="song_options_play_next">Phát tiếp theo</string>
+    <string name="song_options_play_next_subtitle">Ngay sau bài này</string>
+    <string name="song_options_add_to_queue">Thêm vào hàng đợi</string>
+    <string name="song_options_add_to_queue_subtitle">Ở cuối hàng đợi</string>
+    <string name="song_options_add_to_playlist">Thêm vào danh sách phát</string>
+    <string name="song_options_remove_from_liked">Bỏ khỏi mục đã thích</string>
+    <string name="song_options_like">Thích</string>
+    <string name="song_options_download">Tải xuống</string>
+    <string name="song_options_download_subtitle">Lưu trên thiết bị này</string>
+    <string name="song_options_downloaded">Đã tải xuống</string>
+    <string name="song_options_go_to_artist">Đến %1$s</string>
+
+    <string name="add_to_playlist_title">Thêm vào danh sách phát</string>
+    <string name="new_playlist_label">Danh sách phát mới</string>
+    <string name="name_label">Tên</string>
+    <string name="description_optional_label">Mô tả (không bắt buộc)</string>
+
+    <string name="video_options_watch_later">Xem sau</string>
+    <string name="video_options_kept_on_device">Đã lưu trên thiết bị này</string>
+    <string name="video_options_save_to_playlist">Lưu vào danh sách phát</string>
+    <string name="video_options_download">Tải xuống</string>
+    <string name="video_options_go_to_channel">Đến kênh</string>
+    <string name="video_options_share">Chia sẻ</string>
+    <string name="video_options_share_chooser">Chia sẻ video</string>
+    <string name="video_options_not_interested">Không quan tâm</string>
+    <string name="video_options_dont_recommend_channel">Không đề xuất kênh này</string>
+    <string name="video_options_dont_recommend_channel_name">Không đề xuất %1$s</string>
+    <string name="cd_back">Quay lại</string>
+    <string name="search_playlists_placeholder">Tìm danh sách phát</string>
+    <string name="no_playlist_matches">Không có danh sách phát khớp \"%1$s\"</string>
+    <string name="no_playlists_yet_hint">Chưa có danh sách phát. Tạo một cái và video này sẽ vào thẳng đó.</string>
+    <string name="cd_saved">Đã lưu</string>
+    <string name="cd_couldnt_save">Không thể lưu</string>
+    <string name="cd_in_this_playlist">Đã có trong danh sách này</string>
+
+    <string name="settings_section_you">Bạn</string>
+    <string name="settings_section_look_and_feel">Hiển thị</string>
+    <string name="settings_section_playback_and_content">Phát &amp; nội dung</string>
+    <string name="settings_section_system">Hệ thống</string>
+    <string name="settings_section_about">Giới thiệu</string>
+    <string name="settings_account">Tài khoản</string>
+    <string name="settings_appearance">Hiển thị</string>
+    <string name="settings_player">Trình phát</string>
+    <string name="settings_playback_and_quality">Phát &amp; chất lượng</string>
+    <string name="settings_content_and_feeds">Nội dung &amp; luồng</string>
+    <string name="settings_subscriptions">Đăng ký</string>
+    <string name="settings_storage_and_cache">Bộ nhớ &amp; bộ nhớ đệm</string>
+    <string name="settings_notifications">Thông báo</string>
+    <string name="settings_local_library">Thư viện trên máy</string>
+    <string name="settings_backup_and_restore">Sao lưu &amp; khôi phục</string>
+    <string name="settings_advanced">Nâng cao</string>
+    <string name="settings_advanced_value_xiaomi">Khuyên dùng trên máy này</string>
+    <string name="settings_advanced_value_other">Bản vá quét thư viện &amp; pin</string>
+    <string name="settings_version_subtitle">Phiên bản %1$s (%2$d)</string>
+
+    <string name="profiles_title">Hồ sơ</string>
+    <string name="profiles_description">Đăng ký kênh và đề xuất đã ẩn được giữ riêng cho từng hồ sơ. Danh sách phát, bài đã thích và mục tải xuống dùng chung.</string>
+    <string name="add_youtube_account">Thêm tài khoản YouTube</string>
+    <string name="add_youtube_account_subtitle">Đăng nhập bằng tài khoản Google khác</string>
+    <string name="add_device_profile">Thêm hồ sơ trên máy này</string>
+    <string name="add_device_profile_subtitle">Đăng ký riêng, không cần tài khoản</string>
+    <string name="profile_signed_out">Chưa đăng nhập - chạm để đăng nhập</string>
+    <string name="profile_session_expired">Phiên hết hạn - chạm để kết nối lại</string>
+    <string name="profile_on_this_device">Trên máy này</string>
+    <string name="profile_youtube_account">Tài khoản YouTube</string>
+    <string name="cd_active_profile">Hồ sơ đang dùng</string>
+    <string name="cd_remove_profile">Xóa %1$s</string>
+    <string name="new_profile_dialog_title">Hồ sơ mới trên máy này</string>
+    <string name="sign_out_confirm_title">Đăng xuất khỏi %1$s?</string>
+    <string name="remove_profile_confirm_title">Xóa %1$s?</string>
+    <string name="sign_out">Đăng xuất</string>
+    <string name="remove">Xóa</string>
+
+    <string name="library_empty_title">Thư viện của bạn đang trống</string>
+    <string name="library_empty_subtitle">Bài bạn tải xuống hoặc yêu thích sẽ hiện ở đây</string>
+    <string name="library_create_playlist_hint">Tạo bằng nút + bên dưới</string>
+    <string name="fab_downloads">Tải xuống</string>
+    <string name="fab_listening_history">Lịch sử nghe</string>
+    <string name="fab_statistics">Thống kê</string>
+    <string name="cd_listening_stats">Thống kê nghe nhạc</string>
+    <string name="recently_played">Vừa nghe</string>
+    <string name="liked_songs">Bài hát đã thích</string>
+    <string name="no_artists_yet">Chưa có nghệ sĩ nào</string>
+    <string name="no_artists_yet_subtitle">Nghệ sĩ từ các bài hát của bạn sẽ hiện ở đây</string>
+    <string name="no_albums_yet">Chưa có album nào</string>
+    <string name="no_albums_yet_subtitle">Album từ các bài hát của bạn sẽ hiện ở đây</string>
+
+    <plurals name="n_songs">
+        <item quantity="other">%1$d bài hát</item>
+    </plurals>
+    <plurals name="n_playlists">
+        <item quantity="other">%1$d danh sách phát</item>
+    </plurals>
+</resources>

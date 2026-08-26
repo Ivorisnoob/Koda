@@ -1,4 +1,6 @@
 package com.ivor.ivormusic.ui.home
+import androidx.compose.ui.res.stringResource
+import com.ivor.ivormusic.R
 
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
@@ -52,16 +54,16 @@ fun HomeStylePicker(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         HomeStyleOption(
-            title = "Classic",
-            description = "One big hero, then rows",
+            title = stringResource(R.string.hs_classic),
+            description = stringResource(R.string.hs_classic_desc),
             selected = !spotlightHome,
             onClick = { onSpotlightHomeChange(false) },
             modifier = Modifier.weight(1f),
         ) { ClassicHomeWireframe() }
 
         HomeStyleOption(
-            title = "Spotlight",
-            description = "Shortcuts, quick picks, shelves",
+            title = stringResource(R.string.sp_spotlight_home),
+            description = stringResource(R.string.hs_spotlight_desc),
             selected = spotlightHome,
             onClick = { onSpotlightHomeChange(true) },
             modifier = Modifier.weight(1f),
