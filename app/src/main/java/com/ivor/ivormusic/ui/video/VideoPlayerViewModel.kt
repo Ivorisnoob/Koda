@@ -340,6 +340,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     val captionTextSize: StateFlow<Float> = themePreferences.captionTextSize
     val captionTextColor: StateFlow<CaptionTextColor> = themePreferences.captionTextColor
     val captionBackground: StateFlow<CaptionBackground> = themePreferences.captionBackground
+    val captionsEnabled: StateFlow<Boolean> = themePreferences.captionsEnabled
 
     private var captionCuesJob: Job? = null
 
@@ -1792,11 +1793,16 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         _chapters.value = emptyList() // Clear previous chapters
         _seekPreview.value = null // Never show a frame from the previous video
         _captionTracks.value = emptyList() // Clear previous caption tracks
-        _selectedCaption.value = null // Captions default off per video
+        _selectedCaption.value = null // Re-applied below when captions are persistently on
         _isCaptionsLoading.value = false
         captionsLoadedForVideoId = null
         captionCuesJob?.cancel()
         _captionCues.value = emptyList()
+        // Captions that were on for the last video stay on for this one: the
+        // track list is fetched up front rather than waiting for a CC tap.
+        if (themePreferences.isCaptionsEnabled() && !_isLocalPlayback.value) {
+            ensureCaptionsLoaded()
+        }
         _playbackError.value = null // Clear previous error
         rendererRetryCount = 0
         sourceRetryCount = 0
@@ -2408,6 +2414,9 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                 // Ignore stale results if the user switched videos meanwhile
                 if (_currentVideo.value?.videoId == video.videoId) {
                     _captionTracks.value = tracks
+                    if (themePreferences.isCaptionsEnabled() && _selectedCaption.value == null) {
+                        restoreSavedCaptionTrack(tracks)
+                    }
                 }
             } finally {
                 if (_currentVideo.value?.videoId == video.videoId) {
@@ -2418,7 +2427,28 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     }
 
     /**
+     * Re-apply the persisted caption choice to a fresh track list: the exact
+     * language first, then the same base language in another region ("en" vs
+     * "en-US" or an auto-generated track), then whatever the video offers.
+     * A video with no tracks simply leaves captions off.
+     */
+    private fun restoreSavedCaptionTrack(tracks: List<CaptionTrack>) {
+        val wanted = themePreferences.getCaptionLanguageCode()
+        val match = tracks.firstOrNull { it.languageCode == wanted }
+            ?: tracks.firstOrNull {
+                wanted != null && it.languageCode.substringBefore('-') == wanted.substringBefore('-')
+            }
+            ?: tracks.firstOrNull()
+        match?.let { setCaptionTrack(it) }
+    }
+
+    /**
      * Select a caption track, or null to turn captions off.
+     *
+     * The choice is persisted: the on/off state and the track's language come
+     * back on the next video, so a user who watches subtitled does not tap CC
+     * every time. [startVideo] re-applies the saved language once the new
+     * video's tracks arrive.
      *
      * The playback pipeline is deliberately untouched here. Captions used to be
      * a text track merged into the media source, so switching them rebuilt that
@@ -2431,6 +2461,8 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     fun setCaptionTrack(track: CaptionTrack?) {
         if (_selectedCaption.value == track) return
         _selectedCaption.value = track
+        themePreferences.setCaptionsEnabled(track != null)
+        themePreferences.setCaptionLanguageCode(track?.languageCode)
 
         captionCuesJob?.cancel()
         if (_castPlayer != null) {

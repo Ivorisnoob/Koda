@@ -81,6 +81,16 @@ class ThemePreferences(context: Context) {
     private val _captionBackground = MutableStateFlow(getCaptionBackgroundPreference())
     val captionBackground: StateFlow<CaptionBackground> = _captionBackground.asStateFlow()
 
+    // Captions on/off and the chosen language ride the same persistence as the
+    // style above, so a user who watches everything subtitled does not have to
+    // tap CC again on every video.
+    private val _captionsEnabled = MutableStateFlow(prefs.getBoolean(KEY_CAPTIONS_ENABLED, false))
+    val captionsEnabled: StateFlow<Boolean> = _captionsEnabled.asStateFlow()
+
+    private val _captionLanguageCode =
+        MutableStateFlow(prefs.getString(KEY_CAPTION_LANGUAGE_CODE, null))
+    val captionLanguageCode: StateFlow<String?> = _captionLanguageCode.asStateFlow()
+
     private val _musicQualityWifi = MutableStateFlow(getMusicQualityWifiPreference())
     val musicQualityWifi: StateFlow<String> = _musicQualityWifi.asStateFlow()
 
@@ -307,6 +317,8 @@ class ThemePreferences(context: Context) {
         private const val KEY_CAPTION_TEXT_SIZE = "caption_text_size"
         private const val KEY_CAPTION_TEXT_COLOR = "caption_text_color"
         private const val KEY_CAPTION_BACKGROUND = "caption_background"
+        private const val KEY_CAPTIONS_ENABLED = "captions_enabled"
+        private const val KEY_CAPTION_LANGUAGE_CODE = "caption_language_code"
 
         /** Sentinel meaning "highest available quality". */
         const val VIDEO_QUALITY_AUTO = "auto"
@@ -969,6 +981,25 @@ class ThemePreferences(context: Context) {
     fun setCaptionBackground(background: CaptionBackground) {
         prefs.edit().putString(KEY_CAPTION_BACKGROUND, background.name).apply()
         _captionBackground.value = background
+    }
+
+    fun setCaptionsEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_CAPTIONS_ENABLED, enabled).apply()
+        _captionsEnabled.value = enabled
+    }
+
+    /** Fresh pref read for non-composable decision points (ViewModel workers). */
+    fun isCaptionsEnabled(): Boolean = prefs.getBoolean(KEY_CAPTIONS_ENABLED, false)
+
+    fun getCaptionLanguageCode(): String? = prefs.getString(KEY_CAPTION_LANGUAGE_CODE, null)
+
+    fun setCaptionLanguageCode(languageCode: String?) {
+        if (languageCode == null) {
+            prefs.edit().remove(KEY_CAPTION_LANGUAGE_CODE).apply()
+        } else {
+            prefs.edit().putString(KEY_CAPTION_LANGUAGE_CODE, languageCode).apply()
+        }
+        _captionLanguageCode.value = languageCode
     }
 
     // ---------------- Subscriptions ----------------
