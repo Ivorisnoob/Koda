@@ -105,10 +105,10 @@
         <meta-data android:name="com.google.android.gms.car.application" android:resource="@xml/automotive_app_desc"/>
 
         <!--
-            Cast configuration. Play services reads the provider class on process
-            start to learn which receiver app Koda casts to (the public Default
-            Media Receiver); without this meta-data route discovery finds no
-            cast routes at all.
+            Cast configuration. Play services reads the provider class when Koda
+            lazily starts the Cast framework (the Cast sheet opens, or an active
+            receiver session is being restored) to learn which receiver app to
+            use; without this meta-data route discovery finds no cast routes.
         -->
         <meta-data
             android:name="com.google.android.gms.cast.framework.OPTIONS_PROVIDER_CLASS_NAME"

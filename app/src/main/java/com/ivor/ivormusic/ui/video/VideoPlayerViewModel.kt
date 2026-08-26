@@ -1443,15 +1443,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     ): Boolean {
         if (_exoPlayer == null && _castPlayer == null) return false
         val qualities = try {
-            kotlinx.coroutines.withTimeout(15000L) {
-                youtubeRepository.getVideoStreamQualities(video.videoId)
-            }
-        } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
-            // Caught before CancellationException below, which it subclasses:
-            // a timed-out resolution is a real failure the caller must surface,
-            // not a cancellation to propagate.
-            KLog.w("VideoPlayerVM", "Re-resolve timed out for ${video.videoId}", e)
-            emptyList()
+            youtubeRepository.getVideoStreamQualities(video.videoId)
         } catch (e: kotlinx.coroutines.CancellationException) {
             // playVideo() cancels this job when the user moves on. Swallowing
             // that would let a dead recovery keep writing loading/error state
@@ -1920,11 +1912,16 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                     _exoPlayer?.clearMediaItems()
                 }
                 
-                // Add timeout for stream fetching to prevent "stuck in buffering"
-                kotlinx.coroutines.withTimeout(15000L) {
+                // NewPipe's fetchPage() is blocking. A coroutine withTimeout
+                // cannot interrupt it; when extraction took 17-21 seconds it
+                // waited for valid qualities and then discarded them as timed
+                // out. The downloader's connect/read timeouts are the actual
+                // network bounds, while the generation checks below still
+                // prevent a cancelled load from touching a newer video.
+                resolve@ run {
                     // FAST: Get stream URLs only (no metadata, no related, no channel avatar)
                     val streamResult = youtubeRepository.getVideoStreamResult(video.videoId)
-                    if (!isCurrentVideoLoad(video.videoId, loadGeneration)) return@withTimeout
+                    if (!isCurrentVideoLoad(video.videoId, loadGeneration)) return@resolve
                     val qualities = streamResult.qualities
                     _availableQualities.value = qualities
                     _seekPreview.value = streamResult.seekPreview
@@ -1959,14 +1956,14 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                             _playbackError.value =
                                 Exception("This stream cannot be cast")
                             _isLoading.value = false
-                            return@withTimeout
+                            return@resolve
                         }
                         loadQuality(chosen)
                         seekAndResumeAfterLoad(resumePositionMs, resumePaused)
                     } else {
                         // Fallback to legacy stream URL
                         val streamUrl = youtubeRepository.getVideoStreamUrl(video.videoId)
-                        if (!isCurrentVideoLoad(video.videoId, loadGeneration)) return@withTimeout
+                        if (!isCurrentVideoLoad(video.videoId, loadGeneration)) return@resolve
                         if (streamUrl != null) {
                             _currentQuality.value = VideoQuality(
                                 resolution = "Auto",
@@ -1988,11 +1985,6 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                             _isLoading.value = false
                         }
                     }
-                }
-            } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
-                if (isCurrentVideoLoad(video.videoId, loadGeneration)) {
-                    _playbackError.value = Exception("Connection timed out. Please check your internet.")
-                    _isLoading.value = false
                 }
             } catch (e: CancellationException) {
                 throw e

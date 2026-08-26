@@ -50,28 +50,37 @@ data class CastRoute(val id: String, val name: String)
  */
 @UnstableApi
 class VideoCastManager(
-    private val context: Context,
+    context: Context,
     private val playbackKind: CastPlaybackKind = CastPlaybackKind.VIDEO
 ) {
 
-    /** False when Play services are missing: everything degrades to "no cast". */
-    val available: Boolean = try {
-        GoogleApiAvailabilityLight.getInstance()
-            .isGooglePlayServicesAvailable(context) == ConnectionResult.SUCCESS
-    } catch (_: Exception) {
-        false
-    }
+    private val context = context.applicationContext
 
-    private val castContext: CastContext? = if (!available) null else try {
-        @Suppress("VisibleForTests")
-        CastContext.getSharedInstance(context)
-    } catch (e: Exception) {
-        KLog.w(TAG, "CastContext unavailable", e)
-        null
+    /** False when Play services are missing: everything degrades to "no cast". */
+    val available: Boolean by lazy(LazyThreadSafetyMode.PUBLICATION) {
+        try {
+            GoogleApiAvailabilityLight.getInstance()
+                .isGooglePlayServicesAvailable(context) == ConnectionResult.SUCCESS
+        } catch (_: Exception) {
+            false
+        }
     }
 
     private val sessionManager: SessionManager?
-        get() = castContext?.sessionManager
+        get() = sharedCastContext?.sessionManager
+
+    /**
+     * Start Google's Cast framework only for an actual Cast interaction, or
+     * when the previous process died with a receiver session still active.
+     * Merely constructing the video/music ViewModels must stay a no-op: the app
+     * creates three managers, and eager CastContext initialization otherwise
+     * loads the Play-services Cast module and MediaRouter during ordinary local
+     * playback even when the Cast sheet is never opened.
+     */
+    private fun ensureCastFramework(): CastContext? {
+        if (!available) return null
+        return getOrCreateCastContext(context)
+    }
 
     private val _receivers = MutableStateFlow<List<CastRoute>>(emptyList())
     val receivers: StateFlow<List<CastRoute>> = _receivers.asStateFlow()
@@ -112,8 +121,20 @@ class VideoCastManager(
         null
     }
 
-    private val mediaRouter: MediaRouter?
-        get() = try { MediaRouter.getInstance(context) } catch (_: Exception) { null }
+    // Do not use a lazy delegate here: stopDiscovery() is called for the
+    // sheet's initial closed state, and reading a lazy there would still create
+    // MediaRouter during ordinary playback. Only start/connect may initialize
+    // it; stop is a strict no-op until that has happened.
+    private var mediaRouter: MediaRouter? = null
+
+    private fun ensureMediaRouter(): MediaRouter? {
+        mediaRouter?.let { return it }
+        return try {
+            MediaRouter.getInstance(context).also { mediaRouter = it }
+        } catch (_: Exception) {
+            null
+        }
+    }
 
     private val routeCallback = object : MediaRouter.Callback() {
         override fun onRouteAdded(router: MediaRouter, route: MediaRouter.RouteInfo) =
@@ -130,7 +151,11 @@ class VideoCastManager(
      * feature most sessions never open.
      */
     fun startDiscovery() {
-        val router = mediaRouter ?: return
+        // Cast is now in use. Initializing here also attaches every already
+        // registered observer (including MusicService) before a route can be
+        // selected, so the playback owner sees the ensuing session event.
+        ensureCastFramework() ?: return
+        val router = ensureMediaRouter() ?: return
         val selector = routeSelector ?: return
         refreshRoutes()
         router.addCallback(selector, routeCallback, MediaRouter.CALLBACK_FLAG_REQUEST_DISCOVERY)
@@ -186,7 +211,7 @@ class VideoCastManager(
      * cannot produce a CastContext.
      */
     fun createPlayer(): CastPlayer? {
-        val ctx = castContext ?: return null
+        val ctx = ensureCastFramework() ?: return null
         return try {
             @Suppress("VisibleForTests")
             CastPlayer(ctx, KodaCastMediaItemConverter(playbackKind))
@@ -205,8 +230,9 @@ class VideoCastManager(
      * us" - nothing has been loaded onto it yet.
      */
     suspend fun connect(routeId: String): Boolean {
+        ensureCastFramework() ?: return false
         val manager = sessionManager ?: return false
-        val router = mediaRouter ?: return false
+        val router = ensureMediaRouter() ?: return false
         val route = router.routes.firstOrNull { it.id == routeId } ?: return false
         if (_isConnecting.value) return false
 
@@ -245,6 +271,7 @@ class VideoCastManager(
      */
     fun endSession(stopOnReceiver: Boolean) {
         expectingOwnTeardown = true
+        rememberActiveSession(false)
         try {
             sessionManager?.endCurrentSession(stopOnReceiver)
         } catch (e: Exception) {
@@ -293,6 +320,7 @@ class VideoCastManager(
         expectingOwnTeardown = false
         _deviceName.value = session.castDevice?.friendlyName ?: _deviceName.value
         _isSessionActive.value = true
+        rememberActiveSession(true)
         attachRemoteListener()
     }
 
@@ -311,6 +339,7 @@ class VideoCastManager(
         if (!expectingOwnTeardown && wasActive) {
             onSessionLost?.invoke(position)
         }
+        if (wasActive) rememberActiveSession(false)
         expectingOwnTeardown = false
         clearOwnerIfMine()
     }
@@ -323,18 +352,36 @@ class VideoCastManager(
 
     /** Installed by [beginObservation]; the ViewModel owns the whole lifecycle. */
     private var observing = false
+    private var observedSessionManager: SessionManager? = null
 
     /**
-     * Register the session and remote-status listeners once, when the owning
-     * ViewModel is created. Any session that already exists (a reconnect after
-     * process death) fires immediately through the listener contract.
+     * Register this owner as interested in Cast events without starting the
+     * Cast framework. Opening a Cast sheet starts it and attaches all owners.
+     * The one exception is a persisted active-session hint: after process death
+     * we initialize so the app can re-adopt the receiver that is still playing.
      */
     fun beginObservation() {
         if (observing) return
         observing = true
-        sessionManager?.addSessionManagerListener(sessionListener, CastSession::class.java)
+        registerObserver(this)
+        if (wasSessionActive()) ensureCastFramework()
+    }
+
+    /** Called process-wide when the lazily shared CastContext becomes available. */
+    private fun onFrameworkAvailable(castContext: CastContext) {
+        if (!observing || observedSessionManager != null) return
+        val manager = castContext.sessionManager
+        observedSessionManager = manager
+        manager.addSessionManagerListener(sessionListener, CastSession::class.java)
         try {
-            sessionManager?.currentCastSession?.let { if (it.isConnected) onSessionUp(it) }
+            val current = manager.currentCastSession
+            if (current?.isConnected == true) {
+                onSessionUp(current)
+            } else if (wasSessionActive()) {
+                // The old process died while casting, but the receiver session
+                // has since ended. Clear the hint so later launches stay lazy.
+                rememberActiveSession(false)
+            }
         } catch (_: Exception) {
         }
     }
@@ -342,8 +389,22 @@ class VideoCastManager(
     fun endObservation() {
         if (!observing) return
         observing = false
-        sessionManager?.removeSessionManagerListener(sessionListener, CastSession::class.java)
+        unregisterObserver(this)
+        observedSessionManager?.removeSessionManagerListener(
+            sessionListener,
+            CastSession::class.java
+        )
+        observedSessionManager = null
         detachRemoteListener()
+    }
+
+    private fun wasSessionActive(): Boolean =
+        context.getSharedPreferences(CAST_STATE_PREFS, Context.MODE_PRIVATE)
+            .getBoolean(CAST_SESSION_ACTIVE_KEY, false)
+
+    private fun rememberActiveSession(active: Boolean) {
+        context.getSharedPreferences(CAST_STATE_PREFS, Context.MODE_PRIVATE)
+            .edit().putBoolean(CAST_SESSION_ACTIVE_KEY, active).apply()
     }
 
     // ---------------- Remote status ----------------
@@ -401,6 +462,9 @@ class VideoCastManager(
     companion object {
         private const val TAG = "VideoCastManager"
 
+        private const val CAST_STATE_PREFS = "koda_cast_state"
+        private const val CAST_SESSION_ACTIVE_KEY = "session_active"
+
         /** A receiver that has not answered in this long is not going to. */
         private const val CONNECT_TIMEOUT_MS = 15_000L
         private const val CONNECT_POLL_MS = 200L
@@ -410,5 +474,42 @@ class VideoCastManager(
 
         private val ownerLock = Any()
         @Volatile private var activePlaybackKind: CastPlaybackKind? = null
+
+        // CastContext is process-wide in Google's SDK, so Koda owns one lazy
+        // reference too. Managers may register before it exists; the manager
+        // that opens the first Cast sheet initializes it and attaches them all.
+        private val frameworkLock = Any()
+        @Volatile private var sharedCastContext: CastContext? = null
+        private val observers = LinkedHashSet<VideoCastManager>()
+
+        private fun registerObserver(manager: VideoCastManager) {
+            val existing = synchronized(frameworkLock) {
+                observers.add(manager)
+                sharedCastContext
+            }
+            if (existing != null) manager.onFrameworkAvailable(existing)
+        }
+
+        private fun unregisterObserver(manager: VideoCastManager) {
+            synchronized(frameworkLock) { observers.remove(manager) }
+        }
+
+        private fun getOrCreateCastContext(context: Context): CastContext? {
+            sharedCastContext?.let { return it }
+            val (created, waiting) = synchronized(frameworkLock) {
+                sharedCastContext?.let { return it }
+                val newContext = try {
+                    @Suppress("VisibleForTests")
+                    CastContext.getSharedInstance(context.applicationContext)
+                } catch (e: Exception) {
+                    KLog.w(TAG, "CastContext unavailable", e)
+                    return null
+                }
+                sharedCastContext = newContext
+                newContext to observers.toList()
+            }
+            waiting.forEach { it.onFrameworkAvailable(created) }
+            return created
+        }
     }
 }

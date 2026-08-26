@@ -11,9 +11,9 @@ import com.google.android.gms.cast.CastMediaControlIntent
  *
  * Registered through the manifest meta-data
  * `com.google.android.gms.cast.framework.OPTIONS_PROVIDER_CLASS_NAME`, which is
- * how the Cast framework discovers its configuration before any app code runs.
- * Play services reads this on process start, so the class must exist and answer
- * without touching anything else in the app.
+ * how the Cast framework discovers its configuration when Koda lazily starts
+ * it. The class must exist and answer without touching anything else in the
+ * app; normal local playback never needs to initialize the framework.
  *
  * The [CastMediaControlIntent.DEFAULT_MEDIA_RECEIVER_APPLICATION_ID] Default
  * Media Receiver is deliberate: it plays progressive MP4, DASH and HLS - every
