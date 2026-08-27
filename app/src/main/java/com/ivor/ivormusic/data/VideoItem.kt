@@ -242,6 +242,36 @@ data class VideoQuality(
     /** Codec reported by the stream provider, for example avc1, vp9 or av01. */
     val codec: String? = null,
 ) {
+    /**
+     * How this entry reaches a player. This is derived rather than supplied by
+     * every resolver so the meaning of the older isDASH/audioUrl fields stays
+     * consistent across NewPipe, InnerTube, downloads and restored sessions.
+     */
+    val delivery: VideoStreamDelivery
+        get() = when {
+            isDASH -> VideoStreamDelivery.ADAPTIVE_MANIFEST
+            audioUrl != null -> VideoStreamDelivery.SPLIT_VIDEO_AUDIO
+            else -> VideoStreamDelivery.MUXED_PROGRESSIVE
+        }
+
+    val isHlsManifest: Boolean
+        get() = delivery == VideoStreamDelivery.ADAPTIVE_MANIFEST &&
+            format.equals("HLS", ignoreCase = true)
+
+    /**
+     * The Default Cast Receiver accepts one media URL. Koda can therefore send
+     * a self-contained progressive VOD, or the HLS master playlist used by a
+     * live broadcast. A split video/audio pair needs MergingMediaSource on the
+     * phone and cannot be represented by the Default Receiver; VOD DASH is
+     * deliberately excluded because affected Cast firmware can select its
+     * video adaptation set without an audio adaptation set.
+     */
+    val isDefaultCastReceiverCompatible: Boolean
+        get() = when {
+            isLive -> isHlsManifest
+            else -> delivery == VideoStreamDelivery.MUXED_PROGRESSIVE
+        }
+
     /** Taller than it is wide. Unknown dimensions read as landscape. */
     val isPortrait: Boolean get() = sourceAspectRatio?.let { it > 0f && it < 1f } ?: false
 

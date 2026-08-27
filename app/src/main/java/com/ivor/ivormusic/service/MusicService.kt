@@ -51,7 +51,9 @@ import com.ivor.ivormusic.data.SongSource
 import com.ivor.ivormusic.data.StatsRepository
 import com.ivor.ivormusic.data.ThemePreferences
 import com.ivor.ivormusic.data.YouTubeRepository
+import com.ivor.ivormusic.widget.PlayerWidgetStore
 import com.ivor.ivormusic.widget.PlayerWidgets
+import com.ivor.ivormusic.widget.toWidgetSnapshot
 import com.ivor.ivormusic.ui.video.CastPlaybackKind
 import com.ivor.ivormusic.ui.video.VideoCastManager
 import kotlinx.coroutines.CoroutineScope
@@ -424,6 +426,11 @@ class MusicService : MediaLibraryService() {
 
     override fun onDestroy() {
         KLog.i(TAG, "MusicService Destroying...")
+        // The widgets keep the track but must not keep claiming it is playing:
+        // they render from a stored snapshot with no session of their own, so
+        // nothing else would ever correct a playing flag left behind here.
+        runCatching { PlayerWidgetStore.markStopped(this) }
+        runCatching { PlayerWidgets.pushAll(this) }
         fadeVolumeJob?.cancel()
         progressJob?.cancel()
         transitionJob?.cancel()
@@ -1058,8 +1065,6 @@ class MusicService : MediaLibraryService() {
             // 3. Robust Prefetching of FUTURE items
             prefetchUpcomingSongs()
 
-            // 4. The home screen widget family shows what changed
-            PlayerWidgets.pushAll(this@MusicService)
         }
 
         override fun onPlaybackStateChanged(playbackState: Int) {
@@ -1086,7 +1091,40 @@ class MusicService : MediaLibraryService() {
             if (playbackState == Player.STATE_ENDED || playbackState == Player.STATE_IDLE) {
                 progressJob?.cancel()
                 musicProgressLiveUpdate?.hide()
-                PlayerWidgets.pushAll(this@MusicService)
+            }
+        }
+
+        /**
+         * Everything the home screen widgets know, written from here.
+         *
+         * This callback is the only writer that never has to guess: it runs on
+         * the player's own thread, inside the batch that reports what changed,
+         * so the state it reads is exactly the state that caused the redraw.
+         * The widgets then render straight out of the store with no session
+         * bind of their own - see widget/PlayerWidgetCommon.kt.
+         *
+         * It replaced three scattered pushAll calls whose coverage was the bug:
+         * onIsPlayingChanged only fired on the *pause* edge, so starting
+         * playback left every widget showing a play glyph until something else
+         * happened to redraw it, and shuffle and repeat had no push at all, so
+         * the Quick controls toggles lit up only on the next track change.
+         * onEvents carries the full set at once, which makes the list below
+         * auditable rather than being whatever overrides happened to exist.
+         */
+        override fun onEvents(player: Player, events: Player.Events) {
+            super.onEvents(player, events)
+            if (events.containsAny(
+                    Player.EVENT_IS_PLAYING_CHANGED,
+                    Player.EVENT_PLAY_WHEN_READY_CHANGED,
+                    Player.EVENT_PLAYBACK_STATE_CHANGED,
+                    Player.EVENT_MEDIA_ITEM_TRANSITION,
+                    Player.EVENT_MEDIA_METADATA_CHANGED,
+                    Player.EVENT_TIMELINE_CHANGED,
+                    Player.EVENT_SHUFFLE_MODE_ENABLED_CHANGED,
+                    Player.EVENT_REPEAT_MODE_CHANGED,
+                )
+            ) {
+                publishWidgetState()
             }
         }
 
@@ -1131,7 +1169,6 @@ class MusicService : MediaLibraryService() {
                 transitionJob?.cancel()
                 transitionJob = null
                 musicProgressLiveUpdate?.hide()
-                PlayerWidgets.pushAll(this@MusicService)
             }
         }
 
@@ -2710,6 +2747,16 @@ class MusicService : MediaLibraryService() {
         }
     }
     
+    /**
+     * Snapshot the active player for the home screen widgets. Main thread only
+     * - every caller is already a player callback or the progress loop, both of
+     * which run there.
+     */
+    private fun publishWidgetState() {
+        runCatching { PlayerWidgets.publish(this, player.toWidgetSnapshot()) }
+            .onFailure { KLog.w(TAG, "Widget publish failed: ${it.message}") }
+    }
+
     private fun monitorProgress() {
         progressJob?.cancel()
         progressJob = serviceScope.launch {
@@ -2750,7 +2797,7 @@ class MusicService : MediaLibraryService() {
                     widgetProgressTick++
                     if (widgetProgressTick >= 5) {
                         widgetProgressTick = 0
-                        PlayerWidgets.pushAll(this@MusicService)
+                        publishWidgetState()
                     }
 
                     // The fade-out used to live here, on a one-second tick,

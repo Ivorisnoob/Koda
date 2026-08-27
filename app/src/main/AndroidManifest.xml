@@ -169,82 +169,90 @@
         </service>
 
         <!--
-            Home screen widget: current song plus transport controls, a pure
-            session client like the tile. updatePeriodMillis is 0 because the
-            service pushes redraws on playback changes; scheduled polling
-            would only burn battery redrawing the same picture.
+            The home screen widget family. Six providers over one observable
+            snapshot (widget/PlayerWidgetHost.kt), all pure session clients like
+            the QS tile: none holds a MediaController, and every tap binds a
+            throwaway one on the main thread.
+
+            updatePeriodMillis is 0 on all of them because MusicService pushes a
+            redraw on each playback event; scheduled polling would only burn
+            battery redrawing the same picture.
+
+            Listed in picker order - the everyday one first, the two decorative
+            ones last.
         -->
         <receiver
-            android:name=".widget.NowPlayingWidgetReceiver"
+            android:name=".widget.PulseWidgetReceiver"
             android:exported="false"
-            android:label="@string/app_name">
+            android:label="@string/widget_pulse_label">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"
-                android:resource="@xml/now_playing_widget_info" />
+                android:resource="@xml/pulse_widget_info" />
         </receiver>
 
         <receiver
-            android:name=".widget.CirclePlayerWidgetReceiver"
+            android:name=".widget.ConsoleWidgetReceiver"
             android:exported="false"
-            android:label="@string/widget_circle_label">
+            android:label="@string/widget_console_label">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"
-                android:resource="@xml/circle_player_widget_info" />
+                android:resource="@xml/console_widget_info" />
         </receiver>
 
         <receiver
-            android:name=".widget.MiniPlayerWidgetReceiver"
+            android:name=".widget.DeckWidgetReceiver"
             android:exported="false"
-            android:label="@string/widget_mini_label">
+            android:label="@string/widget_deck_label">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"
-                android:resource="@xml/mini_player_widget_info" />
+                android:resource="@xml/deck_widget_info" />
         </receiver>
 
         <receiver
-            android:name=".widget.LargePlayerWidgetReceiver"
+            android:name=".widget.LineupWidgetReceiver"
             android:exported="false"
-            android:label="@string/widget_large_label">
+            android:label="@string/widget_lineup_label">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"
-                android:resource="@xml/large_player_widget_info" />
+                android:resource="@xml/lineup_widget_info" />
         </receiver>
 
         <receiver
-            android:name=".widget.CanvasPlayerWidgetReceiver"
+            android:name=".widget.BloomWidgetReceiver"
             android:exported="false"
-            android:label="@string/widget_canvas_label">
+            android:label="@string/widget_bloom_label">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"
-                android:resource="@xml/canvas_player_widget_info" />
+                android:resource="@xml/bloom_widget_info" />
         </receiver>
 
         <receiver
-            android:name=".widget.QuickControlsWidgetReceiver"
+            android:name=".widget.OrbitWidgetReceiver"
             android:exported="false"
-            android:label="@string/widget_quick_label">
+            android:label="@string/widget_orbit_label">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"
-                android:resource="@xml/quick_controls_widget_info" />
+                android:resource="@xml/orbit_widget_info" />
         </receiver>
+
     </application>
 
 </manifest>

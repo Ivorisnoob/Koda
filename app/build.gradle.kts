@@ -30,8 +30,8 @@ android {
         // platform did not gain until API 33.
         minSdk = 30
         targetSdk = 36
-        versionCode = 24
-        versionName = "4.6"
+        versionCode = 25
+        versionName = "4.7"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -139,6 +139,9 @@ dependencies {
     // The home screen widget. Compose-shaped (Glance), which is why the
     // widget can share the app's design language without RemoteViews XML.
     implementation(libs.androidx.glance.appwidget)
+    // Bridges a Material 3 ColorScheme into Glance, so the widgets follow the
+    // palette chosen in Settings instead of raw system dynamic color.
+    implementation(libs.androidx.glance.material3)
     // The background upload check over the local subscriptions feed.
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.androidx.graphics.shapes)

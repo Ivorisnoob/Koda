@@ -219,15 +219,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      */
     val selectableQualities: StateFlow<List<VideoQuality>> =
         combine(_availableQualities, _isCasting) { qualities, casting ->
-            if (!casting || qualities.isEmpty()) return@combine qualities
-            if (qualities.firstOrNull()?.isLive == true) {
-                qualities.filter {
-                    it.resolution.equals("Auto", ignoreCase = true) ||
-                        it.resolution.takeWhile { ch -> ch.isDigit() }.isEmpty()
-                }
-            } else {
-                qualities
-            }
+            selectableVideoQualities(qualities, casting)
         }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     private val _currentQuality = MutableStateFlow<VideoQuality?>(null)
@@ -1462,9 +1454,13 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
         _availableQualities.value = qualities
         val previousLabel = _currentQuality.value?.resolution
-        val chosen = qualities.firstOrNull { it.resolution == previousLabel }
-            ?: if (_castPlayer != null) pickCastQuality(qualities) ?: qualities.first()
-            else pickDefaultQuality(qualities)
+        val chosen = if (_castPlayer != null) {
+            pickDefaultCastReceiverQuality(qualities, previousLabel) ?: return false
+        } else {
+            localVideoQualityOptions(qualities)
+                .firstOrNull { it.resolution == previousLabel }
+                ?: pickDefaultQuality(qualities)
+        }
 
         val player = activePlayer() ?: return false
         val position = seekToMs ?: player.currentPosition
@@ -1951,10 +1947,12 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                         // A receiver cannot merge a video-only file with its
                         // audio twin the way MergingMediaSource does locally,
                         // so while casting the choice is narrowed to sources it
-                        // can play whole: an adaptive manifest (its own ABR
-                        // inside) or a self-contained progressive file.
+                        // can play whole: live HLS (its own ABR inside) or a
+                        // self-contained progressive VOD. VOD DASH is excluded
+                        // because affected receivers can select video without
+                        // the matching audio adaptation set.
                         val chosen = if (_castPlayer != null) {
-                            pickCastQuality(qualities)
+                            pickDefaultCastReceiverQuality(qualities)
                         } else {
                             pickDefaultQuality(qualities)
                         }
@@ -2070,41 +2068,6 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         videoLoadGeneration == generation && _currentVideo.value?.videoId == videoId
 
     /**
-     * The ladder entry a receiver can actually play, or null when there is
-     * none.
-     *
-     * A Chromecast fetches its own media, so the two local tricks are off the
-     * table: it cannot merge a video-only file with its separate audio twin,
-     * and per-rung quality caps live in ExoPlayer's track selector, which has
-     * no counterpart on the Default Receiver. What it plays natively is an
-     * adaptive manifest - DASH or HLS, running its own ABR inside - and
-     * self-contained progressive files. Live broadcasts only ever offer the
-     * HLS manifest entry, which is exactly what the receiver wants.
-     *
-     * Note the receiver also fetches with its own User-Agent. googlevideo's
-     * UA binding is not enforced at first byte in current observation, but if
-     * enforcement tightens, [recoverFromCastFailure] is the escape hatch: it
-     * re-resolves and reloads once before giving up.
-     */
-    private fun pickCastQuality(qualities: List<VideoQuality>): VideoQuality? {
-        // Live progressive entries are two-second segment endpoints, so HLS is
-        // mandatory there. For VOD, prefer a muxed MP4: it is the only source
-        // whose audio track Koda can prove exists before handing the URL to the
-        // Default Receiver. A DASH URL can be perfectly playable while its
-        // selected period exposes only video on some Cast firmware, which is
-        // the reported "video on TV, no audio" failure. The resolution ceiling
-        // of YouTube's muxed format is a better trade than silent high-res video.
-        qualities.firstOrNull { it.isLive && it.isDASH }?.let { return it }
-        qualities.firstOrNull {
-            !it.isDASH && it.audioUrl == null && it.isMp4Container && it.url.isNotBlank()
-        }?.let { return it }
-        qualities.firstOrNull {
-            !it.isDASH && it.audioUrl == null && it.url.isNotBlank()
-        }?.let { return it }
-        return qualities.firstOrNull { it.isDASH && it.url.isNotBlank() }
-    }
-
-    /**
      * Seek-and-resume tail shared by every load path. Lives here rather than
      * inline because both players need it: for the CastPlayer the seek lands
      * once the receiver reports its timeline, which is exactly when
@@ -2136,28 +2099,30 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      * 60fps variants before 30fps, so the first label at or below the target
      * height is the best match; if the video has nothing at or below it, take
      * the lowest available.
-     */    private fun pickDefaultQuality(qualities: List<VideoQuality>): VideoQuality {
+     */
+    private fun pickDefaultQuality(qualities: List<VideoQuality>): VideoQuality {
         fun height(label: String): Int = label.takeWhile { it.isDigit() }.toIntOrNull() ?: 0
+        val options = localVideoQualityOptions(qualities)
         val preferred = themePreferences.getDefaultVideoQuality()
 
         // The live ladder leads with an "Auto" entry (height 0) that the VOD
         // branches below would skip over, so it picks its own entry: Auto when
         // the setting says auto, otherwise the best rendition at or below the
         // target, falling back to Auto rather than to the lowest available.
-        if (qualities.firstOrNull()?.isLive == true) {
-            if (preferred == ThemePreferences.VIDEO_QUALITY_AUTO) return qualities.first()
+        if (options.firstOrNull()?.isLive == true) {
+            if (preferred == ThemePreferences.VIDEO_QUALITY_AUTO) return options.first()
             val targetHeight = height(preferred)
-            return qualities.firstOrNull { height(it.resolution) in 1..targetHeight }
-                ?: qualities.first()
+            return options.firstOrNull { height(it.resolution) in 1..targetHeight }
+                ?: options.first()
         }
 
         if (preferred == ThemePreferences.VIDEO_QUALITY_AUTO) {
-            return qualities.firstOrNull { height(it.resolution) > 0 } ?: qualities.first()
+            return options.firstOrNull { height(it.resolution) > 0 } ?: options.first()
         }
         val targetHeight = height(preferred)
-        return qualities.firstOrNull { height(it.resolution) in 1..targetHeight }
-            ?: qualities.lastOrNull { height(it.resolution) > 0 }
-            ?: qualities.first()
+        return options.firstOrNull { height(it.resolution) in 1..targetHeight }
+            ?: options.lastOrNull { height(it.resolution) > 0 }
+            ?: options.first()
     }
 
     /**
@@ -2170,10 +2135,23 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      * this only ever deals with video and audio.
      */
     private fun loadQuality(quality: VideoQuality) {
+        if (_castPlayer != null && !quality.isDefaultCastReceiverCompatible) {
+            // Playback code must never bypass the same policy that drives the
+            // quality sheet. Failing closed here prevents a future caller from
+            // handing the receiver a video-only URL and recreating silent TV
+            // playback.
+            KLog.w(
+                "VideoPlayerVM",
+                "Rejected non-Cast-compatible ${quality.delivery} source for ${quality.resolution}"
+            )
+            _playbackError.value = Exception("This video quality cannot be cast with audio")
+            _isLoading.value = false
+            return
+        }
         _currentQuality.value = quality
 
         // The receiver runs its own ABR; the local track-selector cap has no
-        // counterpart there (see pickCastQuality).
+        // counterpart there (see pickDefaultCastReceiverQuality).
         if (_castPlayer == null && quality.isLive) {
             // The whole ladder is one manifest, so the cap has to be applied
             // alongside preparing it - loadQuality is the only entry point that
@@ -2231,10 +2209,16 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      */
     private fun loadOnCast(quality: VideoQuality) {
         val player = _castPlayer ?: return
+        KLog.i(
+            "VideoPlayerVM",
+            "Loading Cast source delivery=${quality.delivery} " +
+                "format=${quality.format ?: "unknown"} quality=${quality.resolution} " +
+                "live=${quality.isLive}"
+        )
         val mime = if (quality.isDASH) {
             adaptiveMimeType(quality)
         } else {
-            // pickCastQuality only admits self-contained progressive files
+            // The source policy only admits self-contained progressive files
             // here. format carries NewPipe's container suffix ("mp4",
             // "webm", "3gpp"), not a MIME type, so it is translated.
             when (quality.format?.lowercase()) {
@@ -2344,7 +2328,24 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             applyLiveQualityCap(quality)
             return
         }
-        reloadPreservingPosition(quality)
+        val selected = if (_castPlayer != null) {
+            defaultCastReceiverQualityOptions(_availableQualities.value)
+                .firstOrNull { it.resolution == quality.resolution }
+                ?: run {
+                    // A sheet that was open while the session connected may
+                    // still deliver a local-only row. Ignore that stale tap;
+                    // interrupting valid playback with a fallback quality is
+                    // more surprising than leaving the current stream alone.
+                    KLog.w(
+                        "VideoPlayerVM",
+                        "Ignored stale non-Cast quality selection ${quality.resolution}"
+                    )
+                    return
+                }
+        } else {
+            quality
+        }
+        reloadPreservingPosition(selected)
     }
 
     /**

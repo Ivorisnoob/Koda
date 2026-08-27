@@ -19,18 +19,30 @@
 
 
     <!-- Home screen widgets: picker labels and descriptions. -->
-    <string name="widget_description">Full-bleed artwork with play, pause and skip controls</string>
     <string name="widget_tap_to_listen">Tap to listen</string>
-    <string name="widget_circle_label">Circle player</string>
-    <string name="widget_circle_description">A round artwork disc with play and pause</string>
-    <string name="widget_mini_label">Mini player</string>
-    <string name="widget_mini_description">Artwork with title and basic controls</string>
-    <string name="widget_large_label">Large player</string>
-    <string name="widget_large_description">Full card with artwork, progress, seek and transport</string>
-    <string name="widget_canvas_label">Canvas player</string>
-    <string name="widget_canvas_description">Full-bleed artwork with a play/pause chip</string>
-    <string name="widget_quick_label">Quick controls</string>
-    <string name="widget_quick_description">Shuffle, repeat and transport controls in a strip</string>
+    <string name="widget_pulse_label">Pulse</string>
+    <string name="widget_pulse_description">Cover, track and play; add a row for progress and skip</string>
+    <string name="widget_console_label">Console</string>
+    <string name="widget_console_description">Just the controls, with shuffle and repeat</string>
+    <string name="widget_deck_label">Deck</string>
+    <string name="widget_deck_description">A tall player with cover, progress and every control</string>
+    <string name="widget_lineup_label">Lineup</string>
+    <string name="widget_lineup_description">What is playing and what is next; tap a track to jump</string>
+    <string name="widget_bloom_label">Bloom</string>
+    <string name="widget_bloom_description">Album art as a scalloped tile with one play button</string>
+    <string name="widget_orbit_label">Orbit</string>
+    <string name="widget_orbit_description">A round cover in a single cell</string>
+
+    <!-- Widget content descriptions and in-widget copy. -->
+    <string name="widget_action_play">Play</string>
+    <string name="widget_action_pause">Pause</string>
+    <string name="widget_action_next">Next</string>
+    <string name="widget_action_previous">Previous</string>
+    <string name="widget_action_shuffle">Shuffle</string>
+    <string name="widget_action_repeat">Repeat</string>
+    <string name="widget_action_repeat_one">Repeat one</string>
+    <string name="widget_action_repeat_all">Repeat all</string>
+    <string name="widget_nothing_up_next">Nothing up next</string>
 
     <!-- Background upload check (#137): its notification channel and grouped title. -->
     <string name="upload_check_channel_name">New uploads</string>

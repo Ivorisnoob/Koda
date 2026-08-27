@@ -4737,18 +4737,25 @@ class YouTubeRepository(private val context: Context) {
             it.audioTrackType != null && it.audioTrackType != AudioTrackType.ORIGINAL
         }
         val qualities = mutableListOf<VideoQuality>()
-        extractor.dashMpdUrl?.takeIf { it.isNotBlank() }?.let { url ->
+        // Live progressive endpoints are unusable and the Default Cast
+        // Receiver needs the HLS master playlist, including its audio
+        // rendition. Never let a live DASH URL win merely because NewPipe
+        // happened to expose both manifest fields.
+        val manifest = if (isLiveStream) {
+            extractor.hlsUrl?.takeIf { it.isNotBlank() }?.let { "HLS" to it }
+        } else {
+            extractor.dashMpdUrl?.takeIf { it.isNotBlank() }?.let { "DASH" to it }
+                ?: extractor.hlsUrl?.takeIf { it.isNotBlank() }?.let { "HLS" to it }
+        }
+        manifest?.let { (format, url) ->
             qualities.add(
                 VideoQuality(
-                    "Auto (Best)", url, "DASH", true,
-                    isLive = isLiveStream, sourceAspectRatio = sourceAspect,
-                )
-            )
-        } ?: extractor.hlsUrl?.takeIf { it.isNotBlank() }?.let { url ->
-            qualities.add(
-                VideoQuality(
-                    "Auto (HLS)", url, "HLS", true,
-                    isLive = isLiveStream, sourceAspectRatio = sourceAspect,
+                    resolution = if (format == "HLS") "Auto (HLS)" else "Auto (Best)",
+                    url = url,
+                    format = format,
+                    isDASH = true,
+                    isLive = isLiveStream,
+                    sourceAspectRatio = sourceAspect,
                 )
             )
         }
@@ -4817,28 +4824,10 @@ class YouTubeRepository(private val context: Context) {
                 .forEach(qualities::add)
         }
 
-        fun height(label: String): Int = label.takeWhile(Char::isDigit).toIntOrNull() ?: 0
-        fun fps(label: String): Int =
-            label.substringAfter('p', "").takeWhile(Char::isDigit).toIntOrNull() ?: 30
-
-        // NewPipe exposes several codecs for the same label. Retain the AVC
-        // MP4 variant when one exists so the download worker is not left with
-        // only a VP9/WebM entry after de-duplication.
-        val sortedQualities = qualities
-            .groupBy { it.resolution }
-            .mapNotNull { (_, variants) ->
-                variants.maxWithOrNull(
-                    compareBy<VideoQuality>(
-                        { if (it.isMp4DownloadCompatible) 2 else if (it.isMp4Container) 1 else 0 },
-                        { if (it.codec?.contains("avc1", ignoreCase = true) == true) 1 else 0 },
-                    )
-                )
-            }
-            .sortedWith(
-                compareByDescending<VideoQuality> { height(it.resolution) }
-                    .thenByDescending { fps(it.resolution) }
-            )
-        return VideoStreamResult(sortedQualities, seekPreview)
+        // NewPipe exposes several codecs and delivery types for the same
+        // visible label. Collapse codec alternatives, but retain both a split
+        // local-playback entry and a muxed Cast entry when both exist.
+        return VideoStreamResult(deduplicateVideoQualityVariants(qualities), seekPreview)
     }
 
     /**
@@ -5001,9 +4990,7 @@ class YouTubeRepository(private val context: Context) {
             muxed.forEach { f ->
                 val label = f.optString("qualityLabel")
                 val url = f.optString("url")
-                if (label.isNotEmpty() && url.isNotEmpty() &&
-                    qualities.none { it.resolution == label }
-                ) {
+                if (label.isNotEmpty() && url.isNotEmpty()) {
                     qualities.add(
                         VideoQuality(
                             label, url, container(f.optString("mimeType")), false,
@@ -5015,11 +5002,10 @@ class YouTubeRepository(private val context: Context) {
             }
         }
 
-        // Highest resolution first, then 60fps variants before 30fps.
-        return qualities.sortedWith(
-            compareByDescending<VideoQuality> { labelHeight(it.resolution) }
-                .thenByDescending { labelFps(it.resolution) }
-        )
+        // Keep muxed and split variants distinct so local playback, downloads
+        // and the Default Cast Receiver can each choose a source they can
+        // actually consume.
+        return deduplicateVideoQualityVariants(qualities)
     }
 
     /**
@@ -5066,7 +5052,7 @@ class YouTubeRepository(private val context: Context) {
                 }
             )
             
-            val finalQualities = qualities.distinctBy { it.resolution }
+            val finalQualities = deduplicateVideoQualityVariants(qualities)
             
             // Related Videos
             val relatedItems = streamExtractor.relatedItems?.items ?: emptyList()

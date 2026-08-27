@@ -335,7 +335,7 @@ Because Auto and Wear both consume this same browse tree, widening it pays twice
 
 #### A home screen widget
 
-**Shipped** - both halves of this entry have landed. The Quick Settings tile (`PlaybackTileService`, music-only) and the Glance widget family (`widget/`) are described under Shipped: six variants (Now Playing, Circle, Mini, Large, Canvas, Quick Controls) sharing a single snapshot reader and push-all fan-out. The original "design question" about the empty state is answered with a brand mark and "Tap to listen" in every variant.
+**Shipped** - both halves of this entry have landed. The Quick Settings tile (`PlaybackTileService`, music-only) and the Glance widget family (`widget/`) are described under Shipped: six variants (Now playing, Quick controls, Stack, Up next, Canvas, Disc) over one stored snapshot. The original "design question" about the empty state is answered with a brand mark and "Tap to listen" in every variant.
 
 #### Tablet optimisation, on every screen
 
@@ -451,7 +451,7 @@ The milestones behind us, kept here so the direction of travel is visible.
 - Assistant voice playback: "Hey Google, play X on Koda" resolves its search query to a real song in the media session instead of arriving as an unplayable empty item
 - An Android Auto help page in Settings, Advanced: explains the sideload wall - Auto hides non-Play-Store media apps until "Unknown sources" is on in Auto's own developer settings - with the steps to fix it
 - Full single-item lookup in the browse surface (`onGetItem`) resolving against every store the tree serves, and per-item content-style hints so Auto renders categories as grids, playlists as lists, and songs as playable list rows
-- Six home-screen widgets drawn with Glance in Material You dynamic color: Now Playing (full-bleed artwork, progress strip, artwork-derived scrims), Circle (1x1 artwork disc), Mini (2x2 art + transport), Large (4x2 card with seek + Up Next), Canvas (full-bleed art, play/pause chip only), and Quick Controls (shuffle/repeat toggle strip); one shared snapshot + push-all fan-out from the service, manual palette extraction for accent colors, five-second progress ticks while playing, and a two-second snapshot cache to prevent redundant controller binds
+- Six home-screen widgets drawn with Glance in Koda's own palette: Now playing (4x1 growing to a 4x2 card with progress and a transport group), Quick controls (transport strip with shuffle and repeat), Stack (2x4 vertical card with everything), Up next (the queue, each row a jump), Canvas (full-bleed cover with one floating hero) and Disc (1x1 round cover). They render from a stored snapshot written by `MusicService` in its own `onEvents` callback rather than binding a session per redraw, so the state cannot lag what is playing; every tap runs its command on the main thread, which a `MediaController` requires and Glance does not provide
 - A microphone in the search field: platform speech recognition that fills the query and searches it in one go
 - Haptics everywhere, on one vocabulary and a four-level dial (Off / Subtle / Balanced / Rich) in Playback and quality - every surface from the style wheel to settings toggles now answers the hand at your chosen intensity
 - A background upload check over channels you follow on this device: periodic RSS sweep with per-channel last-seen memory, silent baselines, grouped notifications on one channel - plus a per-channel mute list in Settings, Notifications
