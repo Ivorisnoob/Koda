@@ -51,7 +51,7 @@ import com.ivor.ivormusic.data.SongSource
 import com.ivor.ivormusic.data.StatsRepository
 import com.ivor.ivormusic.data.ThemePreferences
 import com.ivor.ivormusic.data.YouTubeRepository
-import com.ivor.ivormusic.widget.NowPlayingWidget
+import com.ivor.ivormusic.widget.PlayerWidgets
 import com.ivor.ivormusic.ui.video.CastPlaybackKind
 import com.ivor.ivormusic.ui.video.VideoCastManager
 import kotlinx.coroutines.CoroutineScope
@@ -1058,8 +1058,8 @@ class MusicService : MediaLibraryService() {
             // 3. Robust Prefetching of FUTURE items
             prefetchUpcomingSongs()
 
-            // 4. The home screen widget shows what changed
-            NowPlayingWidget.push(this@MusicService)
+            // 4. The home screen widget family shows what changed
+            PlayerWidgets.pushAll(this@MusicService)
         }
 
         override fun onPlaybackStateChanged(playbackState: Int) {
@@ -1086,7 +1086,7 @@ class MusicService : MediaLibraryService() {
             if (playbackState == Player.STATE_ENDED || playbackState == Player.STATE_IDLE) {
                 progressJob?.cancel()
                 musicProgressLiveUpdate?.hide()
-                NowPlayingWidget.push(this@MusicService)
+                PlayerWidgets.pushAll(this@MusicService)
             }
         }
 
@@ -1131,7 +1131,7 @@ class MusicService : MediaLibraryService() {
                 transitionJob?.cancel()
                 transitionJob = null
                 musicProgressLiveUpdate?.hide()
-                NowPlayingWidget.push(this@MusicService)
+                PlayerWidgets.pushAll(this@MusicService)
             }
         }
 
@@ -2713,6 +2713,7 @@ class MusicService : MediaLibraryService() {
     private fun monitorProgress() {
         progressJob?.cancel()
         progressJob = serviceScope.launch {
+            var widgetProgressTick = 0
             try {
                 while (isActive && player.isPlaying) {
                     val duration = player.duration
@@ -2741,6 +2742,15 @@ class MusicService : MediaLibraryService() {
                              isPlaying = true,
                              artwork = NotificationArtworkLoader.cached(artUrl)
                          )
+                    }
+
+                    // Push progress to the widget family every 5 seconds so the
+                    // progress strip advances visibly without re-rendering every
+                    // tick. Cheap — one snapshot bind shared across all widgets.
+                    widgetProgressTick++
+                    if (widgetProgressTick >= 5) {
+                        widgetProgressTick = 0
+                        PlayerWidgets.pushAll(this@MusicService)
                     }
 
                     // The fade-out used to live here, on a one-second tick,

@@ -18,9 +18,19 @@
     <string name="video_playback_channel_name">Video playback</string>
 
 
-    <!-- The home screen widget's picker description. -->
-    <string name="widget_description">Current song with play, pause and skip controls</string>
+    <!-- Home screen widgets: picker labels and descriptions. -->
+    <string name="widget_description">Full-bleed artwork with play, pause and skip controls</string>
     <string name="widget_tap_to_listen">Tap to listen</string>
+    <string name="widget_circle_label">Circle player</string>
+    <string name="widget_circle_description">A round artwork disc with play and pause</string>
+    <string name="widget_mini_label">Mini player</string>
+    <string name="widget_mini_description">Artwork with title and basic controls</string>
+    <string name="widget_large_label">Large player</string>
+    <string name="widget_large_description">Full card with artwork, progress, seek and transport</string>
+    <string name="widget_canvas_label">Canvas player</string>
+    <string name="widget_canvas_description">Full-bleed artwork with a play/pause chip</string>
+    <string name="widget_quick_label">Quick controls</string>
+    <string name="widget_quick_description">Shuffle, repeat and transport controls in a strip</string>
 
     <!-- Background upload check (#137): its notification channel and grouped title. -->
     <string name="upload_check_channel_name">New uploads</string>
