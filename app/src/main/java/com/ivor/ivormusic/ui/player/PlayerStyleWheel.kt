@@ -1,4 +1,5 @@
 package com.ivor.ivormusic.ui.player
+import com.ivor.ivormusic.R
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
@@ -204,7 +205,7 @@ fun PlayerStyleWheel(
 ) {
     BackHandler(enabled = true) { onDismiss() }
     val entries = rememberPlayerStyleWheelEntries()
-    val haptics = LocalHapticFeedback.current
+    val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
     val density = LocalDensity.current
 
     // Mark the open with the long-press haptic the gesture earned.
@@ -308,8 +309,8 @@ fun PlayerStyleWheel(
                     textAlign = TextAlign.Center
                 )
                 Text(
-                    text = aimedIndex?.let { entries[it].label }
-                        ?: (entries.firstOrNull { it.style == currentStyle }?.label ?: ""),
+                    text = aimedIndex?.let { playerStyleLabel(entries[it].style) }
+                        ?: playerStyleLabel(currentStyle),
                     style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
                     color = if (aimedIndex != null) MaterialTheme.colorScheme.primary
                     else MaterialTheme.colorScheme.onSurface,
@@ -371,14 +372,14 @@ fun PlayerStyleWheel(
                         Box(contentAlignment = Alignment.Center) {
                             Icon(
                                 imageVector = entry.icon,
-                                contentDescription = entry.label,
+                                contentDescription = playerStyleLabel(entry.style),
                                 modifier = Modifier.size(26.dp)
                             )
                         }
                     }
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = entry.label,
+                        text = playerStyleLabel(entry.style),
                         style = MaterialTheme.typography.labelMedium,
                         color = if (aimed || selected) MaterialTheme.colorScheme.primary
                         else MaterialTheme.colorScheme.onSurfaceVariant

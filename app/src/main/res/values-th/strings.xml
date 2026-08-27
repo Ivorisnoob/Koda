@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Koda</string>
+    <string name="now_playing_channel_name">กำลังเล่น</string>
+    <string name="video_playback_channel_name">การเล่นวิดีโอ</string>
+
+    <string name="undo">เลิกทำ</string>
+    <string name="action_cancel">ยกเลิก</string>
+    <string name="action_done">เสร็จแล้ว</string>
+    <string name="action_create">สร้าง</string>
+    <string name="action_save">บันทึก</string>
+    <string name="action_delete">ลบ</string>
+    <string name="action_edit">แก้ไข</string>
+    <string name="action_share">แชร์</string>
+    <string name="action_retry">ลองอีกครั้ง</string>
+    <string name="action_see_all">ดูทั้งหมด</string>
+    <string name="action_play_all">เล่นทั้งหมด</string>
+    <string name="action_show_more">แสดงเพิ่มเติม</string>
+    <string name="action_try_again">ลองอีกครั้ง</string>
+    <string name="action_open_settings">เปิดการตั้งค่า</string>
+    <string name="action_clear_all">ล้างทั้งหมด</string>
+    <string name="action_new_playlist">เพลย์ลิสต์ใหม่</string>
+    <string name="action_grant_permission">ให้สิทธิ์</string>
+    <string name="unknown_artist">ศิลปินที่ไม่รู้จัก</string>
+    <string name="untitled_song">เพลงไม่มีชื่อ</string>
+    <string name="label_playlist">เพลย์ลิสต์</string>
+
+    <string name="tab_home">หน้าแรก</string>
+    <string name="tab_search">ค้นหา</string>
+    <string name="tab_subs">การติดตาม</string>
+    <string name="tab_library">คลัง</string>
+
+    <string name="local_only_title">โหมดภายในเครื่องเท่านั้นเปิดอยู่</string>
+    <string name="local_only_default_subtitle">ส่วนนี้ต้องใช้อินเทอร์เน็ต ปิดโหมดภายในเครื่องเท่านั้นในการตั้งค่าเพื่อใช้งาน</string>
+    <string name="local_only_video_mode_subtitle">โหมดวิดีโอต้องใช้อินเทอร์เน็ต ปิดโหมดภายในเครื่องเท่านั้นในการตั้งค่าเพื่อดูวิดีโอ</string>
+    <string name="local_only_video_search_subtitle">การค้นหาวิดีโอต้องใช้อินเทอร์เน็ต ปิดโหมดภายในเครื่องเท่านั้นในการตั้งค่าเพื่อค้นหาวิดีโอ</string>
+    <string name="local_only_subscriptions_subtitle">การติดตามต้องใช้อินเทอร์เน็ต ปิดโหมดภายในเครื่องเท่านั้นในการตั้งค่าเพื่อดู</string>
+    <string name="local_only_video_library_subtitle">คลังวิดีโอต้องใช้อินเทอร์เน็ต ปิดโหมดภายในเครื่องเท่านั้นในการตั้งค่าเพื่อดู</string>
+    <string name="local_only_update_subtitle">การตรวจสอบอัปเดตต้องใช้อินเทอร์เน็ต ปิดโหมดภายในเครื่องเท่านั้นในการตั้งค่าเพื่อตรวจสอบ</string>
+
+    <string name="crash_dialog_title">Kodaหยุดทำงานเมื่อครั้งก่อน</string>
+    <string name="crash_dialog_message">เกิดข้อผิดพลาดในเซสชันก่อนหน้า คุณส่งรายงานบั๊กพร้อมรายละเอียดได้ - ไม่มีอะไรออกจากอุปกรณ์ของคุณเว้นแต่คุณจะเลือกแชร์</string>
+    <string name="crash_dialog_view_report">ดูและรายงาน</string>
+    <string name="crash_dialog_not_now">ไว้ก่อน</string>
+
+    <string name="permission_required_title">ต้องขอสิทธิ์เพื่อโหลดเพลง</string>
+
+    <string name="home_section_recent_albums">อัลบั้มล่าสุด</string>
+    <string name="home_section_jump_back_in">ฟังต่อ</string>
+    <string name="your_mix_line1">มิกซ์</string>
+    <string name="your_mix_line2">ของคุณ</string>
+    <string name="update_badge_version">v%1$s</string>
+    <string name="artists_joined">%1$s, %2$s</string>
+    <string name="cd_profile">โปรไฟล์</string>
+    <string name="cd_downloads">ดาวน์โหลด</string>
+    <string name="cd_settings">การตั้งค่า</string>
+    <string name="cd_play">เล่น</string>
+    <string name="cd_pause">หยุดชั่วคราว</string>
+    <string name="cd_next">ถัดไป</string>
+    <string name="cd_album_art">ปกอัลบั้ม</string>
+    <string name="cd_show_all">แสดงทั้งหมด: %1$s</string>
+
+    <string name="spotlight_quick_picks">รายการแนะนำด่วน</string>
+    <string name="spotlight_your_playlists">เพลย์ลิสต์ของคุณ</string>
+    <string name="spotlight_from_your_library">จากคลังของคุณ</string>
+    <string name="spotlight_caption_liked">จากเพลงที่คุณถูกใจ</string>
+    <string name="spotlight_caption_recent">จากที่คุณเพิ่งฟัง</string>
+    <string name="shortcut_liked_songs">เพลงที่ถูกใจ</string>
+    <string name="filter_all">ทั้งหมด</string>
+    <string name="filter_liked">ถูกใจ</string>
+    <string name="filter_recent">ล่าสุด</string>
+    <string name="filter_playlists">เพลย์ลิสต์</string>
+    <string name="spotlight_empty_no_liked">ยังไม่มีเพลงที่ถูกใจ</string>
+    <string name="spotlight_empty_no_recent">ยังไม่ได้เล่นอะไรเลย</string>
+    <string name="spotlight_empty_no_playlists">ยังไม่มีเพลย์ลิสต์</string>
+    <string name="spotlight_empty_generic">ยังไม่มีอะไรให้แสดง</string>
+    <string name="spotlight_hint_liked">เพลงที่คุณถูกใจจะรวมกันที่นี่</string>
+    <string name="spotlight_hint_playlists">เพลย์ลิสต์ที่คุณสร้างหรือบันทึกจะแสดงที่นี่</string>
+    <string name="spotlight_hint_all">เล่นอะไรสักอย่างแล้วหน้าแรกของคุณจะเต็มขึ้นมา</string>
+
+    <string name="sleep_timer_title">ตัวจับเวลาหลับ</string>
+    <string name="sleep_timer_status_track">เพลงนี้</string>
+    <string name="sleep_timer_detail_track">การเล่นจะหยุดเมื่อเพลงที่กำลังเล่นจบ</string>
+    <string name="sleep_timer_detail_duration">การเล่นจะเฟดออกและหยุดชั่วคราวเมื่อหมดเวลา</string>
+    <string name="minutes_short">%1$d นาที</string>
+    <string name="sleep_timer_end_of_track">จบเพลงนี้</string>
+    <string name="sleep_timer_turn_off">ปิด</string>
+
+    <string name="cd_switch_to_music">สลับเป็นโหมดเพลง</string>
+    <string name="cd_switch_to_video">สลับเป็นโหมดวิดีโอ</string>
+    <string name="cd_drag_to_reorder">ลากเพื่อจัดลำดับใหม่</string>
+    <string name="cd_favorite">รายการโปรด</string>
+    <string name="cd_clear_search">ล้างการค้นหา</string>
+    <string name="queue_removed_snackbar">นำ %1$s ออกแล้ว</string>
+
+    <string name="song_options_play_next">เล่นเป็นเพลงถัดไป</string>
+    <string name="song_options_play_next_subtitle">ต่อจากเพลงนี้ทันที</string>
+    <string name="song_options_add_to_queue">เพิ่มในคิว</string>
+    <string name="song_options_add_to_queue_subtitle">ที่ท้ายคิว</string>
+    <string name="song_options_add_to_playlist">เพิ่มในเพลย์ลิสต์</string>
+    <string name="song_options_remove_from_liked">นำออกจากรายการถูกใจ</string>
+    <string name="song_options_like">ถูกใจ</string>
+    <string name="song_options_download">ดาวน์โหลด</string>
+    <string name="song_options_download_subtitle">เก็บไว้ในเครื่องนี้</string>
+    <string name="song_options_downloaded">ดาวน์โหลดแล้ว</string>
+    <string name="song_options_go_to_artist">ไปที่ %1$s</string>
+
+    <string name="add_to_playlist_title">เพิ่มในเพลย์ลิสต์</string>
+    <string name="new_playlist_label">เพลย์ลิสต์ใหม่</string>
+    <string name="name_label">ชื่อ</string>
+    <string name="description_optional_label">คำอธิบาย (ไม่บังคับ)</string>
+
+    <string name="video_options_watch_later">ดูภายหลัง</string>
+    <string name="video_options_kept_on_device">เก็บไว้ในเครื่องนี้</string>
+    <string name="video_options_save_to_playlist">บันทึกในเพลย์ลิสต์</string>
+    <string name="video_options_download">ดาวน์โหลด</string>
+    <string name="video_options_go_to_channel">ไปที่ช่อง</string>
+    <string name="video_options_share">แชร์</string>
+    <string name="video_options_share_chooser">แชร์วิดีโอ</string>
+    <string name="video_options_not_interested">ไม่สนใจ</string>
+    <string name="video_options_dont_recommend_channel">ไม่แนะนำช่องนี้</string>
+    <string name="video_options_dont_recommend_channel_name">ไม่แนะนำ %1$s</string>
+    <string name="cd_back">ย้อนกลับ</string>
+    <string name="search_playlists_placeholder">ค้นหาเพลย์ลิสต์</string>
+    <string name="no_playlist_matches">ไม่มีเพลย์ลิสต์ที่ตรงกับ \"%1$s\"</string>
+    <string name="no_playlists_yet_hint">ยังไม่มีเพลย์ลิสต์ สร้างหนึ่งขึ้นมาแล้ววิดีโอนี้จะเข้าไปในนั้นทันที</string>
+    <string name="cd_saved">บันทึกแล้ว</string>
+    <string name="cd_couldnt_save">บันทึกไม่สำเร็จ</string>
+    <string name="cd_in_this_playlist">อยู่ในเพลย์ลิสต์นี้แล้ว</string>
+
+    <string name="settings_section_you">คุณ</string>
+    <string name="settings_section_look_and_feel">ธีมและรูปลักษณ์</string>
+    <string name="settings_section_playback_and_content">การเล่นและเนื้อหา</string>
+    <string name="settings_section_system">ระบบ</string>
+    <string name="settings_section_about">เกี่ยวกับ</string>
+    <string name="settings_account">บัญชี</string>
+    <string name="settings_appearance">รูปลักษณ์</string>
+    <string name="settings_player">เครื่องเล่น</string>
+    <string name="settings_playback_and_quality">การเล่นและคุณภาพ</string>
+    <string name="settings_content_and_feeds">เนื้อหาและฟีด</string>
+    <string name="settings_subscriptions">การติดตาม</string>
+    <string name="settings_storage_and_cache">พื้นที่จัดเก็บและแคช</string>
+    <string name="settings_notifications">การแจ้งเตือน</string>
+    <string name="settings_local_library">คลังในเครื่อง</string>
+    <string name="settings_backup_and_restore">สำรองและกู้คืน</string>
+    <string name="settings_advanced">ขั้นสูง</string>
+    <string name="settings_advanced_value_xiaomi">แนะนำสำหรับเครื่องนี้</string>
+    <string name="settings_advanced_value_other">แก้ไขการสแกนและแบตเตอรี่</string>
+    <string name="settings_version_subtitle">เวอร์ชัน %1$s (%2$d)</string>
+
+    <string name="profiles_title">โปรไฟล์</string>
+    <string name="profiles_description">การติดตามและรายการที่ซ่อนไว้จะแยกตามโปรไฟล์ เพลย์ลิสต์ เพลงที่ถูกใจ และไฟล์ดาวน์โหลดใช้ร่วมกัน</string>
+    <string name="add_youtube_account">เพิ่มบัญชี YouTube</string>
+    <string name="add_youtube_account_subtitle">ลงชื่อเข้าใช้ด้วยบัญชี Google อื่น</string>
+    <string name="add_device_profile">เพิ่มโปรไฟล์ในเครื่องนี้</string>
+    <string name="add_device_profile_subtitle">การติดตามแยกต่างหาก ไม่ต้องมีบัญชี</string>
+    <string name="profile_signed_out">ยังไม่ได้ลงชื่อ - แตะเพื่อเข้าสู่ระบบ</string>
+    <string name="profile_session_expired">เซสชันหมดอายุ - แตะเพื่อเชื่อมต่อใหม่</string>
+    <string name="profile_on_this_device">ในเครื่องนี้</string>
+    <string name="profile_youtube_account">บัญชี YouTube</string>
+    <string name="cd_active_profile">โปรไฟล์ที่ใช้อยู่</string>
+    <string name="cd_remove_profile">นำ %1$s ออก</string>
+    <string name="new_profile_dialog_title">โปรไฟล์ใหม่ในเครื่องนี้</string>
+    <string name="sign_out_confirm_title">ออกจาก %1$s?</string>
+    <string name="remove_profile_confirm_title">นำ %1$s ออก?</string>
+    <string name="sign_out">ออกจากระบบ</string>
+    <string name="remove">นำออก</string>
+
+    <string name="library_empty_title">คลังของคุณว่างเปล่า</string>
+    <string name="library_empty_subtitle">เพลงที่คุณดาวน์โหลดหรือถูกใจจะแสดงที่นี่</string>
+    <string name="library_create_playlist_hint">สร้างด้วยปุ่ม + ด้านล่าง</string>
+    <string name="fab_downloads">ดาวน์โหลด</string>
+    <string name="fab_listening_history">ประวัติการฟัง</string>
+    <string name="fab_statistics">สถิติ</string>
+    <string name="cd_listening_stats">สถิติการฟัง</string>
+    <string name="recently_played">เพิ่งเล่น</string>
+    <string name="liked_songs">เพลงที่ถูกใจ</string>
+    <string name="no_artists_yet">ยังไม่มีศิลปิน</string>
+    <string name="no_artists_yet_subtitle">ศิลปินจากเพลงของคุณจะแสดงที่นี่</string>
+    <string name="no_albums_yet">ยังไม่มีอัลบั้ม</string>
+    <string name="no_albums_yet_subtitle">อัลบั้มจากเพลงของคุณจะแสดงที่นี่</string>
+
+    <plurals name="n_songs">
+        <item quantity="other">%1$d เพลง</item>
+    </plurals>
+    <plurals name="n_playlists">
+        <item quantity="other">%1$d เพลย์ลิสต์</item>
+    </plurals>
+</resources>

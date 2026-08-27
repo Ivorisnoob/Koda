@@ -1,4 +1,7 @@
 package com.ivor.ivormusic.ui.video
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
+import com.ivor.ivormusic.R
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
@@ -352,17 +355,17 @@ fun SubscriptionsContent(
             title = { Text("Unfollow ${channel.name}?", fontWeight = FontWeight.Bold) },
             text = {
                 Text(
-                    "Removes it from this device. Your YouTube account isn't touched."
+                    stringResource(R.string.sc_unfollow_body)
                 )
             },
             confirmButton = {
                 TextButton(onClick = {
                     viewModel.unsubscribeLocally(channel.channelId)
                     channelToUnfollow = null
-                }) { Text("Unfollow") }
+                }) { Text(stringResource(R.string.unfollow)) }
             },
             dismissButton = {
-                TextButton(onClick = { channelToUnfollow = null }) { Text("Cancel") }
+                TextButton(onClick = { channelToUnfollow = null }) { Text(stringResource(R.string.action_cancel)) }
             }
         )
     }
@@ -416,7 +419,7 @@ fun SubscriptionsContent(
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        text = "Subscriptions",
+                                        text = stringResource(R.string.settings_subscriptions),
                                         style = MaterialTheme.typography.headlineSmall,
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.onBackground
@@ -435,7 +438,7 @@ fun SubscriptionsContent(
                                 IconButton(onClick = onManageSubscriptions) {
                                     Icon(
                                         imageVector = Icons.Rounded.Settings,
-                                        contentDescription = "Manage subscriptions",
+                                        contentDescription = stringResource(R.string.sp_manage_subscriptions),
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
@@ -456,7 +459,7 @@ fun SubscriptionsContent(
                                     FilterChip(
                                         selected = selectedGroupId == null,
                                         onClick = { viewModel.selectSubscriptionGroup(null) },
-                                        label = { Text("All") },
+                                        label = { Text(stringResource(R.string.filter_all)) },
                                         shape = RoundedCornerShape(12.dp)
                                     )
                                 }
@@ -531,7 +534,7 @@ fun SubscriptionsContent(
                                             Box(contentAlignment = Alignment.Center) {
                                                 Icon(
                                                     Icons.Rounded.Subscriptions,
-                                                    contentDescription = "All channels",
+                                                    contentDescription = stringResource(R.string.cd_all_channels),
                                                     tint = if (selectedChannelId == null) MaterialTheme.colorScheme.onPrimaryContainer
                                                     else MaterialTheme.colorScheme.onSurfaceVariant
                                                 )
@@ -539,7 +542,7 @@ fun SubscriptionsContent(
                                         }
                                         Spacer(Modifier.height(4.dp))
                                         Text(
-                                            text = "All",
+                                            text = stringResource(R.string.filter_all),
                                             style = MaterialTheme.typography.labelSmall,
                                             color = if (selectedChannelId == null) MaterialTheme.colorScheme.primary
                                             else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -599,12 +602,12 @@ fun SubscriptionsContent(
                                         selected = feedPeriod != SubscriptionFeedPeriod.ALL,
                                         onClick = { showKindMenu = true },
                                         leadingIcon = { Icon(Icons.Rounded.FilterList, null, Modifier.size(18.dp)) },
-                                        label = { Text(feedPeriod.label) }
+                                        label = { Text(feedPeriodLabel(feedPeriod)) }
                                     )
                                     DropdownMenu(expanded = showKindMenu, onDismissRequest = { showKindMenu = false }) {
                                         SubscriptionFeedPeriod.entries.forEach { period ->
                                             DropdownMenuItem(
-                                                text = { Text(period.label) },
+                                                text = { Text(feedPeriodLabel(period)) },
                                                 onClick = { feedPeriodName = period.name; showKindMenu = false }
                                             )
                                         }
@@ -615,12 +618,12 @@ fun SubscriptionsContent(
                                         selected = feedOrder != SubscriptionFeedOrder.NEWEST,
                                         onClick = { showOrderMenu = true },
                                         leadingIcon = { Icon(Icons.AutoMirrored.Rounded.Sort, null, Modifier.size(18.dp)) },
-                                        label = { Text(feedOrder.label) }
+                                        label = { Text(feedOrderLabel(feedOrder)) }
                                     )
                                     DropdownMenu(expanded = showOrderMenu, onDismissRequest = { showOrderMenu = false }) {
                                         SubscriptionFeedOrder.entries.forEach { order ->
                                             DropdownMenuItem(
-                                                text = { Text(order.label) },
+                                                text = { Text(feedOrderLabel(order)) },
                                                 onClick = { feedOrderName = order.name; showOrderMenu = false }
                                             )
                                         }
@@ -658,7 +661,7 @@ fun SubscriptionsContent(
                     } else if (visibleFeed.isEmpty()) {
                         item(key = "filtered-feed-empty") {
                             FeedEmptyState(
-                                error = selectedChannelFeedError ?: "No uploads match these filters.",
+                                error = selectedChannelFeedError ?: stringResource(R.string.sc_no_uploads_match),
                                 hasChannels = true,
                                 isGroupFiltered = selectedGroupId != null,
                                 onRetry = {
@@ -724,13 +727,13 @@ fun SubscriptionsContent(
                             }) {
                                 Icon(
                                     Icons.AutoMirrored.Rounded.ArrowBack,
-                                    contentDescription = "Back",
+                                    contentDescription = stringResource(R.string.cd_back),
                                     tint = MaterialTheme.colorScheme.onBackground
                                 )
                             }
                             Column {
                                 Text(
-                                    text = "All channels",
+                                    text = stringResource(R.string.cd_all_channels),
                                     style = MaterialTheme.typography.headlineSmall,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onBackground
@@ -763,7 +766,7 @@ fun SubscriptionsContent(
                             SearchField(
                                 query = channelQuery,
                                 onQueryChange = { channelQuery = it },
-                                placeholder = "Search channels",
+                                placeholder = stringResource(R.string.search_channels),
                                 modifier = Modifier.padding(horizontal = 16.dp)
                             )
                         }
@@ -787,7 +790,7 @@ fun SubscriptionsContent(
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
-                                    "No subscriptions found",
+                                    stringResource(R.string.sc_none_found),
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
@@ -796,7 +799,7 @@ fun SubscriptionsContent(
                         item(key = "no-channel-matches") {
                             SearchEmptyState(
                                 title = "No channels match \"$channelQuery\"",
-                                hint = "Try part of the name, or the @handle."
+                                hint = stringResource(R.string.sc_search_hint)
                             )
                         }
                     } else {
@@ -862,15 +865,14 @@ private fun SubscriptionsEmptyWall(
             )
             Spacer(modifier = Modifier.height(24.dp))
             Text(
-                text = "Subscriptions",
+                text = stringResource(R.string.settings_subscriptions),
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "Follow channels on this device, or sign in to bring your " +
-                    "YouTube subscriptions across.",
+                text = stringResource(R.string.sc_empty_body),
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center
@@ -886,7 +888,7 @@ private fun SubscriptionsEmptyWall(
             ) {
                 Icon(Icons.Rounded.FileUpload, null)
                 Spacer(Modifier.width(8.dp))
-                Text("Import subscriptions")
+                Text(stringResource(R.string.import_subscriptions))
             }
             Spacer(modifier = Modifier.height(12.dp))
             OutlinedButton(
@@ -895,7 +897,7 @@ private fun SubscriptionsEmptyWall(
             ) {
                 Icon(Icons.Rounded.Login, null)
                 Spacer(Modifier.width(8.dp))
-                Text("Log in to YouTube")
+                Text(stringResource(R.string.log_in_youtube))
             }
         }
     }
@@ -925,9 +927,9 @@ private fun FeedEmptyState(
         Text(
             text = when {
                 error != null -> error
-                isGroupFiltered -> "No recent uploads from this group."
-                !hasChannels -> "You aren't following any channels yet."
-                else -> "No recent uploads from your channels."
+                isGroupFiltered -> stringResource(R.string.sc_group_empty)
+                !hasChannels -> stringResource(R.string.sc_not_following)
+                else -> stringResource(R.string.sc_no_uploads)
             },
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -935,23 +937,24 @@ private fun FeedEmptyState(
         )
         Spacer(Modifier.height(20.dp))
         when {
-            error != null -> OutlinedButton(onClick = onRetry) { Text("Try again") }
-            isGroupFiltered -> OutlinedButton(onClick = onClearGroup) { Text("Show all channels") }
-            !hasChannels -> Button(onClick = onManage) { Text("Import subscriptions") }
+            error != null -> OutlinedButton(onClick = onRetry) { Text(stringResource(R.string.action_try_again)) }
+            isGroupFiltered -> OutlinedButton(onClick = onClearGroup) { Text(stringResource(R.string.show_all_channels)) }
+            !hasChannels -> Button(onClick = onManage) { Text(stringResource(R.string.import_subscriptions)) }
         }
     }
 }
 
 /** "128 channels - 40 on this device", or just the count when there is one source. */
+@Composable
 private fun subscriptionsSubtitle(
     channelCount: Int,
     localCount: Int,
     isConnected: Boolean
 ): String = when {
-    channelCount == 0 -> "Latest from channels you follow"
-    localCount == 0 -> "$channelCount channels"
-    !isConnected || localCount == channelCount -> "$channelCount on this device"
-    else -> "$channelCount channels - $localCount on this device"
+    channelCount == 0 -> stringResource(R.string.sc_latest_from_channels)
+    localCount == 0 -> pluralStringResource(R.plurals.n_channels, channelCount, channelCount)
+    !isConnected || localCount == channelCount -> stringResource(R.string.sc_on_device, channelCount)
+    else -> stringResource(R.string.sc_channels_on_device, channelCount, localCount)
 }
 
 @Composable
@@ -1041,4 +1044,17 @@ private fun ChannelAvatar(channel: SubscribedChannel, size: androidx.compose.ui.
             )
         }
     }
+}
+
+@Composable
+private fun feedPeriodLabel(period: SubscriptionFeedPeriod): String = when (period) {
+    SubscriptionFeedPeriod.ALL -> stringResource(R.string.sc_any_time)
+    SubscriptionFeedPeriod.TODAY -> stringResource(R.string.sc_today)
+    SubscriptionFeedPeriod.THIS_WEEK -> stringResource(R.string.sc_this_week)
+}
+
+@Composable
+private fun feedOrderLabel(order: SubscriptionFeedOrder): String = when (order) {
+    SubscriptionFeedOrder.NEWEST -> stringResource(R.string.sc_newest_first)
+    SubscriptionFeedOrder.OLDEST -> stringResource(R.string.sc_oldest_first)
 }

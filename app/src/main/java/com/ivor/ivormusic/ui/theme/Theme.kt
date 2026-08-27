@@ -65,23 +65,30 @@ private val ExpressiveShapes = Shapes(
     extraLarge = RoundedCornerShape(36.dp)
 )
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
-@Composable
-fun IvorMusicTheme(
-    darkTheme: Boolean = true, // Default to dark theme for this music app
-    colorPalette: String = DYNAMIC_PALETTE_ID, // "dynamic" = wallpaper color, else a fixed AppPalette id
-    amoledDark: Boolean = false, // Pure black backgrounds when dark theme is active
-    content: @Composable () -> Unit
-) {
+/**
+ * How Koda turns its three theme preferences into a [ColorScheme]. Extracted
+ * from [IvorMusicTheme] because the home screen widgets need the same answer
+ * outside a Compose UI composition - a Glance composition has no
+ * LocalContext of the Compose kind and cannot call [IvorMusicTheme] at all, and
+ * widgets drawn in raw system dynamic color while the app runs a chosen palette
+ * look like a different app's widgets.
+ *
+ * Takes a plain [android.content.Context] rather than reading a composition
+ * local so both callers can use it.
+ */
+fun kodaColorScheme(
+    context: android.content.Context,
+    darkTheme: Boolean,
+    colorPalette: String,
+    amoledDark: Boolean,
+): ColorScheme {
     val useDynamic = colorPalette == DYNAMIC_PALETTE_ID
     // Neutral base scheme (surfaces, on-surface text). Dynamic pulls from the
     // wallpaper; a fixed palette starts from the app's own neutral scheme so
     // wallpaper color is fully ignored and only our accents apply.
     val baseColorScheme = when {
-        useDynamic && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-            val context = LocalContext.current
+        useDynamic && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ->
             if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-        }
         darkTheme -> DarkColorScheme
         else -> expressiveLightColorScheme()
     }
@@ -91,7 +98,23 @@ fun IvorMusicTheme(
         findPalette(colorPalette)?.let { buildPaletteColorScheme(it, darkTheme, baseColorScheme) }
             ?: baseColorScheme
     }
-    val colorScheme = if (darkTheme && amoledDark) palettedScheme.toAmoled() else palettedScheme
+    return if (darkTheme && amoledDark) palettedScheme.toAmoled() else palettedScheme
+}
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+fun IvorMusicTheme(
+    darkTheme: Boolean = true, // Default to dark theme for this music app
+    colorPalette: String = DYNAMIC_PALETTE_ID, // "dynamic" = wallpaper color, else a fixed AppPalette id
+    amoledDark: Boolean = false, // Pure black backgrounds when dark theme is active
+    content: @Composable () -> Unit
+) {
+    val colorScheme = kodaColorScheme(
+        context = LocalContext.current,
+        darkTheme = darkTheme,
+        colorPalette = colorPalette,
+        amoledDark = amoledDark,
+    )
     
     val view = LocalView.current
     if (!view.isInEditMode) {

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    4x1 transport strip: previous, play, next, and - given the width - shuffle and repeat. No artwork, no text.
+
+    updatePeriodMillis is 0 for every widget in the family: MusicService pushes
+    a redraw on each playback event, so scheduled polling would only burn
+    battery redrawing the same picture.
+-->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="200dp"
+    android:minHeight="56dp"
+    android:minResizeWidth="200dp"
+    android:minResizeHeight="56dp"
+    android:targetCellWidth="4"
+    android:targetCellHeight="1"
+    android:resizeMode="horizontal"
+    android:widgetCategory="home_screen"
+    android:updatePeriodMillis="0"
+    android:description="@string/widget_console_description"
+    android:initialLayout="@layout/glance_default_loading_layout" />

@@ -223,6 +223,10 @@ fun StickerPlayerSheetContent(
                             )
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            MusicCastIconButton(
+                                containerColor = chipColor,
+                                contentColor = onChip
+                            )
                             EditorialCircleButton(
                                 onClick = sleepTimer.open,
                                 accent = if (sleepTimer.active) ink else chipColor,

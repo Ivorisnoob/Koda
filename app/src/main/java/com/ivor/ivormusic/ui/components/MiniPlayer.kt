@@ -1,4 +1,6 @@
 package com.ivor.ivormusic.ui.components
+import androidx.compose.ui.res.stringResource
+import com.ivor.ivormusic.R
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
@@ -70,9 +72,13 @@ fun MiniPlayerContent(
     progress: Float,
     onPlayPauseClick: () -> Unit,
     onNextClick: () -> Unit,
+    isCasting: Boolean,
+    castDeviceName: String?,
     onClick: () -> Unit
 ) {
     val playerHaptics = rememberPlayerHaptics()
+    val playLabel = stringResource(R.string.cd_play)
+    val pauseLabel = stringResource(R.string.cd_pause)
 
     // Toggling while a track is still resolving would call play() again rather
     // than cancelling the pending start (togglePlayPause keys off isPlaying),
@@ -119,7 +125,7 @@ fun MiniPlayerContent(
                         interactionSource = artworkInteraction,
                         indication = null,
                         enabled = artworkTogglesPlayback,
-                        onClickLabel = if (isPlaying) "Pause" else "Play",
+                        onClickLabel = if (isPlaying) pauseLabel else playLabel,
                         role = Role.Button,
                         onClick = {
                             playerHaptics.playPause(!isPlaying)
@@ -176,7 +182,7 @@ fun MiniPlayerContent(
                                 .data(localUri ?: imageUrl)
                                 .crossfade(true)
                                 .build(),
-                            contentDescription = "Album Art",
+                            contentDescription = stringResource(R.string.cd_album_art),
                             modifier = Modifier.size(44.dp),
                             contentScale = ContentScale.Crop,
                             loading = {
@@ -219,13 +225,23 @@ fun MiniPlayerContent(
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = currentSong.artist,
+                    text = if (isCasting && castDeviceName != null) {
+                        "Casting to $castDeviceName"
+                    } else {
+                        currentSong.artist
+                    },
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = if (isCasting) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
             }
+
+            Spacer(modifier = Modifier.width(8.dp))
 
             // Play/Pause Button with shape morphing or Loading
             if (isBuffering && playWhenReady) {
@@ -261,7 +277,7 @@ fun MiniPlayerContent(
                 ) {
                     Icon(
                         imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                        contentDescription = if (isPlaying) "Pause" else "Play",
+                        contentDescription = if (isPlaying) pauseLabel else playLabel,
                         modifier = Modifier.size(24.dp)
                     )
                 }
@@ -281,7 +297,7 @@ fun MiniPlayerContent(
             ) {
                 Icon(
                     imageVector = Icons.Default.SkipNext,
-                    contentDescription = "Next",
+                    contentDescription = stringResource(R.string.cd_next),
                     modifier = Modifier.size(24.dp)
                 )
             }

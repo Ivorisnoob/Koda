@@ -1,4 +1,6 @@
 package com.ivor.ivormusic.ui.video
+import androidx.compose.ui.res.stringResource
+import com.ivor.ivormusic.R
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -62,7 +64,7 @@ fun NotificationsSheet(
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
             Text(
-                text = "Notifications",
+                text = stringResource(R.string.settings_notifications),
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
@@ -95,7 +97,7 @@ fun NotificationsSheet(
                             )
                             Spacer(Modifier.height(12.dp))
                             Text(
-                                text = "No notifications yet",
+                                text = stringResource(R.string.ns_none_yet),
                                 style = MaterialTheme.typography.bodyLarge,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )

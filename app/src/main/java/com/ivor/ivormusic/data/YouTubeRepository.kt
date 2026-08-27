@@ -1356,7 +1356,6 @@ class YouTubeRepository(private val context: Context) {
             }
         } catch (e: Exception) {
             KLog.e("YouTubeRepo", "Error fetching liked music", e)
-            e.printStackTrace()
         }
         
         // Fallback to NewPipe method
@@ -1398,7 +1397,7 @@ class YouTubeRepository(private val context: Context) {
             val response = okHttpClient.newCall(request).execute()
             (response.body?.string() ?: "").also { noteSessionState(it) }
         } catch (e: Exception) {
-            e.printStackTrace()
+            KLog.e("YouTubeRepo", "Music continuation request failed", e)
             ""
         }
     }
@@ -1557,7 +1556,7 @@ class YouTubeRepository(private val context: Context) {
                 if (internalSongs.isNotEmpty()) return@withContext internalSongs
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            KLog.e("YouTubeRepo", "Anonymous playlist browse failed for $playlistId", e)
         }
 
         // Do not throw away useful rows if every complete path failed, but log
@@ -1639,7 +1638,9 @@ class YouTubeRepository(private val context: Context) {
                 KLog.w("YouTubeRepo", "fetchAccountInfo: empty response from account/account_menu")
                 return@withContext
             }
-            KLog.d("YouTubeRepo", "fetchAccountInfo response: ${jsonResponse.take(400)}")
+            // Account payloads include identity details. Keep them out of the
+            // release diagnostic ring buffer; success/failure is enough here.
+            KLog.d("YouTubeRepo", "fetchAccountInfo response received")
             
             var avatarUrl: String? = null
             var userName: String? = null
@@ -1739,7 +1740,7 @@ class YouTubeRepository(private val context: Context) {
             }
             
         } catch (e: Exception) {
-            e.printStackTrace()
+            KLog.e("YouTubeRepo", "Account identity refresh failed", e)
         }
     }
 
@@ -1988,7 +1989,7 @@ class YouTubeRepository(private val context: Context) {
             if (code !in 200..299) {
                 KLog.w(
                     "YouTubeRepository",
-                    "Resolve[InnerTube/$clientName] HTTP $code videoId=$videoId body=${json.take(160)}",
+                    "Resolve[InnerTube/$clientName] HTTP $code videoId=$videoId",
                 )
                 return@withContext PlayerResponse(null, false)
             }
@@ -2105,7 +2106,7 @@ class YouTubeRepository(private val context: Context) {
             val response = okHttpClient.newCall(request).execute()
             (response.body?.string() ?: "").also { noteSessionState(it) }
         } catch (e: Exception) {
-            e.printStackTrace()
+            KLog.e("YouTubeRepo", "Music browse request failed", e)
             ""
         }
     }
@@ -2149,7 +2150,7 @@ class YouTubeRepository(private val context: Context) {
                 }
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            KLog.e("YouTubeRepo", "Could not parse music song shelf", e)
         }
         return if (preserveDuplicates) songs else songs.distinctBy { it.id }
     }
@@ -2510,7 +2511,7 @@ class YouTubeRepository(private val context: Context) {
                 }
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            KLog.e("YouTubeRepo", "Could not parse music playlist shelf", e)
         }
         return playlists 
     }
@@ -3119,12 +3120,15 @@ class YouTubeRepository(private val context: Context) {
             .build()
 
         try {
-            KLog.d("YouTubeRepo", "Making personalized video request with auth: ${authHeader.take(30)}...")
+            // Never place Authorization material or response bodies in KLog:
+            // users can deliberately attach its release ring buffer to a bug
+            // report, and these values may carry account/feed information.
+            KLog.d("YouTubeRepo", "Making personalized video request")
             val response = okHttpClient.newCall(request).execute()
             val responseBody = response.body?.string() ?: return@withContext empty
             response.close()
 
-            KLog.d("YouTubeRepo", "Got personalized response: ${responseBody.take(500)}...")
+            KLog.d("YouTubeRepo", "Personalized response received")
             val root = org.json.JSONObject(responseBody)
             val videos = parseVideosFromYouTubeJson(responseBody)
             KLog.d("YouTubeRepo", "Parsed ${videos.size} personalized videos")
@@ -3409,7 +3413,7 @@ class YouTubeRepository(private val context: Context) {
             }
             
         } catch (e: Exception) {
-            e.printStackTrace()
+            KLog.e("YouTubeRepo", "Could not parse watch history", e)
         }
         return videos.distinctBy { it.videoId }.take(30)
     }
@@ -4733,18 +4737,25 @@ class YouTubeRepository(private val context: Context) {
             it.audioTrackType != null && it.audioTrackType != AudioTrackType.ORIGINAL
         }
         val qualities = mutableListOf<VideoQuality>()
-        extractor.dashMpdUrl?.takeIf { it.isNotBlank() }?.let { url ->
+        // Live progressive endpoints are unusable and the Default Cast
+        // Receiver needs the HLS master playlist, including its audio
+        // rendition. Never let a live DASH URL win merely because NewPipe
+        // happened to expose both manifest fields.
+        val manifest = if (isLiveStream) {
+            extractor.hlsUrl?.takeIf { it.isNotBlank() }?.let { "HLS" to it }
+        } else {
+            extractor.dashMpdUrl?.takeIf { it.isNotBlank() }?.let { "DASH" to it }
+                ?: extractor.hlsUrl?.takeIf { it.isNotBlank() }?.let { "HLS" to it }
+        }
+        manifest?.let { (format, url) ->
             qualities.add(
                 VideoQuality(
-                    "Auto (Best)", url, "DASH", true,
-                    isLive = isLiveStream, sourceAspectRatio = sourceAspect,
-                )
-            )
-        } ?: extractor.hlsUrl?.takeIf { it.isNotBlank() }?.let { url ->
-            qualities.add(
-                VideoQuality(
-                    "Auto (HLS)", url, "HLS", true,
-                    isLive = isLiveStream, sourceAspectRatio = sourceAspect,
+                    resolution = if (format == "HLS") "Auto (HLS)" else "Auto (Best)",
+                    url = url,
+                    format = format,
+                    isDASH = true,
+                    isLive = isLiveStream,
+                    sourceAspectRatio = sourceAspect,
                 )
             )
         }
@@ -4813,28 +4824,10 @@ class YouTubeRepository(private val context: Context) {
                 .forEach(qualities::add)
         }
 
-        fun height(label: String): Int = label.takeWhile(Char::isDigit).toIntOrNull() ?: 0
-        fun fps(label: String): Int =
-            label.substringAfter('p', "").takeWhile(Char::isDigit).toIntOrNull() ?: 30
-
-        // NewPipe exposes several codecs for the same label. Retain the AVC
-        // MP4 variant when one exists so the download worker is not left with
-        // only a VP9/WebM entry after de-duplication.
-        val sortedQualities = qualities
-            .groupBy { it.resolution }
-            .mapNotNull { (_, variants) ->
-                variants.maxWithOrNull(
-                    compareBy<VideoQuality>(
-                        { if (it.isMp4DownloadCompatible) 2 else if (it.isMp4Container) 1 else 0 },
-                        { if (it.codec?.contains("avc1", ignoreCase = true) == true) 1 else 0 },
-                    )
-                )
-            }
-            .sortedWith(
-                compareByDescending<VideoQuality> { height(it.resolution) }
-                    .thenByDescending { fps(it.resolution) }
-            )
-        return VideoStreamResult(sortedQualities, seekPreview)
+        // NewPipe exposes several codecs and delivery types for the same
+        // visible label. Collapse codec alternatives, but retain both a split
+        // local-playback entry and a muxed Cast entry when both exist.
+        return VideoStreamResult(deduplicateVideoQualityVariants(qualities), seekPreview)
     }
 
     /**
@@ -4997,9 +4990,7 @@ class YouTubeRepository(private val context: Context) {
             muxed.forEach { f ->
                 val label = f.optString("qualityLabel")
                 val url = f.optString("url")
-                if (label.isNotEmpty() && url.isNotEmpty() &&
-                    qualities.none { it.resolution == label }
-                ) {
+                if (label.isNotEmpty() && url.isNotEmpty()) {
                     qualities.add(
                         VideoQuality(
                             label, url, container(f.optString("mimeType")), false,
@@ -5011,11 +5002,10 @@ class YouTubeRepository(private val context: Context) {
             }
         }
 
-        // Highest resolution first, then 60fps variants before 30fps.
-        return qualities.sortedWith(
-            compareByDescending<VideoQuality> { labelHeight(it.resolution) }
-                .thenByDescending { labelFps(it.resolution) }
-        )
+        // Keep muxed and split variants distinct so local playback, downloads
+        // and the Default Cast Receiver can each choose a source they can
+        // actually consume.
+        return deduplicateVideoQualityVariants(qualities)
     }
 
     /**
@@ -5062,7 +5052,7 @@ class YouTubeRepository(private val context: Context) {
                 }
             )
             
-            val finalQualities = qualities.distinctBy { it.resolution }
+            val finalQualities = deduplicateVideoQualityVariants(qualities)
             
             // Related Videos
             val relatedItems = streamExtractor.relatedItems?.items ?: emptyList()

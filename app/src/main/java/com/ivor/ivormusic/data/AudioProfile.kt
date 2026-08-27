@@ -93,12 +93,25 @@ data class AudioProfile(
     val outroKeyMode: String? = null,
     val outroKeyConfidence: Float = 0f,
 
+    /**
+     * Confirmed dead air after the last audible sound, in milliseconds.
+     *
+     * Distinct from [outroLeadMs], which is bounded by the twenty-second tail
+     * window and uses a relative threshold: this one asks specifically whether
+     * the recording keeps going after the music has stopped - a hidden track
+     * gap, an extended silence pad - and measures how far, probing sparsely
+     * up to a minute past the tail window. Zero unless the very end of the
+     * track is genuinely silent.
+     */
+    val trailingSilenceMs: Long = 0,
+
     /** Schema version, so a later measurement change can invalidate old rows. */
     val version: Int = CURRENT_VERSION
 ) {
     companion object {
         // Version 5 uses transient-aware rhythm analysis, persists the schema
         // marker explicitly, and measures the outro key independently.
-        const val CURRENT_VERSION = 5
+        // Version 6 adds trailingSilenceMs for the AutoMix silence skip.
+        const val CURRENT_VERSION = 6
     }
 }

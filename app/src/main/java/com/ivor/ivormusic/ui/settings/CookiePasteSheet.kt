@@ -1,4 +1,6 @@
 package com.ivor.ivormusic.ui.settings
+import androidx.compose.ui.res.stringResource
+import com.ivor.ivormusic.R
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
@@ -125,12 +127,12 @@ fun CookiePasteSheet(
                 Spacer(modifier = Modifier.width(14.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Session Cookies",
+                        text = stringResource(R.string.ck_title),
                         style = MaterialTheme.typography.headlineSmall,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = "Sign in by pasting a browser session",
+                        text = stringResource(R.string.ck_subtitle),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -157,7 +159,7 @@ fun CookiePasteSheet(
                 )
                 Spacer(modifier = Modifier.width(10.dp))
                 Text(
-                    text = "Paste from clipboard",
+                    text = stringResource(R.string.ck_paste_clipboard),
                     style = MaterialTheme.typography.titleMedium
                 )
             }
@@ -170,7 +172,7 @@ fun CookiePasteSheet(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(120.dp),
-                label = { Text("Cookie header") },
+                label = { Text(stringResource(R.string.ck_cookie_header)) },
                 placeholder = {
                     Text(
                         text = "SID=...; SAPISID=...",
@@ -239,7 +241,7 @@ fun CookiePasteSheet(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 TextButton(onClick = onDismiss) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.action_cancel))
                 }
                 Spacer(modifier = Modifier.width(8.dp))
                 Button(
@@ -255,7 +257,7 @@ fun CookiePasteSheet(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Sign in",
+                        text = stringResource(R.string.profile_signed_out),
                         style = MaterialTheme.typography.titleMedium
                     )
                 }
@@ -327,7 +329,7 @@ private fun InstructionsSection(expanded: Boolean, onToggle: () -> Unit) {
                 )
                 Spacer(modifier = Modifier.width(12.dp))
                 Text(
-                    text = "How do I get this?",
+                    text = stringResource(R.string.ck_how_to),
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.weight(1f)
@@ -360,12 +362,12 @@ private fun InstructionsSection(expanded: Boolean, onToggle: () -> Unit) {
                     // navigate. Filtering catches whichever InnerTube request
                     // does happen. Verified July 2026.
                     val steps = listOf(
-                        "Open music.youtube.com on a desktop browser, signed in",
-                        "Press F12 and open the Network tab",
-                        "Type \"youtubei\" in the filter box, then reload",
-                        "Click any request in the list",
-                        "Under Request Headers, right-click \"cookie\" and Copy value",
-                        "Send it to this device and paste it above"
+                        stringResource(R.string.ck_step_1),
+                        stringResource(R.string.ck_step_2),
+                        stringResource(R.string.ck_step_3),
+                        stringResource(R.string.ck_step_4),
+                        stringResource(R.string.ck_step_5),
+                        stringResource(R.string.ck_step_6)
                     )
                     steps.forEachIndexed { index, step ->
                         if (index > 0) Spacer(modifier = Modifier.height(12.dp))
@@ -418,7 +420,7 @@ private fun SecurityNotice() {
             Spacer(modifier = Modifier.width(12.dp))
             Column {
                 Text(
-                    text = "Treat this like a password",
+                    text = stringResource(R.string.ck_password_note),
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.onErrorContainer
                 )

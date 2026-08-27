@@ -1,4 +1,6 @@
 package com.ivor.ivormusic.ui.video
+import androidx.compose.ui.res.stringResource
+import com.ivor.ivormusic.R
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -129,6 +131,7 @@ fun SubscriptionsManagerScreen(
     // SAF rather than a path: the file arrives as a content uri that cannot be
     // opened as a File, and asking for storage permission to read one export
     // would be a far worse trade.
+    val context = androidx.compose.ui.platform.LocalContext.current
     val importLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
@@ -142,8 +145,8 @@ fun SubscriptionsManagerScreen(
             viewModel.exportSubscriptions(uri) { ok ->
                 scope.launch {
                     snackbarHostState.showSnackbar(
-                        if (ok) "Exported ${subscriptions.size} channels"
-                        else "Couldn't write that file"
+                        if (ok) context.getString(R.string.sm_exported, subscriptions.size)
+                        else context.getString(R.string.sm_write_failed)
                     )
                 }
             }
@@ -161,9 +164,9 @@ fun SubscriptionsManagerScreen(
             TopAppBar(
                 title = {
                     Column {
-                        Text("Subscriptions", fontWeight = FontWeight.Bold)
+                        Text(stringResource(R.string.settings_subscriptions), fontWeight = FontWeight.Bold)
                         Text(
-                            text = if (subscriptions.isEmpty()) "Nothing followed on this device"
+                            text = if (subscriptions.isEmpty()) stringResource(R.string.sm_nothing_followed)
                             else "${subscriptions.size} on this device",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -200,12 +203,11 @@ fun SubscriptionsManagerScreen(
             }
 
             item(key = "transfer") {
-                ManagerSection(title = "Transfer") {
+                ManagerSection(title = stringResource(R.string.sm_transfer)) {
                     ManagerRow(
                         icon = Icons.Rounded.FileUpload,
-                        title = "Import from a file",
-                        subtitle = "A NewPipe, PipePipe or Tubular export or backup, " +
-                            "or a Google Takeout file",
+                        title = stringResource(R.string.sm_import_file),
+                        subtitle = stringResource(R.string.sm_import_file_sub),
                         enabled = !isImporting,
                         onClick = {
                             // Exports are .json, .csv, .opml or .xml, backups
@@ -225,11 +227,11 @@ fun SubscriptionsManagerScreen(
                     ManagerDivider()
                     ManagerRow(
                         icon = Icons.Rounded.CloudDownload,
-                        title = "Copy from YouTube account",
+                        title = stringResource(R.string.sm_copy_account),
                         subtitle = if (isConnected) {
-                            "Keeps following these channels after you sign out"
+                            stringResource(R.string.sm_copy_sub)
                         } else {
-                            "Sign in to YouTube first"
+                            stringResource(R.string.sm_sign_in_first)
                         },
                         enabled = !isImporting,
                         onClick = {
@@ -243,11 +245,11 @@ fun SubscriptionsManagerScreen(
                     ManagerDivider()
                     ManagerRow(
                         icon = Icons.Rounded.FileDownload,
-                        title = "Export to a file",
+                        title = stringResource(R.string.sm_export),
                         subtitle = if (subscriptions.isEmpty()) {
-                            "Nothing to export yet"
+                            stringResource(R.string.sm_nothing_to_export)
                         } else {
-                            "Readable by NewPipe and its forks"
+                            stringResource(R.string.sm_readable_by_newpipe)
                         },
                         enabled = subscriptions.isNotEmpty(),
                         onClick = { exportLauncher.launch("koda_subscriptions.json") }
@@ -256,10 +258,10 @@ fun SubscriptionsManagerScreen(
             }
 
             item(key = "groups-header") {
-                ManagerSection(title = "Groups") {
+                ManagerSection(title = stringResource(R.string.sp_groups)) {
                     if (groups.isEmpty()) {
                         Text(
-                            text = "Groups let you narrow the Subscriptions feed to a slice of your channels.",
+                            text = stringResource(R.string.sm_groups_note),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
@@ -287,7 +289,7 @@ fun SubscriptionsManagerScreen(
                     ManagerDivider()
                     ManagerRow(
                         icon = Icons.Rounded.Add,
-                        title = "New group",
+                        title = stringResource(R.string.sm_new_group),
                         subtitle = null,
                         enabled = subscriptions.isNotEmpty(),
                         onClick = { showNewGroupDialog = true }
@@ -300,7 +302,7 @@ fun SubscriptionsManagerScreen(
                     Column {
                         Text(
                             text = if (channelQuery.isBlank()) {
-                                "Channels"
+                                stringResource(R.string.section_channels)
                             } else {
                                 "Channels - ${matchedSubscriptions.size} of ${subscriptions.size}"
                             },
@@ -314,7 +316,7 @@ fun SubscriptionsManagerScreen(
                             SearchField(
                                 query = channelQuery,
                                 onQueryChange = { channelQuery = it },
-                                placeholder = "Search channels"
+                                placeholder = stringResource(R.string.search_channels)
                             )
                         }
                     }
@@ -324,7 +326,7 @@ fun SubscriptionsManagerScreen(
                     item(key = "no-channel-matches") {
                         SearchEmptyState(
                             title = "No channels match \"$channelQuery\"",
-                            hint = "Try part of the name, or the @handle."
+                            hint = stringResource(R.string.sc_search_hint)
                         )
                     }
                 }
@@ -352,7 +354,7 @@ fun SubscriptionsManagerScreen(
                     ) {
                         Icon(Icons.Rounded.DeleteSweep, contentDescription = null)
                         Spacer(Modifier.width(8.dp))
-                        Text("Remove all local subscriptions")
+                        Text(stringResource(R.string.sm_remove_all))
                     }
                 }
             } else if (!isImporting) {
@@ -370,7 +372,7 @@ fun SubscriptionsManagerScreen(
     if (showNewGroupDialog) {
         GroupNameDialog(
             initialName = "",
-            title = "New group",
+            title = stringResource(R.string.sm_new_group),
             onConfirm = { name ->
                 viewModel.createSubscriptionGroup(name)
                 showNewGroupDialog = false
@@ -416,15 +418,15 @@ fun SubscriptionsManagerScreen(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
             shape = RoundedCornerShape(32.dp),
             title = { Text("Delete ${group.name}?", fontWeight = FontWeight.Bold) },
-            text = { Text("The channels in it stay subscribed - only the group goes.") },
+            text = { Text(stringResource(R.string.sm_delete_group_body)) },
             confirmButton = {
                 TextButton(onClick = {
                     viewModel.deleteSubscriptionGroup(group.id)
                     groupToDelete = null
-                }) { Text("Delete") }
+                }) { Text(stringResource(R.string.action_delete)) }
             },
             dismissButton = {
-                TextButton(onClick = { groupToDelete = null }) { Text("Cancel") }
+                TextButton(onClick = { groupToDelete = null }) { Text(stringResource(R.string.action_cancel)) }
             }
         )
     }
@@ -434,21 +436,20 @@ fun SubscriptionsManagerScreen(
             onDismissRequest = { showClearConfirmation = false },
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
             shape = RoundedCornerShape(32.dp),
-            title = { Text("Remove all?", fontWeight = FontWeight.Bold) },
+            title = { Text(stringResource(R.string.sm_remove_all_q), fontWeight = FontWeight.Bold) },
             text = {
                 Text(
-                    "This clears every channel and group stored on this device. " +
-                        "Subscriptions on your YouTube account are not touched."
+                    stringResource(R.string.sm_remove_all_body)
                 )
             },
             confirmButton = {
                 TextButton(onClick = {
                     viewModel.clearLocalSubscriptions()
                     showClearConfirmation = false
-                }) { Text("Remove all") }
+                }) { Text(stringResource(R.string.ni_unblock_all)) }
             },
             dismissButton = {
-                TextButton(onClick = { showClearConfirmation = false }) { Text("Cancel") }
+                TextButton(onClick = { showClearConfirmation = false }) { Text(stringResource(R.string.action_cancel)) }
             }
         )
     }
@@ -469,7 +470,7 @@ private fun ImportProgressCard(progress: Pair<Int, Int>?) {
     ) {
         Column(Modifier.padding(20.dp)) {
             Text(
-                text = "Importing subscriptions",
+                text = stringResource(R.string.sm_importing),
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurface
@@ -477,7 +478,7 @@ private fun ImportProgressCard(progress: Pair<Int, Int>?) {
             Spacer(Modifier.height(4.dp))
             Text(
                 text = progress?.let { (done, total) -> "$done of $total channels" }
-                    ?: "Reading the file",
+                    ?: stringResource(R.string.bk_reading),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -510,15 +511,14 @@ private fun EmptyManagerState() {
         )
         Spacer(Modifier.height(16.dp))
         Text(
-            text = "No channels on this device yet",
+            text = stringResource(R.string.sm_none_yet),
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onBackground
         )
         Spacer(Modifier.height(6.dp))
         Text(
-            text = "Import a list from another app, copy your YouTube account, " +
-                "or just tap Subscribe on any channel.",
+            text = stringResource(R.string.sm_empty_body),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = androidx.compose.ui.text.style.TextAlign.Center
@@ -721,7 +721,7 @@ private fun ImportSummaryDialog(result: SubscriptionImportResult, onDismiss: () 
         },
         title = {
             Text(
-                text = if (result.error != null) "Import failed" else "Import finished",
+                text = if (result.error != null) stringResource(R.string.sm_import_failed) else stringResource(R.string.sm_import_finished),
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.fillMaxWidth(),
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center
@@ -743,8 +743,7 @@ private fun ImportSummaryDialog(result: SubscriptionImportResult, onDismiss: () 
                         SummaryLine("Other services", "${result.skippedOtherService}")
                         Spacer(Modifier.height(8.dp))
                         Text(
-                            text = "Channels from BiliBili, NicoNico and the like were skipped - " +
-                                "Koda only plays YouTube.",
+                            text = stringResource(R.string.sm_foreign_skipped),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -753,7 +752,7 @@ private fun ImportSummaryDialog(result: SubscriptionImportResult, onDismiss: () 
             }
         },
         confirmButton = {
-            Button(onClick = onDismiss, shape = RoundedCornerShape(16.dp)) { Text("Done") }
+            Button(onClick = onDismiss, shape = RoundedCornerShape(16.dp)) { Text(stringResource(R.string.action_done)) }
         }
     )
 }
@@ -789,7 +788,7 @@ private fun GroupNameDialog(
                 value = name,
                 onValueChange = { name = it },
                 singleLine = true,
-                label = { Text("Name") },
+                label = { Text(stringResource(R.string.name_label)) },
                 shape = RoundedCornerShape(16.dp)
             )
         },
@@ -797,9 +796,9 @@ private fun GroupNameDialog(
             TextButton(
                 onClick = { onConfirm(name) },
                 enabled = name.isNotBlank()
-            ) { Text("Save") }
+            ) { Text(stringResource(R.string.action_save)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } }
     )
 }
 
@@ -874,7 +873,7 @@ private fun GroupChannelsDialog(
                     SearchField(
                         query = query,
                         onQueryChange = { query = it },
-                        placeholder = "Search channels"
+                        placeholder = stringResource(R.string.search_channels)
                     )
                     Spacer(Modifier.height(12.dp))
                 }
@@ -918,7 +917,7 @@ private fun GroupChannelsDialog(
             }
         },
         confirmButton = {
-            Button(onClick = onDismiss, shape = RoundedCornerShape(16.dp)) { Text("Done") }
+            Button(onClick = onDismiss, shape = RoundedCornerShape(16.dp)) { Text(stringResource(R.string.action_done)) }
         }
     )
 }
@@ -958,7 +957,7 @@ private fun ChannelGroupsDialog(
             }
         },
         confirmButton = {
-            Button(onClick = onDismiss, shape = RoundedCornerShape(16.dp)) { Text("Done") }
+            Button(onClick = onDismiss, shape = RoundedCornerShape(16.dp)) { Text(stringResource(R.string.action_done)) }
         }
     )
 }

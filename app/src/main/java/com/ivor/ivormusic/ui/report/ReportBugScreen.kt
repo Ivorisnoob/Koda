@@ -1,4 +1,6 @@
 package com.ivor.ivormusic.ui.report
+import androidx.compose.ui.res.stringResource
+import com.ivor.ivormusic.R
 
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -7,6 +9,7 @@ import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -26,6 +29,7 @@ import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Troubleshoot
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalButton
@@ -34,14 +38,13 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.ToggleButton
+import androidx.compose.material3.ToggleButtonDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -139,7 +142,7 @@ fun ReportBugScreen(onBack: () -> Unit) {
         }
         then?.invoke()
         scope.launch {
-            snackbarHostState.showSnackbar("Report copied to clipboard")
+            snackbarHostState.showSnackbar(context.getString(R.string.rb_copied))
         }
     }
 
@@ -150,7 +153,7 @@ fun ReportBugScreen(onBack: () -> Unit) {
             TopAppBar(
                 title = {
                     Column {
-                        Text("Report a bug", fontWeight = FontWeight.Bold)
+                        Text(stringResource(R.string.sp_report_bug), fontWeight = FontWeight.Bold)
                         Text(
                             text = "${logEntries.size} log lines recorded this session",
                             style = MaterialTheme.typography.bodySmall,
@@ -181,8 +184,8 @@ fun ReportBugScreen(onBack: () -> Unit) {
                     value = description,
                     onValueChange = { description = it },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("What happened?") },
-                    placeholder = { Text("What were you doing when it broke?") },
+                    label = { Text(stringResource(R.string.rb_what_happened)) },
+                    placeholder = { Text(stringResource(R.string.rb_placeholder)) },
                     minLines = 3,
                     shape = RoundedCornerShape(16.dp)
                 )
@@ -190,11 +193,11 @@ fun ReportBugScreen(onBack: () -> Unit) {
 
             if (crashText != null) {
                 item(key = "crash") {
-                    SettingsSection(title = "Last crash") {
+                    SettingsSection(title = stringResource(R.string.rb_last_crash)) {
                         SettingsCard {
                             SettingsToggleRow(
                                 icon = Icons.Rounded.BugReport,
-                                title = "Attach crash details",
+                                title = stringResource(R.string.rb_attach_crash),
                                 subtitle = crashPreviewLine(crashText),
                                 enabled = includeCrash,
                                 onToggle = { includeCrash = it }
@@ -209,12 +212,12 @@ fun ReportBugScreen(onBack: () -> Unit) {
             }
 
             item(key = "diagnostics") {
-                SettingsSection(title = "Device & app info") {
+                SettingsSection(title = stringResource(R.string.rb_device_info)) {
                     SettingsCard {
                         SettingsToggleRow(
                             icon = Icons.Rounded.Troubleshoot,
-                            title = "Attach device info",
-                            subtitle = "Model, Android version, build and playback settings",
+                            title = stringResource(R.string.rb_attach_device),
+                            subtitle = stringResource(R.string.rb_attach_device_sub),
                             enabled = includeDiagnostics,
                             onToggle = { includeDiagnostics = it }
                         )
@@ -229,29 +232,45 @@ fun ReportBugScreen(onBack: () -> Unit) {
             item(key = "log-level") {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(
-                        text = "Log detail",
+                        text = stringResource(R.string.rb_log_detail),
                         style = MaterialTheme.typography.titleSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(
+                            ButtonGroupDefaults.ConnectedSpaceBetween
+                        )
+                    ) {
                         LogLevelFilter.entries.forEachIndexed { index, filter ->
-                            SegmentedButton(
-                                selected = logFilter == filter,
-                                onClick = {
+                            val selected = logFilter == filter
+                            ToggleButton(
+                                checked = selected,
+                                onCheckedChange = {
                                     logFilter = filter
                                     prefs.setReportVerboseLogs(filter == LogLevelFilter.ALL)
                                 },
-                                shape = SegmentedButtonDefaults.itemShape(
-                                    index = index,
-                                    count = LogLevelFilter.entries.size
+                                modifier = Modifier.weight(1f),
+                                shapes = when (index) {
+                                    0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                                    LogLevelFilter.entries.lastIndex ->
+                                        ButtonGroupDefaults.connectedTrailingButtonShapes()
+                                    else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+                                },
+                                colors = ToggleButtonDefaults.toggleButtonColors(
+                                    containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                                    checkedContainerColor = MaterialTheme.colorScheme.primary,
+                                    contentColor = MaterialTheme.colorScheme.onSurface,
+                                    checkedContentColor = MaterialTheme.colorScheme.onPrimary
                                 )
                             ) {
                                 Text(
-                                    when (filter) {
-                                        LogLevelFilter.ERRORS -> "Errors"
-                                        LogLevelFilter.WARNINGS -> "+ Warnings"
-                                        LogLevelFilter.ALL -> "Everything"
-                                    }
+                                    text = when (filter) {
+                                        LogLevelFilter.ERRORS -> stringResource(R.string.rb_errors)
+                                        LogLevelFilter.WARNINGS -> stringResource(R.string.rb_warnings)
+                                        LogLevelFilter.ALL -> stringResource(R.string.rb_everything)
+                                    },
+                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
                                 )
                             }
                         }
@@ -261,14 +280,14 @@ fun ReportBugScreen(onBack: () -> Unit) {
 
             item(key = "logs") {
                 val filtered = filteredEntries()
-                SettingsSection(title = "Recent logs") {
+                SettingsSection(title = stringResource(R.string.rb_recent_logs)) {
                     SettingsCard {
                         if (filtered.isEmpty()) {
                             Text(
                                 text = if (logEntries.isEmpty()) {
-                                    "Nothing logged yet this session."
+                                    stringResource(R.string.rb_nothing_logged)
                                 } else {
-                                    "No entries at this detail level."
+                                    stringResource(R.string.rb_no_entries)
                                 },
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -286,10 +305,10 @@ fun ReportBugScreen(onBack: () -> Unit) {
             }
 
             item(key = "preview") {
-                SettingsSection(title = "Preview") {
+                SettingsSection(title = stringResource(R.string.rb_preview)) {
                     SettingsCard {
                         Text(
-                            text = "Exactly what will be copied:",
+                            text = stringResource(R.string.rb_preview_hint),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
@@ -311,7 +330,7 @@ fun ReportBugScreen(onBack: () -> Unit) {
                     ) {
                         Icon(Icons.Rounded.ContentCopy, contentDescription = null)
                         Spacer(Modifier.width(8.dp))
-                        Text("Copy report")
+                        Text(stringResource(R.string.rb_copy_report))
                     }
                     FilledTonalButton(
                         onClick = {
@@ -327,7 +346,7 @@ fun ReportBugScreen(onBack: () -> Unit) {
                     ) {
                         Icon(Icons.AutoMirrored.Rounded.Send, contentDescription = null)
                         Spacer(Modifier.width(8.dp))
-                        Text("Open Telegram chat")
+                        Text(stringResource(R.string.rb_open_telegram))
                     }
                     FilledTonalButton(
                         onClick = {
@@ -346,10 +365,10 @@ fun ReportBugScreen(onBack: () -> Unit) {
                     ) {
                         Icon(Icons.AutoMirrored.Rounded.OpenInNew, contentDescription = null)
                         Spacer(Modifier.width(8.dp))
-                        Text("Open GitHub issue")
+                        Text(stringResource(R.string.rb_open_github))
                     }
                     Text(
-                        text = "The report never sends anything by itself - you paste or attach it yourself.",
+                        text = stringResource(R.string.rb_privacy_note),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(horizontal = 4.dp)
@@ -361,10 +380,11 @@ fun ReportBugScreen(onBack: () -> Unit) {
 }
 
 /** First meaningful line of the crash file, for the toggle's subtitle. */
+@Composable
 private fun crashPreviewLine(crashText: String): String =
     crashText.lineSequence().firstOrNull { it.startsWith("Version:") }
         ?.let { version -> "$version - stack trace and recent logs" }
-        ?: "Stack trace and recent logs"
+        ?: stringResource(R.string.rb_default_attachment)
 
 /**
  * A monospace log/report text block that scrolls internally.

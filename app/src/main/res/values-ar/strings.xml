@@ -1,0 +1,199 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Koda</string>
+    <string name="now_playing_channel_name">قيد التشغيل الآن</string>
+    <string name="video_playback_channel_name">تشغيل الفيديو</string>
+
+    <string name="undo">تراجع</string>
+    <string name="action_cancel">إلغاء</string>
+    <string name="action_done">تم</string>
+    <string name="action_create">إنشاء</string>
+    <string name="action_save">حفظ</string>
+    <string name="action_delete">حذف</string>
+    <string name="action_edit">تعديل</string>
+    <string name="action_share">مشاركة</string>
+    <string name="action_retry">إعادة المحاولة</string>
+    <string name="action_see_all">عرض الكل</string>
+    <string name="action_play_all">تشغيل الكل</string>
+    <string name="action_show_more">عرض المزيد</string>
+    <string name="action_try_again">حاول مجددًا</string>
+    <string name="action_open_settings">فتح الإعدادات</string>
+    <string name="action_clear_all">مسح الكل</string>
+    <string name="action_new_playlist">قائمة تشغيل جديدة</string>
+    <string name="action_grant_permission">منح الإذن</string>
+    <string name="unknown_artist">فنان غير معروف</string>
+    <string name="untitled_song">أغنية بدون عنوان</string>
+    <string name="label_playlist">قائمة تشغيل</string>
+
+    <string name="tab_home">الرئيسية</string>
+    <string name="tab_search">بحث</string>
+    <string name="tab_subs">الاشتراكات</string>
+    <string name="tab_library">المكتبة</string>
+
+    <string name="local_only_title">وضع «محلي فقط» مفعّل</string>
+    <string name="local_only_default_subtitle">هذا القسم يحتاج إلى الإنترنت. أوقف وضع «محلي فقط» من الإعدادات لاستخدامه.</string>
+    <string name="local_only_video_mode_subtitle">وضع الفيديو يحتاج إلى الإنترنت. أوقف وضع «محلي فقط» من الإعدادات لمشاهدة الفيديوهات.</string>
+    <string name="local_only_video_search_subtitle">البحث عن الفيديوهات يحتاج إلى الإنترنت. أوقف وضع «محلي فقط» من الإعدادات للبحث عن الفيديوهات.</string>
+    <string name="local_only_subscriptions_subtitle">الاشتراكات تحتاج إلى الإنترنت. أوقف وضع «محلي فقط» من الإعدادات لمشاهدتها.</string>
+    <string name="local_only_video_library_subtitle">مكتبة الفيديو تحتاج إلى الإنترنت. أوقف وضع «محلي فقط» من الإعدادات لمشاهدتها.</string>
+    <string name="local_only_update_subtitle">التحقق من التحديثات يحتاج إلى الإنترنت. أوقف وضع «محلي فقط» من الإعدادات للتحقق من التحديثات.</string>
+
+    <string name="crash_dialog_title">تعطّل Koda في المرة الأخيرة</string>
+    <string name="crash_dialog_message">حدث خطأ ما في جلستك السابقة. يمكنك إرسال تقرير بالخطأ مع التفاصيل — لا شيء يخرج من جهازك إلا إذا اخترت المشاركة.</string>
+    <string name="crash_dialog_view_report">عرض وإبلاغ</string>
+    <string name="crash_dialog_not_now">ليس الآن</string>
+
+    <string name="permission_required_title">الإذن مطلوب لتحميل الأغاني</string>
+
+    <string name="home_section_recent_albums">ألبومات حديثة</string>
+    <string name="home_section_jump_back_in">تابع من حيث توقفت</string>
+    <string name="your_mix_line1">مزيجك</string>
+    <string name="your_mix_line2">الخاص</string>
+    <string name="update_badge_version">v%1$s</string>
+    <string name="artists_joined">%1$s، %2$s</string>
+    <string name="cd_profile">الملف الشخصي</string>
+    <string name="cd_downloads">التنزيلات</string>
+    <string name="cd_settings">الإعدادات</string>
+    <string name="cd_play">تشغيل</string>
+    <string name="cd_pause">إيقاف مؤقت</string>
+    <string name="cd_next">التالي</string>
+    <string name="cd_album_art">صورة الألبوم</string>
+    <string name="cd_show_all">عرض الكل: %1$s</string>
+
+    <string name="spotlight_quick_picks">اختيارات سريعة</string>
+    <string name="spotlight_your_playlists">قوائم التشغيل الخاصة بك</string>
+    <string name="spotlight_from_your_library">من مكتبتك</string>
+    <string name="spotlight_caption_liked">من الأغاني التي أعجبتك</string>
+    <string name="spotlight_caption_recent">من ما استمعت إليه مؤخرًا</string>
+    <string name="shortcut_liked_songs">الأغاني المفضلة</string>
+    <string name="filter_all">الكل</string>
+    <string name="filter_liked">المفضلة</string>
+    <string name="filter_recent">الحديثة</string>
+    <string name="filter_playlists">قوائم التشغيل</string>
+    <string name="spotlight_empty_no_liked">لا توجد أغانٍ مفضلة بعد</string>
+    <string name="spotlight_empty_no_recent">لم تشغَّل أي شيء بعد</string>
+    <string name="spotlight_empty_no_playlists">لا توجد قوائم تشغيل بعد</string>
+    <string name="spotlight_empty_generic">لا يوجد شيء لعرضه بعد</string>
+    <string name="spotlight_hint_liked">ستتجمع هنا الأغاني التي تعجبك.</string>
+    <string name="spotlight_hint_playlists">تظهر هنا قوائم التشغيل التي تنشئها أو تحفظها.</string>
+    <string name="spotlight_hint_all">شغّل شيئًا وستمتلئ صفحتك الرئيسية.</string>
+
+    <string name="sleep_timer_title">مؤقت النوم</string>
+    <string name="sleep_timer_status_track"> هذا المقطع</string>
+    <string name="sleep_timer_detail_track">يتوقف التشغيل عند انتهاء الأغنية الحالية</string>
+    <string name="sleep_timer_detail_duration">يتلاشى التشغيل ويُوقف مؤقتًا عند انتهاء المؤقت</string>
+    <string name="minutes_short">%1$d د</string>
+    <string name="sleep_timer_end_of_track">نهاية هذا المقطع</string>
+    <string name="sleep_timer_turn_off">إيقاف</string>
+
+    <string name="cd_switch_to_music">التبديل إلى وضع الموسيقى</string>
+    <string name="cd_switch_to_video">التبديل إلى وضع الفيديو</string>
+    <string name="cd_drag_to_reorder">اسحب لإعادة الترتيب</string>
+    <string name="cd_favorite">المفضلة</string>
+    <string name="cd_clear_search">مسح البحث</string>
+    <string name="queue_removed_snackbar">تمت إزالة %1$s</string>
+
+    <string name="song_options_play_next">تشغيل التالي</string>
+    <string name="song_options_play_next_subtitle">بعد هذه الأغنية مباشرة</string>
+    <string name="song_options_add_to_queue">إضافة إلى قائمة الانتظار</string>
+    <string name="song_options_add_to_queue_subtitle">في النهاية</string>
+    <string name="song_options_add_to_playlist">إضافة إلى قائمة تشغيل</string>
+    <string name="song_options_remove_from_liked">إزالة من المفضلة</string>
+    <string name="song_options_like">أعجبني</string>
+    <string name="song_options_download">تنزيل</string>
+    <string name="song_options_download_subtitle">الاحتفاظ على هذا الجهاز</string>
+    <string name="song_options_downloaded">تم التنزيل</string>
+    <string name="song_options_go_to_artist">الانتقال إلى %1$s</string>
+
+    <string name="add_to_playlist_title">إضافة إلى قائمة تشغيل</string>
+    <string name="new_playlist_label">قائمة تشغيل جديدة</string>
+    <string name="name_label">الاسم</string>
+    <string name="description_optional_label">الوصف (اختياري)</string>
+
+    <string name="video_options_watch_later">المشاهدة لاحقًا</string>
+    <string name="video_options_kept_on_device">محفوظ على هذا الجهاز</string>
+    <string name="video_options_save_to_playlist">الحفظ في قائمة تشغيل</string>
+    <string name="video_options_download">تنزيل</string>
+    <string name="video_options_go_to_channel">الانتقال إلى القناة</string>
+    <string name="video_options_share">مشاركة</string>
+    <string name="video_options_share_chooser">مشاركة الفيديو</string>
+    <string name="video_options_not_interested">غير مهتم</string>
+    <string name="video_options_dont_recommend_channel">عدم اقتراح هذه القناة</string>
+    <string name="video_options_dont_recommend_channel_name">عدم اقتراح %1$s</string>
+    <string name="cd_back">رجوع</string>
+    <string name="search_playlists_placeholder">البحث في قوائم التشغيل</string>
+    <string name="no_playlist_matches">لا توجد قوائم تشغيل تطابق \"%1$s\"</string>
+    <string name="no_playlists_yet_hint">لا توجد قوائم تشغيل بعد. أنشئ واحدة وسيذهب هذا الفيديو إليها مباشرة.</string>
+    <string name="cd_saved">تم الحفظ</string>
+    <string name="cd_couldnt_save">تعذّر الحفظ</string>
+    <string name="cd_in_this_playlist">في قائمة التشغيل هذه</string>
+
+    <string name="settings_section_you">حسابك</string>
+    <string name="settings_section_look_and_feel">المظهر</string>
+    <string name="settings_section_playback_and_content">التشغيل والمحتوى</string>
+    <string name="settings_section_system">النظام</string>
+    <string name="settings_section_about">حول</string>
+    <string name="settings_account">الحساب</string>
+    <string name="settings_appearance">المظهر</string>
+    <string name="settings_player">المشغل</string>
+    <string name="settings_playback_and_quality">التشغيل والجودة</string>
+    <string name="settings_content_and_feeds">المحتوى والخلاصات</string>
+    <string name="settings_subscriptions">الاشتراكات</string>
+    <string name="settings_storage_and_cache">التخزين وذاكرة التخزين المؤقت</string>
+    <string name="settings_notifications">الإشعارات</string>
+    <string name="settings_local_library">المكتبة المحلية</string>
+    <string name="settings_backup_and_restore">النسخ الاحتياطي والاستعادة</string>
+    <string name="settings_advanced">خيارات متقدمة</string>
+    <string name="settings_advanced_value_xiaomi">موصى به على هذا الجهاز</string>
+    <string name="settings_advanced_value_other">إصلاحات المسح والبطارية</string>
+    <string name="settings_version_subtitle">الإصدار %1$s (%2$d)</string>
+
+    <string name="profiles_title">الملفات الشخصية</string>
+    <string name="profiles_description">تُحفظ الاشتراكات والتوصيات المخفية لكل ملف شخصي. قوائم التشغيل والأغاني المفضلة والتنزيلات مشتركة.</string>
+    <string name="add_youtube_account">إضافة حساب YouTube</string>
+    <string name="add_youtube_account_subtitle">تسجيل الدخول بحساب Google آخر</string>
+    <string name="add_device_profile">إضافة ملف شخصي على هذا الجهاز</string>
+    <string name="add_device_profile_subtitle">اشتراكات منفصلة دون حساب</string>
+    <string name="profile_signed_out">غير مسجّل الدخول - انقر لتسجيل الدخول</string>
+    <string name="profile_session_expired">انتهت صلاحية الجلسة - انقر لإعادة الاتصال</string>
+    <string name="profile_on_this_device">على هذا الجهاز</string>
+    <string name="profile_youtube_account">حساب YouTube</string>
+    <string name="cd_active_profile">الملف الشخصي النشط</string>
+    <string name="cd_remove_profile">إزالة %1$s</string>
+    <string name="new_profile_dialog_title">ملف شخصي جديد على هذا الجهاز</string>
+    <string name="sign_out_confirm_title">تسجيل الخروج من %1$s؟</string>
+    <string name="remove_profile_confirm_title">إزالة %1$s؟</string>
+    <string name="sign_out">تسجيل الخروج</string>
+    <string name="remove">إزالة</string>
+
+    <string name="library_empty_title">مكتبتك فارغة</string>
+    <string name="library_empty_subtitle">الأغاني التي تنزّلها أو تعجبك ستظهر هنا</string>
+    <string name="library_create_playlist_hint">أنشئ واحدة بزر + في الأسفل</string>
+    <string name="fab_downloads">التنزيلات</string>
+    <string name="fab_listening_history">سجل الاستماع</string>
+    <string name="fab_statistics">الإحصاءات</string>
+    <string name="cd_listening_stats">إحصاءات الاستماع</string>
+    <string name="recently_played">شوهدت حديثًا</string>
+    <string name="liked_songs">الأغاني المفضلة</string>
+    <string name="no_artists_yet">لا يوجد فنانون بعد</string>
+    <string name="no_artists_yet_subtitle">سيظهر هنا فنانو أغانيك</string>
+    <string name="no_albums_yet">لا توجد ألبومات بعد</string>
+    <string name="no_albums_yet_subtitle">ستظهر هنا ألبومات أغانيك</string>
+
+    <plurals name="n_songs">
+        <item quantity="zero">%1$d أغنية</item>
+        <item quantity="one">أغنية واحدة (%1$d)</item>
+        <item quantity="two">أغنيتان (%1$d)</item>
+        <item quantity="few">%1$d أغنيات</item>
+        <item quantity="many">%1$d أغنية</item>
+        <item quantity="other">%1$d أغنية</item>
+    </plurals>
+    <plurals name="n_playlists">
+        <item quantity="zero">%1$d قائمة تشغيل</item>
+        <item quantity="one">قائمة تشغيل واحدة (%1$d)</item>
+        <item quantity="two">قائمتا تشغيل (%1$d)</item>
+        <item quantity="few">%1$d قوائم تشغيل</item>
+        <item quantity="many">%1$d قائمة تشغيل</item>
+        <item quantity="other">%1$d قائمة تشغيل</item>
+    </plurals>
+</resources>

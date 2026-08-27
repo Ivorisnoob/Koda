@@ -1,0 +1,193 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Koda</string>
+    <string name="now_playing_channel_name">Redă acum</string>
+    <string name="video_playback_channel_name">Redare video</string>
+
+    <string name="undo">Anulare</string>
+    <string name="action_cancel">Anulează</string>
+    <string name="action_done">Gata</string>
+    <string name="action_create">Creează</string>
+    <string name="action_save">Salvează</string>
+    <string name="action_delete">Șterge</string>
+    <string name="action_edit">Editează</string>
+    <string name="action_share">Distribuie</string>
+    <string name="action_retry">Încearcă din nou</string>
+    <string name="action_see_all">Vezi tot</string>
+    <string name="action_play_all">Redă tot</string>
+    <string name="action_show_more">Afișează mai mult</string>
+    <string name="action_try_again">Încearcă din nou</string>
+    <string name="action_open_settings">Deschide setările</string>
+    <string name="action_clear_all">Șterge tot</string>
+    <string name="action_new_playlist">Playlist nou</string>
+    <string name="action_grant_permission">Acordă permisiunea</string>
+    <string name="unknown_artist">Artist necunoscut</string>
+    <string name="untitled_song">Piesă fără titlu</string>
+    <string name="label_playlist">Playlist</string>
+
+    <string name="tab_home">Acasă</string>
+    <string name="tab_search">Caută</string>
+    <string name="tab_subs">Abonamente</string>
+    <string name="tab_library">Bibliotecă</string>
+
+    <string name="local_only_title">Modul Doar local este activat</string>
+    <string name="local_only_default_subtitle">Această secțiune are nevoie de internet. Dezactivează modul Doar local din Setări pentru a o folosi.</string>
+    <string name="local_only_video_mode_subtitle">Modul video are nevoie de internet. Dezactivează modul Doar local din Setări pentru a viziona videoclipuri.</string>
+    <string name="local_only_video_search_subtitle">Căutarea de videoclipuri are nevoie de internet. Dezactivează modul Doar local din Setări pentru a căuta videoclipuri.</string>
+    <string name="local_only_subscriptions_subtitle">Abonamentele au nevoie de internet. Dezactivează modul Doar local din Setări pentru a le vedea.</string>
+    <string name="local_only_video_library_subtitle">Videoteca are nevoie de internet. Dezactivează modul Doar local din Setări pentru a o vedea.</string>
+    <string name="local_only_update_subtitle">Verificarea actualizărilor are nevoie de internet. Dezactivează modul Doar local din Setări pentru a verifica actualizările.</string>
+
+    <string name="crash_dialog_title">Koda s-a oprit neașteptat data trecută</string>
+    <string name="crash_dialog_message">Ceva nu a mers în sesiunea anterioară. Poți trimite un raport de eroare cu detaliile - nimic nu părăsește dispozitivul tău dacă nu alegi să îl partajezi.</string>
+    <string name="crash_dialog_view_report">Vezi și raportează</string>
+    <string name="crash_dialog_not_now">Nu acum</string>
+
+    <string name="permission_required_title">Este necesară permisiunea pentru a încărca melodiile</string>
+
+    <string name="home_section_recent_albums">Albume recente</string>
+    <string name="home_section_jump_back_in">Continuă ascultarea</string>
+    <string name="your_mix_line1">Mixul</string>
+    <string name="your_mix_line2">tău</string>
+    <string name="update_badge_version">v%1$s</string>
+    <string name="artists_joined">%1$s, %2$s</string>
+    <string name="cd_profile">Profil</string>
+    <string name="cd_downloads">Descărcări</string>
+    <string name="cd_settings">Setări</string>
+    <string name="cd_play">Redă</string>
+    <string name="cd_pause">Pauză</string>
+    <string name="cd_next">Următoarea</string>
+    <string name="cd_album_art">Coperta albumului</string>
+    <string name="cd_show_all">Afișează tot: %1$s</string>
+
+    <string name="spotlight_quick_picks">Selecții rapide</string>
+    <string name="spotlight_your_playlists">Playlisturile tale</string>
+    <string name="spotlight_from_your_library">Din biblioteca ta</string>
+    <string name="spotlight_caption_liked">Din melodiile care îți plac</string>
+    <string name="spotlight_caption_recent">Din ce ai ascultat recent</string>
+    <string name="shortcut_liked_songs">Melodiile preferate</string>
+    <string name="filter_all">Toate</string>
+    <string name="filter_liked">Cu plăcere</string>
+    <string name="filter_recent">Recente</string>
+    <string name="filter_playlists">Playlisturi</string>
+    <string name="spotlight_empty_no_liked">Nicio melodie cu plăcere încă</string>
+    <string name="spotlight_empty_no_recent">Nimic redat încă</string>
+    <string name="spotlight_empty_no_playlists">Nicio playlist încă</string>
+    <string name="spotlight_empty_generic">Nimic de afișat încă</string>
+    <string name="spotlight_hint_liked">Melodiile care îți plac se vor aduna aici.</string>
+    <string name="spotlight_hint_playlists">Playlisturile pe care le creezi sau salvezi apar aici.</string>
+    <string name="spotlight_hint_all">Redă ceva și pagina ta principală se va umple.</string>
+
+    <string name="sleep_timer_title">Temporizator de somn</string>
+    <string name="sleep_timer_status_track">Această piesă</string>
+    <string name="sleep_timer_detail_track">Redarea se oprește când se termină melodia curentă</string>
+    <string name="sleep_timer_detail_duration">Redarea se estompează și se pune pe pauză când temporizatorul expiră</string>
+    <string name="minutes_short">%1$d min</string>
+    <string name="sleep_timer_end_of_track">Sfârșitul acestei piese</string>
+    <string name="sleep_timer_turn_off">Dezactivează</string>
+
+    <string name="cd_switch_to_music">Comută la modul muzică</string>
+    <string name="cd_switch_to_video">Comută la modul video</string>
+    <string name="cd_drag_to_reorder">Trage pentru a reordona</string>
+    <string name="cd_favorite">Favorit</string>
+    <string name="cd_clear_search">Golește căutarea</string>
+    <string name="queue_removed_snackbar">%1$s a fost eliminat</string>
+
+    <string name="song_options_play_next">Redă următoarea</string>
+    <string name="song_options_play_next_subtitle">Chiar după această piesă</string>
+    <string name="song_options_add_to_queue">Adaugă la coadă</string>
+    <string name="song_options_add_to_queue_subtitle">La final</string>
+    <string name="song_options_add_to_playlist">Adaugă într-un playlist</string>
+    <string name="song_options_remove_from_liked">Elimină dintre favorite</string>
+    <string name="song_options_like">Îmi place</string>
+    <string name="song_options_download">Descarcă</string>
+    <string name="song_options_download_subtitle">Păstrează pe acest dispozitiv</string>
+    <string name="song_options_downloaded">Descărcată</string>
+    <string name="song_options_go_to_artist">Mergi la %1$s</string>
+
+    <string name="add_to_playlist_title">Adaugă în playlist</string>
+    <string name="new_playlist_label">Playlist nou</string>
+    <string name="name_label">Nume</string>
+    <string name="description_optional_label">Descriere (opțional)</string>
+
+    <string name="video_options_watch_later">Vizionează mai târziu</string>
+    <string name="video_options_kept_on_device">Păstrat pe acest dispozitiv</string>
+    <string name="video_options_save_to_playlist">Salvează în playlist</string>
+    <string name="video_options_download">Descarcă</string>
+    <string name="video_options_go_to_channel">Mergi la canal</string>
+    <string name="video_options_share">Distribuie</string>
+    <string name="video_options_share_chooser">Distribuie videoclipul</string>
+    <string name="video_options_not_interested">Nu mă interesează</string>
+    <string name="video_options_dont_recommend_channel">Nu recomanda acest canal</string>
+    <string name="video_options_dont_recommend_channel_name">Nu recomanda %1$s</string>
+    <string name="cd_back">Înapoi</string>
+    <string name="search_playlists_placeholder">Caută playlisturi</string>
+    <string name="no_playlist_matches">Niciun playlist nu se potrivește cu „%1$s”</string>
+    <string name="no_playlists_yet_hint">Încă niciun playlist. Creează unul și acest videoclip va ajunge direct în el.</string>
+    <string name="cd_saved">Salvat</string>
+    <string name="cd_couldnt_save">Nu s-a putut salva</string>
+    <string name="cd_in_this_playlist">E deja în playlistul acesta</string>
+
+    <string name="settings_section_you">Tu</string>
+    <string name="settings_section_look_and_feel">Aspect</string>
+    <string name="settings_section_playback_and_content">Redare și conținut</string>
+    <string name="settings_section_system">Sistem</string>
+    <string name="settings_section_about">Despre</string>
+    <string name="settings_account">Cont</string>
+    <string name="settings_appearance">Aspect</string>
+    <string name="settings_player">Player</string>
+    <string name="settings_playback_and_quality">Redare și calitate</string>
+    <string name="settings_content_and_feeds">Conținut și fluxuri</string>
+    <string name="settings_subscriptions">Abonamente</string>
+    <string name="settings_storage_and_cache">Stocare și cache</string>
+    <string name="settings_notifications">Notificări</string>
+    <string name="settings_local_library">Bibliotecă locală</string>
+    <string name="settings_backup_and_restore">Copiere de rezervă și restaurare</string>
+    <string name="settings_advanced">Avansate</string>
+    <string name="settings_advanced_value_xiaomi">Recomandate pe acest dispozitiv</string>
+    <string name="settings_advanced_value_other">Corecții de scanare și baterie</string>
+    <string name="settings_version_subtitle">Versiunea %1$s (%2$d)</string>
+
+    <string name="profiles_title">Profile</string>
+    <string name="profiles_description">Abonamentele și recomandările ascunse sunt păstrate per profil. Playlisturile, melodiile favorite și descărcările sunt comune.</string>
+    <string name="add_youtube_account">Adaugă cont YouTube</string>
+    <string name="add_youtube_account_subtitle">Autentifică-te cu alt cont Google</string>
+    <string name="add_device_profile">Adaugă profil pe acest dispozitiv</string>
+    <string name="add_device_profile_subtitle">Abonamente separate, fără cont</string>
+    <string name="profile_signed_out">Delogat - atinge pentru autentificare</string>
+    <string name="profile_session_expired">Sesiunea a expirat - atinge pentru reconectare</string>
+    <string name="profile_on_this_device">Pe acest dispozitiv</string>
+    <string name="profile_youtube_account">Cont YouTube</string>
+    <string name="cd_active_profile">Profil activ</string>
+    <string name="cd_remove_profile">Elimină %1$s</string>
+    <string name="new_profile_dialog_title">Profil nou pe acest dispozitiv</string>
+    <string name="sign_out_confirm_title">Deconectezi %1$s?</string>
+    <string name="remove_profile_confirm_title">Elimini %1$s?</string>
+    <string name="sign_out">Deconectare</string>
+    <string name="remove">Elimină</string>
+
+    <string name="library_empty_title">Biblioteca ta e goală</string>
+    <string name="library_empty_subtitle">Melodiile descărcate sau cele cu plăcere vor apărea aici</string>
+    <string name="library_create_playlist_hint">Creează unul cu butonul + de mai jos</string>
+    <string name="fab_downloads">Descărcări</string>
+    <string name="fab_listening_history">Istoricul ascultării</string>
+    <string name="fab_statistics">Statistici</string>
+    <string name="cd_listening_stats">Statistici de ascultare</string>
+    <string name="recently_played">Redate recent</string>
+    <string name="liked_songs">Melodii cu plăcere</string>
+    <string name="no_artists_yet">Niciun artist încă</string>
+    <string name="no_artists_yet_subtitle">Artiștii din melodii vor apărea aici</string>
+    <string name="no_albums_yet">Niciun album încă</string>
+    <string name="no_albums_yet_subtitle">Albumele din melodii vor apărea aici</string>
+
+    <plurals name="n_songs">
+        <item quantity="one">o melodie (%1$d)</item>
+        <item quantity="few">%1$d melodii</item>
+        <item quantity="other">%1$d de melodii</item>
+    </plurals>
+    <plurals name="n_playlists">
+        <item quantity="one">un playlist (%1$d)</item>
+        <item quantity="few">%1$d playlisturi</item>
+        <item quantity="other">%1$d de playlisturi</item>
+    </plurals>
+</resources>

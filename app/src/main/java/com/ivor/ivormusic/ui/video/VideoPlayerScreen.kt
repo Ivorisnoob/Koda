@@ -1,4 +1,6 @@
 package com.ivor.ivormusic.ui.video
+import androidx.compose.ui.res.stringResource
+import com.ivor.ivormusic.R
 
 import android.app.Activity
 import android.content.Context
@@ -67,6 +69,8 @@ import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material.icons.outlined.ThumbDown
 import androidx.compose.material.icons.outlined.ThumbUp
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Cast
+import androidx.compose.material.icons.rounded.CastConnected
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ClosedCaption
 import androidx.compose.material.icons.rounded.ClosedCaptionOff
@@ -309,6 +313,11 @@ fun FullscreenPlayerContent(
     onOpenChapters: () -> Unit = {},
     captionsActive: Boolean = false,
     onCaptionsClick: () -> Unit = {},
+    /** True while playback is on a Chromecast; the local surface shows a card. */
+    casting: Boolean = false,
+    castDeviceName: String? = null,
+    castingArtworkUrl: String? = null,
+    onCastClick: () -> Unit = {},
     captionCues: List<VttCue> = emptyList(),
     captionTextSize: Float = CAPTION_TEXT_SCALE_DEFAULT,
     captionTextColor: CaptionTextColor = CaptionTextColor.WHITE,
@@ -354,6 +363,21 @@ fun FullscreenPlayerContent(
     // moving frame; everything secondary is in Playback settings.
     val topBarActions: @Composable RowScope.() -> Unit = {
         FilledTonalIconButton(
+            onClick = onCastClick,
+            colors = IconButtonDefaults.filledTonalIconButtonColors(
+                containerColor = if (casting) MaterialTheme.colorScheme.primary else Color.Black.copy(0.5f),
+                contentColor = if (casting) MaterialTheme.colorScheme.onPrimary else Color.White
+            ),
+            shapes = stableShapes
+        ) {
+            Icon(
+                if (casting) Icons.Rounded.CastConnected else Icons.Rounded.Cast,
+                contentDescription =
+                    if (casting) "Connected to $castDeviceName" else "Cast"
+            )
+        }
+
+        FilledTonalIconButton(
             onClick = onCaptionsClick,
             colors = IconButtonDefaults.filledTonalIconButtonColors(
                 containerColor = if (captionsActive) MaterialTheme.colorScheme.primary else Color.Black.copy(0.5f),
@@ -363,7 +387,7 @@ fun FullscreenPlayerContent(
         ) {
             Icon(
                 if (captionsActive) Icons.Rounded.ClosedCaption else Icons.Rounded.ClosedCaptionOff,
-                contentDescription = "Captions"
+                contentDescription = stringResource(R.string.vp_captions)
             )
         }
 
@@ -451,6 +475,18 @@ fun FullscreenPlayerContent(
             // Hand the surface back before this view is destroyed - the same
             // ExoPlayer is also rendered by the mini and PiP PlayerViews.
             onRelease = { playerView -> playerView.player = null },
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(end = chatInsetAnimated)
+        )
+
+        // While casting, nothing decodes into this surface - the receiver owns
+        // the picture. A card saying so beats a black rectangle that looks
+        // like a broken player.
+        CastingOverlay(
+            visible = casting,
+            deviceName = castDeviceName,
+            artworkUrl = castingArtworkUrl,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(end = chatInsetAnimated)
@@ -558,7 +594,7 @@ fun FullscreenPlayerContent(
                     if (showQueueControls) {
                         QueueSkipButton(
                             icon = Icons.Rounded.SkipPrevious,
-                            contentDescription = "Previous in playlist",
+                            contentDescription = stringResource(R.string.cd_previous),
                             enabled = hasPreviousInQueue,
                             onClick = onPreviousInQueue,
                             size = 54.dp
@@ -566,7 +602,7 @@ fun FullscreenPlayerContent(
                     } else {
                         PlayerIconButton(
                             icon = Icons.Rounded.Replay10,
-                            contentDescription = "Rewind 10 seconds",
+                            contentDescription = stringResource(R.string.vp_rewind),
                             onClick = onSeekBackward
                         )
                     }
@@ -579,7 +615,7 @@ fun FullscreenPlayerContent(
                     if (showQueueControls) {
                         QueueSkipButton(
                             icon = Icons.Rounded.SkipNext,
-                            contentDescription = "Next in playlist",
+                            contentDescription = stringResource(R.string.cd_next),
                             enabled = hasNextInQueue,
                             onClick = onNextInQueue,
                             size = 54.dp
@@ -587,7 +623,7 @@ fun FullscreenPlayerContent(
                     } else {
                         PlayerIconButton(
                             icon = Icons.Rounded.Forward10,
-                            contentDescription = "Forward 10 seconds",
+                            contentDescription = stringResource(R.string.vp_forward),
                             onClick = onSeekForward
                         )
                     }
@@ -695,6 +731,11 @@ fun PortraitPlayerContent(
     onOpenChapters: () -> Unit = {},
     captionsActive: Boolean = false,
     onCaptionsClick: () -> Unit = {},
+    /** True while playback is on a Chromecast; the local surface shows a card. */
+    casting: Boolean = false,
+    castDeviceName: String? = null,
+    castingArtworkUrl: String? = null,
+    onCastClick: () -> Unit = {},
     captionCues: List<VttCue> = emptyList(),
     captionTextSize: Float = CAPTION_TEXT_SCALE_DEFAULT,
     captionTextColor: CaptionTextColor = CaptionTextColor.WHITE,
@@ -774,6 +815,15 @@ fun PortraitPlayerContent(
             modifier = Modifier.fillMaxSize()
         )
 
+        // While casting, nothing decodes into this surface - see the
+        // fullscreen variant for why a card beats a black rectangle.
+        CastingOverlay(
+            visible = casting,
+            deviceName = castDeviceName,
+            artworkUrl = castingArtworkUrl,
+            modifier = Modifier.fillMaxSize()
+        )
+
         CaptionOverlay(
             cues = captionCues,
             player = exoPlayer,
@@ -822,6 +872,20 @@ fun PortraitPlayerContent(
                     
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         FilledTonalIconButton(
+                            onClick = onCastClick,
+                            colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                containerColor = if (casting) MaterialTheme.colorScheme.primary else Color.Black.copy(0.5f),
+                                contentColor = if (casting) MaterialTheme.colorScheme.onPrimary else Color.White
+                            ),
+                            shapes = stableShapes
+                        ) {
+                            Icon(
+                                if (casting) Icons.Rounded.CastConnected else Icons.Rounded.Cast,
+                                contentDescription =
+                                    if (casting) "Connected to $castDeviceName" else "Cast"
+                            )
+                        }
+                        FilledTonalIconButton(
                             onClick = onCaptionsClick,
                             colors = IconButtonDefaults.filledTonalIconButtonColors(
                                 containerColor = if (captionsActive) MaterialTheme.colorScheme.primary else Color.Black.copy(0.5f),
@@ -831,7 +895,7 @@ fun PortraitPlayerContent(
                         ) {
                             Icon(
                                 if (captionsActive) Icons.Rounded.ClosedCaption else Icons.Rounded.ClosedCaptionOff,
-                                contentDescription = "Captions"
+                                contentDescription = stringResource(R.string.vp_captions)
                             )
                         }
                         FilledIconButton(
@@ -866,7 +930,7 @@ fun PortraitPlayerContent(
                     if (showQueueControls) {
                         QueueSkipButton(
                             icon = Icons.Rounded.SkipPrevious,
-                            contentDescription = "Previous in playlist",
+                            contentDescription = stringResource(R.string.cd_previous),
                             enabled = hasPreviousInQueue,
                             onClick = onPreviousInQueue
                         )
@@ -875,7 +939,7 @@ fun PortraitPlayerContent(
                     if (showQueueControls) {
                         QueueSkipButton(
                             icon = Icons.Rounded.SkipNext,
-                            contentDescription = "Next in playlist",
+                            contentDescription = stringResource(R.string.cd_next),
                             enabled = hasNextInQueue,
                             onClick = onNextInQueue
                         )
@@ -987,7 +1051,7 @@ internal fun LiveEdgeChip(
                     )
             )
             Text(
-                text = "LIVE",
+                text = stringResource(R.string.badge_live),
                 color = if (atLiveEdge) contentTint else contentTint.copy(alpha = 0.6f),
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.Bold
@@ -1418,7 +1482,7 @@ private fun ChapterTitleChip(
             )
             Icon(
                 Icons.Rounded.ExpandMore,
-                contentDescription = "Chapters",
+                contentDescription = stringResource(R.string.vp_chapters),
                 tint = Color.White,
                 modifier = Modifier.size(16.dp)
             )
@@ -1588,7 +1652,7 @@ internal fun PlayerGestureSurface(
     // Both fullscreen swipes commit while the finger is still down and have no
     // dragged preview behind them, so a tick is the only thing that tells the
     // user the gesture took before the screen turns.
-    val haptics = LocalHapticFeedback.current
+    val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
 
     // Hide the badge a short while after the last tap. Re-runs (and so resets
     // the timer) every double tap because it is keyed on `pulse`.
@@ -1633,12 +1697,16 @@ internal fun PlayerGestureSurface(
     // The brightness gesture overrides the window brightness: re-apply the
     // level the user last dialed in so every fullscreen video looks the same,
     // and hand control back to the system when the surface goes away (the rest
-    // of the app must not stay stuck at the video's brightness).
+    // of the app must not stay stuck at the video's brightness). The
+    // remember setting turns the carry-over off; a fresh pref read rather than
+    // the flow, because this effect only runs on fullscreen entry anyway.
     if (fullscreenGesturesEnabled) {
         DisposableEffect(activity) {
             activity?.let { act ->
                 val saved = themePreferences.getVideoBrightness()
-                if (saved != ThemePreferences.VIDEO_BRIGHTNESS_UNSET) {
+                if (themePreferences.getRememberVideoBrightness() &&
+                    saved != ThemePreferences.VIDEO_BRIGHTNESS_UNSET
+                ) {
                     setWindowBrightness(act, saved.coerceAtLeast(0.01f))
                 }
             }
@@ -1874,8 +1942,11 @@ internal fun PlayerGestureSurface(
                             // Persist once the finger lifts, not on every frame of
                             // the drag. Volume is deliberately not stored: it is
                             // the system STREAM_MUSIC level, which already carries
-                            // over on its own.
-                            if (mode == 1 && leftSide) {
+                            // over on its own. The remember setting decides
+                            // whether the level survives to the next video.
+                            if (mode == 1 && leftSide &&
+                                themePreferences.getRememberVideoBrightness()
+                            ) {
                                 themePreferences.setVideoBrightness(level)
                             }
                         }
@@ -2108,7 +2179,7 @@ fun VideoInfoSection(
                 )
             } else if (isOffline) {
                 Text(
-                    text = "Available offline",
+                    text = stringResource(R.string.vh_available_offline),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.primary
                 )
@@ -2208,7 +2279,7 @@ fun VideoInfoSection(
                             ButtonDefaults.buttonColors()
                         }
                     ) {
-                        Text(if (isSubscribed) "Subscribed" else "Subscribe")
+                        Text(if (isSubscribed) stringResource(R.string.subscribed) else stringResource(R.string.subscribe))
                     }
                 },
                 colors = ListItemDefaults.colors(
@@ -2242,7 +2313,7 @@ fun VideoInfoSection(
                         tint = MaterialTheme.colorScheme.primary
                     )
                     Text(
-                        text = "Live chat",
+                        text = stringResource(R.string.vp_live_chat),
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.weight(1f)
@@ -2250,7 +2321,7 @@ fun VideoInfoSection(
                     LiveDot()
                     Icon(
                         Icons.Rounded.ExpandMore,
-                        contentDescription = "Open live chat",
+                        contentDescription = stringResource(R.string.vp_open_live_chat),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
@@ -2279,14 +2350,14 @@ fun VideoInfoSection(
                         tint = MaterialTheme.colorScheme.primary
                     )
                     Text(
-                        text = "Comments",
+                        text = stringResource(R.string.cd_comments),
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.weight(1f)
                     )
                     Icon(
                         Icons.Rounded.ExpandMore,
-                        contentDescription = "Open comments",
+                        contentDescription = stringResource(R.string.cd_comments),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
@@ -2302,7 +2373,7 @@ fun VideoInfoSection(
             ) {
                 Column(Modifier.padding(16.dp)) {
                     Text(
-                        text = "Description",
+                        text = stringResource(R.string.vp_description),
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
@@ -2349,7 +2420,7 @@ fun VideoInfoSection(
                                 // the whole block, which would now fight the
                                 // links inside the text for the same tap.
                                 Text(
-                                    text = if (isDescriptionExpanded) "Show less" else "Show more",
+                                    text = if (isDescriptionExpanded) stringResource(R.string.vp_show_less) else stringResource(R.string.action_show_more),
                                     style = MaterialTheme.typography.labelLarge,
                                     color = MaterialTheme.colorScheme.primary,
                                     fontWeight = FontWeight.Bold,
@@ -2372,7 +2443,7 @@ fun VideoInfoSection(
                     // and inside a playlist that promise belongs to the queue.
                     // These are then just recommendations, and saying so is the
                     // difference between the header being true and being wrong.
-                    text = if (queue != null) "Related videos" else "Up Next",
+                    text = if (queue != null) stringResource(R.string.vp_related_videos) else stringResource(R.string.ps_up_next),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
@@ -2555,7 +2626,7 @@ private fun PlayingFromPlaylistCard(
             }
             Icon(
                 Icons.Rounded.ExpandMore,
-                contentDescription = "Open the playlist queue",
+                contentDescription = stringResource(R.string.vp_open_queue),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
@@ -2580,12 +2651,12 @@ private fun SaveVideoButton(onClick: () -> Unit) {
         ) {
             Icon(
                 Icons.Rounded.WatchLater,
-                contentDescription = "Save to Watch Later",
+                contentDescription = stringResource(R.string.video_options_watch_later),
                 modifier = Modifier.size(20.dp),
                 tint = MaterialTheme.colorScheme.onSurface
             )
             Text(
-                text = "Save",
+                text = stringResource(R.string.action_save),
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurface
@@ -2649,9 +2720,9 @@ private fun DownloadVideoButton(
             )
             Text(
                 text = when {
-                    downloaded -> "Downloaded"
+                    downloaded -> stringResource(R.string.song_options_downloaded)
                     inFlight -> "${((progress?.progress ?: 0f) * 100).toInt()}%"
-                    else -> "Download"
+                    else -> stringResource(R.string.song_options_download)
                 },
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.SemiBold,
@@ -2676,7 +2747,7 @@ private fun ShareVideoButton(video: VideoItem) {
                 type = "text/plain"
                 putExtra(Intent.EXTRA_TEXT, "https://youtube.com/watch?v=${video.videoId}")
             }
-            context.startActivity(Intent.createChooser(send, "Share video"))
+            context.startActivity(Intent.createChooser(send, context.getString(R.string.video_options_share_chooser)))
         }
     ) {
         Row(
@@ -2686,12 +2757,12 @@ private fun ShareVideoButton(video: VideoItem) {
         ) {
             Icon(
                 Icons.Rounded.Share,
-                contentDescription = "Share",
+                contentDescription = stringResource(R.string.video_options_share),
                 modifier = Modifier.size(20.dp),
                 tint = MaterialTheme.colorScheme.onSurface
             )
             Text(
-                text = "Share",
+                text = stringResource(R.string.video_options_share),
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurface
@@ -2731,7 +2802,7 @@ private fun LikeDislikeBar(
             ) {
                 Icon(
                     imageVector = if (likeStatus == LikeStatus.LIKE) Icons.Rounded.ThumbUp else Icons.Outlined.ThumbUp,
-                    contentDescription = if (likeStatus == LikeStatus.LIKE) "Remove like" else "Like",
+                    contentDescription = if (likeStatus == LikeStatus.LIKE) stringResource(R.string.vp_remove_like) else stringResource(R.string.like),
                     modifier = Modifier.size(20.dp),
                     tint = if (likeStatus == LikeStatus.LIKE) MaterialTheme.colorScheme.primary
                         else MaterialTheme.colorScheme.onSurface
@@ -2764,7 +2835,7 @@ private fun LikeDislikeBar(
             ) {
                 Icon(
                     imageVector = if (likeStatus == LikeStatus.DISLIKE) Icons.Rounded.ThumbDown else Icons.Outlined.ThumbDown,
-                    contentDescription = if (likeStatus == LikeStatus.DISLIKE) "Remove dislike" else "Dislike",
+                    contentDescription = if (likeStatus == LikeStatus.DISLIKE) stringResource(R.string.vp_remove_dislike) else stringResource(R.string.cd_dislike),
                     modifier = Modifier.size(20.dp),
                     tint = if (likeStatus == LikeStatus.DISLIKE) MaterialTheme.colorScheme.primary
                         else MaterialTheme.colorScheme.onSurface
@@ -2852,7 +2923,7 @@ fun ExpressivePlayPauseButton(
                 val iconSize = size * 0.45f
                 Icon(
                     imageVector = if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                    contentDescription = if (isPlaying) "Pause" else "Play",
+                    contentDescription = if (isPlaying) stringResource(R.string.cd_pause) else stringResource(R.string.cd_play),
                     modifier = Modifier.size(iconSize)
                 )
             }
@@ -2880,7 +2951,7 @@ fun ErrorOverlay(message: String, onRetry: (() -> Unit)? = null) {
                 Button(onClick = onRetry) {
                     Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text("Retry")
+                    Text(stringResource(R.string.action_retry))
                 }
             }
         }
@@ -2894,4 +2965,67 @@ private fun formatDuration(millis: Long): String {
     val m = (seconds % 3600) / 60
     val s = seconds % 60
     return if (h > 0) String.format(Locale.US, "%d:%02d:%02d", h, m, s) else String.format(Locale.US, "%d:%02d", m, s)
+}
+
+/**
+ * The card shown over the video surface while playback is on a Chromecast.
+ *
+ * The local player has nothing to render - the receiver owns the picture - and
+ * a bare black box reads as a broken player. The video's own artwork behind a
+ * scrim, with the connected device named, says exactly what is happening and
+ * where it is happening. Fades in over the last local frame so the hand-off
+ * does not flash.
+ */
+@Composable
+private fun CastingOverlay(
+    visible: Boolean,
+    deviceName: String?,
+    artworkUrl: String?,
+    modifier: Modifier = Modifier
+) {
+    AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)),
+        exit = fadeOut(),
+        modifier = modifier
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black),
+            contentAlignment = Alignment.Center
+        ) {
+            artworkUrl?.let { url ->
+                coil.compose.AsyncImage(
+                    model = url,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.62f))
+            )
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.padding(horizontal = 24.dp)
+            ) {
+                Icon(
+                    Icons.Rounded.CastConnected,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(48.dp)
+                )
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    text = if (deviceName != null) "Casting to $deviceName" else "Casting",
+                    color = Color.White,
+                    style = MaterialTheme.typography.titleMedium,
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
+    }
 }

@@ -118,6 +118,11 @@ object AudioProfiler {
                 durationMs = durationMs,
             )
             val rawOutroLead = outroLead(tail.envelope)
+            val trailingSilenceMs = if (endsInDeadAir(tail.envelope)) {
+                probeTrailingSilence(extractor, format, durationMs)
+            } else {
+                0L
+            }
             val phrase = analysePhraseBoundary(
                 rawOutroLeadMs = rawOutroLead,
                 durationMs = durationMs,
@@ -148,6 +153,7 @@ object AudioProfiler {
                 outroKeyPitchClass = outroKey.pitchClass,
                 outroKeyMode = outroKey.mode,
                 outroKeyConfidence = outroKey.confidence,
+                trailingSilenceMs = trailingSilenceMs,
             )
         } catch (e: Exception) {
             KLog.d(TAG, "No profile for $songId: ${e.message}")
@@ -616,6 +622,13 @@ object AudioProfiler {
     private const val MAX_EMPTY_DRAINS = 5
     private const val MIN_BPM = 70f
     private const val MAX_BPM = 180f
+
+    /** How far back the trailing-silence probe may look, and how far it may
+     *  report: AutoMix's silence skip is capped at one minute. */
+    private const val MAX_SILENCE_SCAN_US = 65_000_000L
+    private const val MAX_TRAILING_SILENCE_MS = 60_000L
+    private const val SILENCE_PROBE_STEP_US = 5_000_000L
+    private const val SILENCE_PROBE_SAMPLE_US = 400_000L
     private const val MIN_TEMPO_CONFIDENCE_TO_STORE = 0.12f
     private const val MIN_GRID_CONFIDENCE = 0.28f
     private const val MIN_KEY_CONFIDENCE_TO_STORE = 0.025f
@@ -685,6 +698,61 @@ object AudioProfiler {
         val windowsAfter = tail.size - 1 - i
         if (windowsAfter < 4) return 0
         return windowsAfter.toLong() * WINDOW_MS
+    }
+
+    /**
+     * Whether the track ends in genuine dead air rather than a musical decay.
+     *
+     * The last half-second of the tail envelope must be below the absolute
+     * silence floor - not just quiet relative to the track's own peak, which
+     * is [outroLead]'s test. This is the gate for the more expensive sparse
+     * probe, so it must be cheap and it must not fire on ordinary fade-outs,
+     * whose reverb tails hover around the floor without sitting under it.
+     */
+    private fun endsInDeadAir(tail: FloatArray): Boolean {
+        if (tail.size < 10) return false
+        val finalWindows = tail.takeLast(25)
+        return finalWindows.average() <= SILENCE_RMS
+    }
+
+    /**
+     * How much silence follows the last audible sound, probing backwards.
+     *
+     * The continuous tail decode only sees twenty seconds, but recordings do
+     * carry longer stretches of nothing: hidden-track gaps, minute-long
+     * silence pads. Rather than decoding the whole stretch, sample short
+     * windows at coarse steps walking back from the tail window's start until
+     * something audible turns up or the one-minute budget is spent. Five
+     * seconds of granularity is deliberate - the consumer anchors a transition
+     * to this boundary, and being one step off is inaudible when everything on
+     * both sides of it was silence anyway.
+     */
+    private fun probeTrailingSilence(
+        extractor: MediaExtractor,
+        format: MediaFormat,
+        durationMs: Long,
+    ): Long {
+        val durationUs = durationMs.coerceAtLeast(0L) * 1000L
+        var distanceFromEndUs = TAIL_WINDOW_US
+        while (distanceFromEndUs < MAX_SILENCE_SCAN_US) {
+            distanceFromEndUs += SILENCE_PROBE_STEP_US
+            val sampleStartUs =
+                (durationUs - distanceFromEndUs).coerceAtLeast(0L)
+            val audio = runCatching {
+                decodeAudio(extractor, format, sampleStartUs, SILENCE_PROBE_SAMPLE_US)
+            }.getOrNull()
+            if (audio == null || audio.envelope.isEmpty()) break
+            if (audio.envelope.average() > SILENCE_RMS) {
+                // Audible material lives in this window: the confirmed
+                // silence runs from its end to the end of the track.
+                val confirmedUs = durationUs - sampleStartUs - SILENCE_PROBE_SAMPLE_US
+                return (confirmedUs / 1000L).coerceIn(0L, MAX_TRAILING_SILENCE_MS)
+            }
+        }
+        // Everything probed was silent; report the full scanned stretch.
+        return (MAX_SILENCE_SCAN_US / 1000L)
+            .coerceAtMost(durationMs)
+            .coerceAtMost(MAX_TRAILING_SILENCE_MS)
     }
 
     /**

@@ -1,4 +1,6 @@
 package com.ivor.ivormusic.ui.onboarding
+import androidx.compose.ui.res.stringResource
+import com.ivor.ivormusic.R
 
 import android.Manifest
 import android.content.Intent
@@ -241,7 +243,7 @@ fun OnboardingScreen(
                     exit = fadeOut()
                 ) {
                     TextButton(onClick = onFinish) {
-                        Text("Skip")
+                        Text(stringResource(R.string.ob_skip))
                     }
                 }
             }
@@ -376,7 +378,7 @@ fun OnboardingScreen(
                     contentPadding = PaddingValues(horizontal = 28.dp)
                 ) {
                     Text(
-                        text = if (isLastPage) "Start listening" else "Continue",
+                        text = if (isLastPage) stringResource(R.string.ob_start_listening) else stringResource(R.string.ob_continue),
                         style = MaterialTheme.typography.titleMedium
                     )
                     Spacer(modifier = Modifier.width(8.dp))
@@ -412,14 +414,14 @@ private fun WelcomePage() {
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Text(
-                text = "Welcome to Koda",
+                text = stringResource(R.string.ob_welcome_title),
                 style = MaterialTheme.typography.displaySmall,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface,
                 textAlign = TextAlign.Center
             )
             Text(
-                text = "Music and videos, your local files, and a player that adapts to you. A few quick choices and you are in.",
+                text = stringResource(R.string.ob_welcome_body),
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center
@@ -438,20 +440,20 @@ private fun WelcomePage() {
                 FeatureRow(
                     icon = Icons.Rounded.CloudSync,
                     shape = MaterialShapes.Flower,
-                    title = "Stream anything",
-                    subtitle = "Music and videos powered by YouTube Music"
+                    title = stringResource(R.string.ob_feat_stream_title),
+                    subtitle = stringResource(R.string.ob_feat_stream_sub)
                 )
                 FeatureRow(
                     icon = Icons.Rounded.Folder,
                     shape = MaterialShapes.Circle,
-                    title = "Your local library",
-                    subtitle = "Songs already on this device play right alongside"
+                    title = stringResource(R.string.ob_feat_local_title),
+                    subtitle = stringResource(R.string.ob_feat_local_sub)
                 )
                 FeatureRow(
                     icon = Icons.Rounded.Palette,
                     shape = MaterialShapes.SoftBurst,
-                    title = "Made yours",
-                    subtitle = "Dynamic color, ambient artwork and player styles"
+                    title = stringResource(R.string.ob_feat_custom_title),
+                    subtitle = stringResource(R.string.ob_feat_custom_sub)
                 )
             }
         }
@@ -468,13 +470,13 @@ private fun LibraryPage(
     OnboardingPageScaffold(
         icon = Icons.Rounded.Folder,
         iconShape = MaterialShapes.Circle,
-        title = "Your music",
-        body = "Bring the songs already stored on this device into Home, Search and Library. Skip it if you want a streaming-first setup."
+        title = stringResource(R.string.ob_page_your_music),
+        body = stringResource(R.string.ob_page_your_music_body)
     ) {
         SettingSwitchRow(
             icon = Icons.Rounded.Folder,
-            title = "Scan device audio",
-            subtitle = "Show local songs across the app",
+            title = stringResource(R.string.ob_scan_device_audio),
+            subtitle = stringResource(R.string.ob_scan_device_audio_sub),
             checked = loadLocalSongs,
             onCheckedChange = onLoadLocalSongsToggle
         )
@@ -482,19 +484,19 @@ private fun LibraryPage(
         AnimatedVisibility(visible = loadLocalSongs) {
             PermissionRow(
                 icon = Icons.Rounded.Album,
-                title = "Music access",
+                title = stringResource(R.string.ob_music_access),
                 subtitle = if (storagePermissionGranted) {
-                    "Koda can read your audio library."
+                    stringResource(R.string.ob_audio_access_allowed)
                 } else {
-                    "Needed to find songs on this device."
+                    stringResource(R.string.ob_audio_access_needed)
                 },
                 granted = storagePermissionGranted,
-                actionLabel = "Allow",
+                actionLabel = stringResource(R.string.ob_allow),
                 onAction = onRequestStoragePermission
             )
         }
 
-        HintText("Only your audio files are read. Nothing leaves the device.")
+        HintText(stringResource(R.string.ob_hint_only_audio))
     }
 }
 
@@ -507,8 +509,8 @@ private fun YouTubePage(
     OnboardingPageScaffold(
         icon = Icons.Rounded.CloudSync,
         iconShape = MaterialShapes.Flower,
-        title = "YouTube Music",
-        body = "Connect your account for personalized recommendations, liked songs and playlists. Search and streaming work without it."
+        title = stringResource(R.string.settings_section_youtube_music),
+        body = stringResource(R.string.ob_page_ytmusic_body)
     ) {
         Surface(
             shape = RoundedCornerShape(24.dp),
@@ -542,16 +544,16 @@ private fun YouTubePage(
                     }
                     Column {
                         Text(
-                            text = if (isLoggedIn) "Account connected" else "Not connected",
+                            text = if (isLoggedIn) stringResource(R.string.ob_account_connected) else stringResource(R.string.ob_not_connected),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
                             text = if (isLoggedIn) {
-                                "Personalized recommendations are ready."
+                                stringResource(R.string.ob_recs_ready)
                             } else {
-                                "Optional, and you can sign in later from Settings."
+                                stringResource(R.string.ob_optional_sign_in_later)
                             },
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -567,13 +569,13 @@ private fun YouTubePage(
                             .fillMaxWidth()
                             .height(52.dp)
                     ) {
-                        Text("Connect YouTube Music")
+                        Text(stringResource(R.string.sp_connect_youtube_music))
                     }
                 }
             }
         }
 
-        HintText("Your session is stored securely on this device only.")
+        HintText(stringResource(R.string.ob_hint_session_secure))
     }
 }
 
@@ -589,36 +591,36 @@ private fun VideoModePage(
     OnboardingPageScaffold(
         icon = Icons.Rounded.Videocam,
         iconShape = MaterialShapes.Arch,
-        title = "Video mode",
-        body = "Turn the Home tab into a video feed with an in-app player, mini player and picture-in-picture. You can flip between music and video any time."
+        title = stringResource(R.string.ob_page_video_mode),
+        body = stringResource(R.string.ob_page_video_mode_body)
     ) {
         SettingSwitchRow(
             icon = Icons.Rounded.Videocam,
-            title = "Enable video mode",
-            subtitle = "Video home, video search and watch history",
+            title = stringResource(R.string.ob_enable_video_mode),
+            subtitle = stringResource(R.string.ob_enable_video_mode_sub),
             checked = videoMode,
             onCheckedChange = onVideoModeToggle
         )
 
         SettingSwitchRow(
             icon = Icons.Rounded.ToggleOn,
-            title = "Home screen switch",
-            subtitle = "Quick music/video toggle in the Home top bar",
+            title = stringResource(R.string.ob_home_switch),
+            subtitle = stringResource(R.string.ob_home_switch_sub),
             checked = homeModeToggleEnabled,
             onCheckedChange = onHomeModeToggleEnabledChange
         )
 
         SettingSwitchRow(
             icon = Icons.Rounded.Bolt,
-            title = "Shorts",
-            subtitle = "A Shorts shelf and vertical swipe player in video mode",
+            title = stringResource(R.string.sp_shorts),
+            subtitle = stringResource(R.string.ob_shorts_sub),
             checked = shortsEnabled,
             onCheckedChange = onShortsEnabledToggle
         )
 
         ShortsWarningCard()
 
-        HintText("Off keeps a cleaner, music-first layout. The video player stays available either way.")
+        HintText(stringResource(R.string.ob_off_hint))
     }
 }
 
@@ -669,15 +671,18 @@ private fun LookAndFeelPage(
     OnboardingPageScaffold(
         icon = Icons.Rounded.Palette,
         iconShape = MaterialShapes.Diamond,
-        title = "Look and feel",
-        body = "Koda uses Material You dynamic color. Choose how it should behave on this device."
+        title = stringResource(R.string.ob_page_look_and_feel),
+        body = stringResource(R.string.ob_look_and_feel_body)
     ) {
-        ChoiceCard(title = "Theme") {
+        val systemLabel = stringResource(R.string.theme_system)
+        val darkLabel = stringResource(R.string.theme_dark)
+        val lightLabel = stringResource(R.string.theme_light)
+        ChoiceCard(title = stringResource(R.string.sp_theme)) {
             ConnectedChoiceGroup(
                 options = listOf(
-                    ThemeMode.SYSTEM to "System",
-                    ThemeMode.DARK to "Dark",
-                    ThemeMode.LIGHT to "Light"
+                    ThemeMode.SYSTEM to systemLabel,
+                    ThemeMode.DARK to darkLabel,
+                    ThemeMode.LIGHT to lightLabel
                 ),
                 selected = currentThemeMode,
                 onSelect = onThemeModeChange
@@ -686,17 +691,15 @@ private fun LookAndFeelPage(
 
         SettingSwitchRow(
             icon = Icons.Rounded.Wallpaper,
-            title = "Ambient artwork",
-            subtitle = "Let album art color the player background",
+            title = stringResource(R.string.ob_ambient_artwork),
+            subtitle = stringResource(R.string.ob_ambient_artwork_sub),
             checked = ambientBackground,
             onCheckedChange = onAmbientBackgroundToggle
         )
 
-        ChoiceCard(title = "Home screen") {
+        ChoiceCard(title = stringResource(R.string.ob_home_screen_card)) {
             Text(
-                text = "Classic leads with one big hero. Spotlight opens with a grid " +
-                    "of the things you reach for most, then quick picks and " +
-                    "shelves. Either can be changed later in Settings.",
+                text = stringResource(R.string.ob_home_screen_body),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -707,10 +710,9 @@ private fun LookAndFeelPage(
             )
         }
 
-        ChoiceCard(title = "Player style") {
+        ChoiceCard(title = stringResource(R.string.ob_player_style_card)) {
             Text(
-                text = "Pick the player you want. You can change it any time in " +
-                    "Settings, or by long-pressing the artwork while a song plays.",
+                text = stringResource(R.string.ob_player_style_body),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -735,34 +737,34 @@ private fun FinalTouchesPage(
     OnboardingPageScaffold(
         icon = Icons.Rounded.Tune,
         iconShape = MaterialShapes.Pill,
-        title = "Final touches",
-        body = "A few optional extras. All of this lives in Settings if you change your mind later."
+        title = stringResource(R.string.ob_page_final_touches),
+        body = stringResource(R.string.ob_page_final_touches_body)
     ) {
         SettingSwitchRow(
             icon = Icons.Rounded.GraphicEq,
-            title = "Crossfade",
-            subtitle = "Blend songs into each other during playback",
+            title = stringResource(R.string.ob_crossfade),
+            subtitle = stringResource(R.string.ob_crossfade_sub),
             checked = crossfadeEnabled,
             onCheckedChange = onCrossfadeEnabledToggle
         )
 
         PermissionRow(
             icon = Icons.Rounded.NotificationsActive,
-            title = "Playback notifications",
+            title = stringResource(R.string.ob_playback_notifications),
             subtitle = if (notificationPermissionGranted) {
-                "Lock screen controls are ready."
+                stringResource(R.string.ob_notif_ready)
             } else {
-                "Enables lock screen and background controls."
+                stringResource(R.string.ob_notif_enable)
             },
             granted = notificationPermissionGranted,
-            actionLabel = "Enable",
+            actionLabel = stringResource(R.string.ob_enable),
             onAction = onRequestNotificationPermission
         )
 
         SettingSwitchRow(
             icon = Icons.Rounded.PhoneAndroid,
-            title = "High compatibility scan",
-            subtitle = "Only for devices that hide music from the system index, like some HyperOS builds",
+            title = stringResource(R.string.ob_high_compat_scan),
+            subtitle = stringResource(R.string.ob_high_compat_scan_sub),
             checked = manualScanEnabled,
             onCheckedChange = onManualScanEnabledToggle
         )
@@ -803,13 +805,13 @@ private fun AppTimeLimitPage() {
     OnboardingPageScaffold(
         icon = Icons.Rounded.Bedtime,
         iconShape = MaterialShapes.SoftBurst,
-        title = "Daily time limit",
-        body = "Completely optional, and off by default. Decide how much Koda you get each day - when it's used up, the app locks until midnight."
+        title = stringResource(R.string.ob_page_daily_limit),
+        body = stringResource(R.string.ob_page_daily_limit_body)
     ) {
         SettingSwitchRow(
             icon = Icons.Rounded.Bedtime,
-            title = "Limit my listening",
-            subtitle = "Locks Koda once today's budget runs out",
+            title = stringResource(R.string.ob_limit_my_listening),
+            subtitle = stringResource(R.string.ob_limit_my_listening_sub),
             checked = enabled,
             onCheckedChange = { on ->
                 enabled = on
@@ -821,7 +823,7 @@ private fun AppTimeLimitPage() {
         AnimatedVisibility(visible = enabled) {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
-                    text = "Every day:",
+                    text = stringResource(R.string.ob_every_day),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -839,7 +841,7 @@ private fun AppTimeLimitPage() {
                     }
                 }
                 Text(
-                    text = "Different hours per weekday can be set later in Settings > Advanced.",
+                    text = stringResource(R.string.ob_hint_weekday_hours),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -1108,7 +1110,7 @@ private fun PermissionRow(
             if (granted) {
                 Icon(
                     imageVector = Icons.Rounded.CheckCircle,
-                    contentDescription = "Granted",
+                    contentDescription = stringResource(R.string.cd_granted),
                     tint = MaterialTheme.colorScheme.primary
                 )
             } else {

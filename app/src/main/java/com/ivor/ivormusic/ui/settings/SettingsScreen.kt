@@ -1,4 +1,6 @@
 package com.ivor.ivormusic.ui.settings
+import androidx.compose.ui.res.stringResource
+import com.ivor.ivormusic.R
 
 import android.content.Intent
 import android.net.Uri
@@ -25,6 +27,7 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
+import androidx.annotation.StringRes
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -69,6 +72,7 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Contrast
 import androidx.compose.material.icons.rounded.Cookie
 import androidx.compose.material.icons.rounded.DarkMode
+import androidx.compose.material.icons.rounded.DirectionsCar
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material.icons.rounded.Folder
@@ -121,9 +125,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -133,6 +134,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
@@ -321,10 +323,18 @@ fun SettingsScreen(
     onCrossfadeDurationChange: (Int) -> Unit,
     normalizeVolume: Boolean,
     onNormalizeVolumeToggle: (Boolean) -> Unit,
+    rememberVideoBrightness: Boolean,
+    onRememberVideoBrightnessToggle: (Boolean) -> Unit,
+    hapticsLevel: String,
+    onHapticsLevelChange: (String) -> Unit,
+    uploadNotificationsEnabled: Boolean,
+    onUploadNotificationsToggle: (Boolean) -> Unit,
     oemFixEnabled: Boolean,
     onOemFixEnabledToggle: (Boolean) -> Unit,
     manualScanEnabled: Boolean,
     onManualScanEnabledToggle: (Boolean) -> Unit,
+    privateDownloadsEnabled: Boolean,
+    onPrivateDownloadsEnabledToggle: (Boolean) -> Unit,
     onNavigateToUpdate: () -> Unit = {},
     localOnlyMode: Boolean = false,
     onLocalOnlyModeToggle: (Boolean) -> Unit = {},
@@ -333,6 +343,17 @@ fun SettingsScreen(
     val context = LocalContext.current
     val sessionManager = remember { SessionManager(context) }
     val coroutineScope = rememberCoroutineScope()
+
+    // The upload-notification channel list reads the stores directly (no DI
+    // house style): the mute toggles write through the same instances.
+    val localSubscriptionsRepository = remember {
+        com.ivor.ivormusic.data.LocalSubscriptionsRepository(context)
+    }
+    val uploadCheckRepository = remember {
+        com.ivor.ivormusic.data.UploadCheckRepository(context)
+    }
+    val followedChannels by localSubscriptionsRepository.subscriptions.collectAsState()
+    val mutedChannelIds by uploadCheckRepository.mutedChannelIds.collectAsState()
 
     // Check actual login status
     var isLoggedIn by remember { mutableStateOf(sessionManager.isLoggedIn()) }
@@ -485,6 +506,7 @@ fun SettingsScreen(
     // Dialog state for Folder Exclusion
     var showFolderExclusionDialog by remember { mutableStateOf(false) }
     var showShortsButtonsDialog by remember { mutableStateOf(false) }
+    var showAutoHelpDialog by remember { mutableStateOf(false) }
     var availableFolders by remember { mutableStateOf<List<FolderInfo>>(emptyList()) }
     var isFoldersLoading by remember { mutableStateOf(false) }
 
@@ -570,6 +592,7 @@ fun SettingsScreen(
                 localOnlyMode = localOnlyMode,
                 videoMode = videoMode,
                 subscriptionSource = subscriptionSource,
+                privateDownloadsEnabled = privateDownloadsEnabled,
                 cacheEnabled = cacheEnabled,
                 currentCacheSize = currentCacheSize,
                 liveDownloadUpdates = liveDownloadUpdates,
@@ -700,6 +723,10 @@ fun SettingsScreen(
                     onCrossfadeDurationChange = onCrossfadeDurationChange,
                     normalizeVolume = normalizeVolume,
                     onNormalizeVolumeToggle = onNormalizeVolumeToggle,
+                    rememberVideoBrightness = rememberVideoBrightness,
+                    onRememberVideoBrightnessToggle = onRememberVideoBrightnessToggle,
+                    hapticsLevel = hapticsLevel,
+                    onHapticsLevelChange = onHapticsLevelChange,
                     autoLoadQueue = autoLoadQueue,
                     onAutoLoadQueueToggle = onAutoLoadQueueToggle,
                     saveMusicHistory = saveMusicHistory,
@@ -740,6 +767,8 @@ fun SettingsScreen(
                 )
 
                 SettingsPage.STORAGE -> StorageSettingsPage(
+                    privateDownloadsEnabled = privateDownloadsEnabled,
+                    onPrivateDownloadsEnabledToggle = onPrivateDownloadsEnabledToggle,
                     cacheEnabled = cacheEnabled,
                     onCacheEnabledToggle = onCacheEnabledToggle,
                     maxCacheSizeMb = maxCacheSizeMb,
@@ -755,6 +784,13 @@ fun SettingsScreen(
                     livePlaybackUpdates = livePlaybackUpdates,
                     onLivePlaybackUpdatesToggle = onLivePlaybackUpdatesToggle,
                     canPostPromoted = canPostPromoted,
+                    uploadNotificationsEnabled = uploadNotificationsEnabled,
+                    onUploadNotificationsToggle = onUploadNotificationsToggle,
+                    followedChannels = followedChannels,
+                    mutedChannelIds = mutedChannelIds,
+                    onChannelMutedChange = { channelId, muted ->
+                        uploadCheckRepository.setMuted(channelId, muted)
+                    },
                     onOpenSystemSettings = {
                         notificationHelper
                             .promotedNotificationSettingsIntent()
@@ -776,6 +812,7 @@ fun SettingsScreen(
                         onManualScanEnabledToggle = onManualScanEnabledToggle,
                         onReportBug = onNavigateToReportBug,
                         onOpenTimeLimit = onNavigateToTimeLimit,
+                        onOpenAutoHelp = { showAutoHelpDialog = true },
                         onBack = { page = SettingsPage.HUB }
                     )
                 }
@@ -886,6 +923,13 @@ fun SettingsScreen(
             onDismiss = { showShortsButtonsDialog = false }
         )
     }
+
+    // Android Auto help dialog
+    if (showAutoHelpDialog) {
+        AndroidAutoHelpDialog(
+            onDismiss = { showAutoHelpDialog = false }
+        )
+    }
 }
 
 /**
@@ -911,6 +955,7 @@ private fun SettingsHub(
     localOnlyMode: Boolean,
     videoMode: Boolean,
     subscriptionSource: String,
+    privateDownloadsEnabled: Boolean,
     cacheEnabled: Boolean,
     currentCacheSize: Long,
     liveDownloadUpdates: Boolean,
@@ -958,10 +1003,16 @@ private fun SettingsHub(
         else -> "Music mode"
     }
 
-    val storageValue = if (cacheEnabled) {
-        "${com.ivor.ivormusic.data.CacheManager.formatSize(currentCacheSize)} cached"
-    } else {
-        "Caching off"
+    val storageValue = buildString {
+        append(if (privateDownloadsEnabled) "Private downloads" else "Downloads/Koda")
+        append(" · ")
+        append(
+            if (cacheEnabled) {
+                "${com.ivor.ivormusic.data.CacheManager.formatSize(currentCacheSize)} cached"
+            } else {
+                "Caching off"
+            }
+        )
     }
 
     val notificationsValue = when {
@@ -995,7 +1046,7 @@ private fun SettingsHub(
                     )
                 ) {
                     Text(
-                        text = "Settings",
+                        text = stringResource(R.string.settings_title),
                         color = MaterialTheme.colorScheme.onBackground,
                         fontWeight = FontWeight.Bold,
                         style = MaterialTheme.typography.headlineMedium
@@ -1016,7 +1067,7 @@ private fun SettingsHub(
                 ) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                        contentDescription = "Back"
+                        contentDescription = stringResource(R.string.cd_back)
                     )
                 }
             },
@@ -1060,11 +1111,11 @@ private fun SettingsHub(
             } else {
 
             item {
-                SettingsSection(title = "You") {
+                SettingsSection(title = stringResource(R.string.settings_section_you)) {
                     SettingsCard {
                         SettingsHubRow(
                             icon = Icons.Rounded.AccountCircle,
-                            title = "Account",
+                            title = stringResource(R.string.settings_account),
                             value = accountValue,
                             onClick = { onOpenPage(SettingsPage.ACCOUNT) }
                         )
@@ -1073,11 +1124,11 @@ private fun SettingsHub(
             }
 
             item {
-                SettingsSection(title = "Look and feel") {
+                SettingsSection(title = stringResource(R.string.settings_section_look_and_feel)) {
                     SettingsCard {
                         SettingsHubRow(
                             icon = Icons.Rounded.Palette,
-                            title = "Appearance",
+                            title = stringResource(R.string.settings_appearance),
                             value = if (spotlightHome) {
                                 "$themeLabel, $paletteName, Spotlight"
                             } else {
@@ -1088,7 +1139,7 @@ private fun SettingsHub(
                         SettingsDivider()
                         SettingsHubRow(
                             icon = Icons.Rounded.PlayCircle,
-                            title = "Player",
+                            title = stringResource(R.string.settings_player),
                             value = playerStyleLabel,
                             onClick = { onOpenPage(SettingsPage.PLAYER) }
                         )
@@ -1097,11 +1148,11 @@ private fun SettingsHub(
             }
 
             item {
-                SettingsSection(title = "Playback and content") {
+                SettingsSection(title = stringResource(R.string.settings_section_playback_and_content)) {
                     SettingsCard {
                         SettingsHubRow(
                             icon = Icons.Rounded.GraphicEq,
-                            title = "Playback and quality",
+                            title = stringResource(R.string.settings_playback_and_quality),
                             value = "${musicQualityLabel(musicQualityWifi)} music, " +
                                 "${videoQualityLabel(videoQualityWifi)} video on Wi-Fi",
                             onClick = { onOpenPage(SettingsPage.PLAYBACK) }
@@ -1109,14 +1160,14 @@ private fun SettingsHub(
                         SettingsDivider()
                         SettingsHubRow(
                             icon = Icons.Rounded.VideoLibrary,
-                            title = "Content and feeds",
+                            title = stringResource(R.string.settings_content_and_feeds),
                             value = contentValue,
                             onClick = { onOpenPage(SettingsPage.CONTENT) }
                         )
                         SettingsDivider()
                         SettingsHubRow(
                             icon = Icons.Rounded.Subscriptions,
-                            title = "Subscriptions",
+                            title = stringResource(R.string.settings_subscriptions),
                             value = subscriptionSourceLabel(subscriptionSource),
                             onClick = { onOpenPage(SettingsPage.SUBSCRIPTIONS) }
                         )
@@ -1125,11 +1176,11 @@ private fun SettingsHub(
             }
 
             item {
-                SettingsSection(title = "System") {
+                SettingsSection(title = stringResource(R.string.settings_section_system)) {
                     SettingsCard {
                         SettingsHubRow(
                             icon = Icons.Rounded.Folder,
-                            title = "Storage and cache",
+                            title = stringResource(R.string.settings_storage_and_cache),
                             value = storageValue,
                             onClick = { onOpenPage(SettingsPage.STORAGE) }
                         )
@@ -1137,7 +1188,7 @@ private fun SettingsHub(
                             SettingsDivider()
                             SettingsHubRow(
                                 icon = Icons.Rounded.Bolt,
-                                title = "Notifications",
+                                title = stringResource(R.string.settings_notifications),
                                 value = notificationsValue,
                                 onClick = { onOpenPage(SettingsPage.NOTIFICATIONS) },
                                 tint = if (!canPostPromoted && (liveDownloadUpdates || livePlaybackUpdates)) {
@@ -1150,25 +1201,25 @@ private fun SettingsHub(
                         SettingsDivider()
                         SettingsHubRow(
                             icon = Icons.Rounded.MusicNote,
-                            title = "Local library",
+                            title = stringResource(R.string.settings_local_library),
                             value = localLibraryValue,
                             onClick = { onOpenPage(SettingsPage.LOCAL_LIBRARY) }
                         )
                         SettingsDivider()
                         SettingsHubRow(
                             icon = Icons.Rounded.SettingsBackupRestore,
-                            title = "Backup and restore",
+                            title = stringResource(R.string.settings_backup_and_restore),
                             value = backupValue,
                             onClick = onNavigateToBackup
                         )
                         SettingsDivider()
                         SettingsHubRow(
                             icon = Icons.Rounded.Security,
-                            title = "Advanced",
+                            title = stringResource(R.string.settings_advanced),
                             value = if (isXiaomiDevice()) {
-                                "Recommended on this device"
+                                stringResource(R.string.settings_advanced_value_xiaomi)
                             } else {
-                                "Scanning and battery fixes"
+                                stringResource(R.string.settings_advanced_value_other)
                             },
                             onClick = { onOpenPage(SettingsPage.ADVANCED) },
                             tint = if (isXiaomiDevice()) {
@@ -1182,12 +1233,12 @@ private fun SettingsHub(
             }
 
             item {
-                SettingsSection(title = "About") {
+                SettingsSection(title = stringResource(R.string.settings_section_about)) {
                     SettingsCard {
                         SettingsRow(
                             icon = Icons.Rounded.Info,
-                            title = "Koda",
-                            subtitle = "Version ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+                            title = stringResource(R.string.app_name),
+                            subtitle = stringResource(R.string.settings_version_subtitle, BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE),
                             onClick = onShowAbout,
                             showChevron = true
                         )
@@ -1214,7 +1265,7 @@ internal fun ExpressiveThemeSelectGroup(
         modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
     ) {
         Text(
-            text = "Theme",
+            text = stringResource(R.string.sp_theme),
             color = textColor,
             fontSize = 16.sp,
             fontWeight = FontWeight.SemiBold,
@@ -1241,7 +1292,7 @@ internal fun ExpressiveThemeSelectGroup(
                     modifier = Modifier.weight(1f),
                     shapes = shapes,
                     colors = ToggleButtonDefaults.toggleButtonColors(
-                        containerColor = MaterialTheme.colorScheme.surface,
+                        containerColor = accentColor.copy(alpha = 0.1f),
                         checkedContainerColor = accentColor,
                         contentColor = textColor,
                         checkedContentColor = MaterialTheme.colorScheme.onPrimary
@@ -1291,7 +1342,7 @@ internal fun ExpressiveAccountItem(
             if (!userAvatar.isNullOrEmpty()) {
                 AsyncImage(
                     model = userAvatar,
-                    contentDescription = "Profile Picture",
+                    contentDescription = stringResource(R.string.cd_profile_picture),
                     modifier = Modifier
                         .fillMaxSize()
                         .clip(CircleShape),
@@ -1331,7 +1382,7 @@ internal fun ExpressiveAccountItem(
                     modifier = Modifier.size(14.dp)
                 )
                 Text(
-                    text = "Connected",
+                    text = stringResource(R.string.sp_connected),
                     color = connectedColor,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Medium
@@ -1350,7 +1401,7 @@ internal fun ExpressiveVideoModeToggleItem(
     secondaryTextColor: Color,
     accentColor: Color
 ) {
-    val options = listOf("Music", "Video")
+    val options = listOf(stringResource(R.string.sp_mode_music), stringResource(R.string.sp_mode_video))
     val selectedIndex = if (enabled) 1 else 0
     
     Column(
@@ -1384,14 +1435,18 @@ internal fun ExpressiveVideoModeToggleItem(
             // Text
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Content Mode",
+                    text = stringResource(R.string.sp_content_mode),
                     color = textColor,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.SemiBold
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
-                    text = if (enabled) "Showing YouTube videos" else "Showing music content",
+                    text = if (enabled) {
+                        stringResource(R.string.sp_content_mode_video)
+                    } else {
+                        stringResource(R.string.sp_content_mode_music)
+                    },
                     color = secondaryTextColor,
                     fontSize = 13.sp
                 )
@@ -1400,28 +1455,36 @@ internal fun ExpressiveVideoModeToggleItem(
         
         Spacer(modifier = Modifier.height(16.dp))
         
-        // Segmented Button Row
-        SingleChoiceSegmentedButtonRow(
-            modifier = Modifier.fillMaxWidth()
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(
+                ButtonGroupDefaults.ConnectedSpaceBetween
+            ),
         ) {
             options.forEachIndexed { index, label ->
-                SegmentedButton(
-                    selected = selectedIndex == index,
-                    onClick = { onToggle(index == 1) },
-                    shape = SegmentedButtonDefaults.itemShape(
-                        index = index,
-                        count = options.size
+                ToggleButton(
+                    checked = selectedIndex == index,
+                    onCheckedChange = { onToggle(index == 1) },
+                    modifier = Modifier.weight(1f),
+                    shapes = when (index) {
+                        0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                        options.lastIndex ->
+                            ButtonGroupDefaults.connectedTrailingButtonShapes()
+                        else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+                    },
+                    colors = ToggleButtonDefaults.toggleButtonColors(
+                        containerColor = accentColor.copy(alpha = 0.1f),
+                        checkedContainerColor = accentColor,
+                        contentColor = textColor,
+                        checkedContentColor = MaterialTheme.colorScheme.onPrimary,
                     ),
-                    icon = {
-                        SegmentedButtonDefaults.Icon(active = selectedIndex == index) {
-                            Icon(
-                                imageVector = if (index == 0) Icons.Rounded.MusicNote else Icons.Rounded.VideoLibrary,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-                    }
                 ) {
+                    Icon(
+                        imageVector = if (index == 0) Icons.Rounded.MusicNote
+                        else Icons.Rounded.VideoLibrary,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
                     Text(label)
                 }
             }
@@ -1486,16 +1549,16 @@ private fun subscribeTargetOptionLabel(value: String): Pair<String, String> = wh
 
 /** One subscription-routing picker the Settings screen can open. */
 internal enum class SubscriptionDialogTarget(
-    val title: String,
-    val description: String
+    @StringRes val titleRes: Int,
+    @StringRes val descriptionRes: Int
 ) {
     SOURCE(
-        title = "Subscriptions Shown",
-        description = "Which list the Subscriptions tab builds its feed from."
+        titleRes = R.string.sp_subscriptions_shown,
+        descriptionRes = R.string.sp_subs_source_desc
     ),
     TARGET(
-        title = "Subscribe Saves To",
-        description = "Where tapping Subscribe stores the channel. Saving on this device works signed out and never tells YouTube."
+        titleRes = R.string.sp_subscribe_saves_to,
+        descriptionRes = R.string.sp_subs_target_desc
     )
 }
 
@@ -1545,7 +1608,7 @@ private fun SubscriptionRoutingDialog(
             },
             title = {
                 Text(
-                    text = target.title,
+                    text = stringResource(target.titleRes),
                     color = textColor,
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Bold,
@@ -1560,7 +1623,7 @@ private fun SubscriptionRoutingDialog(
                         .verticalScroll(rememberScrollState())
                 ) {
                     Text(
-                        text = target.description,
+                        text = stringResource(target.descriptionRes),
                         color = secondaryTextColor,
                         fontSize = 13.sp,
                         lineHeight = 18.sp,
@@ -1616,7 +1679,7 @@ private fun SubscriptionRoutingDialog(
                     shape = RoundedCornerShape(16.dp),
                     modifier = Modifier.height(48.dp)
                 ) {
-                    Text(text = "Close", fontWeight = FontWeight.SemiBold)
+                    Text(text = stringResource(R.string.action_close), fontWeight = FontWeight.SemiBold)
                 }
             }
         )
@@ -1625,28 +1688,28 @@ private fun SubscriptionRoutingDialog(
 
 /** One per-network quality picker the Settings screen can open. */
 internal enum class QualityDialogTarget(
-    val title: String,
-    val description: String,
+    @StringRes val titleRes: Int,
+    @StringRes val descriptionRes: Int,
     val isMusic: Boolean
 ) {
     VIDEO_WIFI(
-        title = "Video Quality on Wi-Fi",
-        description = "Videos start at this quality on Wi-Fi when available, falling back to the closest lower one.",
+        titleRes = R.string.qd_video_wifi,
+        descriptionRes = R.string.qd_video_wifi_desc,
         isMusic = false
     ),
     VIDEO_MOBILE(
-        title = "Video Quality on Mobile Data",
-        description = "Videos start at this quality on mobile data when available, falling back to the closest lower one.",
+        titleRes = R.string.qd_video_mobile,
+        descriptionRes = R.string.qd_video_mobile_desc,
         isMusic = false
     ),
     MUSIC_WIFI(
-        title = "Music Quality on Wi-Fi",
-        description = "Songs stream at this quality on Wi-Fi.",
+        titleRes = R.string.qd_music_wifi,
+        descriptionRes = R.string.qd_music_wifi_desc,
         isMusic = true
     ),
     MUSIC_MOBILE(
-        title = "Music Quality on Mobile Data",
-        description = "Songs stream at this quality on mobile data.",
+        titleRes = R.string.qd_music_mobile,
+        descriptionRes = R.string.qd_music_mobile_desc,
         isMusic = true
     )
 }
@@ -1700,7 +1763,7 @@ private fun StreamQualityDialog(
             },
             title = {
                 Text(
-                    text = target.title,
+                    text = stringResource(target.titleRes),
                     color = textColor,
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Bold,
@@ -1715,7 +1778,7 @@ private fun StreamQualityDialog(
                         .verticalScroll(rememberScrollState())
                 ) {
                     Text(
-                        text = target.description,
+                        text = stringResource(target.descriptionRes),
                         color = secondaryTextColor,
                         fontSize = 13.sp,
                         lineHeight = 18.sp,
@@ -1759,7 +1822,7 @@ private fun StreamQualityDialog(
                     modifier = Modifier.height(48.dp)
                 ) {
                     Text(
-                        text = "Close",
+                        text = stringResource(R.string.action_close),
                         fontWeight = FontWeight.SemiBold
                     )
                 }
@@ -1813,7 +1876,7 @@ private fun ExpressiveAboutDialog(
                 ) {
                     AsyncImage(
                         model = developerAvatarUrl,
-                        contentDescription = "Developer Avatar",
+                        contentDescription = stringResource(R.string.cd_developer_avatar),
                         modifier = Modifier
                             .fillMaxSize()
                             .clip(cloverShape),
@@ -1827,7 +1890,7 @@ private fun ExpressiveAboutDialog(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
-                        text = "Koda",
+                        text = stringResource(R.string.app_name),
                         color = textColor,
                         fontSize = 24.sp,
                         fontWeight = FontWeight.Bold,
@@ -1854,7 +1917,7 @@ private fun ExpressiveAboutDialog(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
-                        text = "A modern, open-source music player with YouTube Music integration.",
+                        text = stringResource(R.string.about_tagline),
                         color = secondaryTextColor,
                         fontSize = 14.sp,
                         textAlign = TextAlign.Center,
@@ -1873,25 +1936,25 @@ private fun ExpressiveAboutDialog(
                             verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             AboutDetailRow(
-                                label = "Version",
+                                label = stringResource(R.string.about_version),
                                 value = BuildConfig.VERSION_NAME,
                                 textColor = textColor,
                                 labelColor = secondaryTextColor
                             )
                             AboutDetailRow(
-                                label = "Build",
+                                label = stringResource(R.string.about_build),
                                 value = BuildConfig.VERSION_CODE.toString(),
                                 textColor = textColor,
                                 labelColor = secondaryTextColor
                             )
                             AboutDetailRow(
-                                label = "Build Type",
+                                label = stringResource(R.string.about_build_type),
                                 value = if (BuildConfig.DEBUG) "Debug" else "Release",
                                 textColor = textColor,
                                 labelColor = secondaryTextColor
                             )
                             AboutDetailRow(
-                                label = "Developer",
+                                label = stringResource(R.string.about_developer),
                                 value = "ivorisnoob",
                                 textColor = textColor,
                                 labelColor = secondaryTextColor
@@ -1919,7 +1982,7 @@ private fun ExpressiveAboutDialog(
                     )
                     Spacer(modifier = Modifier.width(10.dp))
                     Text(
-                        text = "Check Updates",
+                        text = stringResource(R.string.action_check_updates),
                         fontWeight = FontWeight.SemiBold
                     )
                 }
@@ -1931,7 +1994,7 @@ private fun ExpressiveAboutDialog(
                     modifier = Modifier.height(48.dp)
                 ) {
                     Text(
-                        text = "Close",
+                        text = stringResource(R.string.action_close),
                         fontWeight = FontWeight.SemiBold
                     )
                 }
@@ -1968,6 +2031,135 @@ private fun AboutDetailRow(
 }
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun AndroidAutoHelpDialog(
+    onDismiss: () -> Unit
+) {
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val backgroundColor = MaterialTheme.colorScheme.surfaceContainerHigh
+    val textColor = MaterialTheme.colorScheme.onSurface
+    val secondaryTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+
+    var dialogVisible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        dialogVisible = true
+    }
+
+    AnimatedVisibility(
+        visible = dialogVisible,
+        enter = scaleIn(
+            initialScale = 0.8f,
+            animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy)
+        ) + fadeIn(tween(200)),
+        exit = scaleOut(targetScale = 0.8f) + fadeOut(tween(150))
+    ) {
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            containerColor = backgroundColor,
+            shape = RoundedCornerShape(32.dp),
+            icon = {
+                Box(
+                    modifier = Modifier
+                        .size(64.dp)
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(primaryColor.copy(alpha = 0.15f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.DirectionsCar,
+                        contentDescription = null,
+                        tint = primaryColor,
+                        modifier = Modifier.size(32.dp)
+                    )
+                }
+            },
+            title = {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = stringResource(R.string.sp_android_auto),
+                        color = textColor,
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = stringResource(R.string.auto_help_subtitle),
+                        color = secondaryTextColor,
+                        fontSize = 13.sp,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = stringResource(R.string.auto_help_intro),
+                        color = textColor,
+                        fontSize = 14.sp
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    val steps = listOf(
+                        stringResource(R.string.auto_help_step1),
+                        stringResource(R.string.auto_help_step2),
+                        stringResource(R.string.auto_help_step3),
+                        stringResource(R.string.auto_help_step4)
+                    )
+                    steps.forEachIndexed { index, step ->
+                        Row(verticalAlignment = Alignment.Top) {
+                            Surface(
+                                shape = RoundedCornerShape(50),
+                                color = primaryColor.copy(alpha = 0.15f)
+                            ) {
+                                Text(
+                                    text = "${index + 1}",
+                                    color = primaryColor,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = step,
+                                color = secondaryTextColor,
+                                fontSize = 13.sp
+                            )
+                        }
+                        if (index < steps.lastIndex) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = stringResource(R.string.auto_help_note),
+                        color = secondaryTextColor,
+                        fontSize = 12.sp
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = onDismiss,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = primaryColor
+                    ),
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.height(48.dp)
+                ) {
+                    Text(
+                        text = stringResource(R.string.action_got_it),
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+        )
+    }
+}
+
 @Composable
 private fun FolderExclusionDialog(
     availableFolders: List<FolderInfo>,
@@ -2022,7 +2214,7 @@ private fun FolderExclusionDialog(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
-                        text = "Excluded Folders",
+                        text = stringResource(R.string.sp_excluded_folders),
                         color = textColor,
                         fontSize = 22.sp,
                         fontWeight = FontWeight.Bold,
@@ -2030,7 +2222,7 @@ private fun FolderExclusionDialog(
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "Songs from selected folders won't appear in your library",
+                        text = stringResource(R.string.sp_excluded_folders_sub),
                         color = secondaryTextColor,
                         fontSize = 13.sp,
                         textAlign = TextAlign.Center
@@ -2062,7 +2254,7 @@ private fun FolderExclusionDialog(
                                     )
                                     Spacer(modifier = Modifier.height(12.dp))
                                     Text(
-                                        text = "Scanning folders...",
+                                        text = stringResource(R.string.sp_scanning_folders),
                                         color = secondaryTextColor,
                                         fontSize = 14.sp
                                     )
@@ -2085,7 +2277,7 @@ private fun FolderExclusionDialog(
                                     )
                                     Spacer(modifier = Modifier.height(12.dp))
                                     Text(
-                                        text = "No music folders found",
+                                        text = stringResource(R.string.sp_no_music_folders),
                                         color = secondaryTextColor,
                                         fontSize = 14.sp
                                     )
@@ -2136,7 +2328,7 @@ private fun FolderExclusionDialog(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Done",
+                        text = stringResource(R.string.action_done),
                         fontWeight = FontWeight.SemiBold
                     )
                 }
@@ -2286,7 +2478,7 @@ private fun ShortsButtonsDialog(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
-                        text = "Shorts Buttons",
+                        text = stringResource(R.string.sp_shorts_buttons),
                         color = textColor,
                         fontSize = 22.sp,
                         fontWeight = FontWeight.Bold,
@@ -2294,7 +2486,7 @@ private fun ShortsButtonsDialog(
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "Tap a button to show or hide it in Shorts",
+                        text = stringResource(R.string.sp_shorts_buttons_sub),
                         color = secondaryTextColor,
                         fontSize = 13.sp,
                         textAlign = TextAlign.Center
@@ -2310,31 +2502,31 @@ private fun ShortsButtonsDialog(
                 ) {
                     ShortsButtonShapeToggle(
                         icon = Icons.Rounded.ThumbUp,
-                        label = "Like",
+                        label = stringResource(R.string.action_like),
                         shown = ThemePreferences.SHORTS_ACTION_LIKE !in hiddenActions,
                         onToggle = { toggle(ThemePreferences.SHORTS_ACTION_LIKE) }
                     )
                     ShortsButtonShapeToggle(
                         icon = Icons.Rounded.ThumbDown,
-                        label = "Dislike",
+                        label = stringResource(R.string.cd_dislike),
                         shown = ThemePreferences.SHORTS_ACTION_DISLIKE !in hiddenActions,
                         onToggle = { toggle(ThemePreferences.SHORTS_ACTION_DISLIKE) }
                     )
                     ShortsButtonShapeToggle(
                         icon = Icons.Rounded.ChatBubble,
-                        label = "Comments",
+                        label = stringResource(R.string.cd_comments),
                         shown = ThemePreferences.SHORTS_ACTION_COMMENTS !in hiddenActions,
                         onToggle = { toggle(ThemePreferences.SHORTS_ACTION_COMMENTS) }
                     )
                     ShortsButtonShapeToggle(
                         icon = Icons.Rounded.Share,
-                        label = "Share",
+                        label = stringResource(R.string.action_share),
                         shown = ThemePreferences.SHORTS_ACTION_SHARE !in hiddenActions,
                         onToggle = { toggle(ThemePreferences.SHORTS_ACTION_SHARE) }
                     )
                     ShortsButtonShapeToggle(
                         icon = Icons.Rounded.NotInterested,
-                        label = "Not interested",
+                        label = stringResource(R.string.video_options_not_interested),
                         shown = ThemePreferences.SHORTS_ACTION_NOT_INTERESTED !in hiddenActions,
                         onToggle = { toggle(ThemePreferences.SHORTS_ACTION_NOT_INTERESTED) }
                     )
@@ -2356,7 +2548,7 @@ private fun ShortsButtonsDialog(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Done",
+                        text = stringResource(R.string.action_done),
                         fontWeight = FontWeight.SemiBold
                     )
                 }

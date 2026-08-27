@@ -24,6 +24,7 @@
         android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
+        android:localeConfig="@xml/locales_config"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:requestLegacyExternalStorage="true"
@@ -104,6 +105,17 @@
         
         <meta-data android:name="com.google.android.gms.car.application" android:resource="@xml/automotive_app_desc"/>
 
+        <!--
+            Cast configuration. Play services reads the provider class when Koda
+            lazily starts the Cast framework (the Cast sheet opens, or an active
+            receiver session is being restored) to learn which receiver app to
+            use; without this meta-data route discovery finds no cast routes.
+        -->
+        <meta-data
+            android:name="com.google.android.gms.cast.framework.OPTIONS_PROVIDER_CLASS_NAME"
+            android:value="com.ivor.ivormusic.service.CastOptionsProvider" />
+
+
         <service
             android:name=".service.MusicService"
             android:foregroundServiceType="mediaPlayback"
@@ -139,6 +151,108 @@
             android:name=".service.DownloadService"
             android:foregroundServiceType="dataSync"
             android:exported="false" />
+
+        <!--
+            Quick Settings playback tile. A pure session client: it binds a
+            MediaController to MusicService, so the tile's play/pause and its
+            state are the same playback the app shows. The BIND_QUICK_SETTINGS
+            _TILE permission is the system's own requirement for talking to it;
+            exported is mandatory for the same reason.
+        -->
+        <service
+            android:name=".service.PlaybackTileService"
+            android:exported="true"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+        <!--
+            The home screen widget family. Six providers over one observable
+            snapshot (widget/PlayerWidgetHost.kt), all pure session clients like
+            the QS tile: none holds a MediaController, and every tap binds a
+            throwaway one on the main thread.
+
+            updatePeriodMillis is 0 on all of them because MusicService pushes a
+            redraw on each playback event; scheduled polling would only burn
+            battery redrawing the same picture.
+
+            Listed in picker order - the everyday one first, the two decorative
+            ones last.
+        -->
+        <receiver
+            android:name=".widget.PulseWidgetReceiver"
+            android:exported="false"
+            android:label="@string/widget_pulse_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/pulse_widget_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.ConsoleWidgetReceiver"
+            android:exported="false"
+            android:label="@string/widget_console_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/console_widget_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.DeckWidgetReceiver"
+            android:exported="false"
+            android:label="@string/widget_deck_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/deck_widget_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.LineupWidgetReceiver"
+            android:exported="false"
+            android:label="@string/widget_lineup_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/lineup_widget_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.BloomWidgetReceiver"
+            android:exported="false"
+            android:label="@string/widget_bloom_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/bloom_widget_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.OrbitWidgetReceiver"
+            android:exported="false"
+            android:label="@string/widget_orbit_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/orbit_widget_info" />
+        </receiver>
+
     </application>
 
 </manifest>

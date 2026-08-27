@@ -1,4 +1,6 @@
 package com.ivor.ivormusic.ui.components
+import androidx.compose.ui.res.stringResource
+import com.ivor.ivormusic.R
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -107,7 +109,7 @@ fun SleepTimerSheet(
             Spacer(modifier = Modifier.height(16.dp))
 
             Text(
-                text = "Sleep timer",
+                text = stringResource(R.string.sleep_timer_title),
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
                 color = onContainer
@@ -117,8 +119,8 @@ fun SleepTimerSheet(
 
             if (endOfTrack) {
                 SleepTimerStatus(
-                    headline = "This track",
-                    detail = "Playback stops when the song playing now finishes",
+                    headline = stringResource(R.string.sleep_timer_status_track),
+                    detail = stringResource(R.string.sleep_timer_detail_track),
                     accent = accent,
                     onContainer = onContainer
                 )
@@ -140,7 +142,7 @@ fun SleepTimerSheet(
                 }
                 SleepTimerStatus(
                     headline = formatRemaining(remainingMs),
-                    detail = "Playback fades out and pauses when the timer ends",
+                    detail = stringResource(R.string.sleep_timer_detail_duration),
                     accent = accent,
                     onContainer = onContainer
                 )
@@ -165,7 +167,7 @@ fun SleepTimerSheet(
                                         contentColor = onContainer
                                     )
                                 ) {
-                                    Text("$minutes min")
+                                    Text(stringResource(R.string.minutes_short, minutes))
                                 }
                             }
                         }
@@ -193,7 +195,7 @@ fun SleepTimerSheet(
                                 modifier = Modifier.size(20.dp)
                             )
                             Text(
-                                text = "End of this track",
+                                text = stringResource(R.string.sleep_timer_end_of_track),
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.SemiBold
                             )
@@ -240,7 +242,7 @@ private fun TurnOffButton(onCancel: () -> Unit, accent: Color, onAccent: Color) 
             contentColor = onAccent
         )
     ) {
-        Text("Turn off", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+        Text(stringResource(R.string.sleep_timer_turn_off), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
     }
 }
 

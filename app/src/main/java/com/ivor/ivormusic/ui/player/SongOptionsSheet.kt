@@ -1,4 +1,6 @@
 package com.ivor.ivormusic.ui.player
+import androidx.compose.ui.res.stringResource
+import com.ivor.ivormusic.R
 
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
@@ -101,7 +103,7 @@ fun SongOptionsSheet(
     }
 
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val haptics = LocalHapticFeedback.current
+    val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
     val likedIds by viewModel.likedSongIds.collectAsState()
     val isLiked = song.id in likedIds
     val isDownloaded = remember(song.id) { viewModel.isDownloaded(song.id) }
@@ -125,8 +127,8 @@ fun SongOptionsSheet(
 
             OptionRow(
                 icon = Icons.Rounded.PlaylistPlay,
-                title = "Play next",
-                subtitle = "Right after this song",
+                title = stringResource(R.string.song_options_play_next),
+                subtitle = stringResource(R.string.song_options_play_next_subtitle),
                 hero = true,
                 onClick = {
                     haptics.performHapticFeedback(HapticFeedbackType.Confirm)
@@ -139,8 +141,8 @@ fun SongOptionsSheet(
 
             OptionRow(
                 icon = Icons.Rounded.QueueMusic,
-                title = "Add to queue",
-                subtitle = "At the end",
+                title = stringResource(R.string.song_options_add_to_queue),
+                subtitle = stringResource(R.string.song_options_add_to_queue_subtitle),
                 onClick = {
                     haptics.performHapticFeedback(HapticFeedbackType.Confirm)
                     viewModel.addToQueue(song)
@@ -152,7 +154,7 @@ fun SongOptionsSheet(
 
             OptionRow(
                 icon = Icons.Rounded.PlaylistAdd,
-                title = "Add to playlist",
+                title = stringResource(R.string.song_options_add_to_playlist),
                 onClick = { showPlaylists = true }
             )
 
@@ -160,7 +162,7 @@ fun SongOptionsSheet(
 
             OptionRow(
                 icon = if (isLiked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
-                title = if (isLiked) "Remove from liked" else "Like",
+                title = if (isLiked) stringResource(R.string.song_options_remove_from_liked) else stringResource(R.string.song_options_like),
                 tint = if (isLiked) MaterialTheme.colorScheme.primary else null,
                 onClick = {
                     haptics.performHapticFeedback(HapticFeedbackType.ToggleOn)
@@ -176,8 +178,8 @@ fun SongOptionsSheet(
                 Spacer(modifier = Modifier.height(8.dp))
                 OptionRow(
                     icon = Icons.Rounded.Download,
-                    title = "Download",
-                    subtitle = "Keep on this device",
+                    title = stringResource(R.string.song_options_download),
+                    subtitle = stringResource(R.string.song_options_download_subtitle),
                     onClick = {
                         haptics.performHapticFeedback(HapticFeedbackType.Confirm)
                         viewModel.toggleDownload(song)
@@ -188,7 +190,7 @@ fun SongOptionsSheet(
                 Spacer(modifier = Modifier.height(8.dp))
                 OptionRow(
                     icon = Icons.Rounded.Check,
-                    title = "Downloaded",
+                    title = stringResource(R.string.song_options_downloaded),
                     enabled = false,
                     onClick = {}
                 )
@@ -200,7 +202,7 @@ fun SongOptionsSheet(
                     Spacer(modifier = Modifier.height(8.dp))
                     OptionRow(
                         icon = Icons.Rounded.PlaylistPlay,
-                        title = "Go to $artist",
+                        title = stringResource(R.string.song_options_go_to_artist, artist),
                         onClick = {
                             go(artist)
                             onDismiss()

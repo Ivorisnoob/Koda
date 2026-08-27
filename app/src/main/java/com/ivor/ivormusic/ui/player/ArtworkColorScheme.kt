@@ -14,7 +14,7 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.palette.graphics.Palette
-import coil.ImageLoader
+import coil.imageLoader
 import coil.request.ImageRequest
 import coil.request.SuccessResult
 import kotlinx.coroutines.Dispatchers
@@ -125,7 +125,9 @@ private suspend fun extractArtworkSeeds(
     uri: String
 ): ArtworkSeeds? = withContext(Dispatchers.IO) {
     try {
-        val loader = ImageLoader(context)
+        // The app's shared Coil loader: same instance every other surface
+        // uses, so this artwork is likely already in its memory cache.
+        val loader = context.imageLoader
         val request = ImageRequest.Builder(context)
             .data(uri)
             .allowHardware(false) // Palette needs a software bitmap

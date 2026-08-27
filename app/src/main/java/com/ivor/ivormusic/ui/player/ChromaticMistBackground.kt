@@ -28,7 +28,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.platform.LocalContext
 import androidx.palette.graphics.Palette
-import coil.ImageLoader
+import coil.imageLoader
 import coil.request.ImageRequest
 import coil.request.SuccessResult
 import kotlinx.coroutines.Dispatchers
@@ -292,7 +292,9 @@ private suspend fun extractColorsFromUrl(
     url: String
 ): List<Color> = withContext(Dispatchers.IO) {
     try {
-        val loader = ImageLoader(context)
+        // The app's shared Coil loader, not a throwaway one per color
+        // extraction: the artwork is usually already in its memory cache.
+        val loader = context.imageLoader
         val request = ImageRequest.Builder(context)
             .data(url)
             .allowHardware(false) // Palette needs software bitmap

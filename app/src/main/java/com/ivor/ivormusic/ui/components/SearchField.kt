@@ -1,4 +1,6 @@
 package com.ivor.ivormusic.ui.components
+import androidx.compose.ui.res.stringResource
+import com.ivor.ivormusic.R
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
@@ -138,7 +140,7 @@ fun SearchField(
             ) {
                 Icon(
                     imageVector = Icons.Rounded.Close,
-                    contentDescription = "Clear search",
+                    contentDescription = stringResource(R.string.cd_clear_search),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(20.dp)
                 )

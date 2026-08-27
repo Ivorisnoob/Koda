@@ -81,6 +81,16 @@ class ThemePreferences(context: Context) {
     private val _captionBackground = MutableStateFlow(getCaptionBackgroundPreference())
     val captionBackground: StateFlow<CaptionBackground> = _captionBackground.asStateFlow()
 
+    // Captions on/off and the chosen language ride the same persistence as the
+    // style above, so a user who watches everything subtitled does not have to
+    // tap CC again on every video.
+    private val _captionsEnabled = MutableStateFlow(prefs.getBoolean(KEY_CAPTIONS_ENABLED, false))
+    val captionsEnabled: StateFlow<Boolean> = _captionsEnabled.asStateFlow()
+
+    private val _captionLanguageCode =
+        MutableStateFlow(prefs.getString(KEY_CAPTION_LANGUAGE_CODE, null))
+    val captionLanguageCode: StateFlow<String?> = _captionLanguageCode.asStateFlow()
+
     private val _musicQualityWifi = MutableStateFlow(getMusicQualityWifiPreference())
     val musicQualityWifi: StateFlow<String> = _musicQualityWifi.asStateFlow()
 
@@ -132,11 +142,27 @@ class ThemePreferences(context: Context) {
     private val _normalizeVolume = MutableStateFlow(getNormalizeVolumePreference())
     val normalizeVolume: StateFlow<Boolean> = _normalizeVolume.asStateFlow()
 
+    private val _rememberVideoBrightness =
+        MutableStateFlow(getRememberVideoBrightness())
+    val rememberVideoBrightness: StateFlow<Boolean> = _rememberVideoBrightness.asStateFlow()
+
+    private val _hapticsLevel = MutableStateFlow(getHapticsLevelPreference())
+    val hapticsLevel: StateFlow<String> = _hapticsLevel.asStateFlow()
+
+    private val _uploadNotificationsEnabled =
+        MutableStateFlow(getUploadNotificationsEnabledPreference())
+    val uploadNotificationsEnabled: StateFlow<Boolean> = _uploadNotificationsEnabled.asStateFlow()
+
     private val _oemFixEnabled = MutableStateFlow(getOemFixEnabledPreference())
     val oemFixEnabled: StateFlow<Boolean> = _oemFixEnabled.asStateFlow()
 
     private val _manualScanEnabled = MutableStateFlow(getManualScanEnabledPreference())
     val manualScanEnabled: StateFlow<Boolean> = _manualScanEnabled.asStateFlow()
+
+    private val _privateDownloadsEnabled =
+        MutableStateFlow(getPrivateDownloadsEnabledPreference())
+    val privateDownloadsEnabled: StateFlow<Boolean> =
+        _privateDownloadsEnabled.asStateFlow()
 
     private val _onboardingCompleted = MutableStateFlow(getOnboardingCompletedPreference())
     val onboardingCompleted: StateFlow<Boolean> = _onboardingCompleted.asStateFlow()
@@ -197,8 +223,15 @@ class ThemePreferences(context: Context) {
             KEY_CROSSFADE_AUTO -> _crossfadeAuto.value = getCrossfadeAutoPreference()
             KEY_CROSSFADE_DURATION -> _crossfadeDurationMs.value = getCrossfadeDurationPreference()
             KEY_NORMALIZE_VOLUME -> _normalizeVolume.value = getNormalizeVolumePreference()
+            KEY_REMEMBER_VIDEO_BRIGHTNESS ->
+                _rememberVideoBrightness.value = getRememberVideoBrightness()
+            KEY_HAPTICS_LEVEL -> _hapticsLevel.value = getHapticsLevelPreference()
+            KEY_UPLOAD_NOTIFICATIONS_ENABLED ->
+                _uploadNotificationsEnabled.value = getUploadNotificationsEnabledPreference()
             KEY_OEM_FIX_ENABLED -> _oemFixEnabled.value = getOemFixEnabledPreference()
             KEY_MANUAL_SCAN_ENABLED -> _manualScanEnabled.value = getManualScanEnabledPreference()
+            KEY_PRIVATE_DOWNLOADS ->
+                _privateDownloadsEnabled.value = getPrivateDownloadsEnabledPreference()
             KEY_ONBOARDING_COMPLETED -> _onboardingCompleted.value = getOnboardingCompletedPreference()
             KEY_LOCAL_ONLY_MODE -> _localOnlyMode.value = getLocalOnlyModePreference()
             KEY_TIME_LIMIT_ENABLED -> _timeLimitEnabled.value = getTimeLimitEnabledPreference()
@@ -284,6 +317,8 @@ class ThemePreferences(context: Context) {
         private const val KEY_CAPTION_TEXT_SIZE = "caption_text_size"
         private const val KEY_CAPTION_TEXT_COLOR = "caption_text_color"
         private const val KEY_CAPTION_BACKGROUND = "caption_background"
+        private const val KEY_CAPTIONS_ENABLED = "captions_enabled"
+        private const val KEY_CAPTION_LANGUAGE_CODE = "caption_language_code"
 
         /** Sentinel meaning "highest available quality". */
         const val VIDEO_QUALITY_AUTO = "auto"
@@ -393,6 +428,17 @@ class ThemePreferences(context: Context) {
         private const val KEY_DOWNLOAD_VIDEO_QUALITY = "download_video_quality"
 
         /**
+         * App-only download storage. Off preserves Koda's existing public
+         * Downloads/Koda behavior; callers fresh-read this when a transfer
+         * starts so separate ThemePreferences instances cannot go stale.
+         */
+        private const val KEY_PRIVATE_DOWNLOADS = "private_downloads"
+
+        fun usePrivateDownloadStorage(context: Context): Boolean =
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getBoolean(KEY_PRIVATE_DOWNLOADS, false)
+
+        /**
          * Static fresh read of the download quality for DownloadRepository,
          * which runs off a plain Context (same pattern as [isLocalOnly]).
          * Defaults to [VIDEO_QUALITY_AUTO]: best available, the historical
@@ -442,6 +488,9 @@ class ThemePreferences(context: Context) {
         private const val MIN_CROSSFADE_DURATION_MS = 1_000
         private const val MAX_CROSSFADE_DURATION_MS = 15_000
         private const val KEY_NORMALIZE_VOLUME = "normalize_volume"
+        private const val KEY_REMEMBER_VIDEO_BRIGHTNESS = "remember_video_brightness"
+        private const val KEY_HAPTICS_LEVEL = "haptics_level"
+        private const val KEY_UPLOAD_NOTIFICATIONS_ENABLED = "upload_notifications_enabled"
         private const val KEY_OEM_FIX_ENABLED = "oem_fix_enabled"
         private const val KEY_MANUAL_SCAN_ENABLED = "manual_scan_enabled"
         private const val KEY_ONBOARDING_COMPLETED = "onboarding_completed"
@@ -934,6 +983,25 @@ class ThemePreferences(context: Context) {
         _captionBackground.value = background
     }
 
+    fun setCaptionsEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_CAPTIONS_ENABLED, enabled).apply()
+        _captionsEnabled.value = enabled
+    }
+
+    /** Fresh pref read for non-composable decision points (ViewModel workers). */
+    fun isCaptionsEnabled(): Boolean = prefs.getBoolean(KEY_CAPTIONS_ENABLED, false)
+
+    fun getCaptionLanguageCode(): String? = prefs.getString(KEY_CAPTION_LANGUAGE_CODE, null)
+
+    fun setCaptionLanguageCode(languageCode: String?) {
+        if (languageCode == null) {
+            prefs.edit().remove(KEY_CAPTION_LANGUAGE_CODE).apply()
+        } else {
+            prefs.edit().putString(KEY_CAPTION_LANGUAGE_CODE, languageCode).apply()
+        }
+        _captionLanguageCode.value = languageCode
+    }
+
     // ---------------- Subscriptions ----------------
 
     private fun getSubscriptionSourcePreference(): String =
@@ -1056,6 +1124,14 @@ class ThemePreferences(context: Context) {
         prefs.edit().putString(KEY_DOWNLOAD_VIDEO_QUALITY, quality).apply()
     }
 
+    private fun getPrivateDownloadsEnabledPreference(): Boolean =
+        prefs.getBoolean(KEY_PRIVATE_DOWNLOADS, false)
+
+    fun setPrivateDownloadsEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_PRIVATE_DOWNLOADS, enabled).apply()
+        _privateDownloadsEnabled.value = enabled
+    }
+
     /**
      * Whether the video player loops the current video (repeat) instead of
      * auto-playing the next related one. Sticks across videos and app
@@ -1090,6 +1166,51 @@ class ThemePreferences(context: Context) {
 
     fun setVideoBrightness(value: Float) {
         prefs.edit().putFloat(KEY_VIDEO_BRIGHTNESS, value.coerceIn(0f, 1f)).apply()
+    }
+
+    /**
+     * Whether the fullscreen brightness drag should carry over to the next
+     * fullscreen video (default). Off, every video reopens at the system
+     * brightness and the gesture's level dies with the surface. The stored
+     * level itself is kept either way so turning the setting back on restores
+     * what the user last dialed in.
+     */
+    fun getRememberVideoBrightness(): Boolean =
+        prefs.getBoolean(KEY_REMEMBER_VIDEO_BRIGHTNESS, true)
+
+    fun setRememberVideoBrightness(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_REMEMBER_VIDEO_BRIGHTNESS, enabled).apply()
+        _rememberVideoBrightness.value = enabled
+    }
+
+    /**
+     * Touch feedback intensity for the whole app - one of the values
+     * [com.ivor.ivormusic.util.HapticsLevel] writes via [toPref]. Every
+     * haptic in the app routes through it, so this is the single switch.
+     */
+    private fun getHapticsLevelPreference(): String =
+        prefs.getString(KEY_HAPTICS_LEVEL, com.ivor.ivormusic.util.HapticsLevel.DEFAULT)
+            ?: com.ivor.ivormusic.util.HapticsLevel.DEFAULT
+
+    fun setHapticsLevel(value: String) {
+        prefs.edit().putString(KEY_HAPTICS_LEVEL, value).apply()
+        _hapticsLevel.value = value
+    }
+
+    /**
+     * Whether the background check may notify about new uploads from channels
+     * followed on this device. Off by default: it is a battery-and-attention
+     * commitment, and the worker no-ops (cheaply) when this is false.
+     */
+    fun getUploadNotificationsEnabled(): Boolean =
+        prefs.getBoolean(KEY_UPLOAD_NOTIFICATIONS_ENABLED, false)
+
+    private fun getUploadNotificationsEnabledPreference(): Boolean =
+        prefs.getBoolean(KEY_UPLOAD_NOTIFICATIONS_ENABLED, false)
+
+    fun setUploadNotificationsEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_UPLOAD_NOTIFICATIONS_ENABLED, enabled).apply()
+        _uploadNotificationsEnabled.value = enabled
     }
 
     /**

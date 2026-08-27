@@ -27,6 +27,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -177,6 +178,8 @@ class MainActivity : ComponentActivity() {
             val excludedFolders by themeViewModel.excludedFolders.collectAsState()
             val oemFixEnabled by themeViewModel.oemFixEnabled.collectAsState()
             val manualScanEnabled by themeViewModel.manualScanEnabled.collectAsState()
+            val privateDownloadsEnabled by
+                themeViewModel.privateDownloadsEnabled.collectAsState()
             val onboardingCompleted by themeViewModel.onboardingCompleted.collectAsState()
             val localOnlyMode by themeViewModel.localOnlyMode.collectAsState()
             
@@ -188,6 +191,9 @@ class MainActivity : ComponentActivity() {
             val crossfadeAuto by themeViewModel.crossfadeAuto.collectAsState()
             val crossfadeDurationMs by themeViewModel.crossfadeDurationMs.collectAsState()
             val normalizeVolume by themeViewModel.normalizeVolume.collectAsState()
+            val rememberVideoBrightness by themeViewModel.rememberVideoBrightness.collectAsState()
+            val hapticsLevel by themeViewModel.hapticsLevel.collectAsState()
+            val uploadNotificationsEnabled by themeViewModel.uploadNotificationsEnabled.collectAsState()
             
             val isSystemDark = isSystemInDarkTheme()
             val isDarkTheme = remember(themeMode, isSystemDark) {
@@ -268,6 +274,10 @@ class MainActivity : ComponentActivity() {
                         onOemFixEnabledToggle = { themeViewModel.setOemFixEnabled(it) },
                         manualScanEnabled = manualScanEnabled,
                         onManualScanEnabledToggle = { themeViewModel.setManualScanEnabled(it) },
+                        privateDownloadsEnabled = privateDownloadsEnabled,
+                        onPrivateDownloadsEnabledToggle = {
+                            themeViewModel.setPrivateDownloadsEnabled(it)
+                        },
                         cacheEnabled = cacheEnabled,
                         onCacheEnabledToggle = { themeViewModel.setCacheEnabled(it) },
                         maxCacheSizeMb = maxCacheSizeMb,
@@ -284,6 +294,14 @@ class MainActivity : ComponentActivity() {
                         onCrossfadeDurationChange = { themeViewModel.setCrossfadeDuration(it) },
                         normalizeVolume = normalizeVolume,
                         onNormalizeVolumeToggle = { themeViewModel.setNormalizeVolume(it) },
+                        rememberVideoBrightness = rememberVideoBrightness,
+                        onRememberVideoBrightnessToggle =
+                            { themeViewModel.setRememberVideoBrightness(it) },
+                        hapticsLevel = hapticsLevel,
+                        onHapticsLevelChange = { themeViewModel.setHapticsLevel(it) },
+                        uploadNotificationsEnabled = uploadNotificationsEnabled,
+                        onUploadNotificationsToggle =
+                            { themeViewModel.setUploadNotificationsEnabled(it) },
                         onboardingCompleted = onboardingCompleted,
                         onOnboardingCompleted = { themeViewModel.setOnboardingCompleted(it) },
                         localOnlyMode = localOnlyMode,
@@ -485,10 +503,18 @@ fun MusicApp(
     onCrossfadeDurationChange: (Int) -> Unit,
     normalizeVolume: Boolean,
     onNormalizeVolumeToggle: (Boolean) -> Unit,
+    rememberVideoBrightness: Boolean,
+    onRememberVideoBrightnessToggle: (Boolean) -> Unit,
+    hapticsLevel: String,
+    onHapticsLevelChange: (String) -> Unit,
+    uploadNotificationsEnabled: Boolean,
+    onUploadNotificationsToggle: (Boolean) -> Unit,
     oemFixEnabled: Boolean,
     onOemFixEnabledToggle: (Boolean) -> Unit,
     manualScanEnabled: Boolean,
     onManualScanEnabledToggle: (Boolean) -> Unit,
+    privateDownloadsEnabled: Boolean,
+    onPrivateDownloadsEnabledToggle: (Boolean) -> Unit,
     onboardingCompleted: Boolean,
     onOnboardingCompleted: (Boolean) -> Unit,
     localOnlyMode: Boolean,
@@ -840,10 +866,18 @@ fun MusicApp(
                     onCrossfadeDurationChange = onCrossfadeDurationChange,
                     normalizeVolume = normalizeVolume,
                     onNormalizeVolumeToggle = onNormalizeVolumeToggle,
+                    rememberVideoBrightness = rememberVideoBrightness,
+                    onRememberVideoBrightnessToggle = onRememberVideoBrightnessToggle,
+                    hapticsLevel = hapticsLevel,
+                    onHapticsLevelChange = onHapticsLevelChange,
+                    uploadNotificationsEnabled = uploadNotificationsEnabled,
+                    onUploadNotificationsToggle = onUploadNotificationsToggle,
                     oemFixEnabled = oemFixEnabled,
                     onOemFixEnabledToggle = onOemFixEnabledToggle,
                     manualScanEnabled = manualScanEnabled,
                     onManualScanEnabledToggle = onManualScanEnabledToggle,
+                    privateDownloadsEnabled = privateDownloadsEnabled,
+                    onPrivateDownloadsEnabledToggle = onPrivateDownloadsEnabledToggle,
                     onNavigateToUpdate = { navController.navigate("update") },
                     localOnlyMode = localOnlyMode,
                     onLocalOnlyModeToggle = onLocalOnlyModeToggle
@@ -1031,7 +1065,7 @@ fun MusicApp(
             ) {
                 if (localOnlyMode) {
                     com.ivor.ivormusic.ui.components.LocalOnlyNotice(
-                        subtitle = "Update checks need the internet. Turn off Local only in Settings to check for updates."
+                        subtitle = stringResource(R.string.local_only_update_subtitle)
                     )
                 } else {
                     com.ivor.ivormusic.ui.settings.UpdateScreen(
@@ -1198,7 +1232,7 @@ private fun NotInterestedUndoHost(modifier: Modifier = Modifier) {
         val action = lastAction ?: return@LaunchedEffect
         val result = snackbarHostState.showSnackbar(
             message = action.message,
-            actionLabel = "Undo",
+            actionLabel = context.getString(R.string.undo),
             withDismissAction = false,
             duration = SnackbarDuration.Short
         )
@@ -1249,27 +1283,25 @@ private fun CrashReportPrompt(
         },
         title = {
             Text(
-                text = "Koda crashed last time",
+                text = stringResource(R.string.crash_dialog_title),
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.fillMaxWidth()
             )
         },
         text = {
             Text(
-                text = "Something went wrong on your previous session. " +
-                    "You can send a bug report with the details - nothing " +
-                    "leaves your device unless you choose to share it.",
+                text = stringResource(R.string.crash_dialog_message),
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         },
         confirmButton = {
             Button(onClick = onViewReport) {
-                Text("View & report")
+                Text(stringResource(R.string.crash_dialog_view_report))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Not now")
+                Text(stringResource(R.string.crash_dialog_not_now))
             }
         }
     )

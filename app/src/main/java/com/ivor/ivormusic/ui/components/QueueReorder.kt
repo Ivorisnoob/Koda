@@ -72,7 +72,7 @@ fun queueRowKeys(ids: List<String>, prefix: String): List<String> {
  */
 class QueueReorderState internal constructor(
     private val listState: LazyListState,
-    private val haptics: HapticFeedback
+    private val haptics: com.ivor.ivormusic.util.KodaHaptics
 ) {
     /** Key of the row being dragged, or null when nothing is. */
     var draggingKey: Any? by mutableStateOf(null)
@@ -196,7 +196,7 @@ fun rememberQueueReorderState(
     onMove: (from: Int, to: Int) -> Unit,
     onSettle: () -> Unit
 ): QueueReorderState {
-    val haptics = LocalHapticFeedback.current
+    val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
     val density = LocalDensity.current
     val state = remember(listState) { QueueReorderState(listState, haptics) }
 

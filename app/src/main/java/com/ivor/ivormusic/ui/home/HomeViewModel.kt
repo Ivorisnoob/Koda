@@ -1,4 +1,5 @@
 package com.ivor.ivormusic.ui.home
+import com.ivor.ivormusic.R
 
 import com.ivor.ivormusic.util.KLog
 
@@ -39,6 +40,8 @@ internal fun shouldWarmSubscriptionFeed(
 }
 
 class HomeViewModel(application: Application) : AndroidViewModel(application) {
+
+    private val app get() = getApplication<Application>()
     private val localRepository = SongRepository(application)
     private val youtubeRepository = YouTubeRepository(application)
     private val playlistRepository = com.ivor.ivormusic.data.PlaylistRepository(application)
@@ -539,10 +542,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
      * genuinely the user's would otherwise sit in the list twice, once as
      * theirs and once as a reference offering to remove it from the library.
      *
-     * Albums are the one thing that does not cross over: they are saved by
-     * browse id ("MPRE..."), which is not a playlist and does not resolve
-     * through the video playlist call, so a saved album shown here would open
-     * an empty page. Video mode has no album page to send it to either.
+     * Albums cross over too: they are kept by browse id ("MPRE..."), which a
+     * video-mode open resolves through [loadPlaylistVideos]'s album branch -
+     * the tracks are ordinary YouTube video ids and play as videos - rather
+     * than the playlist call an MPRE id would silently fail against.
      *
      * Declared here rather than beside the other saved-playlist members because
      * it reads [_videoPlaylists], and a property initialized before the one it
@@ -553,7 +556,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         _videoPlaylists
     ) { saved, accountPlaylists ->
         val accountIds = accountPlaylists.map { it.playlistId }.toSet()
-        saved.filterNot { it.isAlbum || it.id in accountIds }.map { it.toVideoPlaylist() }
+        saved.filterNot { it.id in accountIds }.map { it.toVideoPlaylist() }
     }.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000), emptyList())
 
     /** Ids of [savedVideoPlaylists], for marking a row or a page as kept. */
@@ -775,15 +778,15 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     // empty feed, and telling someone to check a connection that
                     // is plainly working sends them fixing the wrong thing.
                     _subscriptionFeedError.value = if (hasNetworkConnection()) {
-                        "No recent uploads from the channels you follow."
+                        app.getString(R.string.hvm_subs_feed_empty)
                     } else {
-                        "Couldn't load recent uploads. Check your connection and try again."
+                        app.getString(R.string.hvm_subs_feed_error)
                     }
                 }
             } catch (e: Exception) {
                 KLog.e("HomeViewModel", "Subscription feed refresh failed", e)
                 _subscriptionFeedError.value =
-                    "Couldn't load recent uploads. Check your connection and try again."
+                    app.getString(R.string.hvm_subs_feed_error)
             } finally {
                 _subscriptionFeedProgress.value = null
                 _isSubscriptionFeedLoading.value = false
@@ -811,12 +814,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 _selectedChannelFeed.value = videos
                 if (videos.isEmpty()) {
                     _selectedChannelFeedError.value =
-                        "Couldn't load uploads from ${channel.name}. Pull to try again."
+                        app.getString(R.string.hvm_channel_feed_error, channel.name)
                 }
             } catch (e: Exception) {
                 KLog.e("HomeViewModel", "Selected channel feed failed", e)
                 _selectedChannelFeedError.value =
-                    "Couldn't load uploads from ${channel.name}. Pull to try again."
+                    app.getString(R.string.hvm_channel_feed_error, channel.name)
             } finally {
                 _isSelectedChannelFeedLoading.value = false
             }
@@ -936,7 +939,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 if (imported == null) {
                     onResult(
                         com.ivor.ivormusic.data.SubscriptionImportResult(
-                            0, 0, 0, error = "That file was empty or could not be opened."
+                            0, 0, 0, error = app.getString(R.string.hvm_import_empty)
                         )
                     )
                     return@launch
@@ -949,9 +952,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                         com.ivor.ivormusic.data.SubscriptionImportResult(
                             0, 0, 0, foreign,
                             error = if (foreign > 0) {
-                                "That file only had channels from services Koda can't play."
+                                app.getString(R.string.hvm_import_foreign)
                             } else {
-                                "Couldn't find any channels in that file."
+                                app.getString(R.string.hvm_import_no_channels)
                             }
                         )
                     )
@@ -992,7 +995,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 KLog.e("HomeViewModel", "Subscription import failed", e)
                 onResult(
                     com.ivor.ivormusic.data.SubscriptionImportResult(
-                        0, 0, 0, error = "Couldn't read that file."
+                        0, 0, 0, error = app.getString(R.string.hvm_import_read)
                     )
                 )
             } finally {
@@ -1014,7 +1017,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         if (!sessionManager.isLoggedIn()) {
             onResult(
                 com.ivor.ivormusic.data.SubscriptionImportResult(
-                    0, 0, 0, error = "Sign in to YouTube first."
+                    0, 0, 0, error = app.getString(R.string.sm_sign_in_first)
                 )
             )
             return
@@ -1026,7 +1029,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 if (channels.isEmpty()) {
                     onResult(
                         com.ivor.ivormusic.data.SubscriptionImportResult(
-                            0, 0, 0, error = "Your account has no subscriptions to copy."
+                            0, 0, 0, error = app.getString(R.string.hvm_copy_empty)
                         )
                     )
                     return@launch
@@ -1052,7 +1055,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 KLog.e("HomeViewModel", "Account subscription copy failed", e)
                 onResult(
                     com.ivor.ivormusic.data.SubscriptionImportResult(
-                        0, 0, 0, error = "Couldn't reach YouTube."
+                        0, 0, 0, error = app.getString(R.string.hvm_network)
                     )
                 )
             } finally {
@@ -1149,7 +1152,25 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             _playlistVideos.value = emptyList()
             _isPlaylistVideosLoading.value = true
             try {
-                _playlistVideos.value = youtubeRepository.getPlaylistVideos(playlistId)
+                _playlistVideos.value =
+                    if (playlistId.startsWith("MPRE")) {
+                        // A saved album. Its browse id is not a playlist id, so
+                        // the playlist call would answer garbage; the album
+                        // tracks themselves are ordinary YouTube video ids and
+                        // play fine as videos.
+                        youtubeRepository.getAlbumSongs(playlistId).map { song ->
+                            VideoItem(
+                                videoId = song.id,
+                                title = song.title,
+                                channelName = song.artist,
+                                thumbnailUrl = song.thumbnailUrl ?: song.highResThumbnailUrl,
+                                duration = song.duration / 1000,
+                                viewCount = ""
+                            )
+                        }
+                    } else {
+                        youtubeRepository.getPlaylistVideos(playlistId)
+                    }
             } finally {
                 _isPlaylistVideosLoading.value = false
             }

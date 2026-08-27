@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    M3 corner-radius scale, one shape per step. Tinted at the use site with
+    ColorFilter so a single white shape serves every color role, and used as a
+    background ImageProvider rather than GlanceModifier.cornerRadius because
+    that modifier is a no-op below API 31 and minSdk here is 30.
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@android:color/white" />
+    <corners android:radius="500dp" />
+</shape>

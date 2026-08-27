@@ -1,4 +1,5 @@
 package com.ivor.ivormusic.ui.settings
+import com.ivor.ivormusic.R
 
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
@@ -23,13 +24,16 @@ import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.Bedtime
+import androidx.compose.material.icons.rounded.BrightnessMedium
 import androidx.compose.material.icons.rounded.BugReport
+import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.BookmarkAdd
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.Contrast
 import androidx.compose.material.icons.rounded.Cookie
+import androidx.compose.material.icons.rounded.DirectionsCar
 import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.FilterList
 import androidx.compose.material.icons.rounded.FlashOn
@@ -51,12 +55,14 @@ import androidx.compose.material.icons.rounded.SettingsBackupRestore
 import androidx.compose.material.icons.rounded.SignalCellularAlt
 import androidx.compose.material.icons.rounded.Subscriptions
 import androidx.compose.material.icons.rounded.ToggleOn
+import androidx.compose.material.icons.rounded.Vibration
 import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.res.stringResource
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -143,6 +149,7 @@ internal fun searchSettings(
  * fix, "offline" is the word for Local Only, "bitrate" is the word for music
  * quality - none of those appear in the titles.
  */
+@Composable
 internal fun buildSettingsSearchIndex(
     onOpenPage: (SettingsPage) -> Unit,
     onOpenQualityPicker: (QualityDialogTarget) -> Unit,
@@ -169,41 +176,41 @@ internal fun buildSettingsSearchIndex(
 
     // Account
     entry(
-        "account", "Account", "Account", Icons.Rounded.AccountCircle,
+        "account", stringResource(R.string.settings_account), "Account", Icons.Rounded.AccountCircle,
         listOf("sign in", "signin", "login", "google", "youtube", "profile", "connect")
     ) { onOpenPage(SettingsPage.ACCOUNT) }
     entry(
-        "watch_history", "Save Watch History", "Account", Icons.Rounded.CheckCircle,
+        "watch_history", stringResource(R.string.sp_save_watch_history), "Account", Icons.Rounded.CheckCircle,
         listOf("history", "watched", "incognito", "private", "tracking")
     ) { onOpenPage(SettingsPage.ACCOUNT) }
     entry(
-        "cookies", "Replace Session Cookies", "Account", Icons.Rounded.Cookie,
+        "cookies", stringResource(R.string.sp_replace_session_cookies), "Account", Icons.Rounded.Cookie,
         listOf("cookie", "session", "token", "auth", "stale", "expired")
     ) { onOpenPage(SettingsPage.ACCOUNT) }
     entry(
-        "sign_out", "Sign Out", "Account", Icons.AutoMirrored.Rounded.Logout,
+        "sign_out", stringResource(R.string.sign_out), "Account", Icons.AutoMirrored.Rounded.Logout,
         listOf("logout", "log out", "disconnect", "remove account")
     ) { onOpenPage(SettingsPage.ACCOUNT) }
 
     // Appearance
     entry(
-        "theme", "Theme", "Appearance", Icons.Rounded.Contrast,
+        "theme", stringResource(R.string.sp_theme), stringResource(R.string.settings_appearance), Icons.Rounded.Contrast,
         listOf("dark", "light", "system", "night", "day", "mode")
     ) { onOpenPage(SettingsPage.APPEARANCE) }
     entry(
-        "palette", "Color palette", "Appearance", Icons.Rounded.Palette,
+        "palette", stringResource(R.string.sp_color_palette), stringResource(R.string.settings_appearance), Icons.Rounded.Palette,
         listOf("colour", "accent", "dynamic", "material you", "monet", "wallpaper", "scheme")
     ) { onNavigateToColorPalette() }
     entry(
-        "amoled", "AMOLED Black", "Appearance", Icons.Rounded.Contrast,
+        "amoled", stringResource(R.string.sp_amoled_black), stringResource(R.string.settings_appearance), Icons.Rounded.Contrast,
         listOf("oled", "pure black", "true black", "battery saving", "deep dark")
     ) { onOpenPage(SettingsPage.APPEARANCE) }
     entry(
-        "ambient", "Ambient Background", "Appearance", Icons.Rounded.Palette,
+        "ambient", stringResource(R.string.sp_ambient_background), stringResource(R.string.settings_appearance), Icons.Rounded.Palette,
         listOf("album art", "artwork", "background", "blur", "glow")
     ) { onOpenPage(SettingsPage.APPEARANCE) }
     entry(
-        "spotlight_home", "Spotlight Home", "Appearance", Icons.Rounded.Dashboard,
+        "spotlight_home", stringResource(R.string.sp_spotlight_home), stringResource(R.string.settings_appearance), Icons.Rounded.Dashboard,
         listOf(
             "home", "home screen", "layout", "shortcuts", "grid", "shelves",
             "quick picks", "spotify", "feed", "classic home"
@@ -211,8 +218,8 @@ internal fun buildSettingsSearchIndex(
     ) { onOpenPage(SettingsPage.APPEARANCE) }
     entry(
         "non_expressive_navigation_bar",
-        "Non-expressive navigation bar",
-        "Appearance",
+        stringResource(R.string.sp_non_expressive_nav),
+        stringResource(R.string.settings_appearance),
         Icons.Rounded.Dashboard,
         listOf(
             "navigation", "navbar", "nav bar", "short navigation bar", "compact",
@@ -222,27 +229,27 @@ internal fun buildSettingsSearchIndex(
 
     // Player
     entry(
-        "player_style", "Player Style", "Player", Icons.Rounded.PlayCircle,
+        "player_style", stringResource(R.string.settings_player), stringResource(R.string.settings_player), Icons.Rounded.PlayCircle,
         listOf(
             "layout", "skin", "look", "classic", "gesture", "editorial", "canvas",
             "poster", "bento", "sticker", "morph", "dial"
         )
     ) { onOpenPage(SettingsPage.PLAYER) }
     entry(
-        "artwork_colors", "Album Art Colors", "Player", Icons.Rounded.Palette,
+        "artwork_colors", stringResource(R.string.sp_album_art_colors), stringResource(R.string.settings_player), Icons.Rounded.Palette,
         listOf("artwork", "colour", "buttons", "tint", "cover")
     ) { onOpenPage(SettingsPage.PLAYER) }
 
     // Playback and quality
     entry(
-        "crossfade", "Crossfade", "Playback and quality", Icons.Rounded.GraphicEq,
+        "crossfade", stringResource(R.string.ob_crossfade), stringResource(R.string.settings_playback_and_quality), Icons.Rounded.GraphicEq,
         listOf(
             "fade", "blend", "transition", "overlap", "gapless", "automix",
             "automatic", "manual", "smart transition"
         )
     ) { onOpenPage(SettingsPage.PLAYBACK) }
     entry(
-        "normalizevolume", "Normalise volume", "Playback and quality",
+        "normalizevolume", stringResource(R.string.sp_normalise_volume), stringResource(R.string.settings_playback_and_quality),
         Icons.Rounded.VolumeUp,
         // Both spellings, and the words people actually type when one song is
         // twice as loud as the last.
@@ -252,12 +259,12 @@ internal fun buildSettingsSearchIndex(
         )
     ) { onOpenPage(SettingsPage.PLAYBACK) }
     entry(
-        "autoqueue", "Auto-load Queue", "Playback and quality",
+        "autoqueue", stringResource(R.string.sp_auto_load_queue), stringResource(R.string.settings_playback_and_quality),
         Icons.AutoMirrored.Rounded.QueueMusic,
         listOf("queue", "autoplay", "radio", "recommended", "keep playing", "endless")
     ) { onOpenPage(SettingsPage.PLAYBACK) }
     entry(
-        "music_history", "Save Listening History", "Playback and quality",
+        "music_history", stringResource(R.string.sp_save_listening_history), stringResource(R.string.settings_playback_and_quality),
         Icons.Rounded.History,
         listOf(
             "history", "listening", "recently played", "played", "log", "track",
@@ -265,53 +272,77 @@ internal fun buildSettingsSearchIndex(
         )
     ) { onOpenPage(SettingsPage.PLAYBACK) }
     entry(
-        "music_q_wifi", "Music quality on Wi-Fi", "Playback and quality",
+        "music_q_wifi", stringResource(R.string.sp_music_quality_wifi), stringResource(R.string.settings_playback_and_quality),
         Icons.Rounded.MusicNote,
         listOf("bitrate", "audio", "sound", "data saver", "high", "normal", "kbps")
     ) { onOpenQualityPicker(QualityDialogTarget.MUSIC_WIFI) }
     entry(
-        "music_q_mobile", "Music quality on mobile data", "Playback and quality",
+        "music_q_mobile", stringResource(R.string.sp_music_quality_mobile), stringResource(R.string.settings_playback_and_quality),
         Icons.Rounded.SignalCellularAlt,
         listOf("bitrate", "audio", "cellular", "data saver", "roaming", "kbps")
     ) { onOpenQualityPicker(QualityDialogTarget.MUSIC_MOBILE) }
     entry(
-        "video_q_wifi", "Video quality on Wi-Fi", "Playback and quality",
+        "video_q_wifi", stringResource(R.string.sp_video_quality_wifi), stringResource(R.string.settings_playback_and_quality),
         Icons.Rounded.VideoLibrary,
         listOf("resolution", "1080p", "720p", "480p", "4k", "2160", "default quality")
     ) { onOpenQualityPicker(QualityDialogTarget.VIDEO_WIFI) }
     entry(
-        "video_q_mobile", "Video quality on mobile data", "Playback and quality",
+        "video_q_mobile", stringResource(R.string.sp_video_quality_mobile), stringResource(R.string.settings_playback_and_quality),
         Icons.Rounded.SignalCellularAlt,
         listOf("resolution", "cellular", "data", "1080p", "720p", "roaming")
     ) { onOpenQualityPicker(QualityDialogTarget.VIDEO_MOBILE) }
+    entry(
+        "video_brightness", "Remember fullscreen brightness", "Playback and quality",
+        Icons.Rounded.BrightnessMedium,
+        listOf(
+            "brightness", "dim", "slider", "fullscreen", "gesture", "reset",
+            "system brightness"
+        )
+    ) { onOpenPage(SettingsPage.PLAYBACK) }
+    entry(
+        "haptics", "Haptics", "Playback and quality",
+        Icons.Rounded.Vibration,
+        listOf(
+            "haptics", "vibration", "vibrate", "feedback", "touch", "buzz",
+            "rumble", "feel", "silent"
+        )
+    ) { onOpenPage(SettingsPage.PLAYBACK) }
+    entry(
+        "upload_notifications", "Notify about new uploads", "Notifications",
+        Icons.Rounded.NotificationsActive,
+        listOf(
+            "upload", "new video", "subscription notification", "background check",
+            "channel alert", "notify me"
+        )
+    ) { onOpenPage(SettingsPage.NOTIFICATIONS) }
     // Content and feeds
     entry(
-        "local_only", "Local Only", "Content and feeds", Icons.Rounded.CloudOff,
+        "local_only", stringResource(R.string.sp_local_only), stringResource(R.string.settings_content_and_feeds), Icons.Rounded.CloudOff,
         listOf("offline", "airplane", "no internet", "disable youtube", "private", "data off")
     ) { onOpenPage(SettingsPage.CONTENT) }
     entry(
-        "content_mode", "Content Mode", "Content and feeds", Icons.Rounded.VideoLibrary,
+        "content_mode", stringResource(R.string.sp_mode), stringResource(R.string.settings_content_and_feeds), Icons.Rounded.VideoLibrary,
         listOf("video mode", "music mode", "switch", "youtube videos")
     ) { onOpenPage(SettingsPage.CONTENT) }
     entry(
-        "home_toggle", "Home Screen Mode Toggle", "Content and feeds", Icons.Rounded.ToggleOn,
+        "home_toggle", stringResource(R.string.sp_home_mode_toggle), stringResource(R.string.settings_content_and_feeds), Icons.Rounded.ToggleOn,
         listOf("home", "header", "switcher", "quick toggle")
     ) { onOpenPage(SettingsPage.CONTENT) }
     entry(
-        "timed_comments", "Timed Comments", "Content and feeds",
+        "timed_comments", stringResource(R.string.sp_timed_comments), stringResource(R.string.settings_content_and_feeds),
         Icons.AutoMirrored.Rounded.Comment,
         listOf("comments", "seek bar", "timeline", "timestamps")
     ) { onOpenPage(SettingsPage.CONTENT) }
     entry(
-        "shorts", "Shorts", "Content and feeds", Icons.Rounded.Bolt,
+        "shorts", stringResource(R.string.sp_shorts), stringResource(R.string.settings_content_and_feeds), Icons.Rounded.Bolt,
         listOf("shorts", "reels", "short videos", "hide shorts", "vertical")
     ) { onOpenPage(SettingsPage.CONTENT) }
     entry(
-        "shorts_buttons", "Shorts Buttons", "Content and feeds", Icons.Rounded.Visibility,
+        "shorts_buttons", stringResource(R.string.sp_shorts_buttons), stringResource(R.string.settings_content_and_feeds), Icons.Rounded.Visibility,
         listOf("hide buttons", "like", "share", "overlay", "actions")
     ) { onShowShortsButtons() }
     entry(
-        "not_interested", "Not Recommended", "Content and feeds", Icons.Rounded.NotInterested,
+        "not_interested", stringResource(R.string.sp_not_recommended), stringResource(R.string.settings_content_and_feeds), Icons.Rounded.NotInterested,
         listOf(
             "blocked", "hidden", "not interested", "blocklist", "dont recommend",
             "blocked channels", "unhide"
@@ -320,36 +351,43 @@ internal fun buildSettingsSearchIndex(
 
     // Subscriptions
     entry(
-        "manage_subs", "Manage Subscriptions", "Subscriptions", Icons.Rounded.Subscriptions,
+        "manage_subs", stringResource(R.string.sp_manage_subscriptions), "Subscriptions", Icons.Rounded.Subscriptions,
         listOf(
             "import", "export", "opml", "takeout", "newpipe", "pipepipe", "groups",
             "channels", "follow", "backup"
         )
     ) { onNavigateToSubscriptions() }
     entry(
-        "subs_source", "Subscriptions Shown", "Subscriptions", Icons.Rounded.FilterList,
+        "subs_source", stringResource(R.string.sp_subscriptions_shown), "Subscriptions", Icons.Rounded.FilterList,
         listOf("source", "feed", "which", "local", "account", "merged")
     ) { onOpenRoutingPicker(SubscriptionDialogTarget.SOURCE) }
     entry(
-        "subs_target", "Subscribe Saves To", "Subscriptions", Icons.Rounded.BookmarkAdd,
+        "subs_target", stringResource(R.string.sp_subscribe_saves_to), "Subscriptions", Icons.Rounded.BookmarkAdd,
         listOf("target", "where", "device", "account", "save subscriptions")
     ) { onOpenRoutingPicker(SubscriptionDialogTarget.TARGET) }
     entry(
-        "fast_subs", "Fast Subscription Refresh", "Subscriptions", Icons.Rounded.Bolt,
+        "fast_subs", stringResource(R.string.sp_fast_refresh), "Subscriptions", Icons.Rounded.Bolt,
         listOf("rss", "refresh", "speed", "data usage", "feed slow", "duration badges")
     ) { onOpenPage(SettingsPage.SUBSCRIPTIONS) }
 
     // Storage
     entry(
-        "cache_music", "Cache Music", "Storage and cache", Icons.Rounded.Save,
+        "private_downloads", stringResource(R.string.sp_private_downloads), "Storage and cache", Icons.Rounded.Security,
+        listOf(
+            "hidden", "hide files", "file manager", "downloads folder", "app only",
+            "private storage", "gallery", "album art", "thumbnail"
+        )
+    ) { onOpenPage(SettingsPage.STORAGE) }
+    entry(
+        "cache_music", stringResource(R.string.sp_cache_music), "Storage and cache", Icons.Rounded.Save,
         listOf("cache", "store", "replay", "offline songs", "buffer")
     ) { onOpenPage(SettingsPage.STORAGE) }
     entry(
-        "cache_size", "Max Cache Size", "Storage and cache", Icons.Rounded.Folder,
+        "cache_size", stringResource(R.string.sp_max_cache_size), "Storage and cache", Icons.Rounded.Folder,
         listOf("size", "limit", "storage", "space", "mb", "gb", "how much")
     ) { onOpenPage(SettingsPage.STORAGE) }
     entry(
-        "clear_cache", "Clear Cache", "Storage and cache", Icons.Rounded.FolderOff,
+        "clear_cache", stringResource(R.string.sp_clear_cache), "Storage and cache", Icons.Rounded.FolderOff,
         listOf("clear", "delete", "free space", "wipe", "clean", "reset storage")
     ) { onOpenPage(SettingsPage.STORAGE) }
 
@@ -357,21 +395,21 @@ internal fun buildSettingsSearchIndex(
     // at this from opposite directions - "back up" before a new phone, and
     // "restore" or "transfer" after one - and neither word finds the other.
     entry(
-        "backup", "Create a backup", "Backup and restore", Icons.Rounded.SettingsBackupRestore,
+        "backup", stringResource(R.string.bk_create), stringResource(R.string.settings_backup_and_restore), Icons.Rounded.SettingsBackupRestore,
         listOf(
             "backup", "back up", "export", "save everything", "new phone",
             "transfer", "move", "migrate", "copy"
         )
     ) { onNavigateToBackup() }
     entry(
-        "restore", "Restore from a backup", "Backup and restore", Icons.Rounded.Restore,
+        "restore", stringResource(R.string.bk_restore), stringResource(R.string.settings_backup_and_restore), Icons.Rounded.Restore,
         listOf(
             "restore", "import", "recover", "reinstall", "lost", "bring back",
             "old phone", "transfer"
         )
     ) { onNavigateToBackup() }
     entry(
-        "backup_playlists", "Save playlists and likes", "Backup and restore", Icons.Rounded.Save,
+        "backup_playlists", stringResource(R.string.bk_hold_2), stringResource(R.string.settings_backup_and_restore), Icons.Rounded.Save,
         listOf(
             "playlists", "liked songs", "stats", "history", "keep", "protect",
             "lose", "wipe", "uninstall"
@@ -381,49 +419,56 @@ internal fun buildSettingsSearchIndex(
     // Notifications - only where the platform can promote an ongoing notification
     if (supportsLiveUpdates) {
         entry(
-            "live_download", "Live download updates", "Notifications", Icons.Rounded.Bolt,
+            "live_download", stringResource(R.string.sp_live_download_updates), "Notifications", Icons.Rounded.Bolt,
             listOf("notification", "status bar", "chip", "download progress", "live update")
         ) { onOpenPage(SettingsPage.NOTIFICATIONS) }
         entry(
-            "live_playback", "Live playback updates", "Notifications", Icons.Rounded.GraphicEq,
+            "live_playback", stringResource(R.string.sp_live_playback_updates), "Notifications", Icons.Rounded.GraphicEq,
             listOf("notification", "now playing", "status bar", "chip", "live update")
         ) { onOpenPage(SettingsPage.NOTIFICATIONS) }
     }
 
     // Local library
     entry(
-        "local_songs", "Load Local Songs", "Local library", Icons.Rounded.Folder,
+        "local_songs", stringResource(R.string.sp_load_local_songs), "Local library", Icons.Rounded.Folder,
         listOf("device", "files", "mp3", "sd card", "my music", "scan", "offline")
     ) { onOpenPage(SettingsPage.LOCAL_LIBRARY) }
     entry(
-        "excluded_folders", "Excluded Folders", "Local library", Icons.Rounded.FolderOff,
+        "excluded_folders", stringResource(R.string.sp_excluded_folders), "Local library", Icons.Rounded.FolderOff,
         listOf("exclude", "ignore", "hide folder", "ringtones", "whatsapp", "recordings")
     ) { onOpenFolderExclusion() }
 
     // Advanced
     entry(
-        "compat_scan", "High Compatibility Scanning", "Advanced", Icons.Rounded.Security,
+        "compat_scan", stringResource(R.string.sp_high_compat_scanning), "Advanced", Icons.Rounded.Security,
         listOf(
             "mediastore", "hyperos", "miui", "xiaomi", "redmi", "poco",
             "missing music", "songs not showing", "scan"
         )
     ) { onOpenPage(SettingsPage.ADVANCED) }
     entry(
-        "battery", "Ignore Battery Optimizations", "Advanced", Icons.Rounded.FlashOn,
+        "battery", stringResource(R.string.sp_ignore_battery), "Advanced", Icons.Rounded.FlashOn,
         listOf(
             "battery", "background", "playback stops", "killed", "doze",
             "optimisation", "keep alive"
         )
     ) { onOpenPage(SettingsPage.ADVANCED) }
     entry(
-        "report_bug", "Report a bug", "Advanced", Icons.Rounded.BugReport,
+        "android_auto", stringResource(R.string.sp_android_auto), "Advanced", Icons.Rounded.DirectionsCar,
+        listOf(
+            "auto", "car", "vehicle", "android auto", "sideload", "unknown sources",
+            "not showing in car", "play store"
+        )
+    ) { onOpenPage(SettingsPage.ADVANCED) }
+    entry(
+        "report_bug", stringResource(R.string.sp_report_bug), "Advanced", Icons.Rounded.BugReport,
         listOf(
             "bug report", "crash", "logs", "logcat", "feedback", "problem",
             "not working", "broken", "error", "diagnostics", "telegram"
         )
     ) { onNavigateToReportBug() }
     entry(
-        "time_limit", "Daily time limit", "Advanced", Icons.Rounded.Bedtime,
+        "time_limit", stringResource(R.string.sp_daily_time_limit), "Advanced", Icons.Rounded.Bedtime,
         listOf(
             "screen time", "usage", "app lock", "lock", "limit", "focus",
             "digital wellbeing", "parental", "hours", "listening time"
@@ -432,7 +477,7 @@ internal fun buildSettingsSearchIndex(
 
     // About
     entry(
-        "about", "About Koda", "About", Icons.Rounded.Info,
+        "about", stringResource(R.string.settings_section_about), stringResource(R.string.settings_section_about), Icons.Rounded.Info,
         listOf("version", "update", "changelog", "github", "licence", "build")
     ) { onShowAbout() }
 }
@@ -450,7 +495,7 @@ internal fun SettingsSearchField(
     SearchField(
         query = query,
         onQueryChange = onQueryChange,
-        placeholder = "Search settings",
+        placeholder = stringResource(R.string.ss_search_settings),
         modifier = modifier
     )
 }

@@ -1,0 +1,191 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Koda</string>
+    <string name="now_playing_channel_name">Παίζει τώρα</string>
+    <string name="video_playback_channel_name">Αναπαραγωγή βίντεο</string>
+
+    <string name="undo">Αναίρεση</string>
+    <string name="action_cancel">Άκυρο</string>
+    <string name="action_done">Τέλος</string>
+    <string name="action_create">Δημιουργία</string>
+    <string name="action_save">Αποθήκευση</string>
+    <string name="action_delete">Διαγραφή</string>
+    <string name="action_edit">Επεξεργασία</string>
+    <string name="action_share">Κοινοποίηση</string>
+    <string name="action_retry">Δοκιμή ξανά</string>
+    <string name="action_see_all">Εμφάνιση όλων</string>
+    <string name="action_play_all">Αναπαραγωγή όλων</string>
+    <string name="action_show_more">Εμφάνιση περισσότερων</string>
+    <string name="action_try_again">Δοκιμάστε ξανά</string>
+    <string name="action_open_settings">Άνοιγμα ρυθμίσεων</string>
+    <string name="action_clear_all">Διαγραφή όλων</string>
+    <string name="action_new_playlist">Νέα λίστα αναπαραγωγής</string>
+    <string name="action_grant_permission">Χορήγηση άδειας</string>
+    <string name="unknown_artist">Άγνωστος καλλιτέχνης</string>
+    <string name="untitled_song">Τραγούδι χωρίς τίτλο</string>
+    <string name="label_playlist">Λίστα αναπαραγωγής</string>
+
+    <string name="tab_home">Αρχική</string>
+    <string name="tab_search">Αναζήτηση</string>
+    <string name="tab_subs">Συνδρομές</string>
+    <string name="tab_library">Βιβλιοθήκη</string>
+
+    <string name="local_only_title">Η λειτουργία Μόνο τοπικά είναι ενεργή</string>
+    <string name="local_only_default_subtitle">Αυτή η ενότητα απαιτεί internet. Απενεργοποιήστε τη λειτουργία Μόνο τοπικά στις Ρυθμίσεις για να τη χρησιμοποιήσετε.</string>
+    <string name="local_only_video_mode_subtitle">Η λειτουργία βίντεο απαιτεί internet. Απενεργοποιήστε τη λειτουργία Μόνο τοπικά στις Ρυθμίσεις για να δείτε βίντεο.</string>
+    <string name="local_only_video_search_subtitle">Η αναζήτηση βίντεο απαιτεί internet. Απενεργοποιήστε τη λειτουργία Μόνο τοπικά στις Ρυθμίσεις για αναζήτηση.</string>
+    <string name="local_only_subscriptions_subtitle">Οι συνδρομές απαιτούν internet. Απενεργοποιήστε τη λειτουργία Μόνο τοπικά στις Ρυθμίσεις για να τις δείτε.</string>
+    <string name="local_only_video_library_subtitle">Η βιβλιοθήκη βίντεο απαιτεί internet. Απενεργοποιήστε τη λειτουργία Μόνο τοπικά στις Ρυθμίσεις για να τη δείτε.</string>
+    <string name="local_only_update_subtitle">Ο έλεγχος ενημερώσεων απαιτεί internet. Απενεργοποιήστε τη λειτουργία Μόνο τοπικά στις Ρυθμίσεις.</string>
+
+    <string name="crash_dialog_title">Το Koda κράσαρε την προηγούμενη φορά</string>
+    <string name="crash_dialog_message">Κάτι πήγε στραβά στην προηγούμενη συνεδρία σας. Μπορείτε να στείλετε αναφορά σφάλματος με λεπτομέρειες - τίποτα δεν φεύγει από τη συσκευή σας εκτός αν επιλέξετε να το μοιραστείτε.</string>
+    <string name="crash_dialog_view_report">Προβολή &amp; αναφορά</string>
+    <string name="crash_dialog_not_now">Όχι τώρα</string>
+
+    <string name="permission_required_title">Απαιτείται άδεια για τη φόρτωση τραγουδιών</string>
+
+    <string name="home_section_recent_albums">Πρόσφατα άλμπουμ</string>
+    <string name="home_section_jump_back_in">Συνεχίστε την ακρόαση</string>
+    <string name="your_mix_line1">Το</string>
+    <string name="your_mix_line2">μιξ σας</string>
+    <string name="update_badge_version">v%1$s</string>
+    <string name="artists_joined">%1$s, %2$s</string>
+    <string name="cd_profile">Προφίλ</string>
+    <string name="cd_downloads">Λήψεις</string>
+    <string name="cd_settings">Ρυθμίσεις</string>
+    <string name="cd_play">Αναπαραγωγή</string>
+    <string name="cd_pause">Παύση</string>
+    <string name="cd_next">Επόμενο</string>
+    <string name="cd_album_art">Εξώφυλλο άλμπουμ</string>
+    <string name="cd_show_all">Εμφάνιση όλων: %1$s</string>
+
+    <string name="spotlight_quick_picks">Γρήγορες επιλογές</string>
+    <string name="spotlight_your_playlists">Οι λίστες σας</string>
+    <string name="spotlight_from_your_library">Από τη βιβλιοθήκη σας</string>
+    <string name="spotlight_caption_liked">Από τραγούδια που σας άρεσαν</string>
+    <string name="spotlight_caption_recent">Από όσα ακούσατε πρόσφατα</string>
+    <string name="shortcut_liked_songs">Αγαπημένα τραγούδια</string>
+    <string name="filter_all">Όλα</string>
+    <string name="filter_liked">Μου αρέσουν</string>
+    <string name="filter_recent">Πρόσφατα</string>
+    <string name="filter_playlists">Λίστες</string>
+    <string name="spotlight_empty_no_liked">Κανένα αγαπημένο τραγούδι ακόμη</string>
+    <string name="spotlight_empty_no_recent">Δεν έχει παιχτεί τίποτα ακόμη</string>
+    <string name="spotlight_empty_no_playlists">Καμία λίστα αναπαραγωγής ακόμη</string>
+    <string name="spotlight_empty_generic">Δεν υπάρχει τίποτα προς το παρόν</string>
+    <string name="spotlight_hint_liked">Τα τραγούδια που σας αρέσουν θα συγκεντρωθούν εδώ.</string>
+    <string name="spotlight_hint_playlists">Οι λίστες που δημιουργείτε ή αποθηκεύετε εμφανίζονται εδώ.</string>
+    <string name="spotlight_hint_all">Παίξτε κάτι και η αρχική σας σελίδα θα γεμίσει.</string>
+
+    <string name="sleep_timer_title">Χρονοδιακόπτης ύπνου</string>
+    <string name="sleep_timer_status_track">Αυτό το κομμάτι</string>
+    <string name="sleep_timer_detail_track">Η αναπαραγωγή σταματά όταν τελειώσει το τρέχον τραγούδι</string>
+    <string name="sleep_timer_detail_duration">Η αναπαραγωγή σβήνει σταδιακά και κάνει παύση όταν λήξει ο χρονοδιακόπτης</string>
+    <string name="minutes_short">%1$d λεπ</string>
+    <string name="sleep_timer_end_of_track">Τέλος αυτού του κομματιού</string>
+    <string name="sleep_timer_turn_off">Απενεργοποίηση</string>
+
+    <string name="cd_switch_to_music">Μετάβαση σε λειτουργία μουσικής</string>
+    <string name="cd_switch_to_video">Μετάβαση σε λειτουργία βίντεο</string>
+    <string name="cd_drag_to_reorder">Σύρετε για αναδιάταξη</string>
+    <string name="cd_favorite">Αγαπημένο</string>
+    <string name="cd_clear_search">Διαγραφή αναζήτησης</string>
+    <string name="queue_removed_snackbar">Αφαιρέθηκε το %1$s</string>
+
+    <string name="song_options_play_next">Αναπαραγωγή στη συνέχεια</string>
+    <string name="song_options_play_next_subtitle">Αμέσως μετά αυτό το τραγούδι</string>
+    <string name="song_options_add_to_queue">Προσθήκη στην ουρά</string>
+    <string name="song_options_add_to_queue_subtitle">Στο τέλος</string>
+    <string name="song_options_add_to_playlist">Προσθήκη σε λίστα</string>
+    <string name="song_options_remove_from_liked">Αφαίρεση από τα «Μου αρέσουν»</string>
+    <string name="song_options_like">Μου αρέσει</string>
+    <string name="song_options_download">Λήψη</string>
+    <string name="song_options_download_subtitle">Διατήρηση σε αυτή τη συσκευή</string>
+    <string name="song_options_downloaded">Έγινε λήψη</string>
+    <string name="song_options_go_to_artist">Μετάβαση σε %1$s</string>
+
+    <string name="add_to_playlist_title">Προσθήκη σε λίστα αναπαραγωγής</string>
+    <string name="new_playlist_label">Νέα λίστα αναπαραγωγής</string>
+    <string name="name_label">Όνομα</string>
+    <string name="description_optional_label">Περιγραφή (προαιρετικό)</string>
+
+    <string name="video_options_watch_later">Προβολή αργότερα</string>
+    <string name="video_options_kept_on_device">Αποθηκεύτηκε σε αυτή τη συσκευή</string>
+    <string name="video_options_save_to_playlist">Αποθήκευση σε λίστα</string>
+    <string name="video_options_download">Λήψη</string>
+    <string name="video_options_go_to_channel">Μετάβαση στο κανάλι</string>
+    <string name="video_options_share">Κοινοποίηση</string>
+    <string name="video_options_share_chooser">Κοινοποίηση βίντεο</string>
+    <string name="video_options_not_interested">Δεν με ενδιαφέρει</string>
+    <string name="video_options_dont_recommend_channel">Να μη προτείνεται αυτό το κανάλι</string>
+    <string name="video_options_dont_recommend_channel_name">Να μη προτείνεται το %1$s</string>
+    <string name="cd_back">Πίσω</string>
+    <string name="search_playlists_placeholder">Αναζήτηση λιστών</string>
+    <string name="no_playlist_matches">Καμία λίστα δεν ταιριάζει με \"%1$s\"</string>
+    <string name="no_playlists_yet_hint">Καμία λίστα ακόμη. Δημιουργήστε μία και αυτό το βίντεο θα μπει απευθείας σε αυτήν.</string>
+    <string name="cd_saved">Αποθηκεύτηκε</string>
+    <string name="cd_couldnt_save">Δεν ήταν δυνατή η αποθήκευση</string>
+    <string name="cd_in_this_playlist">Βρίσκεται ήδη σε αυτή τη λίστα</string>
+
+    <string name="settings_section_you">Εσείς</string>
+    <string name="settings_section_look_and_feel">Εμφάνιση</string>
+    <string name="settings_section_playback_and_content">Αναπαραγωγή και περιεχόμενο</string>
+    <string name="settings_section_system">Σύστημα</string>
+    <string name="settings_section_about">Σχετικά</string>
+    <string name="settings_account">Λογαριασμός</string>
+    <string name="settings_appearance">Εμφάνιση</string>
+    <string name="settings_player">Αναπαραγωγέας</string>
+    <string name="settings_playback_and_quality">Αναπαραγωγή και ποιότητα</string>
+    <string name="settings_content_and_feeds">Περιεχόμενο και ροές</string>
+    <string name="settings_subscriptions">Συνδρομές</string>
+    <string name="settings_storage_and_cache">Αποθήκευση και cache</string>
+    <string name="settings_notifications">Ειδοποιήσεις</string>
+    <string name="settings_local_library">Τοπική βιβλιοθήκη</string>
+    <string name="settings_backup_and_restore">Αντίγραφο ασφαλείας και επαναφορά</string>
+    <string name="settings_advanced">Για προχωρημένους</string>
+    <string name="settings_advanced_value_xiaomi">Προτεινόμενο σε αυτή τη συσκευή</string>
+    <string name="settings_advanced_value_other">Διορθώσεις σάρωσης και μπαταρίας</string>
+    <string name="settings_version_subtitle">Έκδοση %1$s (%2$d)</string>
+
+    <string name="profiles_title">Προφίλ</string>
+    <string name="profiles_description">Οι συνδρομές και οι κρυφές προτάσεις διατηρούνται ανά προφίλ. Οι λίστες, τα αγαπημένα τραγούδια και οι λήψεις είναι κοινές.</string>
+    <string name="add_youtube_account">Προσθήκη λογαριασμού YouTube</string>
+    <string name="add_youtube_account_subtitle">Συνδεθείτε με άλλο λογαριασμό Google</string>
+    <string name="add_device_profile">Προσθήκη προφίλ σε αυτή τη συσκευή</string>
+    <string name="add_device_profile_subtitle">Ξεχωριστές συνδρομές, χωρίς λογαριασμό</string>
+    <string name="profile_signed_out">Αποσύνδεση - πατήστε για είσοδο</string>
+    <string name="profile_session_expired">Η συνεδρία έληξε - πατήστε για επανασύνδεση</string>
+    <string name="profile_on_this_device">Σε αυτή τη συσκευή</string>
+    <string name="profile_youtube_account">Λογαριασμός YouTube</string>
+    <string name="cd_active_profile">Ενεργό προφίλ</string>
+    <string name="cd_remove_profile">Αφαίρεση %1$s</string>
+    <string name="new_profile_dialog_title">Νέο προφίλ σε αυτή τη συσκευή</string>
+    <string name="sign_out_confirm_title">Αποσύνδεση από %1$s;</string>
+    <string name="remove_profile_confirm_title">Αφαίρεση %1$s;</string>
+    <string name="sign_out">Αποσύνδεση</string>
+    <string name="remove">Αφαίρεση</string>
+
+    <string name="library_empty_title">Η βιβλιοθήκη σας είναι άδεια</string>
+    <string name="library_empty_subtitle">Τραγούδια που κατεβάζετε ή σας αρέσουν θα εμφανιστούν εδώ</string>
+    <string name="library_create_playlist_hint">Δημιουργήστε μία με το κουμπί + παρακάτω</string>
+    <string name="fab_downloads">Λήψεις</string>
+    <string name="fab_listening_history">Ιστορικό ακρόασης</string>
+    <string name="fab_statistics">Στατιστικά</string>
+    <string name="cd_listening_stats">Στατιστικά ακρόασης</string>
+    <string name="recently_played">Πρόσφατα ακουσμένα</string>
+    <string name="liked_songs">Αγαπημένα τραγούδια</string>
+    <string name="no_artists_yet">Κανείς καλλιτέχνης ακόμη</string>
+    <string name="no_artists_yet_subtitle">Καλλιτέχνες από τα τραγούδια σας θα εμφανιστούν εδώ</string>
+    <string name="no_albums_yet">Κανένα άλμπουμ ακόμη</string>
+    <string name="no_albums_yet_subtitle">Άλμπουμ από τα τραγούδια σας θα εμφανιστούν εδώ</string>
+
+    <plurals name="n_songs">
+        <item quantity="one">%1$d τραγούδι</item>
+        <item quantity="other">%1$d τραγούδια</item>
+    </plurals>
+    <plurals name="n_playlists">
+        <item quantity="one">%1$d λίστα</item>
+        <item quantity="other">%1$d λίστες</item>
+    </plurals>
+</resources>

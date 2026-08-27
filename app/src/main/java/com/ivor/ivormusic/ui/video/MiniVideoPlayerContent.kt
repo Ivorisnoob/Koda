@@ -1,4 +1,5 @@
 package com.ivor.ivormusic.ui.video
+import androidx.compose.ui.res.stringResource
 
 import android.view.LayoutInflater
 import androidx.compose.animation.core.Spring
@@ -20,6 +21,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.CastConnected
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Close
@@ -88,9 +90,14 @@ fun MiniVideoPlayerContent(viewModel: VideoPlayerViewModel) {
     val progress by viewModel.progress.collectAsState()
     val isLive by viewModel.isLive.collectAsState()
     val isPortrait by viewModel.isPortraitVideo.collectAsState()
+    val isCasting by viewModel.isCasting.collectAsState()
+    val castDeviceName by viewModel.castDeviceName.collectAsState()
 
     val video = currentVideo ?: return
     val haptics = rememberPlayerHaptics()
+    val liveLabel = stringResource(R.string.badge_live)
+    val playLabel = stringResource(R.string.cd_play)
+    val pauseLabel = stringResource(R.string.cd_pause)
 
     Row(
         modifier = Modifier
@@ -103,6 +110,7 @@ fun MiniVideoPlayerContent(viewModel: VideoPlayerViewModel) {
             isBuffering = isBuffering,
             isPortrait = isPortrait,
             isLive = isLive,
+            isCasting = isCasting,
             progress = progress
         )
 
@@ -125,15 +133,17 @@ fun MiniVideoPlayerContent(viewModel: VideoPlayerViewModel) {
                 // accent rather than the red every other app uses: a
                 // hardcoded red is what the palette system exists to
                 // prevent, and the word already reads as live on its own.
-                text = if (isLive) {
-                    listOf("LIVE", video.channelName)
-                        .filter { it.isNotBlank() }
-                        .joinToString("  •  ")
-                } else {
-                    video.channelName
+                text = when {
+                    isCasting && castDeviceName != null ->
+                        stringResource(R.string.mini_casting_to, castDeviceName ?: "")
+                    isLive ->
+                        listOf(liveLabel, video.channelName)
+                            .filter { it.isNotBlank() }
+                            .joinToString("  •  ")
+                    else -> video.channelName
                 },
                 style = MaterialTheme.typography.bodySmall,
-                color = if (isLive) {
+                color = if (isLive || isCasting) {
                     MaterialTheme.colorScheme.primary
                 } else {
                     MaterialTheme.colorScheme.onSurfaceVariant
@@ -165,7 +175,7 @@ fun MiniVideoPlayerContent(viewModel: VideoPlayerViewModel) {
             Icon(
                 imageVector = if (isPlaying) Icons.Rounded.Pause
                     else Icons.Rounded.PlayArrow,
-                contentDescription = if (isPlaying) "Pause" else "Play",
+                contentDescription = if (isPlaying) pauseLabel else playLabel,
                 modifier = Modifier.size(24.dp)
             )
         }
@@ -182,11 +192,12 @@ fun MiniVideoPlayerContent(viewModel: VideoPlayerViewModel) {
         ) {
             Icon(
                 imageVector = Icons.Rounded.Close,
-                contentDescription = "Close video player",
+                contentDescription = stringResource(R.string.mv_close_player),
                 modifier = Modifier.size(22.dp)
             )
         }
     }
+
 }
 
 /**
@@ -214,6 +225,7 @@ private fun MiniVideoSurface(
     isBuffering: Boolean,
     isPortrait: Boolean,
     isLive: Boolean,
+    isCasting: Boolean,
     progress: Float
 ) {
     val resizeMode = remember(isPortrait) {
@@ -264,6 +276,25 @@ private fun MiniVideoSurface(
             onRelease = { pv -> pv.player = null },
             modifier = Modifier.fillMaxSize()
         )
+
+        if (isCasting) {
+            // The local player renders nothing while the TV owns the picture;
+            // a cast badge over the black thumbnail says where it went instead
+            // of reading as a broken preview.
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(Color.Black),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.CastConnected,
+                    contentDescription = "Casting",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+        }
 
         if (isBuffering) {
             // The watch page's own choice over video: it draws its own

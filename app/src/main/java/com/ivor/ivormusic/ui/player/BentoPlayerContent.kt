@@ -214,6 +214,12 @@ fun BentoPlayerSheetContent(
                                 )
                             }
                         }
+                        MusicCastIconButton(
+                            containerColor = tileColor,
+                            contentColor = onTile,
+                            size = 56.dp,
+                            shape = RoundedCornerShape(18.dp)
+                        )
                         BentoTile(
                             onClick = sleepTimer.open,
                             color = if (sleepTimer.active) {

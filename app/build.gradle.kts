@@ -30,8 +30,8 @@ android {
         // platform did not gain until API 33.
         minSdk = 30
         targetSdk = 36
-        versionCode = 24
-        versionName = "4.6"
+        versionCode = 25
+        versionName = "4.7"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -123,10 +123,27 @@ dependencies {
     implementation(libs.androidx.media3.exoplayer.hls)
     implementation(libs.androidx.media3.ui)
     implementation(libs.androidx.media3.session)
+    // Chromecast: CastPlayer is a Player facade over a Chromecast session, so
+    // video mode's transport controls drive either the local ExoPlayer or the
+    // receiver through the same interface.
+    implementation(libs.androidx.media3.cast)
+    // Route discovery for the in-app cast device sheet.
+    implementation(libs.androidx.mediarouter)
+    // Core Cast classes (RemoteMediaClient, MediaStatus). media3-cast only
+    // brings the -framework artifact, which is not enough on its own.
+    implementation(libs.play.services.cast)
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.compose.material.icons.extended)
     implementation(libs.coil.compose)
+    // The home screen widget. Compose-shaped (Glance), which is why the
+    // widget can share the app's design language without RemoteViews XML.
+    implementation(libs.androidx.glance.appwidget)
+    // Bridges a Material 3 ColorScheme into Glance, so the widgets follow the
+    // palette chosen in Settings instead of raw system dynamic color.
+    implementation(libs.androidx.glance.material3)
+    // The background upload check over the local subscriptions feed.
+    implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.androidx.graphics.shapes)
     implementation(libs.androidx.ui.text.google.fonts)
     implementation(libs.androidx.palette.ktx)

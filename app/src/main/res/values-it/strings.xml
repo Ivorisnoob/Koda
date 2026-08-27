@@ -1,0 +1,191 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Koda</string>
+    <string name="now_playing_channel_name">Riproduzione in corso</string>
+    <string name="video_playback_channel_name">Riproduzione video</string>
+
+    <string name="undo">Annulla</string>
+    <string name="action_cancel">Annulla</string>
+    <string name="action_done">Fine</string>
+    <string name="action_create">Crea</string>
+    <string name="action_save">Salva</string>
+    <string name="action_delete">Elimina</string>
+    <string name="action_edit">Modifica</string>
+    <string name="action_share">Condividi</string>
+    <string name="action_retry">Riprova</string>
+    <string name="action_see_all">Mostra tutto</string>
+    <string name="action_play_all">Riproduci tutto</string>
+    <string name="action_show_more">Mostra altro</string>
+    <string name="action_try_again">Riprova</string>
+    <string name="action_open_settings">Apri impostazioni</string>
+    <string name="action_clear_all">Cancella tutto</string>
+    <string name="action_new_playlist">Nuova playlist</string>
+    <string name="action_grant_permission">Concedi autorizzazione</string>
+    <string name="unknown_artist">Artista sconosciuto</string>
+    <string name="untitled_song">Brano senza titolo</string>
+    <string name="label_playlist">Playlist</string>
+
+    <string name="tab_home">Home</string>
+    <string name="tab_search">Cerca</string>
+    <string name="tab_subs">Iscrizioni</string>
+    <string name="tab_library">Libreria</string>
+
+    <string name="local_only_title">La modalità Solo locale è attiva</string>
+    <string name="local_only_default_subtitle">Questa sezione richiede Internet. Disattiva la modalità Solo locale nelle Impostazioni per usarla.</string>
+    <string name="local_only_video_mode_subtitle">La modalità video richiede Internet. Disattiva la modalità Solo locale nelle Impostazioni per guardare i video.</string>
+    <string name="local_only_video_search_subtitle">La ricerca dei video richiede Internet. Disattiva la modalità Solo locale nelle Impostazioni per cercare i video.</string>
+    <string name="local_only_subscriptions_subtitle">Le iscrizioni richiedono Internet. Disattiva la modalità Solo locale nelle Impostazioni per vederle.</string>
+    <string name="local_only_video_library_subtitle">La videoteca richiede Internet. Disattiva la modalità Solo locale nelle Impostazioni per vederla.</string>
+    <string name="local_only_update_subtitle">Il controllo degli aggiornamenti richiede Internet. Disattiva la modalità Solo locale nelle Impostazioni per verificare gli aggiornamenti.</string>
+
+    <string name="crash_dialog_title">Koda si è bloccato l\'ultima volta</string>
+    <string name="crash_dialog_message">Nella sessione precedente è andato qualcosa storto. Puoi inviare una segnalazione di bug con i dettagli: nulla lascia il tuo dispositivo a meno che tu scelga di condividerlo.</string>
+    <string name="crash_dialog_view_report">Visualizza e segnala</string>
+    <string name="crash_dialog_not_now">Non ora</string>
+
+    <string name="permission_required_title">Autorizzazione necessaria per caricare i brani</string>
+
+    <string name="home_section_recent_albums">Album recenti</string>
+    <string name="home_section_jump_back_in">Riprendi</string>
+    <string name="your_mix_line1">Il tuo</string>
+    <string name="your_mix_line2">mix</string>
+    <string name="update_badge_version">v%1$s</string>
+    <string name="artists_joined">%1$s, %2$s</string>
+    <string name="cd_profile">Profilo</string>
+    <string name="cd_downloads">Download</string>
+    <string name="cd_settings">Impostazioni</string>
+    <string name="cd_play">Riproduci</string>
+    <string name="cd_pause">Pausa</string>
+    <string name="cd_next">Avanti</string>
+    <string name="cd_album_art">Copertina dell\'album</string>
+    <string name="cd_show_all">Mostra tutto: %1$s</string>
+
+    <string name="spotlight_quick_picks">Scelte rapide</string>
+    <string name="spotlight_your_playlists">Le tue playlist</string>
+    <string name="spotlight_from_your_library">Dalla tua libreria</string>
+    <string name="spotlight_caption_liked">Dai brani che ti sono piaciuti</string>
+    <string name="spotlight_caption_recent">Da quello che hai ascoltato di recente</string>
+    <string name="shortcut_liked_songs">Brani che ti piacciono</string>
+    <string name="filter_all">Tutti</string>
+    <string name="filter_liked">Piace</string>
+    <string name="filter_recent">Recenti</string>
+    <string name="filter_playlists">Playlist</string>
+    <string name="spotlight_empty_no_liked">Nessun brano ti piace ancora</string>
+    <string name="spotlight_empty_no_recent">Niente ascoltato ancora</string>
+    <string name="spotlight_empty_no_playlists">Nessuna playlist ancora</string>
+    <string name="spotlight_empty_generic">Niente da mostrare per ora</string>
+    <string name="spotlight_hint_liked">I brani che ti piacciono si raccoglieranno qui.</string>
+    <string name="spotlight_hint_playlists">Le playlist che crei o salvi appaiono qui.</string>
+    <string name="spotlight_hint_all">Riproduci qualcosa e la tua home si riempie.</string>
+
+    <string name="sleep_timer_title">Timer di spegnimento</string>
+    <string name="sleep_timer_status_track">Questo brano</string>
+    <string name="sleep_timer_detail_track">La riproduzione si interrompe alla fine del brano corrente</string>
+    <string name="sleep_timer_detail_duration">La riproduzione sfuma e va in pausa quando il timer termina</string>
+    <string name="minutes_short">%1$d min</string>
+    <string name="sleep_timer_end_of_track">Fine di questo brano</string>
+    <string name="sleep_timer_turn_off">Disattiva</string>
+
+    <string name="cd_switch_to_music">Passa alla modalità musica</string>
+    <string name="cd_switch_to_video">Passa alla modalità video</string>
+    <string name="cd_drag_to_reorder">Trascina per riordinare</string>
+    <string name="cd_favorite">Preferito</string>
+    <string name="cd_clear_search">Cancella ricerca</string>
+    <string name="queue_removed_snackbar">%1$s rimosso</string>
+
+    <string name="song_options_play_next">Riproduci dopo</string>
+    <string name="song_options_play_next_subtitle">Subito dopo questo brano</string>
+    <string name="song_options_add_to_queue">Aggiungi alla coda</string>
+    <string name="song_options_add_to_queue_subtitle">Alla fine</string>
+    <string name="song_options_add_to_playlist">Aggiungi alla playlist</string>
+    <string name="song_options_remove_from_liked">Rimuovi dai preferiti</string>
+    <string name="song_options_like">Mi piace</string>
+    <string name="song_options_download">Scarica</string>
+    <string name="song_options_download_subtitle">Conserva su questo dispositivo</string>
+    <string name="song_options_downloaded">Scaricato</string>
+    <string name="song_options_go_to_artist">Vai a %1$s</string>
+
+    <string name="add_to_playlist_title">Aggiungi alla playlist</string>
+    <string name="new_playlist_label">Nuova playlist</string>
+    <string name="name_label">Nome</string>
+    <string name="description_optional_label">Descrizione (facoltativa)</string>
+
+    <string name="video_options_watch_later">Guarda più tardi</string>
+    <string name="video_options_kept_on_device">Conservato su questo dispositivo</string>
+    <string name="video_options_save_to_playlist">Salva nella playlist</string>
+    <string name="video_options_download">Scarica</string>
+    <string name="video_options_go_to_channel">Vai al canale</string>
+    <string name="video_options_share">Condividi</string>
+    <string name="video_options_share_chooser">Condividi video</string>
+    <string name="video_options_not_interested">Non mi interessa</string>
+    <string name="video_options_dont_recommend_channel">Non consigliare questo canale</string>
+    <string name="video_options_dont_recommend_channel_name">Non consigliare %1$s</string>
+    <string name="cd_back">Indietro</string>
+    <string name="search_playlists_placeholder">Cerca playlist</string>
+    <string name="no_playlist_matches">Nessuna playlist corrisponde a \"%1$s\"</string>
+    <string name="no_playlists_yet_hint">Nessuna playlist ancora. Creane una e questo video andrà direttamente dentro.</string>
+    <string name="cd_saved">Salvato</string>
+    <string name="cd_couldnt_save">Impossibile salvare</string>
+    <string name="cd_in_this_playlist">In questa playlist</string>
+
+    <string name="settings_section_you">Tu</string>
+    <string name="settings_section_look_and_feel">Aspetto</string>
+    <string name="settings_section_playback_and_content">Riproduzione e contenuti</string>
+    <string name="settings_section_system">Sistema</string>
+    <string name="settings_section_about">Info</string>
+    <string name="settings_account">Account</string>
+    <string name="settings_appearance">Aspetto</string>
+    <string name="settings_player">Player</string>
+    <string name="settings_playback_and_quality">Riproduzione e qualità</string>
+    <string name="settings_content_and_feeds">Contenuti e feed</string>
+    <string name="settings_subscriptions">Iscrizioni</string>
+    <string name="settings_storage_and_cache">Archiviazione e cache</string>
+    <string name="settings_notifications">Notifiche</string>
+    <string name="settings_local_library">Libreria locale</string>
+    <string name="settings_backup_and_restore">Backup e ripristino</string>
+    <string name="settings_advanced">Avanzate</string>
+    <string name="settings_advanced_value_xiaomi">Consigliato su questo dispositivo</string>
+    <string name="settings_advanced_value_other">Correzioni scansione e batteria</string>
+    <string name="settings_version_subtitle">Versione %1$s (%2$d)</string>
+
+    <string name="profiles_title">Profili</string>
+    <string name="profiles_description">Iscrizioni e consigli nascosti vengono mantenuti per profilo. Playlist, brani preferiti e download sono condivisi.</string>
+    <string name="add_youtube_account">Aggiungi account YouTube</string>
+    <string name="add_youtube_account_subtitle">Accedi con un altro account Google</string>
+    <string name="add_device_profile">Aggiungi profilo su questo dispositivo</string>
+    <string name="add_device_profile_subtitle">Iscrizioni separate, senza bisogno di un account</string>
+    <string name="profile_signed_out">Esci effettuato - tocca per accedere</string>
+    <string name="profile_session_expired">Sessione scaduta - tocca per riconnetterti</string>
+    <string name="profile_on_this_device">Su questo dispositivo</string>
+    <string name="profile_youtube_account">Account YouTube</string>
+    <string name="cd_active_profile">Profilo attivo</string>
+    <string name="cd_remove_profile">Rimuovi %1$s</string>
+    <string name="new_profile_dialog_title">Nuovo profilo su questo dispositivo</string>
+    <string name="sign_out_confirm_title">Uscire da %1$s?</string>
+    <string name="remove_profile_confirm_title">Rimuovere %1$s?</string>
+    <string name="sign_out">Esci</string>
+    <string name="remove">Rimuovi</string>
+
+    <string name="library_empty_title">La tua libreria è vuota</string>
+    <string name="library_empty_subtitle">I brani che scarichi o che ti piacciono appariranno qui</string>
+    <string name="library_create_playlist_hint">Creane una con il pulsante + qui sotto</string>
+    <string name="fab_downloads">Download</string>
+    <string name="fab_listening_history">Cronologia di ascolto</string>
+    <string name="fab_statistics">Statistiche</string>
+    <string name="cd_listening_stats">Statistiche di ascolto</string>
+    <string name="recently_played">Ascoltati di recente</string>
+    <string name="liked_songs">Brani che ti piacciono</string>
+    <string name="no_artists_yet">Nessun artista ancora</string>
+    <string name="no_artists_yet_subtitle">Gli artisti dei tuoi brani appariranno qui</string>
+    <string name="no_albums_yet">Nessun album ancora</string>
+    <string name="no_albums_yet_subtitle">Gli album dei tuoi brani appariranno qui</string>
+
+    <plurals name="n_songs">
+        <item quantity="one">%1$d brano</item>
+        <item quantity="other">%1$d brani</item>
+    </plurals>
+    <plurals name="n_playlists">
+        <item quantity="one">%1$d playlist</item>
+        <item quantity="other">%1$d playlist</item>
+    </plurals>
+</resources>

@@ -185,6 +185,10 @@ fun DialPlayerSheetContent(
                             )
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            MusicCastIconButton(
+                                containerColor = chipColor,
+                                contentColor = ink
+                            )
                             EditorialCircleButton(
                                 onClick = sleepTimer.open,
                                 accent = if (sleepTimer.active) accent else chipColor,
@@ -438,7 +442,7 @@ private fun RotaryDial(
     val displayedFraction = scrubFraction
         ?: if (duration > 0) (progress.toFloat() / duration.toFloat()).coerceIn(0f, 1f) else 0f
 
-    val haptics = LocalHapticFeedback.current
+    val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
     val density = LocalDensity.current
 
     // Puck: per-track die-cut while playing, circle at rest.

@@ -1,4 +1,6 @@
 package com.ivor.ivormusic.ui.video
+import androidx.compose.ui.res.stringResource
+import com.ivor.ivormusic.R
 
 import android.app.Activity
 import android.content.pm.ActivityInfo
@@ -121,7 +123,6 @@ fun VideoPlayerContent(
     val isPlaying by viewModel.isPlaying.collectAsState()
     val isBuffering by viewModel.isBuffering.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
-    val availableQualities by viewModel.availableQualities.collectAsState()
     val currentQuality by viewModel.currentQuality.collectAsState()
     val relatedVideos by viewModel.relatedVideos.collectAsState()
     val queue by viewModel.queue.collectAsState()
@@ -176,6 +177,12 @@ fun VideoPlayerContent(
     val liveChatMaxLength by viewModel.liveChatMaxLength.collectAsState()
     val liveChatRestriction by viewModel.liveChatRestriction.collectAsState()
 
+    // Cast state. The video card, both chromes and the settings sheet all
+    // need to know where the media actually is.
+    val isCasting by viewModel.isCasting.collectAsState()
+    val castDeviceName by viewModel.castDeviceName.collectAsState()
+    val selectableQualities by viewModel.selectableQualities.collectAsState()
+
     // Local UI State
     var showControls by remember { mutableStateOf(false) }
     // Keyed to the video so a source switch can never inherit a drag that
@@ -194,6 +201,17 @@ fun VideoPlayerContent(
         mutableStateOf(false)
     }
     var showLiveChat by remember { mutableStateOf(false) }
+    var showCastSheet by remember { mutableStateOf(false) }
+
+    // Discovery is a radio cost, not a background service: it runs exactly
+    // while the device sheet is open and stops the moment it closes.
+    LaunchedEffect(showCastSheet) {
+        if (showCastSheet) {
+            viewModel.startCastDiscovery()
+        } else {
+            viewModel.stopCastDiscovery()
+        }
+    }
 
     // A portrait live stream opens full-bleed: the standard layout gives a 9:16
     // frame about a third of the width and pillarboxes the rest, which is the
@@ -597,12 +615,16 @@ fun VideoPlayerContent(
                 onSettings = { showPlaybackSettings = true },
                 chapters = chapters,
                 onOpenChapters = { showChaptersSheet = true },
+                casting = isCasting,
+                castDeviceName = castDeviceName,
+                castingArtworkUrl = currentVideo.thumbnailUrl,
+                onCastClick = { showCastSheet = true },
                 captionsActive = selectedCaption != null,
                 onCaptionsClick = {
                     viewModel.ensureCaptionsLoaded()
                     showCaptionsSheet = true
                 },
-                captionCues = captionCues,
+                captionCues = if (isCasting) emptyList() else captionCues,
                 captionTextSize = captionTextSize,
                 captionTextColor = captionTextColor,
                 captionBackground = captionBackground,
@@ -774,6 +796,8 @@ fun VideoPlayerContent(
                     // engagement.isSubscribed only knows about the account.
                     isSubscribed = isSubscribedToChannel,
                     likeStatus = engagement?.likeStatus ?: LikeStatus.INDIFFERENT,
+                    casting = isCasting,
+                    castDeviceName = castDeviceName,
                     onPlayPause = { viewModel.togglePlayPause() },
                     onSeek = { newProgress -> exoPlayer.seekTo((newProgress * duration).toLong()) },
                     onScrubbingChanged = { isSeekScrubbing = it },
@@ -787,6 +811,7 @@ fun VideoPlayerContent(
                         viewModel.ensureCaptionsLoaded()
                         showCaptionsSheet = true
                     },
+                    onCastClick = { showCastSheet = true },
                     onSettings = { showPlaybackSettings = true },
                     onSubscribeClick = { requireSubscribeLogin { viewModel.toggleSubscribe() } },
                     onLikeClick = { requireLogin { viewModel.toggleLike() } },
@@ -893,12 +918,16 @@ fun VideoPlayerContent(
                         onSettings = { showPlaybackSettings = true },
                         chapters = chapters,
                         onOpenChapters = { showChaptersSheet = true },
+                        casting = isCasting,
+                        castDeviceName = castDeviceName,
+                        castingArtworkUrl = currentVideo.thumbnailUrl,
+                        onCastClick = { showCastSheet = true },
                         captionsActive = selectedCaption != null,
                         onCaptionsClick = {
                             viewModel.ensureCaptionsLoaded()
                             showCaptionsSheet = true
                         },
-                        captionCues = captionCues,
+                        captionCues = if (isCasting) emptyList() else captionCues,
                         captionTextSize = captionTextSize,
                         captionTextColor = captionTextColor,
                         captionBackground = captionBackground,
@@ -1173,6 +1202,14 @@ fun VideoPlayerContent(
         )
     }
 
+    // Cast device sheet
+    if (showCastSheet) {
+        CastSheet(
+            viewModel = viewModel,
+            onDismiss = { showCastSheet = false }
+        )
+    }
+
     // Sign-in dialog for like/dislike/subscribe when logged out
     if (showSignInDialog) {
         com.ivor.ivormusic.ui.auth.YouTubeAuthDialog(
@@ -1190,7 +1227,7 @@ fun VideoPlayerContent(
     val playbackSettingsContent: @Composable () -> Unit = {
         PlayerSettingsSections(
             isLoading = isLoading,
-            qualities = availableQualities,
+            qualities = selectableQualities,
             currentQuality = currentQuality,
             onQualitySelected = { viewModel.setQuality(it) },
             playbackSpeed = playbackSpeed,
@@ -1202,7 +1239,10 @@ fun VideoPlayerContent(
             onLoopChanged = { enabled ->
                 if (enabled != isLooping) viewModel.toggleLooping()
             },
-            showPip = pipSupported,
+            // Nothing local renders while casting, so there is no window to
+            // shrink into a PiP card - the entry point would open a picture of
+            // the casting card, which helps nobody.
+            showPip = pipSupported && !isCasting,
             onPipClick = {
                 showPlaybackSettings = false
                 val host = activity as? androidx.activity.ComponentActivity
@@ -1291,7 +1331,7 @@ fun VideoPlayerContent(
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                text = "Playback settings",
+                                text = stringResource(R.string.vpc_playback_settings),
                                 style = MaterialTheme.typography.titleLarge,
                                 color = MaterialTheme.colorScheme.onSurface,
                                 modifier = Modifier.weight(1f)
@@ -1321,7 +1361,7 @@ fun VideoPlayerContent(
                     .padding(bottom = 32.dp)
             ) {
                 Text(
-                    text = "Playback settings",
+                    text = stringResource(R.string.vpc_playback_settings),
                     style = MaterialTheme.typography.headlineSmall,
                     modifier = Modifier.padding(vertical = 8.dp),
                     color = MaterialTheme.colorScheme.onSurface
@@ -1383,11 +1423,11 @@ private fun PlayerSettingsSections(
             Column {
                 SettingsToggleRow(
                     icon = Icons.Rounded.PlayArrow,
-                    title = "Autoplay",
+                    title = stringResource(R.string.vpc_autoplay),
                     supportingText = if (autoplayEnabled) {
-                        "Play the next playlist or related video"
+                        stringResource(R.string.vpc_autoplay_on)
                     } else {
-                        "Stop and stay on this video"
+                        stringResource(R.string.vpc_autoplay_off)
                     },
                     checked = autoplayEnabled,
                     onCheckedChange = onAutoplayChanged
@@ -1398,13 +1438,13 @@ private fun PlayerSettingsSections(
                 )
                 SettingsToggleRow(
                     icon = Icons.Rounded.RepeatOne,
-                    title = "Loop video",
+                    title = stringResource(R.string.vpc_loop),
                     supportingText = if (!autoplayEnabled) {
-                        "Turning this on also enables Autoplay"
+                        stringResource(R.string.vpc_loop_note)
                     } else if (isLooping) {
-                        "Repeat this video instead of moving on"
+                        stringResource(R.string.vpc_loop_off)
                     } else {
-                        "Repeat this video when it ends"
+                        stringResource(R.string.vpc_loop_on)
                     },
                     checked = isLooping,
                     onCheckedChange = onLoopChanged
@@ -1427,7 +1467,7 @@ private fun PlayerSettingsSections(
         }
     } else if (qualities.isEmpty()) {
         Text(
-            text = "No qualities available",
+            text = stringResource(R.string.vpc_no_qualities),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(vertical = 16.dp)
@@ -1472,7 +1512,7 @@ private fun PlayerSettingsSections(
     ) {
         VideoPlayerViewModel.PLAYBACK_SPEED_OPTIONS.forEach { speed ->
             val selected = speed == playbackSpeed
-            val label = if (speed == 1f) "Normal"
+            val label = if (speed == 1f) stringResource(R.string.vpc_normal)
                 else "${speed.toString().removeSuffix(".0")}x"
             ToggleButton(
                 checked = selected,
@@ -1498,19 +1538,19 @@ private fun PlayerSettingsSections(
                 if (showPip) {
                     SettingsActionRow(
                         icon = Icons.Rounded.PictureInPictureAlt,
-                        title = "Picture in picture",
-                        supportingText = "Keep watching over other apps",
+                        title = stringResource(R.string.vpc_pip),
+                        supportingText = stringResource(R.string.vpc_pip_sub),
                         onClick = onPipClick
                     )
                 }
                 if (showComments) {
                     SettingsActionRow(
                         icon = Icons.AutoMirrored.Rounded.Comment,
-                        title = if (commentsActive) "Close comments" else "Comments",
+                        title = if (commentsActive) stringResource(R.string.cd_close_comments) else stringResource(R.string.cd_comments),
                         supportingText = if (commentsActive) {
-                            "Return to the full video"
+                            stringResource(R.string.vpc_return_to_video)
                         } else {
-                            "Browse the conversation"
+                            stringResource(R.string.vpc_browse_conversation)
                         },
                         onClick = onCommentsClick
                     )
@@ -1518,16 +1558,16 @@ private fun PlayerSettingsSections(
                 if (showQueue) {
                     SettingsActionRow(
                         icon = Icons.AutoMirrored.Rounded.PlaylistPlay,
-                        title = "Playlist queue",
-                        supportingText = "See and choose what plays next",
+                        title = stringResource(R.string.your_playlists),
+                        supportingText = stringResource(R.string.vpc_queue_sub),
                         onClick = onQueueClick
                     )
                 }
                 if (showTimedComments) {
                     SettingsToggleRow(
                         icon = Icons.AutoMirrored.Rounded.Comment,
-                        title = "Timed comments",
-                        supportingText = "Show comments at their video moments",
+                        title = stringResource(R.string.sp_timed_comments),
+                        supportingText = stringResource(R.string.vpc_timed_comments_sub),
                         checked = timedCommentsActive,
                         onCheckedChange = onTimedCommentsChanged
                     )
@@ -1535,8 +1575,8 @@ private fun PlayerSettingsSections(
                 if (showLiveChat) {
                     SettingsToggleRow(
                         icon = Icons.AutoMirrored.Rounded.Chat,
-                        title = "Live chat",
-                        supportingText = "Show the conversation beside the stream",
+                        title = stringResource(R.string.vp_live_chat),
+                        supportingText = stringResource(R.string.vpc_live_chat_sub),
                         checked = liveChatActive,
                         onCheckedChange = onLiveChatChanged
                     )
@@ -1544,8 +1584,8 @@ private fun PlayerSettingsSections(
                 if (showVerticalLive) {
                     SettingsActionRow(
                         icon = Icons.Rounded.StayCurrentPortrait,
-                        title = "Vertical live view",
-                        supportingText = "Return to the full-height stream",
+                        title = stringResource(R.string.vpc_vertical_live),
+                        supportingText = stringResource(R.string.vpc_vertical_live_sub),
                         onClick = onVerticalLiveClick
                     )
                 }
@@ -1654,7 +1694,7 @@ private fun ChaptersSheet(
     ) {
         KeepSystemBarsHidden(keepSystemBarsHidden)
         Text(
-            text = "Chapters",
+            text = stringResource(R.string.vp_chapters),
             style = MaterialTheme.typography.headlineSmall,
             modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 8.dp)
         )
@@ -1705,7 +1745,7 @@ private fun ChaptersSheet(
                     if (isActive) {
                         Icon(
                             Icons.Rounded.PlayArrow,
-                            contentDescription = "Now playing",
+                            contentDescription = stringResource(R.string.cd_now_playing),
                             tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(20.dp)
                         )
@@ -1744,7 +1784,7 @@ private fun CaptionsSheet(
     ) {
         KeepSystemBarsHidden(keepSystemBarsHidden)
         Text(
-            text = "Captions",
+            text = stringResource(R.string.vp_captions),
             style = MaterialTheme.typography.headlineSmall,
             modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 8.dp)
         )
@@ -1756,7 +1796,7 @@ private fun CaptionsSheet(
         ) {
             item {
                 Text(
-                    text = "Language",
+                    text = stringResource(R.string.vpc_language),
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
@@ -1775,7 +1815,7 @@ private fun CaptionsSheet(
                 }
                 tracks.isEmpty() -> item {
                     Text(
-                        text = "No captions available for this video",
+                        text = stringResource(R.string.vpc_no_captions),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(horizontal = 24.dp, vertical = 20.dp)
@@ -1806,7 +1846,7 @@ private fun CaptionsSheet(
             item {
                 HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
                 Text(
-                    text = "Appearance",
+                    text = stringResource(R.string.settings_appearance),
                     style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
                 )
@@ -1821,8 +1861,8 @@ private fun CaptionsSheet(
                 CaptionChoiceRow(
                     label = "Text color",
                     options = listOf(
-                        CaptionTextColor.WHITE to "White",
-                        CaptionTextColor.YELLOW to "Yellow"
+                        CaptionTextColor.WHITE to stringResource(R.string.vpc_white),
+                        CaptionTextColor.YELLOW to stringResource(R.string.vpc_yellow)
                     ),
                     selected = textColor,
                     onSelect = onTextColorChanged
@@ -1832,9 +1872,9 @@ private fun CaptionsSheet(
                 CaptionChoiceRow(
                     label = "Background",
                     options = listOf(
-                        CaptionBackground.NONE to "None",
-                        CaptionBackground.TRANSLUCENT to "Soft",
-                        CaptionBackground.SOLID to "Solid"
+                        CaptionBackground.NONE to stringResource(R.string.vpc_none),
+                        CaptionBackground.TRANSLUCENT to stringResource(R.string.vpc_soft),
+                        CaptionBackground.SOLID to stringResource(R.string.vpc_solid)
                     ),
                     selected = background,
                     onSelect = onBackgroundChanged
@@ -1862,7 +1902,7 @@ private fun CaptionTextSizeSlider(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "Text size",
+                text = stringResource(R.string.vpc_text_size),
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -1961,7 +2001,7 @@ private fun CaptionRow(label: String, checked: Boolean, onClick: () -> Unit) {
         if (checked) {
             Icon(
                 Icons.Rounded.Check,
-                contentDescription = "Selected",
+                contentDescription = stringResource(R.string.cd_selected),
                 tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(20.dp)
             )

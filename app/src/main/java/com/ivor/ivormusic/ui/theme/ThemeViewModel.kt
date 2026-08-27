@@ -53,9 +53,13 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
     val crossfadeAuto: StateFlow<Boolean> = themePreferences.crossfadeAuto
     val crossfadeDurationMs: StateFlow<Int> = themePreferences.crossfadeDurationMs
     val normalizeVolume: StateFlow<Boolean> = themePreferences.normalizeVolume
+    val rememberVideoBrightness: StateFlow<Boolean> = themePreferences.rememberVideoBrightness
+    val hapticsLevel: StateFlow<String> = themePreferences.hapticsLevel
+    val uploadNotificationsEnabled: StateFlow<Boolean> = themePreferences.uploadNotificationsEnabled
 
     val oemFixEnabled: StateFlow<Boolean> = themePreferences.oemFixEnabled
     val manualScanEnabled: StateFlow<Boolean> = themePreferences.manualScanEnabled
+    val privateDownloadsEnabled: StateFlow<Boolean> = themePreferences.privateDownloadsEnabled
     val onboardingCompleted: StateFlow<Boolean> = themePreferences.onboardingCompleted
     val localOnlyMode: StateFlow<Boolean> = themePreferences.localOnlyMode
     
@@ -224,6 +228,18 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
     fun setNormalizeVolume(enabled: Boolean) {
         themePreferences.setNormalizeVolume(enabled)
     }
+
+    fun setRememberVideoBrightness(enabled: Boolean) {
+        themePreferences.setRememberVideoBrightness(enabled)
+    }
+
+    fun setHapticsLevel(value: String) {
+        themePreferences.setHapticsLevel(value)
+    }
+
+    fun setUploadNotificationsEnabled(enabled: Boolean) {
+        themePreferences.setUploadNotificationsEnabled(enabled)
+    }
     
     fun setCrossfadeDuration(durationMs: Int) {
         themePreferences.setCrossfadeDuration(durationMs)
@@ -235,6 +251,10 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setManualScanEnabled(enabled: Boolean) {
         themePreferences.setManualScanEnabled(enabled)
+    }
+
+    fun setPrivateDownloadsEnabled(enabled: Boolean) {
+        themePreferences.setPrivateDownloadsEnabled(enabled)
     }
 
     fun setOnboardingCompleted(completed: Boolean) {

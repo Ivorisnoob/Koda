@@ -1,4 +1,6 @@
 package com.ivor.ivormusic.ui.player
+import com.ivor.ivormusic.R
+import androidx.compose.ui.res.stringResource
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.Crossfade
@@ -362,17 +364,27 @@ private fun GestureNowPlayingView(
                     }
                 }
                 
-                // Queue button
-                FilledIconButton(
-                    onClick = onShowQueue,
-                    shape = CircleShape,
-                    colors = IconButtonDefaults.filledIconButtonColors(
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    MusicCastIconButton(
                         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        contentColor = MaterialTheme.colorScheme.onSurface
-                    ),
-                    modifier = Modifier.size(48.dp)
-                ) {
-                    Icon(Icons.AutoMirrored.Filled.QueueMusic, "Queue", modifier = Modifier.size(24.dp))
+                        contentColor = MaterialTheme.colorScheme.onSurface,
+                        size = 48.dp
+                    )
+                    FilledIconButton(
+                        onClick = onShowQueue,
+                        shape = CircleShape,
+                        colors = IconButtonDefaults.filledIconButtonColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            contentColor = MaterialTheme.colorScheme.onSurface
+                        ),
+                        modifier = Modifier.size(48.dp)
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.QueueMusic,
+                            "Queue",
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
                 }
             }
             
@@ -1507,7 +1519,7 @@ private fun GestureQueueView(
                                         )
                                     )
                                     Spacer(modifier = Modifier.width(12.dp))
-                                    Text("Loading...", style = MaterialTheme.typography.titleSmall)
+                                    Text(stringResource(R.string.loading), style = MaterialTheme.typography.titleSmall)
                                 } else {
                                     Icon(
                                         Icons.AutoMirrored.Filled.QueueMusic, 
@@ -1515,7 +1527,7 @@ private fun GestureQueueView(
                                         modifier = Modifier.size(20.dp)
                                     )
                                     Spacer(modifier = Modifier.width(12.dp))
-                                    Text("Load More", style = MaterialTheme.typography.titleSmall)
+                                    Text(stringResource(R.string.load_more), style = MaterialTheme.typography.titleSmall)
                                 }
                             }
                         }
