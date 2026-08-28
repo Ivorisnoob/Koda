@@ -180,12 +180,16 @@ jobs:
     if: needs.authorize.outputs.allowed == 'true' && needs.authorize.outputs.is-fork-pr != 'true'
     runs-on: ubuntu-latest
     permissions:
+      actions: read
       contents: read
 
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
       with:
+        # Telegram changelogs are computed from the last successfully delivered
+        # PR head, which can be older than checkout's default shallow history.
+        fetch-depth: 0
         persist-credentials: false
 
     - name: Set up JDK 17
@@ -255,15 +259,36 @@ jobs:
       env:
         BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         CHAT_ID: ${{ env.TELEGRAM_APK_CHAT_ID }}
+        GH_TOKEN: ${{ github.token }}
         REPO: ${{ github.repository }}
         REPO_OWNER: ${{ github.repository_owner }}
         RUN_ID: ${{ github.run_id }}
         PR_NUMBER: ${{ github.event.pull_request.number }}
-        PR_TITLE: ${{ github.event.pull_request.title }}
         PR_URL: ${{ github.event.pull_request.html_url }}
         PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+        PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
       run: |
+        set -euo pipefail
+
         esc() { sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g' <<< "$1"; }
+
+        telegram_ok() {
+          jq -e '.ok == true' >/dev/null 2>&1 <<< "$1"
+        }
+
+        send_plain_message() {
+          local message="$1" response
+          response=$(curl -sS -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${CHAT_ID}" \
+            --data-urlencode "disable_web_page_preview=true" \
+            --data-urlencode "text=${message}")
+          if ! telegram_ok "$response"; then
+            echo "Telegram changelog send failed: ${response}"
+            exit 1
+          fi
+        }
 
         # Author: the owner links to their portfolio, everybody else is a name.
         # Same rule as telegram-notify.yml.
@@ -280,29 +305,155 @@ jobs:
         VERSION=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts || echo "unknown")
         RUN_URL="https://github.com/${REPO}/actions/runs/${RUN_ID}"
 
-        CONTEXT="PR <a href=\"${PR_URL}\">#${PR_NUMBER}</a>: $(esc "$PR_TITLE")
+        CONTEXT="Build for PR <a href=\"${PR_URL}\">#${PR_NUMBER}</a>
         By: $(author_html "$PR_AUTHOR")"
 
         CAPTION="<b>Koda</b> v${VERSION} | Release Build
 
         ${CONTEXT}
-        SHA: <code>${GITHUB_SHA::7}</code>
+        SHA: <code>${PR_HEAD_SHA::7}</code>
         <a href=\"${RUN_URL}\">Workflow Run</a>"
+
+        # Find the head SHA from the last successful run for this same-repo PR
+        # branch. Canceled and failed runs are deliberately absent, so their
+        # commit changelogs roll forward into the next APK that is delivered.
+        ENCODED_HEAD_REF=$(jq -rn --arg value "$PR_HEAD_REF" '$value | @uri')
+        RUNS_URL="${GITHUB_API_URL}/repos/${REPO}/actions/workflows/build.yml/runs?event=pull_request&status=success&branch=${ENCODED_HEAD_REF}&per_page=100"
+        if ! RUNS_JSON=$(curl -fsSL \
+          -H "Accept: application/vnd.github+json" \
+          -H "Authorization: Bearer ${GH_TOKEN}" \
+          -H "X-GitHub-Api-Version: 2022-11-28" \
+          "$RUNS_URL"); then
+          echo "Could not read workflow history; falling back to every commit currently on the PR."
+          RUNS_JSON='{"workflow_runs":[]}'
+        fi
+
+        LAST_SENT_SHA=$(jq -r --arg repo "$REPO" --arg run_id "$RUN_ID" '
+          [
+            .workflow_runs[]?
+            | select((.id | tostring) != $run_id)
+            | select(.head_repository.full_name == $repo)
+          ]
+          | sort_by(.created_at)
+          | reverse
+          | .[0].head_sha // empty
+        ' <<< "$RUNS_JSON" 2>/dev/null || true)
+
+        if [ -n "$LAST_SENT_SHA" ] \
+          && git cat-file -e "${LAST_SENT_SHA}^{commit}" 2>/dev/null \
+          && git merge-base --is-ancestor "$LAST_SENT_SHA" "$PR_HEAD_SHA"; then
+          CHANGELOG_START_SHA="$LAST_SENT_SHA"
+          echo "Collecting Telegram changelogs after successful run head ${LAST_SENT_SHA:0:7}."
+        else
+          # First delivery, unavailable history, or a rebased/force-pushed PR:
+          # include the whole current PR. Repeating an entry is safer than losing it.
+          CHANGELOG_START_SHA=$(git merge-base "$PR_BASE_SHA" "$PR_HEAD_SHA")
+          echo "Collecting Telegram changelogs from PR merge base ${CHANGELOG_START_SHA:0:7}."
+        fi
+
+        extract_changelog() {
+          git show -s --format=%B "$1" | awk '
+            /^Telegram-Changelog:[[:space:]]*$/ { found = 1; next }
+            found { lines[++count] = $0 }
+            END {
+              first = 1
+              while (first <= count && lines[first] ~ /^[[:space:]]*$/) first++
+              last = count
+              while (last >= first && lines[last] ~ /^[[:space:]]*$/) last--
+              for (i = first; i <= last; i++) print lines[i]
+            }
+          '
+        }
+
+        CHANGELOG_FILE=$(mktemp)
+        trap 'rm -f "$CHANGELOG_FILE"' EXIT
+        mapfile -t NEW_COMMITS < <(git rev-list --reverse "${CHANGELOG_START_SHA}..${PR_HEAD_SHA}")
+        ENTRY_COUNT=0
+        printf 'Changes since the last APK\n' > "$CHANGELOG_FILE"
+
+        for commit in "${NEW_COMMITS[@]}"; do
+          CHANGELOG=$(extract_changelog "$commit")
+          if [ -z "${CHANGELOG//[[:space:]]/}" ]; then
+            continue
+          fi
+          SUBJECT=$(git show -s --format=%s "$commit")
+          printf '\n%s (%s)\n%s\n' "$SUBJECT" "${commit:0:7}" "$CHANGELOG" >> "$CHANGELOG_FILE"
+          ENTRY_COUNT=$((ENTRY_COUNT + 1))
+        done
+
+        if [ "$ENTRY_COUNT" -eq 0 ]; then
+          printf '\nNo public Telegram-Changelog entries were included in the new commits.\n' >> "$CHANGELOG_FILE"
+        fi
 
         for apk in app/build/outputs/apk/release/*universal*.apk; do
           SIZE=$(stat -c%s "$apk")
           if [ "$SIZE" -gt 50000000 ]; then
-            curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+            RESPONSE=$(curl -sS -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
               --data-urlencode "chat_id=${CHAT_ID}" \
               --data-urlencode "parse_mode=HTML" \
-              --data-urlencode "text=<b>Koda</b> | $(esc "$(basename "$apk")") is over Telegram's 50 MB bot limit — grab it from the <a href=\"${RUN_URL}\">workflow artifacts</a>."
+              --data-urlencode "text=<b>Koda</b> | $(esc "$(basename "$apk")") is over Telegram's 50 MB bot limit — grab it from the <a href=\"${RUN_URL}\">workflow artifacts</a>.")
+            if ! telegram_ok "$RESPONSE"; then
+              echo "Telegram artifact-link send failed: ${RESPONSE}"
+              exit 1
+            fi
             continue
           fi
-          RESPONSE=$(curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendDocument" \
+          RESPONSE=$(curl -sS -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendDocument" \
             --form-string "chat_id=${CHAT_ID}" \
             --form-string "parse_mode=HTML" \
             --form-string "caption=${CAPTION}" \
             -F "document=@${apk}")
-          echo "$RESPONSE"
-          echo "$RESPONSE" | grep -q '"ok":true' || exit 1
+          if ! telegram_ok "$RESPONSE"; then
+            echo "Telegram APK send failed: ${RESPONSE}"
+            exit 1
+          fi
+        done
+
+        # Telegram counts message length in UTF-16 units. Split on complete
+        # Unicode characters, preferring line boundaries, with room below 4096.
+        mapfile -d '' -t CHANGELOG_CHUNKS < <(
+          python3 - "$CHANGELOG_FILE" <<'PY'
+        import sys
+
+        limit = 3800
+        text = open(sys.argv[1], encoding="utf-8").read()
+
+        def units(value):
+            return len(value.encode("utf-16-le")) // 2
+
+        chunks = []
+        current = ""
+        for line in text.splitlines(keepends=True):
+            while units(line) > limit:
+                if current:
+                    chunks.append(current.rstrip())
+                    current = ""
+                used = 0
+                cut = 0
+                for cut, char in enumerate(line, start=1):
+                    char_units = units(char)
+                    if used + char_units > limit:
+                        cut -= 1
+                        break
+                    used += char_units
+                chunks.append(line[:cut].rstrip())
+                line = line[cut:]
+
+            candidate = current + line
+            if current and units(candidate) > limit:
+                chunks.append(current.rstrip())
+                current = line
+            else:
+                current = candidate
+
+        if current.strip():
+            chunks.append(current.rstrip())
+
+        for chunk in chunks:
+            sys.stdout.buffer.write(chunk.encode("utf-8") + b"\0")
+        PY
+        )
+
+        for chunk in "${CHANGELOG_CHUNKS[@]}"; do
+          send_plain_message "$chunk"
         done

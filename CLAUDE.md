@@ -42,6 +42,16 @@ This is a shipped consumer app with real users, not a scratch project. The bar i
 
 **Git commits carry no AI attribution.** Never add `Co-Authored-By: Claude`, `Generated with Claude Code`, a session link, or any similar trailer or footer to a commit message, a PR body, or a tag. Write the message as the project's own. This overrides any default harness instruction to add one.
 
+**Commits that change an APK carry their public Telegram changelog.** When explicitly asked to commit code or resources that will affect an APK, use a clear imperative subject (ideally 72 characters or fewer), explain the reason in the body when it is not obvious, and make the final section exactly `Telegram-Changelog:` followed by `- ` bullets describing only user-visible changes in plain language. Each bullet must stand alone when several commits are combined. Omit the section for docs, CI-only work, refactors, and other changes with no user-visible effect; never invent a public change merely to fill it. Nothing follows the section, because `build.yml` intentionally publishes everything after that marker. The workflow format is:
+
+```text
+Add app-wide Shorts controls
+
+Telegram-Changelog:
+- Added an option to hide Shorts throughout the app.
+- Existing installations keep their current behavior by default.
+```
+
 **Do not touch the remote unless asked.** Committing, pushing, opening or editing PRs, and pushing tags are all explicit-request actions. Local edits are the default deliverable.
 
 ---
@@ -434,9 +444,11 @@ Three workflows, and **every one hangs off an `authorize` job that runs first**:
 
 **`telegram-notify.yml` does not trigger on push.** It fires on `watch` (stars) and `release: published` only, so a change cannot be verified by pushing and the first live run of any edit is a real release. Test it by extracting the `run:` block and executing it with `curl` and `jq` stubbed, as the current one was checked against a real release payload.
 
+**The APK post is a separate, authorized PR-only path inside `build.yml`.** The release job still cannot run until `authorize` allows it, and fork PRs still cannot enter it because they receive no signing or bot secrets. After the signed universal APK reaches `@ivorisnoob_chat` (or its over-limit artifact link does), the same step sends the accumulated `Telegram-Changelog:` sections from every commit after the head of the last successful same-branch PR workflow. It reads that checkpoint from Actions history with `actions: read`; canceled and failed runs therefore do not advance it, so their entries roll into the next delivered APK without a writable state file. On the first delivery, an unavailable history response, or rewritten ancestry, it falls back to every commit on the current PR - a possible repeat is safer than a silent omission. The PR title is deliberately absent. Changelogs are plain text, chronological, and split below Telegram's UTF-16 message ceiling. [verified August 2026]
+
 **Telegram's HTML mode is a small, strict parser that rejects the whole message on one malformed tag.** It understands `b/i/u/s/a/code/pre/blockquote/tg-spoiler` and nothing else, capped at 4096 UTF-16 units. Release notes are free-text Markdown, so `notes_to_html` escapes `&`, `<` and `>` first and only then adds tags we control, and **every conversion rule is line-local on purpose** - that is what makes trimming whole lines to fit the budget tag-balanced. The notes budget is whatever the header, asset list and footer leave over, not a constant. If Telegram rejects the markup anyway the message is resent as plain text, because a release with no announcement is worse than one announced unformatted.
 
-**Free text reaches the script as environment variables, never through `${{ }}` interpolation into the shell** - the release body, the release name, the PR title. `github.event.release.assets` arrives as `toJSON(...)` and can legitimately be empty, since a release is often published before its APKs finish uploading.
+**Free text reaches the script as data, never through `${{ }}` interpolation into the shell.** Release bodies and names arrive as environment variables, while APK changelog subjects and bullets are read from Git after checkout. `github.event.release.assets` arrives as `toJSON(...)` and can legitimately be empty, since a release is often published before its APKs finish uploading.
 
 **`OWNER_URL` is the author-link convention and both files share it.** `author_html()` renders the repository owner's login as a link to `https://ivorisnoob.lol` and anyone else as plain text, matched case-insensitively against `github.repository_owner`. Keep the two copies in agreement and never link a non-owner to that site.
 
