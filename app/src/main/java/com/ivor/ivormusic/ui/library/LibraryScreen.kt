@@ -2410,7 +2410,11 @@ fun PlaylistDetailScreen(
     val canReorderRemote = isYouTubePlaylist && isInLibrary && playlist.id.startsWith("PL")
     val canEditSongs = isLocalPlaylist || canEditYouTubeSongs
 
-    var songs by remember { mutableStateOf(preloadedSongs ?: emptyList()) }
+    val trackKeyPrefix = "playlist_${resolvedPlaylist.id}"
+    var songRows by remember(resolvedPlaylist.id) {
+        mutableStateOf(playlistSongRows(preloadedSongs ?: emptyList(), trackKeyPrefix))
+    }
+    val songs = remember(songRows) { songRows.map { it.song } }
     val isFetching = remember { mutableStateOf(songs.isEmpty()) }
     var loadAttempted by remember { mutableStateOf(preloadedSongs != null) }
     var showEditDialog by remember { mutableStateOf(false) }
@@ -2420,9 +2424,10 @@ fun PlaylistDetailScreen(
     var isReorderMode by remember { mutableStateOf(false) }
     var descriptionExpanded by remember { mutableStateOf(false) }
     var reorderDirty by remember { mutableStateOf(false) }
-    // videoId -> setVideoId (the per-row playlist item id InnerTube moves
-    // address rows by), fetched lazily the first time edit mode opens
-    var setVideoIds by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    // Fetched lazily the first time edit mode opens. The ids are attached to
+    // PlaylistSongRow occurrences rather than keyed by videoId, because a
+    // playlist may legitimately contain the same video twice.
+    var remoteRowIdsLoaded by remember { mutableStateOf(false) }
 
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
@@ -2455,18 +2460,18 @@ fun PlaylistDetailScreen(
 
     // Drag state. The dragged row is addressed by its lazy list key so the
     // reorder maths can read real offsets and sizes out of the layout.
-    val trackKeyPrefix = "playlist_${resolvedPlaylist.id}_"
     var draggingKey by remember { mutableStateOf<String?>(null) }
     var dragOffsetY by remember { mutableFloatStateOf(0f) }
     var dragStartIndex by remember { mutableIntStateOf(-1) }
 
-    val filteredSongs = remember(songs, searchQuery) {
-        if (searchQuery.isBlank()) songs
-        else songs.filter {
-            it.title.contains(searchQuery, ignoreCase = true) ||
-                it.artist.contains(searchQuery, ignoreCase = true)
+    val filteredRows = remember(songRows, searchQuery) {
+        if (searchQuery.isBlank()) songRows
+        else songRows.filter { row ->
+            row.song.title.contains(searchQuery, ignoreCase = true) ||
+                row.song.artist.contains(searchQuery, ignoreCase = true)
         }
     }
+    val filteredSongs = remember(filteredRows) { filteredRows.map { it.song } }
 
     // How far the hero header has scrolled away, 0..1. Drives the app bar fade
     // and the artwork parallax continuously - a boolean threshold makes the bar
@@ -2495,15 +2500,22 @@ fun PlaylistDetailScreen(
     LaunchedEffect(resolvedPlaylist.id) {
         if (preloadedSongs == null) {
             isFetching.value = true
-            songs = viewModel.fetchPlaylistSongs(resolvedPlaylist.id)
+            songRows = playlistSongRows(
+                viewModel.fetchPlaylistSongs(resolvedPlaylist.id),
+                trackKeyPrefix
+            )
             isFetching.value = false
             loadAttempted = true
         }
     }
 
     LaunchedEffect(isReorderMode) {
-        if (isReorderMode && canReorderRemote && setVideoIds.isEmpty()) {
-            setVideoIds = viewModel.fetchYouTubePlaylistSetVideoIds(resolvedPlaylist.id)
+        if (isReorderMode && canReorderRemote && !remoteRowIdsLoaded) {
+            val setVideoIds = viewModel.fetchYouTubePlaylistSetVideoIds(resolvedPlaylist.id)
+            songRows = attachPlaylistSetVideoIds(songRows, setVideoIds)
+            // A failed/empty fetch may be retried the next time edit mode is
+            // opened; a successful mapping is stable for this screen session.
+            remoteRowIdsLoaded = setVideoIds.isNotEmpty()
         }
     }
 
@@ -2518,7 +2530,10 @@ fun PlaylistDetailScreen(
 
     val commitLocalOrder: () -> Unit = {
         if (reorderDirty) {
-            viewModel.replaceLocalPlaylistSongs(resolvedPlaylist.id, songs)
+            viewModel.replaceLocalPlaylistSongs(
+                resolvedPlaylist.id,
+                songRows.map { it.song }
+            )
             reorderDirty = false
         }
     }
@@ -2555,30 +2570,41 @@ fun PlaylistDetailScreen(
             return@finish
         }
         if (movedKey == null || startIndex < 0) return@finish
-        val movedId = movedKey.removePrefix(trackKeyPrefix)
-        val newIndex = songs.indexOfFirst { it.id == movedId }
+        val newIndex = songRows.indexOfFirst { it.key == movedKey }
         if (newIndex < 0 || newIndex == startIndex) return@finish
-        val movedSetId = setVideoIds[movedId]
-        val successor = songs.getOrNull(newIndex + 1)
-        val successorSetId = successor?.id?.let { setVideoIds[it] }
+        val movedSetId = songRows[newIndex].setVideoId
+        val successor = songRows.getOrNull(newIndex + 1)
+        val successorSetId = successor?.setVideoId
         if (movedSetId == null || (successor != null && successorSetId == null)) {
             // Row beyond the first browse page - no setVideoId to move it by,
             // so restore the server's order instead of guessing.
-            scope.launch { songs = viewModel.fetchPlaylistSongs(resolvedPlaylist.id) }
+            scope.launch {
+                songRows = playlistSongRows(
+                    viewModel.fetchPlaylistSongs(resolvedPlaylist.id),
+                    trackKeyPrefix
+                )
+                remoteRowIdsLoaded = false
+            }
         } else {
             scope.launch {
                 val ok = viewModel.moveSongInYouTubePlaylist(
                     resolvedPlaylist.id, movedSetId, successorSetId
                 )
-                if (!ok) songs = viewModel.fetchPlaylistSongs(resolvedPlaylist.id)
+                if (!ok) {
+                    songRows = playlistSongRows(
+                        viewModel.fetchPlaylistSongs(resolvedPlaylist.id),
+                        trackKeyPrefix
+                    )
+                    remoteRowIdsLoaded = false
+                }
             }
         }
     }
 
-    val beginDrag: (Song) -> Unit = { song ->
-        draggingKey = trackKeyPrefix + song.id
+    val beginDrag: (PlaylistSongRow) -> Unit = { row ->
+        draggingKey = row.key
         dragOffsetY = 0f
-        dragStartIndex = songs.indexOfFirst { it.id == song.id }
+        dragStartIndex = songRows.indexOfFirst { it.key == row.key }
         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
     }
 
@@ -2600,10 +2626,10 @@ fun PlaylistDetailScreen(
                 centre >= candidate.offset &&
                 centre <= candidate.offset + candidate.size
         } ?: return@settle
-        val from = songs.indexOfFirst { trackKeyPrefix + it.id == key }
-        val to = songs.indexOfFirst { trackKeyPrefix + it.id == target.key }
+        val from = songRows.indexOfFirst { it.key == key }
+        val to = songRows.indexOfFirst { it.key == target.key }
         if (from < 0 || to < 0 || from == to) return@settle
-        songs = songs.toMutableList().apply { add(to, removeAt(from)) }
+        songRows = songRows.toMutableList().apply { add(to, removeAt(from)) }
         // The row's settled slot just moved to the target's; cancel that out of
         // the drag offset so the row does not visibly jump under the finger.
         dragOffsetY -= (target.offset - current.offset).toFloat()
@@ -2638,11 +2664,15 @@ fun PlaylistDetailScreen(
         }
     }
 
-    val removeSong: (Song) -> Unit = { song ->
-        val previous = songs
-        songs = songs.filterNot { it.id == song.id }
+    val removeSong: (PlaylistSongRow) -> Unit = { row ->
+        val song = row.song
+        val previous = songRows
+        songRows = songRows.filterNot { it.key == row.key }
         if (isLocalPlaylist) {
-            viewModel.replaceLocalPlaylistSongs(resolvedPlaylist.id, songs)
+            viewModel.replaceLocalPlaylistSongs(
+                resolvedPlaylist.id,
+                songRows.map { it.song }
+            )
             reorderDirty = false
             scope.launch {
                 val result = snackbarHostState.showSnackbar(
@@ -2651,8 +2681,11 @@ fun PlaylistDetailScreen(
                     duration = SnackbarDuration.Short
                 )
                 if (result == SnackbarResult.ActionPerformed) {
-                    songs = previous
-                    viewModel.replaceLocalPlaylistSongs(resolvedPlaylist.id, previous)
+                    songRows = previous
+                    viewModel.replaceLocalPlaylistSongs(
+                        resolvedPlaylist.id,
+                        previous.map { it.song }
+                    )
                 }
             }
         } else {
@@ -2856,7 +2889,8 @@ fun PlaylistDetailScreen(
             if (isReorderMode) {
                 // Vibrant floating toolbar = the M3 Expressive signal for a
                 // temporary edit mode; stays reachable however far the list scrolls
-                val canReorder = isLocalPlaylist || (canReorderRemote && setVideoIds.isNotEmpty())
+                val canReorder = isLocalPlaylist ||
+                    (canReorderRemote && songRows.any { it.setVideoId != null })
                 ManageModeToolbar(
                     hint = if (canReorder) stringResource(R.string.lib_drag_hint) else stringResource(R.string.lib_tap_remove_hint),
                     icon = if (canReorder) Icons.Rounded.DragIndicator else Icons.Rounded.RemoveCircleOutline,
@@ -3171,7 +3205,11 @@ fun PlaylistDetailScreen(
                             Button(onClick = {
                                 scope.launch {
                                     isFetching.value = true
-                                    songs = viewModel.fetchPlaylistSongs(resolvedPlaylist.id)
+                                    songRows = playlistSongRows(
+                                        viewModel.fetchPlaylistSongs(resolvedPlaylist.id),
+                                        trackKeyPrefix
+                                    )
+                                    remoteRowIdsLoaded = false
                                     isFetching.value = false
                                 }
                             }) {
@@ -3192,24 +3230,25 @@ fun PlaylistDetailScreen(
                 }
 
                 else -> itemsIndexed(
-                    items = filteredSongs,
-                    key = { _, song -> trackKeyPrefix + song.id }
-                ) { _, song ->
+                    items = filteredRows,
+                    key = { _, row -> row.key }
+                ) { _, row ->
+                    val song = row.song
                     // Manage mode: song removal for local and YouTube playlists.
                     // Drag reordering works locally and on owned "PL" playlists
-                    // (remote rows become draggable once their setVideoIds load).
+                    // (remote rows become draggable once their setVideoId loads).
                     val manageEnabled = isReorderMode && searchQuery.isBlank() && canEditSongs
                     val reorderEnabled = manageEnabled &&
-                        (isLocalPlaylist || (canReorderRemote && setVideoIds.isNotEmpty()))
-                    val isDragging = draggingKey == trackKeyPrefix + song.id
+                        (isLocalPlaylist || (canReorderRemote && row.setVideoId != null))
+                    val isDragging = draggingKey == row.key
 
                     // The handle drags on touch (the discoverable path); long
                     // pressing anywhere on the row is the accelerator for the
                     // same reorder. Both feed the one drag state.
                     val handleDrag = if (reorderEnabled) {
-                        Modifier.pointerInput(song.id) {
+                        Modifier.pointerInput(row.key) {
                             detectDragGestures(
-                                onDragStart = { beginDrag(song) },
+                                onDragStart = { beginDrag(row) },
                                 onDragEnd = { finishReorderDrag() },
                                 onDragCancel = { finishReorderDrag() },
                                 onDrag = { change, amount ->
@@ -3220,9 +3259,9 @@ fun PlaylistDetailScreen(
                         }
                     } else Modifier
                     val rowDrag = if (reorderEnabled) {
-                        Modifier.pointerInput(song.id) {
+                        Modifier.pointerInput(row.key) {
                             detectDragGesturesAfterLongPress(
-                                onDragStart = { beginDrag(song) },
+                                onDragStart = { beginDrag(row) },
                                 onDragEnd = { finishReorderDrag() },
                                 onDragCancel = { finishReorderDrag() },
                                 onDrag = { change, amount ->
@@ -3241,7 +3280,7 @@ fun PlaylistDetailScreen(
                         dragHandleModifier = handleDrag,
                         onClick = { onPlayQueue(filteredSongs, song) },
                         onLongClick = onSongLongPress?.let { press -> { press(song) } },
-                        onRemove = { removeSong(song) },
+                        onRemove = { removeSong(row) },
                         modifier = Modifier
                             .fillMaxWidth()
                             // Constant inset, never animated: this feeds

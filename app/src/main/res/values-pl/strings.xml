@@ -192,4 +192,11 @@
         <item quantity="many">%1$d playlist</item>
         <item quantity="other">%1$d playlisty</item>
     </plurals>
+    <plurals name="hvm_subs_feed_rate_limited">
+        <item quantity="one">YouTube ogranicza liczbę żądań z tej sieci. Spróbuj ponownie za około %1$d minutę.</item>
+        <item quantity="few">YouTube ogranicza liczbę żądań z tej sieci. Spróbuj ponownie za około %1$d minuty.</item>
+        <item quantity="many">YouTube ogranicza liczbę żądań z tej sieci. Spróbuj ponownie za około %1$d minut.</item>
+        <item quantity="other">YouTube ogranicza liczbę żądań z tej sieci. Spróbuj ponownie za około %1$d minuty.</item>
+    </plurals>
+    <string name="hvm_subs_feed_rate_limited_soon">YouTube ogranicza liczbę żądań z tej sieci. Spróbuj ponownie za chwilę.</string>
 </resources>

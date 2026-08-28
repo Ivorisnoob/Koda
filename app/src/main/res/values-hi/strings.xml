@@ -188,4 +188,9 @@
         <item quantity="one">%1$d प्लेलिस्ट</item>
         <item quantity="other">%1$d प्लेलिस्ट</item>
     </plurals>
+    <plurals name="hvm_subs_feed_rate_limited">
+        <item quantity="one">YouTube इस नेटवर्क से आने वाले अनुरोधों को सीमित कर रहा है। लगभग %1$d मिनट में फिर से कोशिश करें।</item>
+        <item quantity="other">YouTube इस नेटवर्क से आने वाले अनुरोधों को सीमित कर रहा है। लगभग %1$d मिनट में फिर से कोशिश करें।</item>
+    </plurals>
+    <string name="hvm_subs_feed_rate_limited_soon">YouTube इस नेटवर्क से आने वाले अनुरोधों को सीमित कर रहा है। थोड़ी देर में फिर से कोशिश करें।</string>
 </resources>

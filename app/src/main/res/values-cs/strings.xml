@@ -192,4 +192,11 @@
         <item quantity="many">%1$d playlistů</item>
         <item quantity="other">%1$d playlisty</item>
     </plurals>
+    <plurals name="hvm_subs_feed_rate_limited">
+        <item quantity="one">YouTube omezuje počet požadavků z této sítě. Zkuste to znovu přibližně za %1$d minutu.</item>
+        <item quantity="few">YouTube omezuje počet požadavků z této sítě. Zkuste to znovu přibližně za %1$d minuty.</item>
+        <item quantity="many">YouTube omezuje počet požadavků z této sítě. Zkuste to znovu přibližně za %1$d minuty.</item>
+        <item quantity="other">YouTube omezuje počet požadavků z této sítě. Zkuste to znovu přibližně za %1$d minut.</item>
+    </plurals>
+    <string name="hvm_subs_feed_rate_limited_soon">YouTube omezuje počet požadavků z této sítě. Zkuste to znovu za chvíli.</string>
 </resources>

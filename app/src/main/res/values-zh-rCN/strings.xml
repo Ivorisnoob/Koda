@@ -186,4 +186,8 @@
     <plurals name="n_playlists">
         <item quantity="other">%1$d 个歌单</item>
     </plurals>
+    <plurals name="hvm_subs_feed_rate_limited">
+        <item quantity="other">YouTube 正在限制来自此网络的请求。请在大约 %1$d 分钟后重试。</item>
+    </plurals>
+    <string name="hvm_subs_feed_rate_limited_soon">YouTube 正在限制来自此网络的请求。请稍后重试。</string>
 </resources>

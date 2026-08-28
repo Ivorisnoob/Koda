@@ -192,4 +192,10 @@
         <item quantity="many">%1$d רשימות השמעה</item>
         <item quantity="other">%1$d רשימות השמעה</item>
     </plurals>
+    <plurals name="hvm_subs_feed_rate_limited">
+        <item quantity="one">YouTube מגביל בקשות מהרשת הזו. נסה שוב בעוד כ-%1$d דקה.</item>
+        <item quantity="two">YouTube מגביל בקשות מהרשת הזו. נסה שוב בעוד כ-%1$d דקות.</item>
+        <item quantity="other">YouTube מגביל בקשות מהרשת הזו. נסה שוב בעוד כ-%1$d דקות.</item>
+    </plurals>
+    <string name="hvm_subs_feed_rate_limited_soon">YouTube מגביל בקשות מהרשת הזו. נסה שוב בעוד רגע.</string>
 </resources>

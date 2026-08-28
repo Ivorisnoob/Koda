@@ -60,6 +60,15 @@ class NewPipeDownloaderImpl(
             val response = client.newCall(requestBuilder.build()).execute()
             
             if (response.code == 429) {
+                // Record it before throwing. This was the only place in the app
+                // that noticed a 429 at all, and it converted it straight into
+                // an exception nobody catches, so the fan-out paths kept firing
+                // into a limit they had no way to see.
+                YouTubeRateLimit.note(
+                    response.code,
+                    url,
+                    response.header("Retry-After"),
+                )
                 response.close()
                 throw ReCaptchaException("Rate limited", url)
             }

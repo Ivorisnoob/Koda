@@ -6,6 +6,9 @@
    See https://developer.android.com/about/versions/12/backup-restore
 -->
 <full-backup-content>
+    <!-- EncryptedSharedPreferences keys are device-bound; restoring only the
+         ciphertext makes the session store unreadable on the new device. -->
+    <exclude domain="sharedpref" path="yt_music_session.xml"/>
     <!--
    <include domain="sharedpref" path="."/>
    <exclude domain="sharedpref" path="device.xml"/>

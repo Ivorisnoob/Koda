@@ -190,6 +190,47 @@ class YouTubeRepository(private val context: Context) {
         // ViewModel (no DI), so instance-level storage would make every VM pay
         // the youtube.com bootstrap download once. Shared storage means one
         // fetch warms it for the whole process.
+        /**
+         * Shared HTTP cache for the plain GETs this app makes - the channel
+         * Atom feeds above all, which carry ETag/Last-Modified and are
+         * re-fetched in full on every subscriptions refresh and by the
+         * six-hourly upload check. With a cache those become 304s.
+         *
+         * **Companion-level because it must be, not merely because it is
+         * cheaper.** OkHttp's Cache is a DiskLruCache holding an exclusive
+         * lock on its directory, and this app builds a YouTubeRepository per
+         * ViewModel. A per-instance cache would mean several Cache objects on
+         * one directory, which is corruption, not contention. One instance,
+         * shared by every client built from it.
+         *
+         * InnerTube calls are POSTs and are never cached by OkHttp, so this
+         * cannot serve a stale feed or a stale playlist.
+         */
+        private const val HTTP_CACHE_DIR_NAME = "yt_http_cache"
+        private const val HTTP_CACHE_BYTES = 10L * 1024 * 1024
+        @Volatile private var sharedHttpCache: okhttp3.Cache? = null
+        private val httpCacheLock = Any()
+
+        private fun httpCache(context: Context): okhttp3.Cache? {
+            sharedHttpCache?.let { return it }
+            return synchronized(httpCacheLock) {
+                sharedHttpCache ?: try {
+                    okhttp3.Cache(
+                        java.io.File(
+                            context.applicationContext.cacheDir,
+                            HTTP_CACHE_DIR_NAME,
+                        ),
+                        HTTP_CACHE_BYTES,
+                    ).also { sharedHttpCache = it }
+                } catch (e: Exception) {
+                    // A cache is an optimisation; losing it must not stop the
+                    // app making requests.
+                    KLog.w("YouTubeRepository", "HTTP cache unavailable: ${e.message}")
+                    null
+                }
+            }
+        }
+
         @Volatile private var cachedVisitorData: String? = null
         @Volatile private var visitorDataFetchedAt: Long = 0L
         private val visitorDataMutex = kotlinx.coroutines.sync.Mutex()
@@ -257,6 +298,7 @@ class YouTubeRepository(private val context: Context) {
         // the login snapshot goes stale on its own and every authenticated
         // endpoint quietly answers as signed out. See SessionCookieJar.
         .cookieJar(SessionCookieJar(sessionManager))
+        .apply { httpCache(context)?.let { cache(it) } }
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .build()
@@ -978,6 +1020,24 @@ class YouTubeRepository(private val context: Context) {
 
     private fun loadPersistedVisitorData(): String? =
         visitorDataPrefs.getString("visitor_data", null)?.takeIf { it.isNotBlank() }
+
+    /**
+     * The visitorData this install already has, without minting one.
+     *
+     * The browse/next/search helpers are not suspending and are called from
+     * paths that must not block on a network round trip, so they take whatever
+     * the cache and prefs already hold and send nothing when that is empty -
+     * which is exactly what they did before this existed, so an empty cache is
+     * a no-op rather than a regression.
+     *
+     * It is normally warm: [prefetchVisitorData] runs at `MusicService.onCreate`
+     * and at `VideoPlayerViewModel.init`. Deliberately ignores the TTL - a token
+     * slightly past six hours is still a far better identity for a browse call
+     * than no token at all, and /player's own path re-mints on the bot-check
+     * signal regardless.
+     */
+    private fun cachedVisitorDataOrNull(): String? =
+        cachedVisitorData ?: loadPersistedVisitorData()
 
     private fun persistVisitorData(value: String) {
         visitorDataPrefs.edit()
@@ -2100,11 +2160,32 @@ class YouTubeRepository(private val context: Context) {
             .addHeader("User-Agent", getRandomUserAgent())
             .addHeader("Origin", "https://music.youtube.com")
             .addHeader("X-Goog-AuthUser", "0")
+            // Client name 67 is WEB_REMIX. Sent for the same reason the WEB
+            // calls now send theirs: a client that never identifies itself is
+            // the shape anti-abuse looks for. The visitor id rides as a header
+            // rather than in the body because this endpoint's context is built
+            // from raw JSON strings in five places; the header carries the same
+            // identity without touching any of them.
+            .addHeader("X-YouTube-Client-Name", "67")
+            .addHeader("X-YouTube-Client-Version", WEB_REMIX_VERSION)
+            .apply {
+                cachedVisitorDataOrNull()?.let { addHeader("X-Goog-Visitor-Id", it) }
+            }
             .build()
 
         return try {
-            val response = okHttpClient.newCall(request).execute()
-            (response.body?.string() ?: "").also { noteSessionState(it) }
+            okHttpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    YouTubeRateLimit.note(
+                        response.code,
+                        "music browse $endpoint",
+                        response.header("Retry-After"),
+                    )
+                    KLog.w("YouTubeRepo", "music browse $endpoint HTTP ${response.code}")
+                    return ""
+                }
+                (response.body?.string() ?: "").also { noteSessionState(it) }
+            }
         } catch (e: Exception) {
             KLog.e("YouTubeRepo", "Music browse request failed", e)
             ""
@@ -4512,25 +4593,36 @@ class YouTubeRepository(private val context: Context) {
             YouTubeAuthUtils.getAuthorizationHeader(it, "https://www.youtube.com")
         }
 
-        val jsonBody = """
-            {
-                "context": {
-                    "client": {
-                        "clientName": "WEB",
-                        "clientVersion": "$WEB_VERSION",
-                        "hl": "en",
-                        "gl": "US"
-                    }
-                },
-                "browseId": "$browseId"
-            }
-        """.trimIndent()
+        val visitorData = cachedVisitorDataOrNull()
+
+        // Built through JSONObject rather than string interpolation so the
+        // optional visitorData cannot produce malformed JSON.
+        val jsonBody = org.json.JSONObject()
+            .put(
+                "context",
+                org.json.JSONObject().put(
+                    "client",
+                    org.json.JSONObject()
+                        .put("clientName", "WEB")
+                        .put("clientVersion", WEB_VERSION)
+                        .put("hl", "en")
+                        .put("gl", "US")
+                        .apply { visitorData?.let { put("visitorData", it) } }
+                )
+            )
+            .put("browseId", browseId)
+            .toString()
 
         val request = okhttp3.Request.Builder()
             .url(url)
             .post(jsonBody.toRequestBody("application/json".toMediaType()))
             .addHeader("User-Agent", getRandomUserAgent())
             .addHeader("Origin", "https://www.youtube.com")
+            .addHeader("X-YouTube-Client-Name", "1")
+            .addHeader("X-YouTube-Client-Version", WEB_VERSION)
+            .apply {
+                visitorData?.let { addHeader("X-Goog-Visitor-Id", it) }
+            }
             .apply {
                 // Signed out these are the difference between a public read and
                 // a malformed one: an empty Cookie or Authorization header is
@@ -4544,8 +4636,22 @@ class YouTubeRepository(private val context: Context) {
             .build()
 
         return try {
-            val response = okHttpClient.newCall(request).execute()
-            response.body?.string() ?: ""
+            okHttpClient.newCall(request).execute().use { response ->
+                // This used to return the body whatever the status, so a 429
+                // was handed to the parsers as a string, parsed to nothing, and
+                // surfaced as empty content - indistinguishable from a real
+                // empty result, and invisible to everything upstream.
+                if (!response.isSuccessful) {
+                    YouTubeRateLimit.note(
+                        response.code,
+                        "browse $browseId",
+                        response.header("Retry-After"),
+                    )
+                    KLog.w("YouTubeRepo", "browse $browseId HTTP ${response.code}")
+                    return ""
+                }
+                response.body?.string() ?: ""
+            }
         } catch (e: Exception) {
             KLog.e("YouTubeRepo", "Error in fetchYouTubeBrowse", e)
             ""
@@ -5085,6 +5191,18 @@ class YouTubeRepository(private val context: Context) {
 
     fun isLoggedIn(): Boolean = sessionManager.isLoggedIn()
 
+    /**
+     * The WEB client context for www.youtube.com calls.
+     *
+     * Carries [cachedVisitorDataOrNull] when there is one. The app mints a
+     * visitorData, persists it, TTLs it and re-mints it when the bot check
+     * flags it - and for a long time used it on exactly one endpoint family
+     * (/player). Every browse, next, search and engagement call went out with
+     * no visitor identity at all, so from YouTube's side each was a brand new
+     * anonymous client, hundreds per session from one address. That is a large
+     * part of what makes a device's standing degrade over a session rather than
+     * all at once.
+     */
     private fun webContext(): org.json.JSONObject =
         org.json.JSONObject().put(
             "client",
@@ -5093,6 +5211,9 @@ class YouTubeRepository(private val context: Context) {
                 .put("clientVersion", WEB_VERSION)
                 .put("hl", "en")
                 .put("gl", "US")
+                .apply {
+                    cachedVisitorDataOrNull()?.let { put("visitorData", it) }
+                }
         )
 
     /**
@@ -5106,6 +5227,13 @@ class YouTubeRepository(private val context: Context) {
             .addHeader("User-Agent", BROWSER_USER_AGENT)
             .addHeader("Origin", "https://www.youtube.com")
             .addHeader("X-Origin", "https://www.youtube.com")
+            // A real WEB client always sends these; their absence alongside a
+            // missing visitor id is most of what makes this traffic look
+            // synthetic. Client name 1 is WEB.
+            .addHeader("X-YouTube-Client-Name", "1")
+            .addHeader("X-YouTube-Client-Version", WEB_VERSION)
+
+        cachedVisitorDataOrNull()?.let { builder.addHeader("X-Goog-Visitor-Id", it) }
 
         val cookies = sessionManager.getCookies()
         if (!cookies.isNullOrBlank()) {
@@ -5121,6 +5249,11 @@ class YouTubeRepository(private val context: Context) {
                 if (response.isSuccessful) {
                     response.body?.string()?.also { noteSessionState(it) }
                 } else {
+                    YouTubeRateLimit.note(
+                        response.code,
+                        "watch api $endpoint",
+                        response.header("Retry-After"),
+                    )
                     KLog.w("YouTubeRepo", "watch api $endpoint HTTP ${response.code}")
                     null
                 }
@@ -6494,11 +6627,12 @@ class YouTubeRepository(private val context: Context) {
     /**
      * Fetch the per-row playlist item ids ("setVideoId") for a playlist the
      * user can edit. Reordering via edit_playlist identifies rows by these,
-     * not by videoId. Browses VL<id> on music.youtube.com and reads
+     * not by videoId. Values stay occurrence-ordered because duplicate videos
+     * are separate rows with separate setVideoIds. Browses VL<id> on music.youtube.com and reads
      * musicResponsiveListItemRenderer.playlistItemData. First page only
      * (~100 rows); rows past that simply stay un-movable. Verified July 2026.
      */
-    suspend fun getPlaylistSetVideoIds(playlistId: String): Map<String, String> =
+    suspend fun getPlaylistSetVideoIds(playlistId: String): Map<String, List<String>> =
         withContext(Dispatchers.IO) {
             if (!sessionManager.isLoggedIn()) return@withContext emptyMap()
             val browseId = if (playlistId.startsWith("VL")) playlistId else "VL$playlistId"
@@ -6506,15 +6640,15 @@ class YouTubeRepository(private val context: Context) {
             try {
                 val rows = mutableListOf<org.json.JSONObject>()
                 findObjectsByKey(org.json.JSONObject(raw), "musicResponsiveListItemRenderer", rows)
-                buildMap {
-                    for (row in rows) {
-                        val itemData = row.optJSONObject("playlistItemData") ?: continue
-                        val videoId = itemData.optString("videoId").takeIf { it.isNotBlank() } ?: continue
-                        val setVideoId = itemData.optString("playlistSetVideoId")
-                            .takeIf { it.isNotBlank() } ?: continue
-                        put(videoId, setVideoId)
-                    }
+                val idsByVideo = linkedMapOf<String, MutableList<String>>()
+                for (row in rows) {
+                    val itemData = row.optJSONObject("playlistItemData") ?: continue
+                    val videoId = itemData.optString("videoId").takeIf { it.isNotBlank() } ?: continue
+                    val setVideoId = itemData.optString("playlistSetVideoId")
+                        .takeIf { it.isNotBlank() } ?: continue
+                    idsByVideo.getOrPut(videoId) { mutableListOf() }.add(setVideoId)
                 }
+                idsByVideo.mapValues { (_, ids) -> ids.toList() }
             } catch (e: Exception) {
                 KLog.e("YouTubeRepo", "getPlaylistSetVideoIds failed", e)
                 emptyMap()
@@ -7836,26 +7970,83 @@ class YouTubeRepository(private val context: Context) {
     suspend fun getChannelFeedRss(
         channelId: String,
         avatarUrl: String? = null
-    ): List<VideoItem> = withContext(Dispatchers.IO) {
+    ): List<VideoItem> =
+        (fetchChannelFeedRss(channelId, avatarUrl) as? ChannelFeedResult.Items)?.videos
+            ?: emptyList()
+
+    /**
+     * Whether this fetch may be answered from the HTTP cache.
+     *
+     * YouTube marks these feeds `public, max-age=900`, so with a cache in the
+     * client a refresh inside fifteen minutes costs no request at all - which
+     * is most of the point of having one. But it also means a pull-to-refresh
+     * would silently do nothing for those fifteen minutes, and a refresh that
+     * visibly does nothing is worse than the traffic it saves. So an explicit
+     * refresh revalidates and everything else - a tab revisit, a process
+     * restart, the six-hourly worker - takes the cached answer.
+     */
+    private fun feedCacheControl(forceFresh: Boolean): okhttp3.CacheControl? =
+        if (forceFresh) okhttp3.CacheControl.Builder().noCache().build() else null
+
+    /**
+     * Outcome of one Atom feed fetch, kept richer than a list because
+     * [getLocalSubscriptionsFeed]'s browse fallback is correct for one of these
+     * failures and actively harmful for the other. See there.
+     */
+    sealed interface ChannelFeedResult {
+        data class Items(val videos: List<VideoItem>) : ChannelFeedResult
+
+        /**
+         * The feed answered, but not with a feed - 404/410, or anything else
+         * that is a verdict on this channel rather than on this device. The
+         * browse fallback is exactly right here and is why it exists.
+         */
+        data object NoFeed : ChannelFeedResult
+
+        /** HTTP 429. Escalating to a ~1 MB browse would make this worse. */
+        data object RateLimited : ChannelFeedResult
+
+        /** Network or parse failure - indistinguishable from a dead channel. */
+        data object Failed : ChannelFeedResult
+    }
+
+    private suspend fun fetchChannelFeedRss(
+        channelId: String,
+        avatarUrl: String? = null,
+        forceFresh: Boolean = false,
+    ): ChannelFeedResult = withContext(Dispatchers.IO) {
         try {
             val request = okhttp3.Request.Builder()
                 .url("https://www.youtube.com/feeds/videos.xml?channel_id=$channelId")
                 .addHeader("User-Agent", BROWSER_USER_AGENT)
+                .apply { feedCacheControl(forceFresh)?.let { cacheControl(it) } }
                 .build()
             val body = okHttpClient.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) {
+                    // 429 is a verdict on this device, not on this channel, and
+                    // it is the one code the browse fallback must not answer:
+                    // escalating 200 channels from a 50 KB feed to a 1 MB browse
+                    // aims 200 MB at the server that just asked us to stop.
+                    if (YouTubeRateLimit.note(
+                            response.code,
+                            "channel feed",
+                            response.header("Retry-After"),
+                        )
+                    ) {
+                        return@withContext ChannelFeedResult.RateLimited
+                    }
                     // 404 means the channel is gone or the id was never valid;
                     // the caller keeps the subscription either way, because a
                     // transient failure must not silently delete channels.
                     KLog.w("YouTubeRepo", "channel feed $channelId HTTP ${response.code}")
-                    return@withContext emptyList()
+                    return@withContext ChannelFeedResult.NoFeed
                 }
                 response.body?.string()
-            } ?: return@withContext emptyList()
-            parseChannelFeedXml(body, avatarUrl)
+            } ?: return@withContext ChannelFeedResult.NoFeed
+            ChannelFeedResult.Items(parseChannelFeedXml(body, avatarUrl))
         } catch (e: Exception) {
             KLog.w("YouTubeRepo", "getChannelFeedRss failed for $channelId", e)
-            emptyList()
+            ChannelFeedResult.Failed
         }
     }
 
@@ -7987,9 +8178,17 @@ class YouTubeRepository(private val context: Context) {
         fastMode: Boolean = true,
         maxPerChannel: Int = MAX_FEED_ITEMS_PER_CHANNEL,
         maxTotal: Int = MAX_FEED_ITEMS,
+        /** True when the user asked for this refresh, so it must revalidate. */
+        forceFresh: Boolean = false,
         onProgress: ((completed: Int, total: Int) -> Unit)? = null
     ): List<VideoItem> = withContext(Dispatchers.IO) {
         if (channels.isEmpty()) return@withContext emptyList()
+        // Refuse before spending a single request. A refresh taken during a
+        // hold is the exact loop that deepens one: blocked feed reads as empty,
+        // user pulls to refresh, N more requests.
+        if (YouTubeRateLimit.isHeld()) {
+            throw YouTubeRateLimitedException(YouTubeRateLimit.remainingMs())
+        }
         val gate = kotlinx.coroutines.sync.Semaphore(FEED_CONCURRENCY)
         val completed = java.util.concurrent.atomic.AtomicInteger(0)
         val total = channels.size
@@ -7999,6 +8198,11 @@ class YouTubeRepository(private val context: Context) {
                 async {
                     gate.acquire()
                     try {
+                        // A sibling already hit the limit. The shared state is
+                        // the coordination channel here rather than cancelling
+                        // the scope, so the channels that already succeeded
+                        // keep their results instead of being thrown away.
+                        if (YouTubeRateLimit.isHeld()) return@async emptyList()
                         val videos = if (fastMode) {
                             // RSS is not universally available: some channels
                             // 404 on the feed URL YouTube itself advertises in
@@ -8010,8 +8214,24 @@ class YouTubeRepository(private val context: Context) {
                             // So fast mode means "RSS, else browse", not "RSS
                             // or nothing" - the fallback costs a request only
                             // for the channels that actually need it.
-                            getChannelFeedRss(channel.channelId, channel.avatarUrl)
-                                .ifEmpty { channelVideosWithTimestamps(channel) }
+                            //
+                            // The one refusal it must not answer is 429. That
+                            // is a verdict on this device rather than on this
+                            // channel, a browse will be refused too, and doing
+                            // it for every channel turns a 10 MB refresh into a
+                            // 200 MB one aimed at a server that just said stop.
+                            when (val feed = fetchChannelFeedRss(
+                                channel.channelId,
+                                channel.avatarUrl,
+                                forceFresh,
+                            )) {
+                                is ChannelFeedResult.Items ->
+                                    feed.videos.ifEmpty { channelVideosWithTimestamps(channel) }
+                                ChannelFeedResult.NoFeed,
+                                ChannelFeedResult.Failed ->
+                                    channelVideosWithTimestamps(channel)
+                                ChannelFeedResult.RateLimited -> emptyList()
+                            }
                         } else {
                             channelVideosWithTimestamps(channel)
                         }
@@ -8025,6 +8245,15 @@ class YouTubeRepository(private val context: Context) {
                     }
                 }
             }.map { it.await() }
+        }
+
+        // A hold armed mid-refresh means the rest of the channels stood down,
+        // so what came back is a partial feed. Reporting it as the feed would
+        // present a throttled refresh as "these are your subscriptions", and
+        // the empty case would read as "nothing new" - which is what sends
+        // people to check a connection that is working fine.
+        if (YouTubeRateLimit.isHeld()) {
+            throw YouTubeRateLimitedException(YouTubeRateLimit.remainingMs())
         }
 
         perChannel.flatten()

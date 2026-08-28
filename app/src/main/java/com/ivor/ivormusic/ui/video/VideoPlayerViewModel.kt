@@ -207,6 +207,12 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     private var watchNextJob: Job? = null
     private var videoLoadGeneration = 0L
 
+    // A cold-process restore initially rebuilds only the visible player state.
+    // Keeping the resume point here avoids preparing an ExoPlayer source (and
+    // therefore buffering a video) before the user has asked playback to
+    // resume. Nullable distinguishes a pending restore at 0 from no restore.
+    private var deferredRestorePositionMs: Long? = null
+
     // Qualities and Related
     private val _availableQualities = MutableStateFlow<List<VideoQuality>>(emptyList())
     val availableQualities: StateFlow<List<VideoQuality>> = _availableQualities
@@ -645,21 +651,20 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             themePreferences.setVideoRepeatEnabled(false)
         }
 
-        // Near-instant first frame (~1s buffered) plus an aggressive
-        // read-ahead: up to 5 minutes (min == max: continuous top-up),
-        // hard-capped at 200MB of sample RAM so high-bitrate 4K streams
-        // can't exhaust memory — loading stops at whichever limit is hit
-        // first. Video has no disk cache, so a 30s keyframe-aligned back
-        // buffer keeps short rewinds instant too.
+        // Near-instant first frame without retaining several minutes of video
+        // samples in the app heap. Unlike music, video has no disk cache and
+        // its decoded surfaces/codecs already consume substantial memory, so
+        // a bounded one-minute read-ahead and 64MB allocator ceiling leave
+        // headroom for artwork, Compose and the decoder on lower-memory phones.
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                300_000, // min buffer (== max: continuous top-up)
-                300_000, // max buffer: up to 5 minutes ahead
+                30_000,  // keep playback resilient through short network dips
+                60_000,  // never retain five minutes of long-form video
                 1_000,   // buffer before first frame
                 2_500    // buffer after a rebuffer
             )
-            .setTargetBufferBytes(200 * 1024 * 1024)
-            .setBackBuffer(30_000, true)
+            .setTargetBufferBytes(64 * 1024 * 1024)
+            .setBackBuffer(15_000, true)
             .setPrioritizeTimeOverSizeThresholds(false)
             .build()
 
@@ -922,7 +927,9 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                 return@launch
             }
 
-            val localPos = _exoPlayer?.currentPosition?.coerceAtLeast(0L) ?: 0L
+            val localPos = deferredRestorePositionMs
+                ?: _exoPlayer?.currentPosition?.coerceAtLeast(0L)
+                ?: 0L
             val wasPlaying = _exoPlayer?.isPlaying == true
             // Pause the phone first: two devices playing the same audio for
             // even a second is worse than a beat of silence while the TV spins up.
@@ -1085,7 +1092,9 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             // that video onto the TV where the session says the user is
             // watching, paused or playing as it was on the phone.
             val video = _currentVideo.value!!
-            val pos = _exoPlayer?.currentPosition?.coerceAtLeast(0L) ?: 0L
+            val pos = deferredRestorePositionMs
+                ?: _exoPlayer?.currentPosition?.coerceAtLeast(0L)
+                ?: 0L
             val wasPlaying = _exoPlayer?.isPlaying == true
             _exoPlayer?.pause()
             startVideo(
@@ -1153,13 +1162,16 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             // Collapsed rather than expanded: the user is arriving fresh at
             // whatever screen they left, and popping straight into a
             // fullscreen player would be a jump-scare, not a convenience. The
-            // mini player is enough of a "you left this running" cue, and it
-            // is paused, so nothing streams until they tap it.
+            // mini player is enough of a "you left this running" cue. Rebuild
+            // only its metadata and progress here; the stream is resolved on
+            // the first Play action, so a bad prior session cannot create a
+            // repeated launch-time memory/network failure.
             startVideo(
                 target,
                 resumePositionMs = session.positionMs,
                 resumePaused = true,
-                expand = false
+                expand = false,
+                deferStreamLoad = true
             )
         }
     }
@@ -1207,7 +1219,9 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         // Read off whichever player is producing the media: while casting the
         // position lives on the receiver, and a snapshot of the phone's stale
         // local position would resurrect the wrong moment on restore.
-        val position = activePlayer()?.currentPosition?.coerceAtLeast(0L) ?: return
+        val position = deferredRestorePositionMs
+            ?: activePlayer()?.currentPosition?.coerceAtLeast(0L)
+            ?: return
         val activeQueue = _queue.value
 
         val videos: List<com.ivor.ivormusic.data.PersistedVideoSnapshot>
@@ -1747,13 +1761,16 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      * @param expand false only for a cold-process restore, where popping
      * straight into a fullscreen player would be a jump-scare rather than the
      * "you left this running" cue a mini player gives.
+     * @param deferStreamLoad cold-restore-only path which reconstructs player
+     * chrome without resolving or preparing media until the user presses Play.
      */
     private fun startVideo(
         video: VideoItem,
         forceRestart: Boolean = false,
         resumePositionMs: Long? = null,
         resumePaused: Boolean = false,
-        expand: Boolean = true
+        expand: Boolean = true,
+        deferStreamLoad: Boolean = false
     ) {
         if (!forceRestart && _currentVideo.value?.videoId == video.videoId) {
             // Already playing this video, just expand
@@ -1764,6 +1781,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         val loadGeneration = ++videoLoadGeneration
         streamLoadJob?.cancel()
         watchNextJob?.cancel()
+        if (!deferStreamLoad) deferredRestorePositionMs = null
 
         // Decide from the item, not merely from the queue that introduced it.
         // This keeps ad-hoc online items added after an offline download from
@@ -1794,11 +1812,6 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         captionsLoadedForVideoId = null
         captionCuesJob?.cancel()
         _captionCues.value = emptyList()
-        // Captions that were on for the last video stay on for this one: the
-        // track list is fetched up front rather than waiting for a CC tap.
-        if (themePreferences.isCaptionsEnabled() && !_isLocalPlayback.value) {
-            ensureCaptionsLoaded()
-        }
         _playbackError.value = null // Clear previous error
         rendererRetryCount = 0
         sourceRetryCount = 0
@@ -1850,6 +1863,30 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         // Speed is per-video, like YouTube
         _playbackSpeed.value = 1f
         activePlayer()?.setPlaybackSpeed(1f)
+
+        if (deferStreamLoad) {
+            val position = resumePositionMs?.coerceAtLeast(0L) ?: 0L
+            val duration = (video.duration.coerceAtLeast(0L) * 1_000L)
+            deferredRestorePositionMs = position
+            _positionMs.value = position
+            _durationMs.value = duration
+            _progress.value = if (duration > 0L) {
+                (position.toFloat() / duration).coerceIn(0f, 1f)
+            } else {
+                0f
+            }
+            _bufferedProgress.value = 0f
+            _isPlaying.value = false
+            _isBuffering.value = false
+            _isLoading.value = false
+            return
+        }
+
+        // Captions that were on for the last video stay on for this one: the
+        // track list is fetched up front rather than waiting for a CC tap.
+        if (themePreferences.isCaptionsEnabled() && !_isLocalPlayback.value) {
+            ensureCaptionsLoaded()
+        }
 
         // Publish to the system's media controls. Started here, from a user tap,
         // because a foreground service may not be started from the background;
@@ -2519,6 +2556,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         liveChatStartedForVideoId = null
         _currentVideo.value = null
         _queue.value = null
+        deferredRestorePositionMs = null
         leaveLocalPlayback()
         _isExpanded.value = false
         // Nothing is playing any more, so nothing should be on the lock screen.
@@ -2530,6 +2568,17 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     }
 
     fun togglePlayPause() {
+        deferredRestorePositionMs?.let { position ->
+            val video = _currentVideo.value ?: return
+            startVideo(
+                video = video,
+                forceRestart = true,
+                resumePositionMs = position,
+                resumePaused = false,
+                expand = _isExpanded.value
+            )
+            return
+        }
         val player = activePlayer() ?: return
         if (_isPlaying.value) {
             player.pause()
@@ -2551,10 +2600,39 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      * RemoteActions have no other way to reach the player.
      */
     fun seekBy(deltaMs: Long) {
+        deferredRestorePositionMs?.let { restoredPosition ->
+            val duration = _durationMs.value.takeIf { it > 0L } ?: Long.MAX_VALUE
+            val position = (restoredPosition + deltaMs).coerceIn(0L, duration)
+            deferredRestorePositionMs = position
+            _positionMs.value = position
+            _progress.value = if (duration != Long.MAX_VALUE) {
+                (position.toFloat() / duration).coerceIn(0f, 1f)
+            } else {
+                0f
+            }
+            return
+        }
         val player = activePlayer() ?: return
         val duration = player.duration
         val upperBound = if (duration > 0) duration else Long.MAX_VALUE
         player.seekTo((player.currentPosition + deltaMs).coerceIn(0L, upperBound))
+    }
+
+    /** Absolute seek which also works before a restored session has loaded media. */
+    fun seekTo(positionMs: Long) {
+        deferredRestorePositionMs?.let {
+            val duration = _durationMs.value.takeIf { value -> value > 0L } ?: Long.MAX_VALUE
+            val position = positionMs.coerceIn(0L, duration)
+            deferredRestorePositionMs = position
+            _positionMs.value = position
+            _progress.value = if (duration != Long.MAX_VALUE) {
+                (position.toFloat() / duration).coerceIn(0f, 1f)
+            } else {
+                0f
+            }
+            return
+        }
+        activePlayer()?.seekTo(positionMs.coerceAtLeast(0L))
     }
 
     /** Pause without closing the player (music or Shorts playback started). */
@@ -2564,6 +2642,17 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
     /** External play/pause entry points (the system PiP window's buttons). */
     fun playFromExternal() {
+        deferredRestorePositionMs?.let { position ->
+            val video = _currentVideo.value ?: return
+            startVideo(
+                video = video,
+                forceRestart = true,
+                resumePositionMs = position,
+                resumePaused = false,
+                expand = _isExpanded.value
+            )
+            return
+        }
         val player = activePlayer() ?: return
         if (player.playbackState == Player.STATE_ENDED) player.seekToDefaultPosition()
         player.play()

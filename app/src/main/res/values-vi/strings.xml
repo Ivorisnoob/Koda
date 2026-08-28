@@ -186,4 +186,8 @@
     <plurals name="n_playlists">
         <item quantity="other">%1$d danh sách phát</item>
     </plurals>
+    <plurals name="hvm_subs_feed_rate_limited">
+        <item quantity="other">YouTube đang giới hạn yêu cầu từ mạng này. Thử lại sau khoảng %1$d phút.</item>
+    </plurals>
+    <string name="hvm_subs_feed_rate_limited_soon">YouTube đang giới hạn yêu cầu từ mạng này. Thử lại sau một chút.</string>
 </resources>

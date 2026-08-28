@@ -188,4 +188,9 @@
         <item quantity="one">%1$d spellista</item>
         <item quantity="other">%1$d spellistor</item>
     </plurals>
+    <plurals name="hvm_subs_feed_rate_limited">
+        <item quantity="one">YouTube begränsar förfrågningar från det här nätverket. Försök igen om ungefär %1$d minut.</item>
+        <item quantity="other">YouTube begränsar förfrågningar från det här nätverket. Försök igen om ungefär %1$d minuter.</item>
+    </plurals>
+    <string name="hvm_subs_feed_rate_limited_soon">YouTube begränsar förfrågningar från det här nätverket. Försök igen om en liten stund.</string>
 </resources>

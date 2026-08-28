@@ -188,4 +188,9 @@
         <item quantity="one">%1$d λίστα</item>
         <item quantity="other">%1$d λίστες</item>
     </plurals>
+    <plurals name="hvm_subs_feed_rate_limited">
+        <item quantity="one">Το YouTube περιορίζει τα αιτήματα από αυτό το δίκτυο. Δοκίμασε ξανά σε περίπου %1$d λεπτό.</item>
+        <item quantity="other">Το YouTube περιορίζει τα αιτήματα από αυτό το δίκτυο. Δοκίμασε ξανά σε περίπου %1$d λεπτά.</item>
+    </plurals>
+    <string name="hvm_subs_feed_rate_limited_soon">Το YouTube περιορίζει τα αιτήματα από αυτό το δίκτυο. Δοκίμασε ξανά σε λίγο.</string>
 </resources>

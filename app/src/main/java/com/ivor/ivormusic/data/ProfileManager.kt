@@ -449,12 +449,28 @@ class ProfileManager(context: Context) {
                         buildPrefs(app)
                     } catch (e: Exception) {
                         KLog.e(TAG, "EncryptedSharedPreferences corrupted, resetting", e)
-                        app.getSharedPreferences(PREFS_FILE_NAME, Context.MODE_PRIVATE)
-                            .edit().clear().apply()
-                        java.io.File(
-                            app.filesDir.parent, "shared_prefs/$PREFS_FILE_NAME.xml"
-                        ).delete()
-                        buildPrefs(app)
+                        try {
+                            // The preference ciphertext and its device-bound
+                            // key are one unit. Delete both synchronously before
+                            // rebuilding; clear().apply() followed by raw file
+                            // deletion races its own asynchronous disk write.
+                            app.deleteSharedPreferences(PREFS_FILE_NAME)
+                            runCatching {
+                                java.security.KeyStore.getInstance("AndroidKeyStore").apply {
+                                    load(null)
+                                    deleteEntry(MasterKey.DEFAULT_MASTER_KEY_ALIAS)
+                                }
+                            }.onFailure {
+                                KLog.w(TAG, "Could not remove unusable master key", it)
+                            }
+                            buildPrefs(app)
+                        } catch (retry: Exception) {
+                            // Do not turn a permanently unavailable keystore
+                            // into a launch loop, and never fall back to storing
+                            // account cookies in plaintext.
+                            KLog.e(TAG, "Encrypted preferences unavailable; using volatile session", retry)
+                            VolatileSharedPreferences()
+                        }
                     }
                     prefsInstance = created
                     created

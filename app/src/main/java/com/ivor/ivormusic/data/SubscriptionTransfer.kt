@@ -6,6 +6,7 @@ import android.database.sqlite.SQLiteDatabase
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.io.InputStream
 import java.util.zip.ZipInputStream
 
 /**
@@ -57,7 +58,7 @@ object SubscriptionTransfer {
      */
     fun read(bytes: ByteArray, scratchFile: File): ImportedFile {
         if (looksLikeZip(bytes)) {
-            return if (unpackDatabase(bytes, scratchFile)) {
+            return if (unpackDatabase(bytes.inputStream(), scratchFile)) {
                 try {
                     parseDatabase(scratchFile)
                 } finally {
@@ -86,6 +87,68 @@ object SubscriptionTransfer {
             groups = parseGroups(text),
             foreignServiceEntries = countForeignServiceEntries(text)
         )
+    }
+
+    /**
+     * File-backed import path used for SAF documents.
+     *
+     * Backup archives and SQLite databases can be hundreds of megabytes and
+     * must not be materialised as one ByteArray in the app heap. Only the text
+     * interchange formats are decoded to a String, behind their own much
+     * smaller bound. The source is owned and deleted by the caller.
+     */
+    fun read(sourceFile: File, scratchFile: File): ImportedFile {
+        val header = sourceFile.inputStream().use { input ->
+            ByteArray(SQLITE_MAGIC.size).also { bytes ->
+                var offset = 0
+                while (offset < bytes.size) {
+                    val read = input.read(bytes, offset, bytes.size - offset)
+                    if (read < 0) break
+                    offset += read
+                }
+            }
+        }
+        if (looksLikeZip(header)) {
+            return sourceFile.inputStream().use { input ->
+                if (unpackDatabase(input, scratchFile)) {
+                    try {
+                        parseDatabase(scratchFile)
+                    } finally {
+                        scratchFile.delete()
+                    }
+                } else {
+                    ImportedFile()
+                }
+            }
+        }
+        if (looksLikeSqlite(header)) return parseDatabase(sourceFile)
+        if (sourceFile.length() > MAX_TEXT_IMPORT_BYTES) {
+            throw IllegalArgumentException("Subscription text export is too large")
+        }
+        val text = sourceFile.readText(Charsets.UTF_8)
+        return ImportedFile(
+            channels = parse(text),
+            groups = parseGroups(text),
+            foreignServiceEntries = countForeignServiceEntries(text)
+        )
+    }
+
+    /** Copy an external document to private storage without unbounded heap use. */
+    fun copyImport(input: InputStream, destination: File) {
+        destination.outputStream().buffered().use { output ->
+            val buffer = ByteArray(64 * 1024)
+            var written = 0L
+            while (true) {
+                val read = input.read(buffer)
+                if (read < 0) break
+                if (read == 0) continue
+                written += read
+                if (written > MAX_IMPORT_FILE_BYTES) {
+                    throw IllegalArgumentException("Subscription import is too large")
+                }
+                output.write(buffer, 0, read)
+            }
+        }
     }
 
     /**
@@ -143,9 +206,9 @@ object SubscriptionTransfer {
      * and the copy is capped, since an export is a couple of megabytes and
      * anything wildly past that is not one.
      */
-    private fun unpackDatabase(bytes: ByteArray, destination: File): Boolean {
+    private fun unpackDatabase(input: InputStream, destination: File): Boolean {
         return try {
-            ZipInputStream(bytes.inputStream()).use { zip ->
+            ZipInputStream(input).use { zip ->
                 while (true) {
                     val entry = zip.nextEntry ?: break
                     val name = entry.name.substringAfterLast('/')
@@ -522,6 +585,12 @@ object SubscriptionTransfer {
     }
 
     private const val TAG = "SubscriptionTransfer"
+
+    /** Disk bound for a complete picked backup; copying never allocates it in heap. */
+    private const val MAX_IMPORT_FILE_BYTES = 256L * 1024 * 1024
+
+    /** JSON/CSV/OPML is decoded as text, so keep that heap allocation modest. */
+    private const val MAX_TEXT_IMPORT_BYTES = 16L * 1024 * 1024
 
     /**
      * The 16-byte header every SQLite file opens with. The terminating NUL is

@@ -1153,7 +1153,7 @@ fun MusicApp(
         if (onboardingCompleted) {
             var showCrashPrompt by remember {
                 mutableStateOf(
-                    com.ivor.ivormusic.data.CrashReporter.readPendingCrash(context) != null
+                    com.ivor.ivormusic.data.CrashReporter.shouldPromptForPendingCrash(context)
                 )
             }
             if (showCrashPrompt) {
@@ -1164,7 +1164,7 @@ fun MusicApp(
                     },
                     onDismiss = {
                         showCrashPrompt = false
-                        com.ivor.ivormusic.data.CrashReporter.clearPendingCrash(context)
+                        com.ivor.ivormusic.data.CrashReporter.dismissPendingCrashPrompt(context)
                     }
                 )
             }
@@ -1262,8 +1262,9 @@ private fun NotInterestedUndoHost(modifier: Modifier = Modifier) {
  * A dialog at the MusicApp root rather than a card inside Home: it must be
  * answerable before any of the tab content, overlays or mini players settle,
  * and both answers are one tap - "Report" opens the reporter route (which
- * carries the crash file's contents), "Not now" deletes the file. Either way
- * it never appears twice for the same crash.
+ * carries the crash file's contents), while "Not now" keeps it available from
+ * the manual reporter and suppresses only this prompt. Either way it never
+ * appears twice for the same crash.
  */
 @Composable
 private fun CrashReportPrompt(

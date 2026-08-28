@@ -693,6 +693,7 @@
 
     <!-- Auth dialog -->
     <string name="au_sign_in_title">Sign in to YouTube Music</string>
+    <string name="au_sign_in_renderer_failed">The sign-in page stopped unexpectedly. Your app is still safe; reload the page to continue.</string>
     <string name="cd_close">Close</string>
 
     <!-- Channel / artist / album -->
@@ -827,6 +828,11 @@
     <string name="ss_search_settings">Search settings</string>
     <string name="hvm_subs_feed_empty">No recent uploads from the channels you follow.</string>
     <string name="hvm_subs_feed_error">Couldn\'t load recent uploads. Check your connection and try again.</string>
+    <plurals name="hvm_subs_feed_rate_limited">
+        <item quantity="one">YouTube is limiting requests from this network. Try again in about %1$d minute.</item>
+        <item quantity="other">YouTube is limiting requests from this network. Try again in about %1$d minutes.</item>
+    </plurals>
+    <string name="hvm_subs_feed_rate_limited_soon">YouTube is limiting requests from this network. Try again in a moment.</string>
     <string name="hvm_channel_feed_error">Couldn\'t load uploads from %1$s. Pull to try again.</string>
     <string name="hvm_import_empty">That file was empty or could not be opened.</string>
     <string name="hvm_import_foreign">That file only had channels from services Koda can\'t play.</string>

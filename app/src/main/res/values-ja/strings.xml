@@ -186,4 +186,8 @@
     <plurals name="n_playlists">
         <item quantity="other">プレイリスト: %1$d</item>
     </plurals>
+    <plurals name="hvm_subs_feed_rate_limited">
+        <item quantity="other">YouTube がこのネットワークからのリクエストを制限しています。約%1$d分後にもう一度お試しください。</item>
+    </plurals>
+    <string name="hvm_subs_feed_rate_limited_soon">YouTube がこのネットワークからのリクエストを制限しています。しばらくしてからもう一度お試しください。</string>
 </resources>

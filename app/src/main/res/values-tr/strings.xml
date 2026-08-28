@@ -188,4 +188,9 @@
         <item quantity="one">%1$d liste</item>
         <item quantity="other">%1$d oynatma listesi</item>
     </plurals>
+    <plurals name="hvm_subs_feed_rate_limited">
+        <item quantity="one">YouTube bu ağdan gelen istekleri sınırlandırıyor. Yaklaşık %1$d dakika içinde tekrar deneyin.</item>
+        <item quantity="other">YouTube bu ağdan gelen istekleri sınırlandırıyor. Yaklaşık %1$d dakika içinde tekrar deneyin.</item>
+    </plurals>
+    <string name="hvm_subs_feed_rate_limited_soon">YouTube bu ağdan gelen istekleri sınırlandırıyor. Birazdan tekrar deneyin.</string>
 </resources>

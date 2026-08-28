@@ -190,4 +190,9 @@
         <item quantity="many">%1$d playlists</item>
         <item quantity="other">%1$d playlists</item>
     </plurals>
+    <plurals name="hvm_subs_feed_rate_limited">
+        <item quantity="one">YouTube está limitando las solicitudes desde esta red. Inténtalo de nuevo en aproximadamente %1$d minuto.</item>
+        <item quantity="other">YouTube está limitando las solicitudes desde esta red. Inténtalo de nuevo en aproximadamente %1$d minutos.</item>
+    </plurals>
+    <string name="hvm_subs_feed_rate_limited_soon">YouTube está limitando las solicitudes desde esta red. Inténtalo de nuevo en un momento.</string>
 </resources>

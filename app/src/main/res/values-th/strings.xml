@@ -186,4 +186,8 @@
     <plurals name="n_playlists">
         <item quantity="other">%1$d เพลย์ลิสต์</item>
     </plurals>
+    <plurals name="hvm_subs_feed_rate_limited">
+        <item quantity="other">YouTube กำลังจำกัดคำขอจากเครือข่ายนี้ ลองอีกครั้งในอีกประมาณ %1$d นาที</item>
+    </plurals>
+    <string name="hvm_subs_feed_rate_limited_soon">YouTube กำลังจำกัดคำขอจากเครือข่ายนี้ ลองอีกครั้งในอีกสักครู่</string>
 </resources>
