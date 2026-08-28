@@ -65,7 +65,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.rounded.DragHandle
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.runtime.collectAsState
@@ -109,6 +108,7 @@ import com.ivor.ivormusic.ui.components.QueueRowContainer
 import com.ivor.ivormusic.ui.components.queueDragLongPress
 import com.ivor.ivormusic.ui.components.rememberQueueRemoval
 import com.ivor.ivormusic.ui.components.rememberQueueReorderState
+import com.ivor.ivormusic.ui.components.rememberFocusedQueueListState
 import com.ivor.ivormusic.ui.components.SongArtwork
 import kotlin.math.abs
 
@@ -833,7 +833,10 @@ internal fun EditorialQueueView(
     onCommitOrder: () -> Unit = {},
     onUndoRemove: () -> Unit = {}
 ) {
-    val listState = rememberLazyListState()
+    val currentQueueIndex = remember(queue, currentQueueItemId) {
+        queue.indexOfFirst { it.id == currentQueueItemId }
+    }
+    val listState = rememberFocusedQueueListState(currentQueueIndex)
     val rowKeys = remember(queue) { queue.map { it.id } }
     val reorder = rememberQueueReorderState(
         listState = listState,

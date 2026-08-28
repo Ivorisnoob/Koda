@@ -13,7 +13,6 @@ import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.rounded.DragHandle
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -56,6 +55,7 @@ import com.ivor.ivormusic.ui.components.QueueRowContainer
 import com.ivor.ivormusic.ui.components.queueDragLongPress
 import com.ivor.ivormusic.ui.components.rememberQueueRemoval
 import com.ivor.ivormusic.ui.components.rememberQueueReorderState
+import com.ivor.ivormusic.ui.components.rememberFocusedQueueListState
 import com.ivor.ivormusic.ui.components.SongArtwork
 import com.ivor.ivormusic.data.LyricsResult
 
@@ -858,7 +858,13 @@ private fun ExpressiveQueueView(
 ) {
     val primaryContainerColor = MaterialTheme.colorScheme.primaryContainer
     val currentSong = queue.find { it.id == currentQueueItemId }?.song
-    val listState = rememberLazyListState()
+    val currentQueueIndex = remember(queue, currentQueueItemId) {
+        queue.indexOfFirst { it.id == currentQueueItemId }
+    }
+    val listState = rememberFocusedQueueListState(
+        currentQueueIndex = currentQueueIndex,
+        leadingItemCount = 1,
+    )
     val rowKeys = remember(queue) { queue.map { it.id } }
     val reorder = rememberQueueReorderState(
         listState = listState,
