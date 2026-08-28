@@ -266,6 +266,8 @@
     <string name="sp_home_mode_toggle">Home Screen Mode Toggle</string>
     <string name="sp_timed_comments">Timed Comments</string>
     <string name="sp_shorts">Shorts</string>
+    <string name="sp_shorts_enabled_sub">Shown on Home and opened in the swipe player</string>
+    <string name="sp_shorts_disabled_sub">Hidden from Home; opened in the video player elsewhere</string>
     <string name="sp_shorts_buttons">Shorts Buttons</string>
     <string name="sp_shorts_buttons_sub">Tap a button to show or hide it in Shorts</string>
     <string name="sp_excluded_folders_sub">Songs from selected folders won\'t appear in your library</string>
@@ -382,7 +384,8 @@
     <string name="ob_enable_video_mode_sub">Video home, video search and watch history</string>
     <string name="ob_home_switch">Home screen switch</string>
     <string name="ob_home_switch_sub">Quick music/video toggle in the Home top bar</string>
-    <string name="ob_shorts_sub">A Shorts shelf and vertical swipe player in video mode</string>
+    <string name="ob_shorts_sub">Show a Home shelf and use the vertical swipe player</string>
+    <string name="ob_shorts_warning">Endless short-form feeds are designed to keep you scrolling. With Shorts off, they stay out of Home and open in the standard video player elsewhere.</string>
     <string name="ob_page_look_and_feel">Look and feel</string>
     <string name="ob_look_and_feel_body">Koda uses Material You dynamic color. Choose how it should behave on this device.</string>
     <string name="theme_system">System</string>

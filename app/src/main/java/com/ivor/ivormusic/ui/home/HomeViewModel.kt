@@ -1786,7 +1786,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     /**
      * Load the Shorts shelf (personalized when logged in, search-seeded
-     * otherwise). No-op unless the user opted into Shorts — fresh pref read,
+     * otherwise). No-op unless the user enabled the Home shelf — fresh pref read,
      * since the settings screen toggles through its own ThemePreferences
      * instance. Failures leave the previous shelf in place.
      */

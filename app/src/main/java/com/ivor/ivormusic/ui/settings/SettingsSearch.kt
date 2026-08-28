@@ -335,7 +335,10 @@ internal fun buildSettingsSearchIndex(
     ) { onOpenPage(SettingsPage.CONTENT) }
     entry(
         "shorts", stringResource(R.string.sp_shorts), stringResource(R.string.settings_content_and_feeds), Icons.Rounded.Bolt,
-        listOf("shorts", "reels", "short videos", "hide shorts", "vertical")
+        listOf(
+            "shorts", "reels", "short videos", "hide shorts", "home feed",
+            "normal player", "standard player", "swipe player", "vertical"
+        )
     ) { onOpenPage(SettingsPage.CONTENT) }
     entry(
         "shorts_buttons", stringResource(R.string.sp_shorts_buttons), stringResource(R.string.settings_content_and_feeds), Icons.Rounded.Visibility,

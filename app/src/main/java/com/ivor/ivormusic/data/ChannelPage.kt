@@ -249,19 +249,6 @@ data class ChannelTabPage(
         shelves = shelves + next.shelves,
         continuation = next.continuation
     )
-
-    /**
-     * Removes every short-form entry while preserving the rest of the channel's
-     * own composition. Home shelves can contain more than one renderer family,
-     * so a mixed shelf survives with its videos/playlists/posts intact while a
-     * Shorts-only shelf disappears instead of leaving an empty titled row.
-     */
-    fun withoutShorts(): ChannelTabPage = copy(
-        shorts = emptyList(),
-        shelves = shelves.mapNotNull { shelf ->
-            shelf.copy(shorts = emptyList()).takeUnless { it.isEmpty }
-        }
-    )
 }
 
 /**

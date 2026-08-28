@@ -347,7 +347,6 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
 
     init {
         observeProfileSwitches()
-        observeShortsPreference()
 
         // First frame after ~1s buffered, like the video player. Shorts are
         // under a minute, so the 60s max buffer already covers the whole clip
@@ -396,10 +395,7 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
      * sequenceParams seed the endless feed once the user swipes near the end.
      */
     fun open(items: List<ShortsItem>, startIndex: Int) {
-        // This is the final gate for every present and future entry surface.
-        // UI filtering keeps disabled controls from becoming inert, while the
-        // fresh preference read prevents a stale callback from opening them.
-        if (!themePreferences.isShortsEnabled() || items.isEmpty()) return
+        if (items.isEmpty()) return
         // Keep the tapped Short even if it is hidden - the user asked for this
         // one explicitly, and opening onto a different video would be baffling.
         val tapped = items.getOrNull(startIndex.coerceIn(0, items.size - 1))
@@ -471,16 +467,6 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
         _exoPlayer?.clearMediaItems()
         _currentVideo.value = null
         _playbackError.value = null
-    }
-
-    /** Stop an already-open reel as soon as the app-wide setting is disabled. */
-    private fun observeShortsPreference() {
-        viewModelScope.launch {
-            themePreferences.shortsEnabled
-                .collect { enabled ->
-                    if (!enabled && _isActive.value) close()
-                }
-        }
     }
 
     fun togglePlayPause() {

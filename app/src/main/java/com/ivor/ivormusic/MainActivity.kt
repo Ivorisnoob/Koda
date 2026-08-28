@@ -581,13 +581,20 @@ fun MusicApp(
         navController.navigate("channel/${android.net.Uri.encode(channelId)}")
     }
 
-    // One launch contract for every Shorts surface. The ViewModel repeats the
-    // fresh preference check as a last line of defence against stale callbacks,
-    // but keeping the pause hand-off here also means a blocked launch cannot
-    // interrupt a regular video that is already playing.
+    // One launch contract for every Shorts surface. The preference controls
+    // the Home shelf and the destination, not whether a Short exists elsewhere:
+    // channel pages keep their Shorts, but open them in the ordinary watch page
+    // when the endless swipe player is disabled.
     val openShorts: (List<com.ivor.ivormusic.data.ShortsItem>, Int) -> Unit =
         openShorts@{ shorts, index ->
-            if (!shortsEnabled || shorts.isEmpty()) return@openShorts
+            if (shorts.isEmpty()) return@openShorts
+            val selectedShort = shorts.getOrNull(index.coerceIn(0, shorts.lastIndex))
+                ?: return@openShorts
+            if (!shortsEnabled) {
+                shortsPlayerViewModel.close()
+                videoPlayerViewModel.playVideo(selectedShort.toVideoItem())
+                return@openShorts
+            }
             videoPlayerViewModel.exoPlayer?.pause()
             shortsPlayerViewModel.open(shorts, index)
         }
@@ -962,7 +969,6 @@ fun MusicApp(
                 com.ivor.ivormusic.ui.channel.ChannelScreen(
                     channelId = channelArg,
                     homeViewModel = homeViewModel,
-                    shortsEnabled = shortsEnabled,
                     onBack = { navController.popBackStack() },
                     onPlayVideo = { video -> videoPlayerViewModel.playVideo(video) },
                     onPlayQueue = { queue -> videoPlayerViewModel.playQueue(queue) },
@@ -1108,16 +1114,15 @@ fun MusicApp(
             hostBottomChrome = videoMiniBottomChrome
         )
 
-        // Shorts sit above everything, including the video player overlay.
-        // Removing the host as soon as the setting flips avoids one stale frame
-        // while the ViewModel tears down any active playback.
-        if (shortsEnabled) {
-            com.ivor.ivormusic.ui.shorts.ShortsPlayerOverlay(
-                viewModel = shortsPlayerViewModel,
-                hiddenActions = shortsHiddenActions,
-                onOpenChannel = openChannel
-            )
-        }
+        // Shorts sit above everything, including the video player overlay. The
+        // host remains available because the setting hides only Home's shelf;
+        // the shared launch contract above decides between this swipe player
+        // and the ordinary video player for every other surface.
+        com.ivor.ivormusic.ui.shorts.ShortsPlayerOverlay(
+            viewModel = shortsPlayerViewModel,
+            hiddenActions = shortsHiddenActions,
+            onOpenChannel = openChannel
+        )
 
         // One confirmation host covers the player controls and every song
         // options sheet. Download requests carry the chosen song through the

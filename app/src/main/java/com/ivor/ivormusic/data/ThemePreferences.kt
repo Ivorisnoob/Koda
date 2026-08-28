@@ -897,9 +897,9 @@ class ThemePreferences(context: Context) {
     }
 
     /**
-     * Get the stored Shorts preference. Defaults to false: short-form feeds
-     * are engineered to be compulsive, so Shorts stay hidden until the user
-     * deliberately opts in.
+     * Get the stored Shorts experience preference. Defaults to false: the Home
+     * shelf stays hidden and Shorts found elsewhere use the ordinary video
+     * player until the user deliberately opts into the endless swipe player.
      */
     private fun getShortsEnabledPreference(): Boolean {
         return prefs.getBoolean(KEY_SHORTS_ENABLED, false)
@@ -913,7 +913,7 @@ class ThemePreferences(context: Context) {
     fun isShortsEnabled(): Boolean = getShortsEnabledPreference()
 
     /**
-     * Save Shorts preference and update the flow.
+     * Save the Home shelf / swipe-player preference and update the flow.
      */
     fun setShortsEnabled(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_SHORTS_ENABLED, enabled).apply()
