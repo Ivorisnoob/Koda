@@ -432,6 +432,7 @@ The milestones behind us, kept here so the direction of travel is visible.
 - The video long-press sheet rebuilt as two panes, a playlist picker that saves to several playlists at once, and the same long press on the History and playlist pages
 - "Ready offline" in the Library: the songs already cached in full, listed and playable with no network
 - Real channel pages: banner, about, and every tab a creator actually has, reachable from anywhere a channel name appears - including shared channel links, which the manifest had been claiming and dropping
+- One app-wide Shorts switch: disabling it removes Home and channel shelves, removes channel Shorts tabs, blocks stale launch callbacks, and immediately stops an open reel; an explicit Shorts URL remains playable as an ordinary video in the standard player
 - Playlist links, shared in or pasted into search, opening the playlist's page rather than playing it or previewing it, so one can be kept the same way a searched one can
 - The video mini bar rebuilt: swipe up to expand and down to dismiss instead of a close button, a progress line that moves with playback rather than once a second, and a resting position that follows what is actually on screen under it
 - A persistent Appearance choice between the expressive floating navigation pill and a standard short bottom navigation bar, shared by music and video mode

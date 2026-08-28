@@ -581,6 +581,17 @@ fun MusicApp(
         navController.navigate("channel/${android.net.Uri.encode(channelId)}")
     }
 
+    // One launch contract for every Shorts surface. The ViewModel repeats the
+    // fresh preference check as a last line of defence against stale callbacks,
+    // but keeping the pause hand-off here also means a blocked launch cannot
+    // interrupt a regular video that is already playing.
+    val openShorts: (List<com.ivor.ivormusic.data.ShortsItem>, Int) -> Unit =
+        openShorts@{ shorts, index ->
+            if (!shortsEnabled || shorts.isEmpty()) return@openShorts
+            videoPlayerViewModel.exoPlayer?.pause()
+            shortsPlayerViewModel.open(shorts, index)
+        }
+
     // Music, video and Shorts are mutually exclusive: whichever pipeline
     // starts playing pauses the other two. System audio focus alone is not
     // reliable between players inside the same app, so this is enforced
@@ -754,12 +765,7 @@ fun MusicApp(
                     onEnqueueVideo = { video, playNext ->
                         videoPlayerViewModel.enqueueVideo(video, playNext)
                     },
-                    onOpenShorts = { shorts, index ->
-                        // Shorts take over the screen; pause the video player
-                        // so the two ExoPlayers don't fight for audio focus
-                        videoPlayerViewModel.exoPlayer?.pause()
-                        shortsPlayerViewModel.open(shorts, index)
-                    },
+                    onOpenShorts = openShorts,
                     onOpenChannel = openChannel,
                     shortsEnabled = shortsEnabled,
                     loadLocalSongs = loadLocalSongs,
@@ -956,13 +962,11 @@ fun MusicApp(
                 com.ivor.ivormusic.ui.channel.ChannelScreen(
                     channelId = channelArg,
                     homeViewModel = homeViewModel,
+                    shortsEnabled = shortsEnabled,
                     onBack = { navController.popBackStack() },
                     onPlayVideo = { video -> videoPlayerViewModel.playVideo(video) },
                     onPlayQueue = { queue -> videoPlayerViewModel.playQueue(queue) },
-                    onOpenShorts = { shorts, index ->
-                        videoPlayerViewModel.exoPlayer?.pause()
-                        shortsPlayerViewModel.open(shorts, index)
-                    },
+                    onOpenShorts = openShorts,
                     // A channel opened from inside a channel is a new entry, so
                     // back walks the trail of creators the user actually followed.
                     onOpenChannel = openChannel,
@@ -1104,12 +1108,16 @@ fun MusicApp(
             hostBottomChrome = videoMiniBottomChrome
         )
 
-        // Shorts sit above everything, including the video player overlay
-        com.ivor.ivormusic.ui.shorts.ShortsPlayerOverlay(
-            viewModel = shortsPlayerViewModel,
-            hiddenActions = shortsHiddenActions,
-            onOpenChannel = openChannel
-        )
+        // Shorts sit above everything, including the video player overlay.
+        // Removing the host as soon as the setting flips avoids one stale frame
+        // while the ViewModel tears down any active playback.
+        if (shortsEnabled) {
+            com.ivor.ivormusic.ui.shorts.ShortsPlayerOverlay(
+                viewModel = shortsPlayerViewModel,
+                hiddenActions = shortsHiddenActions,
+                onOpenChannel = openChannel
+            )
+        }
 
         // One confirmation host covers the player controls and every song
         // options sheet. Download requests carry the chosen song through the
