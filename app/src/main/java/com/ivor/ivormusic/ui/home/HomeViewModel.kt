@@ -578,9 +578,34 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     val isPlaylistVideosLoading: StateFlow<Boolean> = _isPlaylistVideosLoading.asStateFlow()
 
     init {
+        observeLocalVideoHistory()
         observeSubscriptionFeedWarmup()
         checkYouTubeConnection()
         observeProfileSwitches()
+    }
+
+    /**
+     * Surface a play recorded by the video player or Shorts immediately in
+     * Library. Those surfaces and this ViewModel own different repository
+     * instances, so waiting for another FEhistory fetch left the carousel
+     * stale until a pull-to-refresh. Account history remains authoritative for
+     * the rest of the list; the newest device write only moves that item to the
+     * front while YouTube's watch-stat update catches up.
+     */
+    private fun observeLocalVideoHistory() {
+        viewModelScope.launch {
+            videoHistoryRepository.history
+                .drop(1)
+                .collect { localHistory ->
+                    if (!sessionManager.isLoggedIn()) {
+                        _historyVideos.value = localHistory
+                        return@collect
+                    }
+                    val latest = localHistory.firstOrNull() ?: return@collect
+                    _historyVideos.value = listOf(latest) +
+                        _historyVideos.value.filterNot { it.videoId == latest.videoId }
+                }
+        }
     }
 
     /**

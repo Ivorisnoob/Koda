@@ -3223,67 +3223,21 @@ class YouTubeRepository(private val context: Context) {
      * Uses the YouTube browse endpoint with "FEhistory".
      */
     suspend fun getWatchHistory(): List<VideoItem> = withContext(Dispatchers.IO) {
-        val cookies = sessionManager.getCookies() ?: return@withContext emptyList()
-        
-        // Extract SAPISID for authentication hash (reusing logic for consistency)
-        val sapisid = cookies.split(";")
-            .map { it.trim() }
-            .find { it.startsWith("SAPISID=") || it.startsWith("__Secure-3PAPISID=") }
-            ?.split("=")?.getOrNull(1)
-        
-        // Generate SAPISID hash for authorization
-        val origin = "https://www.youtube.com"
-        val authHeader = if (sapisid != null) {
-            val timestamp = System.currentTimeMillis() / 1000
-            val hashInput = "$timestamp $sapisid $origin"
-            val hash = java.security.MessageDigest.getInstance("SHA-1")
-                .digest(hashInput.toByteArray())
-                .joinToString("") { "%02x".format(it) }
-            "SAPISIDHASH ${timestamp}_${hash}"
-        } else {
-            YouTubeAuthUtils.getAuthorizationHeader(cookies, origin) ?: ""
-        }
-        
-        val url = "https://www.youtube.com/youtubei/v1/browse?key=AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8&prettyPrint=false"
-        
-        val jsonBody = """
-            {
-                "context": {
-                    "client": {
-                        "clientName": "WEB",
-                        "clientVersion": "$WEB_VERSION",
-                        "hl": "en",
-                        "gl": "US",
-                        "originalUrl": "https://www.youtube.com/feed/history",
-                        "platform": "DESKTOP"
-                    },
-                    "user": {
-                        "lockedSafetyMode": false
-                    }
-                },
-                "browseId": "FEhistory"
-            }
-        """.trimIndent()
-
-        val request = okhttp3.Request.Builder()
-            .url(url)
-            .post(jsonBody.toRequestBody("application/json".toMediaType()))
-            .addHeader("Cookie", cookies)
-            .addHeader("Authorization", authHeader)
-            .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-            .addHeader("Origin", origin)
-            .addHeader("Referer", "$origin/feed/history")
-            .addHeader("X-Goog-AuthUser", "0")
-            .addHeader("X-Origin", origin)
-            .build()
-
+        if (!sessionManager.isLoggedIn()) return@withContext emptyList()
         try {
-            val response = okHttpClient.newCall(request).execute()
-            val responseBody = response.body?.string() ?: return@withContext emptyList()
-            response.close()
-            
-            // Re-use the existing parsing logic which handles various video item formats
-            parseVideosFromYouTubeJson(responseBody)
+            // Use the shared signed WEB request path so HTTP failures and an
+            // expired session cannot masquerade as a valid empty history.
+            val raw = postWatchApi(
+                "browse",
+                org.json.JSONObject()
+                    .put("context", webContext())
+                    .put("browseId", "FEhistory")
+            ) ?: return@withContext emptyList()
+
+            // The live August 2026 shape carries roughly 200 lockups in the
+            // initial date-grouped page. The generic feed parser used to throw
+            // away everything after 30, making View all look out of sync.
+            parseVideosFromYouTubeJson(raw, limit = 200)
         } catch (e: Exception) {
             KLog.e("YouTubeRepo", "Error fetching watch history", e)
             emptyList()
@@ -3326,7 +3280,7 @@ class YouTubeRepository(private val context: Context) {
      * Parse video items from YouTube homepage JSON response.
      * Use optimized path traversal instead of recursive findAllObjects.
      */
-    private fun parseVideosFromYouTubeJson(json: String): List<VideoItem> {
+    private fun parseVideosFromYouTubeJson(json: String, limit: Int = 30): List<VideoItem> {
         val videos = mutableListOf<VideoItem>()
         try {
             val root = org.json.JSONObject(json)
@@ -3415,7 +3369,7 @@ class YouTubeRepository(private val context: Context) {
         } catch (e: Exception) {
             KLog.e("YouTubeRepo", "Could not parse watch history", e)
         }
-        return videos.distinctBy { it.videoId }.take(30)
+        return videos.distinctBy { it.videoId }.take(limit)
     }
     
     // ============================================================
