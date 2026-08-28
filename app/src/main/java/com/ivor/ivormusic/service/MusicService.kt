@@ -6,6 +6,8 @@ import android.app.PendingIntent
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.view.KeyEvent
+import android.view.ViewConfiguration
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -94,6 +96,9 @@ class MusicService : MediaLibraryService() {
     private var castPrefetchJob: Job? = null
     private var castEndOfTrackJob: Job? = null
     private var castSourceRetryCount = 0
+    private val headsetButtonTimeoutMs = ViewConfiguration.getDoubleTapTimeout().toLong()
+    private val headsetButtonSequence = HeadsetButtonSequence(headsetButtonTimeoutMs)
+    private var headsetButtonJob: Job? = null
 
     /**
      * The audible engine. Everything outside the transition itself addresses
@@ -438,6 +443,8 @@ class MusicService : MediaLibraryService() {
         progressJob?.cancel()
         transitionJob?.cancel()
         manualTransitionJob?.cancel()
+        headsetButtonJob?.cancel()
+        headsetButtonSequence.clear()
         sleepTimerJob?.cancel()
         castStartJob?.cancel()
         castPrefetchJob?.cancel()
@@ -1632,6 +1639,66 @@ class MusicService : MediaLibraryService() {
     }
     
     private inner class LibrarySessionCallback : MediaLibrarySession.Callback {
+        /**
+         * Media3 1.5 resolves HEADSETHOOK triples as Next followed by a delayed
+         * Play/Pause. Replace only that raw one-button gesture; devices that
+         * emit explicit media keys continue through Media3 unchanged.
+         */
+        @Suppress("DEPRECATION")
+        override fun onMediaButtonEvent(
+            session: MediaSession,
+            controllerInfo: MediaSession.ControllerInfo,
+            intent: Intent,
+        ): Boolean {
+            val keyEvent = intent.getParcelableExtra<KeyEvent>(Intent.EXTRA_KEY_EVENT)
+                ?: return super.onMediaButtonEvent(session, controllerInfo, intent)
+            if (
+                keyEvent.keyCode != KeyEvent.KEYCODE_HEADSETHOOK ||
+                keyEvent.action != KeyEvent.ACTION_DOWN ||
+                keyEvent.repeatCount != 0
+            ) {
+                return super.onMediaButtonEvent(session, controllerInfo, intent)
+            }
+
+            headsetButtonJob?.cancel()
+            val result = headsetButtonSequence.onTap(keyEvent.eventTime)
+            result.completedAction?.let { performHeadsetButtonAction(session, it) }
+            if (result.awaitingMore) {
+                headsetButtonJob = serviceScope.launch {
+                    delay(headsetButtonTimeoutMs)
+                    headsetButtonSequence.consumePending()?.let {
+                        performHeadsetButtonAction(session, it)
+                    }
+                }
+            }
+            return true
+        }
+
+        private fun performHeadsetButtonAction(
+            session: MediaSession,
+            action: HeadsetButtonAction,
+        ) {
+            when (action) {
+                HeadsetButtonAction.TOGGLE_PLAY_PAUSE -> {
+                    val sessionPlayer = session.player
+                    if (sessionPlayer.playWhenReady) {
+                        sessionPlayer.pause()
+                    } else {
+                        when (sessionPlayer.playbackState) {
+                            Player.STATE_IDLE -> sessionPlayer.prepare()
+                            Player.STATE_ENDED -> sessionPlayer.seekToDefaultPosition()
+                        }
+                        sessionPlayer.play()
+                    }
+                }
+                HeadsetButtonAction.NEXT -> requestManualSkip(forward = true)
+                HeadsetButtonAction.PREVIOUS -> requestManualSkip(
+                    forward = false,
+                    restartCurrentOnPrevious = false,
+                )
+            }
+        }
+
         
         override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult {
             val availablePlayerCommands = MediaSession.ConnectionResult.DEFAULT_PLAYER_COMMANDS.buildUpon()
@@ -2578,9 +2645,16 @@ class MusicService : MediaLibraryService() {
     }
 
     /** Resolve Previous/Next against the audible queue, including rapid taps. */
-    private fun requestManualSkip(forward: Boolean) {
+    private fun requestManualSkip(
+        forward: Boolean,
+        restartCurrentOnPrevious: Boolean = true,
+    ) {
         castPlayer?.let { remote ->
-            if (!forward && remote.currentPosition > PREVIOUS_RESTART_MS) {
+            if (
+                !forward &&
+                restartCurrentOnPrevious &&
+                remote.currentPosition > PREVIOUS_RESTART_MS
+            ) {
                 remote.seekTo(0L)
                 remote.play()
                 return
@@ -2597,7 +2671,12 @@ class MusicService : MediaLibraryService() {
         val pendingIndex = engine.pendingTargetIndex
         val baseIndex = pendingIndex ?: current.currentMediaItemIndex
 
-        if (!forward && pendingIndex == null && current.currentPosition > PREVIOUS_RESTART_MS) {
+        if (
+            !forward &&
+            restartCurrentOnPrevious &&
+            pendingIndex == null &&
+            current.currentPosition > PREVIOUS_RESTART_MS
+        ) {
             engine.cancelTransition()
             current.seekTo(0L)
             current.play()

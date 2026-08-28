@@ -433,6 +433,8 @@ The milestones behind us, kept here so the direction of travel is visible.
 - Feeds that actually run edge to edge, scrolling under the status bar instead of stopping at it
 - Video playlists held on the device, so saving a video no longer needs a YouTube account
 - A queue you can actually edit, in both modes: drag-to-reorder, swipe-to-remove with undo, and Play next / Add to queue from a long press
+- Music queues that open smoothly on the currently playing song in every player style, center it where the list bounds allow, then leave scrolling under the listener's control
+- Single-button wired-headset controls with the conventional Play/Pause and Next presses preserved and triple press added for Previous, without replacing explicit media-key, notification or Android Auto commands
 - The video long-press sheet rebuilt as two panes, a playlist picker that saves to several playlists at once, and the same long press on the History and playlist pages
 - "Ready offline" in the Library: the songs already cached in full, listed and playable with no network
 - Real channel pages: banner, about, and every tab a creator actually has, reachable from anywhere a channel name appears - including shared channel links, which the manifest had been claiming and dropping

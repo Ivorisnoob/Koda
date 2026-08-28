@@ -2,8 +2,10 @@ package com.ivor.ivormusic.ui.components
 
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -13,6 +15,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedback
@@ -21,7 +24,56 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
+
+/**
+ * A music queue opens around its current row once, then leaves scrolling under
+ * the listener's control. [leadingItemCount] accounts for queue designs that
+ * place a now-playing card before their track rows.
+ */
+@Composable
+fun rememberFocusedQueueListState(
+    currentQueueIndex: Int,
+    leadingItemCount: Int = 0,
+): LazyListState {
+    val listState = rememberLazyListState()
+    var hasFocusedCurrentItem by remember { mutableStateOf(false) }
+    val targetIndex = if (currentQueueIndex >= 0) {
+        currentQueueIndex + leadingItemCount
+    } else {
+        -1
+    }
+
+    LaunchedEffect(targetIndex) {
+        if (hasFocusedCurrentItem || targetIndex < 0) return@LaunchedEffect
+
+        snapshotFlow { listState.layoutInfo.totalItemsCount }
+            .first { totalItems -> totalItems > targetIndex }
+        hasFocusedCurrentItem = true
+
+        val initialLayout = listState.layoutInfo
+        val initiallyVisible = initialLayout.visibleItemsInfo.any { it.index == targetIndex }
+        if (!initiallyVisible) {
+            val initialViewportCenter =
+                (initialLayout.viewportStartOffset + initialLayout.viewportEndOffset) / 2
+            // Put the row's leading edge near center in the main animation;
+            // the measured correction below then moves only about half a row.
+            listState.animateScrollToItem(
+                index = targetIndex,
+                scrollOffset = -initialViewportCenter,
+            )
+        }
+        val layout = listState.layoutInfo
+        val target = layout.visibleItemsInfo.firstOrNull { it.index == targetIndex }
+            ?: return@LaunchedEffect
+        val viewportCenter = (layout.viewportStartOffset + layout.viewportEndOffset) / 2
+        val itemCenter = target.offset + target.size / 2
+        listState.animateScrollBy((itemCenter - viewportCenter).toFloat())
+    }
+
+    return listState
+}
 
 /**
  * Stable per-row keys for a queue.
