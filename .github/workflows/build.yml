@@ -353,7 +353,7 @@ jobs:
 
         extract_changelog() {
           git show -s --format=%B "$1" | awk '
-            /^Telegram-Changelog:[[:space:]]*$/ { found = 1; next }
+            /^Changelog:[[:space:]]*$/ { found = 1; next }
             found { lines[++count] = $0 }
             END {
               first = 1
@@ -382,7 +382,7 @@ jobs:
         done
 
         if [ "$ENTRY_COUNT" -eq 0 ]; then
-          printf '\nNo public Telegram-Changelog entries were included in the new commits.\n' >> "$CHANGELOG_FILE"
+          printf '\nNo public changelog entries were included in the new commits.\n' >> "$CHANGELOG_FILE"
         fi
 
         for apk in app/build/outputs/apk/release/*universal*.apk; do
