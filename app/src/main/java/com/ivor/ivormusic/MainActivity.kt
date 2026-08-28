@@ -581,6 +581,17 @@ fun MusicApp(
         navController.navigate("channel/${android.net.Uri.encode(channelId)}")
     }
 
+    // One launch contract for every Shorts surface. The ViewModel repeats the
+    // fresh preference check as a last line of defence against stale callbacks,
+    // but keeping the pause hand-off here also means a blocked launch cannot
+    // interrupt a regular video that is already playing.
+    val openShorts: (List<com.ivor.ivormusic.data.ShortsItem>, Int) -> Unit =
+        openShorts@{ shorts, index ->
+            if (!shortsEnabled || shorts.isEmpty()) return@openShorts
+            videoPlayerViewModel.exoPlayer?.pause()
+            shortsPlayerViewModel.open(shorts, index)
+        }
+
     // Music, video and Shorts are mutually exclusive: whichever pipeline
     // starts playing pauses the other two. System audio focus alone is not
     // reliable between players inside the same app, so this is enforced
@@ -754,12 +765,7 @@ fun MusicApp(
                     onEnqueueVideo = { video, playNext ->
                         videoPlayerViewModel.enqueueVideo(video, playNext)
                     },
-                    onOpenShorts = { shorts, index ->
-                        // Shorts take over the screen; pause the video player
-                        // so the two ExoPlayers don't fight for audio focus
-                        videoPlayerViewModel.exoPlayer?.pause()
-                        shortsPlayerViewModel.open(shorts, index)
-                    },
+                    onOpenShorts = openShorts,
                     onOpenChannel = openChannel,
                     shortsEnabled = shortsEnabled,
                     loadLocalSongs = loadLocalSongs,
@@ -956,13 +962,11 @@ fun MusicApp(
                 com.ivor.ivormusic.ui.channel.ChannelScreen(
                     channelId = channelArg,
                     homeViewModel = homeViewModel,
+                    shortsEnabled = shortsEnabled,
                     onBack = { navController.popBackStack() },
                     onPlayVideo = { video -> videoPlayerViewModel.playVideo(video) },
                     onPlayQueue = { queue -> videoPlayerViewModel.playQueue(queue) },
-                    onOpenShorts = { shorts, index ->
-                        videoPlayerViewModel.exoPlayer?.pause()
-                        shortsPlayerViewModel.open(shorts, index)
-                    },
+                    onOpenShorts = openShorts,
                     // A channel opened from inside a channel is a new entry, so
                     // back walks the trail of creators the user actually followed.
                     onOpenChannel = openChannel,
@@ -1104,12 +1108,16 @@ fun MusicApp(
             hostBottomChrome = videoMiniBottomChrome
         )
 
-        // Shorts sit above everything, including the video player overlay
-        com.ivor.ivormusic.ui.shorts.ShortsPlayerOverlay(
-            viewModel = shortsPlayerViewModel,
-            hiddenActions = shortsHiddenActions,
-            onOpenChannel = openChannel
-        )
+        // Shorts sit above everything, including the video player overlay.
+        // Removing the host as soon as the setting flips avoids one stale frame
+        // while the ViewModel tears down any active playback.
+        if (shortsEnabled) {
+            com.ivor.ivormusic.ui.shorts.ShortsPlayerOverlay(
+                viewModel = shortsPlayerViewModel,
+                hiddenActions = shortsHiddenActions,
+                onOpenChannel = openChannel
+            )
+        }
 
         // One confirmation host covers the player controls and every song
         // options sheet. Download requests carry the chosen song through the
@@ -1145,7 +1153,7 @@ fun MusicApp(
         if (onboardingCompleted) {
             var showCrashPrompt by remember {
                 mutableStateOf(
-                    com.ivor.ivormusic.data.CrashReporter.readPendingCrash(context) != null
+                    com.ivor.ivormusic.data.CrashReporter.shouldPromptForPendingCrash(context)
                 )
             }
             if (showCrashPrompt) {
@@ -1156,7 +1164,7 @@ fun MusicApp(
                     },
                     onDismiss = {
                         showCrashPrompt = false
-                        com.ivor.ivormusic.data.CrashReporter.clearPendingCrash(context)
+                        com.ivor.ivormusic.data.CrashReporter.dismissPendingCrashPrompt(context)
                     }
                 )
             }
@@ -1254,8 +1262,9 @@ private fun NotInterestedUndoHost(modifier: Modifier = Modifier) {
  * A dialog at the MusicApp root rather than a card inside Home: it must be
  * answerable before any of the tab content, overlays or mini players settle,
  * and both answers are one tap - "Report" opens the reporter route (which
- * carries the crash file's contents), "Not now" deletes the file. Either way
- * it never appears twice for the same crash.
+ * carries the crash file's contents), while "Not now" keeps it available from
+ * the manual reporter and suppresses only this prompt. Either way it never
+ * appears twice for the same crash.
  */
 @Composable
 private fun CrashReportPrompt(

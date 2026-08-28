@@ -98,6 +98,7 @@ internal val ABOUT_TAB = ChannelTab(ChannelTabKind.ABOUT, "About", "")
 internal fun LazyGridScope.channelTabContent(
     tabKind: ChannelTabKind,
     page: ChannelTabPage?,
+    shortsEnabled: Boolean,
     isTabLoading: Boolean,
     about: ChannelAbout?,
     isAboutLoading: Boolean,
@@ -113,7 +114,9 @@ internal fun LazyGridScope.channelTabContent(
         return
     }
 
-    if (isTabLoading && (page == null || page.isEmpty)) {
+    val visiblePage = if (shortsEnabled) page else page?.withoutShorts()
+
+    if (isTabLoading && (visiblePage == null || visiblePage.isEmpty)) {
         item(key = "tab_loading", span = { GridItemSpan(maxLineSpan) }) {
             Box(
                 modifier = Modifier
@@ -127,20 +130,20 @@ internal fun LazyGridScope.channelTabContent(
         return
     }
 
-    if (page == null || page.isEmpty) {
+    if (visiblePage == null || visiblePage.isEmpty) {
         item(key = "tab_empty", span = { GridItemSpan(maxLineSpan) }) {
             ChannelEmptyState(tabKind = tabKind)
         }
         return
     }
 
-    if (page.sortOptions.size > 1) {
+    if (visiblePage.sortOptions.size > 1) {
         item(key = "sort", span = { GridItemSpan(maxLineSpan) }) {
-            ChannelSortRow(options = page.sortOptions, onSelect = onSelectSort)
+            ChannelSortRow(options = visiblePage.sortOptions, onSelect = onSelectSort)
         }
     }
 
-    page.featured?.let { featured ->
+    visiblePage.featured?.let { featured ->
         item(key = "featured_${featured.videoId}", span = { GridItemSpan(maxLineSpan) }) {
             FeaturedVideoCard(
                 video = featured,
@@ -151,7 +154,7 @@ internal fun LazyGridScope.channelTabContent(
     }
 
     // Home: the channel's own arrangement of shelves, in its order.
-    page.shelves.forEachIndexed { index, shelf ->
+    visiblePage.shelves.forEachIndexed { index, shelf ->
         item(key = "shelf_${index}_${shelf.title}", span = { GridItemSpan(maxLineSpan) }) {
             ChannelShelfRow(
                 shelf = shelf,
@@ -164,7 +167,7 @@ internal fun LazyGridScope.channelTabContent(
         }
     }
 
-    spanItems(page.videos, key = { "video_${it.videoId}" }) { video ->
+    spanItems(visiblePage.videos, key = { "video_${it.videoId}" }) { video ->
         VideoCard(
             video = video,
             onClick = { onPlayVideo(video) },
@@ -174,22 +177,22 @@ internal fun LazyGridScope.channelTabContent(
     }
 
     spanItemsIndexed(
-        items = page.shorts,
+        items = visiblePage.shorts,
         span = SHORT_SPAN,
         key = { _, short -> "short_${short.videoId}" }
     ) { index, short ->
-        ShortCard(short = short, onClick = { onOpenShorts(page.shorts, index) })
+        ShortCard(short = short, onClick = { onOpenShorts(visiblePage.shorts, index) })
     }
 
     spanItems(
-        items = page.playlists,
+        items = visiblePage.playlists,
         span = PLAYLIST_SPAN,
         key = { "playlist_${it.playlistId}" }
     ) { playlist ->
         ChannelPlaylistCard(playlist = playlist, onClick = { onOpenPlaylist(playlist) })
     }
 
-    spanItems(page.posts, key = { "post_${it.postId}" }) { post ->
+    spanItems(visiblePage.posts, key = { "post_${it.postId}" }) { post ->
         ChannelPostCard(post = post, onPlayVideo = onPlayVideo)
     }
 }

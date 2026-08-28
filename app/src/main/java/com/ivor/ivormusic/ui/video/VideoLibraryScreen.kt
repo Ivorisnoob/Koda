@@ -724,7 +724,6 @@ private fun HistoryPreviewCard(
     Column(
         modifier = Modifier
             .width(160.dp)
-            .clip(RoundedCornerShape(12.dp))
             .clickable(onClick = onClick)
     ) {
         Box(

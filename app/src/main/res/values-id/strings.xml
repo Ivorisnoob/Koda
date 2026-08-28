@@ -186,4 +186,8 @@
     <plurals name="n_playlists">
         <item quantity="other">%1$d playlist</item>
     </plurals>
+    <plurals name="hvm_subs_feed_rate_limited">
+        <item quantity="other">YouTube membatasi permintaan dari jaringan ini. Coba lagi dalam sekitar %1$d menit.</item>
+    </plurals>
+    <string name="hvm_subs_feed_rate_limited_soon">YouTube membatasi permintaan dari jaringan ini. Coba lagi sebentar lagi.</string>
 </resources>

@@ -85,7 +85,7 @@ fun ExpandablePlayer(
     viewModel: PlayerViewModel,
     ambientBackground: Boolean = true,
     artworkColors: Boolean = false,
-    playerStyle: PlayerStyle = PlayerStyle.CLASSIC,
+    playerStyle: PlayerStyle = PlayerStyle.EDITORIAL,
     onPlayerStyleChange: (PlayerStyle) -> Unit = {},
     collapsedBottomSpacing: androidx.compose.ui.unit.Dp = 100.dp,
     onArtistClick: (String) -> Unit = {},

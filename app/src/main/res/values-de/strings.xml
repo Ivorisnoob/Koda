@@ -188,4 +188,9 @@
         <item quantity="one">%1$d Playlist</item>
         <item quantity="other">%1$d Playlists</item>
     </plurals>
+    <plurals name="hvm_subs_feed_rate_limited">
+        <item quantity="one">YouTube schränkt Anfragen von diesem Netzwerk ein. Versuche es in etwa %1$d Minute erneut.</item>
+        <item quantity="other">YouTube schränkt Anfragen von diesem Netzwerk ein. Versuche es in etwa %1$d Minuten erneut.</item>
+    </plurals>
+    <string name="hvm_subs_feed_rate_limited_soon">YouTube schränkt Anfragen von diesem Netzwerk ein. Versuche es in einem Moment erneut.</string>
 </resources>

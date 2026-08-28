@@ -19,6 +19,8 @@ import com.ivor.ivormusic.data.LikedSongsRepository
 import com.ivor.ivormusic.data.LyricsRepository
 import com.ivor.ivormusic.data.LyricsResult
 import com.ivor.ivormusic.service.MusicService
+import com.ivor.ivormusic.service.EXTRA_QUEUE_ITEM_ID
+import com.ivor.ivormusic.service.toPlaybackMediaItem
 import com.ivor.ivormusic.ui.video.CastPlaybackKind
 import com.ivor.ivormusic.ui.video.CastRoute
 import com.ivor.ivormusic.ui.video.VideoCastManager
@@ -32,8 +34,6 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Job
-
-private const val QUEUE_ITEM_ID_EXTRA = "com.ivor.ivormusic.QUEUE_ITEM_ID"
 
 @UnstableApi
 class PlayerViewModel(private val context: Context) : ViewModel() {
@@ -447,7 +447,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                     // the timeline index so a briefly drifted duplicate cannot
                     // be mistaken for another copy of the same song.
                     val mediaQueueItemId = mediaItem?.mediaMetadata?.extras
-                        ?.getString(QUEUE_ITEM_ID_EXTRA)
+                        ?.getString(EXTRA_QUEUE_ITEM_ID)
                     var queueItem = mediaQueueItemId
                         ?.let { queueItemId -> _currentQueue.value.find { it.id == queueItemId } }
                         ?: _currentQueue.value.getOrNull(currentIndex)
@@ -557,7 +557,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                     queueItems.add(
                         MusicQueueItem(
                             id = mediaItem.mediaMetadata.extras
-                                ?.getString(QUEUE_ITEM_ID_EXTRA)
+                                ?.getString(EXTRA_QUEUE_ITEM_ID)
                                 ?: java.util.UUID.randomUUID().toString(),
                             song = song
                         )
@@ -573,7 +573,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         val currentMediaItem = ctrl.currentMediaItem
         if (currentMediaItem != null && _currentSong.value == null) {
             val currentItem = currentMediaItem.mediaMetadata.extras
-                ?.getString(QUEUE_ITEM_ID_EXTRA)
+                ?.getString(EXTRA_QUEUE_ITEM_ID)
                 ?.let { id -> _currentQueue.value.find { it.id == id } }
                 ?: _currentQueue.value.getOrNull(ctrl.currentMediaItemIndex)
                     ?.takeIf { it.song.id == currentMediaItem.mediaId }
@@ -1018,7 +1018,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         val queueItem = _currentQueue.value.getOrNull(index) ?: return false
         if (index >= player.mediaItemCount) return false
         val mediaItem = player.getMediaItemAt(index)
-        val mediaQueueItemId = mediaItem.mediaMetadata.extras?.getString(QUEUE_ITEM_ID_EXTRA)
+        val mediaQueueItemId = mediaItem.mediaMetadata.extras?.getString(EXTRA_QUEUE_ITEM_ID)
         return mediaItem.mediaId == queueItem.song.id &&
             (mediaQueueItemId == null || mediaQueueItemId == queueItem.id)
     }
@@ -1114,55 +1114,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     private fun createMediaItem(
         queueItem: MusicQueueItem,
         castResolveNow: Boolean = false
-    ): MediaItem {
-        val song = queueItem.song
-        val extras = android.os.Bundle().apply {
-            putString(QUEUE_ITEM_ID_EXTRA, queueItem.id)
-            putString(MusicService.EXTRA_SONG_SOURCE, song.source.name)
-            if (castResolveNow) putBoolean(MusicService.EXTRA_CAST_RESOLVE_NOW, true)
-        }
-        return if (song.source == com.ivor.ivormusic.data.SongSource.LOCAL && song.uri != null) {
-            // For local songs, we still need to set mediaId for proper tracking
-            MediaItem.Builder()
-                .setUri(song.uri)
-                .setMediaId(song.id)
-                .setMediaMetadata(
-                    androidx.media3.common.MediaMetadata.Builder()
-                        .setTitle(song.title)
-                        .setArtist(song.artist)
-                        .setDurationMs(song.duration.takeIf { it > 0L })
-                        .setArtworkUri(song.albumArtUri)
-                        .setExtras(extras)
-                        .build()
-                )
-                .build()
-        } else {
-            // YouTube songs: Use mediaId as placeholder URI
-            // MusicService will resolve the actual stream URL when this track is about to play
-            // This ensures MediaSession counts this as a valid timeline item (fixes Next button)
-            MediaItem.Builder()
-                .setMediaId(song.id)
-                .setUri("https://placeholder.ivormusic/${song.id}")
-                .setMediaMetadata(
-                    androidx.media3.common.MediaMetadata.Builder()
-                        .setTitle(song.title)
-                        .setArtist(song.artist)
-                        .setDurationMs(song.duration.takeIf { it > 0L })
-                        // Absent rather than an empty Uri when there is no
-                        // artwork: Uri.parse("") is a valid-looking Uri that
-                        // every consumer then fails to load, and this metadata
-                        // feeds the notification and the lock screen.
-                        .setArtworkUri(
-                            (song.highResThumbnailUrl ?: song.thumbnailUrl)
-                                ?.takeIf { it.isNotBlank() }
-                                ?.let(android.net.Uri::parse)
-                        )
-                        .setExtras(extras)
-                        .build()
-                )
-                .build()
-        }
-    }
+    ): MediaItem = queueItem.toPlaybackMediaItem(castResolveNow)
 
     fun togglePlayPause() {
         controller?.let {

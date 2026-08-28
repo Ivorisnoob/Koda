@@ -186,4 +186,8 @@
     <plurals name="n_playlists">
         <item quantity="other">재생목록 %1$d개</item>
     </plurals>
+    <plurals name="hvm_subs_feed_rate_limited">
+        <item quantity="other">YouTube에서 이 네트워크의 요청을 제한하고 있어요. 약 %1$d분 후에 다시 시도해 주세요.</item>
+    </plurals>
+    <string name="hvm_subs_feed_rate_limited_soon">YouTube에서 이 네트워크의 요청을 제한하고 있어요. 잠시 후 다시 시도해 주세요.</string>
 </resources>

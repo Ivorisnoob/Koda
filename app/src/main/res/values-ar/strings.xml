@@ -196,4 +196,13 @@
         <item quantity="many">%1$d قائمة تشغيل</item>
         <item quantity="other">%1$d قائمة تشغيل</item>
     </plurals>
+    <plurals name="hvm_subs_feed_rate_limited">
+        <item quantity="zero">يحد YouTube من الطلبات الواردة من هذه الشبكة. حاول مرة أخرى خلال %1$d دقيقة تقريبًا.</item>
+        <item quantity="one">يحد YouTube من الطلبات الواردة من هذه الشبكة. حاول مرة أخرى خلال %1$d دقيقة تقريبًا.</item>
+        <item quantity="two">يحد YouTube من الطلبات الواردة من هذه الشبكة. حاول مرة أخرى خلال %1$d دقيقتين تقريبًا.</item>
+        <item quantity="few">يحد YouTube من الطلبات الواردة من هذه الشبكة. حاول مرة أخرى خلال %1$d دقائق تقريبًا.</item>
+        <item quantity="many">يحد YouTube من الطلبات الواردة من هذه الشبكة. حاول مرة أخرى خلال %1$d دقيقة تقريبًا.</item>
+        <item quantity="other">يحد YouTube من الطلبات الواردة من هذه الشبكة. حاول مرة أخرى خلال %1$d دقيقة تقريبًا.</item>
+    </plurals>
+    <string name="hvm_subs_feed_rate_limited_soon">يحد YouTube من الطلبات الواردة من هذه الشبكة. حاول مرة أخرى بعد قليل.</string>
 </resources>

@@ -15,36 +15,50 @@ import org.json.JSONObject
  */
 class VideoHistoryRepository(context: Context) {
 
-    private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private val appContext = context.applicationContext
+    private val prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
-    private val _history = MutableStateFlow(load())
-    val history: StateFlow<List<VideoItem>> = _history.asStateFlow()
+    init {
+        synchronized(LOCK) {
+            if (sharedHistory == null) sharedHistory = MutableStateFlow(load())
+        }
+    }
+
+    private val state: MutableStateFlow<List<VideoItem>> get() = sharedHistory!!
+    val history: StateFlow<List<VideoItem>> get() = state.asStateFlow()
 
     fun getHistory(): List<VideoItem> {
-        // Re-read from prefs: other instances (e.g. the video player's) may
-        // have recorded watches since this instance was constructed.
-        val fresh = load()
-        _history.value = fresh
-        return fresh
+        return synchronized(LOCK) {
+            // Re-read in case another process restored the preference while
+            // this one was alive. Same-process writes already update [state].
+            load().also { state.value = it }
+        }
     }
 
     fun addVideo(video: VideoItem) {
-        val current = _history.value.toMutableList()
-        current.removeAll { it.videoId == video.videoId } // move to top on rewatch
-        current.add(0, video)
-        save(current.take(MAX_ENTRIES))
+        synchronized(LOCK) {
+            // Read from disk inside the same lock as the write. Player and
+            // Shorts own separate repository instances; using either
+            // instance's cached value here could erase the other's last play.
+            val current = load().toMutableList()
+            current.removeAll { it.videoId == video.videoId } // move to top on rewatch
+            current.add(0, video)
+            save(current.take(MAX_ENTRIES))
+        }
     }
 
     fun removeVideo(videoId: String) {
-        save(_history.value.filterNot { it.videoId == videoId })
+        synchronized(LOCK) {
+            save(load().filterNot { it.videoId == videoId })
+        }
     }
 
     fun clearHistory() {
-        save(emptyList())
+        synchronized(LOCK) { save(emptyList()) }
     }
 
     private fun save(videos: List<VideoItem>) {
-        _history.value = videos
+        state.value = videos
         val array = JSONArray()
         videos.forEach { video ->
             array.put(JSONObject().apply {
@@ -91,6 +105,8 @@ class VideoHistoryRepository(context: Context) {
     }
 
     companion object {
+        private val LOCK = Any()
+        @Volatile private var sharedHistory: MutableStateFlow<List<VideoItem>>? = null
         private const val PREFS_NAME = "video_history"
         private const val KEY_HISTORY = "history_list"
         private const val MAX_ENTRIES = 100

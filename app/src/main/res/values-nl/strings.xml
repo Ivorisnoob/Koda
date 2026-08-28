@@ -188,4 +188,9 @@
         <item quantity="one">%1$d afspeellijst</item>
         <item quantity="other">%1$d afspeellijsten</item>
     </plurals>
+    <plurals name="hvm_subs_feed_rate_limited">
+        <item quantity="one">YouTube beperkt aanvragen vanaf dit netwerk. Probeer het over ongeveer %1$d minuut opnieuw.</item>
+        <item quantity="other">YouTube beperkt aanvragen vanaf dit netwerk. Probeer het over ongeveer %1$d minuten opnieuw.</item>
+    </plurals>
+    <string name="hvm_subs_feed_rate_limited_soon">YouTube beperkt aanvragen vanaf dit netwerk. Probeer het over een moment opnieuw.</string>
 </resources>

@@ -19,7 +19,9 @@ import java.io.StringWriter
  *
  * The crash lands in `filesDir/logs/last_crash.txt` and survives process
  * death; the next launch offers to report it (see MainActivity) and either
- * reporting or dismissing deletes it. Nothing here uploads anything on its own.
+ * successful reporting deletes it. "Not now" only suppresses that particular
+ * prompt; the report remains available from Settings so diagnostics are not
+ * lost before the user is ready. Nothing here uploads anything on its own.
  */
 object CrashReporter {
 
@@ -28,6 +30,8 @@ object CrashReporter {
     /** One crash is kept. A newer one overwrites an unreported older one. */
     private const val CRASH_FILE_NAME = "last_crash.txt"
     private const val LOG_DIR = "logs"
+    private const val PROMPT_PREFS = "crash_reporter"
+    private const val KEY_DISMISSED_FINGERPRINT = "dismissed_fingerprint"
 
     /** Log lines snapshotted into the crash file alongside the trace. */
     private const val CRASH_LOG_LINES = 100
@@ -51,12 +55,35 @@ object CrashReporter {
         null
     }
 
+    /** True only for a crash whose prompt has not already been deferred. */
+    fun shouldPromptForPendingCrash(context: Context): Boolean {
+        val file = pendingCrashFile(context)
+        if (!file.exists() || file.length() <= 0L) return false
+        val dismissed = context.getSharedPreferences(PROMPT_PREFS, Context.MODE_PRIVATE)
+            .getString(KEY_DISMISSED_FINGERPRINT, null)
+        return dismissed != fingerprint(file)
+    }
+
+    /** Hide this crash's automatic prompt while retaining the report itself. */
+    fun dismissPendingCrashPrompt(context: Context) {
+        val file = pendingCrashFile(context)
+        if (!file.exists() || file.length() <= 0L) return
+        context.getSharedPreferences(PROMPT_PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_DISMISSED_FINGERPRINT, fingerprint(file))
+            .apply()
+    }
+
     fun clearPendingCrash(context: Context) {
         try {
             pendingCrashFile(context).delete()
+            context.getSharedPreferences(PROMPT_PREFS, Context.MODE_PRIVATE)
+                .edit().remove(KEY_DISMISSED_FINGERPRINT).apply()
         } catch (_: Throwable) {
         }
     }
+
+    private fun fingerprint(file: File): String = "${file.lastModified()}:${file.length()}"
 
     private class Handler(
         private val context: Context,
@@ -92,6 +119,7 @@ object CrashReporter {
                 appendLine("Android: ${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT})")
                 appendLine("Device: ${Build.MANUFACTURER} ${Build.MODEL}")
                 appendLine("Thread: ${thread.name}")
+                appendLine("Captured: ${System.currentTimeMillis()}")
                 appendLine()
                 appendLine("Stack trace:")
                 appendLine(stack)

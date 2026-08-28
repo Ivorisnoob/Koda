@@ -190,4 +190,9 @@
         <item quantity="one">%1$d فهرست پخش</item>
         <item quantity="other">%1$d فهرست پخش</item>
     </plurals>
+    <plurals name="hvm_subs_feed_rate_limited">
+        <item quantity="one">یوتیوب درخواست‌های این شبکه را محدود کرده است. لطفاً حدود %1$d دقیقه دیگر دوباره امتحان کنید.</item>
+        <item quantity="other">یوتیوب درخواست‌های این شبکه را محدود کرده است. لطفاً حدود %1$d دقیقه دیگر دوباره امتحان کنید.</item>
+    </plurals>
+    <string name="hvm_subs_feed_rate_limited_soon">یوتیوب درخواست‌های این شبکه را محدود کرده است. لطفاً کمی بعد دوباره امتحان کنید.</string>
 </resources>

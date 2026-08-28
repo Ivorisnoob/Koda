@@ -241,7 +241,34 @@ class ThemePreferences(context: Context) {
     }
 
     init {
+        migrateLoadLocalSongsDefault()
         prefs.registerOnSharedPreferenceChangeListener(prefChangeListener)
+    }
+
+    /**
+     * Preserve the old `load_local_songs = true` default for installs that
+     * predate it becoming false.
+     *
+     * The Settings toggle is the *only* writer of that key - onboarding never
+     * touches it - so an existing user who simply never opened that screen has
+     * no stored value and has been running on the old default. Flipping the
+     * default alone would empty their library on update with no explanation.
+     *
+     * `onboarding_completed` is the signal for "this install existed before
+     * now", and it cannot be read lazily inside the getter: a fresh user who
+     * finishes onboarding would then start reporting true, which is exactly
+     * the behaviour this change exists to remove. So it is resolved once,
+     * behind its own marker, and written down.
+     */
+    private fun migrateLoadLocalSongsDefault() {
+        if (prefs.contains(KEY_LOAD_LOCAL_SONGS_DEFAULT_MIGRATED)) return
+        val isExistingInstall = prefs.getBoolean(KEY_ONBOARDING_COMPLETED, false)
+        prefs.edit().apply {
+            if (isExistingInstall && !prefs.contains(KEY_LOAD_LOCAL_SONGS)) {
+                putBoolean(KEY_LOAD_LOCAL_SONGS, true)
+            }
+            putBoolean(KEY_LOAD_LOCAL_SONGS_DEFAULT_MIGRATED, true)
+        }.apply()
     }
 
     companion object {
@@ -253,6 +280,9 @@ class ThemePreferences(context: Context) {
         /** Default palette id: wallpaper-based dynamic color (Android 12+). */
         const val DEFAULT_COLOR_PALETTE = "dynamic"
         private const val KEY_LOAD_LOCAL_SONGS = "load_local_songs"
+        /** One-shot marker for [migrateLoadLocalSongsDefault]. */
+        private const val KEY_LOAD_LOCAL_SONGS_DEFAULT_MIGRATED =
+            "load_local_songs_default_migrated"
         private const val KEY_AMBIENT_BACKGROUND = "ambient_background"
         private const val KEY_PLAYER_ARTWORK_COLORS = "player_artwork_colors"
         private const val KEY_VIDEO_MODE = "video_mode"
@@ -628,10 +658,22 @@ class ThemePreferences(context: Context) {
     }
 
     /**
-     * Get the stored load local songs preference. Defaults to true.
+     * Get the stored load local songs preference. Defaults to **false**.
+     *
+     * Off by default because turning it on is what makes `HomeScreen` ask for
+     * the audio permission, and it asked on first render - so someone who
+     * skipped onboarding entirely was met by a system permission dialog before
+     * they had done anything, for a feature they had never asked for. Koda is
+     * a YouTube client first; the device library is opt-in from
+     * Settings, and turning it on is what should trigger the request.
+     *
+     * Only the default moved, and [migrateLoadLocalSongsDefault] keeps
+     * existing installs on the old `true`: the Settings toggle is the only
+     * writer of this key, so an upgrading user who never opened that screen
+     * has nothing stored and would otherwise find their library emptied.
      */
     private fun getLoadLocalSongsPreference(): Boolean {
-        return prefs.getBoolean(KEY_LOAD_LOCAL_SONGS, true)
+        return prefs.getBoolean(KEY_LOAD_LOCAL_SONGS, false)
     }
     
     /**
@@ -748,14 +790,18 @@ class ThemePreferences(context: Context) {
     }
 
     /**
-     * Get the stored player style preference. Defaults to CLASSIC.
+     * Get the stored player style preference. Defaults to EDITORIAL.
+     *
+     * The fallback in the catch is the same constant as the default on purpose:
+     * an unreadable stored value should land where a fresh install does, not on
+     * a different style than the one someone who never chose would get.
      */
     private fun getPlayerStylePreference(): PlayerStyle {
-        val styleName = prefs.getString(KEY_PLAYER_STYLE, PlayerStyle.CLASSIC.name)
+        val styleName = prefs.getString(KEY_PLAYER_STYLE, PlayerStyle.EDITORIAL.name)
         return try {
-            PlayerStyle.valueOf(styleName ?: PlayerStyle.CLASSIC.name)
+            PlayerStyle.valueOf(styleName ?: PlayerStyle.EDITORIAL.name)
         } catch (e: IllegalArgumentException) {
-            PlayerStyle.CLASSIC
+            PlayerStyle.EDITORIAL
         }
     }
     

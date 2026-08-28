@@ -600,7 +600,7 @@ fun VideoPlayerContent(
                 seekPreview = seekPreview,
                 videoTitle = currentVideo.title,
                 onPlayPause = { viewModel.togglePlayPause() },
-                onSeek = { newProgress -> exoPlayer.seekTo((newProgress * duration).toLong()) },
+                onSeek = { newProgress -> viewModel.seekTo((newProgress * duration).toLong()) },
                 onScrubbingChanged = { isSeekScrubbing = it },
                 onSeekBackward = { seekBy(-VideoPlayerViewModel.SEEK_STEP_MS) },
                 onSeekForward = { seekBy(VideoPlayerViewModel.SEEK_STEP_MS) },
@@ -695,7 +695,7 @@ fun VideoPlayerContent(
                         },
                         onDeleteComment = { comment -> viewModel.deleteComment(comment) },
                         onDismiss = { showCommentsSheet = false },
-                        onSeekTo = { seconds -> exoPlayer.seekTo(seconds * 1000L) },
+                        onSeekTo = { seconds -> viewModel.seekTo(seconds * 1000L) },
                         modifier = Modifier
                             .fillMaxHeight()
                             .width(400.dp)
@@ -799,7 +799,7 @@ fun VideoPlayerContent(
                     casting = isCasting,
                     castDeviceName = castDeviceName,
                     onPlayPause = { viewModel.togglePlayPause() },
-                    onSeek = { newProgress -> exoPlayer.seekTo((newProgress * duration).toLong()) },
+                    onSeek = { newProgress -> viewModel.seekTo((newProgress * duration).toLong()) },
                     onScrubbingChanged = { isSeekScrubbing = it },
                     onSeekBackward = { seekBy(-VideoPlayerViewModel.SEEK_STEP_MS) },
                     onSeekForward = { seekBy(VideoPlayerViewModel.SEEK_STEP_MS) },
@@ -904,7 +904,7 @@ fun VideoPlayerContent(
                         seekPreview = seekPreview,
                         videoTitle = currentVideo.title,
                         onPlayPause = { viewModel.togglePlayPause() },
-                        onSeek = { newProgress -> exoPlayer.seekTo((newProgress * duration).toLong()) },
+                        onSeek = { newProgress -> viewModel.seekTo((newProgress * duration).toLong()) },
                         onScrubbingChanged = { isSeekScrubbing = it },
                         onSeekBackward = { seekBy(-VideoPlayerViewModel.SEEK_STEP_MS) },
                         onSeekForward = { seekBy(VideoPlayerViewModel.SEEK_STEP_MS) },
@@ -996,7 +996,7 @@ fun VideoPlayerContent(
                             val channelId = engagement?.channelId ?: currentVideo.channelId
                             if (channelId != null) onOpenChannel(channelId)
                         },
-                        onSeekTo = { seconds -> exoPlayer.seekTo(seconds * 1000L) },
+                        onSeekTo = { seconds -> viewModel.seekTo(seconds * 1000L) },
                         isOffline = isLocalPlayback,
                         onRelatedLongPress = { related ->
                             if (isLoggedIn) viewModel.loadVideoPlaylists()
@@ -1041,7 +1041,7 @@ fun VideoPlayerContent(
                             onDismiss = { showCommentsSheet = false },
                             modifier = Modifier.fillMaxSize(),
                             onSeekTo = { seconds ->
-                                exoPlayer.seekTo(seconds * 1000L)
+                                viewModel.seekTo(seconds * 1000L)
                                 // Jumping to the moment a comment is about is
                                 // pointless if the video stays paused behind
                                 // the panel, so surface the player again.

@@ -45,6 +45,8 @@ import com.ivor.ivormusic.data.AudioProfiler
 import com.ivor.ivormusic.data.TrackLoudnessStore
 import com.ivor.ivormusic.data.LikedSongsRepository
 import com.ivor.ivormusic.data.PlaylistDisplayItem
+import com.ivor.ivormusic.data.MusicQueueItem
+import com.ivor.ivormusic.data.PlaybackSessionRepository
 import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.data.SongRepository
 import com.ivor.ivormusic.data.SongSource
@@ -271,6 +273,7 @@ class MusicService : MediaLibraryService() {
         const val CMD_SKIP_NEXT = "com.ivor.ivormusic.SKIP_NEXT"
         const val CMD_SKIP_PREVIOUS = "com.ivor.ivormusic.SKIP_PREVIOUS"
         const val CMD_SKIP_TO_INDEX = "com.ivor.ivormusic.SKIP_TO_INDEX"
+        const val CMD_RESTORE_PLAYBACK = "com.ivor.ivormusic.RESTORE_PLAYBACK"
         const val ARG_SKIP_INDEX = "skip_index"
         const val EXTRA_SONG_SOURCE = "com.ivor.ivormusic.SONG_SOURCE"
         const val EXTRA_CAST_RESOLVE_NOW = "com.ivor.ivormusic.CAST_RESOLVE_NOW"
@@ -1602,6 +1605,31 @@ class MusicService : MediaLibraryService() {
     }
 
     // --- Media Library Session Callback ---
+
+    /** Read the last playable queue without touching a Player from the IO thread. */
+    private fun loadPlaybackResumption(): MediaSession.MediaItemsWithStartPosition? {
+        val saved = PlaybackSessionRepository(this).load()
+        val queue: List<MusicQueueItem>
+        val startIndex: Int
+        val startPositionMs: Long
+
+        if (saved != null) {
+            queue = saved.queue
+            startIndex = saved.currentIndex
+            startPositionMs = saved.positionMs
+        } else {
+            val lastSong = themePreferences.getLastPlayedSong() ?: return null
+            queue = listOf(MusicQueueItem(song = lastSong))
+            startIndex = 0
+            startPositionMs = 0L
+        }
+
+        return MediaSession.MediaItemsWithStartPosition(
+            queue.map { it.toPlaybackMediaItem() },
+            startIndex,
+            startPositionMs,
+        )
+    }
     
     private inner class LibrarySessionCallback : MediaLibrarySession.Callback {
         
@@ -1618,6 +1646,7 @@ class MusicService : MediaLibraryService() {
                     .add(SessionCommand(CMD_SKIP_NEXT, Bundle.EMPTY))
                     .add(SessionCommand(CMD_SKIP_PREVIOUS, Bundle.EMPTY))
                     .add(SessionCommand(CMD_SKIP_TO_INDEX, Bundle.EMPTY))
+                    .add(SessionCommand(CMD_RESTORE_PLAYBACK, Bundle.EMPTY))
                     .build()
 
             return MediaSession.ConnectionResult.accept(
@@ -1634,6 +1663,21 @@ class MusicService : MediaLibraryService() {
         override fun onPostConnect(session: MediaSession, controller: MediaSession.ControllerInfo) {
             super.onPostConnect(session, controller)
             publishSleepTimerState()
+        }
+
+        /**
+         * Rebuild the last queue when a short-lived controller asks an empty
+         * service to prepare or play. Home-screen widget actions commonly hit
+         * this path after an OEM has reclaimed Koda's process: the widget still
+         * has its persisted picture, but a newly created ExoPlayer has no
+         * timeline until Media3 is given the saved session here.
+         */
+        override fun onPlaybackResumption(
+            mediaSession: MediaSession,
+            controller: MediaSession.ControllerInfo,
+        ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> = resolveScope.future {
+            loadPlaybackResumption()
+                ?: throw IllegalStateException("No saved playback session")
         }
 
         override fun onCustomCommand(
@@ -1661,6 +1705,24 @@ class MusicService : MediaLibraryService() {
             CMD_SKIP_TO_INDEX -> {
                 requestManualTransition(args.getInt(ARG_SKIP_INDEX, C.INDEX_UNSET))
                 Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+            }
+            CMD_RESTORE_PLAYBACK -> serviceScope.future {
+                if (session.player.mediaItemCount == 0) {
+                    val restored = withContext(Dispatchers.IO) { loadPlaybackResumption() }
+                        ?: return@future SessionResult(SessionResult.RESULT_ERROR_IO)
+                    // A second controller can restore while the file read is
+                    // suspended. Do not replace a queue that became live in
+                    // the meantime (or reset its freshly changed position).
+                    if (session.player.mediaItemCount == 0) {
+                        session.player.setMediaItems(
+                            restored.mediaItems,
+                            restored.startIndex,
+                            restored.startPositionMs,
+                        )
+                        session.player.prepare()
+                    }
+                }
+                SessionResult(SessionResult.RESULT_SUCCESS)
             }
             else -> super.onCustomCommand(session, controller, customCommand, args)
         }

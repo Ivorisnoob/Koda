@@ -466,6 +466,18 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     // up pass instead of running two hundred-channel refreshes concurrently.
     private var subscriptionFeedRefreshPending = false
 
+    /**
+     * Whether a feed refresh has run to completion this session.
+     *
+     * The guard below used to be "is the feed non-empty", which never holds
+     * when the refresh came back with nothing - so every visit to the tab
+     * re-ran the whole one-request-per-channel fan-out. Blocked or throttled,
+     * that is a loop: empty feed, user refreshes, N more requests, deeper hold.
+     * An attempt that finished is an attempt, whatever it returned; only an
+     * explicit refresh goes again.
+     */
+    private var subscriptionFeedAttempted = false
+
     private val _selectedChannelFeed = MutableStateFlow<List<VideoItem>>(emptyList())
     val selectedChannelFeed: StateFlow<List<VideoItem>> = _selectedChannelFeed.asStateFlow()
 
@@ -578,9 +590,34 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     val isPlaylistVideosLoading: StateFlow<Boolean> = _isPlaylistVideosLoading.asStateFlow()
 
     init {
+        observeLocalVideoHistory()
         observeSubscriptionFeedWarmup()
         checkYouTubeConnection()
         observeProfileSwitches()
+    }
+
+    /**
+     * Surface a play recorded by the video player or Shorts immediately in
+     * Library. Those surfaces and this ViewModel own different repository
+     * instances, so waiting for another FEhistory fetch left the carousel
+     * stale until a pull-to-refresh. Account history remains authoritative for
+     * the rest of the list; the newest device write only moves that item to the
+     * front while YouTube's watch-stat update catches up.
+     */
+    private fun observeLocalVideoHistory() {
+        viewModelScope.launch {
+            videoHistoryRepository.history
+                .drop(1)
+                .collect { localHistory ->
+                    if (!sessionManager.isLoggedIn()) {
+                        _historyVideos.value = localHistory
+                        return@collect
+                    }
+                    val latest = localHistory.firstOrNull() ?: return@collect
+                    _historyVideos.value = listOf(latest) +
+                        _historyVideos.value.filterNot { it.videoId == latest.videoId }
+                }
+        }
     }
 
     /**
@@ -743,17 +780,50 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         true
     }
 
+    /**
+     * How a rate limit is worded for the user.
+     *
+     * Deliberately not the generic feed error: that one tells people to check
+     * their connection, and during a hold the connection is fine. Rounds up so
+     * "1 minute" never means "any second now", and falls back to a vague
+     * wording under a minute rather than saying "0 minutes".
+     */
+    private fun rateLimitMessage(): String {
+        val remainingMs = com.ivor.ivormusic.data.YouTubeRateLimit.remainingMs()
+        val minutes = ((remainingMs + 59_999L) / 60_000L).toInt()
+        return if (minutes <= 0) {
+            app.getString(R.string.hvm_subs_feed_rate_limited_soon)
+        } else {
+            app.resources.getQuantityString(
+                R.plurals.hvm_subs_feed_rate_limited,
+                minutes,
+                minutes,
+            )
+        }
+    }
+
     fun loadSubscriptionFeed(force: Boolean = false) {
         if (_isSubscriptionFeedLoading.value) {
             if (force) subscriptionFeedRefreshPending = true
             return
         }
-        if (_subscriptionFeed.value.isNotEmpty() && !force) return
+        if (subscriptionFeedAttempted && !force) return
+        // An explicit refresh during a hold must not spend the requests either:
+        // say so instead, and leave whatever is already on screen alone.
+        if (com.ivor.ivormusic.data.YouTubeRateLimit.isHeld()) {
+            _subscriptionFeedError.value = rateLimitMessage()
+            return
+        }
         // Claim the refresh before launching so two callers in the same main-
         // thread frame cannot both pass the guard and start duplicate work.
         _isSubscriptionFeedLoading.value = true
         viewModelScope.launch {
             _subscriptionFeedError.value = null
+            // A refresh that was refused never ran, so it must not count as the
+            // one attempt this session gets - otherwise the tab stays stale
+            // even after the hold expires. Re-entering is free: the guard above
+            // turns a revisit during a hold back at the door.
+            var rateLimited = false
             try {
                 val source = themePreferences.currentSubscriptionSource()
                 val useAccount = source != com.ivor.ivormusic.data.ThemePreferences.SUBSCRIPTIONS_LOCAL &&
@@ -767,7 +837,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     _subscriptionFeedProgress.value = 0 to channels.size
                     youtubeRepository.getLocalSubscriptionsFeed(
                         channels = channels,
-                        fastMode = themePreferences.isFastSubscriptionFeedEnabled()
+                        fastMode = themePreferences.isFastSubscriptionFeedEnabled(),
+                        // Pull-to-refresh has to actually hit the network; the
+                        // feeds are cacheable for fifteen minutes and a refresh
+                        // that silently changes nothing is worse than the
+                        // traffic it saves.
+                        forceFresh = force,
                     ) { done, total -> _subscriptionFeedProgress.value = done to total }
                 } else emptyList()
 
@@ -783,11 +858,19 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                         app.getString(R.string.hvm_subs_feed_error)
                     }
                 }
+            } catch (e: com.ivor.ivormusic.data.YouTubeRateLimitedException) {
+                // Not a network failure and not an empty feed. Telling someone
+                // to check a working connection sends them fixing the wrong
+                // thing; this is the one case where waiting is the fix.
+                KLog.w("HomeViewModel", "Subscription feed refresh rate limited", e)
+                rateLimited = true
+                _subscriptionFeedError.value = rateLimitMessage()
             } catch (e: Exception) {
                 KLog.e("HomeViewModel", "Subscription feed refresh failed", e)
                 _subscriptionFeedError.value =
                     app.getString(R.string.hvm_subs_feed_error)
             } finally {
+                if (!rateLimited) subscriptionFeedAttempted = true
                 _subscriptionFeedProgress.value = null
                 _isSubscriptionFeedLoading.value = false
                 if (subscriptionFeedRefreshPending) {
@@ -877,6 +960,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     fun backfillLocalChannelProfiles() {
         val pending = localSubscriptions.value.filter { it.avatarUrl.isNullOrBlank() }
         if (pending.isEmpty()) return
+        // A channel browse each, and nobody asked for them - exactly the
+        // discretionary work a hold exists to stand down. Pictures can wait.
+        if (com.ivor.ivormusic.data.YouTubeRateLimit.isHeld()) return
         viewModelScope.launch {
             val updated = youtubeRepository.fetchMissingChannelProfiles(pending)
             localSubscriptionsRepository.updateProfiles(updated)
@@ -922,18 +1008,21 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             _importProgress.value = null
             try {
                 val imported = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                    val bytes = getApplication<Application>().contentResolver
-                        .openInputStream(uri)?.use { it.readBytes() }
-                    if (bytes == null || bytes.isEmpty()) {
-                        null
-                    } else {
-                        com.ivor.ivormusic.data.SubscriptionTransfer.read(
-                            bytes,
-                            java.io.File(
-                                getApplication<Application>().cacheDir,
-                                "subscription-import.db"
-                            )
-                        )
+                    val cacheDir = getApplication<Application>().cacheDir
+                    val source = java.io.File(cacheDir, "subscription-import.source")
+                    val database = java.io.File(cacheDir, "subscription-import.db")
+                    try {
+                        val opened = getApplication<Application>().contentResolver
+                            .openInputStream(uri) ?: return@withContext null
+                        opened.use { input ->
+                            com.ivor.ivormusic.data.SubscriptionTransfer.copyImport(input, source)
+                        }
+                        if (source.length() == 0L) null else {
+                            com.ivor.ivormusic.data.SubscriptionTransfer.read(source, database)
+                        }
+                    } finally {
+                        source.delete()
+                        database.delete()
                     }
                 }
                 if (imported == null) {
@@ -2021,10 +2110,11 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * Per-row playlist item ids (videoId -> setVideoId) needed to reorder a
-     * YouTube Music playlist; empty when signed out or on failure.
+     * Per-row playlist item ids (videoId -> occurrence-ordered setVideoIds)
+     * needed to reorder a YouTube Music playlist. A list is required because
+     * the same video may appear more than once; empty when signed out/failure.
      */
-    suspend fun fetchYouTubePlaylistSetVideoIds(playlistId: String): Map<String, String> =
+    suspend fun fetchYouTubePlaylistSetVideoIds(playlistId: String): Map<String, List<String>> =
         youtubeRepository.getPlaylistSetVideoIds(playlistId)
 
     /**

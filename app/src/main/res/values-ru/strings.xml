@@ -192,4 +192,11 @@
         <item quantity="many">%1$d плейлистов</item>
         <item quantity="other">%1$d плейлиста</item>
     </plurals>
+    <plurals name="hvm_subs_feed_rate_limited">
+        <item quantity="one">YouTube ограничивает количество запросов с этой сети. Повторите попытку примерно через %1$d минуту.</item>
+        <item quantity="few">YouTube ограничивает количество запросов с этой сети. Повторите попытку примерно через %1$d минуты.</item>
+        <item quantity="many">YouTube ограничивает количество запросов с этой сети. Повторите попытку примерно через %1$d минут.</item>
+        <item quantity="other">YouTube ограничивает количество запросов с этой сети. Повторите попытку примерно через %1$d минуты.</item>
+    </plurals>
+    <string name="hvm_subs_feed_rate_limited_soon">YouTube ограничивает количество запросов с этой сети. Повторите попытку через мгновение.</string>
 </resources>

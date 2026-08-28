@@ -32,6 +32,7 @@ android {
         targetSdk = 36
         versionCode = 25
         versionName = "4.7"
+        manifestPlaceholders["appLabel"] = "@string/app_name"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -54,6 +55,13 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Install beside the release app instead of replacing its data,
+            // widgets, media session and sign-in state during testing.
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+            manifestPlaceholders["appLabel"] = "Koda Debug"
+        }
         release {
             signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = true
@@ -78,6 +86,16 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+    }
+
+    testOptions {
+        unitTests {
+            // android.util.Log is a stub in JVM unit tests and throws
+            // "not mocked" on every call, so anything that logs through KLog -
+            // which is most of data/ - could not be unit tested at all. Return
+            // defaults instead of throwing.
+            isReturnDefaultValues = true
+        }
     }
 
 }

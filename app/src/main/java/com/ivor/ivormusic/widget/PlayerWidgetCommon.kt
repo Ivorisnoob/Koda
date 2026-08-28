@@ -273,7 +273,7 @@ internal fun MediaController.toSnapshot(): PlayerWidgetSnapshot = toWidgetSnapsh
 internal suspend fun <T> withController(
     context: Context,
     timeoutMs: Long = 3_000L,
-    block: (MediaController) -> T,
+    block: suspend (MediaController) -> T,
 ): T? = withContext(Dispatchers.Main) {
     val appContext = context.applicationContext
     val token = SessionToken(appContext, ComponentName(appContext, MusicService::class.java))

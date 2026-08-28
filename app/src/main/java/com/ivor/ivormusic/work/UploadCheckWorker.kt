@@ -18,11 +18,13 @@ import com.ivor.ivormusic.R
 import com.ivor.ivormusic.data.LocalSubscriptionsRepository
 import com.ivor.ivormusic.data.ThemePreferences
 import com.ivor.ivormusic.data.UploadCheckRepository
+import com.ivor.ivormusic.data.YouTubeRateLimit
 import com.ivor.ivormusic.data.YouTubeRepository
 import com.ivor.ivormusic.util.KLog
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
 import java.util.concurrent.TimeUnit
 
 /**
@@ -60,11 +62,28 @@ class UploadCheckWorker(
             .filter { !uploadCheck.isMuted(it.channelId) }
         if (channels.isEmpty()) return Result.success()
 
+        // Nobody asked for this round. Standing down during a hold and letting
+        // WorkManager's own backoff reschedule is strictly better than spending
+        // one request per channel against a limit that is already tripped.
+        if (YouTubeRateLimit.isHeld()) {
+            KLog.w(TAG, "Upload check skipped: rate limited")
+            return Result.retry()
+        }
+
+        // This used to launch one coroutine per channel with no ceiling, so a
+        // 200-channel library opened 200 sockets at once - the shape the feed
+        // path caps at FEED_CONCURRENCY precisely because mobile radios handle
+        // it badly and it reads as a scrape from the other end.
+        val gate = Semaphore(FEED_CONCURRENCY)
         var notifiedAny = false
         coroutineScope {
             channels.map { channel ->
                 async {
+                    gate.acquire()
                     try {
+                        // A sibling tripped the limit mid-round; the rest stand
+                        // down rather than each finding out the hard way.
+                        if (YouTubeRateLimit.isHeld()) return@async
                         val feed = repository.getChannelFeedRss(channel.channelId, channel.avatarUrl)
                         if (feed.isEmpty()) return@async
 
@@ -86,6 +105,8 @@ class UploadCheckWorker(
                         // One bad channel must not cost the rest of the round;
                         // its last-seen stays put, so nothing is lost, only deferred.
                         KLog.w(TAG, "Upload check failed for ${channel.channelId}: ${e.message}")
+                    } finally {
+                        gate.release()
                     }
                 }
             }.awaitAll()
@@ -152,6 +173,14 @@ class UploadCheckWorker(
         private const val NOTIFICATION_TAG = "upload_check"
         private const val UNIQUE_WORK_NAME = "upload_check"
         private const val MAX_PER_CHANNEL = 3
+
+        /**
+         * How many channels this round fetches at once. Matches the local feed
+         * refresh's own ceiling in `YouTubeRepository` - the constant is
+         * private there, and duplicating the number is better than widening its
+         * visibility for a background job that has the same reason to want it.
+         */
+        private const val FEED_CONCURRENCY = 6
 
         /**
          * Schedule or re-schedule the periodic check. Idempotent (KEEP): called

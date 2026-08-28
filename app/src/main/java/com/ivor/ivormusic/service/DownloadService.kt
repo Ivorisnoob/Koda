@@ -88,7 +88,14 @@ class DownloadService : Service() {
         // Must go foreground within a few seconds of being started, so post a
         // notification from whatever state is available right now rather than
         // waiting for the first progress emission.
-        promoteToForeground(buildCurrentNotification())
+        if (!promoteToForeground(buildCurrentNotification())) {
+            // A service launched with startForegroundService must either
+            // promote successfully or stop promptly. Continuing after a
+            // refused promotion causes Android's fatal
+            // ForegroundServiceDidNotStartInTimeException a few seconds later.
+            stopSelf(startId)
+            return START_NOT_STICKY
+        }
 
         if (!started) {
             started = true
@@ -197,8 +204,8 @@ class DownloadService : Service() {
         )
     }
 
-    private fun promoteToForeground(notification: android.app.Notification) {
-        try {
+    private fun promoteToForeground(notification: android.app.Notification): Boolean {
+        return try {
             ServiceCompat.startForeground(
                 this,
                 DownloadNotificationHelper.FOREGROUND_NOTIFICATION_ID,
@@ -209,11 +216,24 @@ class DownloadService : Service() {
                     0
                 }
             )
+            true
         } catch (e: Exception) {
-            // Android 12+ throws when a foreground start is not permitted from
-            // the background. The transfer continues regardless.
             KLog.w(TAG, "startForeground refused: ${e.message}")
+            false
         }
+    }
+
+    /**
+     * Android 15 caps background dataSync foreground-service time. Once the
+     * system grants this callback only a few seconds remain before it throws a
+     * fatal RemoteServiceException, so relinquish foreground state and stop
+     * synchronously. DownloadRepository owns the queue and can continue while
+     * the process remains alive; the service itself must not overstay.
+     */
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        KLog.w(TAG, "dataSync foreground-service time limit reached")
+        ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+        stopSelf(startId)
     }
 
     override fun onDestroy() {

@@ -112,6 +112,7 @@ import com.ivor.ivormusic.ui.video.VideoPlaylistDetail
 fun ChannelScreen(
     channelId: String,
     homeViewModel: HomeViewModel,
+    shortsEnabled: Boolean,
     onBack: () -> Unit,
     onPlayVideo: (VideoItem) -> Unit,
     onPlayQueue: (VideoQueue) -> Unit,
@@ -139,6 +140,7 @@ fun ChannelScreen(
             ChannelRoot(
                 viewModel = viewModel,
                 homeViewModel = homeViewModel,
+                shortsEnabled = shortsEnabled,
                 onBack = onBack,
                 onPlayVideo = onPlayVideo,
                 onOpenShorts = onOpenShorts,
@@ -177,6 +179,7 @@ fun ChannelScreen(
 private fun ChannelRoot(
     viewModel: ChannelViewModel,
     homeViewModel: HomeViewModel,
+    shortsEnabled: Boolean,
     onBack: () -> Unit,
     onPlayVideo: (VideoItem) -> Unit,
     onOpenShorts: (List<ShortsItem>, Int) -> Unit,
@@ -205,14 +208,35 @@ private fun ChannelRoot(
     val isSearching by viewModel.isSearching.collectAsState()
     val searchRan by viewModel.searchRan.collectAsState()
 
+    val visibleTabs = remember(tabs, shortsEnabled) {
+        if (shortsEnabled) tabs else tabs.filterNot { it.kind == ChannelTabKind.SHORTS }
+    }
+    val fallbackTab = visibleTabs.firstOrNull { it.kind == ChannelTabKind.HOME }?.kind
+        ?: visibleTabs.firstOrNull()?.kind
+        ?: ChannelTabKind.ABOUT
+    val displayedTab = if (!shortsEnabled && selectedTab == ChannelTabKind.SHORTS) {
+        fallbackTab
+    } else {
+        selectedTab
+    }
+
+    // A channel entry can survive while Settings changes underneath it (or be
+    // restored with its Shorts tab selected). Move to a real visible tab rather
+    // than leaving the tab row with no selected destination.
+    LaunchedEffect(shortsEnabled, selectedTab, fallbackTab) {
+        if (!shortsEnabled && selectedTab == ChannelTabKind.SHORTS) {
+            viewModel.selectTab(fallbackTab)
+        }
+    }
+
     val gridState = rememberLazyGridState()
     var searchMode by remember { mutableStateOf(false) }
     var optionsTarget by remember { mutableStateOf<VideoItem?>(null) }
 
     // The About panel is a tab in this UI and an engagement panel on YouTube's
     // side, so it is fetched the moment it is opened rather than with the page.
-    LaunchedEffect(selectedTab) {
-        if (selectedTab == ChannelTabKind.ABOUT) viewModel.loadAbout()
+    LaunchedEffect(displayedTab) {
+        if (displayedTab == ChannelTabKind.ABOUT) viewModel.loadAbout()
     }
 
     /**
@@ -247,8 +271,8 @@ private fun ChannelRoot(
             info.totalItemsCount > 0 && last >= info.totalItemsCount - 6
         }
     }
-    LaunchedEffect(nearEnd, selectedTab, pages) {
-        if (nearEnd && !searchMode) viewModel.loadMore(selectedTab)
+    LaunchedEffect(nearEnd, displayedTab, pages) {
+        if (nearEnd && !searchMode) viewModel.loadMore(displayedTab)
     }
 
     optionsTarget?.let { video ->
@@ -275,8 +299,8 @@ private fun ChannelRoot(
             loadFailed || header == null -> ChannelUnavailable(onBack = onBack)
             else -> {
                 val currentHeader = header!!
-                val page = pages[selectedTab]
-                val isTabLoading = selectedTab in loadingTabs
+                val page = pages[displayedTab]
+                val isTabLoading = displayedTab in loadingTabs
 
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(CHANNEL_GRID_COLUMNS),
@@ -316,7 +340,7 @@ private fun ChannelRoot(
                                 ChannelHeaderActions(
                                     isSubscribed = isSubscribed,
                                     isBlocked = isBlocked,
-                                    canSearch = tabs.any { it.kind == ChannelTabKind.SEARCH },
+                                    canSearch = visibleTabs.any { it.kind == ChannelTabKind.SEARCH },
                                     onSubscribeClick = {
                                         if (viewModel.subscribeNeedsLogin()) onLoginClick()
                                         else viewModel.toggleSubscribe()
@@ -334,16 +358,17 @@ private fun ChannelRoot(
 
                     item(key = "tabs", span = { GridItemSpan(maxLineSpan) }) {
                         ChannelTabRow(
-                            tabs = tabs,
-                            selected = selectedTab,
+                            tabs = visibleTabs,
+                            selected = displayedTab,
                             onSelect = viewModel::selectTab,
                             modifier = Modifier.bleedHorizontally()
                         )
                     }
 
                     channelTabContent(
-                        tabKind = selectedTab,
+                        tabKind = displayedTab,
                         page = page,
+                        shortsEnabled = shortsEnabled,
                         isTabLoading = isTabLoading,
                         about = about,
                         isAboutLoading = isAboutLoading,
@@ -352,7 +377,7 @@ private fun ChannelRoot(
                         onOpenShorts = onOpenShorts,
                         onOpenPlaylist = onOpenPlaylist,
                         onOpenChannel = onOpenChannel,
-                        onSelectSort = { viewModel.selectSort(it, selectedTab) }
+                        onSelectSort = { viewModel.selectSort(it, displayedTab) }
                     )
 
                     if (isLoadingMore) {
