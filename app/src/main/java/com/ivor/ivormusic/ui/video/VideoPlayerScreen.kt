@@ -128,6 +128,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import com.ivor.ivormusic.data.SponsorSegment
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.input.pointer.util.VelocityTracker
@@ -310,6 +312,7 @@ fun FullscreenPlayerContent(
     onFullscreenToggle: () -> Unit,
     onSettings: () -> Unit,
     chapters: List<VideoChapter> = emptyList(),
+    sponsorSegments: List<SponsorSegment> = emptyList(),
     onOpenChapters: () -> Unit = {},
     captionsActive: Boolean = false,
     onCaptionsClick: () -> Unit = {},
@@ -677,6 +680,7 @@ fun FullscreenPlayerContent(
                             onSeek = onSeek,
                             modifier = Modifier.weight(1f),
                             chapters = chapters,
+                            sponsorSegments = sponsorSegments,
                             durationMs = duration,
                             seekPreview = seekPreview,
                             showSeekPreview = !isLive,
@@ -728,6 +732,7 @@ fun PortraitPlayerContent(
     onFullscreenToggle: () -> Unit,
     onSettings: () -> Unit,
     chapters: List<VideoChapter> = emptyList(),
+    sponsorSegments: List<SponsorSegment> = emptyList(),
     onOpenChapters: () -> Unit = {},
     captionsActive: Boolean = false,
     onCaptionsClick: () -> Unit = {},
@@ -978,6 +983,7 @@ fun PortraitPlayerContent(
                             onSeek = onSeek,
                             modifier = Modifier.weight(1f),
                             chapters = chapters,
+                            sponsorSegments = sponsorSegments,
                             durationMs = duration,
                             seekPreview = seekPreview,
                             showSeekPreview = !isLive,
@@ -1085,7 +1091,8 @@ internal fun PlayerSeekBar(
     seekPreview: VideoSeekPreview? = null,
     showSeekPreview: Boolean = true,
     onScrubbingChanged: (Boolean) -> Unit = {},
-    onTonalSurface: Boolean = false
+    onTonalSurface: Boolean = false,
+    sponsorSegments: List<SponsorSegment> = emptyList()
 ) {
     var isScrubbing by remember(mediaId) { mutableStateOf(false) }
     var scrubValue by remember(mediaId) { mutableFloatStateOf(0f) }
@@ -1195,6 +1202,32 @@ internal fun PlayerSeekBar(
                                 strokeWidth = strokeWidth,
                                 cap = StrokeCap.Round,
                             )
+                        }
+
+                        // Drawn before the chapter ticks so a tick sitting on
+                        // a segment boundary stays readable on top of it, and
+                        // after the buffer so a segment is not hidden by the
+                        // buffered line it overlaps.
+                        if (sponsorSegments.isNotEmpty() && durationMs > 0L) {
+                            val trackHeight = 4.dp.toPx()
+                            sponsorSegments.forEach { segment ->
+                                val startFraction =
+                                    (segment.startMs.toFloat() / durationMs).coerceIn(0f, 1f)
+                                val endFraction =
+                                    (segment.endMs.toFloat() / durationMs).coerceIn(0f, 1f)
+                                if (endFraction <= startFraction) return@forEach
+                                val startX = startFraction * size.width
+                                // A very short segment on a long video rounds
+                                // to nothing; give it a floor so it stays
+                                // visible as a mark rather than vanishing.
+                                val width = ((endFraction - startFraction) * size.width)
+                                    .coerceAtLeast(2.dp.toPx())
+                                drawRect(
+                                    color = segment.category.color,
+                                    topLeft = Offset(startX, centerY - trackHeight / 2f),
+                                    size = Size(width, trackHeight)
+                                )
+                            }
                         }
 
                         if (chapters.size > 1 && durationMs > 0L) {

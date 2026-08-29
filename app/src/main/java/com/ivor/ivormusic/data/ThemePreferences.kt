@@ -103,6 +103,25 @@ class ThemePreferences(context: Context) {
     private val _uiScale = MutableStateFlow(getUiScalePreference())
     val uiScale: StateFlow<Float> = _uiScale.asStateFlow()
 
+    private val _sponsorBlockEnabled = MutableStateFlow(getSponsorBlockEnabledPreference())
+    val sponsorBlockEnabled: StateFlow<Boolean> = _sponsorBlockEnabled.asStateFlow()
+
+    private val _sponsorBlockActions = MutableStateFlow(getSponsorBlockActionsPreference())
+    val sponsorBlockActions: StateFlow<Map<SponsorCategory, SegmentAction>> =
+        _sponsorBlockActions.asStateFlow()
+
+    private val _sponsorBlockShowOnSeekBar =
+        MutableStateFlow(getSponsorBlockShowOnSeekBarPreference())
+    val sponsorBlockShowOnSeekBar: StateFlow<Boolean> =
+        _sponsorBlockShowOnSeekBar.asStateFlow()
+
+    private val _sponsorBlockNotice = MutableStateFlow(getSponsorBlockNoticePreference())
+    val sponsorBlockNotice: StateFlow<Boolean> = _sponsorBlockNotice.asStateFlow()
+
+    private val _sponsorBlockMinDurationMs =
+        MutableStateFlow(getSponsorBlockMinDurationPreference())
+    val sponsorBlockMinDurationMs: StateFlow<Long> = _sponsorBlockMinDurationMs.asStateFlow()
+
     private val _nonExpressiveNavigationBar =
         MutableStateFlow(getNonExpressiveNavigationBarPreference())
     val nonExpressiveNavigationBar: StateFlow<Boolean> =
@@ -214,6 +233,16 @@ class ThemePreferences(context: Context) {
             KEY_MUSIC_QUALITY_MOBILE -> _musicQualityMobile.value = getMusicQualityMobilePreference()
             KEY_SPOTLIGHT_HOME -> _spotlightHome.value = getSpotlightHomePreference()
             KEY_UI_SCALE -> _uiScale.value = getUiScalePreference()
+            KEY_SPONSORBLOCK_ENABLED ->
+                _sponsorBlockEnabled.value = getSponsorBlockEnabledPreference()
+            KEY_SPONSORBLOCK_ACTIONS ->
+                _sponsorBlockActions.value = getSponsorBlockActionsPreference()
+            KEY_SPONSORBLOCK_SEEKBAR ->
+                _sponsorBlockShowOnSeekBar.value = getSponsorBlockShowOnSeekBarPreference()
+            KEY_SPONSORBLOCK_NOTICE ->
+                _sponsorBlockNotice.value = getSponsorBlockNoticePreference()
+            KEY_SPONSORBLOCK_MIN_DURATION ->
+                _sponsorBlockMinDurationMs.value = getSponsorBlockMinDurationPreference()
             KEY_NON_EXPRESSIVE_NAVIGATION_BAR ->
                 _nonExpressiveNavigationBar.value = getNonExpressiveNavigationBarPreference()
             KEY_SUBSCRIPTION_SOURCE -> _subscriptionSource.value = getSubscriptionSourcePreference()
@@ -451,6 +480,11 @@ class ThemePreferences(context: Context) {
          */
         private const val KEY_SPOTLIGHT_HOME = "spotlight_home"
         private const val KEY_UI_SCALE = "ui_scale"
+        private const val KEY_SPONSORBLOCK_ENABLED = "sponsorblock_enabled"
+        private const val KEY_SPONSORBLOCK_ACTIONS = "sponsorblock_actions"
+        private const val KEY_SPONSORBLOCK_SEEKBAR = "sponsorblock_seekbar"
+        private const val KEY_SPONSORBLOCK_NOTICE = "sponsorblock_notice"
+        private const val KEY_SPONSORBLOCK_MIN_DURATION = "sponsorblock_min_duration"
         private const val KEY_NON_EXPRESSIVE_NAVIGATION_BAR =
             "non_expressive_navigation_bar"
 
@@ -1153,6 +1187,67 @@ class ThemePreferences(context: Context) {
         uiScaleFromStored(prefs.all[KEY_UI_SCALE])
 
     /**
+     * Off until asked for. This is the only third-party service the app
+     * contacts, so it is not something to switch on for someone.
+     */
+    private fun getSponsorBlockEnabledPreference(): Boolean =
+        prefs.getBoolean(KEY_SPONSORBLOCK_ENABLED, false)
+
+    private fun getSponsorBlockActionsPreference(): Map<SponsorCategory, SegmentAction> =
+        decodeSegmentActions(prefs.getString(KEY_SPONSORBLOCK_ACTIONS, null))
+
+    private fun getSponsorBlockShowOnSeekBarPreference(): Boolean =
+        prefs.getBoolean(KEY_SPONSORBLOCK_SEEKBAR, true)
+
+    private fun getSponsorBlockNoticePreference(): Boolean =
+        prefs.getBoolean(KEY_SPONSORBLOCK_NOTICE, true)
+
+    private fun getSponsorBlockMinDurationPreference(): Long =
+        prefs.getLong(KEY_SPONSORBLOCK_MIN_DURATION, 0L)
+            .coerceIn(0L, SPONSORBLOCK_MAX_MIN_DURATION_MS)
+
+    fun setSponsorBlockEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_SPONSORBLOCK_ENABLED, enabled).apply()
+        _sponsorBlockEnabled.value = enabled
+    }
+
+    fun setSponsorBlockAction(category: SponsorCategory, action: SegmentAction) {
+        val updated = _sponsorBlockActions.value.toMutableMap().apply { put(category, action) }
+        prefs.edit().putString(KEY_SPONSORBLOCK_ACTIONS, encodeSegmentActions(updated)).apply()
+        _sponsorBlockActions.value = updated
+    }
+
+    fun resetSponsorBlockActions() {
+        val defaults = SponsorCategory.defaultActions()
+        prefs.edit().putString(KEY_SPONSORBLOCK_ACTIONS, encodeSegmentActions(defaults)).apply()
+        _sponsorBlockActions.value = defaults
+    }
+
+    fun setSponsorBlockShowOnSeekBar(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_SPONSORBLOCK_SEEKBAR, enabled).apply()
+        _sponsorBlockShowOnSeekBar.value = enabled
+    }
+
+    fun setSponsorBlockNotice(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_SPONSORBLOCK_NOTICE, enabled).apply()
+        _sponsorBlockNotice.value = enabled
+    }
+
+    fun setSponsorBlockMinDurationMs(durationMs: Long) {
+        val safe = durationMs.coerceIn(0L, SPONSORBLOCK_MAX_MIN_DURATION_MS)
+        prefs.edit().putLong(KEY_SPONSORBLOCK_MIN_DURATION, safe).apply()
+        _sponsorBlockMinDurationMs.value = safe
+    }
+
+    /** Fresh read for the player, which must not use this instance's stale flow. */
+    fun isSponsorBlockEnabled(): Boolean = getSponsorBlockEnabledPreference()
+
+    fun sponsorBlockActionsNow(): Map<SponsorCategory, SegmentAction> =
+        getSponsorBlockActionsPreference()
+
+    fun sponsorBlockMinDurationNow(): Long = getSponsorBlockMinDurationPreference()
+
+    /**
      * Save the interface scale and update the flow.
      *
      * Coerced on the way in as well as on the way out: the slider is the only
@@ -1570,6 +1665,13 @@ class ThemePreferences(context: Context) {
         _onboardingCompleted.value = completed
     }
 }
+
+/**
+ * Ceiling for the "ignore very short segments" filter. Two seconds is already
+ * past the point where a skip is less disruptive than the segment, and a
+ * larger value would start hiding the sponsor reads the feature exists for.
+ */
+const val SPONSORBLOCK_MAX_MIN_DURATION_MS = 2_000L
 
 /* ------------------------------------------------------------------ */
 /* Interface scale                                                     */

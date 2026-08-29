@@ -132,6 +132,14 @@ fun VideoPlayerContent(
     val selectedCaption by viewModel.selectedCaption.collectAsState()
     val captionCues by viewModel.captionCues.collectAsState()
     val captionTextSize by viewModel.captionTextSize.collectAsState()
+    val allSponsorSegments by viewModel.sponsorSegments.collectAsState()
+    val sponsorShowOnSeekBar by viewModel.sponsorShowOnSeekBar.collectAsState()
+    // Skipping and drawing are separate choices: someone can want segments
+    // skipped without wanting the bar striped, so the toggle empties what the
+    // seek bar is given rather than what the player acts on.
+    val sponsorSegments = if (sponsorShowOnSeekBar) allSponsorSegments else emptyList()
+    val manualSegment by viewModel.manualSegment.collectAsState()
+    val skipNotice by viewModel.skipNotice.collectAsState()
     val captionTextColor by viewModel.captionTextColor.collectAsState()
     val captionBackground by viewModel.captionBackground.collectAsState()
     val videoAspectRatio by viewModel.videoAspectRatio.collectAsState()
@@ -614,6 +622,7 @@ fun VideoPlayerContent(
                 },
                 onSettings = { showPlaybackSettings = true },
                 chapters = chapters,
+                sponsorSegments = sponsorSegments,
                 onOpenChapters = { showChaptersSheet = true },
                 casting = isCasting,
                 castDeviceName = castDeviceName,
@@ -659,6 +668,19 @@ fun VideoPlayerContent(
                             .padding(start = 24.dp, end = 24.dp, bottom = 104.dp)
                     )
                 }
+
+                // Outside the controls' visibility gate on purpose: a skip
+                // happens without being asked for, so its undo has to be
+                // reachable whether or not the chrome is up.
+                SponsorBlockOverlay(
+                    skipNotice = skipNotice,
+                    manualSegment = manualSegment,
+                    onUndoSkip = { viewModel.undoSponsorSkip() },
+                    onSkipSegment = { viewModel.skipCurrentSegment() },
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(end = 24.dp, bottom = 104.dp)
+                )
 
                 // Regular comments stay inside immersive landscape as a
                 // detached trailing panel. The video remains fullscreen behind
@@ -917,6 +939,7 @@ fun VideoPlayerContent(
                         },
                         onSettings = { showPlaybackSettings = true },
                         chapters = chapters,
+                        sponsorSegments = sponsorSegments,
                         onOpenChapters = { showChaptersSheet = true },
                         casting = isCasting,
                         castDeviceName = castDeviceName,
@@ -958,6 +981,25 @@ fun VideoPlayerContent(
                                 .padding(start = 12.dp, end = 12.dp, bottom = overlayBottomPadding)
                         )
                     }
+
+                    // Same lift as the timed-comments card so the chip clears
+                    // the seek bar while the controls are up, and drops closer
+                    // to the edge once they go. Outside the control visibility
+                    // gate deliberately: an automatic skip must be undoable
+                    // whether or not the chrome happens to be showing.
+                    val sponsorBottomPadding by animateDpAsState(
+                        targetValue = if (showControls) 64.dp else 12.dp,
+                        label = "sponsorChipPadding"
+                    )
+                    SponsorBlockOverlay(
+                        skipNotice = skipNotice,
+                        manualSegment = manualSegment,
+                        onUndoSkip = { viewModel.undoSponsorSkip() },
+                        onSkipSegment = { viewModel.skipCurrentSegment() },
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(end = 12.dp, bottom = sponsorBottomPadding)
+                    )
                 }
                 
                 // Info Area. The comments panel slides up over it, keeping the

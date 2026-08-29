@@ -178,6 +178,10 @@ import com.ivor.ivormusic.data.FolderInfo
 import com.ivor.ivormusic.data.BackupRepository
 import com.ivor.ivormusic.data.SessionManager
 import com.ivor.ivormusic.data.UI_SCALE_DEFAULT
+import com.ivor.ivormusic.data.SegmentAction
+import com.ivor.ivormusic.data.SponsorCategory
+import androidx.compose.material.icons.rounded.MoneyOff
+import androidx.compose.ui.res.pluralStringResource
 import kotlin.math.roundToInt
 import com.ivor.ivormusic.data.ThemePreferences
 import com.ivor.ivormusic.data.YouTubeAuthUtils
@@ -243,7 +247,8 @@ internal enum class SettingsPage {
     NOTIFICATIONS,
     LOCAL_LIBRARY,
     ADVANCED,
-    DISPLAY_SIZE
+    DISPLAY_SIZE,
+    SPONSORBLOCK
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
@@ -343,6 +348,17 @@ fun SettingsScreen(
     onLocalOnlyModeToggle: (Boolean) -> Unit = {},
     uiScale: Float = UI_SCALE_DEFAULT,
     onUiScaleChange: (Float) -> Unit = {},
+    sponsorBlockEnabled: Boolean = false,
+    onSponsorBlockEnabledToggle: (Boolean) -> Unit = {},
+    sponsorBlockActions: Map<SponsorCategory, SegmentAction> = emptyMap(),
+    onSponsorBlockActionChange: (SponsorCategory, SegmentAction) -> Unit = { _, _ -> },
+    onResetSponsorBlockActions: () -> Unit = {},
+    sponsorBlockShowOnSeekBar: Boolean = true,
+    onSponsorBlockShowOnSeekBarToggle: (Boolean) -> Unit = {},
+    sponsorBlockNotice: Boolean = true,
+    onSponsorBlockNoticeToggle: (Boolean) -> Unit = {},
+    sponsorBlockMinDurationMs: Long = 0L,
+    onSponsorBlockMinDurationChange: (Long) -> Unit = {},
     contentPadding: PaddingValues = PaddingValues()
 ) {
     val context = LocalContext.current
@@ -592,6 +608,8 @@ fun SettingsScreen(
                 colorPalette = colorPalette,
                 spotlightHome = spotlightHome,
                 uiScale = uiScale,
+                sponsorBlockEnabled = sponsorBlockEnabled,
+                sponsorBlockActions = sponsorBlockActions,
                 playerStyle = playerStyle,
                 musicQualityWifi = musicQualityWifi,
                 videoQualityWifi = videoQualityWifi,
@@ -717,6 +735,21 @@ fun SettingsScreen(
                 // Back lands on Appearance rather than the hub: this page is
                 // opened from there, and the scale is usually adjusted more
                 // than once before it is right.
+                SettingsPage.SPONSORBLOCK -> SponsorBlockSettingsPage(
+                    enabled = sponsorBlockEnabled,
+                    onEnabledToggle = onSponsorBlockEnabledToggle,
+                    actions = sponsorBlockActions,
+                    onActionChange = onSponsorBlockActionChange,
+                    onResetCategories = onResetSponsorBlockActions,
+                    showOnSeekBar = sponsorBlockShowOnSeekBar,
+                    onShowOnSeekBarToggle = onSponsorBlockShowOnSeekBarToggle,
+                    showNotice = sponsorBlockNotice,
+                    onShowNoticeToggle = onSponsorBlockNoticeToggle,
+                    minDurationMs = sponsorBlockMinDurationMs,
+                    onMinDurationChange = onSponsorBlockMinDurationChange,
+                    onBack = { page = SettingsPage.HUB }
+                )
+
                 SettingsPage.DISPLAY_SIZE -> DisplaySizeSettingsPage(
                     uiScale = uiScale,
                     onUiScaleChange = onUiScaleChange,
@@ -967,6 +1000,8 @@ private fun SettingsHub(
     colorPalette: String,
     spotlightHome: Boolean,
     uiScale: Float,
+    sponsorBlockEnabled: Boolean,
+    sponsorBlockActions: Map<SponsorCategory, SegmentAction>,
     playerStyle: PlayerStyle,
     musicQualityWifi: String,
     videoQualityWifi: String,
@@ -1194,6 +1229,25 @@ private fun SettingsHub(
                             title = stringResource(R.string.settings_subscriptions),
                             value = subscriptionSourceLabel(subscriptionSource),
                             onClick = { onOpenPage(SettingsPage.SUBSCRIPTIONS) }
+                        )
+                        SettingsDivider()
+                        SettingsHubRow(
+                            icon = Icons.Rounded.MoneyOff,
+                            title = stringResource(R.string.sb_title),
+                            // The live value is how many categories will
+                            // actually act, which is the thing that varies
+                            // once it is on - "On" alone says nothing.
+                            value = if (!sponsorBlockEnabled) {
+                                stringResource(R.string.haptic_level_off)
+                            } else {
+                                val active = sponsorBlockActions.count {
+                                    it.value != SegmentAction.IGNORE
+                                }
+                                pluralStringResource(
+                                    R.plurals.sb_active_categories, active, active
+                                )
+                            },
+                            onClick = { onOpenPage(SettingsPage.SPONSORBLOCK) }
                         )
                     }
                 }
