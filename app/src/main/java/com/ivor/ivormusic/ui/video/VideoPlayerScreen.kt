@@ -2553,11 +2553,17 @@ fun VideoInfoSection(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Spacer(Modifier.height(2.dp))
-                            Text(
-                                text = relatedVideo.viewCount + " • " + (relatedVideo.uploadedDate ?: ""),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            val stats = listOfNotNull(
+                                relatedVideo.viewCount.takeIf { it.isNotBlank() },
+                                relatedVideo.uploadedDate?.takeIf { it.isNotBlank() }
+                            ).joinToString(" • ")
+                            if (stats.isNotBlank()) {
+                                Text(
+                                    text = stats,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
                     }
                 }
