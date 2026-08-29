@@ -171,6 +171,13 @@ class MainActivity : ComponentActivity() {
             val musicQualityMobile by themeViewModel.musicQualityMobile.collectAsState()
             val spotlightHome by themeViewModel.spotlightHome.collectAsState()
             val uiScale by themeViewModel.uiScale.collectAsState()
+            val sponsorBlockEnabled by themeViewModel.sponsorBlockEnabled.collectAsState()
+            val sponsorBlockActions by themeViewModel.sponsorBlockActions.collectAsState()
+            val sponsorBlockShowOnSeekBar by
+                themeViewModel.sponsorBlockShowOnSeekBar.collectAsState()
+            val sponsorBlockNotice by themeViewModel.sponsorBlockNotice.collectAsState()
+            val sponsorBlockMinDurationMs by
+                themeViewModel.sponsorBlockMinDurationMs.collectAsState()
             val nonExpressiveNavigationBar by
                 themeViewModel.nonExpressiveNavigationBar.collectAsState()
             val subscriptionSource by themeViewModel.subscriptionSource.collectAsState()
@@ -240,6 +247,23 @@ class MainActivity : ComponentActivity() {
                         spotlightHome = spotlightHome,
                         uiScale = uiScale,
                         onUiScaleChange = { themeViewModel.setUiScale(it) },
+                        sponsorBlockEnabled = sponsorBlockEnabled,
+                        onSponsorBlockEnabledToggle = { themeViewModel.setSponsorBlockEnabled(it) },
+                        sponsorBlockActions = sponsorBlockActions,
+                        onSponsorBlockActionChange = { category, action ->
+                            themeViewModel.setSponsorBlockAction(category, action)
+                        },
+                        onResetSponsorBlockActions = { themeViewModel.resetSponsorBlockActions() },
+                        sponsorBlockShowOnSeekBar = sponsorBlockShowOnSeekBar,
+                        onSponsorBlockShowOnSeekBarToggle = {
+                            themeViewModel.setSponsorBlockShowOnSeekBar(it)
+                        },
+                        sponsorBlockNotice = sponsorBlockNotice,
+                        onSponsorBlockNoticeToggle = { themeViewModel.setSponsorBlockNotice(it) },
+                        sponsorBlockMinDurationMs = sponsorBlockMinDurationMs,
+                        onSponsorBlockMinDurationChange = {
+                            themeViewModel.setSponsorBlockMinDurationMs(it)
+                        },
                         onSpotlightHomeToggle = { themeViewModel.setSpotlightHome(it) },
                         nonExpressiveNavigationBar = nonExpressiveNavigationBar,
                         onNonExpressiveNavigationBarToggle = {
@@ -461,6 +485,17 @@ fun MusicApp(
     spotlightHome: Boolean,
     uiScale: Float,
     onUiScaleChange: (Float) -> Unit,
+    sponsorBlockEnabled: Boolean,
+    onSponsorBlockEnabledToggle: (Boolean) -> Unit,
+    sponsorBlockActions: Map<com.ivor.ivormusic.data.SponsorCategory, com.ivor.ivormusic.data.SegmentAction>,
+    onSponsorBlockActionChange: (com.ivor.ivormusic.data.SponsorCategory, com.ivor.ivormusic.data.SegmentAction) -> Unit,
+    onResetSponsorBlockActions: () -> Unit,
+    sponsorBlockShowOnSeekBar: Boolean,
+    onSponsorBlockShowOnSeekBarToggle: (Boolean) -> Unit,
+    sponsorBlockNotice: Boolean,
+    onSponsorBlockNoticeToggle: (Boolean) -> Unit,
+    sponsorBlockMinDurationMs: Long,
+    onSponsorBlockMinDurationChange: (Long) -> Unit,
     onSpotlightHomeToggle: (Boolean) -> Unit,
     nonExpressiveNavigationBar: Boolean,
     onNonExpressiveNavigationBarToggle: (Boolean) -> Unit,
@@ -905,7 +940,18 @@ fun MusicApp(
                     localOnlyMode = localOnlyMode,
                     onLocalOnlyModeToggle = onLocalOnlyModeToggle,
                     uiScale = uiScale,
-                    onUiScaleChange = onUiScaleChange
+                    onUiScaleChange = onUiScaleChange,
+                    sponsorBlockEnabled = sponsorBlockEnabled,
+                    onSponsorBlockEnabledToggle = onSponsorBlockEnabledToggle,
+                    sponsorBlockActions = sponsorBlockActions,
+                    onSponsorBlockActionChange = onSponsorBlockActionChange,
+                    onResetSponsorBlockActions = onResetSponsorBlockActions,
+                    sponsorBlockShowOnSeekBar = sponsorBlockShowOnSeekBar,
+                    onSponsorBlockShowOnSeekBarToggle = onSponsorBlockShowOnSeekBarToggle,
+                    sponsorBlockNotice = sponsorBlockNotice,
+                    onSponsorBlockNoticeToggle = onSponsorBlockNoticeToggle,
+                    sponsorBlockMinDurationMs = sponsorBlockMinDurationMs,
+                    onSponsorBlockMinDurationChange = onSponsorBlockMinDurationChange
                 )
             }
             composable(

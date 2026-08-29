@@ -177,6 +177,12 @@ dependencies {
     implementation(libs.jaudiotagger)
 
     testImplementation(libs.junit)
+    // A real org.json on the unit-test classpath, shadowing the Android stub.
+    // `isReturnDefaultValues` makes every stubbed android.jar method return a
+    // default rather than throw, which is what lets KLog run in JVM tests - but
+    // org.json is stubbed the same way, so JSONObject/JSONArray silently parse
+    // to nothing. Any parser in data/ is untestable without this.
+    testImplementation(libs.json.unit.test)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))

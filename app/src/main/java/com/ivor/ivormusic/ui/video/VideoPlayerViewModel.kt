@@ -28,6 +28,11 @@ import com.ivor.ivormusic.data.CaptionTrack
 import com.ivor.ivormusic.data.CommentItem
 import com.ivor.ivormusic.data.DownloadedVideo
 import com.ivor.ivormusic.data.LikeStatus
+import com.ivor.ivormusic.data.SegmentAction
+import com.ivor.ivormusic.data.SponsorBlockRepository
+import com.ivor.ivormusic.data.SponsorSegment
+import com.ivor.ivormusic.data.activeCategories
+import com.ivor.ivormusic.data.segmentAt
 import com.ivor.ivormusic.data.LocalSubscription
 import com.ivor.ivormusic.data.SubscriptionActions
 import com.ivor.ivormusic.data.SubscriptionStore
@@ -197,6 +202,40 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     val bufferedProgress: StateFlow<Float> = _bufferedProgress
 
     private var progressJob: Job? = null
+
+    /* ---------------- SponsorBlock ---------------- */
+
+    private val sponsorBlockRepository = SponsorBlockRepository()
+    private var sponsorBlockJob: Job? = null
+
+    private val _sponsorSegments = MutableStateFlow<List<SponsorSegment>>(emptyList())
+    val sponsorSegments: StateFlow<List<SponsorSegment>> = _sponsorSegments.asStateFlow()
+
+    /**
+     * The segment currently under the playhead whose category is set to
+     * Manual, so the chrome can offer a button. Null whenever the playhead is
+     * outside every such segment.
+     */
+    private val _manualSegment = MutableStateFlow<SponsorSegment?>(null)
+    val manualSegment: StateFlow<SponsorSegment?> = _manualSegment.asStateFlow()
+
+    /** Whether segments are drawn on the seek bar, straight off preferences. */
+    val sponsorShowOnSeekBar: StateFlow<Boolean> = themePreferences.sponsorBlockShowOnSeekBar
+
+    /** The most recent automatic skip, for the undo chip. Cleared on a timer. */
+    private val _skipNotice = MutableStateFlow<SponsorSkipNotice?>(null)
+    val skipNotice: StateFlow<SponsorSkipNotice?> = _skipNotice.asStateFlow()
+
+    /**
+     * Segments the viewer has undone, or skipped manually, for this video.
+     *
+     * Keyed by the submission UUID rather than an index or a start time,
+     * because a viewer who undoes a skip is left sitting inside the segment
+     * and the very next poll would otherwise skip it again - and because they
+     * can seek back into it later from anywhere.
+     */
+    private val ignoredSegmentIds = mutableSetOf<String>()
+    private var skipNoticeJob: Job? = null
 
     // Initial stream resolution and watch-next metadata belong to one specific
     // startVideo invocation. Cancellation handles the normal case; the
@@ -1346,6 +1385,13 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                             lastSessionSaveAt = now
                             saveVideoPlaybackSession()
                         }
+
+                        // Rides the poll that already exists rather than adding
+                        // a second timer. The cost is that a skip can land up
+                        // to one tick late; a dedicated listener would be
+                        // frame-accurate and is not worth a second loop, since
+                        // submitted segments carry padding of their own.
+                        applySponsorBlock(player, position)
                     }
                 }
                 delay(PROGRESS_POLL_MS)
@@ -1359,6 +1405,125 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         _durationMs.value = 0L
         _progress.value = 0f
         _bufferedProgress.value = 0f
+    }
+
+    /**
+     * Drops every trace of the previous video's segments.
+     *
+     * The ignore set has to go with them: it is keyed by submission UUID,
+     * which is unique per video, but leaving it to grow across a long queue
+     * run would hold a set nothing will ever read again.
+     */
+    private fun resetSponsorBlock() {
+        sponsorBlockJob?.cancel()
+        skipNoticeJob?.cancel()
+        _sponsorSegments.value = emptyList()
+        _manualSegment.value = null
+        _skipNotice.value = null
+        ignoredSegmentIds.clear()
+    }
+
+    /**
+     * Decides what to do about the segment under the playhead, if any.
+     *
+     * Runs on every poll tick, so it must stay cheap and must not act while
+     * the viewer is dragging the seek bar - skipping out from under a scrub
+     * fights the gesture and loses the position they were aiming for.
+     */
+    private fun applySponsorBlock(player: Player, positionMs: Long) {
+        // No scrubbing guard is needed: PlayerSeekBar commits on release, so
+        // the player's own position does not move during a drag and this can
+        // never fire mid-gesture. Seeking *into* a segment and then being
+        // skipped past it is the intended behaviour.
+        val segments = _sponsorSegments.value
+        if (segments.isEmpty()) {
+            if (_manualSegment.value != null) _manualSegment.value = null
+            return
+        }
+
+        val segment = segmentAt(segments, positionMs, ignoredSegmentIds)
+        if (segment == null) {
+            if (_manualSegment.value != null) _manualSegment.value = null
+            return
+        }
+
+        val action = themePreferences.sponsorBlockActions.value[segment.category]
+        val minDuration = themePreferences.sponsorBlockMinDurationMs.value
+        if (segment.durationMs < minDuration) {
+            if (_manualSegment.value != null) _manualSegment.value = null
+            return
+        }
+
+        when (action) {
+            SegmentAction.SKIP -> {
+                if (_manualSegment.value != null) _manualSegment.value = null
+                performSkip(player, segment, automatic = true)
+            }
+
+            SegmentAction.MANUAL -> {
+                if (_manualSegment.value?.uuid != segment.uuid) {
+                    _manualSegment.value = segment
+                }
+            }
+
+            // IGNORE, or a category this build does not know: leave it alone.
+            else -> if (_manualSegment.value != null) _manualSegment.value = null
+        }
+    }
+
+    /**
+     * Seeks past [segment] and, when the skip was automatic, offers an undo.
+     *
+     * The segment is added to the ignore set either way. Without that, a
+     * manual skip that lands the viewer a moment before the end - or an undo
+     * they then scrub back through - re-triggers on the next tick.
+     */
+    private fun performSkip(player: Player, segment: SponsorSegment, automatic: Boolean) {
+        val returnTo = player.currentPosition.coerceAtLeast(0L)
+        ignoredSegmentIds.add(segment.uuid)
+        player.seekTo(segment.endMs)
+        _positionMs.value = segment.endMs
+        _manualSegment.value = null
+
+        if (!automatic || !themePreferences.sponsorBlockNotice.value) return
+
+        skipNoticeJob?.cancel()
+        _skipNotice.value = SponsorSkipNotice(
+            segment = segment,
+            returnToMs = returnTo,
+            id = SystemClock.elapsedRealtime()
+        )
+        skipNoticeJob = viewModelScope.launch {
+            kotlinx.coroutines.delay(SKIP_NOTICE_DURATION_MS)
+            _skipNotice.value = null
+        }
+    }
+
+    /** The Manual-category button in the chrome. */
+    fun skipCurrentSegment() {
+        val segment = _manualSegment.value ?: return
+        val player = activePlayer() ?: return
+        performSkip(player, segment, automatic = false)
+    }
+
+    /**
+     * Puts the playhead back where the skip took it from.
+     *
+     * The segment stays in the ignore set, so playing on through it does not
+     * immediately skip again - undoing a skip means the viewer wants to watch
+     * that segment, not to be asked about it twice.
+     */
+    fun undoSponsorSkip() {
+        val notice = _skipNotice.value ?: return
+        skipNoticeJob?.cancel()
+        _skipNotice.value = null
+        activePlayer()?.seekTo(notice.returnToMs)
+        _positionMs.value = notice.returnToMs
+    }
+
+    fun dismissSkipNotice() {
+        skipNoticeJob?.cancel()
+        _skipNotice.value = null
     }
 
     /**
@@ -1801,6 +1966,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         // Zero the progress for the new video rather than letting the previous
         // one's position sit in the seek bar until the first poll lands.
         resetProgress()
+        resetSponsorBlock()
         _availableQualities.value = emptyList()
         _currentQuality.value = null
         _relatedVideos.value = emptyList() // Clear previous related
@@ -2038,6 +2204,29 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             }
         }
         
+        // ========== SPONSORBLOCK ==========
+        // Its own job rather than a step inside Phase 2: the lookup is keyed on
+        // the video id alone and needs nothing watch-next returns, so making it
+        // wait behind that response would delay skipping for no reason. It must
+        // never join Phase 1, which is stream URLs only - a third-party service
+        // being slow must not delay the first frame.
+        sponsorBlockJob = viewModelScope.launch {
+            // Fresh reads: the settings screen writes through its own
+            // ThemePreferences instance, and the user may have changed either
+            // of these since this ViewModel was built.
+            if (!themePreferences.isSponsorBlockEnabled()) return@launch
+            val actions = themePreferences.sponsorBlockActionsNow()
+            val categories = activeCategories(actions)
+            if (categories.isEmpty()) return@launch
+
+            val segments = sponsorBlockRepository.getSegments(video.videoId, categories)
+            if (!isCurrentVideoLoad(video.videoId, loadGeneration)) return@launch
+            // A live broadcast has no fixed timeline to key segments against,
+            // and _isLive is resolved in Phase 1, so by here it is known.
+            if (_isLive.value) return@launch
+            _sponsorSegments.value = segments
+        }
+
         // ========== PHASE 2: ENGAGEMENT + METADATA + RELATED ==========
         // One watch-next call answers all three (the old code paid for an
         // engagement /next call AND a full NewPipe extraction here, competing
@@ -3333,6 +3522,13 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         private const val PROGRESS_POLL_MS = 500L
 
         /**
+         * How long the skip chip stays up. Long enough to read three words and
+         * reach the undo, short enough that it is gone before it becomes part
+         * of the video's furniture.
+         */
+        private const val SKIP_NOTICE_DURATION_MS = 5_000L
+
+        /**
          * Floor between two resume-snapshot writes from the progress poll.
          * onEnterBackground() saves immediately on its own; this only guards
          * the foreground-kill backstop above, where every-500ms would be a
@@ -3373,3 +3569,20 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         _exoPlayer = null
     }
 }
+
+/**
+ * A skip that has just happened and can still be undone.
+ *
+ * [returnToMs] is where the playhead actually was, not the segment start: a
+ * viewer who seeks into the middle of a sponsor read and gets skipped should
+ * land back where they were, not at the beginning of a segment they had
+ * already partly passed.
+ *
+ * [id] exists so the chip animates in again for a second skip of the same
+ * segment category, where the data would otherwise compare equal.
+ */
+data class SponsorSkipNotice(
+    val segment: com.ivor.ivormusic.data.SponsorSegment,
+    val returnToMs: Long,
+    val id: Long
+)
