@@ -244,8 +244,8 @@ jobs:
 
     # R8 deobfuscation map for this exact build. Release stack traces arriving
     # through the in-app bug reporter are only readable against the mapping of
-    # the versionCode that produced them, so keep it alongside the APKs (and
-    # attach it to GitHub releases when cutting one).
+    # the versionCode that produced them, so keep it as a retained workflow
+    # artifact for maintainers rather than a public release asset.
     - name: Upload Release mapping.txt
       uses: actions/upload-artifact@v4
       with:

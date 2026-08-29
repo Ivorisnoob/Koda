@@ -52,6 +52,8 @@ Changelog:
 - Existing installations keep their current behavior by default.
 ```
 
+**Public GitHub releases ship APKs only.** Never attach `mapping.txt` or any other deobfuscation artifact to release assets. Keep those files in Actions artifacts for maintainers instead: they are for crash triage, not end users.
+
 **Do not touch the remote unless asked.** Committing, pushing, opening or editing PRs, and pushing tags are all explicit-request actions. Local edits are the default deliverable.
 
 ---
