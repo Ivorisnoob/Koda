@@ -509,15 +509,20 @@ fun LibraryMainScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // displayLarge is 57sp and "Library" is most of the width at
-                // that size, so this row has space for exactly one action.
-                // Listening history is reached from the Recently played rail
-                // and the FAB menu instead; a second button here truncated the
-                // title, and dropping the title a step would split Home and
-                // Library, the only two screens that share this scale.
+                // headlineSmall matches video mode's Library header, which
+                // uses the same string, so switching modes no longer changes
+                // the size of the same word. It also frees the width that
+                // displayLarge's 57sp took: the row now has room for a second
+                // action if one is ever wanted, where before a single button
+                // truncated the title.
+                //
+                // This deliberately leaves the music Home on displayLarge, so
+                // the two are no longer one scale - see issue #118, which is
+                // where a heading system for the whole app belongs.
                 Text(
                     text = stringResource(R.string.tab_library),
-                    style = MaterialTheme.typography.displayLarge,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onBackground,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,

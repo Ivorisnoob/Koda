@@ -32,6 +32,7 @@ import androidx.compose.material.icons.rounded.BookmarkAdd
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.Contrast
+import androidx.compose.material.icons.rounded.FormatSize
 import androidx.compose.material.icons.rounded.Cookie
 import androidx.compose.material.icons.rounded.DirectionsCar
 import androidx.compose.material.icons.rounded.Dashboard
@@ -201,6 +202,18 @@ internal fun buildSettingsSearchIndex(
         "palette", stringResource(R.string.sp_color_palette), stringResource(R.string.settings_appearance), Icons.Rounded.Palette,
         listOf("colour", "accent", "dynamic", "material you", "monet", "wallpaper", "scheme")
     ) { onNavigateToColorPalette() }
+    // "Too big" and "too small" are the words people actually arrive with,
+    // and neither appears in the title - the whole reason the synonym list
+    // exists. "Font size" and "zoom" are here because they are what the
+    // setting is called on other platforms.
+    entry(
+        "display_size", stringResource(R.string.sp_display_size), stringResource(R.string.settings_appearance), Icons.Rounded.FormatSize,
+        listOf(
+            "ui scale", "scale", "zoom", "font size", "text size", "bigger",
+            "smaller", "too big", "too small", "density", "dpi", "compact",
+            "shrink", "enlarge", "layout size", "interface size"
+        )
+    ) { onOpenPage(SettingsPage.DISPLAY_SIZE) }
     entry(
         "amoled", stringResource(R.string.sp_amoled_black), stringResource(R.string.settings_appearance), Icons.Rounded.Contrast,
         listOf("oled", "pure black", "true black", "battery saving", "deep dark")

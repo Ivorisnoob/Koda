@@ -100,6 +100,9 @@ class ThemePreferences(context: Context) {
     private val _spotlightHome = MutableStateFlow(getSpotlightHomePreference())
     val spotlightHome: StateFlow<Boolean> = _spotlightHome.asStateFlow()
 
+    private val _uiScale = MutableStateFlow(getUiScalePreference())
+    val uiScale: StateFlow<Float> = _uiScale.asStateFlow()
+
     private val _nonExpressiveNavigationBar =
         MutableStateFlow(getNonExpressiveNavigationBarPreference())
     val nonExpressiveNavigationBar: StateFlow<Boolean> =
@@ -210,6 +213,7 @@ class ThemePreferences(context: Context) {
             KEY_MUSIC_QUALITY_WIFI -> _musicQualityWifi.value = getMusicQualityWifiPreference()
             KEY_MUSIC_QUALITY_MOBILE -> _musicQualityMobile.value = getMusicQualityMobilePreference()
             KEY_SPOTLIGHT_HOME -> _spotlightHome.value = getSpotlightHomePreference()
+            KEY_UI_SCALE -> _uiScale.value = getUiScalePreference()
             KEY_NON_EXPRESSIVE_NAVIGATION_BAR ->
                 _nonExpressiveNavigationBar.value = getNonExpressiveNavigationBarPreference()
             KEY_SUBSCRIPTION_SOURCE -> _subscriptionSource.value = getSubscriptionSourcePreference()
@@ -446,6 +450,7 @@ class ThemePreferences(context: Context) {
          * therefore frozen forever, and there is no third Home planned.
          */
         private const val KEY_SPOTLIGHT_HOME = "spotlight_home"
+        private const val KEY_UI_SCALE = "ui_scale"
         private const val KEY_NON_EXPRESSIVE_NAVIGATION_BAR =
             "non_expressive_navigation_bar"
 
@@ -1144,6 +1149,23 @@ class ThemePreferences(context: Context) {
         _spotlightHome.value = enabled
     }
 
+    private fun getUiScalePreference(): Float =
+        uiScaleFromStored(prefs.all[KEY_UI_SCALE])
+
+    /**
+     * Save the interface scale and update the flow.
+     *
+     * Coerced on the way in as well as on the way out: the slider is the only
+     * writer today, but a restored backup carries whatever the device that
+     * wrote it allowed, and a value outside the range would reach
+     * [androidx.compose.ui.unit.Density] unchecked.
+     */
+    fun setUiScale(scale: Float) {
+        val safeScale = scale.coerceIn(UI_SCALE_MIN, UI_SCALE_MAX)
+        prefs.edit().putFloat(KEY_UI_SCALE, safeScale).apply()
+        _uiScale.value = safeScale
+    }
+
     private fun getNonExpressiveNavigationBarPreference(): Boolean {
         return prefs.getBoolean(KEY_NON_EXPRESSIVE_NAVIGATION_BAR, false)
     }
@@ -1548,6 +1570,49 @@ class ThemePreferences(context: Context) {
         _onboardingCompleted.value = completed
     }
 }
+
+/* ------------------------------------------------------------------ */
+/* Interface scale                                                     */
+/* ------------------------------------------------------------------ */
+
+/**
+ * How far the whole interface may shrink, matching the smallest stop on the
+ * platform's own Display size control. It is a floor rather than a preference:
+ * the scale multiplies every dp in the app, so 0.85 already takes a 48dp touch
+ * target down to the physical size of 40.8dp, and going further would put the
+ * app's controls under the minimum a finger can reliably hit. Someone who
+ * needs smaller still can stack the system Display size setting underneath,
+ * which is their explicit choice rather than one Koda made for them.
+ */
+const val UI_SCALE_MIN = 0.85f
+
+const val UI_SCALE_DEFAULT = 1f
+
+/**
+ * The ceiling is deliberately nearer the default than the floor is. Growing
+ * the interface is what the system font and display size settings already do
+ * well, and Koda's layouts have far less slack upward - see the bottom-sheet
+ * ceiling in VideoOptionsSheet, which scaling up eats into.
+ */
+const val UI_SCALE_MAX = 1.15f
+
+/** The stops the slider snaps to, and the only values ever written. */
+val UI_SCALE_STEPS: List<Float> =
+    listOf(0.85f, 0.90f, 0.95f, 1.00f, 1.05f, 1.10f, 1.15f)
+
+/**
+ * Read the stored scale, tolerating anything. Kept outside SharedPreferences
+ * so it is deterministic and unit-testable without an Android Context, the
+ * same way [captionTextScaleFromStored] is.
+ */
+internal fun uiScaleFromStored(stored: Any?): Float = when (stored) {
+    is Number -> stored.toFloat()
+    else -> UI_SCALE_DEFAULT
+}.coerceIn(UI_SCALE_MIN, UI_SCALE_MAX)
+
+/** Snaps an arbitrary slider position onto the nearest stop. */
+fun nearestUiScaleStep(value: Float): Float =
+    UI_SCALE_STEPS.minByOrNull { kotlin.math.abs(it - value) } ?: UI_SCALE_DEFAULT
 
 const val CAPTION_TEXT_SCALE_MIN = 0.75f
 const val CAPTION_TEXT_SCALE_DEFAULT = 1f

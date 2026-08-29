@@ -1,6 +1,7 @@
 package com.ivor.ivormusic.ui.settings
 import androidx.compose.ui.res.stringResource
 import com.ivor.ivormusic.R
+import kotlin.math.roundToInt
 
 import android.content.Intent
 import android.net.Uri
@@ -43,6 +44,7 @@ import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.FlashOn
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.FolderOff
+import androidx.compose.material.icons.rounded.FormatSize
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.HdrOn
@@ -219,6 +221,8 @@ internal fun AppearanceSettingsPage(
     onSpotlightHomeToggle: (Boolean) -> Unit,
     nonExpressiveNavigationBar: Boolean,
     onNonExpressiveNavigationBarToggle: (Boolean) -> Unit,
+    uiScale: Float,
+    onNavigateToDisplaySize: () -> Unit,
     onBack: () -> Unit
 ) {
     val paletteName = if (colorPalette == ThemePreferences.DEFAULT_COLOR_PALETTE) {
@@ -274,6 +278,23 @@ internal fun AppearanceSettingsPage(
                         },
                         enabled = ambientBackground,
                         onToggle = onAmbientBackgroundToggle
+                    )
+                }
+            }
+        }
+
+        item {
+            SettingsSection(title = stringResource(R.string.sp_display_size)) {
+                SettingsCard {
+                    // A page rather than a slider here: the scale is worth
+                    // previewing before it is applied, and a preview needs
+                    // room the hub list does not have.
+                    SettingsRow(
+                        icon = Icons.Rounded.FormatSize,
+                        title = stringResource(R.string.sp_display_size),
+                        subtitle = "${(uiScale * 100).roundToInt()}%",
+                        onClick = onNavigateToDisplaySize,
+                        showChevron = true
                     )
                 }
             }

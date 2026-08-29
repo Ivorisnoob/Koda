@@ -243,6 +243,17 @@
     <string name="sp_navigation">Navigation</string>
     <string name="sp_non_expressive_nav">Non-expressive navigation bar</string>
     <string name="sp_spotlight_home">Spotlight Home</string>
+    <string name="sp_display_size">Display size</string>
+    <string name="sp_display_size_sub">Make everything in Koda smaller or larger</string>
+    <string name="sp_display_size_preview">Preview</string>
+    <string name="sp_display_size_scale">Scale</string>
+    <string name="sp_display_size_about">About this setting</string>
+    <string name="sp_display_size_compact">Compact</string>
+    <string name="sp_display_size_default">Default</string>
+    <string name="sp_display_size_large">Large</string>
+    <string name="sp_display_size_reset">Reset</string>
+    <string name="sp_display_size_note_system">This applies on top of the Display size and Font size settings in Android, so you can go smaller still by lowering those too.</string>
+    <string name="sp_display_size_note_excluded">Home screen widgets, the playback notification and Android Auto keep the size their host asks for, so they will not change.</string>
     <string name="sp_style">Style</string>
     <string name="sp_style_note">Every style plays the same music - they differ in layout and how you control it.</string>
     <string name="sp_style_switch_hint">Long-press the artwork in any player to switch styles from the wheel without coming back here.</string>

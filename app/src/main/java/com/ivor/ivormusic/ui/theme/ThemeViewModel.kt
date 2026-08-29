@@ -37,6 +37,7 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
     val musicQualityWifi: StateFlow<String> = themePreferences.musicQualityWifi
     val musicQualityMobile: StateFlow<String> = themePreferences.musicQualityMobile
     val spotlightHome: StateFlow<Boolean> = themePreferences.spotlightHome
+    val uiScale: StateFlow<Float> = themePreferences.uiScale
     val nonExpressiveNavigationBar: StateFlow<Boolean> =
         themePreferences.nonExpressiveNavigationBar
     val subscriptionSource: StateFlow<String> = themePreferences.subscriptionSource
@@ -163,6 +164,10 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setSpotlightHome(enabled: Boolean) {
         themePreferences.setSpotlightHome(enabled)
+    }
+
+    fun setUiScale(scale: Float) {
+        themePreferences.setUiScale(scale)
     }
 
     fun setNonExpressiveNavigationBar(enabled: Boolean) {

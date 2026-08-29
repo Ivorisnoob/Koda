@@ -17,13 +17,17 @@ import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.expressiveLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
+import com.ivor.ivormusic.data.UI_SCALE_DEFAULT
 
 private val DarkColorScheme = darkColorScheme(
     primary = PrimaryBlue,
@@ -107,6 +111,7 @@ fun IvorMusicTheme(
     darkTheme: Boolean = true, // Default to dark theme for this music app
     colorPalette: String = DYNAMIC_PALETTE_ID, // "dynamic" = wallpaper color, else a fixed AppPalette id
     amoledDark: Boolean = false, // Pure black backgrounds when dark theme is active
+    uiScale: Float = UI_SCALE_DEFAULT, // Multiplies every dp and sp in the app
     content: @Composable () -> Unit
 ) {
     val colorScheme = kodaColorScheme(
@@ -144,6 +149,43 @@ fun IvorMusicTheme(
         motionScheme = MotionScheme.expressive(),
         shapes = ExpressiveShapes,
         typography = Typography,
+    ) {
+        ScaledDensity(uiScale, content)
+    }
+}
+
+/**
+ * Rescales the whole interface by lying about the display's density.
+ *
+ * Every `dp` in the app is converted to pixels through [LocalDensity], so
+ * multiplying the density here resizes all 3,400-odd of them at once and keeps
+ * the proportions the design was drawn at - which is the entire reason the
+ * setting is a density override rather than a sweep of the dp literals.
+ *
+ * [Density.fontScale] is deliberately left alone rather than divided back out.
+ * Compose resolves `sp` as `density * fontScale`, so text rides along with the
+ * chrome and the layout stays in proportion; compensating would hold type at
+ * its old size inside boxes that had shrunk around it. The user's system font
+ * setting still applies on top, because it is the untouched multiplier.
+ *
+ * Applied inside `MaterialExpressiveTheme` so every consumer of the theme
+ * sees it, dialogs and bottom sheets included - those compose as
+ * subcompositions and inherit the local. Deliberately not reaching the Glance
+ * widgets or the media notification: those are drawn by another process and
+ * should match its density, not Koda's.
+ */
+@Composable
+private fun ScaledDensity(scale: Float, content: @Composable () -> Unit) {
+    if (scale == UI_SCALE_DEFAULT) {
+        content()
+        return
+    }
+    val current = LocalDensity.current
+    CompositionLocalProvider(
+        LocalDensity provides Density(
+            density = current.density * scale,
+            fontScale = current.fontScale
+        ),
         content = content
     )
 }
