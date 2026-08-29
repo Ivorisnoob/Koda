@@ -173,7 +173,9 @@ Two details it carries that are easy to get wrong alone. The child's own exit ha
 
 #### One heading system, applied everywhere
 
-Screen titles are set at four different type scales depending on which screen you are on. Home and Library use `displayLarge`; Search and the artist page use `headlineLarge`; Settings, video history, Subscriptions, and the palette picker use `headlineMedium`; Stats uses `displaySmall`. All four are doing the same job (naming the screen you are looking at), and they do not agree on how big that job is.
+Screen titles are set at five different type scales depending on which screen you are on. Music Home uses `displayLarge`; Search and the artist page use `headlineLarge`; Settings, video history, Subscriptions, and the palette picker use `headlineMedium`; music and video Library use `headlineSmall`; Stats uses `displaySmall`. All five are doing the same job (naming the screen you are looking at), and they do not agree on how big that job is.
+
+Music Library moved off `displayLarge` to match video mode's header, which uses the same string: switching modes changed the size of the word "Library", which was the drift at its most visible. That fixed one pair and left music Home as the only `displayLarge` screen title, which is a smaller inconsistency than the one it replaced but still an inconsistency - the ladder below is what actually settles it.
 
 The cause is structural rather than careless. There are only nine `TopAppBar` usages in the entire app, so nearly every screen hand-rolls its own header, and a hand-rolled header picks its own scale. Each one looked right in isolation and the set drifted. The same is true one level down, where section headers inside screens split across `titleLarge`, `titleMedium`, and `titleSmall` without a rule for which means what.
 
