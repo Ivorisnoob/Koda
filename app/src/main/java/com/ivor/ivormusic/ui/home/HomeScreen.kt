@@ -271,8 +271,8 @@ fun HomeScreen(
         }
     }
 
-    // Fetch the Shorts shelf when the user opts in mid-session (the load
-    // itself also gates on the preference)
+    // Fetch the Home-only Shorts shelf when the user opts in mid-session (the
+    // load itself also gates on the preference).
     LaunchedEffect(videoMode, shortsEnabled) {
         if (videoMode && shortsEnabled) {
             viewModel.loadShortsFeed()

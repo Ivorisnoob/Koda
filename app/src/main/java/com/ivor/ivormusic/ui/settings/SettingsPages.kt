@@ -863,15 +863,15 @@ internal fun ContentSettingsPage(
                             icon = Icons.Rounded.Bolt,
                             title = stringResource(R.string.sp_shorts),
                             subtitle = if (shortsEnabled) {
-                                "Shorts shelves appear in your feeds"
+                                stringResource(R.string.sp_shorts_enabled_sub)
                             } else {
-                                "Shorts are hidden everywhere"
+                                stringResource(R.string.sp_shorts_disabled_sub)
                             },
                             enabled = shortsEnabled,
                             onToggle = onShortsEnabledToggle
                         )
 
-                        // Shorts button visibility - only relevant while Shorts are on
+                        // Action-rail choices only apply to the dedicated swipe player.
                         AnimatedVisibility(
                             visible = shortsEnabled,
                             enter = fadeIn(tween(200)) + slideInVertically(

@@ -625,9 +625,9 @@ private fun VideoModePage(
 }
 
 /**
- * Deliberate friction before enabling Shorts: endless short-form feeds are
- * engineered to be compulsive, so Koda ships them off and warns before the
- * user opts in.
+ * Deliberate friction before enabling the Shorts swipe player: endless
+ * short-form feeds are engineered to be compulsive, so Koda ships it off and
+ * warns before the user opts in.
  */
 @Composable
 private fun ShortsWarningCard() {
@@ -648,7 +648,7 @@ private fun ShortsWarningCard() {
             )
             Spacer(modifier = Modifier.width(14.dp))
             Text(
-                text = "Endless short-form feeds are designed to keep you scrolling. Shorts stay off unless you choose them, and you can turn them off again any time in Settings.",
+                text = stringResource(R.string.ob_shorts_warning),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onErrorContainer
             )

@@ -45,10 +45,10 @@ This is a shipped consumer app with real users, not a scratch project. The bar i
 **Commits that change an APK carry their public changelog.** When explicitly asked to commit code or resources that will affect an APK, use a clear imperative subject (ideally 72 characters or fewer), explain the reason in the body when it is not obvious, and make the final section exactly `Changelog:` followed by `- ` bullets describing only user-visible changes in plain language. Each bullet must stand alone when several commits are combined. Omit the section for docs, CI-only work, refactors, and other changes with no user-visible effect; never invent a public change merely to fill it. Nothing follows the section, because `build.yml` intentionally publishes everything after that marker. The workflow format is:
 
 ```text
-Add app-wide Shorts controls
+Add Home-focused Shorts controls
 
 Changelog:
-- Added an option to hide Shorts throughout the app.
+- Added an option to hide Shorts from Home and use the standard player elsewhere.
 - Existing installations keep their current behavior by default.
 ```
 
