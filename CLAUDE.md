@@ -36,7 +36,7 @@ This is a shipped consumer app with real users, not a scratch project. The bar i
 
 **Verify claims you are about to act on.** This codebase rewards probing over recall: a live request, a `javap` on the actual jar, a two-line script. Several entries below exist because someone reasoned from plausible assumptions and was wrong. If a fix rests on an assumption you can test in under a minute, test it.
 
-**Never build unless asked.** Any `gradlew`/`gradle` invocation - compile, assemble, install, test - waits for an explicit request. Finish the code changes and stop.
+**Build freely, never touch an emulator.** `gradlew`/`gradle` invocations - compile, assemble, test - are yours to run without asking, and compiling before handing work back is expected rather than optional. **Emulators and devices are not**: no `emulator`, no AVD boot, no `adb install`, no `installDebug`, no screenshots off a running app. Anything needing a screen goes back to the user to run. That splits the two costs apart - a compile is seconds and catches the errors worth catching, while booting a device is slow and is the user's call.
 
 **Delegate wide-but-shallow work to a cheap subagent.** Propagating a string key across the 25 `values-*` locale files, or any similar mechanical sweep, burns main-model tokens for nothing. Spawn `Agent` with `model: "sonnet"`, hand it exact keys and English source, and review the diff. Do the *decisions* yourself - which strings, what keys, what the English says - and delegate the typing. Not for a one-off string in a file you are already editing.
 
@@ -146,10 +146,10 @@ Decisions already made, with the reasoning that made them. Re-deriving these cos
 .\gradlew assembleRelease        # signing from local.properties, or KEYSTORE_PASSWORD / KEY_ALIAS / KEY_PASSWORD
 ```
 
-Remember rule: **none of these run unless the user asks.**
+Remember rule: **the ones that only build are yours to run; the ones that reach a device are not.** `compileDebugKotlin`, `testDebugUnitTest` and `assembleRelease` need no permission. `installDebug` does, because it wants a running device.
 
 - **Tests.** A small JVM suite under `app/src/test/` covers pure logic only - parsers, formatters, the rate-limit hold. `testOptions { unitTests { isReturnDefaultValues = true } }` is set because `KLog` writes through `android.util.Log`, an unmocked stub that throws on every call in JVM tests; without it nothing in `data/` is testable. No instrumented tests worth running. Anything touching UI or the network is verified by compile plus a run on the emulator.
-- **Emulator.** `emulator -avd Pixel_8_API36` (tools on PATH), then `adb wait-for-device`. Current SDK at `E:\Android\Sdk`. The debug build installs as `com.ivor.ivormusic.debug` and lives beside the release app rather than replacing its data, session and widgets - so resolve the launcher activity rather than assuming the package name.
+- **Emulator - the user's to run, not yours.** `emulator -avd Pixel_8_API36` (tools on PATH), then `adb wait-for-device`. Current SDK at `E:\Android\Sdk`. The debug build installs as `com.ivor.ivormusic.debug` and lives beside the release app rather than replacing its data, session and widgets - so resolve the launcher activity rather than assuming the package name. Kept here because it is what the user needs to type; anything only verifiable on a screen is handed back with what to look at.
 - **Versions.** `versionCode` / `versionName` in `app/build.gradle.kts`. Dependency versions live only in `gradle/libs.versions.toml`.
 - **minSdk is 30, and desugaring is load-bearing.** [scar] `isCoreLibraryDesugaringEnabled` plus `coreLibraryDesugaring(libs.desugar.jdk.libs.nio)` - it must be the `_nio` flavour. NewPipe calls Java 10/11 library APIs the platform only shipped in API 33 (`URLEncoder.encode(String, Charset)`, `URLDecoder.decode(String, Charset)`, `Collectors.toUnmodifiableList()`) and D8's built-in backports miss those three, so removing desugaring makes every search throw `NoSuchMethodError` on API 30-32 while compiling cleanly. Anything gated above 30 (dynamic color at 31, Live Updates at 36) needs a `Build.VERSION.SDK_INT` guard and a working fallback.
 
