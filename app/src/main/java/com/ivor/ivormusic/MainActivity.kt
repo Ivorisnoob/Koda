@@ -170,6 +170,7 @@ class MainActivity : ComponentActivity() {
             val musicQualityWifi by themeViewModel.musicQualityWifi.collectAsState()
             val musicQualityMobile by themeViewModel.musicQualityMobile.collectAsState()
             val spotlightHome by themeViewModel.spotlightHome.collectAsState()
+            val uiScale by themeViewModel.uiScale.collectAsState()
             val nonExpressiveNavigationBar by
                 themeViewModel.nonExpressiveNavigationBar.collectAsState()
             val subscriptionSource by themeViewModel.subscriptionSource.collectAsState()
@@ -204,7 +205,12 @@ class MainActivity : ComponentActivity() {
                 }
             }
             
-            IvorMusicTheme(darkTheme = isDarkTheme, colorPalette = colorPalette, amoledDark = amoledTheme) {
+            IvorMusicTheme(
+                darkTheme = isDarkTheme,
+                colorPalette = colorPalette,
+                amoledDark = amoledTheme,
+                uiScale = uiScale
+            ) {
                 Box(modifier = Modifier.fillMaxSize()) {
                     MusicApp(
                         pendingSharedLink = pendingSharedLink,
@@ -232,6 +238,8 @@ class MainActivity : ComponentActivity() {
                         homeModeToggleEnabled = homeModeToggleEnabled,
                         onHomeModeToggleEnabledChange = { themeViewModel.setHomeModeToggleEnabled(it) },
                         spotlightHome = spotlightHome,
+                        uiScale = uiScale,
+                        onUiScaleChange = { themeViewModel.setUiScale(it) },
                         onSpotlightHomeToggle = { themeViewModel.setSpotlightHome(it) },
                         nonExpressiveNavigationBar = nonExpressiveNavigationBar,
                         onNonExpressiveNavigationBarToggle = {
@@ -451,6 +459,8 @@ fun MusicApp(
     homeModeToggleEnabled: Boolean,
     onHomeModeToggleEnabledChange: (Boolean) -> Unit,
     spotlightHome: Boolean,
+    uiScale: Float,
+    onUiScaleChange: (Float) -> Unit,
     onSpotlightHomeToggle: (Boolean) -> Unit,
     nonExpressiveNavigationBar: Boolean,
     onNonExpressiveNavigationBarToggle: (Boolean) -> Unit,
@@ -893,7 +903,9 @@ fun MusicApp(
                     onPrivateDownloadsEnabledToggle = onPrivateDownloadsEnabledToggle,
                     onNavigateToUpdate = { navController.navigate("update") },
                     localOnlyMode = localOnlyMode,
-                    onLocalOnlyModeToggle = onLocalOnlyModeToggle
+                    onLocalOnlyModeToggle = onLocalOnlyModeToggle,
+                    uiScale = uiScale,
+                    onUiScaleChange = onUiScaleChange
                 )
             }
             composable(

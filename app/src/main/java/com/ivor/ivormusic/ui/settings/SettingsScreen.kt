@@ -177,6 +177,8 @@ import com.ivor.ivormusic.data.DownloadNotificationHelper
 import com.ivor.ivormusic.data.FolderInfo
 import com.ivor.ivormusic.data.BackupRepository
 import com.ivor.ivormusic.data.SessionManager
+import com.ivor.ivormusic.data.UI_SCALE_DEFAULT
+import kotlin.math.roundToInt
 import com.ivor.ivormusic.data.ThemePreferences
 import com.ivor.ivormusic.data.YouTubeAuthUtils
 
@@ -240,7 +242,8 @@ internal enum class SettingsPage {
     STORAGE,
     NOTIFICATIONS,
     LOCAL_LIBRARY,
-    ADVANCED
+    ADVANCED,
+    DISPLAY_SIZE
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
@@ -338,6 +341,8 @@ fun SettingsScreen(
     onNavigateToUpdate: () -> Unit = {},
     localOnlyMode: Boolean = false,
     onLocalOnlyModeToggle: (Boolean) -> Unit = {},
+    uiScale: Float = UI_SCALE_DEFAULT,
+    onUiScaleChange: (Float) -> Unit = {},
     contentPadding: PaddingValues = PaddingValues()
 ) {
     val context = LocalContext.current
@@ -586,6 +591,7 @@ fun SettingsScreen(
                 currentThemeMode = currentThemeMode,
                 colorPalette = colorPalette,
                 spotlightHome = spotlightHome,
+                uiScale = uiScale,
                 playerStyle = playerStyle,
                 musicQualityWifi = musicQualityWifi,
                 videoQualityWifi = videoQualityWifi,
@@ -703,7 +709,18 @@ fun SettingsScreen(
                     nonExpressiveNavigationBar = nonExpressiveNavigationBar,
                     onNonExpressiveNavigationBarToggle =
                         onNonExpressiveNavigationBarToggle,
+                    uiScale = uiScale,
+                    onNavigateToDisplaySize = { page = SettingsPage.DISPLAY_SIZE },
                     onBack = { page = SettingsPage.HUB }
+                )
+
+                // Back lands on Appearance rather than the hub: this page is
+                // opened from there, and the scale is usually adjusted more
+                // than once before it is right.
+                SettingsPage.DISPLAY_SIZE -> DisplaySizeSettingsPage(
+                    uiScale = uiScale,
+                    onUiScaleChange = onUiScaleChange,
+                    onBack = { page = SettingsPage.APPEARANCE }
                 )
 
                 SettingsPage.PLAYER -> PlayerSettingsPage(
@@ -949,6 +966,7 @@ private fun SettingsHub(
     currentThemeMode: ThemeMode,
     colorPalette: String,
     spotlightHome: Boolean,
+    uiScale: Float,
     playerStyle: PlayerStyle,
     musicQualityWifi: String,
     videoQualityWifi: String,
@@ -1129,10 +1147,16 @@ private fun SettingsHub(
                         SettingsHubRow(
                             icon = Icons.Rounded.Palette,
                             title = stringResource(R.string.settings_appearance),
-                            value = if (spotlightHome) {
-                                "$themeLabel, $paletteName, Spotlight"
-                            } else {
-                                "$themeLabel, $paletteName"
+                            value = buildString {
+                                append(themeLabel)
+                                append(", ")
+                                append(paletteName)
+                                if (spotlightHome) append(", Spotlight")
+                                // Only when it is doing something: a "100%"
+                                // on every install is noise, not a live value.
+                                if (uiScale != UI_SCALE_DEFAULT) {
+                                    append(", ${(uiScale * 100).roundToInt()}%")
+                                }
                             },
                             onClick = { onOpenPage(SettingsPage.APPEARANCE) }
                         )
