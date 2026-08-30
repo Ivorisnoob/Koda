@@ -196,6 +196,16 @@ decision that is genuinely the user's - where files come from - to the user.
 
 ### One playback overlay, not two
 
+> **Revised when phase 3 was built.** This section proposed reusing `VideoPlayerOverlay`. Carrying it
+> out means extracting an interface across `VideoPlayerViewModel` and the 2,044-line
+> `VideoPlayerContent` that reads dozens of its members - a mechanical refactor with real regression
+> risk on the app's most-used surface. What shipped instead avoids the cost this section was worried
+> about by a different route: `TvPlayerScreen` is **strictly full-screen with no mini bar**, so it
+> has no expand animation, no nav-bar arithmetic and nothing to step aside for - one boolean above
+> the NavHost rather than a third overlay in the sense meant below. The trade is stated where it is
+> paid: you cannot browse while a film plays. The reasoning below stands as the argument the
+> deviation had to answer.
+
 [judgement] TV playback reuses `VideoPlayerOverlay` rather than adding a third overlay above the
 `NavHost`. Two view models (`VideoPlayerViewModel`, `TvPlayerViewModel`) behind a discriminator, one
 overlay, one mini bar, one `VideoPipController`, one "step aside for the channel screen" path.
@@ -692,10 +702,14 @@ mode is genuinely useful with zero configuration**: browse, search, watchlist, a
 Koda's own player. `XL`.
 
 **Phase 3 - playback.** `TvPlayerViewModel` behind the shared overlay, the source sheet, the release
-parser, per-stream headers, resume and progress, next-episode autoplay. `XL`.
+parser, per-stream headers, resume and progress, next-episode autoplay. `XL`. **Landed, with one
+deviation:** the player is its own full-screen composable rather than a discriminator inside
+`VideoPlayerOverlay` - see the revision note under section 3. Audio-track selection was pulled
+forward from phase 4, because it is half of what "dub" means and it is sixty lines once the player
+exists.
 
-**Phase 4 - the choices.** Audio track selection, merged subtitles, subtitle styling, auto-select
-profiles, `bingeGroup` stickiness, downloads. `L`.
+**Phase 4 - the choices.** Merged subtitles, subtitle styling, auto-select profiles of their own,
+downloads. `L`. (Audio-track selection and `bingeGroup` stickiness landed in phase 3.)
 
 **Phase 5 - the manager.** Addon browse / configure / reorder UI, per-resource toggles, adult filter.
 `M`.

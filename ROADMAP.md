@@ -86,26 +86,31 @@ watchlisting work on first launch, and leaves the one decision that is genuinely
 files come from - to the user. It also means the honest first-run state is "browse everything, play
 nothing", which is designed for rather than hidden.
 
-**Phases 1 and 2 have landed.** Phase 1 was `AppMode`, the three-way toggle and per-mode tab sets.
+**Phases 1 to 3 have landed.** Phase 1 was `AppMode`, the three-way toggle and per-mode tab sets.
 Phase 2 is the mode being useful with zero configuration: `data/tv/` and the addon client, Home with
 a hero and catalog shelves, cross-addon search with deduplication, the title page with seasons and
 episode ranges, a device-local watchlist and Continue Watching, a minimal addon manager, and
-trailers that play in Koda's own player. **Playback is not built** - the primary action opens a
-source sheet that says so rather than a button that silently does nothing.
+trailers that play in Koda's own player. **Phase 3 is playback**: the release-name parser, the source
+sheet with a ranked auto-pick and filters derived from the result set, per-stream request headers,
+`TvPlayerViewModel` and a full-screen player, resume and progress, audio-track selection, and
+next-episode autoplay that stays on the same release through `bingeGroup`.
 
-What remains, roughly in order: the source sheet filled with parsed and ranked releases plus an
-auto-pick, a `TvPlayerViewModel` behind the shared video overlay, audio-track and merged-subtitle
-selection, per-network auto-select profiles, `bingeGroup` stickiness for binge watching, downloads,
-and the addon manager growing directory browsing and WebView configuration (which is how a debrid
-key reaches an addon without Koda ever handling it).
+**Sub and dub are two unrelated mechanisms and both are now handled.** A dub that is *a different
+file* is a filter in the source sheet, read out of the release name because the protocol has no
+structured field for it; a dub that is *an audio track inside one file* is the player's Audio row,
+switching with no refetch. A dual-audio release satisfies both, which is why they are two flags
+rather than one tri-state. **HDR conflicted with a decision already made here** - HDR is
+intentionally unsupported, while the TV catalogue is full of HDR10 and Dolby Vision - and the answer
+was to parse and label those releases and de-prioritise them in auto-select rather than either
+filtering them out or allowing them freely.
 
-Two things worth knowing before the next phase. **Sub and dub are two unrelated mechanisms** - a
-different file (a separate episode list, which is how CloudStream models it) and a different audio
-track inside one file - and Koda has no audio-track selection at all today, because a YouTube stream
-has one audio language. And **HDR conflicts with a decision already made here**: HDR is intentionally
-unsupported, while the TV catalogue is full of HDR10 and Dolby Vision releases, so those are parsed,
-labelled and de-prioritised behind an off-by-default toggle rather than either filtered out or
-allowed freely.
+What remains, roughly in order: merged subtitles (the `/subtitles` fan-out exists in
+`TvStreamRepository` but nothing consumes it yet) and subtitle styling; per-network auto-select
+profiles of their own, since today's cap is borrowed from the video quality setting; a TV settings
+page and the addon manager growing directory browsing and WebView configuration (which is how a
+debrid key reaches an addon without Koda ever handling it); PiP and a mini bar for the TV player, if
+browsing while a series plays turns out to matter; downloads; and the 25-locale string sweep, which
+covers phases 2 and 3 together.
 
 #### Per-channel notification settings
 

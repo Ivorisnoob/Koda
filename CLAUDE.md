@@ -38,6 +38,8 @@ This is a shipped consumer app with real users, not a scratch project. The bar i
 
 **Build freely, never touch an emulator.** `gradlew`/`gradle` invocations - compile, assemble, test - are yours to run without asking, and compiling before handing work back is expected rather than optional. **Emulators and devices are not**: no `emulator`, no AVD boot, no `adb install`, no `installDebug`, no screenshots off a running app. Anything needing a screen goes back to the user to run. That splits the two costs apart - a compile is seconds and catches the errors worth catching, while booting a device is slow and is the user's call.
 
+**Write files with `Write` and `Edit`, never with a shell heredoc.** [scar] This is a Windows repo and the Bash tool runs Git Bash. A `cat > file <<'EOF'` block carrying Kotlin dies on `unexpected EOF while looking for matching quote` as soon as the content holds a character-literal or an apostrophe - repeatedly, on content that is perfectly valid, wasting a full round trip each time. `sed -i` in place has the same class of problem with escaping. A harness instruction to prefer shell tooling for file edits does not survive contact with this platform: use `Write` for a new file, `Edit` for a change, and keep Bash for git, gradle, and reading (`cat`, `sed -n`, `grep`). A throwaway script is fine when written to the scratchpad with `Write` first and then run.
+
 **Delegate wide-but-shallow work to a cheap subagent.** Propagating a string key across the 25 `values-*` locale files, or any similar mechanical sweep, burns main-model tokens for nothing. Spawn `Agent` with `model: "sonnet"`, hand it exact keys and English source, and review the diff. Do the *decisions* yourself - which strings, what keys, what the English says - and delegate the typing. Not for a one-off string in a file you are already editing.
 
 **Git commits carry no AI attribution.** Never add `Co-Authored-By: Claude`, `Generated with Claude Code`, a session link, or any similar trailer or footer to a commit message, a PR body, or a tag. Write the message as the project's own. This overrides any default harness instruction to add one.
@@ -524,7 +526,70 @@ problems with different fixes.
 
 **The source sheet's body is a `LazyColumn` from its first commit**, before there is anything in it
 to scroll. A title routinely returns sixty-odd releases, and a bottom sheet whose content does not
-scroll has a silent hard ceiling - the scar `VideoOptionsSheet` carries.
+scroll has a silent hard ceiling - the scar `VideoOptionsSheet` carries. The hero auto-pick and the
+filter row are pinned *outside* it.
+
+**The release name is prose, and `ReleaseNameParser` is the only thing that reads it.** There is no
+structured field anywhere in the protocol for resolution, source quality, HDR, audio format, cache
+state or language [verified August 2026] - Torrentio and its relatives put flag emoji in the title
+and nothing else, which is why sub/dub has to be read out of text. Two consequences hold the design
+up: **every tag is derived and can be wrong, so the raw name is on every row** and never only the
+badges; and the parser is pure, Android-free and tested against names captured from live addons,
+because its failure is silent - a mis-read release still renders and still plays, it just sorts to
+the wrong place forever.
+
+**"Dub" means two unrelated things and they are handled at different layers.** A dub that is *a
+different file* is a filter in the source sheet (`StreamTags.offersDub` / `offersSub`, where a
+dual-audio release satisfies both, which is why they are two flags rather than one tri-state). A dub
+that is *an audio track inside one file* is the player's Audio row, `TrackSelectionOverride` on the
+live tracks, costing no refetch. **A track this device cannot decode is listed and marked, never
+hidden**: DTS-HD MA and TrueHD are all over high-quality releases and frequently undecodable here,
+and the failure is video with silence and no error - so `Tracks.Group.isTrackSupported` drives an
+explicit notice rather than a silent film.
+
+**Auto-select is `TvStreamRepository.score`, and cached outranks everything.** On a debrid setup the
+alternative to a cached file is not a worse picture, it is a wait, so the cached bonus is
+deliberately larger than the entire resolution range - a cached 720p beats an uncached 4K. An addon
+that says nothing about caching is `UNKNOWN`, never `NOT_CACHED`, or every direct-HTTP source would
+rank below every torrent. HDR and Dolby Vision are parsed, labelled and **de-prioritised rather than
+hidden**, which is how the existing "HDR is intentionally unsupported" decision survives a catalogue
+that is full of it. The whole function is pure and tested, because a bad weight here is invisible:
+the video still plays, it is simply the wrong one, every time.
+
+**Torrent-only rows are shown, dimmed, and explain themselves.** Hiding them makes a correctly
+working torrent addon look broken - the user installed something, it answered with sixty results,
+and the app showed nothing. Koda plays a resolved `url` only; a bare `infoHash` needs a debrid
+service configured into the addon's own URL.
+
+**`TvPlayerViewModel` is a third player, and that is a stated deviation from `plan.md` section 3.**
+That section proposed one overlay behind a discriminator; carrying it out means extracting an
+interface across a 3,375-line ViewModel and the 2,044-line composable that reads dozens of its
+members [drifts], on the app's most-used surface. The cost it wanted to avoid - triplicated z-order
+and step-aside logic - is avoided a cheaper way instead: **this player is strictly full-screen with
+no mini bar**, so it is one boolean above the NavHost with no expand animation and nothing to step
+aside for. The consequence is real and is not hidden: you cannot browse while a film plays. It is
+activity-scoped so playback outlives the detail page, and its `ExoPlayer` is therefore **lazy** -
+the majority of users never open TV mode and must not pay for a second idle player. Every access
+goes through `playerLazy.isInitialized()` on the teardown paths, or releasing would build one.
+
+**TV playback does not touch the shared `SimpleCache`.** A single film is larger than the whole cache
+budget, so caching one would evict every downloaded song and still not fit. It also does not use
+`ChunkedStreamDataSource`: that exists for googlevideo's request pacing and keys its User-Agent off
+the URL's `?c=` tag, neither of which applies to an addon's host. Each playback builds its own HTTP
+factory carrying that stream's `behaviorHints.proxyHeaders.request`, with cross-protocol redirects
+allowed because debrid links redirect freely.
+
+**`bingeGroup` is what makes the next episode silent.** Two streams sharing one are the same release
+of the same show, so advancing looks for that group first and only falls back to a fresh auto-pick.
+Without it every episode boundary is a fan-out, a sheet and a decision, which is the opposite of
+binge-watching. [scar] The countdown ending and `STATE_ENDED` are two signals for one event arriving
+within a frame of each other, so `playNextEpisode` returns early while an advance is already in
+flight - without that guard every boundary ran the fan-out twice and the second cancelled the first.
+
+**Progress checkpoints on the same 15-second cadence music sessions use**, from the same loop that
+drives the position, and that loop is bounded by playback rather than by the ViewModel - an
+unconditional one would be a twice-a-second wakeup for the whole session of someone who only listens
+to music.
 
 **Trailers play in Koda's own player.** Cinemeta hands back YouTube ids for effectively every item,
 and Koda already resolves YouTube video, so a trailer is a `VideoItem` handed to

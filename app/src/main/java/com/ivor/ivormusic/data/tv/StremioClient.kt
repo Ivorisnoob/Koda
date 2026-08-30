@@ -176,6 +176,32 @@ class StremioClient(context: Context) {
         "meta"
     )?.meta
 
+    /**
+     * Playable candidates for one item or episode.
+     *
+     * Returns null when the addon could not be reached at all and an empty list
+     * when it answered with nothing, because the caller says different things
+     * for those two: one addon being down is not the same as no release
+     * existing.
+     */
+    suspend fun streams(
+        transportUrl: String,
+        type: String,
+        id: String,
+    ): List<TvStream>? = decode<TvStreamResponse>(
+        getBody(StremioUrls.resource(transportUrl, "stream", type, id), false),
+        "stream"
+    )?.streams
+
+    suspend fun subtitles(
+        transportUrl: String,
+        type: String,
+        id: String,
+    ): List<TvSubtitleTrack>? = decode<TvSubtitleResponse>(
+        getBody(StremioUrls.resource(transportUrl, "subtitles", type, id), false),
+        "subtitles"
+    )?.subtitles
+
     /** The addon directory an addon can publish about other addons. */
     suspend fun addonCatalog(
         transportUrl: String,

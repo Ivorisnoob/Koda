@@ -544,6 +544,12 @@ fun MusicApp(
     val videoPlayerViewModel: com.ivor.ivormusic.ui.video.VideoPlayerViewModel = viewModel()
     val shortsPlayerViewModel: com.ivor.ivormusic.ui.shorts.ShortsPlayerViewModel = viewModel()
 
+    // Activity-scoped rather than route-scoped, because TV playback has to
+    // outlive the detail page that started it - the viewer can leave the
+    // episode list and the film keeps playing. It holds an ExoPlayer, so it is
+    // built here once and released with the activity.
+    val tvPlayerViewModel: com.ivor.ivormusic.ui.tv.TvPlayerViewModel = viewModel()
+
     // Changing content modes is a clean hand-off: no player from the previous
     // mode should remain visible or continue playing after the switch. Route
     // every mode toggle through the same close actions used by the players'
@@ -554,6 +560,7 @@ fun MusicApp(
             playerViewModel.clearPlayer()
             videoPlayerViewModel.closePlayer()
             shortsPlayerViewModel.close()
+            tvPlayerViewModel.close()
             onAppModeChange(nextMode)
         }
     }
@@ -1065,6 +1072,7 @@ fun MusicApp(
                 com.ivor.ivormusic.ui.tv.TvDetailRoute(
                     type = typeArg,
                     id = idArg,
+                    playerViewModel = tvPlayerViewModel,
                     onBack = { navController.popBackStack() },
                     onPlayTrailer = playTvTrailer,
                     onOpenAddons = openTvAddons,
@@ -1211,6 +1219,25 @@ fun MusicApp(
             hiddenActions = shortsHiddenActions,
             onOpenChannel = openChannel
         )
+
+        // TV playback, last of the three players and above the other two.
+        //
+        // Unlike them it has no minimised form, so it is one boolean rather
+        // than an overlay with an expand animation and a step-aside path - see
+        // the note on TvPlayerViewModel. It draws over the Shorts overlay
+        // because only one of the three can hold audio focus anyway, and
+        // starting TV playback stands the other two down.
+        val tvPlayback by tvPlayerViewModel.playback.collectAsState()
+        androidx.compose.runtime.LaunchedEffect(tvPlayback?.streamId) {
+            if (tvPlayback != null) {
+                playerViewModel.pause()
+                videoPlayerViewModel.closePlayer()
+                shortsPlayerViewModel.close()
+            }
+        }
+        if (tvPlayback != null) {
+            com.ivor.ivormusic.ui.tv.TvPlayerScreen(viewModel = tvPlayerViewModel)
+        }
 
         // One confirmation host covers the player controls and every song
         // options sheet. Download requests carry the chosen song through the

@@ -318,3 +318,119 @@ data class TvCatalogResponse(
 
 @Serializable
 data class TvMetaResponse(val meta: TvItem? = null)
+
+/**
+ * Accepts a JSON number *or* a numeric string and yields a Long.
+ *
+ * `behaviorHints.videoSize` is documented as a number and Torrentio sends one,
+ * but several community addons send `"2310000000"`. Without this a single such
+ * addon fails its whole response over a field used only for a size badge.
+ */
+object LenientLongSerializer : KSerializer<Long> {
+    override val descriptor: SerialDescriptor =
+        PrimitiveSerialDescriptor("LenientLong", PrimitiveKind.LONG)
+
+    override fun deserialize(decoder: Decoder): Long {
+        val input = decoder as? JsonDecoder ?: return decoder.decodeLong()
+        return when (val element = input.decodeJsonElement()) {
+            is JsonPrimitive -> element.contentOrNull?.trim()?.toDoubleOrNull()?.toLong() ?: 0L
+            else -> 0L
+        }
+    }
+
+    override fun serialize(encoder: Encoder, value: Long) = encoder.encodeLong(value)
+}
+
+/**
+ * One subtitle track, as returned inside a stream or by a `/subtitles` call.
+ *
+ * `lang` is not reliably ISO 639: OpenSubtitles v3 sends three-letter codes,
+ * other addons send names ("English") or locales ("pt-BR"). Normalising is the
+ * consumer's job, not the model's.
+ */
+@Serializable
+data class TvSubtitleTrack(
+    val id: String = "",
+    val url: String = "",
+    val lang: String = "",
+    val name: String? = null,
+    /** Set locally to say which addon produced it, so the picker can group. */
+    val addonName: String? = null,
+) {
+    val isUsable: Boolean get() = url.isNotBlank()
+}
+
+/**
+ * Headers an addon requires on the media request itself.
+ *
+ * A debrid link is usually a plain signed URL, but some addons front a host
+ * that checks Referer or a token header. Attaching these is the difference
+ * between a stream that plays and a 403 with no explanation.
+ */
+@Serializable
+data class StreamProxyHeaders(
+    val request: Map<String, String> = emptyMap(),
+    val response: Map<String, String> = emptyMap(),
+)
+
+@Serializable
+data class StreamBehaviorHints(
+    /**
+     * The protocol's binge marker: two streams sharing one means "the same
+     * release of the same show", so the next episode can be played from the
+     * same source without asking again.
+     */
+    val bingeGroup: String? = null,
+    val notWebReady: Boolean = false,
+    val proxyHeaders: StreamProxyHeaders? = null,
+    val filename: String? = null,
+    @Serializable(with = LenientLongSerializer::class)
+    val videoSize: Long? = null,
+    val countryWhitelist: List<String> = emptyList(),
+)
+
+/**
+ * One playable candidate, exactly as an addon returned it.
+ *
+ * The four delivery fields are mutually exclusive by the spec and only [url] is
+ * playable in Koda today. [infoHash] entries are kept rather than dropped:
+ * hiding them makes a working torrent addon look like a broken one, and the
+ * sheet says in one sentence what they need instead.
+ */
+@Serializable
+data class TvStream(
+    val url: String? = null,
+    val ytId: String? = null,
+    val infoHash: String? = null,
+    val fileIdx: Int? = null,
+    val externalUrl: String? = null,
+    /** Conventionally the quality line: "Torrentio\n1080p". */
+    val name: String? = null,
+    /** Conventionally the release name plus stats. Addons also use `description`. */
+    val title: String? = null,
+    val description: String? = null,
+    val subtitles: List<TvSubtitleTrack> = emptyList(),
+    val behaviorHints: StreamBehaviorHints? = null,
+) {
+    /** Everything an addon wrote about this release, for the parser to read. */
+    val text: String
+        get() = listOfNotNull(name, title, description, behaviorHints?.filename)
+            .filter { it.isNotBlank() }
+            .joinToString("\n")
+
+    /** The release name, preferring the field addons actually put it in. */
+    val releaseName: String
+        get() = listOfNotNull(title, description, behaviorHints?.filename, name)
+            .firstOrNull { it.isNotBlank() }.orEmpty()
+
+    val isPlayable: Boolean get() = !url.isNullOrBlank()
+}
+
+@Serializable
+data class TvStreamResponse(
+    val streams: List<TvStream> = emptyList(),
+    val cacheMaxAge: Long? = null,
+)
+
+@Serializable
+data class TvSubtitleResponse(val subtitles: List<TvSubtitleTrack> = emptyList())
