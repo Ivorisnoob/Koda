@@ -14,7 +14,6 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.cast.CastPlayer
-import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.HttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlaybackException
@@ -25,6 +24,7 @@ import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import com.ivor.ivormusic.data.CaptionBackground
 import com.ivor.ivormusic.data.CaptionTextColor
 import com.ivor.ivormusic.data.CaptionTrack
+import com.ivor.ivormusic.data.CacheManager
 import com.ivor.ivormusic.data.CommentItem
 import com.ivor.ivormusic.data.DownloadedVideo
 import com.ivor.ivormusic.data.LikeStatus
@@ -38,10 +38,12 @@ import com.ivor.ivormusic.data.TimedComment
 import com.ivor.ivormusic.data.VideoEngagement
 import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.data.VideoQuality
+import com.ivor.ivormusic.data.VideoPlaybackCacheStream
 import com.ivor.ivormusic.data.VideoSeekPreview
 import com.ivor.ivormusic.data.VttCue
 import com.ivor.ivormusic.data.YouTubeRepository
 import com.ivor.ivormusic.data.ThemePreferences
+import com.ivor.ivormusic.data.videoPlaybackCacheKey
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -632,17 +634,24 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         localVideoPlaylistsRepository.playlists
 
     /**
-     * Stream data source factory: ChunkedStreamDataSource fetches googlevideo
-     * media in bounded ranged chunks (open-ended requests are server-paced to
-     * the media bitrate) and picks the per-request User-Agent matching the
-     * URL's issuing client (`?c=` param; a UA mismatch means a 403).
+     * Stream data source factory: CacheDataSource keeps bytes already fetched
+     * for VOD seeking/replay, while ChunkedStreamDataSource supplies cache
+     * misses as bounded googlevideo ranges (open-ended requests are paced to
+     * the media bitrate) with the User-Agent matching the URL's issuing client.
      *
      * Declared before [init] on purpose: the ExoPlayer built there installs it
      * as the player-wide MediaSource factory, so a lazy declared further down
      * the class would still be an uninitialised delegate at that point.
      */
-    private val streamDataSourceFactory =
-        DefaultDataSource.Factory(context, com.ivor.ivormusic.data.ChunkedStreamDataSource.Factory())
+    private val streamDataSourceFactory = run {
+        // MusicService used to be the cache's only initializer. Video owns a
+        // separate player and can run without that service, so it must make the
+        // shared process cache available before constructing its data source.
+        CacheManager.initialize(context, themePreferences.maxCacheSizeMb.value)
+        CacheManager.createPlaybackDataSourceFactory(context) {
+            themePreferences.cacheEnabled.value
+        }
+    }
 
     init {
         observeProfileSwitches()
@@ -652,9 +661,9 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         }
 
         // Near-instant first frame without retaining several minutes of video
-        // samples in the app heap. Unlike music, video has no disk cache and
-        // its decoded surfaces/codecs already consume substantial memory, so
-        // a bounded one-minute read-ahead and 64MB allocator ceiling leave
+        // samples in the app heap. The disk cache preserves fetched compressed
+        // bytes for later seeks; decoded surfaces/codecs still consume memory,
+        // so a bounded one-minute read-ahead and 64MB allocator ceiling leave
         // headroom for artwork, Compose and the decoder on lower-memory phones.
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
@@ -2016,7 +2025,13 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                                 loadQuality(_currentQuality.value!!)
                             } else {
                                 val source = ProgressiveMediaSource.Factory(streamDataSourceFactory)
-                                    .createMediaSource(nowPlayingMediaItem(streamUrl))
+                                    .createMediaSource(
+                                        cachedProgressiveMediaItem(
+                                            uri = streamUrl,
+                                            stream = VideoPlaybackCacheStream.MUXED,
+                                            fallbackVariant = "auto-muxed",
+                                        )
+                                    )
                                 _exoPlayer?.setMediaSource(source)
                                 _exoPlayer?.prepare()
                             }
@@ -2220,13 +2235,32 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                 // The merged source reports the *video* item's MediaItem, which
                 // is why the metadata rides on that one.
                 val videoSource = ProgressiveMediaSource.Factory(dataSourceFactory)
-                    .createMediaSource(nowPlayingMediaItem(quality.url))
+                    .createMediaSource(
+                        cachedProgressiveMediaItem(
+                            uri = quality.url,
+                            stream = VideoPlaybackCacheStream.VIDEO,
+                            fallbackVariant = quality.cacheVariant,
+                        )
+                    )
                 val audioSource = ProgressiveMediaSource.Factory(dataSourceFactory)
-                    .createMediaSource(MediaItem.fromUri(audioUrl))
+                    .createMediaSource(
+                        cachedProgressiveMediaItem(
+                            uri = audioUrl,
+                            stream = VideoPlaybackCacheStream.AUDIO,
+                            fallbackVariant = "original-audio",
+                            includeNowPlayingMetadata = false,
+                        )
+                    )
                 MergingMediaSource(true, videoSource, audioSource)
             } else {
                 ProgressiveMediaSource.Factory(dataSourceFactory)
-                    .createMediaSource(nowPlayingMediaItem(quality.url))
+                    .createMediaSource(
+                        cachedProgressiveMediaItem(
+                            uri = quality.url,
+                            stream = VideoPlaybackCacheStream.MUXED,
+                            fallbackVariant = quality.cacheVariant,
+                        )
+                    )
             }
 
             _exoPlayer?.setMediaSource(primarySource)
@@ -2312,6 +2346,41 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         }
         return builder.build()
     }
+
+    /**
+     * Progressive item whose cache identity survives googlevideo URL refreshes.
+     *
+     * Split video/audio sources must never share one key: their byte offsets
+     * describe different files. The rendition's itag normally distinguishes
+     * qualities; [fallbackVariant] covers the rare provider URL without one.
+     */
+    private fun cachedProgressiveMediaItem(
+        uri: String,
+        stream: VideoPlaybackCacheStream,
+        fallbackVariant: String,
+        includeNowPlayingMetadata: Boolean = true,
+    ): MediaItem {
+        val item = if (includeNowPlayingMetadata) {
+            nowPlayingMediaItem(uri)
+        } else {
+            MediaItem.fromUri(uri)
+        }
+        val videoId = _currentVideo.value?.videoId ?: return item
+        return item.buildUpon()
+            .setCustomCacheKey(
+                videoPlaybackCacheKey(
+                    videoId = videoId,
+                    stream = stream,
+                    sourceUrl = uri,
+                    fallbackVariant = fallbackVariant,
+                )
+            )
+            .build()
+    }
+
+    private val VideoQuality.cacheVariant: String
+        get() = listOfNotNull(resolution, format, codec)
+            .joinToString("-")
 
     /**
      * Push freshly-learned title/channel into the already-playing media item.
@@ -2490,11 +2559,10 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      *
      * The playback pipeline is deliberately untouched here. Captions used to be
      * a text track merged into the media source, so switching them rebuilt that
-     * source: playback re-prepared, the buffer was discarded, and - because
-     * video has no disk cache - everything already downloaded was fetched
-     * again. Cues are fetched and parsed on their own instead, and the overlay
-     * draws them over the video surface, which makes the CC toggle instant and
-     * free no matter how many times it is pressed.
+     * source: playback re-prepared and its active sample buffer was discarded.
+     * Cues are fetched and parsed on their own instead, and the overlay draws
+     * them over the video surface, which makes the CC toggle instant and free
+     * no matter how many times it is pressed, including when disk caching is off.
      */
     fun setCaptionTrack(track: CaptionTrack?) {
         if (_selectedCaption.value == track) return
