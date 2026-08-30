@@ -592,6 +592,41 @@ fun MusicApp(
         navController.navigate("channel/${android.net.Uri.encode(channelId)}")
     }
 
+    // TV mode's detail page is a NavHost destination, so both players step
+    // aside on the way in exactly as they do for a channel: the video player
+    // drops to its mini bar and keeps playing, Shorts closes outright having no
+    // minimised form.
+    val openTvDetail: (String, String) -> Unit = openTvDetail@{ type, id ->
+        if (id.isBlank()) return@openTvDetail
+        videoPlayerViewModel.setExpanded(false)
+        shortsPlayerViewModel.close()
+        navController.navigate(
+            "tv/${android.net.Uri.encode(type.ifBlank { "movie" })}/${android.net.Uri.encode(id)}"
+        )
+    }
+
+    val openTvAddons: () -> Unit = { navController.navigate("tv_addons") }
+
+    /**
+     * A trailer is an ordinary YouTube video, so it plays in Koda's own player
+     * rather than an external app or a second embedded one. This is the whole
+     * reason TV mode belongs in this app rather than beside it: the video
+     * pipeline that resolves it already exists.
+     */
+    val playTvTrailer: (String, String) -> Unit = playTrailer@{ youtubeId, title ->
+        if (youtubeId.isBlank()) return@playTrailer
+        videoPlayerViewModel.playVideo(
+            com.ivor.ivormusic.data.VideoItem(
+                videoId = youtubeId,
+                title = title,
+                channelName = "",
+                thumbnailUrl = null,
+                duration = 0L,
+                viewCount = "",
+            )
+        )
+    }
+
     // One launch contract for every Shorts surface. The preference controls
     // the Home shelf and the destination, not whether a Short exists elsewhere:
     // channel pages keep their Shorts, but open them in the ordinary watch page
@@ -793,6 +828,9 @@ fun MusicApp(
                     appMode = appMode,
                     onAppModeChange = switchPlaybackMode,
                     showModeToggle = homeModeToggleEnabled,
+                    onOpenTvDetail = openTvDetail,
+                    onOpenTvAddons = openTvAddons,
+                    onPlayTrailer = playTvTrailer,
                     playerStyle = playerStyle,
                     onPlayerStyleChange = onPlayerStyleChange,
                     manualScan = manualScanEnabled,
@@ -1005,6 +1043,43 @@ fun MusicApp(
                         homeViewModel.requestArtistPage(name)
                         navController.popBackStack("home", inclusive = false)
                     }
+                )
+            }
+            composable(
+                route = "tv/{type}/{id}",
+                arguments = listOf(
+                    androidx.navigation.navArgument("type") {
+                        type = androidx.navigation.NavType.StringType
+                    },
+                    androidx.navigation.navArgument("id") {
+                        type = androidx.navigation.NavType.StringType
+                    },
+                ),
+                enterTransition = { slideInHorizontally(initialOffsetX = { it }) + fadeIn() },
+                exitTransition = { slideOutHorizontally(targetOffsetX = { -it / 3 }) + fadeOut() },
+                popEnterTransition = { slideInHorizontally(initialOffsetX = { -it / 3 }) + fadeIn() },
+                popExitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut() }
+            ) { entry ->
+                val typeArg = entry.arguments?.getString("type").orEmpty()
+                val idArg = entry.arguments?.getString("id").orEmpty()
+                com.ivor.ivormusic.ui.tv.TvDetailRoute(
+                    type = typeArg,
+                    id = idArg,
+                    onBack = { navController.popBackStack() },
+                    onPlayTrailer = playTvTrailer,
+                    onOpenAddons = openTvAddons,
+                )
+            }
+            composable(
+                route = "tv_addons",
+                enterTransition = { slideInHorizontally(initialOffsetX = { it }) + fadeIn() },
+                exitTransition = { slideOutHorizontally(targetOffsetX = { -it / 3 }) + fadeOut() },
+                popEnterTransition = { slideInHorizontally(initialOffsetX = { -it / 3 }) + fadeIn() },
+                popExitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut() }
+            ) {
+                com.ivor.ivormusic.ui.tv.TvAddonsScreen(
+                    viewModel = androidx.lifecycle.viewmodel.compose.viewModel(),
+                    onBack = { navController.popBackStack() },
                 )
             }
             composable(

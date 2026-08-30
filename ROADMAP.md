@@ -86,8 +86,18 @@ watchlisting work on first launch, and leaves the one decision that is genuinely
 files come from - to the user. It also means the honest first-run state is "browse everything, play
 nothing", which is designed for rather than hidden.
 
-**Phase 1 has landed**: `AppMode`, the three-way toggle, per-mode tab sets and persistence, and
-placeholder content. Nothing about addons or playback exists yet.
+**Phases 1 and 2 have landed.** Phase 1 was `AppMode`, the three-way toggle and per-mode tab sets.
+Phase 2 is the mode being useful with zero configuration: `data/tv/` and the addon client, Home with
+a hero and catalog shelves, cross-addon search with deduplication, the title page with seasons and
+episode ranges, a device-local watchlist and Continue Watching, a minimal addon manager, and
+trailers that play in Koda's own player. **Playback is not built** - the primary action opens a
+source sheet that says so rather than a button that silently does nothing.
+
+What remains, roughly in order: the source sheet filled with parsed and ranked releases plus an
+auto-pick, a `TvPlayerViewModel` behind the shared video overlay, audio-track and merged-subtitle
+selection, per-network auto-select profiles, `bingeGroup` stickiness for binge watching, downloads,
+and the addon manager growing directory browsing and WebView configuration (which is how a debrid
+key reaches an addon without Koda ever handling it).
 
 Two things worth knowing before the next phase. **Sub and dub are two unrelated mechanisms** - a
 different file (a separate episode list, which is how CloudStream models it) and a different audio

@@ -120,8 +120,10 @@ import com.ivor.ivormusic.data.AppMode
 import com.ivor.ivormusic.ui.components.AppModeToggle
 import com.ivor.ivormusic.ui.components.AppModeToggleState
 import com.ivor.ivormusic.ui.components.rememberAppModeToggleState
-import com.ivor.ivormusic.ui.tv.TvPlaceholder
-import com.ivor.ivormusic.ui.tv.TvPlaceholderTab
+import com.ivor.ivormusic.ui.tv.TvHomeTab
+import com.ivor.ivormusic.ui.tv.TvLibraryTab
+import com.ivor.ivormusic.ui.tv.TvSearchTab
+import com.ivor.ivormusic.ui.tv.TvViewModel
 import com.ivor.ivormusic.ui.components.rememberPermissionState
 import com.ivor.ivormusic.ui.components.scrollToTop
 import com.ivor.ivormusic.ui.player.PlayerViewModel
@@ -195,6 +197,12 @@ fun HomeScreen(
     appMode: AppMode = AppMode.MUSIC,
     onAppModeChange: (AppMode) -> Unit = {},
     showModeToggle: Boolean = true,
+    /** TV mode: open a title's page. Type and id address the addon protocol. */
+    onOpenTvDetail: (String, String) -> Unit = { _, _ -> },
+    /** TV mode: open the addon manager. */
+    onOpenTvAddons: () -> Unit = {},
+    /** TV mode: a trailer is a YouTube video, so it plays in Koda's own player. */
+    onPlayTrailer: (String, String) -> Unit = { _, _ -> },
     playerStyle: PlayerStyle = PlayerStyle.EDITORIAL,
     onPlayerStyleChange: (PlayerStyle) -> Unit = {},
     manualScan: Boolean = false,
@@ -341,6 +349,17 @@ fun HomeScreen(
     // Lives outside the mode-swapped content so the thumb keeps animating
     // while the music/video home content cross-fades underneath it
     val modeToggleState = rememberAppModeToggleState(appMode)
+
+    // One TV ViewModel across TV's three tabs, hoisted for the same reason the
+    // scroll states are: anything remembered inside the AnimatedContent is
+    // disposed when a tab transition settles. Created lazily so a user who
+    // never opens TV mode never builds its repositories.
+    val tvViewModel: com.ivor.ivormusic.ui.tv.TvViewModel? =
+        if (appMode.isTv) androidx.lifecycle.viewmodel.compose.viewModel() else null
+
+    LaunchedEffect(appMode) {
+        if (appMode.isTv) tvViewModel?.loadHome()
+    }
 
     // Handle back button to return to Home tab if on Search or Library
     BackHandler(enabled = selectedTab != 0) {
@@ -549,9 +568,16 @@ fun HomeScreen(
                             // YouTube, so the notice the other two modes need
                             // would be answering a question TV never asks.
                             if (modeContent.isTv) {
-                                TvPlaceholder(
-                                    tab = TvPlaceholderTab.HOME,
-                                    contentPadding = listContentPadding
+                                TvHomeTab(
+                                    viewModel = tvViewModel,
+                                    contentPadding = listContentPadding,
+                                    appMode = appMode,
+                                    onAppModeChange = onAppModeChange,
+                                    showModeToggle = showModeToggle,
+                                    modeToggleState = modeToggleState,
+                                    listState = tvHomeScrollState,
+                                    onOpenDetail = onOpenTvDetail,
+                                    onOpenAddons = onOpenTvAddons,
                                 )
                             }
                             // Video Mode: Show video content
@@ -693,9 +719,12 @@ fun HomeScreen(
                         }
                     }
                     1 -> if (appMode.isTv) {
-                        TvPlaceholder(
-                            tab = TvPlaceholderTab.SEARCH,
-                            contentPadding = listContentPadding
+                        TvSearchTab(
+                            viewModel = tvViewModel,
+                            contentPadding = listContentPadding,
+                            listState = tvSearchScrollState,
+                            onOpenDetail = onOpenTvDetail,
+                            onBrowseGenre = { selectedTab = 0 },
                         )
                     } else if (appMode.isVideo && localOnly) {
                         com.ivor.ivormusic.ui.components.LocalOnlyNotice(
@@ -736,9 +765,11 @@ fun HomeScreen(
                     )
                     2 -> {
                         if (appMode.isTv) {
-                            TvPlaceholder(
-                                tab = TvPlaceholderTab.LIBRARY,
-                                contentPadding = listContentPadding
+                            TvLibraryTab(
+                                viewModel = tvViewModel,
+                                contentPadding = listContentPadding,
+                                onOpenDetail = onOpenTvDetail,
+                                onBrowse = { selectedTab = 0 },
                             )
                         } else if (appMode.isVideo && localOnly) {
                             com.ivor.ivormusic.ui.components.LocalOnlyNotice(

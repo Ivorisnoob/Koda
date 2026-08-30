@@ -1,0 +1,185 @@
+{
+ "meta": {
+  "awards": "Won 16 Primetime Emmys. 172 wins & 269 nominations total",
+  "cast": [
+   "Bryan Cranston",
+   "Aaron Paul",
+   "Anna Gunn"
+  ],
+  "country": "United States",
+  "description": "A chemistry teacher diagnosed with inoperable lung cancer turns to manufacturing and selling methamphetamine with a former student to secure his family's future.",
+  "director": null,
+  "dvdRelease": null,
+  "genre": [
+   "Crime",
+   "Drama",
+   "Thriller"
+  ],
+  "imdbRating": "9.5",
+  "imdb_id": "tt0903747",
+  "name": "Breaking Bad",
+  "popularity": 4.613136666666667,
+  "poster": "https://images.metahub.space/poster/small/tt0903747/img",
+  "released": "2008-01-20T00:00:00.000Z",
+  "runtime": "49 min",
+  "status": "Ended",
+  "tvdb_id": 81189,
+  "type": "series",
+  "writer": [
+   "Vince Gilligan"
+  ],
+  "year": "2008–2013",
+  "background": "https://images.metahub.space/background/medium/tt0903747/img",
+  "logo": "https://images.metahub.space/logo/medium/tt0903747/img",
+  "popularities": {
+   "PXS_TEST": 0,
+   "PXS": 3,
+   "SCM": 6,
+   "EXMD": 1,
+   "ALLIANCE": 0,
+   "EJD": 0,
+   "moviedb": 138.3941,
+   "trakt": 655,
+   "stremio": 4.613136666666667,
+   "stremio_lib": 0
+  },
+  "moviedb_id": 1396,
+  "slug": "series/breaking-bad-0903747",
+  "trailers": [
+   {
+    "source": "VFLkMDEO-Xc",
+    "type": "Trailer"
+   },
+   {
+    "source": "XZ8daibM3AE",
+    "type": "Trailer"
+   }
+  ],
+  "id": "tt0903747",
+  "genres": [
+   "Crime",
+   "Drama",
+   "Thriller"
+  ],
+  "releaseInfo": "2008–2013",
+  "videos": [
+   {
+    "name": "Pilot",
+    "season": 1,
+    "number": 1,
+    "firstAired": "2008-01-21T05:00:00.000Z",
+    "tvdb_id": 349232,
+    "rating": "7.7",
+    "overview": "When an unassuming high school chemistry teacher discovers he has a rare form of lung cancer, he decides to team up with a former student and create a top of the line crystal meth in a used RV, to provide for his family once he is gone.",
+    "thumbnail": "https://episodes.metahub.space/tt0903747/1/1/w780.jpg",
+    "id": "tt0903747:1:1",
+    "released": "2008-01-21T05:00:00.000Z",
+    "episode": 1,
+    "description": "When an unassuming high school chemistry teacher discovers he has a rare form of lung cancer, he decides to team up with a former student and create a top of the line crystal meth in a used RV, to provide for his family once he is gone."
+   },
+   {
+    "name": "Cat's in the Bag...",
+    "season": 1,
+    "number": 2,
+    "firstAired": "2008-01-28T05:00:00.000Z",
+    "tvdb_id": 349233,
+    "rating": "7.6",
+    "overview": "Walt and Jesse attempt to tie up loose ends. The desperate situation gets more complicated with the flip of a coin. Walt's wife, Skyler, becomes suspicious of Walt's strange behavior.",
+    "thumbnail": "https://episodes.metahub.space/tt0903747/1/2/w780.jpg",
+    "id": "tt0903747:1:2",
+    "released": "2008-01-28T05:00:00.000Z",
+    "episode": 2,
+    "description": "Walt and Jesse attempt to tie up loose ends. The desperate situation gets more complicated with the flip of a coin. Walt's wife, Skyler, becomes suspicious of Walt's strange behavior."
+   },
+   {
+    "name": "...And the Bag's in the River",
+    "season": 1,
+    "number": 3,
+    "firstAired": "2008-02-11T05:00:00.000Z",
+    "tvdb_id": 349235,
+    "rating": "7.6",
+    "overview": "Walter fights with Jesse over his drug use, causing him to leave Walter alone with their captive, Krazy-8. Meanwhile, Hank has a scared straight moment with Walter Jr..",
+    "thumbnail": "https://episodes.metahub.space/tt0903747/1/3/w780.jpg",
+    "id": "tt0903747:1:3",
+    "released": "2008-02-11T05:00:00.000Z",
+    "episode": 3,
+    "description": "Walter fights with Jesse over his drug use, causing him to leave Walter alone with their captive, Krazy-8. Meanwhile, Hank has a scared straight moment with Walter Jr.."
+   },
+   {
+    "name": "Seven Thirty-Seven",
+    "season": 2,
+    "number": 1,
+    "firstAired": "2009-03-09T05:00:00.000Z",
+    "tvdb_id": 438912,
+    "rating": "7.7",
+    "overview": "Walt and Jesse are reminded of Tuco’s volatile nature, and try to figure a way out of their business partnership. Hank attempts to mend fences between the estranged Marie and Skyler.",
+    "thumbnail": "https://episodes.metahub.space/tt0903747/2/1/w780.jpg",
+    "id": "tt0903747:2:1",
+    "released": "2009-03-09T05:00:00.000Z",
+    "episode": 1,
+    "description": "Walt and Jesse are reminded of Tuco’s volatile nature, and try to figure a way out of their business partnership. Hank attempts to mend fences between the estranged Marie and Skyler."
+   }
+  ],
+  "trailerStreams": [
+   {
+    "title": "Breaking Bad",
+    "ytId": "VFLkMDEO-Xc"
+   },
+   {
+    "title": "Breaking Bad",
+    "ytId": "XZ8daibM3AE"
+   }
+  ],
+  "links": [
+   {
+    "name": "9.5",
+    "category": "imdb",
+    "url": "https://imdb.com/title/tt0903747"
+   },
+   {
+    "name": "Breaking Bad",
+    "category": "share",
+    "url": "https://www.strem.io/s/series/breaking-bad-0903747"
+   },
+   {
+    "name": "Crime",
+    "category": "Genres",
+    "url": "stremio:///discover/https%3A%2F%2Fv3-cinemeta.strem.io%2Fmanifest.json/series/top?genre=Crime"
+   },
+   {
+    "name": "Drama",
+    "category": "Genres",
+    "url": "stremio:///discover/https%3A%2F%2Fv3-cinemeta.strem.io%2Fmanifest.json/series/top?genre=Drama"
+   },
+   {
+    "name": "Thriller",
+    "category": "Genres",
+    "url": "stremio:///discover/https%3A%2F%2Fv3-cinemeta.strem.io%2Fmanifest.json/series/top?genre=Thriller"
+   },
+   {
+    "name": "Bryan Cranston",
+    "category": "Cast",
+    "url": "stremio:///search?search=Bryan%20Cranston"
+   },
+   {
+    "name": "Aaron Paul",
+    "category": "Cast",
+    "url": "stremio:///search?search=Aaron%20Paul"
+   },
+   {
+    "name": "Anna Gunn",
+    "category": "Cast",
+    "url": "stremio:///search?search=Anna%20Gunn"
+   },
+   {
+    "name": "Vince Gilligan",
+    "category": "Writers",
+    "url": "stremio:///search?search=Vince%20Gilligan"
+   }
+  ],
+  "behaviorHints": {
+   "defaultVideoId": null,
+   "hasScheduledVideos": true
+  }
+ }
+}

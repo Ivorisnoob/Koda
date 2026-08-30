@@ -1,0 +1,135 @@
+{
+ "meta": {
+  "awards": "Won 4 Oscars. 160 wins & 220 nominations total",
+  "cast": [
+   "Leonardo DiCaprio",
+   "Joseph Gordon-Levitt",
+   "Elliot Page"
+  ],
+  "country": "United Kingdom, United States",
+  "description": "A thief who steals corporate secrets through the use of dream-sharing technology is given the inverse task of planting an idea into the mind of a CEO, but his tragic past may doom the project and his team to disaster.",
+  "director": [
+   "Christopher Nolan"
+  ],
+  "dvdRelease": "2013-06-20T00:00:00.000Z",
+  "genre": [
+   "Action",
+   "Adventure",
+   "Sci-Fi"
+  ],
+  "imdbRating": "8.8",
+  "imdb_id": "tt1375666",
+  "moviedb_id": 27205,
+  "name": "Inception",
+  "popularity": 1.7823333333333333,
+  "poster": "https://images.metahub.space/poster/small/tt1375666/img",
+  "released": "2010-07-16T00:00:00.000Z",
+  "runtime": "148 min",
+  "trailers": [
+   {
+    "source": "cdx31ak4KbQ",
+    "type": "Trailer"
+   },
+   {
+    "source": "JE9z-gy4De4",
+    "type": "Trailer"
+   },
+   {
+    "source": "Jvurpf91omw",
+    "type": "Trailer"
+   }
+  ],
+  "type": "movie",
+  "writer": [
+   "Christopher Nolan"
+  ],
+  "year": "2010",
+  "background": "https://images.metahub.space/background/medium/tt1375666/img",
+  "logo": "https://images.metahub.space/logo/medium/tt1375666/img",
+  "popularities": {
+   "moviedb": 53.47,
+   "stremio": 1.7823333333333333,
+   "trakt": 115,
+   "stremio_lib": 0
+  },
+  "slug": "movie/inception-1375666",
+  "id": "tt1375666",
+  "genres": [
+   "Action",
+   "Adventure",
+   "Sci-Fi"
+  ],
+  "releaseInfo": "2010",
+  "videos": [],
+  "trailerStreams": [
+   {
+    "title": "Inception",
+    "ytId": "cdx31ak4KbQ"
+   },
+   {
+    "title": "Inception",
+    "ytId": "JE9z-gy4De4"
+   },
+   {
+    "title": "Inception",
+    "ytId": "Jvurpf91omw"
+   }
+  ],
+  "links": [
+   {
+    "name": "8.8",
+    "category": "imdb",
+    "url": "https://imdb.com/title/tt1375666"
+   },
+   {
+    "name": "Inception",
+    "category": "share",
+    "url": "https://www.strem.io/s/movie/inception-1375666"
+   },
+   {
+    "name": "Action",
+    "category": "Genres",
+    "url": "stremio:///discover/https%3A%2F%2Fv3-cinemeta.strem.io%2Fmanifest.json/movie/top?genre=Action"
+   },
+   {
+    "name": "Adventure",
+    "category": "Genres",
+    "url": "stremio:///discover/https%3A%2F%2Fv3-cinemeta.strem.io%2Fmanifest.json/movie/top?genre=Adventure"
+   },
+   {
+    "name": "Sci-Fi",
+    "category": "Genres",
+    "url": "stremio:///discover/https%3A%2F%2Fv3-cinemeta.strem.io%2Fmanifest.json/movie/top?genre=Sci-Fi"
+   },
+   {
+    "name": "Leonardo DiCaprio",
+    "category": "Cast",
+    "url": "stremio:///search?search=Leonardo%20DiCaprio"
+   },
+   {
+    "name": "Joseph Gordon-Levitt",
+    "category": "Cast",
+    "url": "stremio:///search?search=Joseph%20Gordon-Levitt"
+   },
+   {
+    "name": "Elliot Page",
+    "category": "Cast",
+    "url": "stremio:///search?search=Elliot%20Page"
+   },
+   {
+    "name": "Christopher Nolan",
+    "category": "Writers",
+    "url": "stremio:///search?search=Christopher%20Nolan"
+   },
+   {
+    "name": "Christopher Nolan",
+    "category": "Directors",
+    "url": "stremio:///search?search=Christopher%20Nolan"
+   }
+  ],
+  "behaviorHints": {
+   "defaultVideoId": "tt1375666",
+   "hasScheduledVideos": false
+  }
+ }
+}

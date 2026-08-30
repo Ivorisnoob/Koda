@@ -1,0 +1,362 @@
+{
+ "metas": [
+  {
+   "imdb_id": "tt37287335",
+   "name": "Obsession",
+   "type": "movie",
+   "awards": "7 wins & 15 nominations total",
+   "cast": [
+    "Michael Johnston",
+    "Inde Navarrette",
+    "Cooper Tomlinson"
+   ],
+   "country": "United States",
+   "description": "Baron \"Bear\" Bailey breaks a novelty charm to force his co-worker Nikki Freeman to love him, but the supernatural compulsion warps her mind into violent obsession, trapping him in a nightmare he cannot wish away.",
+   "director": [
+    "Curry Barker"
+   ],
+   "genre": [
+    "Horror",
+    "Romance",
+    "Thriller"
+   ],
+   "imdbRating": "7.9",
+   "released": "2026-05-15T00:00:00.000Z",
+   "slug": "movie/obsession-37287335",
+   "writer": [
+    "Curry Barker"
+   ],
+   "year": "2026",
+   "moviedb_id": 1339713,
+   "popularities": {
+    "moviedb": 264.4783,
+    "stremio": 8.815943333333333,
+    "stremio_lib": 0,
+    "trakt": 689
+   },
+   "poster": "https://images.metahub.space/poster/small/tt37287335/img",
+   "runtime": "109 min",
+   "trailers": [
+    {
+     "source": "gMC8kkwbIQQ",
+     "type": "Trailer"
+    }
+   ],
+   "background": "https://images.metahub.space/background/medium/tt37287335/img",
+   "logo": "https://images.metahub.space/logo/medium/tt37287335/img",
+   "popularity": 8.815943333333333,
+   "id": "tt37287335",
+   "genres": [
+    "Horror",
+    "Romance",
+    "Thriller"
+   ],
+   "releaseInfo": "2026",
+   "trailerStreams": [
+    {
+     "title": "Obsession",
+     "ytId": "gMC8kkwbIQQ"
+    }
+   ],
+   "links": [
+    {
+     "name": "7.9",
+     "category": "imdb",
+     "url": "https://imdb.com/title/tt37287335"
+    },
+    {
+     "name": "Obsession",
+     "category": "share",
+     "url": "https://www.strem.io/s/movie/obsession-37287335"
+    },
+    {
+     "name": "Horror",
+     "category": "Genres",
+     "url": "stremio:///discover/https%3A%2F%2Fv3-cinemeta.strem.io%2Fmanifest.json/movie/top?genre=Horror"
+    },
+    {
+     "name": "Romance",
+     "category": "Genres",
+     "url": "stremio:///discover/https%3A%2F%2Fv3-cinemeta.strem.io%2Fmanifest.json/movie/top?genre=Romance"
+    },
+    {
+     "name": "Thriller",
+     "category": "Genres",
+     "url": "stremio:///discover/https%3A%2F%2Fv3-cinemeta.strem.io%2Fmanifest.json/movie/top?genre=Thriller"
+    },
+    {
+     "name": "Michael Johnston",
+     "category": "Cast",
+     "url": "stremio:///search?search=Michael%20Johnston"
+    },
+    {
+     "name": "Inde Navarrette",
+     "category": "Cast",
+     "url": "stremio:///search?search=Inde%20Navarrette"
+    },
+    {
+     "name": "Cooper Tomlinson",
+     "category": "Cast",
+     "url": "stremio:///search?search=Cooper%20Tomlinson"
+    },
+    {
+     "name": "Curry Barker",
+     "category": "Writers",
+     "url": "stremio:///search?search=Curry%20Barker"
+    },
+    {
+     "name": "Curry Barker",
+     "category": "Directors",
+     "url": "stremio:///search?search=Curry%20Barker"
+    }
+   ],
+   "behaviorHints": {
+    "defaultVideoId": "tt37287335",
+    "hasScheduledVideos": false
+   }
+  },
+  {
+   "imdb_id": "tt14173636",
+   "name": "The Invite",
+   "type": "movie",
+   "cast": [
+    "Seth Rogen",
+    "Olivia Wilde",
+    "Penélope Cruz"
+   ],
+   "country": "United States",
+   "description": "Joe and Angela's marriage is on thin ice. When they invite their enigmatic upstairs neighbors for a dinner party, the night spirals into unexpected places.",
+   "director": [
+    "Olivia Wilde"
+   ],
+   "genre": [
+    "Comedy",
+    "Drama",
+    "Romance"
+   ],
+   "imdbRating": "7.8",
+   "released": "2026-07-10T00:00:00.000Z",
+   "slug": "movie/the-invite-14173636",
+   "writer": [
+    "Cesc Gay",
+    "Will McCormack",
+    "Rashida Jones"
+   ],
+   "year": "2026",
+   "moviedb_id": 950028,
+   "popularities": {
+    "moviedb": 56.1328,
+    "stremio": 1.8710933333333335,
+    "stremio_lib": 0,
+    "trakt": 779
+   },
+   "poster": "https://images.metahub.space/poster/small/tt14173636/img",
+   "runtime": "107 min",
+   "trailers": [
+    {
+     "source": "nelkiuezJxg",
+     "type": "Trailer"
+    },
+    {
+     "source": "OJ19I9q_hOQ",
+     "type": "Trailer"
+    }
+   ],
+   "background": "https://images.metahub.space/background/medium/tt14173636/img",
+   "logo": "https://images.metahub.space/logo/medium/tt14173636/img",
+   "awards": "2 wins & 6 nominations total",
+   "popularity": 1.8710933333333335,
+   "id": "tt14173636",
+   "genres": [
+    "Comedy",
+    "Drama",
+    "Romance"
+   ],
+   "releaseInfo": "2026",
+   "trailerStreams": [
+    {
+     "title": "The Invite",
+     "ytId": "nelkiuezJxg"
+    },
+    {
+     "title": "The Invite",
+     "ytId": "OJ19I9q_hOQ"
+    }
+   ],
+   "links": [
+    {
+     "name": "7.8",
+     "category": "imdb",
+     "url": "https://imdb.com/title/tt14173636"
+    },
+    {
+     "name": "The Invite",
+     "category": "share",
+     "url": "https://www.strem.io/s/movie/the-invite-14173636"
+    },
+    {
+     "name": "Comedy",
+     "category": "Genres",
+     "url": "stremio:///discover/https%3A%2F%2Fv3-cinemeta.strem.io%2Fmanifest.json/movie/top?genre=Comedy"
+    },
+    {
+     "name": "Drama",
+     "category": "Genres",
+     "url": "stremio:///discover/https%3A%2F%2Fv3-cinemeta.strem.io%2Fmanifest.json/movie/top?genre=Drama"
+    },
+    {
+     "name": "Romance",
+     "category": "Genres",
+     "url": "stremio:///discover/https%3A%2F%2Fv3-cinemeta.strem.io%2Fmanifest.json/movie/top?genre=Romance"
+    },
+    {
+     "name": "Seth Rogen",
+     "category": "Cast",
+     "url": "stremio:///search?search=Seth%20Rogen"
+    },
+    {
+     "name": "Olivia Wilde",
+     "category": "Cast",
+     "url": "stremio:///search?search=Olivia%20Wilde"
+    },
+    {
+     "name": "Penélope Cruz",
+     "category": "Cast",
+     "url": "stremio:///search?search=Pen%C3%A9lope%20Cruz"
+    },
+    {
+     "name": "Cesc Gay",
+     "category": "Writers",
+     "url": "stremio:///search?search=Cesc%20Gay"
+    },
+    {
+     "name": "Will McCormack",
+     "category": "Writers",
+     "url": "stremio:///search?search=Will%20McCormack"
+    },
+    {
+     "name": "Rashida Jones",
+     "category": "Writers",
+     "url": "stremio:///search?search=Rashida%20Jones"
+    },
+    {
+     "name": "Olivia Wilde",
+     "category": "Directors",
+     "url": "stremio:///search?search=Olivia%20Wilde"
+    }
+   ],
+   "behaviorHints": {
+    "defaultVideoId": "tt14173636",
+    "hasScheduledVideos": false
+   }
+  },
+  {
+   "imdb_id": "tt36590417",
+   "name": "Don't Say Good Luck",
+   "popularities": {
+    "trakt": 135,
+    "moviedb": 47.0389,
+    "stremio": 1.5679633333333334,
+    "stremio_lib": 0
+   },
+   "type": "movie",
+   "cast": [
+    "Jack Champion",
+    "Melanie Lynskey",
+    "Stephanie Beatriz"
+   ],
+   "country": "United States",
+   "description": "Sophie Birenbaum gets the lead in her high school show, but at the same time, her mom's cancer comes back.",
+   "director": [
+    "Julia Hart"
+   ],
+   "genre": [
+    "Comedy"
+   ],
+   "imdbRating": "",
+   "released": null,
+   "slug": "movie/dont-say-good-luck-36590417",
+   "writer": [
+    "Laura Hankin",
+    "Julia Hart",
+    "Jordan Horowitz"
+   ],
+   "year": "2026",
+   "moviedb_id": 1504358,
+   "poster": "https://images.metahub.space/poster/small/tt36590417/img",
+   "runtime": "96 min",
+   "trailers": [
+    {
+     "source": "bvWqHSFkO5s",
+     "type": "Trailer"
+    }
+   ],
+   "background": "https://images.metahub.space/background/medium/tt36590417/img",
+   "logo": "https://images.metahub.space/logo/medium/tt36590417/img",
+   "popularity": 1.5679633333333334,
+   "id": "tt36590417",
+   "genres": [
+    "Comedy"
+   ],
+   "releaseInfo": "2026",
+   "trailerStreams": [
+    {
+     "title": "Don't Say Good Luck",
+     "ytId": "bvWqHSFkO5s"
+    }
+   ],
+   "links": [
+    {
+     "name": "Don't Say Good Luck",
+     "category": "share",
+     "url": "https://www.strem.io/s/movie/dont-say-good-luck-36590417"
+    },
+    {
+     "name": "Comedy",
+     "category": "Genres",
+     "url": "stremio:///discover/https%3A%2F%2Fv3-cinemeta.strem.io%2Fmanifest.json/movie/top?genre=Comedy"
+    },
+    {
+     "name": "Jack Champion",
+     "category": "Cast",
+     "url": "stremio:///search?search=Jack%20Champion"
+    },
+    {
+     "name": "Melanie Lynskey",
+     "category": "Cast",
+     "url": "stremio:///search?search=Melanie%20Lynskey"
+    },
+    {
+     "name": "Stephanie Beatriz",
+     "category": "Cast",
+     "url": "stremio:///search?search=Stephanie%20Beatriz"
+    },
+    {
+     "name": "Laura Hankin",
+     "category": "Writers",
+     "url": "stremio:///search?search=Laura%20Hankin"
+    },
+    {
+     "name": "Julia Hart",
+     "category": "Writers",
+     "url": "stremio:///search?search=Julia%20Hart"
+    },
+    {
+     "name": "Jordan Horowitz",
+     "category": "Writers",
+     "url": "stremio:///search?search=Jordan%20Horowitz"
+    },
+    {
+     "name": "Julia Hart",
+     "category": "Directors",
+     "url": "stremio:///search?search=Julia%20Hart"
+    }
+   ],
+   "behaviorHints": {
+    "defaultVideoId": "tt36590417",
+    "hasScheduledVideos": false
+   }
+  }
+ ],
+ "cacheMaxAge": 14400
+}

@@ -71,6 +71,7 @@ Where to look, by question:
 | Music playback, queue, notification, crossfade | `service/MusicService.kt` (§8) |
 | Video playback, PiP, captions, chapters | `ui/video/VideoPlayerViewModel.kt` (§8) |
 | Where a screen lives / how tabs work | `MainActivity.kt`, `ui/home/HomeScreen.kt` (§9) |
+| Movies, series, anime (TV mode) | `data/tv/`, `ui/tv/` (§19) |
 | Adding a setting | §12 - five files plus the search index |
 | Sign-in, accounts, switching | `data/SessionManager.kt`, `ProfileManager.kt`, `AccountSwitcher.kt` (§13) |
 | Subscriptions, blocklist, channels | §10, §11 |
@@ -91,7 +92,7 @@ Things that must stay true. Breaking one is a bug even when it compiles.
 3. **Every googlevideo media fetch is a bounded ranged request.** Open-ended requests are paced to roughly the media bitrate. Never substitute a plain `DefaultHttpDataSource` or an unbounded OkHttp GET for a stream URL.
 4. **Never route a live stream through the progressive path.** Its `adaptiveFormats` URLs are segment endpoints; the HLS manifest is the only usable source.
 5. **A `MediaController` is touched only on its application thread.** Glance never gives you that thread; go through `withController`.
-6. **Process-wide repository state is a closed list of seven**, each justified by "a write taken on one surface must be visible on another holding its own instance": `LocalSubscriptionsRepository`, `NotInterestedRepository`, `SavedPlaylistsRepository`, `LocalVideoPlaylistsRepository`, `VideoHistoryRepository`, the `visitorData` cache, and `YouTubeRateLimit`. An eighth needs that same justification, not "it would be convenient".
+6. **Process-wide repository state is a closed list of nine**, each justified by "a write taken on one surface must be visible on another holding its own instance": `LocalSubscriptionsRepository`, `NotInterestedRepository`, `SavedPlaylistsRepository`, `LocalVideoPlaylistsRepository`, `VideoHistoryRepository`, the `visitorData` cache, `YouTubeRateLimit`, `TvWatchlistRepository` and `TvProgressRepository`. A tenth needs that same justification, not "it would be convenient". **`AddonRepository` deliberately is not on it** - it is changed on one screen and re-read on resume (`TvViewModel.refreshAddons`), which is the rule invariant 7 already states for settings.
 7. **A ViewModel that needs a setting at decision time does a fresh pref read.** `ThemePreferences` StateFlow updates do not cross instances.
 8. **`SettingsScreen`'s signature is the contract with `MainActivity`.** Add parameters; never reorder or restructure.
 9. **Persisted enum constants are frozen.** `PlayerStyle` and `AppMode` are stored by `name`; renaming a constant resets every existing user's choice. `AppModeTest` asserts the three names, so a rename fails a test rather than only a user.
@@ -148,6 +149,7 @@ Decisions already made, with the reasoning that made them. Re-deriving these cos
 
 Remember rule: **the ones that only build are yours to run; the ones that reach a device are not.** `compileDebugKotlin`, `testDebugUnitTest` and `assembleRelease` need no permission. `installDebug` does, because it wants a running device.
 
+- **`org.json` does not parse in unit tests, so parsers built on it cannot be tested.** [verified August 2026] `isReturnDefaultValues = true` makes Android's stubbed `org.json` return null for every field rather than throwing, so a JSON parser written against it silently reads as empty under test. That is fine for the InnerTube layer, whose parsers are validated by probing live endpoints, and it is why `data/tv/` uses kotlinx-serialization instead (§19). Anything new that must be *tested* against a captured response needs either kotlinx-serialization or a real `org.json` on the test classpath.
 - **Tests.** A small JVM suite under `app/src/test/` covers pure logic only - parsers, formatters, the rate-limit hold. `testOptions { unitTests { isReturnDefaultValues = true } }` is set because `KLog` writes through `android.util.Log`, an unmocked stub that throws on every call in JVM tests; without it nothing in `data/` is testable. No instrumented tests worth running. Anything touching UI or the network is verified by compile plus a run on the emulator.
 - **Emulator - the user's to run, not yours.** `emulator -avd Pixel_8_API36` (tools on PATH), then `adb wait-for-device`. Current SDK at `E:\Android\Sdk`. The debug build installs as `com.ivor.ivormusic.debug` and lives beside the release app rather than replacing its data, session and widgets - so resolve the launcher activity rather than assuming the package name. Kept here because it is what the user needs to type; anything only verifiable on a screen is handed back with what to look at.
 - **Versions.** `versionCode` / `versionName` in `app/build.gradle.kts`. Dependency versions live only in `gradle/libs.versions.toml`.
@@ -461,6 +463,73 @@ Three workflows, and **every one hangs off an `authorize` job that runs first**:
 **Free text reaches the script as data, never through `${{ }}` interpolation into the shell.** Release bodies and names arrive as environment variables, while APK changelog subjects and bullets are read from Git after checkout. `github.event.release.assets` arrives as `toJSON(...)` and can legitimately be empty, since a release is often published before its APKs finish uploading.
 
 **`OWNER_URL` is the author-link convention and both files share it.** `author_html()` renders the repository owner's login as a link to `https://ivorisnoob.lol` and anyone else as plain text, matched case-insensitively against `github.repository_owner`. Keep the two copies in agreement and never link a non-owner to that site.
+
+---
+
+## 19. TV mode (`data/tv/`, `ui/tv/`)
+
+A third mode beside Music and Video, for movies, series and anime. The full design and the research
+behind it are in `plan.md`; this is what the code does and the decisions that are easy to undo by
+accident.
+
+**Koda is a client, not a scraper.** Content comes from user-installed Stremio addons over a
+documented HTTP contract: `/manifest.json`, then `/{resource}/{type}/{id}.json` for `catalog`,
+`meta`, `stream` and `subtitles`, with `/{resource}/{type}/{id}/{k=v&k=v}.json` when there are
+extras. The four resources are independent markets joined client-side by namespaced ids (`tt` for
+IMDb, `kitsu:`/`mal:`/`anilist:`/`anidb:` for anime), so a catalog addon knows nothing about where
+files come from. **Koda ships no scrapers and no default source**; the scraper layer is the part
+that rots, and it rots on someone else's schedule.
+
+**Three addons ship preinstalled and none is a source of files**: Cinemeta, Anime Kitsu,
+OpenSubtitles v3. All keyless [verified August 2026, probed with no credentials]. Browsing,
+searching and watchlisting work on first launch; playing needs a source the user chooses. The
+first-run state is therefore "browse everything, play nothing", and it is designed for rather than
+hidden - one dismissible card under the hero says so.
+
+**kotlinx-serialization here, org.json everywhere else, and that is deliberate.** InnerTube is
+undocumented and its renderers get renamed wholesale, so lenient recursive traversal plus dated
+probes is the only thing that survives; the addon protocol is a documented contract with a published
+SDK, where `ignoreUnknownKeys` is the right posture. The decisive reason is testability: Android's
+`org.json` is stubbed in unit tests (§6), so a parser built on it reads as empty under test, and
+these shapes come from servers nobody here controls. `TvModelsTest` parses responses captured live
+from the real addons rather than hand-written JSON.
+
+**Cinemeta's catalogs return full meta objects, not previews** [verified August 2026: logo,
+background, poster, description, runtime and cast present on 50 of 50]. That is why Home is one
+request per shelf with no per-item lookup, and why a detail page paints instantly from
+`TvItemCache` - the item the user tapped - while its episode list loads. A catalog request
+307-redirects to `cinemeta-catalogs.strem.io`, so redirects must be followed.
+
+**A catalog with a required extra we cannot supply is not browsable.** Anime Kitsu's
+`kitsu-anime-list` marks `search` as `isRequired`, which makes it search-only; asking it for a plain
+feed returns nothing useful. `AddonCatalog.isBrowsable` is the gate, and genres are the one required
+extra that can be satisfied. **Genres, catalogs and types all come from the manifest** - the same
+principle the channel page runs on, and for the same reason: a hardcoded list draws empty shelves
+for addons that lack them and hides real ones from addons that have more.
+
+**Search dedupes across addons, and the anime-native id wins.** The same show arrives as
+`tt22248376` from Cinemeta and `kitsu:46474` from Anime Kitsu; keeping the IMDb row would give the
+user a page that finds no streams, because anime stream addons index on the kitsu id. Dedupe is by
+id, then by normalised title plus year - so remakes survive as separate entries.
+
+**Transport URLs are credentials.** A configured addon carries its debrid API key in its own path,
+so `AddonRepository` writes to `EncryptedSharedPreferences`, and the URL must never be logged or
+included in a backup or a diagnostics report. The addon *name* is safe; the URL is not.
+
+**A failing addon never blocks the ones that answered.** Every fan-out is bounded at
+`TvRepository.CONCURRENCY` (6, the same ceiling and reasoning as the subscriptions feed) and
+collects failures alongside results. A shelf that fails keeps whatever it was already showing and
+names the addon that did not respond, because "no results" and "that addon timed out" are different
+problems with different fixes.
+
+**The source sheet's body is a `LazyColumn` from its first commit**, before there is anything in it
+to scroll. A title routinely returns sixty-odd releases, and a bottom sheet whose content does not
+scroll has a silent hard ceiling - the scar `VideoOptionsSheet` carries.
+
+**Trailers play in Koda's own player.** Cinemeta hands back YouTube ids for effectively every item,
+and Koda already resolves YouTube video, so a trailer is a `VideoItem` handed to
+`VideoPlayerViewModel`. Stremio needs a separate addon for this; here it is the pipeline that
+already exists, and it is the clearest reason this mode belongs in this app rather than beside it.
 
 ---
 
