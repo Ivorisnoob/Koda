@@ -51,6 +51,7 @@ import com.ivor.ivormusic.data.tv.TvAutoPick
 import com.ivor.ivormusic.data.tv.TvSource
 import com.ivor.ivormusic.data.tv.TvSourceFacets
 import com.ivor.ivormusic.data.tv.TvSourceFilter
+import com.ivor.ivormusic.data.tv.TvSourceKind
 
 /**
  * Where a title's playable sources are chosen.
@@ -79,7 +80,9 @@ fun TvSourceSheet(
     autoPick: TvAutoPick?,
     facets: TvSourceFacets,
     filter: TvSourceFilter,
+    failedAddons: List<String>,
     onPlay: (TvSource) -> Unit,
+    onOpenExternal: (String) -> Unit,
     onSetResolution: (Int?) -> Unit,
     onSetLanguage: (String?) -> Unit,
     onSetSourceQuality: (SourceQuality?) -> Unit,
@@ -91,6 +94,7 @@ fun TvSourceSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var torrentNotice by remember { mutableStateOf(false) }
+    var externalNotice by remember { mutableStateOf<TvSource?>(null) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -132,6 +136,14 @@ fun TvSourceSheet(
 
             Spacer(Modifier.height(12.dp))
 
+            if (failedAddons.isNotEmpty() && !isLoading) {
+                FailedAddonsNotice(
+                    names = failedAddons,
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+                )
+                Spacer(Modifier.height(8.dp))
+            }
+
             when {
                 !hasStreamSource -> NoSourceAddonBody(onBrowseAddons)
                 isLoading -> SearchingBody()
@@ -166,12 +178,23 @@ fun TvSourceSheet(
                         SourceList(
                             sources = sources,
                             onPlay = onPlay,
-                            onUnplayable = { torrentNotice = true },
+                            onTorrent = { torrentNotice = true },
+                            onExternal = { externalNotice = it },
                         )
                     }
                 }
             }
         }
+    }
+
+    externalNotice?.let { source ->
+        ExternalNoticeDialog(
+            onOpen = {
+                source.externalLink?.let(onOpenExternal)
+                externalNotice = null
+            },
+            onDismiss = { externalNotice = null },
+        )
     }
 
     if (torrentNotice) {
@@ -197,7 +220,8 @@ fun TvSourceSheet(
 private fun SourceList(
     sources: List<TvSource>,
     onPlay: (TvSource) -> Unit,
-    onUnplayable: () -> Unit,
+    onTorrent: () -> Unit,
+    onExternal: (TvSource) -> Unit,
 ) {
     val groups = remember(sources) {
         sources.groupBy { it.tags.resolution }
@@ -224,7 +248,13 @@ private fun SourceList(
             items(group, key = { it.id }) { source ->
                 SourceRow(
                     source = source,
-                    onClick = { if (source.isPlayable) onPlay(source) else onUnplayable() },
+                    onClick = {
+                        when (source.kind) {
+                            TvSourceKind.PLAYABLE -> onPlay(source)
+                            TvSourceKind.EXTERNAL -> onExternal(source)
+                            TvSourceKind.TORRENT -> onTorrent()
+                        }
+                    },
                 )
             }
         }
@@ -314,7 +344,10 @@ private fun SourceBadges(source: TvSource, playable: Boolean, modifier: Modifier
     ) {
         if (!playable) {
             Badge(
-                text = stringResource(R.string.tv_torrent_badge),
+                text = stringResource(
+                    if (source.kind == TvSourceKind.EXTERNAL) R.string.tv_external_badge
+                    else R.string.tv_torrent_badge
+                ),
                 container = MaterialTheme.colorScheme.surfaceContainerHighest,
                 content = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -653,6 +686,59 @@ private fun TorrentNoticeDialog(onBrowseAddons: () -> Unit, onDismiss: () -> Uni
             TextButton(onClick = onDismiss) { Text(stringResource(R.string.tv_got_it)) }
         },
     )
+}
+
+/**
+ * A link to somebody's web player, which is not a torrent and must not be
+ * described as one.
+ */
+@Composable
+private fun ExternalNoticeDialog(onOpen: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = RoundedCornerShape(32.dp),
+        title = { Text(stringResource(R.string.tv_external_title)) },
+        text = { Text(stringResource(R.string.tv_external_body)) },
+        confirmButton = {
+            TextButton(onClick = onOpen) { Text(stringResource(R.string.tv_open_link)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.tv_got_it)) }
+        },
+    )
+}
+
+/**
+ * Which addons were asked and did not answer.
+ *
+ * Named, because the usual cause is an addon that requires an account and
+ * enforces it at the stream call rather than at install - it looks perfectly
+ * healthy in the addon list and returns nothing forever. Saying "nothing found"
+ * for that is Koda taking the blame for someone else's login wall.
+ */
+@Composable
+private fun FailedAddonsNotice(names: List<String>, modifier: Modifier = Modifier) {
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+        modifier = modifier.fillMaxWidth(),
+    ) {
+        Text(
+            text = if (names.size == 1) {
+                stringResource(R.string.tv_addons_failed_one, names.first())
+            } else {
+                stringResource(
+                    R.string.tv_addons_failed_many,
+                    names.size,
+                    names.joinToString(", "),
+                )
+            },
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+        )
+    }
 }
 
 // --- Formatting -------------------------------------------------------------

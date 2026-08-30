@@ -77,6 +77,7 @@ fun TvDetailRoute(
     val facets by sourcesViewModel.facets.collectAsState()
     val filter by sourcesViewModel.filter.collectAsState()
     val sourcesTotal by sourcesViewModel.totalCount.collectAsState()
+    val failedAddons by sourcesViewModel.failedAddons.collectAsState()
 
     val episodes = remember(item, selectedSeason, selectedRange) { viewModel.episodesToShow() }
     val ranges = remember(item, selectedSeason) { viewModel.rangesForCurrentSeason() }
@@ -179,7 +180,18 @@ fun TvDetailRoute(
             autoPick = autoPick,
             facets = facets,
             filter = filter,
+            failedAddons = failedAddons,
             onPlay = { source -> startPlayback(source) },
+            onOpenExternal = { link ->
+                // Handed to the system rather than opened in a WebView: this is
+                // a third-party page Koda knows nothing about, and wrapping it
+                // would imply it is part of the app.
+                runCatching {
+                    context.startActivity(
+                        Intent(Intent.ACTION_VIEW, android.net.Uri.parse(link))
+                    )
+                }
+            },
             onSetResolution = sourcesViewModel::setResolution,
             onSetLanguage = sourcesViewModel::setLanguage,
             onSetSourceQuality = sourcesViewModel::setSourceQuality,

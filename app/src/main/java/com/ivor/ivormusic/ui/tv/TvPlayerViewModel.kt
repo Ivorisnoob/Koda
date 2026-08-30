@@ -391,7 +391,7 @@ class TvPlayerViewModel(application: Application) : AndroidViewModel(application
         advanceJob = viewModelScope.launch {
             _isAdvancing.value = true
             val profile = TvAutoSelectProfile.forCurrentNetwork(getApplication())
-            val sources = streamRepository.sources(current.item.type, next.id)
+            val sources = streamRepository.sources(current.item.type, next.id).sources
             val playable = sources.filter { it.isPlayable }
             val sameRelease = bingeGroup?.let { group ->
                 playable.firstOrNull { it.bingeGroup == group }

@@ -296,6 +296,33 @@ class TvSourceRankingTest {
     // --- Identity -----------------------------------------------------------
 
     @Test
+    fun anExternalLinkIsNotATorrent() {
+        // Both are unplayable here, but a link to somebody's web player needs a
+        // browser, not a debrid service - describing it as a torrent is simply
+        // false, and the sheet says different things for the two.
+        val web = TvSource(
+            addonId = "a", addonName = "A",
+            stream = TvStream(externalUrl = "https://example.com/watch", title = "Movie 1080p"),
+            tags = StreamTags(),
+        )
+        val torrent = source("Movie.1080p", url = null, infoHash = "abc")
+        assertEquals(TvSourceKind.EXTERNAL, web.kind)
+        assertEquals(TvSourceKind.TORRENT, torrent.kind)
+        assertFalse(web.isPlayable)
+        assertEquals("https://example.com/watch", web.externalLink)
+    }
+
+    @Test
+    fun aYouTubeStreamResolvesToAWatchLink() {
+        val yt = TvSource(
+            addonId = "a", addonName = "A",
+            stream = TvStream(ytId = "dQw4w9WgXcQ"), tags = StreamTags(),
+        )
+        assertEquals(TvSourceKind.EXTERNAL, yt.kind)
+        assertEquals("https://www.youtube.com/watch?v=dQw4w9WgXcQ", yt.externalLink)
+    }
+
+    @Test
     fun bingeGroupIsReadOffTheStreamAndBlanksAreNull() {
         assertEquals(
             "torrentio|1080p|web-dl",

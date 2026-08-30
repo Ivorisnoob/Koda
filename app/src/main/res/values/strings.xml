@@ -155,6 +155,12 @@
     <string name="tv_filter_dub">Dub</string>
     <string name="tv_filter_hdr">HDR</string>
     <string name="tv_torrent_badge">Torrent</string>
+    <string name="tv_external_badge">Opens elsewhere</string>
+    <string name="tv_external_title">This one opens outside Koda</string>
+    <string name="tv_external_body">This source is a link to another app or site rather than a video file, so Koda cannot play it here.</string>
+    <string name="tv_open_link">Open link</string>
+    <string name="tv_addons_failed_one">%1$s did not answer. Some addons need an account before they return anything.</string>
+    <string name="tv_addons_failed_many">%1$d addons did not answer: %2$s</string>
     <string name="tv_torrent_title">This one is a torrent</string>
     <string name="tv_torrent_body">Koda plays direct links only. A debrid service configured into your source addon turns results like this into playable links.</string>
     <string name="tv_got_it">Got it</string>

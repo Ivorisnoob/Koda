@@ -24,7 +24,30 @@ data class TvSource(
     val stream: TvStream,
     val tags: StreamTags,
 ) {
-    val isPlayable: Boolean get() = stream.isPlayable
+    val isPlayable: Boolean get() = kind == TvSourceKind.PLAYABLE
+
+    /**
+     * Which of the protocol's four delivery shapes this is.
+     *
+     * [TvSourceKind.EXTERNAL] exists because the three unplayable shapes are
+     * not one thing. A torrent needs a debrid service or a torrent engine; a
+     * link to somebody's web player needs a browser and nothing else. Calling
+     * both "a torrent" tells one of them a plain falsehood, which is what the
+     * first cut of this did.
+     */
+    val kind: TvSourceKind
+        get() = when {
+            !stream.url.isNullOrBlank() -> TvSourceKind.PLAYABLE
+            !stream.externalUrl.isNullOrBlank() || !stream.ytId.isNullOrBlank() ->
+                TvSourceKind.EXTERNAL
+            else -> TvSourceKind.TORRENT
+        }
+
+    /** Where an [TvSourceKind.EXTERNAL] row should send the viewer. */
+    val externalLink: String?
+        get() = stream.externalUrl?.takeIf { it.isNotBlank() }
+            ?: stream.ytId?.takeIf { it.isNotBlank() }
+                ?.let { "https://www.youtube.com/watch?v=" + it }
 
     /**
      * Stable identity for list keys and for cross-addon dedupe.
@@ -53,6 +76,9 @@ data class TvSource(
         get() = stream.name?.lineSequence()?.firstOrNull { it.isNotBlank() }?.trim()
             ?.takeIf { it.isNotBlank() } ?: addonName
 }
+
+/** How a source delivers its file, which decides what tapping it can do. */
+enum class TvSourceKind { PLAYABLE, TORRENT, EXTERNAL }
 
 /** Which of the two dub mechanisms the viewer is asking for. See plan section 5. */
 enum class DubPreference { ANY, SUB, DUB }
@@ -104,6 +130,21 @@ enum class PickReason { ONLY_PLAYABLE, CACHED, WITHIN_LIMIT, BEST_AVAILABLE }
 
 data class TvAutoPick(val source: TvSource, val reason: PickReason)
 
+/**
+ * The outcome of one fan-out.
+ *
+ * [failedAddons] is named rather than counted because the two failures a viewer
+ * can act on are different: an addon that needs an account answers 400 to every
+ * request, and an addon that is down answers nothing. Collapsing either into an
+ * empty list tells them "no addon has this title", which is a different problem
+ * with a different fix - and is exactly how an addon that quietly requires
+ * registration looks like a broken app.
+ */
+data class TvSourceResult(
+    val sources: List<TvSource> = emptyList(),
+    val failedAddons: List<String> = emptyList(),
+)
+
 /** The filter chips that this particular result set can actually offer. */
 data class TvSourceFacets(
     val resolutions: List<Int> = emptyList(),
@@ -114,6 +155,7 @@ data class TvSourceFacets(
     val hasDub: Boolean = false,
     val hasSub: Boolean = false,
     val hasUnplayable: Boolean = false,
+    val hasExternal: Boolean = false,
 ) {
     val isEmpty: Boolean
         get() = resolutions.isEmpty() && languages.isEmpty() && sourceQualities.isEmpty() &&
@@ -155,23 +197,26 @@ class TvStreamRepository(context: Context) {
      * an episode. Nothing has to reconstruct it because that is exactly what
      * the progress store already keys on.
      */
-    suspend fun sources(type: String, id: String): List<TvSource> = coroutineScope {
+    suspend fun sources(type: String, id: String): TvSourceResult = coroutineScope {
         val providers = addonRepository.streamProviders()
             .filter { it.handlesEnabled("stream", type, id) }
-        if (providers.isEmpty()) return@coroutineScope emptyList()
+        if (providers.isEmpty()) return@coroutineScope TvSourceResult()
 
         val gate = Semaphore(TvRepository.CONCURRENCY)
-        val collected = providers.map { addon ->
+        val answers = providers.map { addon ->
             async {
                 gate.withPermit {
+                    // null means the addon could not be reached or refused;
+                    // an empty list means it answered and had nothing. Only the
+                    // first is worth telling the viewer about.
                     val streams = client.streams(addon.transportUrl, type, id)
                     if (streams == null) {
                         // Named, never with its URL: a configured transport URL
                         // carries the user's debrid key.
-                        KLog.w(TAG, "No streams from " + addon.name)
-                        emptyList()
+                        KLog.w(TAG, "No answer from " + addon.name)
+                        addon.name to emptyList()
                     } else {
-                        streams.map { stream ->
+                        null to streams.map { stream ->
                             TvSource(
                                 addonId = addon.id,
                                 addonName = addon.name,
@@ -185,9 +230,12 @@ class TvStreamRepository(context: Context) {
                     }
                 }
             }
-        }.awaitAll().flatten()
+        }.awaitAll()
 
-        dedupe(collected)
+        TvSourceResult(
+            sources = dedupe(answers.flatMap { it.second }),
+            failedAddons = answers.mapNotNull { it.first },
+        )
     }
 
     /**
@@ -361,6 +409,7 @@ class TvStreamRepository(context: Context) {
             hasDub = sources.any { it.tags.offersDub },
             hasSub = sources.any { it.tags.offersSub },
             hasUnplayable = sources.any { !it.isPlayable },
+            hasExternal = sources.any { it.kind == TvSourceKind.EXTERNAL },
         )
 
         /**

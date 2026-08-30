@@ -57,6 +57,18 @@ class TvSourcesViewModel(application: Application) : AndroidViewModel(applicatio
     private val _totalCount = MutableStateFlow(0)
     val totalCount: StateFlow<Int> = _totalCount.asStateFlow()
 
+    /**
+     * Addons that were asked and did not answer usefully.
+     *
+     * Surfaced rather than logged, because the most common cause is an addon
+     * that quietly requires an account - it installs from a perfectly valid
+     * manifest, then answers 400 to every title. Without naming it, that reads
+     * as "Koda finds nothing", which is the app taking the blame for someone
+     * else's login wall.
+     */
+    private val _failedAddons = MutableStateFlow<List<String>>(emptyList())
+    val failedAddons: StateFlow<List<String>> = _failedAddons.asStateFlow()
+
     /** True once a fan-out has completed for the current key. */
     private val _loaded = MutableStateFlow(false)
     val loaded: StateFlow<Boolean> = _loaded.asStateFlow()
@@ -87,6 +99,7 @@ class TvSourcesViewModel(application: Application) : AndroidViewModel(applicatio
         _sources.value = emptyList()
         _visible.value = emptyList()
         _totalCount.value = 0
+        _failedAddons.value = emptyList()
         _facets.value = TvSourceFacets()
         _autoPick.value = null
         _filter.value = TvSourceFilter()
@@ -95,9 +108,11 @@ class TvSourcesViewModel(application: Application) : AndroidViewModel(applicatio
         job = viewModelScope.launch {
             _isLoading.value = true
             profile = TvAutoSelectProfile.forCurrentNetwork(getApplication())
-            val found = repository.sources(type, id)
+            val result = repository.sources(type, id)
+            val found = result.sources
             _sources.value = found
             _totalCount.value = found.size
+            _failedAddons.value = result.failedAddons
             // Facets come from the whole set and never change as chips are
             // used: a filter row whose options vanish as you touch them is
             // unusable. The pick below is the opposite - see recompute().
