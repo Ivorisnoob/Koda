@@ -76,9 +76,10 @@ import coil.compose.AsyncImage
 import com.ivor.ivormusic.data.DownloadedVideo
 import com.ivor.ivormusic.data.ShortsItem
 import com.ivor.ivormusic.data.VideoItem
-import com.ivor.ivormusic.ui.components.MusicVideoToggle
-import com.ivor.ivormusic.ui.components.MusicVideoToggleState
-import com.ivor.ivormusic.ui.components.rememberMusicVideoToggleState
+import com.ivor.ivormusic.data.AppMode
+import com.ivor.ivormusic.ui.components.AppModeToggle
+import com.ivor.ivormusic.ui.components.AppModeToggleState
+import com.ivor.ivormusic.ui.components.rememberAppModeToggleState
 import com.ivor.ivormusic.ui.home.HomeViewModel
 
 /**
@@ -106,10 +107,10 @@ fun VideoHomeContent(
     isDarkMode: Boolean,
     contentPadding: PaddingValues,
     viewModel: HomeViewModel,
-    videoMode: Boolean = true,
-    onVideoModeToggle: (Boolean) -> Unit = {},
+    appMode: AppMode = AppMode.VIDEO,
+    onAppModeChange: (AppMode) -> Unit = {},
     showModeToggle: Boolean = true,
-    modeToggleState: MusicVideoToggleState = rememberMusicVideoToggleState(videoMode),
+    modeToggleState: AppModeToggleState = rememberAppModeToggleState(appMode),
     // Hoisted by HomeScreen so the position survives a tab switch and the nav
     // bar can send it back to the top on a re-tap. Defaulted for previews and
     // any caller that does not care.
@@ -231,8 +232,8 @@ fun VideoHomeContent(
                             }
                         },
                         viewModel = viewModel,
-                        videoMode = videoMode,
-                        onVideoModeToggle = onVideoModeToggle,
+                        appMode = appMode,
+                        onAppModeChange = onAppModeChange,
                         showModeToggle = showModeToggle,
                         modeToggleState = modeToggleState
                     )
@@ -380,10 +381,10 @@ private fun VideoTopBarSection(
     onDownloadsClick: () -> Unit,
     onNotificationsClick: () -> Unit,
     viewModel: HomeViewModel,
-    videoMode: Boolean = true,
-    onVideoModeToggle: (Boolean) -> Unit = {},
+    appMode: AppMode = AppMode.VIDEO,
+    onAppModeChange: (AppMode) -> Unit = {},
     showModeToggle: Boolean = true,
-    modeToggleState: MusicVideoToggleState = rememberMusicVideoToggleState(videoMode)
+    modeToggleState: AppModeToggleState = rememberAppModeToggleState(appMode)
 ) {
     val surfaceColor = MaterialTheme.colorScheme.surfaceContainer
     val iconColor = MaterialTheme.colorScheme.onSurface
@@ -496,9 +497,9 @@ private fun VideoTopBarSection(
             // when the home content swaps between modes. Can be hidden from
             // Settings (Home Screen Mode Toggle).
             if (showModeToggle) {
-                MusicVideoToggle(
-                    videoMode = videoMode,
-                    onVideoModeChange = onVideoModeToggle,
+                AppModeToggle(
+                    mode = appMode,
+                    onModeChange = onAppModeChange,
                     state = modeToggleState
                 )
             }

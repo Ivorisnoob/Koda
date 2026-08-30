@@ -57,6 +57,7 @@ import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.CloudSync
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.GraphicEq
+import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.Palette
@@ -112,6 +113,7 @@ import androidx.compose.ui.unit.dp
 import androidx.graphics.shapes.Morph
 import androidx.graphics.shapes.RoundedPolygon
 import androidx.graphics.shapes.toPath
+import com.ivor.ivormusic.data.AppMode
 import com.ivor.ivormusic.data.PlayerStyle
 import com.ivor.ivormusic.ui.components.rememberPermissionState
 import com.ivor.ivormusic.ui.home.HomeStylePicker
@@ -133,8 +135,8 @@ fun OnboardingScreen(
     onLoadLocalSongsToggle: (Boolean) -> Unit,
     ambientBackground: Boolean,
     onAmbientBackgroundToggle: (Boolean) -> Unit,
-    videoMode: Boolean,
-    onVideoModeToggle: (Boolean) -> Unit,
+    appMode: AppMode,
+    onAppModeChange: (AppMode) -> Unit,
     homeModeToggleEnabled: Boolean = true,
     onHomeModeToggleEnabledChange: (Boolean) -> Unit = {},
     shortsEnabled: Boolean = false,
@@ -279,11 +281,11 @@ fun OnboardingScreen(
                             isLoggedIn = isLoggedIn,
                             onConnectYouTube = { showAuthDialog = true }
                         )
-                        3 -> VideoModePage(
-                            videoMode = videoMode,
+                        3 -> ContentModesPage(
+                            appMode = appMode,
                             shortsEnabled = shortsEnabled,
                             onShortsEnabledToggle = onShortsEnabledToggle,
-                            onVideoModeToggle = onVideoModeToggle,
+                            onAppModeChange = onAppModeChange,
                             homeModeToggleEnabled = homeModeToggleEnabled,
                             onHomeModeToggleEnabledChange = onHomeModeToggleEnabledChange
                         )
@@ -580,9 +582,9 @@ private fun YouTubePage(
 }
 
 @Composable
-private fun VideoModePage(
-    videoMode: Boolean,
-    onVideoModeToggle: (Boolean) -> Unit,
+private fun ContentModesPage(
+    appMode: AppMode,
+    onAppModeChange: (AppMode) -> Unit,
     homeModeToggleEnabled: Boolean,
     onHomeModeToggleEnabledChange: (Boolean) -> Unit,
     shortsEnabled: Boolean,
@@ -594,12 +596,25 @@ private fun VideoModePage(
         title = stringResource(R.string.ob_page_video_mode),
         body = stringResource(R.string.ob_page_video_mode_body)
     ) {
+        // Two independent switches rather than a three-way picker: the modes
+        // are mutually exclusive, but this page is a list of switches and a
+        // picker among three would read as a required choice on a page whose
+        // whole point is that both are optional. Turning one on turns the other
+        // off, which is the contract the top bar toggle has anyway.
         SettingSwitchRow(
             icon = Icons.Rounded.Videocam,
             title = stringResource(R.string.ob_enable_video_mode),
             subtitle = stringResource(R.string.ob_enable_video_mode_sub),
-            checked = videoMode,
-            onCheckedChange = onVideoModeToggle
+            checked = appMode.isVideo,
+            onCheckedChange = { on -> onAppModeChange(if (on) AppMode.VIDEO else AppMode.MUSIC) }
+        )
+
+        SettingSwitchRow(
+            icon = Icons.Rounded.Movie,
+            title = stringResource(R.string.ob_enable_tv_mode),
+            subtitle = stringResource(R.string.ob_enable_tv_mode_sub),
+            checked = appMode.isTv,
+            onCheckedChange = { on -> onAppModeChange(if (on) AppMode.TV else AppMode.MUSIC) }
         )
 
         SettingSwitchRow(

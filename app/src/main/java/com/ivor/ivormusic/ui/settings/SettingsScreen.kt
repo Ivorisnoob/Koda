@@ -82,6 +82,7 @@ import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Interests
 import androidx.compose.material.icons.rounded.LightMode
+import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Newspaper
 import androidx.compose.material.icons.rounded.NotInterested
@@ -184,6 +185,7 @@ import com.ivor.ivormusic.data.YouTubeAuthUtils
 
 import com.ivor.ivormusic.ui.auth.YouTubeAuthDialog
 import com.ivor.ivormusic.ui.components.coveredBy
+import com.ivor.ivormusic.data.AppMode
 import com.ivor.ivormusic.data.PlayerStyle
 import com.ivor.ivormusic.ui.theme.ThemeMode
 import kotlinx.coroutines.CancellationException
@@ -261,8 +263,8 @@ fun SettingsScreen(
     onAmbientBackgroundToggle: (Boolean) -> Unit,
     playerArtworkColors: Boolean = true,
     onPlayerArtworkColorsToggle: (Boolean) -> Unit = {},
-    videoMode: Boolean,
-    onVideoModeToggle: (Boolean) -> Unit,
+    appMode: AppMode,
+    onAppModeChange: (AppMode) -> Unit,
     homeModeToggleEnabled: Boolean = true,
     onHomeModeToggleChange: (Boolean) -> Unit = {},
     spotlightHome: Boolean = false,
@@ -596,7 +598,7 @@ fun SettingsScreen(
                 musicQualityWifi = musicQualityWifi,
                 videoQualityWifi = videoQualityWifi,
                 localOnlyMode = localOnlyMode,
-                videoMode = videoMode,
+                appMode = appMode,
                 subscriptionSource = subscriptionSource,
                 privateDownloadsEnabled = privateDownloadsEnabled,
                 cacheEnabled = cacheEnabled,
@@ -759,8 +761,8 @@ fun SettingsScreen(
                 SettingsPage.CONTENT -> ContentSettingsPage(
                     localOnlyMode = localOnlyMode,
                     onLocalOnlyModeToggle = onLocalOnlyModeToggle,
-                    videoMode = videoMode,
-                    onVideoModeToggle = onVideoModeToggle,
+                    appMode = appMode,
+                    onAppModeChange = onAppModeChange,
                     homeModeToggleEnabled = homeModeToggleEnabled,
                     onHomeModeToggleChange = onHomeModeToggleChange,
                     timedCommentsEnabled = timedCommentsEnabled,
@@ -971,7 +973,7 @@ private fun SettingsHub(
     musicQualityWifi: String,
     videoQualityWifi: String,
     localOnlyMode: Boolean,
-    videoMode: Boolean,
+    appMode: AppMode,
     subscriptionSource: String,
     privateDownloadsEnabled: Boolean,
     cacheEnabled: Boolean,
@@ -1017,7 +1019,8 @@ private fun SettingsHub(
 
     val contentValue = when {
         localOnlyMode -> "Local only, offline"
-        videoMode -> "Video mode"
+        appMode.isVideo -> "Video mode"
+        appMode.isTv -> "TV mode"
         else -> "Music mode"
     }
 
@@ -1418,16 +1421,18 @@ internal fun ExpressiveAccountItem(
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class)
 @Composable
-internal fun ExpressiveVideoModeToggleItem(
-    enabled: Boolean,
-    onToggle: (Boolean) -> Unit,
+internal fun ExpressiveAppModeToggleItem(
+    mode: AppMode,
+    onModeChange: (AppMode) -> Unit,
     textColor: Color,
     secondaryTextColor: Color,
     accentColor: Color
 ) {
-    val options = listOf(stringResource(R.string.sp_mode_music), stringResource(R.string.sp_mode_video))
-    val selectedIndex = if (enabled) 1 else 0
-    
+    // Built from AppMode.entries rather than a hand-written list, so a fourth
+    // mode cannot ship with a button group that has forgotten about it.
+    val options = AppMode.entries
+    val selectedIndex = options.indexOf(mode)
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -1447,7 +1452,7 @@ internal fun ExpressiveVideoModeToggleItem(
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    imageVector = if (enabled) Icons.Rounded.VideoLibrary else Icons.Rounded.MusicNote,
+                    imageVector = mode.settingsIcon,
                     contentDescription = null,
                     tint = accentColor,
                     modifier = Modifier.size(26.dp)
@@ -1466,11 +1471,7 @@ internal fun ExpressiveVideoModeToggleItem(
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
-                    text = if (enabled) {
-                        stringResource(R.string.sp_content_mode_video)
-                    } else {
-                        stringResource(R.string.sp_content_mode_music)
-                    },
+                    text = stringResource(mode.contentModeSubtitle),
                     color = secondaryTextColor,
                     fontSize = 13.sp
                 )
@@ -1485,10 +1486,10 @@ internal fun ExpressiveVideoModeToggleItem(
                 ButtonGroupDefaults.ConnectedSpaceBetween
             ),
         ) {
-            options.forEachIndexed { index, label ->
+            options.forEachIndexed { index, entry ->
                 ToggleButton(
                     checked = selectedIndex == index,
-                    onCheckedChange = { onToggle(index == 1) },
+                    onCheckedChange = { onModeChange(entry) },
                     modifier = Modifier.weight(1f),
                     shapes = when (index) {
                         0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
@@ -1504,17 +1505,37 @@ internal fun ExpressiveVideoModeToggleItem(
                     ),
                 ) {
                     Icon(
-                        imageVector = if (index == 0) Icons.Rounded.MusicNote
-                        else Icons.Rounded.VideoLibrary,
+                        imageVector = entry.settingsIcon,
                         contentDescription = null,
                         modifier = Modifier.size(18.dp),
                     )
-                    Text(label)
+                    Text(stringResource(entry.shortLabel))
                 }
             }
         }
     }
 }
+
+private val AppMode.settingsIcon: androidx.compose.ui.graphics.vector.ImageVector
+    get() = when (this) {
+        AppMode.MUSIC -> Icons.Rounded.MusicNote
+        AppMode.VIDEO -> Icons.Rounded.VideoLibrary
+        AppMode.TV -> Icons.Rounded.Movie
+    }
+
+private val AppMode.shortLabel: Int
+    get() = when (this) {
+        AppMode.MUSIC -> R.string.sp_mode_music
+        AppMode.VIDEO -> R.string.sp_mode_video
+        AppMode.TV -> R.string.sp_mode_tv
+    }
+
+private val AppMode.contentModeSubtitle: Int
+    get() = when (this) {
+        AppMode.MUSIC -> R.string.sp_content_mode_music
+        AppMode.VIDEO -> R.string.sp_content_mode_video
+        AppMode.TV -> R.string.sp_content_mode_tv
+    }
 
 /** Human-readable label for a stored default video quality value. */
 internal fun videoQualityLabel(value: String): String =

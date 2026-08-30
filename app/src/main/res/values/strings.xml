@@ -81,6 +81,16 @@
     <string name="tab_subs">Subs</string>
     <string name="tab_library">Library</string>
 
+    <!-- TV mode -->
+    <string name="tv_mode">TV</string>
+    <string name="tv_placeholder_home_title">Movies and series</string>
+    <string name="tv_placeholder_home_body">Browse trending films, shows and anime from the sources you add. Nothing is installed yet.</string>
+    <string name="tv_placeholder_search_title">Search everything</string>
+    <string name="tv_placeholder_search_body">One search across every catalogue you have installed, grouped by movies, series and anime.</string>
+    <string name="tv_placeholder_library_title">Your library</string>
+    <string name="tv_placeholder_library_body">Continue watching, your watchlist and downloads will live here. All of it works offline.</string>
+    <string name="tv_placeholder_footnote">Not built yet in this build.</string>
+
     <!-- Local only mode notices -->
     <string name="local_only_title">Local only mode is on</string>
     <string name="local_only_default_subtitle">This section needs the internet. Turn off Local only in Settings to use it.</string>
@@ -146,6 +156,7 @@
     <!-- Mini player / shared component content descriptions -->
     <string name="cd_switch_to_music">Switch to music mode</string>
     <string name="cd_switch_to_video">Switch to video mode</string>
+    <string name="cd_switch_to_tv">Switch to TV mode</string>
     <string name="cd_drag_to_reorder">Drag to reorder</string>
     <string name="cd_favorite">Favorite</string>
     <string name="cd_clear_search">Clear search</string>
@@ -233,9 +244,11 @@
     <string name="sp_connected">Connected</string>
     <string name="sp_mode_music">Music</string>
     <string name="sp_mode_video">Video</string>
+    <string name="sp_mode_tv">TV</string>
     <string name="sp_content_mode">Content Mode</string>
     <string name="sp_content_mode_music">Showing music content</string>
     <string name="sp_content_mode_video">Showing YouTube videos</string>
+    <string name="sp_content_mode_tv">Showing movies and series</string>
     <string name="sp_color_palette">Color palette</string>
     <string name="sp_amoled_black">AMOLED Black</string>
     <string name="sp_backgrounds">Backgrounds</string>
@@ -389,10 +402,12 @@
     <string name="ob_recs_ready">Personalized recommendations are ready.</string>
     <string name="ob_optional_sign_in_later">Optional, and you can sign in later from Settings.</string>
     <string name="ob_hint_session_secure">Your session is stored securely on this device only.</string>
-    <string name="ob_page_video_mode">Video mode</string>
-    <string name="ob_page_video_mode_body">Turn the Home tab into a video feed with an in-app player, mini player and picture-in-picture. You can flip between music and video any time.</string>
+    <string name="ob_page_video_mode">Beyond music</string>
+    <string name="ob_page_video_mode_body">Koda is three apps in one. Turn on the ones you want now, or switch between them any time from the Home top bar.</string>
     <string name="ob_enable_video_mode">Enable video mode</string>
     <string name="ob_enable_video_mode_sub">Video home, video search and watch history</string>
+    <string name="ob_enable_tv_mode">Enable TV mode</string>
+    <string name="ob_enable_tv_mode_sub">Movies and series from sources you add. Nothing is included.</string>
     <string name="ob_home_switch">Home screen switch</string>
     <string name="ob_home_switch_sub">Quick music/video toggle in the Home top bar</string>
     <string name="ob_shorts_sub">Show a Home shelf and use the vertical swipe player</string>

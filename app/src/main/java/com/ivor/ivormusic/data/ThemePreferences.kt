@@ -36,8 +36,8 @@ class ThemePreferences(context: Context) {
     private val _playerArtworkColors = MutableStateFlow(getPlayerArtworkColorsPreference())
     val playerArtworkColors: StateFlow<Boolean> = _playerArtworkColors.asStateFlow()
     
-    private val _videoMode = MutableStateFlow(getVideoModePreference())
-    val videoMode: StateFlow<Boolean> = _videoMode.asStateFlow()
+    private val _appMode = MutableStateFlow(getAppModePreference())
+    val appMode: StateFlow<AppMode> = _appMode.asStateFlow()
 
     private val _homeModeToggleEnabled = MutableStateFlow(getHomeModeToggleEnabledPreference())
     val homeModeToggleEnabled: StateFlow<Boolean> = _homeModeToggleEnabled.asStateFlow()
@@ -195,7 +195,7 @@ class ThemePreferences(context: Context) {
             KEY_LOAD_LOCAL_SONGS -> _loadLocalSongs.value = getLoadLocalSongsPreference()
             KEY_AMBIENT_BACKGROUND -> _ambientBackground.value = getAmbientBackgroundPreference()
             KEY_PLAYER_ARTWORK_COLORS -> _playerArtworkColors.value = getPlayerArtworkColorsPreference()
-            KEY_VIDEO_MODE -> _videoMode.value = getVideoModePreference()
+            KEY_APP_MODE -> _appMode.value = getAppModePreference()
             KEY_HOME_MODE_TOGGLE_ENABLED -> _homeModeToggleEnabled.value = getHomeModeToggleEnabledPreference()
             KEY_PLAYER_STYLE -> _playerStyle.value = getPlayerStylePreference()
             KEY_SAVE_VIDEO_HISTORY -> _saveVideoHistory.value = getSaveVideoHistoryPreference()
@@ -289,9 +289,15 @@ class ThemePreferences(context: Context) {
             "load_local_songs_default_migrated"
         private const val KEY_AMBIENT_BACKGROUND = "ambient_background"
         private const val KEY_PLAYER_ARTWORK_COLORS = "player_artwork_colors"
+        /**
+         * Legacy two-mode key, still written by [setAppMode] and never read by
+         * anything but [getAppModePreference]'s fallback. See [AppMode].
+         */
         private const val KEY_VIDEO_MODE = "video_mode"
+        private const val KEY_APP_MODE = "app_mode"
         private const val KEY_LAST_MUSIC_TAB = "last_music_tab"
         private const val KEY_LAST_VIDEO_TAB = "last_video_tab"
+        private const val KEY_LAST_TV_TAB = "last_tv_tab"
         private const val KEY_HOME_MODE_TOGGLE_ENABLED = "home_mode_toggle_enabled"
         private const val KEY_PLAYER_STYLE = "player_style"
         private const val KEY_SAVE_VIDEO_HISTORY = "save_video_history"
@@ -743,39 +749,56 @@ class ThemePreferences(context: Context) {
     }
     
     /**
-     * Get the stored video mode preference. Defaults to false (Music mode).
+     * Get the stored app mode. Defaults to [AppMode.MUSIC].
+     *
+     * The legacy `video_mode` boolean is read as a fallback rather than
+     * rewritten behind a one-shot marker, which is what
+     * [migrateLoadLocalSongsDefault] needed. The difference is that there is no
+     * ambiguity to resolve here: absent-and-absent means Music for a fresh
+     * install and for an upgrading user alike, so the lazy read is already
+     * correct and costs nothing. It also leaves the old key untouched, which is
+     * what makes a downgrade land where the user left off rather than on Music.
+     *
+     * The fallback in the catch is the same constant as the default on purpose,
+     * matching [getPlayerStylePreference]: an unreadable stored value should
+     * land where a fresh install does.
      */
-    private fun getVideoModePreference(): Boolean {
-        return prefs.getBoolean(KEY_VIDEO_MODE, false)
-    }
-    
+    private fun getAppModePreference(): AppMode = appModeFromStored(
+        stored = prefs.getString(KEY_APP_MODE, null),
+        legacyVideoMode = prefs.getBoolean(KEY_VIDEO_MODE, false)
+    )
+
     /**
-     * Save video mode preference and update the flow.
+     * Save the app mode and update the flow.
+     *
+     * `video_mode` is kept in step so that downgrading to a two-mode build
+     * lands on Music or Video rather than silently resetting. TV has no legacy
+     * equivalent and maps to false, which is the honest answer: a build that
+     * does not know about TV cannot restore it.
      */
-    fun setVideoMode(enabled: Boolean) {
-        prefs.edit().putBoolean(KEY_VIDEO_MODE, enabled).apply()
-        _videoMode.value = enabled
-    }
-    
-    /**
-     * Toggle video mode setting.
-     */
-    fun toggleVideoMode() {
-        setVideoMode(!_videoMode.value)
+    fun setAppMode(mode: AppMode) {
+        prefs.edit()
+            .putString(KEY_APP_MODE, mode.name)
+            .putBoolean(KEY_VIDEO_MODE, mode == AppMode.VIDEO)
+            .apply()
+        _appMode.value = mode
     }
 
     /** Root Home destination restored after Koda is recreated. */
-    fun getLastHomeTab(videoMode: Boolean): Int {
-        val key = if (videoMode) KEY_LAST_VIDEO_TAB else KEY_LAST_MUSIC_TAB
-        val lastValidTab = if (videoMode) 3 else 2
-        return prefs.getInt(key, 0).coerceIn(0, lastValidTab)
+    fun getLastHomeTab(mode: AppMode): Int =
+        prefs.getInt(lastHomeTabKey(mode), 0).coerceIn(0, mode.lastTabIndex)
+
+    /** Each mode keeps its own position because their tab sets differ. */
+    fun setLastHomeTab(mode: AppMode, tab: Int) {
+        prefs.edit()
+            .putInt(lastHomeTabKey(mode), tab.coerceIn(0, mode.lastTabIndex))
+            .apply()
     }
 
-    /** Music and video keep separate positions because their tab sets differ. */
-    fun setLastHomeTab(videoMode: Boolean, tab: Int) {
-        val key = if (videoMode) KEY_LAST_VIDEO_TAB else KEY_LAST_MUSIC_TAB
-        val lastValidTab = if (videoMode) 3 else 2
-        prefs.edit().putInt(key, tab.coerceIn(0, lastValidTab)).apply()
+    private fun lastHomeTabKey(mode: AppMode): String = when (mode) {
+        AppMode.MUSIC -> KEY_LAST_MUSIC_TAB
+        AppMode.VIDEO -> KEY_LAST_VIDEO_TAB
+        AppMode.TV -> KEY_LAST_TV_TAB
     }
 
     /**
@@ -1649,6 +1672,50 @@ enum class CaptionBackground {
 /**
  * Player UI Style options
  */
+/**
+ * Resolve the stored app mode, falling back to the legacy `video_mode` boolean.
+ *
+ * Hoisted out of `ThemePreferences` so it can be tested without a Context, the
+ * same way [uiScaleFromStored] is. This is the one part of the two-mode to
+ * three-mode migration that compiles perfectly while being wrong: getting it
+ * backwards silently resets every existing user to Music on update.
+ */
+internal fun appModeFromStored(stored: String?, legacyVideoMode: Boolean): AppMode {
+    if (stored == null) return if (legacyVideoMode) AppMode.VIDEO else AppMode.MUSIC
+    return try {
+        AppMode.valueOf(stored)
+    } catch (e: IllegalArgumentException) {
+        AppMode.MUSIC
+    }
+}
+
+/**
+ * Which of the three apps inside Koda the Home screen is currently showing.
+ *
+ * Replaces the older `videoMode: Boolean`, which could not express a third
+ * state. **These constants are persisted by [name] and are frozen** - the same
+ * rule as [PlayerStyle]. Renaming one resets every existing user's mode.
+ *
+ * [lastTabIndex] lives here rather than in the two branches it used to be
+ * spelled out in, because the tab count is a property of the mode and every
+ * caller that persists a tab position needs the same ceiling. It is the index
+ * of the last tab, not the count.
+ */
+enum class AppMode(val lastTabIndex: Int) {
+    /** Home, Search, Library over YouTube Music. */
+    MUSIC(2),
+
+    /** Home, Search, Subscriptions, Library over YouTube video. */
+    VIDEO(3),
+
+    /** Home, Search, Library over movies and series from installed addons. */
+    TV(2);
+
+    val isVideo: Boolean get() = this == VIDEO
+    val isMusic: Boolean get() = this == MUSIC
+    val isTv: Boolean get() = this == TV
+}
+
 enum class PlayerStyle {
     /** Classic button-based player with play/pause/next/previous controls */
     CLASSIC,

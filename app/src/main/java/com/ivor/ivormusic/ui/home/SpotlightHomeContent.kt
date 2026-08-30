@@ -55,8 +55,9 @@ import com.ivor.ivormusic.data.PlaylistDisplayItem
 import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.ui.library.songRowClick
 import com.ivor.ivormusic.ui.components.ExpressivePullToRefresh
-import com.ivor.ivormusic.ui.components.MusicVideoToggleState
-import com.ivor.ivormusic.ui.components.rememberMusicVideoToggleState
+import com.ivor.ivormusic.data.AppMode
+import com.ivor.ivormusic.ui.components.AppModeToggleState
+import com.ivor.ivormusic.ui.components.rememberAppModeToggleState
 
 /**
  * Spotlight: an alternative music Home built the way music apps are actually
@@ -109,10 +110,10 @@ fun SpotlightHomeContent(
     viewModel: HomeViewModel,
     excludedFolders: Set<String> = emptySet(),
     manualScan: Boolean = false,
-    videoMode: Boolean = false,
-    onVideoModeToggle: (Boolean) -> Unit = {},
+    appMode: AppMode = AppMode.MUSIC,
+    onAppModeChange: (AppMode) -> Unit = {},
     showModeToggle: Boolean = true,
-    modeToggleState: MusicVideoToggleState = rememberMusicVideoToggleState(videoMode),
+    modeToggleState: AppModeToggleState = rememberAppModeToggleState(appMode),
     listState: LazyListState = rememberLazyListState(),
 ) {
     val isRefreshing by viewModel.isLoading.collectAsState()
@@ -161,8 +162,8 @@ fun SpotlightHomeContent(
                     onDownloadsClick = onDownloadsClick,
                     isDarkMode = isDarkMode,
                     viewModel = viewModel,
-                    videoMode = videoMode,
-                    onVideoModeToggle = onVideoModeToggle,
+                    appMode = appMode,
+                    onAppModeChange = onAppModeChange,
                     showModeToggle = showModeToggle,
                     modeToggleState = modeToggleState,
                 )

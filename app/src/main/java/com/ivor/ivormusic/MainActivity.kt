@@ -56,6 +56,7 @@ import com.ivor.ivormusic.ui.home.HomeViewModel
 import com.ivor.ivormusic.ui.player.PlayerViewModel
 import com.ivor.ivormusic.ui.theme.IvorMusicTheme
 import com.ivor.ivormusic.ui.theme.ThemeViewModel
+import com.ivor.ivormusic.data.AppMode
 import com.ivor.ivormusic.data.PlayerStyle
 import androidx.compose.ui.unit.dp
 
@@ -155,7 +156,7 @@ class MainActivity : ComponentActivity() {
             val loadLocalSongs by themeViewModel.loadLocalSongs.collectAsState()
             val ambientBackground by themeViewModel.ambientBackground.collectAsState()
             val playerArtworkColors by themeViewModel.playerArtworkColors.collectAsState()
-            val videoMode by themeViewModel.videoMode.collectAsState()
+            val appMode by themeViewModel.appMode.collectAsState()
             val homeModeToggleEnabled by themeViewModel.homeModeToggleEnabled.collectAsState()
             val playerStyle by themeViewModel.playerStyle.collectAsState()
             val saveVideoHistory by themeViewModel.saveVideoHistory.collectAsState()
@@ -233,8 +234,8 @@ class MainActivity : ComponentActivity() {
                         onAmbientBackgroundToggle = { themeViewModel.setAmbientBackground(it) },
                         playerArtworkColors = playerArtworkColors,
                         onPlayerArtworkColorsToggle = { themeViewModel.setPlayerArtworkColors(it) },
-                        videoMode = videoMode,
-                        onVideoModeToggle = { themeViewModel.setVideoMode(it) },
+                        appMode = appMode,
+                        onAppModeChange = { themeViewModel.setAppMode(it) },
                         homeModeToggleEnabled = homeModeToggleEnabled,
                         onHomeModeToggleEnabledChange = { themeViewModel.setHomeModeToggleEnabled(it) },
                         spotlightHome = spotlightHome,
@@ -454,8 +455,8 @@ fun MusicApp(
     onAmbientBackgroundToggle: (Boolean) -> Unit,
     playerArtworkColors: Boolean,
     onPlayerArtworkColorsToggle: (Boolean) -> Unit,
-    videoMode: Boolean,
-    onVideoModeToggle: (Boolean) -> Unit,
+    appMode: AppMode,
+    onAppModeChange: (AppMode) -> Unit,
     homeModeToggleEnabled: Boolean,
     onHomeModeToggleEnabledChange: (Boolean) -> Unit,
     spotlightHome: Boolean,
@@ -548,12 +549,12 @@ fun MusicApp(
     // every mode toggle through the same close actions used by the players'
     // own dismiss buttons, while ignoring callbacks that repeat the current
     // value (including preference restoration during composition).
-    val switchPlaybackMode: (Boolean) -> Unit = { nextVideoMode ->
-        if (nextVideoMode != videoMode) {
+    val switchPlaybackMode: (AppMode) -> Unit = { nextMode ->
+        if (nextMode != appMode) {
             playerViewModel.clearPlayer()
             videoPlayerViewModel.closePlayer()
             shortsPlayerViewModel.close()
-            onVideoModeToggle(nextVideoMode)
+            onAppModeChange(nextMode)
         }
     }
 
@@ -732,8 +733,8 @@ fun MusicApp(
                     onLoadLocalSongsToggle = onLoadLocalSongsToggle,
                     ambientBackground = ambientBackground,
                     onAmbientBackgroundToggle = onAmbientBackgroundToggle,
-                    videoMode = videoMode,
-                    onVideoModeToggle = switchPlaybackMode,
+                    appMode = appMode,
+                    onAppModeChange = switchPlaybackMode,
                     homeModeToggleEnabled = homeModeToggleEnabled,
                     onHomeModeToggleEnabledChange = onHomeModeToggleEnabledChange,
                     shortsEnabled = shortsEnabled,
@@ -789,8 +790,8 @@ fun MusicApp(
                     excludedFolders = excludedFolders,
                     ambientBackground = ambientBackground,
                     playerArtworkColors = playerArtworkColors,
-                    videoMode = videoMode,
-                    onVideoModeToggle = switchPlaybackMode,
+                    appMode = appMode,
+                    onAppModeChange = switchPlaybackMode,
                     showModeToggle = homeModeToggleEnabled,
                     playerStyle = playerStyle,
                     onPlayerStyleChange = onPlayerStyleChange,
@@ -826,8 +827,8 @@ fun MusicApp(
                     onAmbientBackgroundToggle = onAmbientBackgroundToggle,
                     playerArtworkColors = playerArtworkColors,
                     onPlayerArtworkColorsToggle = onPlayerArtworkColorsToggle,
-                    videoMode = videoMode,
-                    onVideoModeToggle = switchPlaybackMode,
+                    appMode = appMode,
+                    onAppModeChange = switchPlaybackMode,
                     homeModeToggleEnabled = homeModeToggleEnabled,
                     onHomeModeToggleChange = onHomeModeToggleEnabledChange,
                     spotlightHome = spotlightHome,

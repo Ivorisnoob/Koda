@@ -335,7 +335,7 @@ internal fun buildSettingsSearchIndex(
     ) { onOpenPage(SettingsPage.CONTENT) }
     entry(
         "content_mode", stringResource(R.string.sp_mode), stringResource(R.string.settings_content_and_feeds), Icons.Rounded.VideoLibrary,
-        listOf("video mode", "music mode", "switch", "youtube videos")
+        listOf("video mode", "music mode", "tv mode", "switch", "youtube videos", "movies", "series", "anime")
     ) { onOpenPage(SettingsPage.CONTENT) }
     entry(
         "home_toggle", stringResource(R.string.sp_home_mode_toggle), stringResource(R.string.settings_content_and_feeds), Icons.Rounded.ToggleOn,

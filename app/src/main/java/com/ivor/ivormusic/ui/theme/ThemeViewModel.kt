@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.launch
+import com.ivor.ivormusic.data.AppMode
 import com.ivor.ivormusic.data.ThemePreferences
 import com.ivor.ivormusic.data.PlayerStyle
 import kotlinx.coroutines.flow.StateFlow
@@ -21,7 +22,7 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
     val loadLocalSongs: StateFlow<Boolean> = themePreferences.loadLocalSongs
     val ambientBackground: StateFlow<Boolean> = themePreferences.ambientBackground
     val playerArtworkColors: StateFlow<Boolean> = themePreferences.playerArtworkColors
-    val videoMode: StateFlow<Boolean> = themePreferences.videoMode
+    val appMode: StateFlow<AppMode> = themePreferences.appMode
     val homeModeToggleEnabled: StateFlow<Boolean> = themePreferences.homeModeToggleEnabled
     val playerStyle: StateFlow<PlayerStyle> = themePreferences.playerStyle
     val saveVideoHistory: StateFlow<Boolean> = themePreferences.saveVideoHistory
@@ -98,12 +99,8 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
         themePreferences.toggleAmbientBackground()
     }
     
-    fun setVideoMode(enabled: Boolean) {
-        themePreferences.setVideoMode(enabled)
-    }
-    
-    fun toggleVideoMode() {
-        themePreferences.toggleVideoMode()
+    fun setAppMode(mode: AppMode) {
+        themePreferences.setAppMode(mode)
     }
 
     fun setHomeModeToggleEnabled(enabled: Boolean) {

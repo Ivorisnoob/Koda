@@ -66,6 +66,37 @@ There are no diagnosed, still-open defects recorded here for version 4.6. Fixed 
 
 ### Interface
 
+#### TV mode, a third content mode
+
+**In progress.** A third mode beside Music and Video for movies, series and anime, with source,
+quality, audio-language and subtitle choices. The design, the research it rests on and the phasing
+live in [`plan.md`](plan.md); what follows is only the shape and the reasoning that constrains it.
+
+**Koda is a client, not a scraper.** Content comes from user-installed Stremio addons: the protocol
+is four independent resources (`catalog`, `meta`, `stream`, `subtitles`) joined client-side by
+namespaced ids, so catalogues, metadata, files and subtitles are four separate markets and Koda
+ships none of them. That is the only boundary where the volatile half lives on someone else's
+server. The alternative - scrapers in the APK - puts the fastest-rotting code in the project on a
+release cadence measured in CI runs; `webstreamr.hayd.uk`, the addon every guide pointed at for
+direct HTTP streams, now answers every request with a deprecation notice [verified August 2026].
+
+**Three keyless addons ship preinstalled and none of them is a source of files**: Cinemeta, Anime
+Kitsu and OpenSubtitles v3, all probed live with no credentials. That makes browsing, searching and
+watchlisting work on first launch, and leaves the one decision that is genuinely the user's - where
+files come from - to the user. It also means the honest first-run state is "browse everything, play
+nothing", which is designed for rather than hidden.
+
+**Phase 1 has landed**: `AppMode`, the three-way toggle, per-mode tab sets and persistence, and
+placeholder content. Nothing about addons or playback exists yet.
+
+Two things worth knowing before the next phase. **Sub and dub are two unrelated mechanisms** - a
+different file (a separate episode list, which is how CloudStream models it) and a different audio
+track inside one file - and Koda has no audio-track selection at all today, because a YouTube stream
+has one audio language. And **HDR conflicts with a decision already made here**: HDR is intentionally
+unsupported, while the TV catalogue is full of HDR10 and Dolby Vision releases, so those are parsed,
+labelled and de-prioritised behind an off-by-default toggle rather than either filtered out or
+allowed freely.
+
 #### Per-channel notification settings
 
 ~~The bell is an output control for something that does not run.~~ **The device-local half now runs.** The background upload check is built (`work/UploadCheckWorker.kt`): a periodic WorkManager job (six hours, network-connected constraint, scheduled idempotently from Application.onCreate) walks the locally-followed channels' RSS feeds - the same cheap per-channel source as in-app fast refresh - remembers a last-seen timestamp per channel, and notifies what arrived since. First sight of a channel sets its baseline silently instead of greeting you with forty uploads. One Android notification channel carries everything, grouped; `POST_NOTIFICATIONS` is honoured at post time.
@@ -381,7 +412,9 @@ The third is simply that a watch is a small battery attached to a bad antenna. E
 
 ---
 
-#### Android TV
+#### Android TV (leanback)
+
+**Not to be confused with TV mode**, which is a third content mode on the phone (movies and series) and is tracked separately below. This entry is about Koda running on a television.
 
 There is no leanback support in the project. No TV launcher intent, no leanback feature declaration, no D-pad navigation model. Koda cannot appear on a TV today.
 

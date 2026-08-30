@@ -57,7 +57,7 @@ object DiagnosticsCollector {
             appendLine("Signed in: ${if (signedIn) "yes" else "no"}")
             appendLine()
             appendLine("[Settings]")
-            appendLine("Video mode: ${prefs.videoMode.value}")
+            appendLine("Mode: ${prefs.appMode.value.name.lowercase(Locale.US)}")
             appendLine("Home style: ${if (prefs.spotlightHome.value) "Spotlight" else "Classic"}")
             appendLine("Player style: ${prefs.playerStyle.value.name.lowercase(Locale.US)}")
             appendLine("Local only mode: ${prefs.localOnlyMode.value}")

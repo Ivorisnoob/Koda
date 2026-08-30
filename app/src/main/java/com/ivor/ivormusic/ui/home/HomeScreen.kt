@@ -39,8 +39,10 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Subscriptions
+import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material.icons.outlined.LibraryMusic
+import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material.icons.outlined.VideoLibrary
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Subscriptions
@@ -114,9 +116,12 @@ import coil.compose.AsyncImage
 import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.ui.library.songRowClick
 import com.ivor.ivormusic.data.PlayerStyle
-import com.ivor.ivormusic.ui.components.MusicVideoToggle
-import com.ivor.ivormusic.ui.components.MusicVideoToggleState
-import com.ivor.ivormusic.ui.components.rememberMusicVideoToggleState
+import com.ivor.ivormusic.data.AppMode
+import com.ivor.ivormusic.ui.components.AppModeToggle
+import com.ivor.ivormusic.ui.components.AppModeToggleState
+import com.ivor.ivormusic.ui.components.rememberAppModeToggleState
+import com.ivor.ivormusic.ui.tv.TvPlaceholder
+import com.ivor.ivormusic.ui.tv.TvPlaceholderTab
 import com.ivor.ivormusic.ui.components.rememberPermissionState
 import com.ivor.ivormusic.ui.components.scrollToTop
 import com.ivor.ivormusic.ui.player.PlayerViewModel
@@ -187,8 +192,8 @@ fun HomeScreen(
     excludedFolders: Set<String> = emptySet(),
     ambientBackground: Boolean = true,
     playerArtworkColors: Boolean = true,
-    videoMode: Boolean = false,
-    onVideoModeToggle: (Boolean) -> Unit = {},
+    appMode: AppMode = AppMode.MUSIC,
+    onAppModeChange: (AppMode) -> Unit = {},
     showModeToggle: Boolean = true,
     playerStyle: PlayerStyle = PlayerStyle.EDITORIAL,
     onPlayerStyleChange: (PlayerStyle) -> Unit = {},
@@ -265,16 +270,16 @@ fun HomeScreen(
     val shortsFeed by viewModel.shortsFeed.collectAsState()
     
     // Load videos when video mode is enabled
-    LaunchedEffect(videoMode) {
-        if (videoMode) {
+    LaunchedEffect(appMode) {
+        if (appMode.isVideo) {
             viewModel.loadTrendingVideos()
         }
     }
 
     // Fetch the Home-only Shorts shelf when the user opts in mid-session (the
     // load itself also gates on the preference).
-    LaunchedEffect(videoMode, shortsEnabled) {
-        if (videoMode && shortsEnabled) {
+    LaunchedEffect(appMode, shortsEnabled) {
+        if (appMode.isVideo && shortsEnabled) {
             viewModel.loadShortsFeed()
         }
     }
@@ -284,12 +289,12 @@ fun HomeScreen(
     // and a plainly-remembered tab index would drop the user on Home every time
     // they looked at a creator from the Subscriptions feed. The scroll states
     // below already survive it, because rememberLazyListState is saveable.
-    var selectedTab by androidx.compose.runtime.saveable.rememberSaveable(videoMode) {
-        mutableIntStateOf(homePreferences.getLastHomeTab(videoMode))
+    var selectedTab by androidx.compose.runtime.saveable.rememberSaveable(appMode) {
+        mutableIntStateOf(homePreferences.getLastHomeTab(appMode))
     }
 
-    LaunchedEffect(selectedTab, videoMode) {
-        homePreferences.setLastHomeTab(videoMode, selectedTab)
+    LaunchedEffect(selectedTab, appMode) {
+        homePreferences.setLastHomeTab(appMode, selectedTab)
     }
 
     // Every tab's scroll position, remembered HERE rather than inside the tab
@@ -313,34 +318,46 @@ fun HomeScreen(
     val subscriptionsScrollState = rememberLazyListState()
     val musicLibraryScrollState = rememberLazyListState()
     val videoLibraryScrollState = rememberLazyListState()
+    val tvHomeScrollState = rememberLazyListState()
+    val tvSearchScrollState = rememberLazyListState()
+    val tvLibraryScrollState = rememberLazyListState()
 
     // Which of the above the visible tab is currently driving.
     val currentTabScrollState = when (selectedTab) {
-        0 -> if (videoMode) videoHomeScrollState else musicHomeScrollState
-        1 -> searchScrollState
-        2 -> if (videoMode) subscriptionsScrollState else musicLibraryScrollState
+        0 -> when (appMode) {
+            AppMode.VIDEO -> videoHomeScrollState
+            AppMode.TV -> tvHomeScrollState
+            AppMode.MUSIC -> musicHomeScrollState
+        }
+        1 -> if (appMode.isTv) tvSearchScrollState else searchScrollState
+        2 -> when (appMode) {
+            AppMode.VIDEO -> subscriptionsScrollState
+            AppMode.TV -> tvLibraryScrollState
+            AppMode.MUSIC -> musicLibraryScrollState
+        }
         else -> videoLibraryScrollState
     }
 
     // Lives outside the mode-swapped content so the thumb keeps animating
     // while the music/video home content cross-fades underneath it
-    val modeToggleState = rememberMusicVideoToggleState(videoMode)
+    val modeToggleState = rememberAppModeToggleState(appMode)
 
     // Handle back button to return to Home tab if on Search or Library
     BackHandler(enabled = selectedTab != 0) {
         selectedTab = 0
     }
 
-    // The Subscriptions/History tabs (2/3) only exist in video mode
-    LaunchedEffect(videoMode) {
-        if (!videoMode && selectedTab > 2) selectedTab = 0
+    // Tab sets differ per mode (video has a fourth), so a mode change can
+    // leave selectedTab pointing past the end of the new set.
+    LaunchedEffect(appMode) {
+        if (selectedTab > appMode.lastTabIndex) selectedTab = 0
     }
 
     // Re-read the history when Home becomes the active tab. Playback writes an
     // entry only after 15s, so coming back from the player is exactly when the
     // rail has something new to show.
-    LaunchedEffect(selectedTab, videoMode) {
-        if (selectedTab == 0 && !videoMode) viewModel.refreshRecentlyPlayed()
+    LaunchedEffect(selectedTab, appMode) {
+        if (selectedTab == 0 && appMode.isMusic) viewModel.refreshRecentlyPlayed()
     }
 
     // Auth Dialog State
@@ -374,7 +391,7 @@ fun HomeScreen(
             // is video history while the video toggle is on. Asking for it is
             // therefore asking to be in music mode; leaving the toggle alone
             // would land on the wrong tab and look like the link did nothing.
-            if (videoMode) onVideoModeToggle(false)
+            if (!appMode.isMusic) onAppModeChange(AppMode.MUSIC)
             viewedArtistFromPlayer = artist
             selectedTab = 2
             viewModel.consumeArtistPageRequest()
@@ -400,7 +417,7 @@ fun HomeScreen(
     val pendingPlaylistPage by viewModel.pendingPlaylistPage.collectAsState()
     LaunchedEffect(pendingPlaylistPage) {
         pendingPlaylistPage?.let { playlist ->
-            if (videoMode) onVideoModeToggle(false)
+            if (!appMode.isMusic) onAppModeChange(AppMode.MUSIC)
             viewedPlaylistFromHome = playlist
             selectedTab = 2
             viewModel.consumePlaylistPageRequest()
@@ -409,7 +426,7 @@ fun HomeScreen(
     val pendingVideoPlaylistPage by viewModel.pendingVideoPlaylistPage.collectAsState()
     LaunchedEffect(pendingVideoPlaylistPage) {
         pendingVideoPlaylistPage?.let { playlist ->
-            if (!videoMode) onVideoModeToggle(true)
+            if (!appMode.isVideo) onAppModeChange(AppMode.VIDEO)
             viewedVideoPlaylistFromHome = playlist
             // Video mode's Library is tab 3; music's is tab 2.
             selectedTab = 3
@@ -511,7 +528,7 @@ fun HomeScreen(
                         // motionScheme is composable and transitionSpec is not.
                         val modeScaleSpec = MaterialTheme.motionScheme.fastSpatialSpec<Float>()
                         androidx.compose.animation.AnimatedContent(
-                            targetState = videoMode,
+                            targetState = appMode,
                             label = "ModeTransition",
                             transitionSpec = {
                                 (androidx.compose.animation.fadeIn(
@@ -526,14 +543,24 @@ fun HomeScreen(
                                     animationSpec = androidx.compose.animation.core.tween(durationMillis = 220)
                                 ))
                             }
-                        ) { videoModeContent ->
+                        ) { modeContent ->
+                            // TV mode is not account-derived and has no
+                            // local-only variant: nothing it shows comes from
+                            // YouTube, so the notice the other two modes need
+                            // would be answering a question TV never asks.
+                            if (modeContent.isTv) {
+                                TvPlaceholder(
+                                    tab = TvPlaceholderTab.HOME,
+                                    contentPadding = listContentPadding
+                                )
+                            }
                             // Video Mode: Show video content
-                            if (videoModeContent && localOnly) {
+                            else if (modeContent.isVideo && localOnly) {
                                 com.ivor.ivormusic.ui.components.LocalOnlyNotice(
                                     subtitle = stringResource(R.string.local_only_video_mode_subtitle),
                                     onOpenSettings = onNavigateToSettings
                                 )
-                            } else if (videoModeContent) {
+                            } else if (modeContent.isVideo) {
                                 VideoHomeContent(
                                     videos = trendingVideos,
                                     isLoading = isVideoLoading,
@@ -560,8 +587,8 @@ fun HomeScreen(
                                     isDarkMode = isDarkMode,
                                     contentPadding = listContentPadding,
                                     viewModel = viewModel,
-                                    videoMode = videoMode,
-                                    onVideoModeToggle = onVideoModeToggle,
+                                    appMode = appMode,
+                                    onAppModeChange = onAppModeChange,
                                     showModeToggle = showModeToggle,
                                     modeToggleState = modeToggleState,
                                     listState = videoHomeScrollState
@@ -613,8 +640,8 @@ fun HomeScreen(
                                     viewModel = viewModel,
                                     excludedFolders = excludedFolders,
                                     manualScan = manualScan,
-                                    videoMode = videoMode,
-                                    onVideoModeToggle = onVideoModeToggle,
+                                    appMode = appMode,
+                                    onAppModeChange = onAppModeChange,
                                     showModeToggle = showModeToggle,
                                     modeToggleState = modeToggleState,
                                     listState = musicHomeScrollState
@@ -656,8 +683,8 @@ fun HomeScreen(
                                     viewModel = viewModel,
                                     excludedFolders = excludedFolders,
                                     manualScan = manualScan,
-                                    videoMode = videoMode,
-                                    onVideoModeToggle = onVideoModeToggle,
+                                    appMode = appMode,
+                                    onAppModeChange = onAppModeChange,
                                     showModeToggle = showModeToggle,
                                     modeToggleState = modeToggleState,
                                     listState = musicHomeScrollState
@@ -665,7 +692,12 @@ fun HomeScreen(
                             }
                         }
                     }
-                    1 -> if (videoMode && localOnly) {
+                    1 -> if (appMode.isTv) {
+                        TvPlaceholder(
+                            tab = TvPlaceholderTab.SEARCH,
+                            contentPadding = listContentPadding
+                        )
+                    } else if (appMode.isVideo && localOnly) {
                         com.ivor.ivormusic.ui.components.LocalOnlyNotice(
                             subtitle = stringResource(R.string.local_only_video_search_subtitle),
                             onOpenSettings = onNavigateToSettings
@@ -698,17 +730,22 @@ fun HomeScreen(
                         contentPadding = listContentPadding,
                         viewModel = viewModel,
                         isDarkMode = isDarkMode,
-                        videoMode = videoMode,
+                        videoMode = appMode.isVideo,
                         localOnly = localOnly,
                         listState = searchScrollState
                     )
                     2 -> {
-                        if (videoMode && localOnly) {
+                        if (appMode.isTv) {
+                            TvPlaceholder(
+                                tab = TvPlaceholderTab.LIBRARY,
+                                contentPadding = listContentPadding
+                            )
+                        } else if (appMode.isVideo && localOnly) {
                             com.ivor.ivormusic.ui.components.LocalOnlyNotice(
                                 subtitle = stringResource(R.string.local_only_subscriptions_subtitle),
                                 onOpenSettings = onNavigateToSettings
                             )
-                        } else if (videoMode) {
+                        } else if (appMode.isVideo) {
                             com.ivor.ivormusic.ui.video.SubscriptionsContent(
                                 viewModel = viewModel,
                                 onEnqueueVideo = onEnqueueVideo,
@@ -755,12 +792,12 @@ fun HomeScreen(
                     3 -> {
                         // Video mode only: Library (playlists, Watch Later,
                         // liked videos, watch history)
-                        if (videoMode && localOnly) {
+                        if (appMode.isVideo && localOnly) {
                             com.ivor.ivormusic.ui.components.LocalOnlyNotice(
                                 subtitle = stringResource(R.string.local_only_video_library_subtitle),
                                 onOpenSettings = onNavigateToSettings
                             )
-                        } else if (videoMode) {
+                        } else if (appMode.isVideo) {
                             com.ivor.ivormusic.ui.video.VideoLibraryContent(
                                 viewModel = viewModel,
                                 onOpenChannel = onOpenChannel,
@@ -813,16 +850,26 @@ fun HomeScreen(
         // Both navigation variants use the same destinations and interaction
         // contract. Only their Material container and item presentation differ.
         val navBarHaptics = com.ivor.ivormusic.util.rememberKodaHaptics()
-        val navTabs = if (videoMode) listOf(
-            Triple(0, stringResource(R.string.tab_home), Pair(Icons.Rounded.Home, Icons.Outlined.Home)),
-            Triple(1, stringResource(R.string.tab_search), Pair(Icons.Filled.Search, Icons.Outlined.Search)),
-            Triple(2, stringResource(R.string.tab_subs), Pair(Icons.Filled.Subscriptions, Icons.Outlined.Subscriptions)),
-            Triple(3, stringResource(R.string.tab_library), Pair(Icons.Filled.VideoLibrary, Icons.Outlined.VideoLibrary))
-        ) else listOf(
-            Triple(0, stringResource(R.string.tab_home), Pair(Icons.Rounded.Home, Icons.Outlined.Home)),
-            Triple(1, stringResource(R.string.tab_search), Pair(Icons.Filled.Search, Icons.Outlined.Search)),
-            Triple(2, stringResource(R.string.tab_library), Pair(Icons.Filled.LibraryMusic, Icons.Outlined.LibraryMusic))
-        )
+        val homeTab = Triple(0, stringResource(R.string.tab_home), Pair(Icons.Rounded.Home, Icons.Outlined.Home))
+        val searchTab = Triple(1, stringResource(R.string.tab_search), Pair(Icons.Filled.Search, Icons.Outlined.Search))
+        val navTabs = when (appMode) {
+            AppMode.VIDEO -> listOf(
+                homeTab,
+                searchTab,
+                Triple(2, stringResource(R.string.tab_subs), Pair(Icons.Filled.Subscriptions, Icons.Outlined.Subscriptions)),
+                Triple(3, stringResource(R.string.tab_library), Pair(Icons.Filled.VideoLibrary, Icons.Outlined.VideoLibrary))
+            )
+            AppMode.TV -> listOf(
+                homeTab,
+                searchTab,
+                Triple(2, stringResource(R.string.tab_library), Pair(Icons.Filled.Movie, Icons.Outlined.Movie))
+            )
+            AppMode.MUSIC -> listOf(
+                homeTab,
+                searchTab,
+                Triple(2, stringResource(R.string.tab_library), Pair(Icons.Filled.LibraryMusic, Icons.Outlined.LibraryMusic))
+            )
+        }
         val selectNavTab: (Int) -> Unit = { index ->
             if (selectedTab == index) {
                 if (currentTabScrollState.canScrollBackward) {
@@ -1037,10 +1084,10 @@ fun HomeScreen(
                 // Refresh login state, account info and the feeds so the UI
                 // reflects the account immediately instead of after a restart
                 viewModel.checkYouTubeConnection()
-                if (videoMode) {
+                if (appMode.isVideo) {
                     viewModel.loadTrendingVideos()
                     viewModel.loadYouTubeHistory()
-                } else {
+                } else if (appMode.isMusic) {
                     viewModel.loadYouTubeRecommendations()
                 }
             },
@@ -1122,10 +1169,10 @@ fun YourMixContent(
     viewModel: HomeViewModel,
     excludedFolders: Set<String> = emptySet(),
     manualScan: Boolean = false,
-    videoMode: Boolean = false,
-    onVideoModeToggle: (Boolean) -> Unit = {},
+    appMode: AppMode = AppMode.MUSIC,
+    onAppModeChange: (AppMode) -> Unit = {},
     showModeToggle: Boolean = true,
-    modeToggleState: MusicVideoToggleState = rememberMusicVideoToggleState(videoMode),
+    modeToggleState: AppModeToggleState = rememberAppModeToggleState(appMode),
     /** Hoisted by HomeScreen: survives tab switches, reachable by the nav bar. */
     listState: LazyListState = rememberLazyListState()
 ) {
@@ -1167,7 +1214,7 @@ fun YourMixContent(
                     alpha = if (visible) 1f else 0f
                     translationY = if (visible) 0f else -20f
                 }.animateContentSize()) {
-                    TopBarSection(onProfileClick = onProfileClick, onSettingsClick = onSettingsClick, onDownloadsClick = onDownloadsClick, isDarkMode = isDarkMode, viewModel = viewModel, videoMode = videoMode, onVideoModeToggle = onVideoModeToggle, showModeToggle = showModeToggle, modeToggleState = modeToggleState)
+                    TopBarSection(onProfileClick = onProfileClick, onSettingsClick = onSettingsClick, onDownloadsClick = onDownloadsClick, isDarkMode = isDarkMode, viewModel = viewModel, appMode = appMode, onAppModeChange = onAppModeChange, showModeToggle = showModeToggle, modeToggleState = modeToggleState)
                 }
             }
             
@@ -1277,10 +1324,10 @@ fun TopBarSection(
     onDownloadsClick: () -> Unit = {},
     isDarkMode: Boolean,
     viewModel: HomeViewModel,
-    videoMode: Boolean = false,
-    onVideoModeToggle: (Boolean) -> Unit = {},
+    appMode: AppMode = AppMode.MUSIC,
+    onAppModeChange: (AppMode) -> Unit = {},
     showModeToggle: Boolean = true,
-    modeToggleState: MusicVideoToggleState = rememberMusicVideoToggleState(videoMode)
+    modeToggleState: AppModeToggleState = rememberAppModeToggleState(appMode)
 ) {
     val surfaceColor = MaterialTheme.colorScheme.surfaceContainer
     val iconColor = MaterialTheme.colorScheme.onSurface
@@ -1411,9 +1458,9 @@ fun TopBarSection(
             // when the home content swaps between modes. Can be hidden from
             // Settings (Home Screen Mode Toggle).
             if (showModeToggle) {
-                MusicVideoToggle(
-                    videoMode = videoMode,
-                    onVideoModeChange = onVideoModeToggle,
+                AppModeToggle(
+                    mode = appMode,
+                    onModeChange = onAppModeChange,
                     state = modeToggleState
                 )
             }

@@ -89,6 +89,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ivor.ivormusic.data.CacheManager
+import com.ivor.ivormusic.data.AppMode
 import com.ivor.ivormusic.data.PlayerStyle
 import com.ivor.ivormusic.data.SessionManager
 import com.ivor.ivormusic.data.ThemePreferences
@@ -796,8 +797,8 @@ internal fun PlaybackSettingsPage(
 internal fun ContentSettingsPage(
     localOnlyMode: Boolean,
     onLocalOnlyModeToggle: (Boolean) -> Unit,
-    videoMode: Boolean,
-    onVideoModeToggle: (Boolean) -> Unit,
+    appMode: AppMode,
+    onAppModeChange: (AppMode) -> Unit,
     homeModeToggleEnabled: Boolean,
     onHomeModeToggleChange: (Boolean) -> Unit,
     timedCommentsEnabled: Boolean,
@@ -837,9 +838,9 @@ internal fun ContentSettingsPage(
                     ) {
                         Column {
                             SettingsDivider()
-                            ExpressiveVideoModeToggleItem(
-                                enabled = videoMode,
-                                onToggle = onVideoModeToggle,
+                            ExpressiveAppModeToggleItem(
+                                mode = appMode,
+                                onModeChange = onAppModeChange,
                                 textColor = MaterialTheme.colorScheme.onBackground,
                                 secondaryTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
                                 accentColor = MaterialTheme.colorScheme.primary

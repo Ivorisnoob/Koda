@@ -700,7 +700,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         _subscriptionFeed.value = emptyList()
 
         // Both modes are emptied, not just the visible one. Toggling modes
-        // refetches on its own (HomeScreen's LaunchedEffect(videoMode)), but
+        // refetches on its own (HomeScreen's LaunchedEffect(appMode)), but
         // the old list would stay on screen until that lands - so switching
         // account and flipping to video mode would show the previous account's
         // feed for as long as the fetch takes. These loaders also only assign
@@ -716,8 +716,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
         // Refresh whichever home the user is actually on. Same split the
         // sign-in handler uses, so a switch and a fresh login behave alike.
-        // loadTrendingVideos already pulls the Shorts shelf itself.
-        if (themePreferences.videoMode.value) {
+        // loadTrendingVideos already pulls the Shorts shelf itself. TV mode is
+        // not account-derived, so a profile switch has nothing to refetch there.
+        if (themePreferences.appMode.value.isVideo) {
             loadTrendingVideos()
             loadYouTubeHistory()
         } else {
