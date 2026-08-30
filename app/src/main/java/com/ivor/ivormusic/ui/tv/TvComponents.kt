@@ -115,8 +115,26 @@ private fun seedColor(title: String): Color {
         scheme.primaryContainer, scheme.secondaryContainer, scheme.tertiaryContainer,
         scheme.surfaceContainerHigh, scheme.surfaceContainerHighest,
     )
-    val index = (title.hashCode().toLong() and 0xFFFFFFFFL).toInt() % options.size
-    return options[index]
+    return options[seedIndex(title, options.size)]
+}
+
+/**
+ * A stable index in `[0, count)` for [title].
+ *
+ * [scar] The first version masked the hash to unsigned and then narrowed it
+ * back with `.toInt()`, which restores the sign and undoes the mask entirely -
+ * so any title with a negative hash produced a negative index and Kotlin's
+ * truncated `%` kept it negative. That crashed on roughly four in ten titles,
+ * which is to say TV mode crashed as soon as a shelf drew a poster without
+ * artwork.
+ *
+ * The modulo happens on the Long, where the masked value is genuinely
+ * non-negative, and only the result - which is now known to be in range - is
+ * narrowed. Do not "simplify" the order of those two operations.
+ */
+internal fun seedIndex(title: String, count: Int): Int {
+    if (count <= 0) return 0
+    return ((title.hashCode().toLong() and 0xFFFFFFFFL) % count).toInt()
 }
 
 /** Press physics shared by every tappable TV card. */
