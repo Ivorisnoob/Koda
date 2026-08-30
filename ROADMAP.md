@@ -104,7 +104,16 @@ intentionally unsupported, while the TV catalogue is full of HDR10 and Dolby Vis
 was to parse and label those releases and de-prioritise them in auto-select rather than either
 filtering them out or allowing them freely.
 
-What remains, roughly in order: merged subtitles (the `/subtitles` fan-out exists in
+**Torrent playback landed after phase 3**, reversing the plan's own "no torrent engine in v1". The
+reason was evidence rather than preference: seventeen addons were probed and none offered a free,
+playable path - every route runs through torrents, a debrid subscription or a registration, and even
+Stremio's official Public Domain Movies addon returns torrents. The cost is a 15.79 MB native library
+on arm64 (13.20 MB on armv7), measured from the packaged APK and identical in release because R8 does
+not touch `.so` files. **That makes splitting the APK by product flavour load-bearing** - a build
+without TV mode should not carry it.
+
+What remains, roughly in order: the product-flavour split so only a TV build pays for the engine;
+merged subtitles (the `/subtitles` fan-out exists in
 `TvStreamRepository` but nothing consumes it yet) and subtitle styling; per-network auto-select
 profiles of their own, since today's cap is borrowed from the video quality setting; a TV settings
 page and the addon manager growing directory browsing and WebView configuration (which is how a

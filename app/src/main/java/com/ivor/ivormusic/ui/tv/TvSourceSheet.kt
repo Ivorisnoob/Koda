@@ -81,6 +81,7 @@ fun TvSourceSheet(
     facets: TvSourceFacets,
     filter: TvSourceFilter,
     failedAddons: List<String>,
+    torrentsPlayable: Boolean,
     onPlay: (TvSource) -> Unit,
     onOpenExternal: (String) -> Unit,
     onSetResolution: (Int?) -> Unit,
@@ -177,6 +178,7 @@ fun TvSourceSheet(
                     } else {
                         SourceList(
                             sources = sources,
+                            torrentsPlayable = torrentsPlayable,
                             onPlay = onPlay,
                             onTorrent = { torrentNotice = true },
                             onExternal = { externalNotice = it },
@@ -219,6 +221,7 @@ fun TvSourceSheet(
 @Composable
 private fun SourceList(
     sources: List<TvSource>,
+    torrentsPlayable: Boolean,
     onPlay: (TvSource) -> Unit,
     onTorrent: () -> Unit,
     onExternal: (TvSource) -> Unit,
@@ -248,11 +251,13 @@ private fun SourceList(
             items(group, key = { it.id }) { source ->
                 SourceRow(
                     source = source,
+                    torrentsPlayable = torrentsPlayable,
                     onClick = {
                         when (source.kind) {
                             TvSourceKind.PLAYABLE -> onPlay(source)
                             TvSourceKind.EXTERNAL -> onExternal(source)
-                            TvSourceKind.TORRENT -> onTorrent()
+                            TvSourceKind.TORRENT ->
+                                if (torrentsPlayable) onPlay(source) else onTorrent()
                         }
                     },
                 )
@@ -270,9 +275,13 @@ private fun SourceList(
  * name better than any regex does.
  */
 @Composable
-private fun SourceRow(source: TvSource, onClick: () -> Unit) {
+private fun SourceRow(
+    source: TvSource,
+    torrentsPlayable: Boolean,
+    onClick: () -> Unit,
+) {
     val tags = source.tags
-    val playable = source.isPlayable
+    val playable = source.canPlay(torrentsPlayable)
     // A torrent row is shown, dimmed: hiding it makes a working addon look
     // empty, which is a worse lie than showing something that needs a step.
     val contentColor =
@@ -289,7 +298,11 @@ private fun SourceRow(source: TvSource, onClick: () -> Unit) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 SourceBadges(
                     source = source,
-                    playable = playable,
+                    // The badge marks what a row *is*, not whether it can be
+                    // started: a torrent stays labelled a torrent once the
+                    // engine can play it, because it still costs bandwidth and
+                    // still takes a moment to find peers.
+                    showKind = !source.isPlayable,
                     modifier = Modifier.weight(1f),
                 )
                 source.sizeBytes?.let { bytes ->
@@ -335,14 +348,14 @@ private fun SourceRow(source: TvSource, onClick: () -> Unit) {
 }
 
 @Composable
-private fun SourceBadges(source: TvSource, playable: Boolean, modifier: Modifier = Modifier) {
+private fun SourceBadges(source: TvSource, showKind: Boolean, modifier: Modifier = Modifier) {
     val tags = source.tags
     Row(
         modifier = modifier,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (!playable) {
+        if (showKind) {
             Badge(
                 text = stringResource(
                     if (source.kind == TvSourceKind.EXTERNAL) R.string.tv_external_badge

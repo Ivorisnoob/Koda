@@ -122,6 +122,17 @@ android.defaultConfig.apply {
 dependencies {
     coreLibraryDesugaring(libs.desugar.jdk.libs.nio)
 
+    // Torrent playback for TV mode sources that carry only an infoHash.
+    // Only the two ABIs the splits above build for; adding x86 would put 6 MB
+    // of native code in the universal APK for emulators alone.
+    implementation(libs.libtorrent4j)
+    implementation(libs.libtorrent4j.android.arm64)
+    implementation(libs.libtorrent4j.android.arm)
+    // The emulator's ABI, and debug-only so it never reaches a release APK -
+    // the same reason testImplementation and debugImplementation are absent
+    // from the release archive.
+    debugImplementation(libs.libtorrent4j.android.x64)
+
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.core.splashscreen)

@@ -586,6 +586,29 @@ binge-watching. [scar] The countdown ending and `STATE_ENDED` are two signals fo
 within a frame of each other, so `playNextEpisode` returns early while an advance is already in
 flight - without that guard every boundary ran the fan-out twice and the second cancelled the first.
 
+**Torrent sources play through a `DataSource`, not a local server.** `TorrentDataSource` hands
+ExoPlayer bytes out of a partially-downloaded file, so every feature above it - resume, next-episode,
+audio tracks, the gesture surface - works untouched: none of them are below that line. It is the one
+data source in the app allowed to block, because a byte that has not arrived is a wait rather than an
+error and returning zero would read as end-of-stream. A seek re-aims the swarm (`prioritiseFrom` plus
+piece deadlines); without that, jumping to 1:20:00 waits for the sequential head to crawl there.
+
+**The torrent engine is a streaming engine, not a download manager**, and every setting follows from
+that: only the playing file is fetched (everything else is `Priority.IGNORE`, because an unread file
+is pure bandwidth and battery), pieces are sequential rather than rarest-first, connections are
+capped, upload is limited rather than zero (swarms throttle peers that never give anything back), and
+**the session is torn down when playback stops** so a device is not left running a DHT node. One
+session process-wide, started lazily - libtorrent binds ports and holds a routing table, so two
+sessions is two of each from one app.
+
+**The native library is 15.79 MB on arm64 and 13.20 MB on armv7** [measured August 2026 from the
+packaged APK]. Maven's 6.2 MB artifact is the compressed form; `.so` files are stored uncompressed
+and R8 never touches them, so **the debug figure is exactly the release figure**. x86_64 is
+`debugImplementation` only - emulators on a PC host are x86_64, and without it the engine reports
+itself unavailable on every development device while working on real phones, which is the worst way
+for this to fail. `TorrentEngine.isAvailable` probes the native load and catches `Throwable`, since an
+unsupported ABI surfaces as `UnsatisfiedLinkError`; torrent rows stay dimmed rather than crashing.
+
 **Progress checkpoints on the same 15-second cadence music sessions use**, from the same loop that
 drives the position, and that loop is bounded by playback rather than by the ViewModel - an
 unconditional one would be a twice-a-second wakeup for the whole session of someone who only listens

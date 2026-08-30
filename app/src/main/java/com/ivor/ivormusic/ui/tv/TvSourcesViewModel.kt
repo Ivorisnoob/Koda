@@ -9,6 +9,7 @@ import com.ivor.ivormusic.data.tv.TvAutoPick
 import com.ivor.ivormusic.data.tv.TvAutoSelectProfile
 import com.ivor.ivormusic.data.tv.TvSource
 import com.ivor.ivormusic.data.tv.TvSourceFacets
+import com.ivor.ivormusic.data.tv.TorrentEngine
 import com.ivor.ivormusic.data.tv.TvSourceFilter
 import com.ivor.ivormusic.data.tv.TvStreamRepository
 import kotlinx.coroutines.Job
@@ -80,6 +81,15 @@ class TvSourcesViewModel(application: Application) : AndroidViewModel(applicatio
     /** Whether anything installed could produce a file at all. A fresh read. */
     fun hasStreamSource(): Boolean = !repository.addons.hasNoStreamSource()
 
+    /**
+     * Whether torrent rows can be started.
+     *
+     * An ABI question rather than a content one - the native library ships for
+     * arm64 and armv7 only - so it is asked once and threaded through ranking
+     * and the UI rather than assumed either way.
+     */
+    val torrentsPlayable: Boolean get() = TorrentEngine.isAvailable
+
     fun refreshAddons() = repository.addons.reload()
 
     /**
@@ -150,7 +160,7 @@ class TvSourcesViewModel(application: Application) : AndroidViewModel(applicatio
      */
     private fun recompute() {
         val filtered = TvStreamRepository.filter(_sources.value, _filter.value)
-        _visible.value = TvStreamRepository.ranked(filtered, profile)
-        _autoPick.value = TvStreamRepository.autoPick(filtered, profile)
+        _visible.value = TvStreamRepository.ranked(filtered, profile, torrentsPlayable)
+        _autoPick.value = TvStreamRepository.autoPick(filtered, profile, torrentsPlayable)
     }
 }

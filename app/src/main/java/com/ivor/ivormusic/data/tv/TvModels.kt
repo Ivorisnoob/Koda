@@ -411,6 +411,16 @@ data class TvStream(
     val description: String? = null,
     val subtitles: List<TvSubtitleTrack> = emptyList(),
     val behaviorHints: StreamBehaviorHints? = null,
+    /**
+     * Trackers and DHT hints for an [infoHash], as `tracker:udp://...` and
+     * `dht:<hash>` entries.
+     *
+     * Load-bearing for torrent playback: a magnet built from the hash alone
+     * relies entirely on DHT, which on a cold routing table can take minutes to
+     * find a first peer, while the addon's own tracker list usually finds one
+     * in seconds.
+     */
+    val sources: List<String> = emptyList(),
 ) {
     /** Everything an addon wrote about this release, for the parser to read. */
     val text: String

@@ -179,6 +179,18 @@ thing you can do to a phone's battery and a metered connection, and it changes w
 every store and mirror it is distributed through. Debrid, which the ecosystem already treats as the
 default, gets the same content over plain HTTPS with none of that.
 
+> **Overruled after phase 3, deliberately and with the cost measured.** Testing seventeen addons found
+> no free-and-playable path at all: every route to a file goes through torrents, a debrid subscription
+> or a registration, and even Stremio's own Public Domain Movies addon returns torrents. Requiring a
+> paid account to use a mode contradicts "the signed-out path is a first-class path" harder than the
+> objections above. libtorrent4j is now wired in behind `TorrentEngine`. **The size cost is real and
+> larger than this section assumed**: the packaged `libtorrent4j.so` is 15.79 MB on arm64 and 13.20 MB
+> on armv7 [measured August 2026 from the APK, not from the artifact - Maven's 6.2 MB jar is the
+> compressed form], and native libraries are stored uncompressed and untouched by R8, so that figure
+> is identical in a release build. That is what makes the product-flavour split load-bearing rather
+> than a nicety. The battery and metered-connection objections stand unchanged and are answered by
+> capped connections, an upload ceiling, and tearing the session down when playback stops.
+
 **Debrid-only.** Rejected as the *only* path, because it makes a paid account mandatory to use a mode,
 which the project's own constraint ("the signed-out path is a first-class path") argues against. It
 stays the *recommended* path.

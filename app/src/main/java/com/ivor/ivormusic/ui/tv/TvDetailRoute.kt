@@ -181,6 +181,7 @@ fun TvDetailRoute(
             facets = facets,
             filter = filter,
             failedAddons = failedAddons,
+            torrentsPlayable = sourcesViewModel.torrentsPlayable,
             onPlay = { source -> startPlayback(source) },
             onOpenExternal = { link ->
                 // Handed to the system rather than opened in a WebView: this is

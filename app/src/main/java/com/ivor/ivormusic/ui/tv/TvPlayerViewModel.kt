@@ -17,12 +17,17 @@ import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import com.ivor.ivormusic.data.tv.TvAutoSelectProfile
 import com.ivor.ivormusic.data.tv.TvEpisode
 import com.ivor.ivormusic.data.tv.TvItem
 import com.ivor.ivormusic.data.tv.TvProgressRepository
 import com.ivor.ivormusic.data.tv.TvSource
+import com.ivor.ivormusic.data.tv.TorrentDataSource
+import com.ivor.ivormusic.data.tv.TorrentEngine
+import com.ivor.ivormusic.data.tv.TvSourceKind
 import com.ivor.ivormusic.data.tv.TvStreamRepository
+import com.ivor.ivormusic.data.tv.magnetFor
 import com.ivor.ivormusic.util.KLog
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -153,6 +158,10 @@ class TvPlayerViewModel(application: Application) : AndroidViewModel(application
     private var ticker: Job? = null
     private var countdown: Job? = null
     private var advanceJob: Job? = null
+    private var torrentJob: Job? = null
+
+    /** The swarm currently joined, so it can be left when playback moves on. */
+    private var activeTorrentHash: String? = null
 
     /** Set while the media source is being swapped, so an expected stop is not an error. */
     private var isSwitchingSource = false
@@ -258,17 +267,13 @@ class TvPlayerViewModel(application: Application) : AndroidViewModel(application
     ) {
         cancelCountdown()
         advanceJob?.cancel()
+        torrentJob?.cancel()
+        releaseTorrent()
         _isAdvancing.value = false
         _problem.value = null
         _audioTracks.value = emptyList()
         offeredNextFor = null
         autoAdvanceDeclined = false
-
-        val url = source.stream.url
-        if (url.isNullOrBlank()) {
-            _problem.value = TvPlaybackProblem.SOURCE_FAILED
-            return
-        }
 
         _playback.value = TvPlayback(item, episode, source)
         bingeGroup = source.bingeGroup
@@ -277,6 +282,19 @@ class TvPlayerViewModel(application: Application) : AndroidViewModel(application
         val streamId = episode?.id ?: item.id
         val stored = progressRepository.forEpisode(streamId)
         val startAt = resumeFrom ?: stored?.takeIf { it.isResumable }?.positionMs ?: 0L
+
+        if (source.kind == TvSourceKind.TORRENT) {
+            startTorrent(item, episode, source, startAt)
+            return
+        }
+
+        val url = source.stream.url
+        if (url.isNullOrBlank()) {
+            // An external link reaches here only if a caller ignored its kind;
+            // the sheet routes those to the browser instead.
+            _problem.value = TvPlaybackProblem.SOURCE_FAILED
+            return
+        }
 
         isSwitchingSource = true
         // A per-playback factory, because the headers belong to this stream:
@@ -293,6 +311,74 @@ class TvPlayerViewModel(application: Application) : AndroidViewModel(application
         player.playWhenReady = true
         isSwitchingSource = false
         startTicker()
+    }
+
+    /**
+     * Join a swarm and play out of it.
+     *
+     * Three waits stacked, and each is a normal part of torrent playback rather
+     * than an error: the handle registering, the file list arriving over BEP 9,
+     * and the first pieces landing. Only the last of those is handled inside
+     * [TorrentDataSource]; the first two happen here because until the file
+     * list exists there is nothing to build a data source around.
+     */
+    private fun startTorrent(
+        item: TvItem,
+        episode: TvEpisode?,
+        source: TvSource,
+        startAt: Long,
+    ) {
+        val infoHash = source.stream.infoHash?.takeIf { it.isNotBlank() } ?: run {
+            _problem.value = TvPlaybackProblem.SOURCE_FAILED
+            return
+        }
+        if (!TorrentEngine.isAvailable) {
+            _problem.value = TvPlaybackProblem.SOURCE_FAILED
+            return
+        }
+
+        torrentJob?.cancel()
+        _isBuffering.value = true
+        torrentJob = viewModelScope.launch {
+            val context = getApplication<Application>()
+            val magnet = magnetFor(infoHash, source.stream.releaseName, source.stream.sources)
+            val handle = TorrentEngine.start(context, magnet, infoHash)
+            val info = handle?.let { TorrentEngine.awaitMetadata(it) }
+            if (handle == null || info == null) {
+                _isBuffering.value = false
+                _problem.value = TvPlaybackProblem.SOURCE_FAILED
+                return@launch
+            }
+            val files = TorrentEngine.filesOf(info)
+            val file = TorrentEngine.pickPlayableFile(files, source.stream.fileIdx)
+            if (file == null) {
+                _isBuffering.value = false
+                _problem.value = TvPlaybackProblem.SOURCE_FAILED
+                return@launch
+            }
+            TorrentEngine.prepareForStreaming(handle, info, file)
+            activeTorrentHash = infoHash
+
+            isSwitchingSource = true
+            player.setMediaSource(
+                ProgressiveMediaSource.Factory(
+                    TorrentDataSource.Factory(
+                        handle, info, file, TorrentEngine.cacheDir(context)
+                    )
+                ).createMediaSource(
+                    // The URI is a label, not an address - the factory above is
+                    // already bound to one file. It exists because Media3
+                    // requires a MediaItem and because it names the torrent in
+                    // any error the player logs.
+                    MediaItem.fromUri("torrent://" + infoHash + "/" + file.index)
+                )
+            )
+            player.prepare()
+            if (startAt > 0) player.seekTo(startAt)
+            player.playWhenReady = true
+            isSwitchingSource = false
+            startTicker()
+        }
     }
 
     /** Swap the file without losing the position. Used by "change source". */
@@ -411,6 +497,8 @@ class TvPlayerViewModel(application: Application) : AndroidViewModel(application
         checkpoint()
         cancelCountdown()
         advanceJob?.cancel()
+        torrentJob?.cancel()
+        releaseTorrent()
         ticker?.cancel()
         ticker = null
         if (playerLazy.isInitialized()) {
@@ -439,10 +527,24 @@ class TvPlayerViewModel(application: Application) : AndroidViewModel(application
         ticker?.cancel()
         countdown?.cancel()
         advanceJob?.cancel()
+        torrentJob?.cancel()
+        releaseTorrent()
         // Never through the accessor: releasing a player that was never built
         // would construct one purely to tear it down.
         if (playerLazy.isInitialized()) playerLazy.value.release()
         super.onCleared()
+    }
+
+    /**
+     * Leave the swarm.
+     *
+     * Not optional and not deferrable: a torrent left running keeps peers
+     * connected, keeps the radio awake and keeps uploading after the viewer has
+     * closed the film. Every exit from playback goes through here.
+     */
+    private fun releaseTorrent() {
+        activeTorrentHash?.let { TorrentEngine.release(it) }
+        activeTorrentHash = null
     }
 
     // --- Internals ----------------------------------------------------------

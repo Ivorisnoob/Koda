@@ -10,6 +10,7 @@ activityCompose = "1.11.0"
 composeBom = "2026.06.01"
 material3 = "1.5.0-alpha24"
 media3 = "1.5.0"
+libtorrent4j = "2.1.0-35"
 mediarouter = "1.7.0"
 playServicesCast = "21.3.0"
 coil = "2.7.0"
@@ -83,6 +84,19 @@ jaudiotagger = { group = "net.jthink", name = "jaudiotagger", version.ref = "jau
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinxSerializationJson" }
 # The _nio flavour specifically: NewPipe Extractor requires it for any minSdk below 33.
 desugar-jdk-libs-nio = { group = "com.android.tools", name = "desugar_jdk_libs_nio", version.ref = "desugarJdkLibs" }
+
+# The torrent engine behind TV mode's torrent sources. Split by ABI on purpose:
+# the native library is 6.2 MB for arm64 and 5.4 MB for armv7 [measured August
+# 2026], and the ABI splits in app/build.gradle.kts mean a user installs one of
+# them, not both. The -core artifact is the Java API and carries no native code.
+libtorrent4j = { group = "org.libtorrent4j", name = "libtorrent4j", version.ref = "libtorrent4j" }
+libtorrent4j-android-arm64 = { group = "org.libtorrent4j", name = "libtorrent4j-android-arm64", version.ref = "libtorrent4j" }
+libtorrent4j-android-arm = { group = "org.libtorrent4j", name = "libtorrent4j-android-arm", version.ref = "libtorrent4j" }
+# Debug builds only, for the emulator. Android emulators on a PC host are
+# x86_64, so without this the engine reports itself unavailable on every
+# development device while working correctly on real phones - which is the
+# worst possible way for this to fail.
+libtorrent4j-android-x64 = { group = "org.libtorrent4j", name = "libtorrent4j-android-x86_64", version.ref = "libtorrent4j" }
 
 
 [plugins]

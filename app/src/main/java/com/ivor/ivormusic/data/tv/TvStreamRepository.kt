@@ -27,6 +27,19 @@ data class TvSource(
     val isPlayable: Boolean get() = kind == TvSourceKind.PLAYABLE
 
     /**
+     * Whether this can actually be started right now.
+     *
+     * A torrent is playable only when the engine loaded - which is an ABI
+     * question, not a content one - so playability is asked with that answer
+     * rather than baked into the source. Passing it explicitly keeps the
+     * ranking functions pure and testable, which is the whole reason they are
+     * in a companion rather than reading a global.
+     */
+    fun canPlay(torrentsPlayable: Boolean): Boolean =
+        kind == TvSourceKind.PLAYABLE ||
+            (kind == TvSourceKind.TORRENT && torrentsPlayable)
+
+    /**
      * Which of the protocol's four delivery shapes this is.
      *
      * [TvSourceKind.EXTERNAL] exists because the three unplayable shapes are
@@ -370,9 +383,13 @@ class TvStreamRepository(context: Context) {
          * dropped, because hiding them makes a working torrent addon look like
          * a broken one - they sort last, dimmed, and say what they need.
          */
-        fun ranked(sources: List<TvSource>, profile: TvAutoSelectProfile): List<TvSource> =
+        fun ranked(
+            sources: List<TvSource>,
+            profile: TvAutoSelectProfile,
+            torrentsPlayable: Boolean = false,
+        ): List<TvSource> =
             sources.sortedWith(
-                compareByDescending<TvSource> { it.isPlayable }
+                compareByDescending<TvSource> { it.canPlay(torrentsPlayable) }
                     .thenByDescending { score(it, profile) }
             )
 
@@ -383,8 +400,12 @@ class TvStreamRepository(context: Context) {
          * state - an unconfigured torrent addon returns sixty-odd rows and not
          * one of them can be opened.
          */
-        fun autoPick(sources: List<TvSource>, profile: TvAutoSelectProfile): TvAutoPick? {
-            val playable = sources.filter { it.isPlayable }
+        fun autoPick(
+            sources: List<TvSource>,
+            profile: TvAutoSelectProfile,
+            torrentsPlayable: Boolean = false,
+        ): TvAutoPick? {
+            val playable = sources.filter { it.canPlay(torrentsPlayable) }
             if (playable.isEmpty()) return null
             val best = playable.maxByOrNull { score(it, profile) } ?: return null
             val reason = when {
