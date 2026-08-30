@@ -205,6 +205,9 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
     
     fun setMaxCacheSizeMb(sizeMb: Long) {
         themePreferences.setMaxCacheSizeMb(sizeMb)
+        // Video playback can own the active CacheDataSource without
+        // MusicService running, so apply the new LRU limit here as well.
+        com.ivor.ivormusic.data.CacheManager.setMaxCacheSize(getApplication(), sizeMb)
     }
     
     fun clearCacheAction() {

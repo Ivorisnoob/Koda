@@ -123,8 +123,10 @@ class MusicService : MediaLibraryService() {
     private val resolveScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     // --- State & Cache ---
-    // Deduplicated active resolutions: VideoID -> Deferred result
-    private val activeResolutions = ConcurrentHashMap<String, kotlinx.coroutines.Deferred<MediaItem>>()
+    // Deduplicated active resolutions: VideoID -> Deferred result. Work is
+    // published before it starts so cache hits may complete immediately
+    // without recursively mutating a ConcurrentHashMap computation.
+    private val activeResolutions = DeferredSingleFlight<String, MediaItem>(resolveScope)
 
     // Cache for resolved stream URIs. googlevideo URLs die after ~6h (their
     // `expire` param) and on network/IP changes, so each entry carries an
@@ -1366,15 +1368,9 @@ class MusicService : MediaLibraryService() {
 
     private fun getOrStartResolution(mediaItem: MediaItem): kotlinx.coroutines.Deferred<MediaItem> {
         val videoId = mediaItem.mediaId
-        
-        return activeResolutions.computeIfAbsent(videoId) {
-            // Create a new async job
-            resolveScope.async {
-                performResolution(mediaItem)
-            }.also { 
-                // Auto-cleanup when done to prevent memory leaks
-                it.invokeOnCompletion { activeResolutions.remove(videoId) }
-            }
+
+        return activeResolutions.getOrStart(videoId) {
+            performResolution(mediaItem)
         }
     }
 
@@ -1484,7 +1480,7 @@ class MusicService : MediaLibraryService() {
 
         // 1. If we are already resolving this item, just wait.
         // The validation logic or update logic will handle it when ready.
-        if (activeResolutions.containsKey(videoId)) {
+        if (activeResolutions.contains(videoId)) {
             KLog.d(TAG, "Error: Already resolving $videoId. Ignoring error.")
             player.playWhenReady = true
             return
@@ -1529,7 +1525,7 @@ class MusicService : MediaLibraryService() {
                     resetUpcomingItemsToPlaceholders()
                 }
                 // FORCE new resolution
-                activeResolutions.remove(videoId)
+                activeResolutions.forget(videoId)
 
                 val deferred = getOrStartResolution(currentItem)
                 try {

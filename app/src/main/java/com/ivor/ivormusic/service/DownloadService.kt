@@ -158,15 +158,7 @@ class DownloadService : Service() {
                 }
                 // notify() rather than startForeground(): the service is already
                 // foreground and re-promoting on every percent would be wasteful.
-                if (NotificationManagerCompat.from(this@DownloadService)
-                        .areNotificationsEnabled()
-                ) {
-                    NotificationManagerCompat.from(this@DownloadService)
-                        .notify(
-                            DownloadNotificationHelper.FOREGROUND_NOTIFICATION_ID,
-                            notification
-                        )
-                }
+                postForegroundUpdate(notification)
             }
         }
     }
@@ -192,16 +184,26 @@ class DownloadService : Service() {
      * may happen after the last progress emission.
      */
     private fun refreshNotification() {
-        val manager = NotificationManagerCompat.from(this)
-        if (!manager.areNotificationsEnabled()) return
         val stillRunning = repository.downloadProgress.value.values.any {
             it.status == DownloadStatus.DOWNLOADING
         }
         if (!stillRunning) return
-        manager.notify(
-            DownloadNotificationHelper.FOREGROUND_NOTIFICATION_ID,
-            buildCurrentNotification()
-        )
+        postForegroundUpdate(buildCurrentNotification())
+    }
+
+    private fun postForegroundUpdate(notification: android.app.Notification) {
+        val manager = NotificationManagerCompat.from(this)
+        if (!manager.areNotificationsEnabled()) return
+        try {
+            manager.notify(
+                DownloadNotificationHelper.FOREGROUND_NOTIFICATION_ID,
+                notification
+            )
+        } catch (e: SecurityException) {
+            // Permission can be revoked after areNotificationsEnabled(). The
+            // transfer should keep running rather than crash its service.
+            KLog.w(TAG, "Notification permission changed before post: ${e.message}")
+        }
     }
 
     private fun promoteToForeground(notification: android.app.Notification): Boolean {

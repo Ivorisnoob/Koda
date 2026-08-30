@@ -1,5 +1,6 @@
 package com.ivor.ivormusic.data
 
+import java.io.ByteArrayInputStream
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Rule
@@ -10,6 +11,19 @@ import kotlinx.coroutines.runBlocking
 class LocalLyricsSourceTest {
     @get:Rule
     val temporaryFolder = TemporaryFolder()
+
+    @Test
+    fun boundedContentReadAcceptsTheLimitAndRejectsOneByteMore() {
+        val exact = byteArrayOf(1, 2, 3, 4)
+
+        assertEquals(
+            exact.toList(),
+            LocalLyricsSource.readBounded(ByteArrayInputStream(exact), 4)?.toList()
+        )
+        assertNull(
+            LocalLyricsSource.readBounded(ByteArrayInputStream(exact + 5), 4)
+        )
+    }
 
     @Test
     fun matchingLrcSidecarWinsOverEmbeddedLyrics() {

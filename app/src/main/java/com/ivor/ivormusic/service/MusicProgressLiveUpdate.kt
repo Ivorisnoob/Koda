@@ -14,6 +14,7 @@ import androidx.core.graphics.drawable.IconCompat
 import com.ivor.ivormusic.MainActivity
 import com.ivor.ivormusic.R
 import com.ivor.ivormusic.data.ThemePreferences
+import com.ivor.ivormusic.util.KLog
 
 /**
  * Playback progress as an Android 16 Live Update: a status bar chip with the
@@ -41,6 +42,7 @@ import com.ivor.ivormusic.data.ThemePreferences
 class MusicProgressLiveUpdate(private val context: Context) {
 
     companion object {
+        private const val TAG = "MusicProgressLiveUpdate"
         /**
          * Shared with the MediaStyle notification: [LiveUpdateMediaNotificationProvider]
          * points Media3's DefaultMediaNotificationProvider at this id so the two
@@ -230,8 +232,15 @@ class MusicProgressLiveUpdate(private val context: Context) {
             .setShortCriticalText(chipText)
             .build()
 
-        notificationManager.notify(NOTIFICATION_ID, notification)
-        isShowing = true
+        try {
+            notificationManager.notify(NOTIFICATION_ID, notification)
+            isShowing = true
+        } catch (e: SecurityException) {
+            // Permission can be revoked after areNotificationsEnabled(). A
+            // progress chip is optional and must never take playback down.
+            KLog.w(TAG, "Notification permission changed before post: ${e.message}")
+            isShowing = false
+        }
     }
 
     /**

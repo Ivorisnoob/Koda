@@ -37,6 +37,41 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    androidResources {
+        // Keep transitive libraries from packaging every translation they
+        // publish. Koda exposes exactly these locales in locales_config.xml;
+        // unsupported library-only locales otherwise inflate resources.arsc
+        // and can make Android imply that the whole app supports them.
+        localeFilters += listOf(
+            "en",
+            "pt-rBR",
+            "es",
+            "fr",
+            "de",
+            "it",
+            "nl",
+            "sv",
+            "cs",
+            "ro",
+            "el",
+            "ru",
+            "uk",
+            "pl",
+            "tr",
+            "ar",
+            "he",
+            "fa",
+            "hi",
+            "th",
+            "vi",
+            "id",
+            "ja",
+            "ko",
+            "zh-rCN",
+            "zh-rTW",
+        )
+    }
+
     splits {
         abi {
             isEnable = true

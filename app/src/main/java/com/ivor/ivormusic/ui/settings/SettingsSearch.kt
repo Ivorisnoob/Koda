@@ -396,7 +396,7 @@ internal fun buildSettingsSearchIndex(
     ) { onOpenPage(SettingsPage.STORAGE) }
     entry(
         "cache_music", stringResource(R.string.sp_cache_music), "Storage and cache", Icons.Rounded.Save,
-        listOf("cache", "store", "replay", "offline songs", "buffer")
+        listOf("cache", "store", "replay", "offline songs", "video seeking", "buffer")
     ) { onOpenPage(SettingsPage.STORAGE) }
     entry(
         "cache_size", stringResource(R.string.sp_max_cache_size), "Storage and cache", Icons.Rounded.Folder,
