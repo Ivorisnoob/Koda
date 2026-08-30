@@ -14,6 +14,7 @@ import org.libtorrent4j.Priority
 import org.libtorrent4j.SessionManager
 import org.libtorrent4j.SessionParams
 import org.libtorrent4j.SettingsPack
+import org.libtorrent4j.TorrentFlags
 import org.libtorrent4j.TorrentHandle
 import org.libtorrent4j.TorrentInfo
 import java.io.File
@@ -130,7 +131,7 @@ object TorrentEngine {
             // Throwable rather than Exception: this is JNI, and a missing or
             // mismatched native library surfaces as UnsatisfiedLinkError, which
             // must degrade to "torrents unavailable" rather than kill playback.
-            KLog.w(TAG, "Metadata fetch failed: " + e.javaClass.simpleName)
+            KLog.w(TAG, "Metadata fetch failed: " + e.javaClass.simpleName + ": " + e.message)
             null
         }
     }
@@ -147,7 +148,15 @@ object TorrentEngine {
                 // that gets a v2 or hybrid torrent's hash right.
                 val hash = AddTorrentParams.parseMagnetUri(magnet).infoHashes.best
 
-                manager.download(magnet, cacheDir(context), null)
+                // Flags must not be null. [scar] download() does
+                // getFlags().or_(flags) on the argument without a null check,
+                // so passing null throws NullPointerException before the
+                // torrent is ever added - which reads as "every link errors".
+                // SEQUENTIAL_DOWNLOAD is the right value here anyway: this is a
+                // streaming session, and asking for it at add time means the
+                // first pieces are already being fetched in order before
+                // prepareForStreaming refines the range.
+                manager.download(magnet, cacheDir(context), TorrentFlags.SEQUENTIAL_DOWNLOAD)
                 // download() is asynchronous; the handle appears once the
                 // session has registered the torrent.
                 val handle = withTimeoutOrNull(HANDLE_TIMEOUT_MS) {
@@ -162,7 +171,7 @@ object TorrentEngine {
                 synchronized(lock) { active[infoHash.lowercase()] = handle }
                 handle
             } catch (e: Throwable) {
-                KLog.w(TAG, "Torrent start failed: " + e.javaClass.simpleName)
+                KLog.w(TAG, "Torrent start failed: " + e.javaClass.simpleName + ": " + e.message)
                 null
             }
         }
@@ -264,16 +273,21 @@ object TorrentEngine {
      * Stop a torrent and forget it.
      *
      * The session itself is stopped once nothing is active, so a device is not
-     * left running a DHT node after a film ends. Partial data is deliberately
-     * left on disk for the cache directory to reclaim rather than deleted here
-     * - closing and reopening the same film within a session should not start
-     * from zero.
+     * left running a DHT node after a film ends, and the partial data goes with
+     * it. Keeping it would make reopening the same film resume instead of
+     * restart, which is the nicer behaviour and the wrong trade: a few
+     * abandoned films is several gigabytes sitting in a cache directory on a
+     * phone, and Android is under no obligation to reclaim it promptly.
      */
     fun release(infoHash: String) {
         synchronized(lock) {
             val key = infoHash.lowercase()
             active.remove(key)?.let { handle ->
-                runCatching { session?.remove(handle, null) }
+                // Same null-hostility as download(): pass a real flags value.
+                // Nothing is kept, so the files go with it.
+                runCatching {
+                    session?.remove(handle, org.libtorrent4j.swig.session_handle.delete_files)
+                }
             }
             if (active.isEmpty()) {
                 runCatching { session?.stop() }
