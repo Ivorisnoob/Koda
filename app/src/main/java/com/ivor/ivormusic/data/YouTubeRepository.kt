@@ -1426,9 +1426,14 @@ class YouTubeRepository(private val context: Context) {
      * Fetch continuation page using continuation token.
      */
     private fun fetchContinuation(continuationToken: String): String {
-        val cookies = sessionManager.getCookies() ?: return ""
-        val authHeader = YouTubeAuthUtils.getAuthorizationHeader(cookies) ?: ""
-        
+        // Account headers are conditional, the call is not. [verified August
+        // 2026: a public playlist's continuation chain walks to the end with no
+        // cookies, no auth header and no visitorData.] Returning "" without a
+        // session made every signed-out continuation look like a failed fetch,
+        // which capped public playlists at their first page just as the parser
+        // gap did for signed-in ones - the same symptom from a second cause.
+        val cookies = sessionManager.getCookies()
+
         val jsonBody = """
             {
                 "context": {
@@ -1443,16 +1448,22 @@ class YouTubeRepository(private val context: Context) {
             }
         """.trimIndent()
         
-        val request = okhttp3.Request.Builder()
+        val requestBuilder = okhttp3.Request.Builder()
             .url("https://music.youtube.com/youtubei/v1/browse")
             .post(jsonBody.toRequestBody("application/json".toMediaType()))
-            .addHeader("Cookie", cookies)
-            .addHeader("Authorization", authHeader)
             .addHeader("User-Agent", getRandomUserAgent())
             .addHeader("Origin", "https://music.youtube.com")
-            .addHeader("X-Goog-AuthUser", "0")
-            .build()
-        
+
+        if (cookies != null) {
+            requestBuilder.addHeader("Cookie", cookies)
+            YouTubeAuthUtils.getAuthorizationHeader(cookies)?.let { auth ->
+                requestBuilder.addHeader("Authorization", auth)
+                requestBuilder.addHeader("X-Goog-AuthUser", "0")
+            }
+        }
+
+        val request = requestBuilder.build()
+
         return try {
             val response = okHttpClient.newCall(request).execute()
             (response.body?.string() ?: "").also { noteSessionState(it) }
@@ -1547,7 +1558,7 @@ class YouTubeRepository(private val context: Context) {
         // songs and prevent this authenticated path from ever running.
         val isLoggedIn = sessionManager.isLoggedIn()
         val accountResult = if (isLoggedIn) {
-            getAuthenticatedPlaylistSongs(playlistId)
+            getBrowsePlaylistSongs(playlistId)
         } else PlaylistLoadResult(emptyList(), complete = false)
         if (accountResult.complete && accountResult.songs.isNotEmpty()) {
             return@withContext accountResult.songs
@@ -1601,30 +1612,30 @@ class YouTubeRepository(private val context: Context) {
 
         if (newPipeComplete && newPipeSongs.isNotEmpty()) return@withContext newPipeSongs
 
-        // Fallback to InnerTube /browse. Anonymous WEB_REMIX works for public
-        // playlists and album playlists (OLAK5uy_…); cookies personalize when
-        // logged in (LM, RTM). Playlists browse as "VL<id>".
-        if (!isLoggedIn) try {
-            val browseId = if (playlistId.startsWith("VL") || playlistId.startsWith("FE")) {
-                playlistId
-            } else {
-                "VL$playlistId"
+        // Fallback to InnerTube /browse, which anonymous WEB_REMIX answers for
+        // public playlists and album playlists (OLAK5uy_…); playlists browse as
+        // "VL<id>". Signed out the account path above never ran, so this is the
+        // only browse - and it walks continuations for the same reason that one
+        // does. Parsing page one alone was the 100-song cap wearing a second
+        // hat: public playlists page to their end with no session at all.
+        val anonymousResult = if (!isLoggedIn) {
+            try {
+                getBrowsePlaylistSongs(playlistId)
+            } catch (e: Exception) {
+                KLog.e("YouTubeRepo", "Anonymous playlist browse failed for $playlistId", e)
+                PlaylistLoadResult(emptyList(), complete = false)
             }
-            val json = browseMusic(browseId)
-            if (json != null) {
-                val internalSongs = parseSongsFromInternalJson(json, preserveDuplicates = true)
-                if (internalSongs.isNotEmpty()) return@withContext internalSongs
-            }
-        } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "Anonymous playlist browse failed for $playlistId", e)
+        } else PlaylistLoadResult(emptyList(), complete = false)
+        if (anonymousResult.complete && anonymousResult.songs.isNotEmpty()) {
+            return@withContext anonymousResult.songs
         }
 
         // Do not throw away useful rows if every complete path failed, but log
         // loudly that this is degraded rather than pretending the exact page
         // boundary is the playlist's real end.
-        val partial = if (accountResult.songs.size >= newPipeSongs.size) {
-            accountResult.songs
-        } else newPipeSongs
+        val partial = listOf(accountResult.songs, newPipeSongs, anonymousResult.songs)
+            .maxByOrNull { it.size }
+            .orEmpty()
         if (partial.isNotEmpty()) {
             KLog.w(
                 "YouTubeRepo",
@@ -1639,8 +1650,15 @@ class YouTubeRepository(private val context: Context) {
         val complete: Boolean
     )
 
-    /** Authenticated WEB_REMIX playlist browse, including every continuation. */
-    private fun getAuthenticatedPlaylistSongs(playlistId: String): PlaylistLoadResult {
+    /**
+     * WEB_REMIX playlist browse, including every continuation.
+     *
+     * Account cookies are attached by [browseMusic] and [fetchContinuation]
+     * when there is a session and omitted when there is not, so this one walker
+     * serves both: a public playlist pages to its end anonymously, and an owned
+     * or private one needs the session that those two helpers already apply.
+     */
+    private fun getBrowsePlaylistSongs(playlistId: String): PlaylistLoadResult {
         val browseId = if (playlistId.startsWith("VL") || playlistId.startsWith("FE")) {
             playlistId
         } else {
@@ -1673,12 +1691,27 @@ class YouTubeRepository(private val context: Context) {
     /**
      * Read only the continuation belonging to the playlist shelf. A generic
      * recursive "first continuation" can pick an unrelated carousel token.
+     *
+     * That scoping is load-bearing rather than tidiness [verified August 2026]:
+     * a playlist page also carries
+     * `twoColumnBrowseResultsRenderer.secondaryContents.sectionListRenderer.continuations[0]`,
+     * and following that token returns a `musicCarouselShelfRenderer` of
+     * related playlists, not more tracks. Do not widen this to a bare
+     * findContinuationTokens over the whole response.
+     *
+     * Page one puts the token in a `continuationItemRenderer` at the end of the
+     * shelf's own contents, which the shelf scopes already cover. Later pages
+     * arrive under `appendContinuationItemsAction`, where there is no shelf at
+     * all - without that scope the chain stopped after page two even once the
+     * items themselves parsed.
      */
     private fun extractPlaylistContinuationToken(json: String): String? = try {
         val root = org.json.JSONObject(json)
         val scopes = mutableListOf<org.json.JSONObject>()
         findObjectsByKey(root, "musicPlaylistShelfRenderer", scopes)
         findObjectsByKey(root, "musicPlaylistShelfContinuation", scopes)
+        findObjectsByKey(root, "appendContinuationItemsAction", scopes)
+        findObjectsByKey(root, "reloadContinuationItemsCommand", scopes)
         scopes.asSequence().mapNotNull { scope ->
             val tokens = mutableListOf<String>()
             findContinuationTokens(scope, tokens)
@@ -2302,6 +2335,10 @@ class YouTubeRepository(private val context: Context) {
             ?.optJSONObject("gridContinuation")
             ?.optJSONArray("items")
             ?.let { return it }
+
+        // Modern continuation shape - every branch above is the legacy form.
+        // See continuationItemsOrNull for what changed and what it cost.
+        continuationItemsOrNull(root)?.let { return it }
 
         return null
     }

@@ -15,6 +15,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.IconCompat
 import com.ivor.ivormusic.MainActivity
 import com.ivor.ivormusic.R
+import com.ivor.ivormusic.util.KLog
 
 /**
  * Download notifications, including Android 16 Live Updates.
@@ -39,6 +40,7 @@ import com.ivor.ivormusic.R
 class DownloadNotificationHelper(private val context: Context) {
 
     companion object {
+        private const val TAG = "DownloadNotification"
         private const val CHANNEL_ID = "download_channel"
         private const val CHANNEL_NAME = "Downloads"
         private const val CHANNEL_DESCRIPTION = "Song and video download progress"
@@ -245,7 +247,7 @@ class DownloadNotificationHelper(private val context: Context) {
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setTimeoutAfter(5_000)
 
-        notificationManager.notify(getNotificationId(songId), builder.build())
+        notifySafely(getNotificationId(songId), builder.build())
     }
 
     /**
@@ -264,7 +266,7 @@ class DownloadNotificationHelper(private val context: Context) {
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
 
-        notificationManager.notify(getNotificationId(songId), builder.build())
+        notifySafely(getNotificationId(songId), builder.build())
     }
 
     /**
@@ -285,6 +287,15 @@ class DownloadNotificationHelper(private val context: Context) {
             ) == PackageManager.PERMISSION_GRANTED
         } else {
             true
+        }
+    }
+
+    /** Permission can be revoked between the check above and this binder call. */
+    private fun notifySafely(id: Int, notification: android.app.Notification) {
+        try {
+            notificationManager.notify(id, notification)
+        } catch (e: SecurityException) {
+            KLog.w(TAG, "Notification permission changed before post: ${e.message}")
         }
     }
 }

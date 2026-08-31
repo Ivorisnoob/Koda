@@ -27,16 +27,19 @@
 -dontwarn com.google.common.**
 -dontwarn com.google.re2j.**
 
-# Keep NewPipe Extractor classes if they are being stripped too aggressively
--keep class org.schabi.newpipe.extractor.** { *; }
--keep class org.mozilla.javascript.** { *; }
+# NewPipe reflects only its localized time-ago pattern classes. Keeping the
+# entire extractor used to pin every supported service and every unused
+# method into the APK. Its generated protobufs do need their field names at
+# runtime, so keep those members narrowly instead.
+-keep class org.schabi.newpipe.extractor.timeago.patterns.** { *; }
+-keepclassmembers class * extends com.google.protobuf.GeneratedMessageLite {
+    <fields>;
+}
 
-# youtubedl-android (bundled Python + yt-dlp). The library invokes the Python
-# runtime via JNI/reflection, so its classes must not be renamed or stripped.
--keep class com.yausername.** { *; }
--dontwarn com.yausername.**
--keep class org.apache.commons.** { *; }
--dontwarn org.apache.commons.**
+# Rhino executes YouTube's JavaScript and generates bytecode dynamically.
+# These are the reflection-sensitive pieces from NewPipe's own R8 rules.
+-keep class org.mozilla.javascript.** { *; }
+-keep class org.mozilla.classfile.ClassFileWriter { *; }
 
 # jAudioTagger reads local lyric tags. Its tag bodies are instantiated by
 # identifier and its desktop-only artwork helpers are never used on Android.

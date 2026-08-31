@@ -369,8 +369,8 @@
     <string name="sp_private_downloads_off">New audio and video appear in Downloads/Koda</string>
     <string name="sp_private_downloads_note">Album art stays hidden from Gallery in either mode. Existing downloads stay where they are.</string>
     <string name="sp_cache">Cache</string>
-    <string name="sp_cache_music">Cache Music</string>
-    <string name="sp_cache_music_sub">Store streamed songs for instant replay</string>
+    <string name="sp_cache_music">Cache Playback</string>
+    <string name="sp_cache_music_sub">Store streamed songs and videos for faster replay and seeking</string>
     <string name="sp_local_cache">Local Cache</string>
     <string name="sp_max_cache_size">Max Cache Size</string>
     <string name="sp_clear_cache">Clear Cache</string>
@@ -655,7 +655,7 @@
     <string name="bk_not_holds">What it does not</string>
     <string name="bk_not_1">Your Google sign-in. Accounts come back by name and ask to be signed into again, so the file is safe to keep in cloud storage or mail to yourself.</string>
     <string name="bk_not_2">Downloaded audio and video. Those files live in Downloads/Koda and survive an uninstall on their own; putting them in here would make the backup gigabytes.</string>
-    <string name="bk_not_3">Cached audio, which rebuilds itself as you listen.</string>
+    <string name="bk_not_3">Cached playback media, which rebuilds itself as you listen and watch.</string>
     <string name="bk_writing">Writing your backup</string>
     <string name="bk_reading">Reading that file</string>
     <string name="bk_restoring">Restoring</string>

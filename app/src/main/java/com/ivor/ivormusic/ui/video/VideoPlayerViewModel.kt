@@ -14,17 +14,18 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.cast.CastPlayer
-import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.HttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlaybackException
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.MergingMediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import com.ivor.ivormusic.data.CaptionBackground
 import com.ivor.ivormusic.data.CaptionTextColor
 import com.ivor.ivormusic.data.CaptionTrack
+import com.ivor.ivormusic.data.CacheManager
 import com.ivor.ivormusic.data.CommentItem
 import com.ivor.ivormusic.data.DownloadedVideo
 import com.ivor.ivormusic.data.LikeStatus
@@ -43,10 +44,12 @@ import com.ivor.ivormusic.data.TimedComment
 import com.ivor.ivormusic.data.VideoEngagement
 import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.data.VideoQuality
+import com.ivor.ivormusic.data.VideoPlaybackCacheStream
 import com.ivor.ivormusic.data.VideoSeekPreview
 import com.ivor.ivormusic.data.VttCue
 import com.ivor.ivormusic.data.YouTubeRepository
 import com.ivor.ivormusic.data.ThemePreferences
+import com.ivor.ivormusic.data.videoPlaybackCacheKey
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -671,17 +674,24 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         localVideoPlaylistsRepository.playlists
 
     /**
-     * Stream data source factory: ChunkedStreamDataSource fetches googlevideo
-     * media in bounded ranged chunks (open-ended requests are server-paced to
-     * the media bitrate) and picks the per-request User-Agent matching the
-     * URL's issuing client (`?c=` param; a UA mismatch means a 403).
+     * Stream data source factory: CacheDataSource keeps bytes already fetched
+     * for VOD seeking/replay, while ChunkedStreamDataSource supplies cache
+     * misses as bounded googlevideo ranges (open-ended requests are paced to
+     * the media bitrate) with the User-Agent matching the URL's issuing client.
      *
      * Declared before [init] on purpose: the ExoPlayer built there installs it
      * as the player-wide MediaSource factory, so a lazy declared further down
      * the class would still be an uninitialised delegate at that point.
      */
-    private val streamDataSourceFactory =
-        DefaultDataSource.Factory(context, com.ivor.ivormusic.data.ChunkedStreamDataSource.Factory())
+    private val streamDataSourceFactory = run {
+        // MusicService used to be the cache's only initializer. Video owns a
+        // separate player and can run without that service, so it must make the
+        // shared process cache available before constructing its data source.
+        CacheManager.initialize(context, themePreferences.maxCacheSizeMb.value)
+        CacheManager.createPlaybackDataSourceFactory(context) {
+            themePreferences.cacheEnabled.value
+        }
+    }
 
     init {
         observeProfileSwitches()
@@ -690,20 +700,32 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             themePreferences.setVideoRepeatEnabled(false)
         }
 
-        // Near-instant first frame without retaining several minutes of video
-        // samples in the app heap. Unlike music, video has no disk cache and
-        // its decoded surfaces/codecs already consume substantial memory, so
-        // a bounded one-minute read-ahead and 64MB allocator ceiling leave
-        // headroom for artwork, Compose and the decoder on lower-memory phones.
+        // The sample queue this sizes IS the app's RAM cache for video: the
+        // seek bar's pale segment is exactly `player.bufferedPosition`, so what
+        // a scrub lands in - and whether it stalls - is decided here rather
+        // than by the disk cache, which only backs the misses.
+        //
+        // [scar] The previous values made seeking stall by construction. A seek
+        // that leaves the buffer counts as a rebuffer, so the 2.5s resume
+        // threshold held the first frame back for 2.5s of queued media even
+        // when every byte was already in RAM; and a 15s back buffer discarded
+        // history well inside the range people scrub back into. Decoded
+        // surfaces and codecs still consume memory outside this allocator, so
+        // the ceiling stays bounded rather than unbounded.
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                30_000,  // keep playback resilient through short network dips
-                60_000,  // never retain five minutes of long-form video
-                1_000,   // buffer before first frame
-                2_500    // buffer after a rebuffer
+                30_000,   // resume loading once the queue drops below this
+                120_000,  // forward runway; the byte ceiling below usually binds first
+                1_000,    // buffer before first frame
+                800       // buffer before resuming after a seek or a rebuffer
             )
-            .setTargetBufferBytes(64 * 1024 * 1024)
-            .setBackBuffer(15_000, true)
+            // Shared by the split video and audio sources of an adaptive pair,
+            // and by the back buffer below, so it is the real ceiling on how
+            // much of a scrub can be served without touching storage.
+            .setTargetBufferBytes(96 * 1024 * 1024)
+            // Backwards is the common scrub direction; 15s was inside the
+            // distance a single drag routinely covers.
+            .setBackBuffer(45_000, true)
             .setPrioritizeTimeOverSizeThresholds(false)
             .build()
 
@@ -1481,7 +1503,9 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     private fun performSkip(player: Player, segment: SponsorSegment, automatic: Boolean) {
         val returnTo = player.currentPosition.coerceAtLeast(0L)
         ignoredSegmentIds.add(segment.uuid)
-        player.seekTo(segment.endMs)
+        // Exact: a keyframe-snapped skip can land back inside the segment it
+        // just left, which re-triggers on the next tick.
+        seekPlayerTo(player, segment.endMs, precise = true)
         _positionMs.value = segment.endMs
         _manualSegment.value = null
 
@@ -1517,7 +1541,8 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         val notice = _skipNotice.value ?: return
         skipNoticeJob?.cancel()
         _skipNotice.value = null
-        activePlayer()?.seekTo(notice.returnToMs)
+        // Exact: an undo returns to the moment the skip took them from.
+        activePlayer()?.let { seekPlayerTo(it, notice.returnToMs, precise = true) }
         _positionMs.value = notice.returnToMs
     }
 
@@ -1653,7 +1678,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         val listener = object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
                 if (playbackState == Player.STATE_READY) {
-                    player.seekTo(position.coerceAtLeast(0L))
+                    seekPlayerTo(player, position.coerceAtLeast(0L), precise = true)
                     if (playWhenReady) player.play()
                     player.removeListener(this)
                     qualityChangeListener = null
@@ -1738,7 +1763,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
     /** Jump to a chapter's start position. */
     fun seekToChapter(chapter: com.ivor.ivormusic.data.VideoChapter) {
-        activePlayer()?.seekTo(chapter.startMs)
+        activePlayer()?.let { seekPlayerTo(it, chapter.startMs, precise = true) }
     }
 
     /**
@@ -2089,7 +2114,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                 _exoPlayer?.setMediaItem(nowPlayingMediaItem(localDownload.uri.toString()))
                 _exoPlayer?.prepare()
                 if (resumePositionMs != null && resumePositionMs > 0) {
-                    _exoPlayer?.seekTo(resumePositionMs)
+                    _exoPlayer?.let { seekPlayerTo(it, resumePositionMs, precise = true) }
                 }
                 if (resumePaused) {
                     _exoPlayer?.pause()
@@ -2182,7 +2207,13 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                                 loadQuality(_currentQuality.value!!)
                             } else {
                                 val source = ProgressiveMediaSource.Factory(streamDataSourceFactory)
-                                    .createMediaSource(nowPlayingMediaItem(streamUrl))
+                                    .createMediaSource(
+                                        cachedProgressiveMediaItem(
+                                            uri = streamUrl,
+                                            stream = VideoPlaybackCacheStream.MUXED,
+                                            fallbackVariant = "auto-muxed",
+                                        )
+                                    )
                                 _exoPlayer?.setMediaSource(source)
                                 _exoPlayer?.prepare()
                             }
@@ -2305,7 +2336,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             return
         }
         if (resumePositionMs != null && resumePositionMs > 0) {
-            player.seekTo(resumePositionMs)
+            seekPlayerTo(player, resumePositionMs, precise = true)
         }
         if (resumePaused) {
             player.pause()
@@ -2409,13 +2440,32 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                 // The merged source reports the *video* item's MediaItem, which
                 // is why the metadata rides on that one.
                 val videoSource = ProgressiveMediaSource.Factory(dataSourceFactory)
-                    .createMediaSource(nowPlayingMediaItem(quality.url))
+                    .createMediaSource(
+                        cachedProgressiveMediaItem(
+                            uri = quality.url,
+                            stream = VideoPlaybackCacheStream.VIDEO,
+                            fallbackVariant = quality.cacheVariant,
+                        )
+                    )
                 val audioSource = ProgressiveMediaSource.Factory(dataSourceFactory)
-                    .createMediaSource(MediaItem.fromUri(audioUrl))
+                    .createMediaSource(
+                        cachedProgressiveMediaItem(
+                            uri = audioUrl,
+                            stream = VideoPlaybackCacheStream.AUDIO,
+                            fallbackVariant = "original-audio",
+                            includeNowPlayingMetadata = false,
+                        )
+                    )
                 MergingMediaSource(true, videoSource, audioSource)
             } else {
                 ProgressiveMediaSource.Factory(dataSourceFactory)
-                    .createMediaSource(nowPlayingMediaItem(quality.url))
+                    .createMediaSource(
+                        cachedProgressiveMediaItem(
+                            uri = quality.url,
+                            stream = VideoPlaybackCacheStream.MUXED,
+                            fallbackVariant = quality.cacheVariant,
+                        )
+                    )
             }
 
             _exoPlayer?.setMediaSource(primarySource)
@@ -2501,6 +2551,41 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         }
         return builder.build()
     }
+
+    /**
+     * Progressive item whose cache identity survives googlevideo URL refreshes.
+     *
+     * Split video/audio sources must never share one key: their byte offsets
+     * describe different files. The rendition's itag normally distinguishes
+     * qualities; [fallbackVariant] covers the rare provider URL without one.
+     */
+    private fun cachedProgressiveMediaItem(
+        uri: String,
+        stream: VideoPlaybackCacheStream,
+        fallbackVariant: String,
+        includeNowPlayingMetadata: Boolean = true,
+    ): MediaItem {
+        val item = if (includeNowPlayingMetadata) {
+            nowPlayingMediaItem(uri)
+        } else {
+            MediaItem.fromUri(uri)
+        }
+        val videoId = _currentVideo.value?.videoId ?: return item
+        return item.buildUpon()
+            .setCustomCacheKey(
+                videoPlaybackCacheKey(
+                    videoId = videoId,
+                    stream = stream,
+                    sourceUrl = uri,
+                    fallbackVariant = fallbackVariant,
+                )
+            )
+            .build()
+    }
+
+    private val VideoQuality.cacheVariant: String
+        get() = listOfNotNull(resolution, format, codec)
+            .joinToString("-")
 
     /**
      * Push freshly-learned title/channel into the already-playing media item.
@@ -2618,7 +2703,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         val listener = object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
                 if (playbackState == Player.STATE_READY) {
-                    player.seekTo(position)
+                    seekPlayerTo(player, position, precise = true)
                     player.removeListener(this)
                     qualityChangeListener = null
                 }
@@ -2679,11 +2764,10 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      *
      * The playback pipeline is deliberately untouched here. Captions used to be
      * a text track merged into the media source, so switching them rebuilt that
-     * source: playback re-prepared, the buffer was discarded, and - because
-     * video has no disk cache - everything already downloaded was fetched
-     * again. Cues are fetched and parsed on their own instead, and the overlay
-     * draws them over the video surface, which makes the CC toggle instant and
-     * free no matter how many times it is pressed.
+     * source: playback re-prepared and its active sample buffer was discarded.
+     * Cues are fetched and parsed on their own instead, and the overlay draws
+     * them over the video surface, which makes the CC toggle instant and free
+     * no matter how many times it is pressed, including when disk caching is off.
      */
     fun setCaptionTrack(track: CaptionTrack?) {
         if (_selectedCaption.value == track) return
@@ -2804,11 +2888,36 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         val player = activePlayer() ?: return
         val duration = player.duration
         val upperBound = if (duration > 0) duration else Long.MAX_VALUE
-        player.seekTo((player.currentPosition + deltaMs).coerceIn(0L, upperBound))
+        seekPlayerTo(player, (player.currentPosition + deltaMs).coerceIn(0L, upperBound), precise = false)
+    }
+
+    /**
+     * Seek, choosing how exactly the player has to land on [positionMs].
+     *
+     * ExoPlayer seeks exactly by default: it starts decoding at the sync sample
+     * before the target and discards every frame up to it, so a scrub into a
+     * 1080p60 stream with a multi-second GOP decodes hundreds of frames nobody
+     * ever sees before the first visible one. That cost is paid whether the
+     * bytes came from the sample queue, the disk cache or the network, which is
+     * why a scrub into already-buffered video could still sit on a spinner.
+     * CLOSEST_SYNC renders the nearest keyframe instead.
+     *
+     * The trade is landing up to half a GOP from the requested millisecond.
+     * That is invisible dragging a seek bar and wrong for anything addressing a
+     * specific moment - a chapter start, a comment's timestamp, the position a
+     * session or a quality switch is being restored to - so those pass
+     * [precise] and keep exact seeking.
+     */
+    private fun seekPlayerTo(player: Player, positionMs: Long, precise: Boolean) {
+        // Cast playback is driven by the receiver and has no seek parameters.
+        (player as? ExoPlayer)?.setSeekParameters(
+            if (precise) SeekParameters.EXACT else SeekParameters.CLOSEST_SYNC
+        )
+        player.seekTo(positionMs)
     }
 
     /** Absolute seek which also works before a restored session has loaded media. */
-    fun seekTo(positionMs: Long) {
+    fun seekTo(positionMs: Long, precise: Boolean = false) {
         deferredRestorePositionMs?.let {
             val duration = _durationMs.value.takeIf { value -> value > 0L } ?: Long.MAX_VALUE
             val position = positionMs.coerceIn(0L, duration)
@@ -2821,7 +2930,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             }
             return
         }
-        activePlayer()?.seekTo(positionMs.coerceAtLeast(0L))
+        activePlayer()?.let { seekPlayerTo(it, positionMs.coerceAtLeast(0L), precise) }
     }
 
     /** Pause without closing the player (music or Shorts playback started). */

@@ -7,6 +7,9 @@ import androidx.media3.common.C
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.database.StandaloneDatabaseProvider
 import androidx.media3.datasource.DataSource
+import androidx.media3.datasource.DataSpec
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.TransferListener
 import androidx.media3.datasource.cache.Cache
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.CacheEvictor
@@ -20,7 +23,7 @@ import java.util.TreeSet
 
 /**
  * Singleton manager for ExoPlayer's SimpleCache.
- * Handles persistent caching of audio streams for offline/instant playback.
+ * Handles persistent caching of playback streams for fast replay and seeking.
  */
 @UnstableApi
 object CacheManager {
@@ -209,12 +212,44 @@ object CacheManager {
             return CacheDataSource.Factory()
                 .setCache(cache)
                 .setUpstreamDataSourceFactory(upstream)
+                // Progressive MediaItems supply a stable song/video key.
+                // Adaptive manifests and their segments do not; namespace
+                // their URI keys so Ready offline never mistakes one for a
+                // song id while they still remain reusable in this session.
+                .setCacheKeyFactory { dataSpec ->
+                    dataSpec.key ?: opaquePlaybackCacheKey(dataSpec.uri.toString())
+                }
                 .setFlags(
                     CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR
                 )
         } catch (e: Exception) {
             KLog.e(TAG, "Failed to create cache data source factory", e)
             return null
+        }
+    }
+
+    /**
+     * Data source used by a player that can open both device and network URIs.
+     *
+     * Network streams pass through [CacheDataSource] while the user's cache
+     * setting is enabled. Local `content://` and `file://` media always use
+     * [DefaultDataSource], because handing either to the HTTP-only cache
+     * upstream fails on devices whose downloads are exposed through MediaStore.
+     * The setting is read for every open so changing it applies to the next
+     * load without rebuilding ExoPlayer.
+     */
+    fun createPlaybackDataSourceFactory(
+        context: Context,
+        isCacheEnabled: () -> Boolean,
+    ): DataSource.Factory {
+        val directFactory = DefaultDataSource.Factory(context, createPerClientHttpFactory())
+        val cacheFactory = createCacheDataSourceFactory()
+        return DataSource.Factory {
+            SwitchingPlaybackDataSource(
+                direct = directFactory.createDataSource(),
+                cached = cacheFactory?.createDataSource(),
+                isCacheEnabled = isCacheEnabled,
+            )
         }
     }
 
@@ -348,10 +383,11 @@ object CacheManager {
     /**
      * Every content key held in full, and how many bytes each occupies.
      *
-     * The keys are song ids: playback reads and writes under
+     * The returned keys are song ids: music playback reads and writes under
      * `MediaItem`'s custom cache key (see `MusicService.buildMediaItemWithUri`),
      * which is what makes this list mean anything to the rest of the app rather
-     * than being a set of opaque URLs.
+     * than being a set of opaque URLs. Video entries share the physical LRU
+     * cache but carry a namespaced key and are intentionally excluded here.
      *
      * **Fully cached only, and that is the whole point.**
      * `MusicService.warmStreamCache` writes the first 512 KB of the next three
@@ -366,6 +402,7 @@ object CacheManager {
         val cache = simpleCache ?: return emptyMap()
         return runCatching {
             cache.keys.mapNotNull { key ->
+                if (isNonMusicPlaybackCacheKey(key)) return@mapNotNull null
                 val length = cache.getContentMetadata(key)
                     .get(androidx.media3.datasource.cache.ContentMetadata.KEY_CONTENT_LENGTH, -1L)
                 if (length > 0 && cache.getCachedBytes(key, 0, length) >= length) {
@@ -377,6 +414,39 @@ object CacheManager {
         }.getOrElse {
             KLog.w(TAG, "Failed to enumerate cached keys", it)
             emptyMap()
+        }
+    }
+
+    private class SwitchingPlaybackDataSource(
+        private val direct: DataSource,
+        private val cached: DataSource?,
+        private val isCacheEnabled: () -> Boolean,
+    ) : DataSource {
+        private var active: DataSource? = null
+
+        override fun addTransferListener(transferListener: TransferListener) {
+            direct.addTransferListener(transferListener)
+            cached?.addTransferListener(transferListener)
+        }
+
+        override fun open(dataSpec: DataSpec): Long {
+            val scheme = dataSpec.uri.scheme
+            val isNetwork = scheme == "http" || scheme == "https"
+            active = if (isNetwork && isCacheEnabled() && cached != null) cached else direct
+            return checkNotNull(active).open(dataSpec)
+        }
+
+        override fun read(buffer: ByteArray, offset: Int, length: Int): Int =
+            active?.read(buffer, offset, length) ?: C.RESULT_END_OF_INPUT
+
+        override fun getUri(): android.net.Uri? = active?.uri
+
+        override fun getResponseHeaders(): Map<String, List<String>> =
+            active?.responseHeaders ?: emptyMap()
+
+        override fun close() {
+            active?.close()
+            active = null
         }
     }
 }

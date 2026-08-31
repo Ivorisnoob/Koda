@@ -6,7 +6,9 @@ import android.content.Context
 import android.net.Uri
 import org.jaudiotagger.audio.AudioFileIO
 import org.jaudiotagger.tag.FieldKey
+import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.InputStream
 import java.util.Collections
 import java.util.LinkedHashMap
 
@@ -199,9 +201,36 @@ internal class LocalLyricsSource(
 
         private fun readContentUri(context: Context, uri: Uri, maxBytes: Long): String? {
             return context.contentResolver.openInputStream(uri)?.use { input ->
-                val bytes = input.readNBytes((maxBytes + 1L).toInt())
-                if (bytes.size.toLong() > maxBytes) null else decodeSharedSidecar(bytes)
+                readBounded(input, maxBytes)?.let(::decodeSharedSidecar)
             }
+        }
+
+        /**
+         * API-30-safe equivalent of reading at most one byte past the limit.
+         * InputStream.readNBytes did not reach Android until API 33.
+         */
+        internal fun readBounded(input: InputStream, maxBytes: Long): ByteArray? {
+            require(maxBytes in 0 until Int.MAX_VALUE.toLong())
+            val hardLimit = (maxBytes + 1L).toInt()
+            val output = ByteArrayOutputStream(minOf(DEFAULT_BUFFER_SIZE, hardLimit))
+            val buffer = ByteArray(minOf(DEFAULT_BUFFER_SIZE, hardLimit))
+            var total = 0
+
+            while (total < hardLimit) {
+                val read = input.read(buffer, 0, minOf(buffer.size, hardLimit - total))
+                if (read < 0) break
+                if (read == 0) {
+                    val oneByte = input.read()
+                    if (oneByte < 0) break
+                    output.write(oneByte)
+                    total++
+                    continue
+                }
+                output.write(buffer, 0, read)
+                total += read
+            }
+
+            return if (total > maxBytes) null else output.toByteArray()
         }
 
         private fun decodeSharedSidecar(bytes: ByteArray): String = when {
