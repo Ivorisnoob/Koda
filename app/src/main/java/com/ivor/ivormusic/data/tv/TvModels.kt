@@ -160,6 +160,8 @@ data class AddonCatalog(
 data class AddonBehaviorHints(
     val configurable: Boolean = false,
     val configurationRequired: Boolean = false,
+    /** Directory signal used to keep adult addons out of browse by default. */
+    val adult: Boolean = false,
 )
 
 @Serializable
@@ -415,10 +417,10 @@ data class TvStream(
      * Trackers and DHT hints for an [infoHash], as `tracker:udp://...` and
      * `dht:<hash>` entries.
      *
-     * Load-bearing for torrent playback: a magnet built from the hash alone
-     * relies entirely on DHT, which on a cold routing table can take minutes to
-     * find a first peer, while the addon's own tracker list usually finds one
-     * in seconds.
+     * Parsed but unused: Koda plays a resolved [url] only, so nothing here
+     * builds a magnet any more. Kept because it is part of the response an
+     * addon sends and dropping it from the model would mean re-deriving the
+     * shape if a debrid path ever wants the tracker list.
      */
     val sources: List<String> = emptyList(),
 ) {

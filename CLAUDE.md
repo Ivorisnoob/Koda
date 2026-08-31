@@ -339,7 +339,7 @@ All settings live in `data/ThemePreferences.kt` (prefs `ivor_music_theme_prefs`,
 
 **Then add it to `buildSettingsSearchIndex` in `SettingsSearch.kt`.** A setting missing from the index is unfindable and there is no compile error. That is the one omission here that fails silently. **Backups need nothing** - `BackupRepository` copies the whole prefs file key by key.
 
-**Settings is a hub and eleven detail pages, not one scroll.** `SettingsScreen.kt` holds the hub, the page router and every dialog; `SettingsPages.kt` the pages; `SettingsComponents.kt` the shared rows; `SettingsSearch.kt` the index and matcher. Pages are a `SettingsPage` enum driven by `AnimatedContent`, **not** nav routes: `SettingsScreen` takes 95 parameters [drifts] and a destination per category would repeat that list eleven times.
+**Settings is a hub and eleven detail pages, not one scroll.** `SettingsScreen.kt` holds the hub, the page router and every dialog; `SettingsPages.kt` the pages; `SettingsComponents.kt` the shared rows; `SettingsSearch.kt` the index and matcher. Pages are a `SettingsPage` enum driven by `AnimatedContent`, **not** nav routes: `SettingsScreen` takes 96 parameters [drifts] and a destination per category would repeat that list eleven times.
 
 **A page big enough to own a file gets one.** `DISPLAY_SIZE` lives in `ui/settings/DisplaySizeSettings.kt` rather than `SettingsPages.kt`, and is reached from a row on Appearance rather than the hub, because it is one setting rather than a category. Its back goes to Appearance, not the hub - it is opened from there and the value is usually adjusted more than once. A page that is really one control with a preview is the case for this shape; a page that is a list of rows belongs in `SettingsPages.kt` with the rest. Back unwinds one step at a time - open page, hub, clear the query, leave.
 
@@ -517,6 +517,27 @@ id, then by normalised title plus year - so remakes survive as separate entries.
 **Transport URLs are credentials.** A configured addon carries its debrid API key in its own path,
 so `AddonRepository` writes to `EncryptedSharedPreferences`, and the URL must never be logged or
 included in a backup or a diagnostics report. The addon *name* is safe; the URL is not.
+`backup_rules.xml` and `data_extraction_rules.xml` both exclude `tv_addons.xml` by name, which is one
+more place §13's "rename a store and it silently drops out" trap runs in reverse.
+
+**When secure storage is unavailable, installs fail rather than degrade.** `securePrefs` returns null
+instead of falling back to a plaintext file - the earlier fallback would have written a debrid API key
+in the clear to avoid an inconvenience, which is the wrong trade. Browsing still works on the
+preinstalled addons; installing visibly fails until keystore access returns, so `save()` returns a
+Boolean and every caller propagates it. Logs carry the exception *class*, never its message: the
+serialized value holds configured transport URLs and an exception that quotes its input would put one
+in a log that can be attached to a report.
+
+**A manifest that is never re-read freezes what the app thinks exists.** [scar] `manifest()` was
+called on exactly one path - installing an addon by hand - so the preinstalled three ran forever on
+the shapes hardcoded in `defaultAddons`. Two Cinemeta shelves and one Kitsu shelf simply did not
+exist in Koda, for months, while both addons had been offering them, and no amount of reloading would
+have found them. `AddonRepository.updateManifest` rewrites the stored manifest by id and touches
+neither `order` nor `disabledResources`, because those are the user's decisions and an addon growing a
+resource must not silently re-enable one they switched off. `TvViewModel` refreshes once per instance
+rather than once per `loadHome` - manifests change on the addon's schedule, not the viewer's - off the
+critical path, rebuilding shelves only when something actually changed. The flag is set before the
+fetch, so a failed refresh does not retry on every Home load for the session.
 
 **A failing addon never blocks the ones that answered.** Every fan-out is bounded at
 `TvRepository.CONCURRENCY` (6, the same ceiling and reasoning as the subscriptions feed) and
@@ -563,7 +584,7 @@ service configured into the addon's own URL.
 
 **`TvPlayerViewModel` is a third player, and that is a stated deviation from `plan.md` section 3.**
 That section proposed one overlay behind a discriminator; carrying it out means extracting an
-interface across a 3,375-line ViewModel and the 2,044-line composable that reads dozens of its
+interface across a 3,375-line ViewModel and the 3,031-line composable that reads dozens of its
 members [drifts], on the app's most-used surface. The cost it wanted to avoid - triplicated z-order
 and step-aside logic - is avoided a cheaper way instead: **this player is strictly full-screen with
 no mini bar**, so it is one boolean above the NavHost with no expand animation and nothing to step
@@ -586,28 +607,47 @@ binge-watching. [scar] The countdown ending and `STATE_ENDED` are two signals fo
 within a frame of each other, so `playNextEpisode` returns early while an advance is already in
 flight - without that guard every boundary ran the fan-out twice and the second cancelled the first.
 
-**Torrent sources play through a `DataSource`, not a local server.** `TorrentDataSource` hands
-ExoPlayer bytes out of a partially-downloaded file, so every feature above it - resume, next-episode,
-audio tracks, the gesture surface - works untouched: none of them are below that line. It is the one
-data source in the app allowed to block, because a byte that has not arrived is a wait rather than an
-error and returning zero would read as end-of-stream. A seek re-aims the swarm (`prioritiseFrom` plus
-piece deadlines); without that, jumping to 1:20:00 waits for the sequential head to crawl there.
+**A built-in torrent engine was shipped on this branch and then removed.** `TorrentDataSource`,
+`TorrentEngine` and the four libtorrent4j artifacts existed between `15e58e0` and the working tree
+that deleted them, so `Koda plays a resolved url only` above is once again the whole truth. Anything
+citing a 15.79 MB native library, an ABI split for it, or `TorrentEngine.isAvailable` predates that
+removal and is describing code that is not here.
 
-**The torrent engine is a streaming engine, not a download manager**, and every setting follows from
-that: only the playing file is fetched (everything else is `Priority.IGNORE`, because an unread file
-is pure bandwidth and battery), pieces are sequential rather than rarest-first, connections are
-capped, upload is limited rather than zero (swarms throttle peers that never give anything back), and
-**the session is torn down when playback stops** so a device is not left running a DHT node. One
-session process-wide, started lazily - libtorrent binds ports and holds a routing table, so two
-sessions is two of each from one app.
+**Pressing Play does not open the source sheet.** Play means "watch this", not "show me a list": the
+fan-out runs behind a scrim that also swallows input, auto-select's answer starts, and the sheet
+appears only when nothing playable came back - where it is the explanation rather than a menu, since
+it already names the addons that did not answer and dims the rows needing a debrid service. The
+resolve is gated on `loaded` rather than on a non-empty list, because "no addon has answered yet" and
+"no addon has this" are different and only the second is an answer. With nothing installed that can
+produce a file there is no fan-out at all - spinning across zero addons to reach a known answer makes
+it look like a failure.
 
-**The native library is 15.79 MB on arm64 and 13.20 MB on armv7** [measured August 2026 from the
-packaged APK]. Maven's 6.2 MB artifact is the compressed form; `.so` files are stored uncompressed
-and R8 never touches them, so **the debug figure is exactly the release figure**. x86_64 is
-`debugImplementation` only - emulators on a PC host are x86_64, and without it the engine reports
-itself unavailable on every development device while working on real phones, which is the worst way
-for this to fail. `TorrentEngine.isAvailable` probes the native load and catches `Throwable`, since an
-unsupported ABI surfaces as `UnsatisfiedLinkError`; torrent rows stay dimmed rather than crashing.
+**`sources()` walks priority tiers and stops at the first startable one, unless asked not to.**
+`streamProviders()` is already in the user's order, so a `chunked(CONCURRENCY)` slice is a tier;
+`exhaustive = true` is the sheet, where the viewer explicitly wants the field and a missing release
+is worse than a slower list. Unplayable rows deliberately do not end the walk - a tier answering with
+sixty torrents has said "no file here", and stopping there would hide the addon that could actually
+play it. Each provider is bounded by `PROVIDER_TIMEOUT_MS` (20s, generous because a debrid addon
+legitimately asks its provider whether a torrent is cached): the fan-out awaits every provider, so
+before the timeout one addon that accepted the connection and never replied hung playback behind a
+spinner with nothing to look at.
+
+**The source sheet is hosted by `TvPlayerScreen`, not the detail page.** [scar] It used to live on the
+detail page, so "change source" had to `close()` first - the sheet is inside the NavHost and this
+player is an overlay above it, so it would otherwise have opened underneath the video. Tearing the
+player down to change release also lost the exact position, since progress only checkpoints every 15
+seconds, and dropped the viewer back to the detail page mid-film. Hosted here, `switchSource()` swaps
+the file in place at the current position and the film does not stop.
+
+**Subtitles are two independent sources merged into one list.** External tracks come from the
+`/subtitles` fan-out plus whatever the chosen stream carried inline, fetched as WebVTT and parsed by
+`data/WebVttParser` - the same parser video mode and `YouTubeRepository` already use, not a second
+one. Embedded tracks are the text groups in `player.currentTracks`, selected with a
+`TrackSelectionOverride` at no refetch. Both restore the viewer's preferred caption language on
+arrival, and both honour the caption styling settings. **An embedded track this device cannot decode
+is listed and marked, never hidden**, for the same reason the audio row does it. Selecting an
+external track must not rebuild the media source - that would discard the video buffer to change a
+line of text.
 
 **Progress checkpoints on the same 15-second cadence music sessions use**, from the same loop that
 drives the position, and that loop is bounded by playback rather than by the ViewModel - an

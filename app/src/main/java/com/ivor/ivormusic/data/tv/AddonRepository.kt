@@ -1,6 +1,7 @@
 package com.ivor.ivormusic.data.tv
 
 import android.content.Context
+import android.content.SharedPreferences
 import com.ivor.ivormusic.util.KLog
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -101,14 +102,40 @@ class AddonRepository(context: Context) {
             manifest = manifest,
             order = (without.maxOfOrNull { it.order } ?: -1) + 1,
         )
-        save(next)
-        return true
+        return save(next)
     }
 
     fun remove(addonId: String) {
         val target = _addons.value.firstOrNull { it.id == addonId } ?: return
         if (target.isPreinstalled) return
         save(_addons.value.filterNot { it.id == addonId })
+    }
+
+    /**
+     * Replace a stored manifest with a freshly fetched one.
+     *
+     * [scar] Without this, the seeded manifests in [defaultAddons] were the
+     * only ones the preinstalled addons ever had: `manifest()` was called on
+     * exactly one code path, installing an addon by hand, so Cinemeta and Kitsu
+     * ran forever on whatever shape was hardcoded here. Two Cinemeta shelves
+     * and one Kitsu shelf simply did not exist in the app because the seed
+     * predated them, and no amount of reloading would have found them.
+     *
+     * Keyed by id and deliberately narrow: it rewrites the manifest and touches
+     * neither [InstalledAddon.order] nor [InstalledAddon.disabledResources],
+     * because those are the user's decisions and an addon growing a resource
+     * must not silently re-enable one they switched off.
+     *
+     * Returns true when something actually changed, so a caller can avoid
+     * rebuilding shelves for a no-op refresh.
+     */
+    fun updateManifest(addonId: String, manifest: AddonManifest): Boolean {
+        if (manifest.id.isBlank()) return false
+        val current = _addons.value.firstOrNull { it.id == addonId } ?: return false
+        if (current.manifest == manifest) return false
+        return save(_addons.value.map { addon ->
+            if (addon.id == addonId) addon.copy(manifest = manifest) else addon
+        })
     }
 
     fun setResourceEnabled(addonId: String, resource: String, enabled: Boolean) {
@@ -129,23 +156,27 @@ class AddonRepository(context: Context) {
             .mapIndexed { index, addon -> addon.copy(order = index) })
     }
 
-    private fun save(list: List<InstalledAddon>) {
+    private fun save(list: List<InstalledAddon>): Boolean {
         val normalised = list.mapIndexed { index, addon -> addon.copy(order = index) }
-        try {
-            prefs.edit()
+        val secureStore = prefs ?: return false
+        val saved = try {
+            secureStore.edit()
                 .putString(KEY_ADDONS, TvJson.instance.encodeToString(normalised))
-                .apply()
+                .commit()
         } catch (e: Exception) {
-            KLog.w(TAG, "Could not persist addon list: ${e.message}")
+            KLog.w(TAG, "Could not persist addon list: " + e.javaClass.simpleName)
+            false
         }
+        if (!saved) return false
         _addons.value = normalised
+        return true
     }
 
     private fun load(): List<InstalledAddon> {
         val stored = try {
-            prefs.getString(KEY_ADDONS, null)
+            prefs?.getString(KEY_ADDONS, null)
         } catch (e: Exception) {
-            KLog.w(TAG, "Could not read addon list: ${e.message}")
+            KLog.w(TAG, "Could not read addon list: " + e.javaClass.simpleName)
             null
         }
         if (stored.isNullOrBlank()) return defaultAddons()
@@ -157,12 +188,14 @@ class AddonRepository(context: Context) {
             // A store written by an older shape. Falling back to the defaults
             // loses the user's additions, which is bad, but leaving TV mode with
             // no metadata source at all is worse and unrecoverable from the UI.
-            KLog.w(TAG, "Addon list unreadable, falling back to defaults: ${e.message}")
+            // The serialized value contains configured transport URLs, so an
+            // exception message that quotes input must never reach logs.
+            KLog.w(TAG, "Addon list unreadable: " + e.javaClass.simpleName)
             defaultAddons()
         }
     }
 
-    private fun securePrefs(context: Context) = try {
+    private fun securePrefs(context: Context): SharedPreferences? = try {
         val key = androidx.security.crypto.MasterKey.Builder(context)
             .setKeyScheme(androidx.security.crypto.MasterKey.KeyScheme.AES256_GCM)
             .build()
@@ -175,9 +208,10 @@ class AddonRepository(context: Context) {
         )
     } catch (e: Exception) {
         // Keystore failures happen on a small number of devices. TV mode
-        // degrading to the preinstalled addons is better than not opening.
-        KLog.w(TAG, "Encrypted prefs unavailable: ${e.message}")
-        context.getSharedPreferences(PREFS_NAME + "_plain", Context.MODE_PRIVATE)
+        // degrading to the preinstalled addons is better than storing a debrid
+        // API key in plaintext. Installs fail visibly until secure storage works.
+        KLog.w(TAG, "Encrypted prefs unavailable: " + e.javaClass.simpleName)
+        null
     }
 
     companion object {
@@ -211,16 +245,31 @@ class AddonRepository(context: Context) {
                     description = "Movie and series catalogs",
                     types = listOf("movie", "series"),
                     idPrefixes = listOf("tt"),
-                    resources = listOf(AddonResource("catalog"), AddonResource("meta")),
+                    resources = listOf(
+                        AddonResource("catalog"),
+                        AddonResource("meta"),
+                        AddonResource("addon_catalog"),
+                    ),
+                    // Matches the live manifest [verified August 2026]: eight
+                    // catalogs, of which six are browsable. `last-videos` and
+                    // `calendar-videos` require id lists Koda cannot supply, so
+                    // isBrowsable correctly drops them and they are not seeded.
                     catalogs = listOf(
-                        AddonCatalog("movie", "top", "Popular Movies",
+                        AddonCatalog("movie", "top", "Popular",
                             extra = listOf(AddonExtra("genre"), AddonExtra("search"), AddonExtra("skip"))),
-                        AddonCatalog("series", "top", "Popular Series",
+                        AddonCatalog("series", "top", "Popular",
                             extra = listOf(AddonExtra("genre"), AddonExtra("search"), AddonExtra("skip"))),
-                        AddonCatalog("movie", "year", "New Movies",
+                        AddonCatalog("movie", "imdbRating", "Featured",
                             extra = listOf(AddonExtra("genre"), AddonExtra("skip"))),
-                        AddonCatalog("series", "year", "New Series",
+                        AddonCatalog("series", "imdbRating", "Featured",
                             extra = listOf(AddonExtra("genre"), AddonExtra("skip"))),
+                        // `genre` really is required on these two, unlike the
+                        // rest. It is the one required extra isBrowsable can
+                        // satisfy, so they stay browsable.
+                        AddonCatalog("movie", "year", "New",
+                            extra = listOf(AddonExtra("genre", isRequired = true), AddonExtra("skip"))),
+                        AddonCatalog("series", "year", "New",
+                            extra = listOf(AddonExtra("genre", isRequired = true), AddonExtra("skip"))),
                     ),
                 ),
             ),
@@ -237,11 +286,16 @@ class AddonRepository(context: Context) {
                     resources = listOf(
                         AddonResource("catalog"), AddonResource("meta"), AddonResource("subtitles")
                     ),
+                    // Matches the live manifest [verified August 2026]. The
+                    // list catalog is search-only and stays that way; the other
+                    // four are shelves.
                     catalogs = listOf(
-                        AddonCatalog("anime", "kitsu-anime-trending", "Trending Anime"),
-                        AddonCatalog("anime", "kitsu-anime-airing", "Top Airing Anime",
+                        AddonCatalog("anime", "kitsu-anime-trending", "Kitsu Trending"),
+                        AddonCatalog("anime", "kitsu-anime-airing", "Kitsu Top Airing",
                             extra = listOf(AddonExtra("genre"), AddonExtra("skip"))),
-                        AddonCatalog("anime", "kitsu-anime-popular", "Popular Anime",
+                        AddonCatalog("anime", "kitsu-anime-popular", "Kitsu Most Popular",
+                            extra = listOf(AddonExtra("genre"), AddonExtra("skip"))),
+                        AddonCatalog("anime", "kitsu-anime-rating", "Kitsu Highest Rated",
                             extra = listOf(AddonExtra("genre"), AddonExtra("skip"))),
                         AddonCatalog("anime", "kitsu-anime-list", "Kitsu",
                             extra = listOf(

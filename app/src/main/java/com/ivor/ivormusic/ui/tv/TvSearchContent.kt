@@ -9,13 +9,22 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.History
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -41,10 +50,15 @@ fun TvSearchContent(
     query: String,
     results: List<TvSearchGroup>,
     isSearching: Boolean,
+    recentSearches: List<String>,
     genres: List<String>,
     onQueryChange: (String) -> Unit,
     onItemClick: (TvItem) -> Unit,
     onToggleWatchlist: (TvItem) -> Unit,
+    onSubmitSearch: () -> Unit,
+    onRecentSearch: (String) -> Unit,
+    onRemoveRecentSearch: (String) -> Unit,
+    onClearRecentSearches: () -> Unit,
     onGenreClick: (String) -> Unit,
     contentPadding: PaddingValues,
     listState: LazyListState = rememberLazyListState(),
@@ -55,6 +69,7 @@ fun TvSearchContent(
             query = query,
             onQueryChange = onQueryChange,
             placeholder = stringResource(R.string.tv_search_placeholder),
+            onSearch = onSubmitSearch,
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(
@@ -72,8 +87,18 @@ fun TvSearchContent(
             modifier = Modifier.fillMaxSize(),
         ) {
             when {
-                query.isBlank() && genres.isNotEmpty() -> {
-                    item(key = "genres") {
+                query.isBlank() -> {
+                    if (recentSearches.isNotEmpty()) {
+                        item(key = "recent") {
+                            RecentSearches(
+                                searches = recentSearches,
+                                onSearch = onRecentSearch,
+                                onRemove = onRemoveRecentSearch,
+                                onClear = onClearRecentSearches,
+                            )
+                        }
+                    }
+                    if (genres.isNotEmpty()) item(key = "genres") {
                         Column {
                             TvSectionHeader(
                                 title = stringResource(R.string.tv_browse_by_genre),
@@ -84,8 +109,6 @@ fun TvSearchContent(
                         }
                     }
                 }
-
-                query.isBlank() -> Unit
 
                 isSearching && results.isEmpty() -> {
                     item(key = "searching") {
@@ -131,6 +154,60 @@ fun TvSearchContent(
                                 }
                             }
                         }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RecentSearches(
+    searches: List<String>,
+    onSearch: (String) -> Unit,
+    onRemove: (String) -> Unit,
+    onClear: () -> Unit,
+) {
+    Column(Modifier.padding(horizontal = 16.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            TvSectionHeader(
+                title = stringResource(R.string.tv_recent_searches),
+                modifier = Modifier.weight(1f),
+            )
+            TextButton(onClick = onClear) {
+                Text(stringResource(R.string.action_clear))
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        searches.take(8).forEach { query ->
+            Surface(
+                onClick = { onSearch(query) },
+                shape = RoundedCornerShape(14.dp),
+                color = MaterialTheme.colorScheme.surfaceContainer,
+                modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(start = 12.dp, end = 2.dp),
+                ) {
+                    Icon(
+                        Icons.Rounded.History,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        query,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f).padding(horizontal = 12.dp),
+                    )
+                    IconButton(onClick = { onRemove(query) }) {
+                        Icon(
+                            Icons.Rounded.Close,
+                            contentDescription = stringResource(R.string.tv_remove_recent_search),
+                        )
                     }
                 }
             }

@@ -17,18 +17,20 @@ import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
-import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import com.ivor.ivormusic.data.tv.TvAutoSelectProfile
 import com.ivor.ivormusic.data.tv.TvEpisode
 import com.ivor.ivormusic.data.tv.TvItem
 import com.ivor.ivormusic.data.tv.TvProgressRepository
 import com.ivor.ivormusic.data.tv.TvSource
-import com.ivor.ivormusic.data.tv.TorrentDataSource
-import com.ivor.ivormusic.data.tv.TorrentEngine
 import com.ivor.ivormusic.data.tv.TvSourceKind
 import com.ivor.ivormusic.data.tv.TvStreamRepository
-import com.ivor.ivormusic.data.tv.magnetFor
+import com.ivor.ivormusic.data.tv.TvSubtitleTrack
+import com.ivor.ivormusic.data.tv.StremioClient
+import com.ivor.ivormusic.data.ThemePreferences
+import com.ivor.ivormusic.data.VttCue
+import com.ivor.ivormusic.data.WebVttParser
 import com.ivor.ivormusic.util.KLog
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -67,8 +69,25 @@ data class TvAudioTrack(
     val isSupported: Boolean,
 )
 
+/** One subtitle track muxed inside the playing file. */
+data class TvEmbeddedSubtitleTrack(
+    val groupIndex: Int,
+    val trackIndex: Int,
+    val label: String,
+    val language: String?,
+    val isSelected: Boolean,
+    val isSupported: Boolean,
+)
+
 /** Why playback stopped, in terms a viewer can act on. */
-enum class TvPlaybackProblem { SOURCE_FAILED, NO_SUPPORTED_AUDIO, NO_NEXT_SOURCE }
+enum class TvPlaybackProblem {
+    SOURCE_FAILED,
+    NETWORK_FAILED,
+    FORMAT_UNSUPPORTED,
+    DECODER_FAILED,
+    NO_SUPPORTED_AUDIO,
+    NO_NEXT_SOURCE,
+}
 
 /**
  * TV playback.
@@ -96,7 +115,9 @@ enum class TvPlaybackProblem { SOURCE_FAILED, NO_SUPPORTED_AUDIO, NO_NEXT_SOURCE
 class TvPlayerViewModel(application: Application) : AndroidViewModel(application) {
 
     private val streamRepository = TvStreamRepository(application)
+    private val stremioClient = StremioClient(application)
     private val progressRepository = TvProgressRepository(application)
+    private val themePreferences = ThemePreferences(application)
 
     private val _playback = MutableStateFlow<TvPlayback?>(null)
     val playback: StateFlow<TvPlayback?> = _playback.asStateFlow()
@@ -119,6 +140,34 @@ class TvPlayerViewModel(application: Application) : AndroidViewModel(application
     private val _audioTracks = MutableStateFlow<List<TvAudioTrack>>(emptyList())
     val audioTracks: StateFlow<List<TvAudioTrack>> = _audioTracks.asStateFlow()
 
+    private val _subtitleTracks = MutableStateFlow<List<TvSubtitleTrack>>(emptyList())
+    val subtitleTracks: StateFlow<List<TvSubtitleTrack>> = _subtitleTracks.asStateFlow()
+
+    private val _selectedSubtitle = MutableStateFlow<TvSubtitleTrack?>(null)
+    val selectedSubtitle: StateFlow<TvSubtitleTrack?> = _selectedSubtitle.asStateFlow()
+
+    private val _embeddedSubtitleTracks =
+        MutableStateFlow<List<TvEmbeddedSubtitleTrack>>(emptyList())
+    val embeddedSubtitleTracks: StateFlow<List<TvEmbeddedSubtitleTrack>> =
+        _embeddedSubtitleTracks.asStateFlow()
+
+    private val _selectedEmbeddedSubtitle = MutableStateFlow<TvEmbeddedSubtitleTrack?>(null)
+    val selectedEmbeddedSubtitle: StateFlow<TvEmbeddedSubtitleTrack?> =
+        _selectedEmbeddedSubtitle.asStateFlow()
+
+    private val _subtitleCues = MutableStateFlow<List<VttCue>>(emptyList())
+    val subtitleCues: StateFlow<List<VttCue>> = _subtitleCues.asStateFlow()
+
+    private val _isSubtitlesLoading = MutableStateFlow(false)
+    val isSubtitlesLoading: StateFlow<Boolean> = _isSubtitlesLoading.asStateFlow()
+
+    private val _subtitleLoadFailed = MutableStateFlow(false)
+    val subtitleLoadFailed: StateFlow<Boolean> = _subtitleLoadFailed.asStateFlow()
+
+    val captionTextSize = themePreferences.captionTextSize
+    val captionTextColor = themePreferences.captionTextColor
+    val captionBackground = themePreferences.captionBackground
+
     private val _problem = MutableStateFlow<TvPlaybackProblem?>(null)
     val problem: StateFlow<TvPlaybackProblem?> = _problem.asStateFlow()
 
@@ -133,19 +182,6 @@ class TvPlayerViewModel(application: Application) : AndroidViewModel(application
     val isAdvancing: StateFlow<Boolean> = _isAdvancing.asStateFlow()
 
     /**
-     * Set when the viewer asks for a different release, carrying the stream id
-     * to reopen the sheet on.
-     *
-     * The source list belongs to the detail page, which is still composed under
-     * this player, so "change source" hands the request back rather than
-     * building a second copy of that whole fan-out here. Cleared by whoever
-     * acts on it; nobody acting on it means the player simply closed, which is
-     * what a viewer who navigated away would expect anyway.
-     */
-    private val _sourceChangeRequest = MutableStateFlow<String?>(null)
-    val sourceChangeRequest: StateFlow<String?> = _sourceChangeRequest.asStateFlow()
-
-    /**
      * The release the current episode came from.
      *
      * Kept so the next episode can be played from the same one without asking:
@@ -158,10 +194,8 @@ class TvPlayerViewModel(application: Application) : AndroidViewModel(application
     private var ticker: Job? = null
     private var countdown: Job? = null
     private var advanceJob: Job? = null
-    private var torrentJob: Job? = null
-
-    /** The swarm currently joined, so it can be left when playback moves on. */
-    private var activeTorrentHash: String? = null
+    private var subtitleDiscoveryJob: Job? = null
+    private var subtitleLoadJob: Job? = null
 
     /** Set while the media source is being swapped, so an expected stop is not an error. */
     private var isSwitchingSource = false
@@ -213,7 +247,15 @@ class TvPlayerViewModel(application: Application) : AndroidViewModel(application
         .setSeekBackIncrementMs(SEEK_STEP_MS)
         .setSeekForwardIncrementMs(SEEK_STEP_MS)
         .build()
-        .also { it.addListener(playerListener) }
+        .also { built ->
+            // "Off" has to mean off. Text tracks are enabled only after the
+            // saved preference or an explicit picker choice selects one.
+            built.trackSelectionParameters = built.trackSelectionParameters
+                .buildUpon()
+                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                .build()
+            built.addListener(playerListener)
+        }
 
     /** Exposed for the `PlayerView` that renders it. Nothing else may command it. */
     fun exoPlayer(): ExoPlayer = player
@@ -235,6 +277,7 @@ class TvPlayerViewModel(application: Application) : AndroidViewModel(application
 
             override fun onTracksChanged(tracks: Tracks) {
                 _audioTracks.value = readAudioTracks(tracks)
+                _embeddedSubtitleTracks.value = readEmbeddedSubtitleTracks(tracks)
                 // Video with silence and no error is the worst failure this
                 // player has, and it is common: DTS-HD MA and TrueHD are all
                 // over high-quality releases and frequently undecodable here.
@@ -243,12 +286,14 @@ class TvPlayerViewModel(application: Application) : AndroidViewModel(application
                 if (audio.isNotEmpty() && audio.none { it.isSupported }) {
                     _problem.value = TvPlaybackProblem.NO_SUPPORTED_AUDIO
                 }
+                restorePreferredEmbeddedSubtitle()
             }
 
             override fun onPlayerError(error: PlaybackException) {
                 if (isSwitchingSource) return
                 KLog.w(TAG, "Playback failed: " + error.errorCodeName)
-                _problem.value = TvPlaybackProblem.SOURCE_FAILED
+                _isBuffering.value = false
+                _problem.value = playbackProblemFor(error)
             }
     }
 
@@ -267,117 +312,70 @@ class TvPlayerViewModel(application: Application) : AndroidViewModel(application
     ) {
         cancelCountdown()
         advanceJob?.cancel()
-        torrentJob?.cancel()
-        releaseTorrent()
+        subtitleDiscoveryJob?.cancel()
+        subtitleLoadJob?.cancel()
+
         _isAdvancing.value = false
         _problem.value = null
         _audioTracks.value = emptyList()
+        _subtitleTracks.value = emptyList()
+        _selectedSubtitle.value = null
+        _embeddedSubtitleTracks.value = emptyList()
+        _selectedEmbeddedSubtitle.value = null
+        _subtitleCues.value = emptyList()
+        _subtitleLoadFailed.value = false
+        _isSubtitlesLoading.value = false
         offeredNextFor = null
         autoAdvanceDeclined = false
 
         _playback.value = TvPlayback(item, episode, source)
         bingeGroup = source.bingeGroup
         _nextEpisode.value = findNextEpisode(item, episode)
+        discoverSubtitles(item, episode, source)
 
         val streamId = episode?.id ?: item.id
         val stored = progressRepository.forEpisode(streamId)
         val startAt = resumeFrom ?: stored?.takeIf { it.isResumable }?.positionMs ?: 0L
 
-        if (source.kind == TvSourceKind.TORRENT) {
-            startTorrent(item, episode, source, startAt)
-            return
-        }
-
         val url = source.stream.url
         if (url.isNullOrBlank()) {
-            // An external link reaches here only if a caller ignored its kind;
-            // the sheet routes those to the browser instead.
+            // A torrent or an external link reaches here only if a caller
+            // ignored its kind; the sheet routes both to their own notice.
             _problem.value = TvPlaybackProblem.SOURCE_FAILED
             return
         }
 
-        isSwitchingSource = true
-        // A per-playback factory, because the headers belong to this stream:
-        // behaviorHints.proxyHeaders.request is how an addon says its host
-        // checks a Referer or a token, and without them the fetch is a 403 with
-        // no explanation anywhere.
-        player.setMediaSource(
-            DefaultMediaSourceFactory(
-                dataSourceFactory(source.requestHeaders)
-            ).createMediaSource(MediaItem.fromUri(url))
-        )
-        player.prepare()
-        if (startAt > 0) player.seekTo(startAt)
-        player.playWhenReady = true
-        isSwitchingSource = false
-        startTicker()
-    }
-
-    /**
-     * Join a swarm and play out of it.
-     *
-     * Three waits stacked, and each is a normal part of torrent playback rather
-     * than an error: the handle registering, the file list arriving over BEP 9,
-     * and the first pieces landing. Only the last of those is handled inside
-     * [TorrentDataSource]; the first two happen here because until the file
-     * list exists there is nothing to build a data source around.
-     */
-    private fun startTorrent(
-        item: TvItem,
-        episode: TvEpisode?,
-        source: TvSource,
-        startAt: Long,
-    ) {
-        val infoHash = source.stream.infoHash?.takeIf { it.isNotBlank() } ?: run {
-            _problem.value = TvPlaybackProblem.SOURCE_FAILED
-            return
-        }
-        if (!TorrentEngine.isAvailable) {
-            _problem.value = TvPlaybackProblem.SOURCE_FAILED
-            return
-        }
-
-        torrentJob?.cancel()
         _isBuffering.value = true
-        torrentJob = viewModelScope.launch {
-            val context = getApplication<Application>()
-            val magnet = magnetFor(infoHash, source.stream.releaseName, source.stream.sources)
-            val handle = TorrentEngine.start(context, magnet, infoHash)
-            val info = handle?.let { TorrentEngine.awaitMetadata(it) }
-            if (handle == null || info == null) {
-                _isBuffering.value = false
-                _problem.value = TvPlaybackProblem.SOURCE_FAILED
-                return@launch
-            }
-            val files = TorrentEngine.filesOf(info)
-            val file = TorrentEngine.pickPlayableFile(files, source.stream.fileIdx)
-            if (file == null) {
-                _isBuffering.value = false
-                _problem.value = TvPlaybackProblem.SOURCE_FAILED
-                return@launch
-            }
-            TorrentEngine.prepareForStreaming(handle, info, file)
-            activeTorrentHash = infoHash
-
-            isSwitchingSource = true
+        isSwitchingSource = true
+        try {
+            // A per-playback factory, because the headers belong to this stream:
+            // behaviorHints.proxyHeaders.request is how an addon says its host
+            // checks a Referer or a token, and without them the fetch is a 403
+            // with no explanation anywhere.
             player.setMediaSource(
-                ProgressiveMediaSource.Factory(
-                    TorrentDataSource.Factory(
-                        handle, info, file, TorrentEngine.cacheDir(context)
-                    )
-                ).createMediaSource(
-                    // The URI is a label, not an address - the factory above is
-                    // already bound to one file. It exists because Media3
-                    // requires a MediaItem and because it names the torrent in
-                    // any error the player logs.
-                    MediaItem.fromUri("torrent://" + infoHash + "/" + file.index)
-                )
+                DefaultMediaSourceFactory(
+                    dataSourceFactory(source.requestHeaders)
+                ).createMediaSource(MediaItem.fromUri(url))
             )
             player.prepare()
             if (startAt > 0) player.seekTo(startAt)
             player.playWhenReady = true
-            isSwitchingSource = false
             startTicker()
+        } catch (error: Exception) {
+            KLog.w(TAG, "Could not prepare source: " + error.javaClass.simpleName)
+            _isBuffering.value = false
+            _problem.value = TvPlaybackProblem.SOURCE_FAILED
+        } finally {
+            isSwitchingSource = false
+        }
+    }
+
+    private fun playbackProblemFor(error: PlaybackException): TvPlaybackProblem {
+        return when (error.errorCode) {
+            in 2000..2999 -> TvPlaybackProblem.NETWORK_FAILED
+            in 3000..3999 -> TvPlaybackProblem.FORMAT_UNSUPPORTED
+            in 4000..4999 -> TvPlaybackProblem.DECODER_FAILED
+            else -> TvPlaybackProblem.SOURCE_FAILED
         }
     }
 
@@ -388,7 +386,7 @@ class TvPlayerViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun togglePlayPause() {
-        if (player.isPlaying) player.pause() else player.play()
+        if (player.playWhenReady) player.pause() else player.play()
     }
 
     fun seekTo(positionMs: Long) {
@@ -422,21 +420,96 @@ class TvPlayerViewModel(application: Application) : AndroidViewModel(application
         _audioTracks.value = readAudioTracks(player.currentTracks)
     }
 
+    /** Select an external subtitle without rebuilding or discarding the video buffer. */
+    fun selectSubtitle(track: TvSubtitleTrack?) {
+        if (track == null) {
+            disableSubtitles()
+            return
+        }
+        if (_selectedSubtitle.value == track) return
+        _selectedSubtitle.value = track
+        _selectedEmbeddedSubtitle.value = null
+        _subtitleLoadFailed.value = false
+        themePreferences.setCaptionsEnabled(true)
+        themePreferences.setCaptionLanguageCode(track?.lang?.takeIf { it.isNotBlank() })
+        subtitleLoadJob?.cancel()
+        if (playerLazy.isInitialized()) {
+            playerLazy.value.trackSelectionParameters = playerLazy.value.trackSelectionParameters
+                .buildUpon()
+                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+                .build()
+        }
+        _isSubtitlesLoading.value = true
+        _subtitleCues.value = emptyList()
+        subtitleLoadJob = viewModelScope.launch {
+            val body = stremioClient.subtitleBody(track.url)
+            val cues = body?.let(WebVttParser::parse).orEmpty()
+            if (_selectedSubtitle.value != track) return@launch
+            _subtitleCues.value = cues
+            _subtitleLoadFailed.value = cues.isEmpty()
+            _isSubtitlesLoading.value = false
+        }
+    }
+
+    /** Select a text track already muxed into the playing file. */
+    fun selectEmbeddedSubtitle(track: TvEmbeddedSubtitleTrack) {
+        if (!playerLazy.isInitialized() || !track.isSupported) return
+        val groups = player.currentTracks.groups.filter { it.type == C.TRACK_TYPE_TEXT }
+        val group = groups.getOrNull(track.groupIndex) ?: return
+        subtitleLoadJob?.cancel()
+        _selectedSubtitle.value = null
+        _subtitleCues.value = emptyList()
+        _subtitleLoadFailed.value = false
+        _isSubtitlesLoading.value = false
+        themePreferences.setCaptionsEnabled(true)
+        themePreferences.setCaptionLanguageCode(track.language)
+        player.trackSelectionParameters = player.trackSelectionParameters
+            .buildUpon()
+            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+            .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+            .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, track.trackIndex))
+            .build()
+        _embeddedSubtitleTracks.value = readEmbeddedSubtitleTracks(player.currentTracks)
+        _selectedEmbeddedSubtitle.value = _embeddedSubtitleTracks.value
+            .firstOrNull { it.groupIndex == track.groupIndex && it.trackIndex == track.trackIndex }
+            ?: track
+    }
+
+    fun disableSubtitles() {
+        subtitleLoadJob?.cancel()
+        _selectedSubtitle.value = null
+        _selectedEmbeddedSubtitle.value = null
+        _subtitleCues.value = emptyList()
+        _subtitleLoadFailed.value = false
+        _isSubtitlesLoading.value = false
+        themePreferences.setCaptionsEnabled(false)
+        themePreferences.setCaptionLanguageCode(null)
+        if (playerLazy.isInitialized()) {
+            player.trackSelectionParameters = player.trackSelectionParameters
+                .buildUpon()
+                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+                .build()
+        }
+    }
+
     fun dismissProblem() {
         _problem.value = null
     }
 
+    /** Retry the current release without losing the viewer's position. */
+    fun retryPlayback() {
+        val current = _playback.value ?: return
+        val resumeFrom = if (playerLazy.isInitialized()) {
+            playerLazy.value.currentPosition.coerceAtLeast(0)
+        } else {
+            _positionMs.value.coerceAtLeast(0)
+        }
+        play(current.item, current.episode, current.source, resumeFrom)
+    }
+
     /** Close, and ask whoever is underneath to reopen the source list. */
-    fun requestSourceChange() {
-        val streamId = _playback.value?.streamId
-        close()
-        _sourceChangeRequest.value = streamId
-    }
-
-    fun consumeSourceChangeRequest() {
-        _sourceChangeRequest.value = null
-    }
-
     /** Internal reset. Does not count as the viewer declining. */
     private fun cancelCountdown() {
         countdown?.cancel()
@@ -497,8 +570,8 @@ class TvPlayerViewModel(application: Application) : AndroidViewModel(application
         checkpoint()
         cancelCountdown()
         advanceJob?.cancel()
-        torrentJob?.cancel()
-        releaseTorrent()
+        subtitleDiscoveryJob?.cancel()
+        subtitleLoadJob?.cancel()
         ticker?.cancel()
         ticker = null
         if (playerLazy.isInitialized()) {
@@ -507,9 +580,19 @@ class TvPlayerViewModel(application: Application) : AndroidViewModel(application
         }
         _playback.value = null
         _isPlaying.value = false
+        _isBuffering.value = false
+        _isAdvancing.value = false
         _positionMs.value = 0
         _durationMs.value = 0
+        _bufferedMs.value = 0
         _audioTracks.value = emptyList()
+        _subtitleTracks.value = emptyList()
+        _selectedSubtitle.value = null
+        _embeddedSubtitleTracks.value = emptyList()
+        _selectedEmbeddedSubtitle.value = null
+        _subtitleCues.value = emptyList()
+        _subtitleLoadFailed.value = false
+        _isSubtitlesLoading.value = false
         _problem.value = null
         _nextEpisode.value = null
         bingeGroup = null
@@ -527,27 +610,64 @@ class TvPlayerViewModel(application: Application) : AndroidViewModel(application
         ticker?.cancel()
         countdown?.cancel()
         advanceJob?.cancel()
-        torrentJob?.cancel()
-        releaseTorrent()
+        subtitleDiscoveryJob?.cancel()
+        subtitleLoadJob?.cancel()
         // Never through the accessor: releasing a player that was never built
         // would construct one purely to tear it down.
         if (playerLazy.isInitialized()) playerLazy.value.release()
         super.onCleared()
     }
 
-    /**
-     * Leave the swarm.
-     *
-     * Not optional and not deferrable: a torrent left running keeps peers
-     * connected, keeps the radio awake and keeps uploading after the viewer has
-     * closed the film. Every exit from playback goes through here.
-     */
-    private fun releaseTorrent() {
-        activeTorrentHash?.let { TorrentEngine.release(it) }
-        activeTorrentHash = null
+    // --- Internals ----------------------------------------------------------
+
+    /** Merge the chosen stream's tracks with every installed subtitle addon. */
+    private fun discoverSubtitles(item: TvItem, episode: TvEpisode?, source: TvSource) {
+        val inline = source.stream.subtitles
+            .filter { it.isUsable }
+            .map { track ->
+                if (track.addonName.isNullOrBlank()) track.copy(addonName = source.addonName)
+                else track
+            }
+        _subtitleTracks.value = mergeSubtitleTracks(inline, emptyList())
+        restorePreferredSubtitle(_subtitleTracks.value)
+        subtitleDiscoveryJob = viewModelScope.launch {
+            val streamId = episode?.id ?: item.id
+            val addonTracks = streamRepository.subtitles(item.type, streamId)
+            if (_playback.value?.streamId != streamId || _playback.value?.source?.id != source.id) {
+                return@launch
+            }
+            val merged = mergeSubtitleTracks(inline, addonTracks)
+            _subtitleTracks.value = merged
+            restorePreferredSubtitle(merged)
+        }
     }
 
-    // --- Internals ----------------------------------------------------------
+    private fun restorePreferredSubtitle(tracks: List<TvSubtitleTrack>) {
+        if (
+            !themePreferences.isCaptionsEnabled() ||
+            _selectedSubtitle.value != null ||
+            _selectedEmbeddedSubtitle.value != null
+        ) return
+        val preferred = themePreferences.getCaptionLanguageCode()
+        val match = preferred?.let { wanted ->
+            tracks.firstOrNull { languageMatches(it.lang, wanted) }
+        } ?: tracks.firstOrNull()
+        match?.let(::selectSubtitle)
+    }
+
+    private fun restorePreferredEmbeddedSubtitle() {
+        if (
+            !themePreferences.isCaptionsEnabled() ||
+            _selectedSubtitle.value != null ||
+            _selectedEmbeddedSubtitle.value != null
+        ) return
+        val tracks = _embeddedSubtitleTracks.value.filter { it.isSupported }
+        val preferred = themePreferences.getCaptionLanguageCode()
+        val match = preferred?.let { wanted ->
+            tracks.firstOrNull { languageMatches(it.language.orEmpty(), wanted) }
+        } ?: tracks.firstOrNull()
+        match?.let(::selectEmbeddedSubtitle)
+    }
 
     /**
      * Position, and a progress checkpoint on the same 15-second cadence music
@@ -689,6 +809,31 @@ class TvPlayerViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    private fun readEmbeddedSubtitleTracks(tracks: Tracks): List<TvEmbeddedSubtitleTrack> {
+        val groups = tracks.groups.filter { it.type == C.TRACK_TYPE_TEXT }
+        return buildList {
+            groups.forEachIndexed { groupIndex, group ->
+                for (trackIndex in 0 until group.length) {
+                    val format = group.getTrackFormat(trackIndex)
+                    val language = format.language?.takeIf { it.isNotBlank() && it != "und" }
+                    val label = format.label?.takeIf { it.isNotBlank() }
+                        ?: language?.let(::languageLabel)
+                        ?: "Subtitle " + (size + 1)
+                    add(
+                        TvEmbeddedSubtitleTrack(
+                            groupIndex = groupIndex,
+                            trackIndex = trackIndex,
+                            label = label,
+                            language = language,
+                            isSelected = group.isTrackSelected(trackIndex),
+                            isSupported = group.isTrackSupported(trackIndex),
+                        )
+                    )
+                }
+            }
+        }
+    }
+
     companion object {
         private const val TAG = "TvPlayerViewModel"
 
@@ -742,6 +887,24 @@ class TvPlayerViewModel(application: Application) : AndroidViewModel(application
             }
             return listOfNotNull(name, channels).joinToString(" ").ifBlank { "Audio" }
         }
+
+        internal fun mergeSubtitleTracks(
+            streamTracks: List<TvSubtitleTrack>,
+            addonTracks: List<TvSubtitleTrack>,
+        ): List<TvSubtitleTrack> {
+            val seenUrls = HashSet<String>()
+            val seenLabels = HashSet<String>()
+            return (streamTracks + addonTracks).filter { track ->
+                if (!track.isUsable || !seenUrls.add(track.url)) return@filter false
+                val labelKey = track.lang.trim().lowercase() + "|" +
+                    (track.name ?: track.id).trim().lowercase()
+                labelKey == "|" || seenLabels.add(labelKey)
+            }
+        }
+
+        private fun languageMatches(first: String, second: String): Boolean =
+            first.equals(second, ignoreCase = true) ||
+                languageLabel(first).equals(languageLabel(second), ignoreCase = true)
     }
 }
 

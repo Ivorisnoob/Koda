@@ -11,6 +11,7 @@ import com.ivor.ivormusic.data.tv.TvRepository
 import com.ivor.ivormusic.data.tv.TvSearchGroup
 import com.ivor.ivormusic.data.tv.TvShelf
 import com.ivor.ivormusic.data.tv.TvWatchlistRepository
+import com.ivor.ivormusic.data.SearchHistoryRepository
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -31,6 +32,7 @@ class TvViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = TvRepository(application)
     private val watchlistRepository = TvWatchlistRepository(application)
     private val progressRepository = TvProgressRepository(application)
+    private val searchHistoryRepository = SearchHistoryRepository(application)
 
     private val _shelves = MutableStateFlow<List<TvShelf>>(emptyList())
     val shelves: StateFlow<List<TvShelf>> = _shelves.asStateFlow()
@@ -51,6 +53,9 @@ class TvViewModel(application: Application) : AndroidViewModel(application) {
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
+    private val _recentSearches = MutableStateFlow(searchHistoryRepository.getHistory())
+    val recentSearches: StateFlow<List<String>> = _recentSearches.asStateFlow()
+
     val watchlist: StateFlow<List<TvLibraryEntry>> = watchlistRepository.watchlist
     val progress: StateFlow<Map<String, TvProgress>> = progressRepository.progress
     val watchedItems: StateFlow<List<TvLibraryEntry>> = progressRepository.watchedItems
@@ -67,6 +72,17 @@ class TvViewModel(application: Application) : AndroidViewModel(application) {
 
     private var searchJob: Job? = null
     private var homeJob: Job? = null
+    private var manifestJob: Job? = null
+
+    /**
+     * Whether this instance has re-read the installed manifests yet.
+     *
+     * Once per ViewModel rather than once per [loadHome], because the manifests
+     * describe what an addon offers and that changes on the addon's schedule,
+     * not the viewer's - refetching six of them every time Home is opened is
+     * traffic spent to learn nothing. A pull-to-refresh overrides it.
+     */
+    private var manifestsRefreshed = false
 
     /** Continue Watching, newest first. Derived rather than stored. */
     fun continueWatching(): List<Pair<TvLibraryEntry, TvProgress>> =
@@ -80,6 +96,8 @@ class TvViewModel(application: Application) : AndroidViewModel(application) {
 
     fun clearProgressFor(itemId: String) = progressRepository.clearForItem(itemId)
 
+    fun clearAllProgress() = progressRepository.clearAll()
+
     /**
      * Load or reload every shelf.
      *
@@ -89,6 +107,7 @@ class TvViewModel(application: Application) : AndroidViewModel(application) {
      * its shape immediately rather than appearing row by row.
      */
     fun loadHome(forceFresh: Boolean = false) {
+        maybeRefreshManifests(forceFresh)
         if (homeJob?.isActive == true && !forceFresh) return
         homeJob?.cancel()
         homeJob = viewModelScope.launch {
@@ -129,6 +148,26 @@ class TvViewModel(application: Application) : AndroidViewModel(application) {
             }
             _isLoadingHome.value = false
             _hasLoadedHome.value = true
+        }
+    }
+
+    /**
+     * Re-read every installed manifest, off the critical path.
+     *
+     * Deliberately not awaited by [loadHome]: Home paints from the manifests
+     * already stored, and a refresh that blocked the first shelf would trade a
+     * visible delay for a correctness fix nobody is waiting on. If anything
+     * actually changed, the shelf list is rebuilt afterwards - which is the
+     * only case where the extra pass is worth a redraw.
+     */
+    private fun maybeRefreshManifests(forceFresh: Boolean) {
+        if (manifestsRefreshed && !forceFresh) return
+        if (manifestJob?.isActive == true) return
+        // Set before the fetch, not after, so a failed refresh does not retry
+        // on every Home load for the whole session.
+        manifestsRefreshed = true
+        manifestJob = viewModelScope.launch {
+            if (repository.refreshManifests()) loadHome(forceFresh = false)
         }
     }
 
@@ -220,10 +259,15 @@ class TvViewModel(application: Application) : AndroidViewModel(application) {
             _isSearching.value = false
             return
         }
+        // The previous query's rows are not a valid answer while this query is
+        // being debounced. Clear them and publish loading immediately so the
+        // UI never looks finished with stale results.
+        _searchResults.value = emptyList()
+        _isSearching.value = true
         searchJob = viewModelScope.launch {
             delay(SEARCH_DEBOUNCE_MS)
-            _isSearching.value = true
             val results = repository.search(query)
+            if (_searchQuery.value != query) return@launch
             _searchResults.value = results
             _isSearching.value = false
         }
@@ -234,6 +278,23 @@ class TvViewModel(application: Application) : AndroidViewModel(application) {
         _searchQuery.value = ""
         _searchResults.value = emptyList()
         _isSearching.value = false
+    }
+
+    fun rememberSearch(query: String = _searchQuery.value) {
+        val value = query.trim()
+        if (value.isBlank()) return
+        searchHistoryRepository.addQuery(value)
+        _recentSearches.value = searchHistoryRepository.getHistory()
+    }
+
+    fun removeRecentSearch(query: String) {
+        searchHistoryRepository.removeQuery(query)
+        _recentSearches.value = searchHistoryRepository.getHistory()
+    }
+
+    fun clearRecentSearches() {
+        searchHistoryRepository.clearHistory()
+        _recentSearches.value = emptyList()
     }
 
     private companion object {

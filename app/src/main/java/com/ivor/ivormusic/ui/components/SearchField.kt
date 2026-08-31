@@ -73,7 +73,8 @@ fun SearchField(
     query: String,
     onQueryChange: (String) -> Unit,
     placeholder: String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onSearch: (() -> Unit)? = null,
 ) {
     val focusManager = LocalFocusManager.current
     val interactionSource = remember { MutableInteractionSource() }
@@ -119,7 +120,10 @@ fun SearchField(
                 cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                 interactionSource = interactionSource,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
+                keyboardActions = KeyboardActions(onSearch = {
+                    onSearch?.invoke()
+                    focusManager.clearFocus()
+                }),
                 modifier = Modifier.fillMaxWidth()
             )
         }

@@ -2,8 +2,10 @@ package com.ivor.ivormusic.ui.tv
 
 import com.ivor.ivormusic.data.tv.TvEpisode
 import com.ivor.ivormusic.data.tv.TvItem
+import com.ivor.ivormusic.data.tv.TvSubtitleTrack
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -118,6 +120,25 @@ class TvPlayerLogicTest {
         ))
         assertEquals("Just A Title", episodeLabel(TvEpisode(id = "x", name = "Just A Title")))
         assertEquals("S1E1", episodeLabel(TvEpisode(id = "x", season = 1, episode = 1)))
+    }
+
+    @Test
+    fun subtitleTracksMergeWithoutDuplicateUrlsOrReleaseLabels() {
+        val inline = TvSubtitleTrack(
+            id = "one", url = "https://sub/one.srt", lang = "en", name = "Movie Release"
+        )
+        val sameUrl = inline.copy(id = "two")
+        val sameRelease = inline.copy(id = "three", url = "https://sub/mirror.srt")
+        val japanese = TvSubtitleTrack(
+            id = "four", url = "https://sub/ja.srt", lang = "ja", name = "Movie Release"
+        )
+
+        val merged = TvPlayerViewModel.mergeSubtitleTracks(
+            listOf(inline), listOf(sameUrl, sameRelease, japanese)
+        )
+
+        assertEquals(2, merged.size)
+        assertTrue(merged.any { it.lang == "ja" })
     }
 
     // --- Formatting ---------------------------------------------------------

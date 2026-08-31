@@ -79,6 +79,41 @@ class TvRepository(context: Context) {
         }
     }
 
+    /**
+     * Re-fetch every installed addon's manifest and store what changed.
+     *
+     * An addon describes its own catalogs, so a manifest that is never re-read
+     * freezes the app's idea of what exists at whatever was seeded or installed
+     * - which is exactly how Cinemeta's Featured shelves and Kitsu's Highest
+     * Rated were missing from Home while both addons had offered them for
+     * months. Bounded and failure-tolerant like every other fan-out here: an
+     * addon that cannot be reached simply keeps the manifest it already had,
+     * because a cached shape is enormously better than none.
+     *
+     * Returns true when at least one manifest changed, which is the caller's
+     * signal that the shelf list needs rebuilding.
+     */
+    suspend fun refreshManifests(): Boolean = coroutineScope {
+        val installed = addonRepository.enabled()
+        if (installed.isEmpty()) return@coroutineScope false
+
+        val gate = Semaphore(CONCURRENCY)
+        val fetched = installed.map { addon ->
+            async {
+                gate.withPermit {
+                    addon.id to client.manifest(addon.transportUrl, forceFresh = true)
+                }
+            }
+        }.awaitAll()
+
+        var changed = false
+        for ((addonId, manifest) in fetched) {
+            if (manifest == null) continue
+            if (addonRepository.updateManifest(addonId, manifest)) changed = true
+        }
+        changed
+    }
+
     /** One shelf's page. Returns null on failure so the caller can mark it. */
     suspend fun loadShelf(
         shelf: TvShelf,

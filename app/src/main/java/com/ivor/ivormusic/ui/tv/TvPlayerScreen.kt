@@ -10,6 +10,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -19,14 +20,18 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.Pause
-import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Forward10
+import androidx.compose.material.icons.rounded.Replay10
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SwapHoriz
+import androidx.compose.material.icons.rounded.Subtitles
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilledTonalButton
@@ -35,8 +40,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -53,7 +56,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -64,7 +68,12 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.ivor.ivormusic.R
+import com.ivor.ivormusic.data.tv.TvSubtitleTrack
+import com.ivor.ivormusic.ui.video.ExpressivePlayPauseButton
 import com.ivor.ivormusic.ui.video.PlayerGestureSurface
+import com.ivor.ivormusic.ui.video.PlayerSeekBar
+import com.ivor.ivormusic.ui.video.QueueSkipButton
+import com.ivor.ivormusic.ui.video.CaptionOverlay
 import java.util.Locale
 
 /**
@@ -83,9 +92,32 @@ import java.util.Locale
  */
 @OptIn(UnstableApi::class)
 @Composable
-fun TvPlayerScreen(viewModel: TvPlayerViewModel) {
+fun TvPlayerScreen(
+    viewModel: TvPlayerViewModel,
+    onOpenExtensions: () -> Unit = {},
+) {
     val playback by viewModel.playback.collectAsState()
     val current = playback ?: return
+
+    // The source sheet is hosted here rather than on the detail page.
+    // [scar] It used to live there, which meant "change source" had to call
+    // close() first - the sheet is inside the NavHost and this player is an
+    // overlay above it, so it would otherwise have opened underneath the video.
+    // Tearing the player down to change quality lost the exact position (the
+    // progress store only checkpoints every 15 seconds) and dropped the viewer
+    // back to the detail page mid-film. Hosting it here lets switchSource()
+    // swap the file in place at the current position instead.
+    val sourcesViewModel: TvSourcesViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+    var showSourceSheet by remember { mutableStateOf(false) }
+
+    val sheetSources by sourcesViewModel.visible.collectAsState()
+    val sheetLoading by sourcesViewModel.isLoading.collectAsState()
+    val sheetLoaded by sourcesViewModel.loaded.collectAsState()
+    val sheetAutoPick by sourcesViewModel.autoPick.collectAsState()
+    val sheetFacets by sourcesViewModel.facets.collectAsState()
+    val sheetFilter by sourcesViewModel.filter.collectAsState()
+    val sheetTotal by sourcesViewModel.totalCount.collectAsState()
+    val sheetFailedAddons by sourcesViewModel.failedAddons.collectAsState()
 
     val isPlaying by viewModel.isPlaying.collectAsState()
     val isBuffering by viewModel.isBuffering.collectAsState()
@@ -93,6 +125,16 @@ fun TvPlayerScreen(viewModel: TvPlayerViewModel) {
     val durationMs by viewModel.durationMs.collectAsState()
     val bufferedMs by viewModel.bufferedMs.collectAsState()
     val audioTracks by viewModel.audioTracks.collectAsState()
+    val subtitleTracks by viewModel.subtitleTracks.collectAsState()
+    val selectedSubtitle by viewModel.selectedSubtitle.collectAsState()
+    val embeddedSubtitleTracks by viewModel.embeddedSubtitleTracks.collectAsState()
+    val selectedEmbeddedSubtitle by viewModel.selectedEmbeddedSubtitle.collectAsState()
+    val subtitleCues by viewModel.subtitleCues.collectAsState()
+    val isSubtitlesLoading by viewModel.isSubtitlesLoading.collectAsState()
+    val subtitleLoadFailed by viewModel.subtitleLoadFailed.collectAsState()
+    val captionTextSize by viewModel.captionTextSize.collectAsState()
+    val captionTextColor by viewModel.captionTextColor.collectAsState()
+    val captionBackground by viewModel.captionBackground.collectAsState()
     val problem by viewModel.problem.collectAsState()
     val nextEpisode by viewModel.nextEpisode.collectAsState()
     val countdown by viewModel.autoplayCountdown.collectAsState()
@@ -100,11 +142,14 @@ fun TvPlayerScreen(viewModel: TvPlayerViewModel) {
 
     val context = LocalContext.current
     val activity = context as? Activity
+    val videoBackground = MaterialTheme.colorScheme.scrim.toArgb()
 
     var controlsVisible by remember { mutableStateOf(true) }
+    // Owned by PlayerSeekBar and reported back, because the auto-hide timer
+    // must not fire while a drag is in progress.
     var isScrubbing by remember { mutableStateOf(false) }
-    var scrubValue by remember { mutableFloatStateOf(0f) }
     var showAudioSheet by remember { mutableStateOf(false) }
+    var showSubtitleSheet by remember { mutableStateOf(false) }
     var zoomedToFill by remember { mutableStateOf(false) }
     var speedBeforeBoost by remember { mutableFloatStateOf(1f) }
     // Bumped on every interaction so the auto-hide timer restarts rather than
@@ -165,7 +210,7 @@ fun TvPlayerScreen(viewModel: TvPlayerViewModel) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black)
+            .background(MaterialTheme.colorScheme.scrim)
     ) {
         PlayerGestureSurface(
             onToggleControls = {
@@ -194,10 +239,11 @@ fun TvPlayerScreen(viewModel: TvPlayerViewModel) {
                     PlayerView(ctx).apply {
                         useController = false
                         player = viewModel.exoPlayer()
-                        setShutterBackgroundColor(android.graphics.Color.BLACK)
+                        setShutterBackgroundColor(videoBackground)
                     }
                 },
                 update = { view ->
+                    view.setShutterBackgroundColor(videoBackground)
                     view.resizeMode =
                         if (zoomedToFill) AspectRatioFrameLayout.RESIZE_MODE_ZOOM
                         else AspectRatioFrameLayout.RESIZE_MODE_FIT
@@ -210,8 +256,27 @@ fun TvPlayerScreen(viewModel: TvPlayerViewModel) {
             )
         }
 
-        if (isBuffering || isAdvancing) {
-            LoadingIndicator(modifier = Modifier.align(Alignment.Center))
+        CaptionOverlay(
+            cues = subtitleCues,
+            player = viewModel.exoPlayer(),
+            bottomPadding = if (controlsVisible) 104.dp else 28.dp,
+            compact = false,
+            textSize = captionTextSize,
+            textColor = captionTextColor,
+            background = captionBackground,
+            modifier = Modifier.fillMaxSize(),
+        )
+
+        // Both this and the centre transport are centred, so only one may draw
+        // at a time. Ordinary buffering is reported by the play button itself
+        // while the controls are up, and only needs its own indicator once they
+        // have hidden; advancing to the next episode always gets the card,
+        // because it is a multi-second fan-out that has to say what it is doing.
+        if (isAdvancing || (isBuffering && !controlsVisible)) {
+            PlaybackLoadingStatus(
+                isAdvancing = isAdvancing,
+                modifier = Modifier.align(Alignment.Center),
+            )
         }
 
         AnimatedVisibility(
@@ -220,7 +285,10 @@ fun TvPlayerScreen(viewModel: TvPlayerViewModel) {
             exit = fadeOut(),
             modifier = Modifier.fillMaxSize(),
         ) {
-            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.35f))) {
+            // No flat dim over the whole frame: the two gradients below darken
+            // exactly the bands the text sits in, which is what the video
+            // player does and what keeps the picture itself untouched.
+            Box(Modifier.fillMaxSize()) {
                 TopChrome(
                     title = current.title,
                     subtitle = current.subtitle,
@@ -228,11 +296,23 @@ fun TvPlayerScreen(viewModel: TvPlayerViewModel) {
                     modifier = Modifier.align(Alignment.TopStart),
                 )
 
-                CentreControls(
+                // Stands down while the next episode is being resolved: the
+                // loading card occupies the same centre slot, and a transport
+                // for a file that is not chosen yet has nothing to command.
+                if (!isAdvancing) CentreControls(
                     isPlaying = isPlaying,
+                    isBuffering = isBuffering,
                     hasNext = nextEpisode != null,
                     onPlayPause = {
                         viewModel.togglePlayPause()
+                        interaction++
+                    },
+                    onSeekBackward = {
+                        viewModel.seekBy(-TvPlayerViewModel.SEEK_STEP_MS)
+                        interaction++
+                    },
+                    onSeekForward = {
+                        viewModel.seekBy(TvPlayerViewModel.SEEK_STEP_MS)
                         interaction++
                     },
                     onNext = {
@@ -243,26 +323,41 @@ fun TvPlayerScreen(viewModel: TvPlayerViewModel) {
                 )
 
                 BottomChrome(
-                    positionMs = if (isScrubbing) (scrubValue * durationMs).toLong() else positionMs,
+                    streamId = current.streamId,
+                    positionMs = positionMs,
                     durationMs = durationMs,
                     bufferedMs = bufferedMs,
-                    isScrubbing = isScrubbing,
-                    scrubValue = scrubValue,
                     hasAudioChoice = audioTracks.size > 1,
-                    onScrub = {
-                        isScrubbing = true
-                        scrubValue = it
-                    },
-                    onScrubFinished = {
-                        isScrubbing = false
-                        viewModel.seekTo((scrubValue * durationMs).toLong())
+                    hasSubtitles = subtitleTracks.isNotEmpty() ||
+                        embeddedSubtitleTracks.isNotEmpty() || isSubtitlesLoading,
+                    selectedSubtitle = selectedSubtitle,
+                    selectedEmbeddedSubtitle = selectedEmbeddedSubtitle,
+                    onSeekFraction = { fraction ->
+                        viewModel.seekTo((fraction * durationMs).toLong())
                         interaction++
                     },
+                    onScrubbingChanged = { isScrubbing = it },
                     onOpenAudio = {
                         showAudioSheet = true
                         interaction++
                     },
-                    onChangeSource = { viewModel.requestSourceChange() },
+                    onOpenSubtitles = {
+                        showSubtitleSheet = true
+                        interaction++
+                    },
+                    onChangeSource = {
+                        showSourceSheet = true
+                        interaction++
+                        // Exhaustive: the viewer opened this to see the field.
+                        // It takes a few seconds and the sheet shows its own
+                        // spinner while it fills, rather than blocking playback
+                        // - the film keeps running underneath the whole time.
+                        sourcesViewModel.load(
+                            current.item.type,
+                            current.streamId,
+                            exhaustive = true,
+                        )
+                    },
                     modifier = Modifier.align(Alignment.BottomStart),
                 )
             }
@@ -287,7 +382,15 @@ fun TvPlayerScreen(viewModel: TvPlayerViewModel) {
         problem?.let { kind ->
             ProblemCard(
                 problem = kind,
-                onChangeSource = { viewModel.requestSourceChange() },
+                onRetry = { viewModel.retryPlayback() },
+                onChangeSource = {
+                    showSourceSheet = true
+                    sourcesViewModel.load(
+                        current.item.type,
+                        current.streamId,
+                        exhaustive = true,
+                    )
+                },
                 onDismiss = { viewModel.dismissProblem() },
                 modifier = Modifier.align(Alignment.Center),
             )
@@ -304,6 +407,76 @@ fun TvPlayerScreen(viewModel: TvPlayerViewModel) {
             onDismiss = { showAudioSheet = false },
         )
     }
+
+
+    if (showSourceSheet) {
+        TvSourceSheet(
+            title = listOfNotNull(
+                current.title,
+                current.subtitle?.takeIf { it.isNotBlank() },
+            ).joinToString("  "),
+            hasStreamSource = sourcesViewModel.hasStreamSource(),
+            isLoading = sheetLoading,
+            loaded = sheetLoaded,
+            sources = sheetSources,
+            totalCount = sheetTotal,
+            autoPick = sheetAutoPick,
+            facets = sheetFacets,
+            filter = sheetFilter,
+            failedAddons = sheetFailedAddons,
+            // The whole point of hosting this here: swap the file at the
+            // current position, with no teardown and no return to the detail
+            // page. The film does not stop.
+            onPlay = { source ->
+                showSourceSheet = false
+                viewModel.switchSource(source)
+            },
+            onOpenExternal = { link ->
+                runCatching {
+                    context.startActivity(
+                        android.content.Intent(
+                            android.content.Intent.ACTION_VIEW,
+                            android.net.Uri.parse(link),
+                        )
+                    )
+                }
+            },
+            onSetResolution = sourcesViewModel::setResolution,
+            onSetLanguage = sourcesViewModel::setLanguage,
+            onSetSourceQuality = sourcesViewModel::setSourceQuality,
+            onSetCachedOnly = sourcesViewModel::setCachedOnly,
+            onSetDub = sourcesViewModel::setDub,
+            onClearFilters = sourcesViewModel::clearFilters,
+            onRetry = {
+                sourcesViewModel.load(
+                    current.item.type,
+                    current.streamId,
+                    force = true,
+                    exhaustive = true,
+                )
+            },
+            onBrowseAddons = {
+                showSourceSheet = false
+                onOpenExtensions()
+            },
+            onDismiss = { showSourceSheet = false },
+        )
+    }
+
+    if (showSubtitleSheet) {
+        SubtitleTrackSheet(
+            tracks = subtitleTracks,
+            selected = selectedSubtitle,
+            embeddedTracks = embeddedSubtitleTracks,
+            selectedEmbedded = selectedEmbeddedSubtitle,
+            isLoading = isSubtitlesLoading,
+            loadFailed = subtitleLoadFailed,
+            onSelect = { viewModel.selectSubtitle(it) },
+            onSelectEmbedded = viewModel::selectEmbeddedSubtitle,
+            onDisable = viewModel::disableSubtitles,
+            onDismiss = { showSubtitleSheet = false },
+        )
+    }
 }
 
 @Composable
@@ -316,15 +489,26 @@ private fun TopChrome(
     Row(
         modifier = modifier
             .fillMaxWidth()
+            // Darkens only the band the title sits in. A title over a bright
+            // frame is unreadable without it, and dimming the whole picture to
+            // fix one line of text is the wrong trade.
+            .background(
+                Brush.verticalGradient(
+                    listOf(
+                        MaterialTheme.colorScheme.scrim.copy(alpha = 0.75f),
+                        MaterialTheme.colorScheme.scrim.copy(alpha = 0f),
+                    )
+                )
+            )
             .systemBarsPadding()
             .padding(horizontal = 8.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         IconButton(onClick = onClose) {
             Icon(
-                imageVector = Icons.Rounded.ArrowBack,
+                imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
                 contentDescription = stringResource(R.string.cd_back),
-                tint = Color.White,
+                tint = MaterialTheme.colorScheme.inverseOnSurface,
             )
         }
         Column(Modifier.weight(1f).padding(start = 4.dp)) {
@@ -332,7 +516,7 @@ private fun TopChrome(
                 text = title,
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
-                color = Color.White,
+                color = MaterialTheme.colorScheme.inverseOnSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -340,7 +524,7 @@ private fun TopChrome(
                 Text(
                     text = subtitle,
                     style = MaterialTheme.typography.labelMedium,
-                    color = Color.White.copy(alpha = 0.75f),
+                    color = MaterialTheme.colorScheme.inverseOnSurface.copy(alpha = 0.75f),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -349,124 +533,204 @@ private fun TopChrome(
     }
 }
 
+/**
+ * The centre transport, in the video player's vocabulary.
+ *
+ * Seek buttons flank play/pause even though double-tap already seeks, because
+ * a gesture nobody is told about is a feature only the people who wrote it
+ * have. The buttons are the discoverable path and the gesture is the fast one;
+ * both call the same [TvPlayerViewModel.SEEK_STEP_MS].
+ *
+ * Next-episode appears only when there is one, so a film shows three controls
+ * rather than a permanently dead fourth.
+ */
 @Composable
 private fun CentreControls(
     isPlaying: Boolean,
+    isBuffering: Boolean,
     hasNext: Boolean,
     onPlayPause: () -> Unit,
+    onSeekBackward: () -> Unit,
+    onSeekForward: () -> Unit,
     onNext: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Row(
         modifier = modifier,
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(28.dp),
+        horizontalArrangement = Arrangement.spacedBy(24.dp),
     ) {
-        Surface(
+        QueueSkipButton(
+            icon = Icons.Rounded.Replay10,
+            contentDescription = stringResource(R.string.cd_seek_backward),
+            enabled = true,
+            onClick = onSeekBackward,
+        )
+        ExpressivePlayPauseButton(
+            isPlaying = isPlaying,
+            isBuffering = isBuffering,
             onClick = onPlayPause,
-            shape = RoundedCornerShape(percent = 50),
-            color = Color.White.copy(alpha = 0.16f),
-        ) {
-            Icon(
-                imageVector = if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                contentDescription = null,
-                tint = Color.White,
-                modifier = Modifier.padding(16.dp).size(36.dp),
-            )
-        }
+        )
+        QueueSkipButton(
+            icon = Icons.Rounded.Forward10,
+            contentDescription = stringResource(R.string.cd_seek_forward),
+            enabled = true,
+            onClick = onSeekForward,
+        )
         if (hasNext) {
-            Surface(
+            QueueSkipButton(
+                icon = Icons.Rounded.SkipNext,
+                contentDescription = stringResource(R.string.tv_next_episode),
+                enabled = true,
                 onClick = onNext,
-                shape = RoundedCornerShape(percent = 50),
-                color = Color.White.copy(alpha = 0.10f),
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.SkipNext,
-                    contentDescription = stringResource(R.string.tv_next_episode),
-                    tint = Color.White,
-                    modifier = Modifier.padding(12.dp).size(26.dp),
-                )
-            }
+            )
         }
     }
 }
 
+/**
+ * Seek bar and the track controls under it.
+ *
+ * The seek bar is the video player's [PlayerSeekBar], shared rather than
+ * reimplemented. That is not only tidiness: it draws the buffered range *on*
+ * the track instead of as a second bar underneath it, and it holds the thumb at
+ * the committed position until the twice-a-second position poll catches up, so
+ * releasing a drag no longer snaps backwards for half a second. Both were
+ * wrong here and right there.
+ *
+ * [streamId] keys its internal scrub state, so moving to the next episode
+ * starts a fresh bar rather than inheriting the previous one's drag.
+ */
 @Composable
 private fun BottomChrome(
+    streamId: String,
     positionMs: Long,
     durationMs: Long,
     bufferedMs: Long,
-    isScrubbing: Boolean,
-    scrubValue: Float,
     hasAudioChoice: Boolean,
-    onScrub: (Float) -> Unit,
-    onScrubFinished: () -> Unit,
+    hasSubtitles: Boolean,
+    selectedSubtitle: TvSubtitleTrack?,
+    selectedEmbeddedSubtitle: TvEmbeddedSubtitleTrack?,
+    onSeekFraction: (Float) -> Unit,
+    onScrubbingChanged: (Boolean) -> Unit,
     onOpenAudio: () -> Unit,
+    onOpenSubtitles: () -> Unit,
     onChangeSource: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val progress = when {
-        isScrubbing -> scrubValue
-        durationMs > 0 -> (positionMs.toFloat() / durationMs).coerceIn(0f, 1f)
-        else -> 0f
-    }
+    val progress =
+        if (durationMs > 0) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
+    val buffered =
+        if (durationMs > 0) (bufferedMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
 
     Column(
         modifier = modifier
             .fillMaxWidth()
+            .background(
+                Brush.verticalGradient(
+                    listOf(
+                        MaterialTheme.colorScheme.scrim.copy(alpha = 0f),
+                        MaterialTheme.colorScheme.scrim.copy(alpha = 0.85f),
+                    )
+                )
+            )
             .systemBarsPadding()
             .padding(horizontal = 16.dp, vertical = 10.dp),
     ) {
-        Slider(
-            value = progress,
-            onValueChange = onScrub,
-            onValueChangeFinished = onScrubFinished,
-            enabled = durationMs > 0,
-            colors = SliderDefaults.colors(
-                thumbColor = MaterialTheme.colorScheme.primary,
-                activeTrackColor = MaterialTheme.colorScheme.primary,
-                // Deliberate literals: this control sits on arbitrary video
-                // rather than a themed surface, the same exception the caption
-                // scrim takes.
-                inactiveTrackColor = Color.White.copy(alpha = 0.28f),
-            ),
-        )
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
             Text(
-                text = formatPlaybackTime(positionMs) + " / " + formatPlaybackTime(durationMs),
+                text = formatPlaybackTime(positionMs),
                 style = MaterialTheme.typography.labelMedium,
-                color = Color.White.copy(alpha = 0.85f),
+                color = MaterialTheme.colorScheme.inverseOnSurface,
             )
+            PlayerSeekBar(
+                mediaId = streamId,
+                progress = progress,
+                bufferedProgress = buffered,
+                onSeek = onSeekFraction,
+                durationMs = durationMs,
+                // There is no storyboard for an addon's file - the protocol
+                // carries no thumbnail track - so the preview is switched off
+                // rather than shown empty.
+                showSeekPreview = false,
+                onScrubbingChanged = onScrubbingChanged,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                text = formatPlaybackTime(durationMs),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.inverseOnSurface,
+            )
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
             Spacer(Modifier.weight(1f))
             if (hasAudioChoice) {
-                TextButton(onClick = onOpenAudio) {
-                    Icon(
-                        imageVector = Icons.Rounded.Tune,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(17.dp),
-                    )
-                    Text(
-                        text = stringResource(R.string.tv_audio_track),
-                        color = Color.White,
-                        modifier = Modifier.padding(start = 6.dp),
-                    )
-                }
-            }
-            TextButton(onClick = onChangeSource) {
-                Icon(
-                    imageVector = Icons.Rounded.SwapHoriz,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(17.dp),
-                )
-                Text(
-                    text = stringResource(R.string.tv_change_source),
-                    color = Color.White,
-                    modifier = Modifier.padding(start = 6.dp),
+                ChromeActionButton(
+                    icon = Icons.Rounded.Tune,
+                    label = stringResource(R.string.tv_audio_track),
+                    onClick = onOpenAudio,
                 )
             }
+            if (hasSubtitles) {
+                ChromeActionButton(
+                    icon = Icons.Rounded.Subtitles,
+                    // Shows the chosen track rather than the word "Subtitles",
+                    // so the current state is readable without opening a sheet.
+                    label = selectedSubtitle?.lang?.takeIf { it.isNotBlank() }
+                        ?.let(::languageLabel)
+                        ?: selectedEmbeddedSubtitle?.label
+                        ?: stringResource(R.string.tv_subtitles),
+                    onClick = onOpenSubtitles,
+                )
+            }
+            ChromeActionButton(
+                icon = Icons.Rounded.SwapHoriz,
+                label = stringResource(R.string.tv_change_source),
+                onClick = onChangeSource,
+            )
         }
+    }
+}
+
+/**
+ * One control in the bottom action row.
+ *
+ * A filled tonal pill rather than the bare `TextButton` these used to be:
+ * over an arbitrary video frame an unbounded label does not read as something
+ * tappable, and these three are the only way to reach audio, subtitles and a
+ * different release.
+ */
+@Composable
+private fun ChromeActionButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    onClick: () -> Unit,
+) {
+    FilledTonalButton(
+        onClick = onClick,
+        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            modifier = Modifier.size(18.dp),
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelLarge,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(start = 8.dp),
+        )
     }
 }
 
@@ -519,6 +783,7 @@ private fun UpNextCard(
 @Composable
 private fun ProblemCard(
     problem: TvPlaybackProblem,
+    onRetry: () -> Unit,
     onChangeSource: () -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
@@ -534,6 +799,9 @@ private fun ProblemCard(
                     when (problem) {
                         TvPlaybackProblem.NO_SUPPORTED_AUDIO -> R.string.tv_audio_unsupported
                         TvPlaybackProblem.NO_NEXT_SOURCE -> R.string.tv_sources_none_found_title
+                        TvPlaybackProblem.NETWORK_FAILED -> R.string.tv_playback_network_title
+                        TvPlaybackProblem.FORMAT_UNSUPPORTED -> R.string.tv_playback_format_title
+                        TvPlaybackProblem.DECODER_FAILED -> R.string.tv_playback_decoder_title
                         TvPlaybackProblem.SOURCE_FAILED -> R.string.tv_playback_failed_title
                     }
                 ),
@@ -541,21 +809,69 @@ private fun ProblemCard(
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurface,
             )
-            if (problem == TvPlaybackProblem.SOURCE_FAILED) {
+            val body = when (problem) {
+                TvPlaybackProblem.SOURCE_FAILED -> R.string.tv_playback_failed_body
+                TvPlaybackProblem.NETWORK_FAILED -> R.string.tv_playback_network_body
+                TvPlaybackProblem.FORMAT_UNSUPPORTED -> R.string.tv_playback_format_body
+                TvPlaybackProblem.DECODER_FAILED -> R.string.tv_playback_decoder_body
+                TvPlaybackProblem.NO_SUPPORTED_AUDIO,
+                TvPlaybackProblem.NO_NEXT_SOURCE -> null
+            }
+            if (body != null) {
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    text = stringResource(R.string.tv_playback_failed_body),
+                    text = stringResource(body),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             Spacer(Modifier.height(16.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            androidx.compose.foundation.layout.FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                if (
+                    problem != TvPlaybackProblem.NO_SUPPORTED_AUDIO &&
+                    problem != TvPlaybackProblem.NO_NEXT_SOURCE
+                ) {
+                    Button(onClick = onRetry) {
+                        Text(stringResource(R.string.tv_retry))
+                    }
+                }
                 FilledTonalButton(onClick = onChangeSource) {
                     Text(stringResource(R.string.tv_change_source))
                 }
                 TextButton(onClick = onDismiss) { Text(stringResource(R.string.tv_got_it)) }
             }
+        }
+    }
+}
+
+@Composable
+private fun PlaybackLoadingStatus(
+    isAdvancing: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+        modifier = modifier,
+    ) {
+        LoadingIndicator()
+        Surface(
+            shape = RoundedCornerShape(18.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        ) {
+            Text(
+                text = stringResource(
+                    if (isAdvancing) R.string.tv_loading_next_source
+                    else R.string.tv_playback_buffering
+                ),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp),
+            )
         }
     }
 }
@@ -618,6 +934,175 @@ private fun AudioTrackSheet(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SubtitleTrackSheet(
+    tracks: List<TvSubtitleTrack>,
+    selected: TvSubtitleTrack?,
+    embeddedTracks: List<TvEmbeddedSubtitleTrack>,
+    selectedEmbedded: TvEmbeddedSubtitleTrack?,
+    isLoading: Boolean,
+    loadFailed: Boolean,
+    onSelect: (TvSubtitleTrack) -> Unit,
+    onSelectEmbedded: (TvEmbeddedSubtitleTrack) -> Unit,
+    onDisable: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val groups = remember(tracks) {
+        tracks.groupBy { it.lang.ifBlank { "und" } }
+            .toList()
+            .sortedBy { (language, _) -> languageLabel(language) }
+    }
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+    ) {
+        Column(
+            Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 24.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.tv_subtitles),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = stringResource(R.string.tv_subtitles_style_note),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 3.dp, bottom = 10.dp),
+            )
+            if (isLoading && tracks.isEmpty()) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.padding(vertical = 16.dp),
+                ) {
+                    LoadingIndicator(modifier = Modifier.size(22.dp))
+                    Text(stringResource(R.string.tv_subtitles_loading))
+                }
+            }
+            if (loadFailed) {
+                Text(
+                    stringResource(R.string.tv_subtitles_failed),
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(bottom = 8.dp),
+                )
+            }
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth().heightIn(max = 520.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                item(key = "off") {
+                    SubtitleRow(
+                        title = stringResource(R.string.tv_subtitles_off),
+                        subtitle = null,
+                        selected = selected == null && selectedEmbedded == null,
+                        onClick = {
+                            onDisable()
+                            onDismiss()
+                        },
+                    )
+                }
+                if (embeddedTracks.isNotEmpty()) {
+                    item(key = "embedded-header") {
+                        Text(
+                            stringResource(R.string.tv_subtitles_embedded),
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 8.dp, bottom = 2.dp),
+                        )
+                    }
+                    items(
+                        embeddedTracks,
+                        key = { "embedded/${it.groupIndex}/${it.trackIndex}" },
+                    ) { track ->
+                        SubtitleRow(
+                            title = track.label,
+                            subtitle = if (track.isSupported) {
+                                stringResource(R.string.tv_subtitles_embedded_in_file)
+                            } else {
+                                stringResource(R.string.tv_subtitles_unsupported)
+                            },
+                            selected = track == selectedEmbedded,
+                            enabled = track.isSupported,
+                            onClick = {
+                                onSelectEmbedded(track)
+                                onDismiss()
+                            },
+                        )
+                    }
+                }
+                for ((language, languageTracks) in groups) {
+                    item(key = "language/$language") {
+                        Text(
+                            languageLabel(language),
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 8.dp, bottom = 2.dp),
+                        )
+                    }
+                    items(languageTracks, key = { it.url }) { track ->
+                        SubtitleRow(
+                            title = track.name?.takeIf { it.isNotBlank() }
+                                ?: languageLabel(track.lang),
+                            subtitle = track.addonName,
+                            selected = track == selected,
+                            onClick = {
+                                onSelect(track)
+                                onDismiss()
+                            },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SubtitleRow(
+    title: String,
+    subtitle: String?,
+    selected: Boolean,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
+    Surface(
+        onClick = onClick,
+        enabled = enabled,
+        shape = RoundedCornerShape(14.dp),
+        color = if (selected) MaterialTheme.colorScheme.secondaryContainer
+        else MaterialTheme.colorScheme.surfaceContainer,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(horizontal = 14.dp, vertical = 11.dp)) {
+            Text(
+                title,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface.copy(
+                    alpha = if (enabled) 1f else 0.45f
+                ),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            subtitle?.takeIf { it.isNotBlank() }?.let {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
     }

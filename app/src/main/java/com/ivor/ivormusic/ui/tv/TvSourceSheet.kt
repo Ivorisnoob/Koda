@@ -2,6 +2,7 @@ package com.ivor.ivormusic.ui.tv
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -40,6 +41,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.ivor.ivormusic.R
@@ -81,7 +83,6 @@ fun TvSourceSheet(
     facets: TvSourceFacets,
     filter: TvSourceFilter,
     failedAddons: List<String>,
-    torrentsPlayable: Boolean,
     onPlay: (TvSource) -> Unit,
     onOpenExternal: (String) -> Unit,
     onSetResolution: (Int?) -> Unit,
@@ -90,6 +91,7 @@ fun TvSourceSheet(
     onSetCachedOnly: (Boolean) -> Unit,
     onSetDub: (DubPreference) -> Unit,
     onClearFilters: () -> Unit,
+    onRetry: () -> Unit,
     onBrowseAddons: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -140,6 +142,7 @@ fun TvSourceSheet(
             if (failedAddons.isNotEmpty() && !isLoading) {
                 FailedAddonsNotice(
                     names = failedAddons,
+                    onRetry = onRetry,
                     modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
                 )
                 Spacer(Modifier.height(8.dp))
@@ -178,7 +181,6 @@ fun TvSourceSheet(
                     } else {
                         SourceList(
                             sources = sources,
-                            torrentsPlayable = torrentsPlayable,
                             onPlay = onPlay,
                             onTorrent = { torrentNotice = true },
                             onExternal = { externalNotice = it },
@@ -218,10 +220,10 @@ fun TvSourceSheet(
  * groups are in descending order and anything the parser could not read falls
  * into one honest bucket at the end rather than being scattered.
  */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun SourceList(
     sources: List<TvSource>,
-    torrentsPlayable: Boolean,
     onPlay: (TvSource) -> Unit,
     onTorrent: () -> Unit,
     onExternal: (TvSource) -> Unit,
@@ -238,26 +240,26 @@ private fun SourceList(
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         for ((resolution, group) in groups) {
-            item(key = "header-" + resolution) {
-                Text(
-                    text = group.first().tags.resolutionLabel
-                        ?: stringResource(R.string.tv_group_other),
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 8.dp, bottom = 2.dp),
-                )
+            stickyHeader(key = "header-" + resolution) {
+                Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+                    Text(
+                        text = group.first().tags.resolutionLabel
+                            ?: stringResource(R.string.tv_group_other),
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 6.dp),
+                    )
+                }
             }
             items(group, key = { it.id }) { source ->
                 SourceRow(
                     source = source,
-                    torrentsPlayable = torrentsPlayable,
                     onClick = {
                         when (source.kind) {
                             TvSourceKind.PLAYABLE -> onPlay(source)
                             TvSourceKind.EXTERNAL -> onExternal(source)
-                            TvSourceKind.TORRENT ->
-                                if (torrentsPlayable) onPlay(source) else onTorrent()
+                            TvSourceKind.TORRENT -> onTorrent()
                         }
                     },
                 )
@@ -277,11 +279,10 @@ private fun SourceList(
 @Composable
 private fun SourceRow(
     source: TvSource,
-    torrentsPlayable: Boolean,
     onClick: () -> Unit,
 ) {
     val tags = source.tags
-    val playable = source.canPlay(torrentsPlayable)
+    val playable = source.isPlayable
     // A torrent row is shown, dimmed: hiding it makes a working addon look
     // empty, which is a worse lie than showing something that needs a step.
     val contentColor =
@@ -319,7 +320,7 @@ private fun SourceRow(
 
             Text(
                 text = source.stream.releaseName.ifBlank { source.addonLabel },
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.bodySmall.copy(textDirection = TextDirection.Ltr),
                 // Monospace because release names are read token by token and a
                 // proportional face makes the dots and dashes disappear.
                 fontFamily = FontFamily.Monospace,
@@ -350,10 +351,10 @@ private fun SourceRow(
 @Composable
 private fun SourceBadges(source: TvSource, showKind: Boolean, modifier: Modifier = Modifier) {
     val tags = source.tags
-    Row(
+    FlowRow(
         modifier = modifier,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalAlignment = Alignment.CenterVertically,
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         if (showKind) {
             Badge(
@@ -731,26 +732,38 @@ private fun ExternalNoticeDialog(onOpen: () -> Unit, onDismiss: () -> Unit) {
  * for that is Koda taking the blame for someone else's login wall.
  */
 @Composable
-private fun FailedAddonsNotice(names: List<String>, modifier: Modifier = Modifier) {
+private fun FailedAddonsNotice(
+    names: List<String>,
+    onRetry: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Surface(
         shape = RoundedCornerShape(12.dp),
         color = MaterialTheme.colorScheme.surfaceContainerHighest,
         modifier = modifier.fillMaxWidth(),
     ) {
-        Text(
-            text = if (names.size == 1) {
-                stringResource(R.string.tv_addons_failed_one, names.first())
-            } else {
-                stringResource(
-                    R.string.tv_addons_failed_many,
-                    names.size,
-                    names.joinToString(", "),
-                )
-            },
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+        ) {
+            Text(
+                text = if (names.size == 1) {
+                    stringResource(R.string.tv_addons_failed_one, names.first())
+                } else {
+                    stringResource(
+                        R.string.tv_addons_failed_many,
+                        names.size,
+                        names.joinToString(", "),
+                    )
+                },
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
+            )
+            TextButton(onClick = onRetry) {
+                Text(stringResource(R.string.tv_retry))
+            }
+        }
     }
 }
 

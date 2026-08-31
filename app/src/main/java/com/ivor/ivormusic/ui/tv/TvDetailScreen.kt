@@ -50,7 +50,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -80,6 +79,7 @@ fun TvDetailScreen(
     selectedRange: EpisodeRange?,
     episodes: List<TvEpisode>,
     resumeLabel: String?,
+    canShare: Boolean,
     watchedEpisodeIds: Set<String>,
     episodeProgress: (String) -> Float,
     onBack: () -> Unit,
@@ -166,6 +166,7 @@ fun TvDetailScreen(
                         onToggleWatchlist = onToggleWatchlist,
                         onPlayTrailer = onPlayTrailer,
                         onShare = onShare,
+                        canShare = canShare,
                     )
                 }
 
@@ -206,7 +207,7 @@ fun TvDetailScreen(
         // A back affordance over the backdrop, which has no app bar of its own.
         Surface(
             shape = RoundedCornerShape(50),
-            color = Color.Black.copy(alpha = 0.4f),
+            color = MaterialTheme.colorScheme.scrim.copy(alpha = 0.58f),
             modifier = Modifier
                 .align(Alignment.TopStart)
                 .padding(12.dp)
@@ -216,7 +217,7 @@ fun TvDetailScreen(
                 Icon(
                     imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
                     contentDescription = stringResource(R.string.cd_back),
-                    tint = Color.White,
+                    tint = MaterialTheme.colorScheme.inverseOnSurface,
                 )
             }
         }
@@ -225,6 +226,7 @@ fun TvDetailScreen(
 
 @Composable
 private fun DetailBackdrop(item: TvItem) {
+    var logoFailed by remember(item.id) { mutableStateOf(false) }
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -254,12 +256,13 @@ private fun DetailBackdrop(item: TvItem) {
             )
             Spacer(Modifier.width(12.dp))
             Box(Modifier.weight(1f), contentAlignment = Alignment.BottomStart) {
-                if (!item.logo.isNullOrBlank()) {
+                if (!item.logo.isNullOrBlank() && !logoFailed) {
                     AsyncImage(
                         model = item.logo,
                         contentDescription = item.name,
                         contentScale = ContentScale.Fit,
                         alignment = Alignment.BottomStart,
+                        onError = { logoFailed = true },
                         modifier = Modifier
                             .heightIn(max = 60.dp)
                             .widthIn(max = 210.dp),
@@ -269,7 +272,7 @@ private fun DetailBackdrop(item: TvItem) {
                         text = item.name,
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White,
+                        color = MaterialTheme.colorScheme.inverseOnSurface,
                         maxLines = 3,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -288,6 +291,7 @@ private fun DetailActions(
     onToggleWatchlist: () -> Unit,
     onPlayTrailer: (String) -> Unit,
     onShare: () -> Unit,
+    canShare: Boolean,
 ) {
     Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
         Button(
@@ -326,12 +330,14 @@ private fun DetailActions(
                     )
                 }
             }
-            FilledTonalButton(onClick = onShare) {
-                Icon(
-                    Icons.Rounded.Share,
-                    contentDescription = stringResource(R.string.action_share),
-                    modifier = Modifier.size(18.dp),
-                )
+            if (canShare) {
+                FilledTonalButton(onClick = onShare) {
+                    Icon(
+                        Icons.Rounded.Share,
+                        contentDescription = stringResource(R.string.action_share),
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
             }
         }
     }
@@ -340,6 +346,7 @@ private fun DetailActions(
 @Composable
 private fun Synopsis(text: String) {
     var expanded by remember { mutableStateOf(false) }
+    var canExpand by remember(text) { mutableStateOf(false) }
     Column(
         Modifier
             .padding(horizontal = 16.dp)
@@ -351,14 +358,19 @@ private fun Synopsis(text: String) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = if (expanded) Int.MAX_VALUE else 3,
             overflow = TextOverflow.Ellipsis,
+            onTextLayout = { result ->
+                if (!expanded) canExpand = result.hasVisualOverflow
+            },
         )
-        TextButton(
-            onClick = { expanded = !expanded },
-            contentPadding = PaddingValues(horizontal = 0.dp, vertical = 4.dp),
-        ) {
-            Text(
-                stringResource(if (expanded) R.string.tv_show_less else R.string.tv_show_more)
-            )
+        if (canExpand) {
+            TextButton(
+                onClick = { expanded = !expanded },
+                contentPadding = PaddingValues(horizontal = 0.dp, vertical = 4.dp),
+            ) {
+                Text(
+                    stringResource(if (expanded) R.string.tv_show_less else R.string.tv_show_more)
+                )
+            }
         }
     }
 }
@@ -418,7 +430,7 @@ private fun EpisodeRow(
 ) {
     Surface(
         onClick = onClick,
-        color = Color.Transparent,
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0f),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Row(
@@ -442,7 +454,7 @@ private fun EpisodeRow(
                             .fillMaxWidth()
                             .height(3.dp),
                         color = MaterialTheme.colorScheme.primary,
-                        trackColor = Color.Black.copy(alpha = 0.45f),
+                        trackColor = MaterialTheme.colorScheme.scrim.copy(alpha = 0.45f),
                         drawStopIndicator = {},
                         gapSize = 0.dp,
                     )

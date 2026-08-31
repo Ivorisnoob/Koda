@@ -37,6 +37,7 @@ import androidx.compose.material.icons.rounded.Contrast
 import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.Cookie
 import androidx.compose.material.icons.rounded.DirectionsCar
+import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.FilterList
 import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.BrightnessMedium
@@ -423,6 +424,7 @@ internal fun PlaybackSettingsPage(
     videoQualityWifi: String,
     videoQualityMobile: String,
     onOpenQualityPicker: (QualityDialogTarget) -> Unit,
+    onNavigateToTvExtensions: () -> Unit,
     onBack: () -> Unit
 ) {
     // Which network the quality rows below are talking about. Reframing the
@@ -782,6 +784,24 @@ internal fun PlaybackSettingsPage(
                         },
                         enabled = rememberVideoBrightness,
                         onToggle = onRememberVideoBrightnessToggle
+                    )
+                }
+            }
+        }
+
+        item {
+            SettingsSection(title = stringResource(R.string.sp_tv_mode)) {
+                SettingsCard {
+                    // TV mode's addons live here rather than on the TV screen
+                    // itself. Installing a source is a one-off setup decision,
+                    // and a permanent button for it on the browsing surface
+                    // made the mode look like it was about managing addons
+                    // rather than about watching something.
+                    SettingsRow(
+                        icon = Icons.Rounded.Extension,
+                        title = stringResource(R.string.sp_tv_extensions),
+                        subtitle = stringResource(R.string.sp_tv_extensions_subtitle),
+                        onClick = onNavigateToTvExtensions,
                     )
                 }
             }

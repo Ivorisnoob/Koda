@@ -104,22 +104,34 @@ intentionally unsupported, while the TV catalogue is full of HDR10 and Dolby Vis
 was to parse and label those releases and de-prioritise them in auto-select rather than either
 filtering them out or allowing them freely.
 
-**Torrent playback landed after phase 3**, reversing the plan's own "no torrent engine in v1". The
-reason was evidence rather than preference: seventeen addons were probed and none offered a free,
-playable path - every route runs through torrents, a debrid subscription or a registration, and even
-Stremio's official Public Domain Movies addon returns torrents. The cost is a 15.79 MB native library
-on arm64 (13.20 MB on armv7), measured from the packaged APK and identical in release because R8 does
-not touch `.so` files. **That makes splitting the APK by product flavour load-bearing** - a build
-without TV mode should not carry it.
+**Torrent playback landed after phase 3 and was then taken back out.** It went in reversing the
+plan's own "no torrent engine in v1", on evidence rather than preference: seventeen addons were
+probed and none offered a free, playable path - every route runs through torrents, a debrid
+subscription or a registration, and even Stremio's official Public Domain Movies addon returns
+torrents. It cost a 15.79 MB native library on arm64 (13.20 MB on armv7), identical in release
+because R8 does not touch `.so` files, which is what made a product-flavour split load-bearing.
+Removing `TorrentEngine`, `TorrentDataSource` and the four libtorrent4j artifacts removes that
+pressure with it: no flavour split is needed for a dependency the build no longer has. **Koda plays a
+resolved `url` and nothing else again**, and a bare `infoHash` needs a debrid service configured into
+the addon's own URL. *The reason for the removal is not recorded here - fill this in.*
 
-What remains, roughly in order: the product-flavour split so only a TV build pays for the engine;
-merged subtitles (the `/subtitles` fan-out exists in
-`TvStreamRepository` but nothing consumes it yet) and subtitle styling; per-network auto-select
-profiles of their own, since today's cap is borrowed from the video quality setting; a TV settings
-page and the addon manager growing directory browsing and WebView configuration (which is how a
-debrid key reaches an addon without Koda ever handling it); PiP and a mini bar for the TV player, if
-browsing while a series plays turns out to matter; downloads; and the 25-locale string sweep, which
-covers phases 2 and 3 together.
+**Phase 4 landed the parts of playback that were still missing.** Subtitles now merge the
+`/subtitles` fan-out with the chosen stream's inline tracks and the file's own embedded text tracks,
+reusing `data/WebVttParser` rather than adding a second parser, with the preferred caption language
+restored on arrival and undecodable embedded tracks marked rather than hidden. Play no longer opens
+the source sheet - the fan-out runs behind a scrim and auto-select's answer starts - so the sheet
+became the explanation for a failure and the tool for the minority who want a specific release,
+which is also why it moved into `TvPlayerScreen` and can now swap the file at the current position.
+Stream resolution walks priority tiers with a per-addon timeout, and installed manifests are
+re-read once per session, which is what surfaced Cinemeta's Featured shelves and Kitsu's Highest
+Rated after months of their being invisible. The addon manager grew directory browsing and WebView
+configuration (how a debrid key reaches an addon without Koda ever handling it), and Extensions is
+reachable from Settings and its search index.
+
+What remains, roughly in order: per-network auto-select profiles of their own, since today's cap is
+borrowed from the video quality setting; PiP and a mini bar for the TV player, if browsing while a
+series plays turns out to matter; downloads; and the 25-locale string sweep, which now covers phases
+2 to 4 together.
 
 #### Per-channel notification settings
 

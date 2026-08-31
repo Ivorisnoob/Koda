@@ -577,7 +577,8 @@ fun HomeScreen(
                                     modeToggleState = modeToggleState,
                                     listState = tvHomeScrollState,
                                     onOpenDetail = onOpenTvDetail,
-                                    onOpenAddons = onOpenTvAddons,
+                                    onOpenSettings = onNavigateToSettings,
+                                    onOpenExtensions = onOpenTvAddons,
                                 )
                             }
                             // Video Mode: Show video content

@@ -9,7 +9,6 @@ import com.ivor.ivormusic.data.tv.TvAutoPick
 import com.ivor.ivormusic.data.tv.TvAutoSelectProfile
 import com.ivor.ivormusic.data.tv.TvSource
 import com.ivor.ivormusic.data.tv.TvSourceFacets
-import com.ivor.ivormusic.data.tv.TorrentEngine
 import com.ivor.ivormusic.data.tv.TvSourceFilter
 import com.ivor.ivormusic.data.tv.TvStreamRepository
 import kotlinx.coroutines.Job
@@ -81,15 +80,6 @@ class TvSourcesViewModel(application: Application) : AndroidViewModel(applicatio
     /** Whether anything installed could produce a file at all. A fresh read. */
     fun hasStreamSource(): Boolean = !repository.addons.hasNoStreamSource()
 
-    /**
-     * Whether torrent rows can be started.
-     *
-     * An ABI question rather than a content one - the native library ships for
-     * arm64 and armv7 only - so it is asked once and threaded through ranking
-     * and the UI rather than assumed either way.
-     */
-    val torrentsPlayable: Boolean get() = TorrentEngine.isAvailable
-
     fun refreshAddons() = repository.addons.reload()
 
     /**
@@ -100,8 +90,23 @@ class TvSourcesViewModel(application: Application) : AndroidViewModel(applicatio
      * between opening a title and opening its sources and the Wi-Fi / mobile
      * split is only honest if it is read at the moment of the decision.
      */
-    fun load(type: String, id: String, force: Boolean = false) {
-        val key = type + "/" + id
+    fun load(
+        type: String,
+        id: String,
+        force: Boolean = false,
+        /**
+         * Ask every addon rather than stopping at the first tier that answered.
+         *
+         * The sheet passes true because the viewer is looking at the field and
+         * expects to see it; Play passes false because it wants the fastest
+         * startable file. See [TvStreamRepository.sources].
+         */
+        exhaustive: Boolean = false,
+    ) {
+        // Exhaustiveness is part of the key: a short list fetched for Play must
+        // not satisfy a later request to see everything, or opening the sheet
+        // after an automatic start would show only the tier that won the race.
+        val key = type + "/" + id + if (exhaustive) "/all" else ""
         if (loadedKey == key && !force && _loaded.value) return
         loadedKey = key
         job?.cancel()
@@ -114,11 +119,11 @@ class TvSourcesViewModel(application: Application) : AndroidViewModel(applicatio
         _autoPick.value = null
         _filter.value = TvSourceFilter()
         _loaded.value = false
+        _isLoading.value = true
 
         job = viewModelScope.launch {
-            _isLoading.value = true
             profile = TvAutoSelectProfile.forCurrentNetwork(getApplication())
-            val result = repository.sources(type, id)
+            val result = repository.sources(type, id, exhaustive = exhaustive)
             val found = result.sources
             _sources.value = found
             _totalCount.value = found.size
@@ -160,7 +165,7 @@ class TvSourcesViewModel(application: Application) : AndroidViewModel(applicatio
      */
     private fun recompute() {
         val filtered = TvStreamRepository.filter(_sources.value, _filter.value)
-        _visible.value = TvStreamRepository.ranked(filtered, profile, torrentsPlayable)
-        _autoPick.value = TvStreamRepository.autoPick(filtered, profile, torrentsPlayable)
+        _visible.value = TvStreamRepository.ranked(filtered, profile)
+        _autoPick.value = TvStreamRepository.autoPick(filtered, profile)
     }
 }

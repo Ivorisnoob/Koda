@@ -32,6 +32,7 @@ import androidx.compose.material.icons.rounded.BookmarkAdd
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.Contrast
+import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.FormatSize
 import androidx.compose.material.icons.rounded.Cookie
 import androidx.compose.material.icons.rounded.DirectionsCar
@@ -164,6 +165,7 @@ internal fun buildSettingsSearchIndex(
     onNavigateToBackup: () -> Unit,
     onNavigateToReportBug: () -> Unit,
     onNavigateToTimeLimit: () -> Unit,
+    onNavigateToTvExtensions: () -> Unit,
     supportsLiveUpdates: Boolean
 ): List<SettingsSearchEntry> = buildList {
     fun entry(
@@ -312,6 +314,15 @@ internal fun buildSettingsSearchIndex(
             "system brightness"
         )
     ) { onOpenPage(SettingsPage.PLAYBACK) }
+    entry(
+        "tv_extensions", "Extensions", "Playback and quality",
+        Icons.Rounded.Extension,
+        listOf(
+            "addon", "addons", "extension", "extensions", "stremio", "tv",
+            "movies", "series", "anime", "catalog", "source", "sources",
+            "debrid", "install", "manifest"
+        )
+    ) { onNavigateToTvExtensions() }
     entry(
         "haptics", "Haptics", "Playback and quality",
         Icons.Rounded.Vibration,

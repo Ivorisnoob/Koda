@@ -341,6 +341,7 @@ fun SettingsScreen(
     privateDownloadsEnabled: Boolean,
     onPrivateDownloadsEnabledToggle: (Boolean) -> Unit,
     onNavigateToUpdate: () -> Unit = {},
+    onNavigateToTvExtensions: () -> Unit = {},
     localOnlyMode: Boolean = false,
     onLocalOnlyModeToggle: (Boolean) -> Unit = {},
     uiScale: Float = UI_SCALE_DEFAULT,
@@ -542,6 +543,7 @@ fun SettingsScreen(
         onNavigateToBackup = onNavigateToBackup,
         onNavigateToReportBug = onNavigateToReportBug,
         onNavigateToTimeLimit = onNavigateToTimeLimit,
+        onNavigateToTvExtensions = onNavigateToTvExtensions,
         supportsLiveUpdates = ThemePreferences.SUPPORTS_LIVE_UPDATES
     )
 
@@ -755,6 +757,7 @@ fun SettingsScreen(
                     videoQualityWifi = videoQualityWifi,
                     videoQualityMobile = videoQualityMobile,
                     onOpenQualityPicker = { qualityDialogTarget = it },
+                    onNavigateToTvExtensions = onNavigateToTvExtensions,
                     onBack = { page = SettingsPage.HUB }
                 )
 

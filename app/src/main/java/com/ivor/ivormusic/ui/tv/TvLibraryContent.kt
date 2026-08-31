@@ -3,6 +3,7 @@ package com.ivor.ivormusic.ui.tv
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -16,8 +17,14 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -41,15 +48,18 @@ import com.ivor.ivormusic.data.tv.TvLibraryEntry
 fun TvLibraryContent(
     continueWatching: List<TvContinueRow>,
     watchlist: List<TvLibraryEntry>,
+    watchedHistory: List<TvLibraryEntry>,
     onEntryClick: (TvLibraryEntry) -> Unit,
     onContinueClick: (TvContinueRow) -> Unit,
     onRemoveFromWatchlist: (TvLibraryEntry) -> Unit,
     onClearProgress: (TvLibraryEntry) -> Unit,
+    onClearAllHistory: () -> Unit,
     onBrowse: () -> Unit,
     contentPadding: PaddingValues,
     gridState: LazyGridState = rememberLazyGridState(),
     modifier: Modifier = Modifier,
 ) {
+    var confirmClearHistory by remember { mutableStateOf(false) }
     LazyVerticalGrid(
         columns = GridCells.Adaptive(minSize = 108.dp),
         state = gridState,
@@ -119,6 +129,48 @@ fun TvLibraryContent(
                 )
             }
         }
+
+        if (watchedHistory.isNotEmpty()) {
+            item(span = { GridItemSpan(maxLineSpan) }, key = "history-header") {
+                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    TvSectionHeader(
+                        title = stringResource(R.string.tv_watched_history),
+                        trailing = watchedHistory.size.toString(),
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(onClick = { confirmClearHistory = true }) {
+                        Text(stringResource(R.string.action_clear))
+                    }
+                }
+            }
+            spanItems(watchedHistory, key = { "history/" + it.id }) { entry ->
+                TvLibraryCard(
+                    entry = entry,
+                    onClick = { onEntryClick(entry) },
+                    onLongClick = { onClearProgress(entry) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
+    }
+
+    if (confirmClearHistory) {
+        AlertDialog(
+            onDismissRequest = { confirmClearHistory = false },
+            title = { Text(stringResource(R.string.tv_clear_history_title)) },
+            text = { Text(stringResource(R.string.tv_clear_history_body)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    onClearAllHistory()
+                    confirmClearHistory = false
+                }) { Text(stringResource(R.string.action_clear)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmClearHistory = false }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            },
+        )
     }
 }
 

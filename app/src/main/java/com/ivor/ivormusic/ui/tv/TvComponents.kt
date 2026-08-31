@@ -265,7 +265,7 @@ fun TvContinueCard(
                     .fillMaxWidth()
                     .height(4.dp),
                 color = MaterialTheme.colorScheme.primary,
-                trackColor = Color.Black.copy(alpha = 0.45f),
+                trackColor = MaterialTheme.colorScheme.scrim.copy(alpha = 0.45f),
                 drawStopIndicator = {},
                 gapSize = 0.dp,
             )
@@ -296,7 +296,7 @@ fun RatingBadge(rating: String, modifier: Modifier = Modifier) {
     Surface(
         modifier = modifier,
         shape = RoundedCornerShape(8.dp),
-        color = Color.Black.copy(alpha = 0.55f),
+        color = MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.88f),
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -305,17 +305,13 @@ fun RatingBadge(rating: String, modifier: Modifier = Modifier) {
             Icon(
                 imageVector = Icons.Rounded.Star,
                 contentDescription = null,
-                // The one deliberate literal in this file. This badge sits on
-                // arbitrary artwork rather than on a themed surface, so a theme
-                // colour cannot be relied on for contrast against it - the same
-                // exception the caption scrim and Super Chat colours take.
-                tint = Color(0xFFFFC107),
+                tint = MaterialTheme.colorScheme.inversePrimary,
                 modifier = Modifier.size(11.dp),
             )
             Text(
                 text = rating,
                 style = MaterialTheme.typography.labelSmall,
-                color = Color.White,
+                color = MaterialTheme.colorScheme.inverseOnSurface,
                 modifier = Modifier.padding(start = 3.dp),
             )
         }
@@ -325,14 +321,15 @@ fun RatingBadge(rating: String, modifier: Modifier = Modifier) {
 /** Bottom-up scrim so a logo or title stays readable over arbitrary artwork. */
 @Composable
 fun BoxScopeScrim(modifier: Modifier = Modifier, heightFraction: Float = 0.75f) {
+    val scrim = MaterialTheme.colorScheme.scrim
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(
                 Brush.verticalGradient(
-                    0f to Color.Transparent,
-                    (1f - heightFraction) to Color.Transparent,
-                    1f to Color.Black.copy(alpha = 0.82f),
+                    0f to scrim.copy(alpha = 0f),
+                    (1f - heightFraction) to scrim.copy(alpha = 0f),
+                    1f to scrim.copy(alpha = 0.82f),
                 )
             )
     )

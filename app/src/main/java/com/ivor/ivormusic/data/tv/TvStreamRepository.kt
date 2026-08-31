@@ -8,6 +8,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * One candidate release, with the addon that produced it and what its name
@@ -24,29 +25,25 @@ data class TvSource(
     val stream: TvStream,
     val tags: StreamTags,
 ) {
+    /**
+     * Whether this can actually be started.
+     *
+     * Koda plays a resolved `url` and nothing else, so this is exactly
+     * [TvSourceKind.PLAYABLE]. It stays a named member rather than collapsing
+     * into `kind == PLAYABLE` at the call sites because the ranking functions
+     * sort on it, and one name is the thing to change if a second playable
+     * shape ever arrives.
+     */
     val isPlayable: Boolean get() = kind == TvSourceKind.PLAYABLE
 
     /**
-     * Whether this can actually be started right now.
+     * Which of the protocol's delivery shapes this is.
      *
-     * A torrent is playable only when the engine loaded - which is an ABI
-     * question, not a content one - so playability is asked with that answer
-     * rather than baked into the source. Passing it explicitly keeps the
-     * ranking functions pure and testable, which is the whole reason they are
-     * in a companion rather than reading a global.
-     */
-    fun canPlay(torrentsPlayable: Boolean): Boolean =
-        kind == TvSourceKind.PLAYABLE ||
-            (kind == TvSourceKind.TORRENT && torrentsPlayable)
-
-    /**
-     * Which of the protocol's four delivery shapes this is.
-     *
-     * [TvSourceKind.EXTERNAL] exists because the three unplayable shapes are
-     * not one thing. A torrent needs a debrid service or a torrent engine; a
-     * link to somebody's web player needs a browser and nothing else. Calling
-     * both "a torrent" tells one of them a plain falsehood, which is what the
-     * first cut of this did.
+     * [TvSourceKind.EXTERNAL] exists because the two unplayable shapes are not
+     * one thing. A torrent needs a debrid service to resolve it into a direct
+     * link; a link to somebody's web player needs a browser and nothing else.
+     * Calling both "a torrent" tells one of them a plain falsehood, which is
+     * what the first cut of this did.
      */
     val kind: TvSourceKind
         get() = when {
@@ -210,45 +207,85 @@ class TvStreamRepository(context: Context) {
      * an episode. Nothing has to reconstruct it because that is exactly what
      * the progress store already keys on.
      */
-    suspend fun sources(type: String, id: String): TvSourceResult = coroutineScope {
+    suspend fun sources(
+        type: String,
+        id: String,
+        /**
+         * Ask every addon regardless of what the earlier ones returned.
+         *
+         * False - the default - walks the addons in the user's own priority
+         * order and stops at the first tier that produced something startable,
+         * which is what pressing Play wants: the fastest correct answer, not
+         * the complete one. True is for the source sheet, where the viewer has
+         * explicitly asked to see the field and a missing release is a worse
+         * failure than a slower list.
+         */
+        exhaustive: Boolean = false,
+    ): TvSourceResult = coroutineScope {
         val providers = addonRepository.streamProviders()
             .filter { it.handlesEnabled("stream", type, id) }
         if (providers.isEmpty()) return@coroutineScope TvSourceResult()
 
-        val gate = Semaphore(TvRepository.CONCURRENCY)
-        val answers = providers.map { addon ->
-            async {
-                gate.withPermit {
-                    // null means the addon could not be reached or refused;
-                    // an empty list means it answered and had nothing. Only the
-                    // first is worth telling the viewer about.
-                    val streams = client.streams(addon.transportUrl, type, id)
-                    if (streams == null) {
-                        // Named, never with its URL: a configured transport URL
-                        // carries the user's debrid key.
-                        KLog.w(TAG, "No answer from " + addon.name)
-                        addon.name to emptyList()
-                    } else {
-                        null to streams.map { stream ->
-                            TvSource(
-                                addonId = addon.id,
-                                addonName = addon.name,
-                                stream = stream,
-                                tags = ReleaseNameParser.parse(
-                                    stream.text,
-                                    stream.behaviorHints?.videoSize,
-                                ),
-                            )
-                        }
-                    }
-                }
-            }
-        }.awaitAll()
+        val collected = mutableListOf<TvSource>()
+        val failed = mutableListOf<String>()
 
-        TvSourceResult(
-            sources = dedupe(answers.flatMap { it.second }),
-            failedAddons = answers.mapNotNull { it.first },
-        )
+        // `streamProviders()` is already sorted by the user's ordering, so a
+        // chunk is a priority tier. With the usual handful of stream addons
+        // this is a single tier and behaves exactly as the old flat fan-out.
+        for (tier in providers.chunked(TvRepository.CONCURRENCY)) {
+            val answers = tier.map { addon ->
+                async { resolveOne(addon, type, id) }
+            }.awaitAll()
+
+            for ((failedName, sources) in answers) {
+                if (failedName != null) failed += failedName else collected += sources
+            }
+
+            // Anything startable ends the walk. Unplayable rows deliberately do
+            // not: a tier that returned sixty torrents has answered the
+            // question "is there a file here" with a no, and stopping on it
+            // would hide the addon that could actually play the title.
+            if (!exhaustive && collected.any { it.isPlayable }) break
+        }
+
+        TvSourceResult(sources = dedupe(collected), failedAddons = failed)
+    }
+
+    /**
+     * One addon's answer, bounded in time.
+     *
+     * The timeout is the point. Without it a single addon that accepts the
+     * connection and then never replies holds up playback for as long as the
+     * socket read allows, and because the fan-out awaits every provider, one
+     * hung addon stalled the whole thing - with a spinner and no explanation
+     * now that Play no longer opens a sheet to look at.
+     *
+     * Returns the addon's name on failure and its sources on success, because
+     * "could not be reached" and "answered with nothing" are different and only
+     * the first is worth naming to the viewer.
+     */
+    private suspend fun resolveOne(
+        addon: InstalledAddon,
+        type: String,
+        id: String,
+    ): Pair<String?, List<TvSource>> {
+        val streams = withTimeoutOrNull(PROVIDER_TIMEOUT_MS) {
+            client.streams(addon.transportUrl, type, id)
+        }
+        if (streams == null) {
+            // Named, never with its URL: a configured transport URL carries the
+            // user's debrid key.
+            KLog.w(TAG, "No answer from " + addon.name)
+            return addon.name to emptyList()
+        }
+        return null to streams.map { stream ->
+            TvSource(
+                addonId = addon.id,
+                addonName = addon.name,
+                stream = stream,
+                tags = ReleaseNameParser.parse(stream.text, stream.behaviorHints?.videoSize),
+            )
+        }
     }
 
     /**
@@ -278,6 +315,18 @@ class TvStreamRepository(context: Context) {
 
     companion object {
         private const val TAG = "TvStreamRepository"
+
+        /**
+         * How long one addon gets to answer a stream request.
+         *
+         * Generous, because a debrid addon legitimately does work before it can
+         * reply - it may be asking its provider whether a torrent is cached -
+         * and cutting that short turns a working source into a missing one.
+         * Bounded all the same, because Play now waits on this behind a
+         * spinner and an addon that never replies must not become a spinner
+         * that never ends.
+         */
+        private const val PROVIDER_TIMEOUT_MS = 20_000L
 
         /**
          * Cached beats everything, because on a debrid setup the alternative is
@@ -386,10 +435,9 @@ class TvStreamRepository(context: Context) {
         fun ranked(
             sources: List<TvSource>,
             profile: TvAutoSelectProfile,
-            torrentsPlayable: Boolean = false,
         ): List<TvSource> =
             sources.sortedWith(
-                compareByDescending<TvSource> { it.canPlay(torrentsPlayable) }
+                compareByDescending<TvSource> { it.isPlayable }
                     .thenByDescending { score(it, profile) }
             )
 
@@ -403,9 +451,8 @@ class TvStreamRepository(context: Context) {
         fun autoPick(
             sources: List<TvSource>,
             profile: TvAutoSelectProfile,
-            torrentsPlayable: Boolean = false,
         ): TvAutoPick? {
-            val playable = sources.filter { it.canPlay(torrentsPlayable) }
+            val playable = sources.filter { it.isPlayable }
             if (playable.isEmpty()) return null
             val best = playable.maxByOrNull { score(it, profile) } ?: return null
             val reason = when {

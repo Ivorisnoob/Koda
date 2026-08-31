@@ -108,33 +108,65 @@ class StremioClient(context: Context) {
         .build()
 
     /** Raw GET returning the body, or null on any failure. Never throws upward. */
-    private suspend fun getBody(url: String, forceFresh: Boolean): String? =
+    private suspend fun getBody(
+        url: String,
+        forceFresh: Boolean,
+        accept: String = "application/json",
+        maxBytes: Long? = null,
+    ): String? =
         withContext(Dispatchers.IO) {
             try {
                 val request = Request.Builder()
                     .url(url)
                     .header("User-Agent", USER_AGENT)
-                    .header("Accept", "application/json")
+                    .header("Accept", accept)
                     .apply {
                         if (forceFresh) cacheControl(okhttp3.CacheControl.FORCE_NETWORK)
                     }
                     .build()
                 client.newCall(request).execute().use { response ->
                     if (!response.isSuccessful) {
-                        KLog.w(TAG, "HTTP ${response.code} for $url")
+                        // Never include the URL: configured addon paths carry
+                        // debrid API keys and logs can be attached to reports.
+                        KLog.w(TAG, "Addon request returned HTTP ${response.code}")
                         return@use null
                     }
-                    response.body?.string()
+                    val body = response.body ?: return@use null
+                    if (maxBytes == null) {
+                        body.string()
+                    } else {
+                        val declared = body.contentLength()
+                        if (declared > maxBytes) {
+                            KLog.w(TAG, "Addon text response exceeded the size limit")
+                            return@use null
+                        }
+                        val text = response.peekBody(maxBytes + 1).string()
+                        if (text.toByteArray(Charsets.UTF_8).size > maxBytes) {
+                            KLog.w(TAG, "Addon text response exceeded the size limit")
+                            null
+                        } else {
+                            text
+                        }
+                    }
                 }
             } catch (e: java.io.IOException) {
-                KLog.w(TAG, "Request failed for $url: ${e.message}")
+                KLog.w(TAG, "Addon request failed: " + e.javaClass.simpleName)
                 null
             } catch (e: IllegalArgumentException) {
                 // A malformed transportUrl the user pasted. Not a crash.
-                KLog.w(TAG, "Bad URL $url: ${e.message}")
+                KLog.w(TAG, "Addon URL was invalid")
                 null
             }
         }
+
+    /** Subtitle payloads are third-party text and may be WebVTT or SRT. */
+    suspend fun subtitleBody(url: String): String? =
+        getBody(
+            url,
+            forceFresh = false,
+            accept = "text/vtt, text/plain, */*",
+            maxBytes = MAX_SUBTITLE_BYTES,
+        )
 
     private inline fun <reified T> decode(body: String?, what: String): T? {
         if (body.isNullOrBlank()) return null
@@ -207,8 +239,12 @@ class StremioClient(context: Context) {
         transportUrl: String,
         type: String,
         catalogId: String,
+        forceFresh: Boolean = false,
     ): List<AddonDescriptor> = decode<AddonCatalogResponse>(
-        getBody(StremioUrls.resource(transportUrl, "addon_catalog", type, catalogId), false),
+        getBody(
+            StremioUrls.resource(transportUrl, "addon_catalog", type, catalogId),
+            forceFresh,
+        ),
         "addon_catalog"
     )?.addons.orEmpty()
 
@@ -223,6 +259,7 @@ class StremioClient(context: Context) {
 
         private const val CACHE_DIR_NAME = "tv_addon_cache"
         private const val CACHE_BYTES = 8L * 1024 * 1024
+        private const val MAX_SUBTITLE_BYTES = 5L * 1024 * 1024
 
         /**
          * Companion-level for the reason `YouTubeRepository`'s is: OkHttp's

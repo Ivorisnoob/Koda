@@ -6,6 +6,7 @@
 <data-extraction-rules>
     <cloud-backup>
         <exclude domain="sharedpref" path="yt_music_session.xml"/>
+        <exclude domain="sharedpref" path="tv_addons.xml"/>
         <!-- TODO: Use <include> and <exclude> to control what is backed up.
         <include .../>
         <exclude .../>
@@ -13,5 +14,6 @@
     </cloud-backup>
     <device-transfer>
         <exclude domain="sharedpref" path="yt_music_session.xml"/>
+        <exclude domain="sharedpref" path="tv_addons.xml"/>
     </device-transfer>
 </data-extraction-rules>

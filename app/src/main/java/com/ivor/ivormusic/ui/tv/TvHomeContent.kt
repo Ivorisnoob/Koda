@@ -34,7 +34,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.Extension
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -56,7 +56,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -95,7 +94,17 @@ fun TvHomeContent(
     onSelectGenre: (String, String?) -> Unit,
     onLoadMore: (String) -> Unit,
     onRefresh: () -> Unit,
-    onBrowseAddons: () -> Unit,
+    /** The top-bar icon: the app's settings, where TV extensions now live. */
+    onOpenSettings: () -> Unit,
+    /**
+     * The extension manager itself.
+     *
+     * Separate from [onOpenSettings] on purpose. The top-bar icon is a general
+     * way in, but the two empty states exist *because* something is missing,
+     * and sending someone who has no source to the settings root to hunt for
+     * the right page is a worse answer than taking them there.
+     */
+    onOpenExtensions: () -> Unit,
     contentPadding: PaddingValues,
     appMode: AppMode,
     onAppModeChange: (AppMode) -> Unit,
@@ -123,7 +132,7 @@ fun TvHomeContent(
                     onAppModeChange = onAppModeChange,
                     showModeToggle = showModeToggle,
                     modeToggleState = modeToggleState,
-                    onBrowseAddons = onBrowseAddons,
+                    onOpenSettings = onOpenSettings,
                 )
             }
 
@@ -144,7 +153,7 @@ fun TvHomeContent(
             if (!hasStreamSource && hasLoaded && !sourceNoticeDismissed) {
                 item(key = "no-source") {
                     NoSourceCard(
-                        onBrowseAddons = onBrowseAddons,
+                        onOpenExtensions = onOpenExtensions,
                         onDismiss = { sourceNoticeDismissed = true },
                     )
                 }
@@ -196,7 +205,7 @@ fun TvHomeContent(
                         title = stringResource(R.string.tv_no_catalogs_title),
                         body = stringResource(R.string.tv_no_catalogs_body),
                         actionLabel = stringResource(R.string.tv_browse_addons),
-                        onAction = onBrowseAddons,
+                        onAction = onOpenExtensions,
                     )
                 }
             }
@@ -220,7 +229,7 @@ private fun TvTopBar(
     onAppModeChange: (AppMode) -> Unit,
     showModeToggle: Boolean,
     modeToggleState: AppModeToggleState,
-    onBrowseAddons: () -> Unit,
+    onOpenSettings: () -> Unit,
 ) {
     Row(
         modifier = Modifier
@@ -235,10 +244,14 @@ private fun TvTopBar(
             color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.weight(1f),
         )
-        IconButton(onClick = onBrowseAddons, modifier = Modifier.size(44.dp)) {
+        // Settings rather than an extension manager. Installing a source is a
+        // one-off setup step, and a permanent shortcut to it on the browsing
+        // surface made TV mode read as a thing you configure rather than a
+        // thing you watch. It lives under Playback in Settings now.
+        IconButton(onClick = onOpenSettings, modifier = Modifier.size(44.dp)) {
             Icon(
-                imageVector = Icons.Rounded.Extension,
-                contentDescription = stringResource(R.string.tv_addons),
+                imageVector = Icons.Rounded.Settings,
+                contentDescription = stringResource(R.string.cd_settings),
                 modifier = Modifier.size(22.dp),
             )
         }
@@ -287,6 +300,7 @@ private fun TvHero(
             modifier = Modifier.fillMaxWidth(),
         ) { page ->
             val item = items[page]
+            var logoFailed by remember(item.id) { mutableStateOf(false) }
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -306,12 +320,13 @@ private fun TvHero(
                         .align(Alignment.BottomStart)
                         .padding(18.dp),
                 ) {
-                    if (!item.logo.isNullOrBlank()) {
+                    if (!item.logo.isNullOrBlank() && !logoFailed) {
                         AsyncImage(
                             model = item.logo,
                             contentDescription = item.name,
                             contentScale = ContentScale.Fit,
                             alignment = Alignment.BottomStart,
+                            onError = { logoFailed = true },
                             modifier = Modifier
                                 .heightIn(max = 54.dp)
                                 .widthIn(max = 220.dp),
@@ -321,7 +336,7 @@ private fun TvHero(
                             text = item.name,
                             style = MaterialTheme.typography.headlineMedium,
                             fontWeight = FontWeight.Bold,
-                            color = Color.White,
+                            color = MaterialTheme.colorScheme.inverseOnSurface,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                         )
@@ -334,7 +349,7 @@ private fun TvHero(
                             item.imdbRating?.takeIf { it.isNotBlank() }?.let { "$it/10" },
                         ).joinToString(" · "),
                         style = MaterialTheme.typography.labelMedium,
-                        color = Color.White.copy(alpha = 0.85f),
+                        color = MaterialTheme.colorScheme.inverseOnSurface.copy(alpha = 0.85f),
                         maxLines = 1,
                     )
                     Spacer(Modifier.height(12.dp))
@@ -342,8 +357,8 @@ private fun TvHero(
                         Button(
                             onClick = { onPlay(item) },
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = Color.White,
-                                contentColor = Color.Black,
+                                containerColor = MaterialTheme.colorScheme.inverseSurface,
+                                contentColor = MaterialTheme.colorScheme.inverseOnSurface,
                             ),
                         ) {
                             Icon(
@@ -358,8 +373,8 @@ private fun TvHero(
                         FilledTonalButton(
                             onClick = { onToggleWatchlist(item) },
                             colors = ButtonDefaults.filledTonalButtonColors(
-                                containerColor = Color.White.copy(alpha = 0.18f),
-                                contentColor = Color.White,
+                                containerColor = MaterialTheme.colorScheme.inverseOnSurface.copy(alpha = 0.18f),
+                                contentColor = MaterialTheme.colorScheme.inverseOnSurface,
                             ),
                         ) {
                             Icon(
@@ -491,7 +506,7 @@ private fun ShelfFailed(addonName: String, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun NoSourceCard(onBrowseAddons: () -> Unit, onDismiss: () -> Unit) {
+private fun NoSourceCard(onOpenExtensions: () -> Unit, onDismiss: () -> Unit) {
     AnimatedVisibility(
         visible = true,
         enter = fadeIn() + scaleIn(
@@ -522,7 +537,7 @@ private fun NoSourceCard(onBrowseAddons: () -> Unit, onDismiss: () -> Unit) {
                 )
                 Spacer(Modifier.height(10.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilledTonalButton(onClick = onBrowseAddons) {
+                    FilledTonalButton(onClick = onOpenExtensions) {
                         Text(stringResource(R.string.tv_browse_addons))
                     }
                     TextButton(onClick = onDismiss) {

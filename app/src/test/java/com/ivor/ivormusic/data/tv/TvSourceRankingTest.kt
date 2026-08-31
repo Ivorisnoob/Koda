@@ -170,7 +170,9 @@ class TvSourceRankingTest {
 
     @Test
     fun autoPickReturnsNothingWhenEveryRowIsATorrent() {
-        // The honest and common state for an unconfigured torrent addon.
+        // The honest and common state for an unconfigured torrent addon. Koda
+        // plays a resolved url and nothing else, so a bare infoHash is never
+        // startable however many of them come back.
         val torrents = listOf(
             source("A.1080p", url = null, infoHash = "aaa"),
             source("B.2160p", url = null, infoHash = "bbb"),

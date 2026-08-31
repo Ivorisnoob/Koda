@@ -1,6 +1,11 @@
 package com.ivor.ivormusic.ui.tv
 
 import android.content.Intent
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.LoadingIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -8,7 +13,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -45,6 +52,19 @@ fun TvDetailRoute(
     // and the stream endpoint both use, so nothing has to reconstruct it.
     var sourcesFor by remember { mutableStateOf<TvEpisode?>(null) }
     var showSources by remember { mutableStateOf(false) }
+
+    /**
+     * Whether a press of Play is still waiting on the source fan-out.
+     *
+     * Pressing Play means "watch this", not "show me a list": the sheet is a
+     * tool for the minority who want a specific release, and making everyone
+     * pass through it to reach the majority answer - the one auto-select was
+     * already computing - put a decision in front of every single play. While
+     * this is set the page shows a spinner and nothing else, the same as
+     * opening a video, and the sheet appears only if nothing turned out to be
+     * playable.
+     */
+    var awaitingAutoPlay by remember { mutableStateOf(false) }
 
     // The item the user actually tapped, remembered as it went past in a
     // catalog or search response. Present almost always, and its absence costs
@@ -86,26 +106,57 @@ fun TvDetailRoute(
     }
     val resume: TvProgress? = remember(progress, item) { viewModel.resumePoint() }
 
-    // The player asking for a different release. It has already closed itself,
-    // and this page is still composed underneath, so the sheet simply reopens
-    // on the same episode with the list it already has - no second fan-out.
-    val sourceChangeRequest by playerViewModel.sourceChangeRequest.collectAsState()
-    LaunchedEffect(sourceChangeRequest) {
-        val requested = sourceChangeRequest ?: return@LaunchedEffect
-        val current = item
-        if (current != null) {
-            sourcesFor = current.videos.firstOrNull { it.id == requested }
+    // Resolve a pending Play once the fan-out has actually finished. Gated on
+    // `loaded` rather than on the list being non-empty, because "no addon
+    // answered yet" and "no addon has this" are different and only the second
+    // is an answer.
+    LaunchedEffect(awaitingAutoPlay, sourcesLoaded, sourcesLoading, autoPick) {
+        if (!awaitingAutoPlay || sourcesLoading || !sourcesLoaded) return@LaunchedEffect
+        val current = item ?: return@LaunchedEffect
+        awaitingAutoPlay = false
+        val chosen = autoPick?.source
+        if (chosen != null) {
+            playerViewModel.play(current, sourcesFor, chosen)
+        } else {
+            // Nothing startable. The sheet is the right place to land: it
+            // already names the addons that did not answer and dims the rows
+            // that need a debrid service, which is the whole explanation.
             showSources = true
-            sourcesViewModel.load(current.type, requested)
         }
-        playerViewModel.consumeSourceChangeRequest()
     }
 
     /** Open the sheet for one episode, or for the film itself. */
     fun openSources(episode: TvEpisode?) {
         val current = item ?: return
+        awaitingAutoPlay = false
         sourcesFor = episode
         showSources = true
+        // Exhaustive: the sheet is open because the viewer wants the field.
+        sourcesViewModel.load(current.type, episode?.id ?: current.id, exhaustive = true)
+    }
+
+    /**
+     * Press Play: fan out, take auto-select's answer, start.
+     *
+     * The same load the sheet uses, so choosing manually afterwards costs no
+     * second fan-out - the result is already in the ViewModel.
+     */
+    fun beginPlayback(episode: TvEpisode?) {
+        val current = item ?: return
+        sourcesFor = episode
+
+        // Nothing installed can produce a file, so there is nothing to wait
+        // for. Spinning and then fanning out across zero addons only to land
+        // on the same explanation makes a known answer look like a failure -
+        // say it immediately instead.
+        if (!sourcesViewModel.hasStreamSource()) {
+            awaitingAutoPlay = false
+            showSources = true
+            return
+        }
+
+        showSources = false
+        awaitingAutoPlay = true
         sourcesViewModel.load(current.type, episode?.id ?: current.id)
     }
 
@@ -134,6 +185,7 @@ fun TvDetailRoute(
                 else -> "Resume"
             }
         },
+        canShare = shareLinkFor(item?.imdbId ?: item?.id.orEmpty()) != null,
         watchedEpisodeIds = watchedIds,
         episodeProgress = { episodeId -> progress[episodeId]?.fraction ?: 0f },
         onBack = onBack,
@@ -146,9 +198,9 @@ fun TvDetailRoute(
             val current = item
             val resumeEpisode = resume?.episodeId
                 ?.let { episodeId -> current?.videos?.firstOrNull { it.id == episodeId } }
-            openSources(resumeEpisode ?: current?.videos?.firstOrNull())
+            beginPlayback(resumeEpisode ?: current?.videos?.firstOrNull())
         },
-        onPlayEpisode = { episode -> openSources(episode) },
+        onPlayEpisode = { episode -> beginPlayback(episode) },
         onToggleWatched = viewModel::markWatched,
         onPlayTrailer = { youtubeId -> onPlayTrailer(youtubeId, item?.name.orEmpty()) },
         onShare = {
@@ -166,6 +218,21 @@ fun TvDetailRoute(
         modifier = modifier,
     )
 
+    // Covers the page while Play is resolving, so the wait reads as "it is
+    // starting" rather than as a dead button. It also swallows input, which
+    // stops a second press queueing another fan-out behind the first.
+    if (awaitingAutoPlay) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.55f))
+                .pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent() } },
+        ) {
+            LoadingIndicator()
+        }
+    }
+
     if (showSources) {
         TvSourceSheet(
             title = listOfNotNull(
@@ -181,7 +248,6 @@ fun TvDetailRoute(
             facets = facets,
             filter = filter,
             failedAddons = failedAddons,
-            torrentsPlayable = sourcesViewModel.torrentsPlayable,
             onPlay = { source -> startPlayback(source) },
             onOpenExternal = { link ->
                 // Handed to the system rather than opened in a WebView: this is
@@ -199,6 +265,16 @@ fun TvDetailRoute(
             onSetCachedOnly = sourcesViewModel::setCachedOnly,
             onSetDub = sourcesViewModel::setDub,
             onClearFilters = sourcesViewModel::clearFilters,
+            onRetry = {
+                val current = item
+                if (current != null) {
+                    sourcesViewModel.load(
+                        current.type,
+                        sourcesFor?.id ?: current.id,
+                        force = true,
+                    )
+                }
+            },
             onBrowseAddons = {
                 showSources = false
                 onOpenAddons()

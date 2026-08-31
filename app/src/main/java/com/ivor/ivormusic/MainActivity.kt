@@ -866,6 +866,7 @@ fun MusicApp(
                     onNavigateToBackup = { navController.navigate("backup") },
                     onNavigateToReportBug = { navController.navigate("report") },
                     onNavigateToTimeLimit = { navController.navigate("app_time_limit") },
+                    onNavigateToTvExtensions = openTvAddons,
                     loadLocalSongs = loadLocalSongs,
                     onLoadLocalSongsToggle = onLoadLocalSongsToggle,
                     ambientBackground = ambientBackground,
@@ -1236,7 +1237,10 @@ fun MusicApp(
             }
         }
         if (tvPlayback != null) {
-            com.ivor.ivormusic.ui.tv.TvPlayerScreen(viewModel = tvPlayerViewModel)
+            com.ivor.ivormusic.ui.tv.TvPlayerScreen(
+                viewModel = tvPlayerViewModel,
+                onOpenExtensions = openTvAddons,
+            )
         }
 
         // One confirmation host covers the player controls and every song

@@ -29,7 +29,8 @@ fun TvHomeTab(
     modeToggleState: AppModeToggleState,
     listState: LazyListState,
     onOpenDetail: (String, String) -> Unit,
-    onOpenAddons: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onOpenExtensions: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     if (viewModel == null) return
@@ -74,7 +75,8 @@ fun TvHomeTab(
         onSelectGenre = { key, genre -> viewModel.selectGenre(key, genre) },
         onLoadMore = { key -> viewModel.loadMore(key) },
         onRefresh = { viewModel.loadHome(forceFresh = true) },
-        onBrowseAddons = onOpenAddons,
+        onOpenSettings = onOpenSettings,
+        onOpenExtensions = onOpenExtensions,
         contentPadding = contentPadding,
         appMode = appMode,
         onAppModeChange = onAppModeChange,
@@ -98,6 +100,7 @@ fun TvSearchTab(
     val query by viewModel.searchQuery.collectAsState()
     val results by viewModel.searchResults.collectAsState()
     val isSearching by viewModel.isSearching.collectAsState()
+    val recentSearches by viewModel.recentSearches.collectAsState()
     val shelves by viewModel.shelves.collectAsState()
 
     // Genres come from the installed manifests, so the empty-query state costs
@@ -110,10 +113,18 @@ fun TvSearchTab(
         query = query,
         results = results,
         isSearching = isSearching,
+        recentSearches = recentSearches,
         genres = genres,
         onQueryChange = { viewModel.search(it) },
-        onItemClick = { item -> onOpenDetail(item.type, item.id) },
+        onItemClick = { item ->
+            viewModel.rememberSearch()
+            onOpenDetail(item.type, item.id)
+        },
         onToggleWatchlist = { item -> viewModel.toggleWatchlist(item) },
+        onSubmitSearch = { viewModel.rememberSearch() },
+        onRecentSearch = { query -> viewModel.search(query) },
+        onRemoveRecentSearch = viewModel::removeRecentSearch,
+        onClearRecentSearches = viewModel::clearRecentSearches,
         // Filters the catalogs and hands back to Home, rather than running a
         // text search for the word - searching "Action" returns titles with
         // Action in the name, which is not what tapping a genre means.
@@ -138,15 +149,22 @@ fun TvLibraryTab(
     if (viewModel == null) return
     val watchlist by viewModel.watchlist.collectAsState()
     val progress by viewModel.progress.collectAsState()
+    val watchedItems by viewModel.watchedItems.collectAsState()
     val continueRows = remember(progress, viewModel) { viewModel.continueRows() }
+    val watchedHistory = remember(progress, watchedItems) {
+        val watchedIds = progress.values.filter { it.isWatched }.mapTo(HashSet()) { it.itemId }
+        watchedItems.filter { it.id in watchedIds }
+    }
 
     TvLibraryContent(
         continueWatching = continueRows,
         watchlist = watchlist,
+        watchedHistory = watchedHistory,
         onEntryClick = { entry -> onOpenDetail(entry.type, entry.id) },
         onContinueClick = { row -> onOpenDetail(row.entry.type, row.entry.id) },
         onRemoveFromWatchlist = { entry -> viewModel.removeFromWatchlist(entry.id) },
         onClearProgress = { entry -> viewModel.clearProgressFor(entry.id) },
+        onClearAllHistory = viewModel::clearAllProgress,
         onBrowse = onBrowse,
         contentPadding = contentPadding,
         modifier = modifier,

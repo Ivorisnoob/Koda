@@ -191,6 +191,15 @@ default, gets the same content over plain HTTPS with none of that.
 > than a nicety. The battery and metered-connection objections stand unchanged and are answered by
 > capped connections, an upload ceiling, and tearing the session down when playback stops.
 
+> **Overruled again, and the section as originally written now stands.** `TorrentEngine`,
+> `TorrentDataSource` and all four libtorrent4j artifacts were removed before the branch merged, so
+> the amendment above describes code that is no longer in the tree and the product-flavour split it
+> called load-bearing is moot - there is no native dependency left to split away from. Koda plays a
+> resolved `url` and nothing else; a bare `infoHash` needs a debrid service configured into the
+> addon's own URL. *The reason for this second reversal is not recorded - fill it in here, because
+> the evidence that motivated the first amendment has not changed and the next person reading this
+> will otherwise re-derive it and rebuild the engine.*
+
 **Debrid-only.** Rejected as the *only* path, because it makes a paid account mandatory to use a mode,
 which the project's own constraint ("the signed-out path is a first-class path") argues against. It
 stays the *recommended* path.

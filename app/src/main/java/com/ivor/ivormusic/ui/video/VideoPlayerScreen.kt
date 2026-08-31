@@ -2543,7 +2543,7 @@ fun VideoInfoSection(
  * that is already reaching for it.
  */
 @Composable
-private fun QueueSkipButton(
+internal fun QueueSkipButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     contentDescription: String,
     enabled: Boolean,
