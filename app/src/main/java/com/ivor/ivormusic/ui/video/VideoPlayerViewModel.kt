@@ -1503,7 +1503,9 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     private fun performSkip(player: Player, segment: SponsorSegment, automatic: Boolean) {
         val returnTo = player.currentPosition.coerceAtLeast(0L)
         ignoredSegmentIds.add(segment.uuid)
-        player.seekTo(segment.endMs)
+        // Exact: a keyframe-snapped skip can land back inside the segment it
+        // just left, which re-triggers on the next tick.
+        seekPlayerTo(player, segment.endMs, precise = true)
         _positionMs.value = segment.endMs
         _manualSegment.value = null
 
@@ -1539,7 +1541,8 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         val notice = _skipNotice.value ?: return
         skipNoticeJob?.cancel()
         _skipNotice.value = null
-        activePlayer()?.seekTo(notice.returnToMs)
+        // Exact: an undo returns to the moment the skip took them from.
+        activePlayer()?.let { seekPlayerTo(it, notice.returnToMs, precise = true) }
         _positionMs.value = notice.returnToMs
     }
 
