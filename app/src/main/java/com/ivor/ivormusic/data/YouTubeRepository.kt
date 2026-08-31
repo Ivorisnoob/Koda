@@ -4095,24 +4095,16 @@ class YouTubeRepository(private val context: Context) {
 
              fun absorbVideoStats(parts: org.json.JSONArray?) {
                  if (parts == null) return
-                 for (i in 0 until parts.length()) {
-                     val raw = parts.optJSONObject(i)
-                         ?.optJSONObject("text")
-                         ?.optString("content")
-                         .orEmpty()
-                     raw.split('•')
-                         .map { it.trim() }
-                         .filter { value -> value.any { it.isLetterOrDigit() } }
-                         .forEach { value ->
-                             when {
-                                 value.contains("view", ignoreCase = true) ||
-                                     value.contains("watching", ignoreCase = true) -> {
-                                     if (viewCount.isBlank()) viewCount = value
-                                 }
-                                 uploadDate.isBlank() -> uploadDate = value
-                             }
-                         }
-                 }
+                 val stats = parseLockupVideoStats(
+                     (0 until parts.length()).map { index ->
+                         val part = parts.optJSONObject(index)
+                         val text = part?.optJSONObject("text")
+                         text?.optString("content").orEmpty() to
+                             part?.optString("accessibilityLabel")?.takeIf { it.isNotBlank() }
+                     }
+                 )
+                 if (viewCount.isBlank()) viewCount = stats.viewCount
+                 if (uploadDate.isBlank()) uploadDate = stats.uploadedDate
              }
              
              if (metadataRows != null && metadataRows.length() > 0) {
@@ -4120,7 +4112,16 @@ class YouTubeRepository(private val context: Context) {
                  if (firstRowParts != null && firstRowParts.length() > 0) {
                      val textObj = firstRowParts.optJSONObject(0)?.optJSONObject("text")
                      val firstText = textObj?.optString("content").orEmpty()
-                     val firstRowIsStats = firstText.contains("view", ignoreCase = true) ||
+                     val firstRowStats = parseLockupVideoStats(
+                         (0 until firstRowParts.length()).map { index ->
+                             val part = firstRowParts.optJSONObject(index)
+                             val text = part?.optJSONObject("text")
+                             text?.optString("content").orEmpty() to
+                                 part?.optString("accessibilityLabel")?.takeIf { it.isNotBlank() }
+                         }
+                     )
+                     val firstRowIsStats = firstRowStats.uploadedDate.isNotBlank() ||
+                         firstText.contains("view", ignoreCase = true) ||
                          firstText.contains("watching", ignoreCase = true)
 
                      if (firstRowIsStats) {

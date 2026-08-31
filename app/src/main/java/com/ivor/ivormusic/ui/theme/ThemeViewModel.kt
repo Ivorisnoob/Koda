@@ -38,6 +38,12 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
     val musicQualityMobile: StateFlow<String> = themePreferences.musicQualityMobile
     val spotlightHome: StateFlow<Boolean> = themePreferences.spotlightHome
     val uiScale: StateFlow<Float> = themePreferences.uiScale
+    val sponsorBlockEnabled: StateFlow<Boolean> = themePreferences.sponsorBlockEnabled
+    val sponsorBlockActions: StateFlow<Map<com.ivor.ivormusic.data.SponsorCategory, com.ivor.ivormusic.data.SegmentAction>> =
+        themePreferences.sponsorBlockActions
+    val sponsorBlockShowOnSeekBar: StateFlow<Boolean> = themePreferences.sponsorBlockShowOnSeekBar
+    val sponsorBlockNotice: StateFlow<Boolean> = themePreferences.sponsorBlockNotice
+    val sponsorBlockMinDurationMs: StateFlow<Long> = themePreferences.sponsorBlockMinDurationMs
     val nonExpressiveNavigationBar: StateFlow<Boolean> =
         themePreferences.nonExpressiveNavigationBar
     val subscriptionSource: StateFlow<String> = themePreferences.subscriptionSource
@@ -168,6 +174,33 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setUiScale(scale: Float) {
         themePreferences.setUiScale(scale)
+    }
+
+    fun setSponsorBlockEnabled(enabled: Boolean) {
+        themePreferences.setSponsorBlockEnabled(enabled)
+    }
+
+    fun setSponsorBlockAction(
+        category: com.ivor.ivormusic.data.SponsorCategory,
+        action: com.ivor.ivormusic.data.SegmentAction
+    ) {
+        themePreferences.setSponsorBlockAction(category, action)
+    }
+
+    fun resetSponsorBlockActions() {
+        themePreferences.resetSponsorBlockActions()
+    }
+
+    fun setSponsorBlockShowOnSeekBar(enabled: Boolean) {
+        themePreferences.setSponsorBlockShowOnSeekBar(enabled)
+    }
+
+    fun setSponsorBlockNotice(enabled: Boolean) {
+        themePreferences.setSponsorBlockNotice(enabled)
+    }
+
+    fun setSponsorBlockMinDurationMs(durationMs: Long) {
+        themePreferences.setSponsorBlockMinDurationMs(durationMs)
     }
 
     fun setNonExpressiveNavigationBar(enabled: Boolean) {

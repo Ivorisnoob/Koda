@@ -33,6 +33,7 @@ import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.Contrast
 import androidx.compose.material.icons.rounded.FormatSize
+import androidx.compose.material.icons.rounded.MoneyOff
 import androidx.compose.material.icons.rounded.Cookie
 import androidx.compose.material.icons.rounded.DirectionsCar
 import androidx.compose.material.icons.rounded.Dashboard
@@ -206,6 +207,15 @@ internal fun buildSettingsSearchIndex(
     // and neither appears in the title - the whole reason the synonym list
     // exists. "Font size" and "zoom" are here because they are what the
     // setting is called on other platforms.
+    // "Sponsor" and "skip ads" are what people type; the brand name is what
+    // they type if they already know it exists. Both have to hit.
+    entry(
+        "sponsorblock", stringResource(R.string.sb_title), stringResource(R.string.settings_section_playback_and_content), Icons.Rounded.MoneyOff,
+        listOf(
+            "sponsor", "sponsorblock", "skip ads", "ads", "advert", "promo",
+            "segments", "intro", "outro", "self promo", "sponsors", "skip"
+        )
+    ) { onOpenPage(SettingsPage.SPONSORBLOCK) }
     entry(
         "display_size", stringResource(R.string.sp_display_size), stringResource(R.string.settings_appearance), Icons.Rounded.FormatSize,
         listOf(
