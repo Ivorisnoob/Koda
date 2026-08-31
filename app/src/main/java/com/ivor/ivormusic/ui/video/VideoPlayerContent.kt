@@ -695,7 +695,7 @@ fun VideoPlayerContent(
                         },
                         onDeleteComment = { comment -> viewModel.deleteComment(comment) },
                         onDismiss = { showCommentsSheet = false },
-                        onSeekTo = { seconds -> viewModel.seekTo(seconds * 1000L) },
+                        onSeekTo = { seconds -> viewModel.seekTo(seconds * 1000L, precise = true) },
                         modifier = Modifier
                             .fillMaxHeight()
                             .width(400.dp)
@@ -996,7 +996,7 @@ fun VideoPlayerContent(
                             val channelId = engagement?.channelId ?: currentVideo.channelId
                             if (channelId != null) onOpenChannel(channelId)
                         },
-                        onSeekTo = { seconds -> viewModel.seekTo(seconds * 1000L) },
+                        onSeekTo = { seconds -> viewModel.seekTo(seconds * 1000L, precise = true) },
                         isOffline = isLocalPlayback,
                         onRelatedLongPress = { related ->
                             if (isLoggedIn) viewModel.loadVideoPlaylists()
@@ -1041,7 +1041,7 @@ fun VideoPlayerContent(
                             onDismiss = { showCommentsSheet = false },
                             modifier = Modifier.fillMaxSize(),
                             onSeekTo = { seconds ->
-                                viewModel.seekTo(seconds * 1000L)
+                                viewModel.seekTo(seconds * 1000L, precise = true)
                                 // Jumping to the moment a comment is about is
                                 // pointless if the video stays paused behind
                                 // the panel, so surface the player again.
