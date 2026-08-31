@@ -123,6 +123,14 @@ android {
         buildConfig = true
     }
 
+    packaging {
+        resources {
+            // Protobuf ships its schema sources for tooling; the generated
+            // runtime messages in the APK do not read them.
+            excludes += "/google/protobuf/*.proto"
+        }
+    }
+
     testOptions {
         unitTests {
             // android.util.Log is a stub in JVM unit tests and throws
