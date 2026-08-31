@@ -18,6 +18,7 @@ import androidx.media3.datasource.HttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlaybackException
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.MergingMediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
@@ -660,20 +661,32 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             themePreferences.setVideoRepeatEnabled(false)
         }
 
-        // Near-instant first frame without retaining several minutes of video
-        // samples in the app heap. The disk cache preserves fetched compressed
-        // bytes for later seeks; decoded surfaces/codecs still consume memory,
-        // so a bounded one-minute read-ahead and 64MB allocator ceiling leave
-        // headroom for artwork, Compose and the decoder on lower-memory phones.
+        // The sample queue this sizes IS the app's RAM cache for video: the
+        // seek bar's pale segment is exactly `player.bufferedPosition`, so what
+        // a scrub lands in - and whether it stalls - is decided here rather
+        // than by the disk cache, which only backs the misses.
+        //
+        // [scar] The previous values made seeking stall by construction. A seek
+        // that leaves the buffer counts as a rebuffer, so the 2.5s resume
+        // threshold held the first frame back for 2.5s of queued media even
+        // when every byte was already in RAM; and a 15s back buffer discarded
+        // history well inside the range people scrub back into. Decoded
+        // surfaces and codecs still consume memory outside this allocator, so
+        // the ceiling stays bounded rather than unbounded.
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                30_000,  // keep playback resilient through short network dips
-                60_000,  // never retain five minutes of long-form video
-                1_000,   // buffer before first frame
-                2_500    // buffer after a rebuffer
+                30_000,   // resume loading once the queue drops below this
+                120_000,  // forward runway; the byte ceiling below usually binds first
+                1_000,    // buffer before first frame
+                800       // buffer before resuming after a seek or a rebuffer
             )
-            .setTargetBufferBytes(64 * 1024 * 1024)
-            .setBackBuffer(15_000, true)
+            // Shared by the split video and audio sources of an adaptive pair,
+            // and by the back buffer below, so it is the real ceiling on how
+            // much of a scrub can be served without touching storage.
+            .setTargetBufferBytes(96 * 1024 * 1024)
+            // Backwards is the common scrub direction; 15s was inside the
+            // distance a single drag routinely covers.
+            .setBackBuffer(45_000, true)
             .setPrioritizeTimeOverSizeThresholds(false)
             .build()
 
@@ -1497,7 +1510,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         val listener = object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
                 if (playbackState == Player.STATE_READY) {
-                    player.seekTo(position.coerceAtLeast(0L))
+                    seekPlayerTo(player, position.coerceAtLeast(0L), precise = true)
                     if (playWhenReady) player.play()
                     player.removeListener(this)
                     qualityChangeListener = null
@@ -1582,7 +1595,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
     /** Jump to a chapter's start position. */
     fun seekToChapter(chapter: com.ivor.ivormusic.data.VideoChapter) {
-        activePlayer()?.seekTo(chapter.startMs)
+        activePlayer()?.let { seekPlayerTo(it, chapter.startMs, precise = true) }
     }
 
     /**
@@ -1932,7 +1945,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                 _exoPlayer?.setMediaItem(nowPlayingMediaItem(localDownload.uri.toString()))
                 _exoPlayer?.prepare()
                 if (resumePositionMs != null && resumePositionMs > 0) {
-                    _exoPlayer?.seekTo(resumePositionMs)
+                    _exoPlayer?.let { seekPlayerTo(it, resumePositionMs, precise = true) }
                 }
                 if (resumePaused) {
                     _exoPlayer?.pause()
@@ -2131,7 +2144,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             return
         }
         if (resumePositionMs != null && resumePositionMs > 0) {
-            player.seekTo(resumePositionMs)
+            seekPlayerTo(player, resumePositionMs, precise = true)
         }
         if (resumePaused) {
             player.pause()
@@ -2498,7 +2511,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         val listener = object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
                 if (playbackState == Player.STATE_READY) {
-                    player.seekTo(position)
+                    seekPlayerTo(player, position, precise = true)
                     player.removeListener(this)
                     qualityChangeListener = null
                 }
@@ -2683,11 +2696,36 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         val player = activePlayer() ?: return
         val duration = player.duration
         val upperBound = if (duration > 0) duration else Long.MAX_VALUE
-        player.seekTo((player.currentPosition + deltaMs).coerceIn(0L, upperBound))
+        seekPlayerTo(player, (player.currentPosition + deltaMs).coerceIn(0L, upperBound), precise = false)
+    }
+
+    /**
+     * Seek, choosing how exactly the player has to land on [positionMs].
+     *
+     * ExoPlayer seeks exactly by default: it starts decoding at the sync sample
+     * before the target and discards every frame up to it, so a scrub into a
+     * 1080p60 stream with a multi-second GOP decodes hundreds of frames nobody
+     * ever sees before the first visible one. That cost is paid whether the
+     * bytes came from the sample queue, the disk cache or the network, which is
+     * why a scrub into already-buffered video could still sit on a spinner.
+     * CLOSEST_SYNC renders the nearest keyframe instead.
+     *
+     * The trade is landing up to half a GOP from the requested millisecond.
+     * That is invisible dragging a seek bar and wrong for anything addressing a
+     * specific moment - a chapter start, a comment's timestamp, the position a
+     * session or a quality switch is being restored to - so those pass
+     * [precise] and keep exact seeking.
+     */
+    private fun seekPlayerTo(player: Player, positionMs: Long, precise: Boolean) {
+        // Cast playback is driven by the receiver and has no seek parameters.
+        (player as? ExoPlayer)?.setSeekParameters(
+            if (precise) SeekParameters.EXACT else SeekParameters.CLOSEST_SYNC
+        )
+        player.seekTo(positionMs)
     }
 
     /** Absolute seek which also works before a restored session has loaded media. */
-    fun seekTo(positionMs: Long) {
+    fun seekTo(positionMs: Long, precise: Boolean = false) {
         deferredRestorePositionMs?.let {
             val duration = _durationMs.value.takeIf { value -> value > 0L } ?: Long.MAX_VALUE
             val position = positionMs.coerceIn(0L, duration)
@@ -2700,7 +2738,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             }
             return
         }
-        activePlayer()?.seekTo(positionMs.coerceAtLeast(0L))
+        activePlayer()?.let { seekPlayerTo(it, positionMs.coerceAtLeast(0L), precise) }
     }
 
     /** Pause without closing the player (music or Shorts playback started). */
