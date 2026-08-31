@@ -3,17 +3,16 @@ package com.ivor.ivormusic.work
 import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.job.JobInfo
+import android.app.job.JobParameters
+import android.app.job.JobScheduler
+import android.app.job.JobService
+import android.content.ComponentName
 import android.content.Context
 import android.content.pm.PackageManager
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
-import androidx.work.CoroutineWorker
-import androidx.work.ExistingPeriodicWorkPolicy
-import androidx.work.NetworkType
-import androidx.work.PeriodicWorkRequestBuilder
-import androidx.work.WorkManager
-import androidx.work.WorkerParameters
 import com.ivor.ivormusic.R
 import com.ivor.ivormusic.data.LocalSubscriptionsRepository
 import com.ivor.ivormusic.data.ThemePreferences
@@ -21,10 +20,18 @@ import com.ivor.ivormusic.data.UploadCheckRepository
 import com.ivor.ivormusic.data.YouTubeRateLimit
 import com.ivor.ivormusic.data.YouTubeRepository
 import com.ivor.ivormusic.util.KLog
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.withContext
 import java.util.concurrent.TimeUnit
 
 /**
@@ -42,16 +49,48 @@ import java.util.concurrent.TimeUnit
  * First sight of a channel sets a baseline silently instead of notifying:
  * following someone should not greet you with their last forty uploads.
  */
-class UploadCheckWorker(
-    context: Context,
-    parameters: WorkerParameters,
-) : CoroutineWorker(context, parameters) {
+class UploadCheckJobService : JobService() {
 
-    override suspend fun doWork(): Result {
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var runningJob: Job? = null
+
+    override fun onStartJob(params: JobParameters): Boolean {
+        val job = serviceScope.launch {
+            val shouldRetry = try {
+                withContext(Dispatchers.IO) { checkForUploads() }
+            } catch (e: CancellationException) {
+                return@launch
+            } catch (e: Exception) {
+                KLog.e(TAG, "Upload check job failed", e)
+                true
+            }
+
+            if (runningJob === coroutineContext[Job]) {
+                runningJob = null
+                jobFinished(params, shouldRetry)
+            }
+        }
+        runningJob = job
+        return true
+    }
+
+    override fun onStopJob(params: JobParameters): Boolean {
+        runningJob?.cancel()
+        runningJob = null
+        return true
+    }
+
+    override fun onDestroy() {
+        serviceScope.cancel()
+        super.onDestroy()
+    }
+
+    /** Returns true when JobScheduler should retry this run with backoff. */
+    private suspend fun checkForUploads(): Boolean {
         val themePreferences = ThemePreferences(applicationContext)
-        // Fresh read: workers run in a process where every ViewModel is long dead.
+        // Fresh read: jobs run in a process where every ViewModel may be long dead.
         if (!themePreferences.getUploadNotificationsEnabled()) {
-            return Result.success()
+            return false
         }
 
         val localSubscriptions = LocalSubscriptionsRepository(applicationContext)
@@ -60,14 +99,14 @@ class UploadCheckWorker(
 
         val channels = localSubscriptions.getAll()
             .filter { !uploadCheck.isMuted(it.channelId) }
-        if (channels.isEmpty()) return Result.success()
+        if (channels.isEmpty()) return false
 
         // Nobody asked for this round. Standing down during a hold and letting
-        // WorkManager's own backoff reschedule is strictly better than spending
+        // JobScheduler's backoff reschedule is strictly better than spending
         // one request per channel against a limit that is already tripped.
         if (YouTubeRateLimit.isHeld()) {
             KLog.w(TAG, "Upload check skipped: rate limited")
-            return Result.retry()
+            return true
         }
 
         // This used to launch one coroutine per channel with no ceiling, so a
@@ -75,7 +114,6 @@ class UploadCheckWorker(
         // path caps at FEED_CONCURRENCY precisely because mobile radios handle
         // it badly and it reads as a scrape from the other end.
         val gate = Semaphore(FEED_CONCURRENCY)
-        var notifiedAny = false
         coroutineScope {
             channels.map { channel ->
                 async {
@@ -100,7 +138,8 @@ class UploadCheckWorker(
                         val fresh = feed.filter { (it.publishedAtMs ?: 0L) > seenUpTo }
                         notifyNewUploads(channel.name, channel.channelId, fresh.take(MAX_PER_CHANNEL))
                         uploadCheck.markSeen(channel.channelId, newest)
-                        notifiedAny = true
+                    } catch (e: CancellationException) {
+                        throw e
                     } catch (e: Exception) {
                         // One bad channel must not cost the rest of the round;
                         // its last-seen stays put, so nothing is lost, only deferred.
@@ -111,7 +150,7 @@ class UploadCheckWorker(
                 }
             }.awaitAll()
         }
-        return Result.success()
+        return false
     }
 
     private fun notifyNewUploads(channelName: String, channelId: String, uploads: List<com.ivor.ivormusic.data.VideoItem>) {
@@ -168,10 +207,12 @@ class UploadCheckWorker(
     }
 
     companion object {
-        private const val TAG = "UploadCheckWorker"
+        private const val TAG = "UploadCheckJob"
         private const val CHANNEL_ID = "upload_checks"
         private const val NOTIFICATION_TAG = "upload_check"
-        private const val UNIQUE_WORK_NAME = "upload_check"
+        private const val JOB_ID = 0x4B4F4441
+        private const val LEGACY_WORK_MANAGER_SERVICE =
+            "androidx.work.impl.background.systemjob.SystemJobService"
         private const val MAX_PER_CHANNEL = 3
 
         /**
@@ -182,24 +223,38 @@ class UploadCheckWorker(
          */
         private const val FEED_CONCURRENCY = 6
 
-        /**
-         * Schedule or re-schedule the periodic check. Idempotent (KEEP): called
-         * from Application.onCreate so an install, an update or a reboot all
-         * converge on exactly one running job.
-         */
-        fun schedule(context: Context) {
-            val request = PeriodicWorkRequestBuilder<UploadCheckWorker>(6, TimeUnit.HOURS)
-                .setConstraints(
-                    androidx.work.Constraints.Builder()
-                        .setRequiredNetworkType(NetworkType.CONNECTED)
-                        .build()
-                )
-                .build()
-            WorkManager.getInstance(context).enqueueUniquePeriodicWork(
-                UNIQUE_WORK_NAME,
-                ExistingPeriodicWorkPolicy.KEEP,
-                request,
+        fun sync(context: Context) {
+            setEnabled(context, ThemePreferences(context).getUploadNotificationsEnabled())
+        }
+
+        fun setEnabled(context: Context, enabled: Boolean) {
+            val appContext = context.applicationContext
+            val scheduler = appContext.getSystemService(JobScheduler::class.java)
+
+            // WorkManager owned the previous version of this task. Clear any
+            // persisted scheduler entry left behind when that dependency was
+            // removed, without touching future native jobs.
+            scheduler.allPendingJobs
+                .filter { it.service.className == LEGACY_WORK_MANAGER_SERVICE }
+                .forEach { scheduler.cancel(it.id) }
+
+            if (!enabled) {
+                scheduler.cancel(JOB_ID)
+                return
+            }
+            if (scheduler.getPendingJob(JOB_ID) != null) return
+
+            val job = JobInfo.Builder(
+                JOB_ID,
+                ComponentName(appContext, UploadCheckJobService::class.java),
             )
+                .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
+                .setPeriodic(TimeUnit.HOURS.toMillis(6))
+                .setPersisted(true)
+                .build()
+            if (scheduler.schedule(job) == JobScheduler.RESULT_FAILURE) {
+                KLog.e(TAG, "Could not schedule the periodic upload check")
+            }
         }
     }
 }

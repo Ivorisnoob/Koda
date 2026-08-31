@@ -203,8 +203,6 @@ dependencies {
     // Bridges a Material 3 ColorScheme into Glance, so the widgets follow the
     // palette chosen in Settings instead of raw system dynamic color.
     implementation(libs.androidx.glance.material3)
-    // The background upload check over the local subscriptions feed.
-    implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.androidx.graphics.shapes)
     implementation(libs.androidx.ui.text.google.fonts)
     implementation(libs.androidx.palette.ktx)
