@@ -10,11 +10,11 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.withLock
 import org.schabi.newpipe.extractor.NewPipe
-import org.schabi.newpipe.extractor.ServiceList
 import org.schabi.newpipe.extractor.stream.StreamInfo
 import org.schabi.newpipe.extractor.stream.AudioStream
 import org.schabi.newpipe.extractor.stream.AudioTrackType
 import org.schabi.newpipe.extractor.services.youtube.YoutubeParsingHelper
+import org.schabi.newpipe.extractor.services.youtube.YoutubeService
 import org.schabi.newpipe.extractor.search.SearchInfo
 import org.schabi.newpipe.extractor.stream.StreamInfoItem
 import org.schabi.newpipe.extractor.playlist.PlaylistInfo
@@ -44,6 +44,12 @@ class YouTubeRepository(private val context: Context) {
     companion object {
         private const val YT_MUSIC_BASE_URL = "https://music.youtube.com"
         private var isInitialized = false
+
+        // ServiceList eagerly constructs every extractor NewPipe supports. Koda
+        // only uses YouTube, so keep the equivalent service instance directly
+        // and let R8 discard the SoundCloud, PeerTube, Bandcamp and MediaCCC
+        // implementations.
+        private val youtubeService = YoutubeService(0)
         
         // Content filters for YouTube Music search
         const val FILTER_SONGS = "music_songs"
@@ -366,9 +372,8 @@ class YouTubeRepository(private val context: Context) {
      */
     suspend fun search(query: String, filter: String = FILTER_SONGS): List<Song> = withContext(Dispatchers.IO) {
         try {
-            val ytService = ServiceList.all().find { it.serviceInfo.name == "YouTube" } ?: return@withContext emptyList()
             // YouTube Music search often uses the search extractor with specific filters
-            val searchExtractor = ytService.getSearchExtractor(query, listOf(filter), "")
+            val searchExtractor = youtubeService.getSearchExtractor(query, listOf(filter), "")
             searchExtractor.fetchPage()
             
             // Cache for pagination
@@ -400,8 +405,7 @@ class YouTubeRepository(private val context: Context) {
      */
     suspend fun searchPlaylists(query: String): List<PlaylistDisplayItem> = withContext(Dispatchers.IO) {
         try {
-            val ytService = ServiceList.all().find { it.serviceInfo.name == "YouTube" } ?: return@withContext emptyList()
-            val searchExtractor = ytService.getSearchExtractor(query, listOf(FILTER_PLAYLISTS), "")
+            val searchExtractor = youtubeService.getSearchExtractor(query, listOf(FILTER_PLAYLISTS), "")
             searchExtractor.fetchPage()
             
             searchExtractor.initialPage.items.filterIsInstance<PlaylistInfoItem>().mapNotNull { item ->
@@ -424,8 +428,7 @@ class YouTubeRepository(private val context: Context) {
      */
     suspend fun searchAlbums(query: String): List<PlaylistDisplayItem> = withContext(Dispatchers.IO) {
         try {
-            val ytService = ServiceList.all().find { it.serviceInfo.name == "YouTube" } ?: return@withContext emptyList()
-            val searchExtractor = ytService.getSearchExtractor(query, listOf(FILTER_ALBUMS), "")
+            val searchExtractor = youtubeService.getSearchExtractor(query, listOf(FILTER_ALBUMS), "")
             searchExtractor.fetchPage()
             
             searchExtractor.initialPage.items.filterIsInstance<PlaylistInfoItem>().mapNotNull { item ->
@@ -447,8 +450,7 @@ class YouTubeRepository(private val context: Context) {
      */
     suspend fun searchArtists(query: String): List<ArtistItem> = withContext(Dispatchers.IO) {
         try {
-            val ytService = ServiceList.all().find { it.serviceInfo.name == "YouTube" } ?: return@withContext emptyList()
-            val searchExtractor = ytService.getSearchExtractor(query, listOf(FILTER_ARTISTS), "")
+            val searchExtractor = youtubeService.getSearchExtractor(query, listOf(FILTER_ARTISTS), "")
             searchExtractor.fetchPage()
             
             searchExtractor.initialPage.items.filterIsInstance<ChannelInfoItem>().mapNotNull { item ->
@@ -780,9 +782,7 @@ class YouTubeRepository(private val context: Context) {
     private suspend fun resolveAudioUrlViaNewPipe(videoId: String): String? = withContext(Dispatchers.IO) {
         try {
             val streamUrl = "https://www.youtube.com/watch?v=$videoId"
-            val ytService = ServiceList.all().find { it.serviceInfo.name == "YouTube" }
-                ?: return@withContext null
-            val streamExtractor = ytService.getStreamExtractor(streamUrl)
+            val streamExtractor = youtubeService.getStreamExtractor(streamUrl)
             streamExtractor.fetchPage()
 
             // Generated manifest content shares the Stream model with direct
@@ -813,9 +813,7 @@ class YouTubeRepository(private val context: Context) {
     private suspend fun resolveM4aAudioUrlViaNewPipe(videoId: String): String? =
         withContext(Dispatchers.IO) {
             try {
-                val ytService = ServiceList.all().find { it.serviceInfo.name == "YouTube" }
-                    ?: return@withContext null
-                val extractor = ytService.getStreamExtractor(
+                val extractor = youtubeService.getStreamExtractor(
                     "https://www.youtube.com/watch?v=$videoId"
                 )
                 extractor.fetchPage()
@@ -1142,8 +1140,7 @@ class YouTubeRepository(private val context: Context) {
     suspend fun getStreamInfo(videoId: String): StreamInfo? = withContext(Dispatchers.IO) {
         try {
             val streamUrl = "https://www.youtube.com/watch?v=$videoId"
-            val ytService = ServiceList.all().find { it.serviceInfo.name == "YouTube" } ?: return@withContext null
-            val streamExtractor = ytService.getStreamExtractor(streamUrl)
+            val streamExtractor = youtubeService.getStreamExtractor(streamUrl)
             streamExtractor.fetchPage()
             // This return type might need adjustment depending on what's expected
             null 
@@ -1566,48 +1563,44 @@ class YouTubeRepository(private val context: Context) {
 
         var newPipeComplete = true
         val newPipeSongs = try {
-             val urlId = if (playlistId.startsWith("VL")) playlistId.removePrefix("VL") else playlistId
-             val playlistUrl = "https://www.youtube.com/playlist?list=$urlId"
-             
-             // Try NewPipe
-             val ytService = ServiceList.all().find { it.serviceInfo.name == "YouTube" } 
-             if (ytService != null) {
-                 val playlistExtractor = ytService.getPlaylistExtractor(playlistUrl)
-                 playlistExtractor.fetchPage()
-                 
-                 val allItems = mutableListOf<StreamInfoItem>()
-                 allItems.addAll(playlistExtractor.initialPage.items.filterIsInstance<StreamInfoItem>())
-                 
-                 var currentPage = playlistExtractor.initialPage
-                 while (currentPage.hasNextPage()) {
-                     try {
-                         currentPage = playlistExtractor.getPage(currentPage.nextPage)
-                         allItems.addAll(currentPage.items.filterIsInstance<StreamInfoItem>())
-                     } catch (e: Exception) {
-                         newPipeComplete = false
-                         KLog.w(
-                             "YouTubeRepo",
-                             "NewPipe playlist continuation failed for $playlistId after ${allItems.size} items",
-                             e
-                         )
-                         break
-                     }
-                 }
-                 
-                 allItems.mapNotNull { item ->
-                     Song.fromYouTube(
-                         videoId = extractVideoId(item.url),
-                         title = item.name ?: "Unknown",
-                         artist = item.uploaderName ?: "Unknown Artist",
-                         album = playlistExtractor.name ?: "",
-                         duration = item.duration * 1000L,
-                         thumbnailUrl = item.thumbnails?.firstOrNull()?.url
-                     )
-                 }
-             } else emptyList()
+            val urlId = if (playlistId.startsWith("VL")) playlistId.removePrefix("VL") else playlistId
+            val playlistUrl = "https://www.youtube.com/playlist?list=$urlId"
+
+            val playlistExtractor = youtubeService.getPlaylistExtractor(playlistUrl)
+            playlistExtractor.fetchPage()
+
+            val allItems = mutableListOf<StreamInfoItem>()
+            allItems.addAll(playlistExtractor.initialPage.items.filterIsInstance<StreamInfoItem>())
+
+            var currentPage = playlistExtractor.initialPage
+            while (currentPage.hasNextPage()) {
+                try {
+                    currentPage = playlistExtractor.getPage(currentPage.nextPage)
+                    allItems.addAll(currentPage.items.filterIsInstance<StreamInfoItem>())
+                } catch (e: Exception) {
+                    newPipeComplete = false
+                    KLog.w(
+                        "YouTubeRepo",
+                        "NewPipe playlist continuation failed for $playlistId after ${allItems.size} items",
+                        e
+                    )
+                    break
+                }
+            }
+
+            allItems.mapNotNull { item ->
+                Song.fromYouTube(
+                    videoId = extractVideoId(item.url),
+                    title = item.name ?: "Unknown",
+                    artist = item.uploaderName ?: "Unknown Artist",
+                    album = playlistExtractor.name ?: "",
+                    duration = item.duration * 1000L,
+                    thumbnailUrl = item.thumbnails?.firstOrNull()?.url
+                )
+            }
         } catch (e: Exception) {
-             newPipeComplete = false
-             emptyList()
+            newPipeComplete = false
+            emptyList()
         }
 
         if (newPipeComplete && newPipeSongs.isNotEmpty()) return@withContext newPipeSongs
@@ -2876,11 +2869,8 @@ class YouTubeRepository(private val context: Context) {
         }
 
         try {
-            val ytService = ServiceList.all().find { it.serviceInfo.name == "YouTube" }
-                ?: return@withContext emptyList()
-
             // Use YouTube videos filter (not music_videos)
-            val searchExtractor = ytService.getSearchExtractor(effectiveQuery, listOf(FILTER_YOUTUBE_VIDEOS), "")
+            val searchExtractor = youtubeService.getSearchExtractor(effectiveQuery, listOf(FILTER_YOUTUBE_VIDEOS), "")
             searchExtractor.fetchPage()
 
             // Cache for pagination (see searchVideosNext)
@@ -2960,10 +2950,7 @@ class YouTubeRepository(private val context: Context) {
      */
     suspend fun searchVideoPlaylists(query: String): List<VideoPlaylist> = withContext(Dispatchers.IO) {
         try {
-            val ytService = ServiceList.all().find { it.serviceInfo.name == "YouTube" }
-                ?: return@withContext emptyList()
-
-            val searchExtractor = ytService.getSearchExtractor(query, listOf(FILTER_YOUTUBE_PLAYLISTS), "")
+            val searchExtractor = youtubeService.getSearchExtractor(query, listOf(FILTER_YOUTUBE_PLAYLISTS), "")
             searchExtractor.fetchPage()
 
             searchExtractor.initialPage.items.filterIsInstance<PlaylistInfoItem>().mapNotNull { item ->
@@ -2997,10 +2984,8 @@ class YouTubeRepository(private val context: Context) {
     suspend fun searchChannels(query: String): List<SubscribedChannel> =
         withContext(Dispatchers.IO) {
             try {
-                val ytService = ServiceList.all().find { it.serviceInfo.name == "YouTube" }
-                    ?: return@withContext emptyList()
                 val searchExtractor =
-                    ytService.getSearchExtractor(query, listOf(FILTER_YOUTUBE_CHANNELS), "")
+                    youtubeService.getSearchExtractor(query, listOf(FILTER_YOUTUBE_CHANNELS), "")
                 searchExtractor.fetchPage()
 
                 searchExtractor.initialPage.items
@@ -3814,9 +3799,7 @@ class YouTubeRepository(private val context: Context) {
                 return@withContext VideoPlaylistLoadResult(emptyList(), complete = false)
             }
             try {
-                val ytService = ServiceList.all().find { it.serviceInfo.name == "YouTube" }
-                    ?: return@withContext VideoPlaylistLoadResult(emptyList(), complete = false)
-                val extractor = ytService.getPlaylistExtractor(
+                val extractor = youtubeService.getPlaylistExtractor(
                     "https://www.youtube.com/playlist?list=$listId"
                 )
                 extractor.fetchPage()
@@ -3849,9 +3832,7 @@ class YouTubeRepository(private val context: Context) {
             val listId = playlistId.removePrefix("VL")
             if (listId == "WL" || listId == "LL" || listId == "LM") return@withContext emptyList()
             try {
-                val ytService = ServiceList.all().find { it.serviceInfo.name == "YouTube" }
-                    ?: return@withContext emptyList()
-                val extractor = ytService.getPlaylistExtractor(
+                val extractor = youtubeService.getPlaylistExtractor(
                     "https://www.youtube.com/playlist?list=$listId"
                 )
                 extractor.fetchPage()
@@ -4571,9 +4552,7 @@ class YouTubeRepository(private val context: Context) {
     suspend fun getVideoStreamUrl(videoId: String): String? = withContext(Dispatchers.IO) {
         try {
             val streamUrl = "https://www.youtube.com/watch?v=$videoId"
-            val ytService = ServiceList.all().find { it.serviceInfo.name == "YouTube" } 
-                ?: return@withContext null
-            val streamExtractor = ytService.getStreamExtractor(streamUrl)
+            val streamExtractor = youtubeService.getStreamExtractor(streamUrl)
             streamExtractor.fetchPage()
 
             // A muxed URL does not expose which language YouTube selected.
@@ -4791,9 +4770,7 @@ class YouTubeRepository(private val context: Context) {
      * before the first frame.
      */
     private fun getVideoStreamsFromNewPipe(videoId: String): VideoStreamResult {
-        val ytService = ServiceList.all().find { it.serviceInfo.name == "YouTube" }
-            ?: return VideoStreamResult(emptyList())
-        val extractor = ytService.getStreamExtractor("https://www.youtube.com/watch?v=$videoId")
+        val extractor = youtubeService.getStreamExtractor("https://www.youtube.com/watch?v=$videoId")
         extractor.fetchPage()
 
         // Storyboards ride the same extraction as the stream URLs. Prefer the
@@ -5112,9 +5089,7 @@ class YouTubeRepository(private val context: Context) {
     suspend fun getVideoDetails(videoId: String): VideoDetails = withContext(Dispatchers.IO) {
         try {
             val streamUrl = "https://www.youtube.com/watch?v=$videoId"
-            val ytService = ServiceList.all().find { it.serviceInfo.name == "YouTube" } 
-                ?: return@withContext VideoDetails(emptyList(), emptyList())
-            val streamExtractor = ytService.getStreamExtractor(streamUrl)
+            val streamExtractor = youtubeService.getStreamExtractor(streamUrl)
             streamExtractor.fetchPage()
             
             val qualities = mutableListOf<VideoQuality>()
