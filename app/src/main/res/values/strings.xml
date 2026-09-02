@@ -932,6 +932,8 @@
     <string name="pd_already_offline_here">Already offline here</string>
     <string name="pd_pages_note">Every remaining playlist page is resolved after you confirm; existing downloads are skipped then too.</string>
     <string name="pd_already_offline">Already offline</string>
+    <string name="pd_repeated_entries">Repeated entries</string>
+    <string name="pd_repeated_entries_note">Repeated playlist entries share one offline file and still remain in their original positions.</string>
     <string name="pd_to_download">To download</string>
     <string name="pd_progress_cd">Playlist download progress</string>
     <string name="pd_quality_note">Each video uses the best MP4 quality at or below this limit.</string>
