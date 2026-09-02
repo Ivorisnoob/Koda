@@ -5157,7 +5157,7 @@ class YouTubeRepository(private val context: Context) {
                 else -> null
             }
             
-            // 🌟 Try to fetch channel avatar - Priority 1: From Extractor directly
+            // Channel avatar, first preference: straight from the extractor
             var channelIconUrl = try {
                  streamExtractor.uploaderAvatars?.maxByOrNull { it.width }?.url
             } catch (e: Exception) { null }

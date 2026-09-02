@@ -187,7 +187,7 @@ private fun getSegmentedShape(index: Int, count: Int, hasMore: Boolean = false, 
 }
 
 /**
- * 🌟 Material 3 Expressive Search Screen
+ * Search across songs, videos, artists, albums and playlists.
  * 
  * Design Features:
  * - Gradient header with decorative organic shapes

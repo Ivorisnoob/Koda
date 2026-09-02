@@ -108,7 +108,7 @@ fun PlayerSheetContent(
     var showAddToPlaylist by remember { mutableStateOf(false) }
     val addToPlaylistItems by viewModel.addToPlaylistItems.collectAsState()
 
-    // 🌟 Stable shapes - prevents "square flash" on initial render
+    // Stable shapes: prevents a square flash on the first render
     // IconButtonDefaults.shapes() already uses internal remember/caching
     val stableIconButtonShapes = IconButtonDefaults.shapes()
 
@@ -490,7 +490,7 @@ private fun ExpressiveNowPlayingView(
                 .padding(bottom = 40.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // 🌟 Wavy Progress Indicator (Expressive!)
+            // Wavy progress indicator
             // While the user is scrubbing we only track the finger locally and
             // issue a single seek on release — seeking on every drag frame causes
             // rebuffering storms on streamed tracks.
@@ -647,7 +647,7 @@ private fun ExpressiveNowPlayingView(
                     menuContent = {}
                 )
 
-                // 🌟 Play/Pause Button (center, larger weight for emphasis)
+                // Play/pause, centred, with a larger weight for emphasis
                 customItem(
                     buttonGroupContent = {
                         FilledIconButton(
@@ -668,7 +668,7 @@ private fun ExpressiveNowPlayingView(
                         ) {
                             // FIX: Only show loading if we are NOT playing. If audio is playing, always show Pause.
                             if (isBuffering && playWhenReady && !isPlaying) {
-                                // 🌟 Organic morphing loading with MaterialShapes
+                                // Organic morphing loading, from MaterialShapes
                                 LoadingIndicator(
                                     modifier = Modifier.size(40.dp),
                                     color = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -741,7 +741,7 @@ private fun ExpressiveNowPlayingView(
             
             Spacer(modifier = Modifier.height(24.dp))
             
-            // 🌟 Favorite / Download / Sleep Timer - connected button group
+            // Favourite, download and sleep timer, as a connected button group
             val sleepTimer = rememberSleepTimerControl(viewModel = viewModel)
             val sleepTimerActive = sleepTimer.active
             val groupButtonColors = ToggleButtonDefaults.colors(

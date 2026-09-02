@@ -35,7 +35,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 
 /**
- * 💥 Expressive "like" heart with a one-shot burst.
+ * The "like" heart, with a one-shot burst when it is switched on.
  *
  * When [isFavorite] flips to true, a Burst-shaped flash expands and fades
  * behind the heart while the heart itself springs in with a bouncy

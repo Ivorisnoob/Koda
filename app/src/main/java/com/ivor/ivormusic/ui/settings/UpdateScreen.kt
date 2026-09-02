@@ -45,7 +45,7 @@ import com.ivor.ivormusic.data.UpdateResult
 import kotlinx.coroutines.delay
 
 /**
- * 🌟 Premium Update Screen
+ * The in-app updater.
  * 
  * A beautiful, Material You-styled update experience with:
  * - Animated hero section with version info
