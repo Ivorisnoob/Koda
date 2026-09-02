@@ -22,10 +22,14 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
 import com.ivor.ivormusic.data.Song
 
 /**
@@ -182,6 +186,44 @@ fun KodaRowArtwork(song: Song, size: Dp = ROW_ARTWORK_SIZE) {
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+        }
+    }
+}
+
+/**
+ * The same leading tile for anything that is not a song - a playlist cover, a
+ * channel, or an action like "New playlist" that has an icon where a picture
+ * would go.
+ *
+ * It exists so those rows stop each choosing their own size and corner: the
+ * sheet that picks a playlist was drawing 56dp tiles next to lists drawing
+ * 48dp ones, for no reason anybody decided.
+ */
+@Composable
+fun KodaRowThumbnail(
+    model: Any?,
+    fallbackIcon: ImageVector,
+    modifier: Modifier = Modifier,
+    containerColor: Color = MaterialTheme.colorScheme.surfaceContainerHighest,
+    iconTint: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+    size: Dp = ROW_ARTWORK_SIZE
+) {
+    Surface(
+        shape = RoundedCornerShape(ROW_ARTWORK_CORNER),
+        color = containerColor,
+        modifier = modifier.size(size)
+    ) {
+        if (model != null) {
+            AsyncImage(
+                model = model,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+        } else {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(fallbackIcon, contentDescription = null, tint = iconTint)
             }
         }
     }

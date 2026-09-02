@@ -3,38 +3,27 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import com.ivor.ivormusic.R
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.PlaylistPlay
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -43,16 +32,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
 import com.ivor.ivormusic.data.PlaylistDisplayItem
+import com.ivor.ivormusic.ui.components.KodaListRow
+import com.ivor.ivormusic.ui.components.KodaRowThumbnail
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -71,9 +57,11 @@ fun AddToPlaylistSheet(
             onCreate = { name, desc ->
                 onCreateNewClick(name, desc)
                 showCreateDialog = false
-                // Don't dismiss sheet yet, let user see it added or auto dismiss? cause Sheet scrolling or dismis UX is SO SHIT istfg
-                // Probably better to dismiss sheet or show success.
-                // For now we dismiss sheet logic is handled by caller usually or we stay open.
+                // The sheet deliberately stays open: the new playlist appears in
+                // the list underneath, which is the confirmation that it was
+                // made. Closing here would leave the song unadded and the person
+                // wondering whether the tap did anything. Callers that want the
+                // sheet gone dismiss it themselves.
             }
         )
     }
@@ -98,40 +86,43 @@ fun AddToPlaylistSheet(
                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp)
             )
 
-            HorizontalDivider(
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-                modifier = Modifier.padding(bottom = 8.dp)
-            )
-
             LazyColumn(
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Create New Item
+                // "New playlist" is its own single-item group rather than the
+                // head of the playlist one. It is an action, not a playlist, and
+                // a segmented group means "these belong together" - putting it
+                // inside would say it is the first of the things you can add to.
                 item {
-                    ListItem(
+                    KodaListRow(
+                        index = 0,
+                        count = 1,
+                        onClick = { showCreateDialog = true },
+                        modifier = Modifier.padding(horizontal = 16.dp),
                         headlineContent = {
-                            Text(stringResource(R.string.new_playlist_label), fontWeight = FontWeight.SemiBold)
+                            Text(
+                                stringResource(R.string.new_playlist_label),
+                                fontWeight = FontWeight.SemiBold
+                            )
                         },
                         leadingContent = {
-                            Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = MaterialTheme.colorScheme.primaryContainer,
-                                modifier = Modifier.size(56.dp)
-                            ) {
-                                AccessIcon(Icons.Rounded.Add, tint = MaterialTheme.colorScheme.onPrimaryContainer)
-                            }
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { showCreateDialog = true }
-                            .padding(horizontal = 16.dp, vertical = 4.dp)
-                            .clip(RoundedCornerShape(16.dp)),
-                        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                            KodaRowThumbnail(
+                                model = null,
+                                fallbackIcon = Icons.Rounded.Add,
+                                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                iconTint = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
                     )
                 }
 
-                items(playlists) { playlist ->
-                    ListItem(
+                itemsIndexed(playlists) { index, playlist ->
+                    KodaListRow(
+                        index = index,
+                        count = playlists.size,
+                        onClick = { onPlaylistClick(playlist) },
+                        modifier = Modifier.padding(horizontal = 16.dp),
                         headlineContent = {
                             Text(
                                 playlist.name,
@@ -142,49 +133,30 @@ fun AddToPlaylistSheet(
                         },
                         supportingContent = {
                             Text(
-                                if (playlist.itemCount >= 0) pluralStringResource(R.plurals.n_songs, playlist.itemCount, playlist.itemCount)
-                                else playlist.uploaderName.ifBlank { stringResource(R.string.label_playlist) }
+                                if (playlist.itemCount >= 0) {
+                                    pluralStringResource(
+                                        R.plurals.n_songs,
+                                        playlist.itemCount,
+                                        playlist.itemCount
+                                    )
+                                } else {
+                                    playlist.uploaderName.ifBlank {
+                                        stringResource(R.string.label_playlist)
+                                    }
+                                }
                             )
                         },
                         leadingContent = {
-                            Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                modifier = Modifier.size(56.dp)
-                            ) {
-                                if (playlist.thumbnailUrl != null) {
-                                    AsyncImage(
-                                        model = playlist.thumbnailUrl,
-                                        contentDescription = null,
-                                        contentScale = ContentScale.Crop,
-                                        modifier = Modifier.fillMaxSize()
-                                    )
-                                } else {
-                                    AccessIcon(
-                                        Icons.Rounded.PlaylistPlay,
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onPlaylistClick(playlist) }
-                            .padding(horizontal = 16.dp, vertical = 4.dp)
-                            .clip(RoundedCornerShape(16.dp)),
-                        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                            KodaRowThumbnail(
+                                model = playlist.thumbnailUrl,
+                                fallbackIcon = Icons.Rounded.PlaylistPlay
+                            )
+                        }
                     )
                 }
             }
             Spacer(modifier = Modifier.height(16.dp))
         }
-    }
-}
-
-@Composable
-private fun AccessIcon(icon: androidx.compose.ui.graphics.vector.ImageVector, tint: Color) {
-    androidx.compose.foundation.layout.Box(contentAlignment = Alignment.Center) {
-        Icon(icon, null, tint = tint)
     }
 }
 
