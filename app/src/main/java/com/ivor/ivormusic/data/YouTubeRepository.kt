@@ -26,6 +26,8 @@ import org.schabi.newpipe.extractor.channel.ChannelInfoItem
 import org.schabi.newpipe.extractor.ListExtractor
 import org.schabi.newpipe.extractor.Page
 import okhttp3.OkHttpClient
+import okhttp3.ConnectionPool
+import okhttp3.Dispatcher
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 
@@ -43,7 +45,8 @@ class YouTubeRepository(private val context: Context) {
 
     companion object {
         private const val YT_MUSIC_BASE_URL = "https://music.youtube.com"
-        private var isInitialized = false
+        @Volatile private var isInitialized = false
+        private val newPipeInitLock = Any()
 
         // ServiceList eagerly constructs every extractor NewPipe supports. Koda
         // only uses YouTube, so keep the equivalent service instance directly
@@ -217,6 +220,20 @@ class YouTubeRepository(private val context: Context) {
         @Volatile private var sharedHttpCache: okhttp3.Cache? = null
         private val httpCacheLock = Any()
 
+        // Repository instances retain their own cookie jars and Local Only
+        // interceptors, but sockets and dispatcher threads are transport
+        // resources rather than account state. Sharing both avoids building a
+        // fresh connection pool and executor for every ViewModel.
+        private val sharedHttpDispatcher = Dispatcher().apply {
+            maxRequests = 32
+            maxRequestsPerHost = 8
+        }
+        private val sharedConnectionPool = ConnectionPool(
+            maxIdleConnections = 8,
+            keepAliveDuration = 5,
+            timeUnit = TimeUnit.MINUTES,
+        )
+
         private fun httpCache(context: Context): okhttp3.Cache? {
             sharedHttpCache?.let { return it }
             return synchronized(httpCacheLock) {
@@ -283,6 +300,7 @@ class YouTubeRepository(private val context: Context) {
         fun invalidateSessionScopedCaches(context: Context, commitNow: Boolean = false) {
             cachedVisitorData = null
             visitorDataFetchedAt = 0L
+            VideoStreamResolutionCache.clear()
             val editor = context.applicationContext
                 .getSharedPreferences("ivor_visitor_data", Context.MODE_PRIVATE)
                 .edit().remove("visitor_data").remove("visitor_data_at")
@@ -294,6 +312,8 @@ class YouTubeRepository(private val context: Context) {
     // needs no restart. newBuilder() copies interceptors, so this also guards
     // streamResolveClient and the NewPipe downloader (same client instance).
     private val okHttpClient = OkHttpClient.Builder()
+        .dispatcher(sharedHttpDispatcher)
+        .connectionPool(sharedConnectionPool)
         .addInterceptor { chain ->
             if (ThemePreferences.isLocalOnly(context)) {
                 throw java.io.IOException("Local only mode is on: network disabled")
@@ -337,12 +357,15 @@ class YouTubeRepository(private val context: Context) {
     }
 
     private fun initializeNewPipe() {
-        if (!isInitialized) {
-            try {
-                NewPipe.init(NewPipeDownloaderImpl(okHttpClient, sessionManager))
-                isInitialized = true
-            } catch (e: Exception) {
-                // Already initialized
+        if (isInitialized) return
+        synchronized(newPipeInitLock) {
+            if (!isInitialized) {
+                try {
+                    NewPipe.init(NewPipeDownloaderImpl(okHttpClient, sessionManager))
+                } catch (_: Exception) {
+                    // NewPipe may already have been initialized by another
+                    // process entry point. Its singleton is still usable.
+                }
                 isInitialized = true
             }
         }
@@ -999,6 +1022,10 @@ class YouTubeRepository(private val context: Context) {
      * Safe to call speculatively; a no-op when there is no token to replace.
      */
     suspend fun refreshVisitorDataAfterPlaybackFailure() {
+        // Every cached ladder contains signed URLs minted before the failure.
+        // They must not win the retry after identity or network conditions
+        // change, even when there is no persisted visitor token to replace.
+        VideoStreamResolutionCache.clear()
         val flagged = cachedVisitorData ?: loadPersistedVisitorData() ?: return
         try {
             remintVisitorData(flagged)
@@ -4740,7 +4767,17 @@ class YouTubeRepository(private val context: Context) {
      * extraction as one value. Callers that render a scrub preview must use
      * this API instead of trying to coordinate two independently mutable reads.
      */
-    suspend fun getVideoStreamResult(videoId: String): VideoStreamResult = withContext(Dispatchers.IO) {
+    suspend fun getVideoStreamResult(videoId: String): VideoStreamResult =
+        VideoStreamResolutionCache.getOrResolve(videoId) {
+            resolveVideoStreamResult(videoId)
+        }
+
+    /** Forget a failed ladder before retrying the same video. */
+    fun invalidateVideoStreamResult(videoId: String) {
+        VideoStreamResolutionCache.invalidate(videoId)
+    }
+
+    private suspend fun resolveVideoStreamResult(videoId: String): VideoStreamResult = withContext(Dispatchers.IO) {
         // NewPipe 0.26.3+ deliberately resolves VOD streams through Android's
         // reel endpoint and a visionOS fallback, both of which avoid the WEB
         // client's SABR-only response. Keep that maintained client selection in

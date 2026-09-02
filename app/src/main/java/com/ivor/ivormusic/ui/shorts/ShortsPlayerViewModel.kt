@@ -607,6 +607,7 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
                 } else {
                     synchronized(qualitiesCache) { qualitiesCache.remove(item.videoId) }
                 }
+                youtubeRepository.invalidateVideoStreamResult(item.videoId)
                 val qualities = kotlinx.coroutines.withTimeout(15_000L) {
                     youtubeRepository.getVideoStreamQualities(item.videoId)
                 }

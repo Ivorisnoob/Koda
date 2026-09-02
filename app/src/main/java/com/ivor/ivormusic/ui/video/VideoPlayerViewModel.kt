@@ -1658,6 +1658,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         seekToMs: Long? = null
     ): Boolean {
         if (_exoPlayer == null && _castPlayer == null) return false
+        youtubeRepository.invalidateVideoStreamResult(video.videoId)
         val qualities = try {
             youtubeRepository.getVideoStreamQualities(video.videoId)
         } catch (e: kotlinx.coroutines.CancellationException) {

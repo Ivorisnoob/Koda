@@ -74,8 +74,16 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import java.util.LinkedHashMap
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
+
+private class BoundedLruMap<K, V>(
+    private val maxEntries: Int,
+) : LinkedHashMap<K, V>(maxEntries, 0.75f, true) {
+    override fun removeEldestEntry(eldest: MutableMap.MutableEntry<K, V>): Boolean =
+        size > maxEntries
+}
 
 @UnstableApi
 class MusicService : MediaLibraryService() {
@@ -132,7 +140,9 @@ class MusicService : MediaLibraryService() {
     // `expire` param) and on network/IP changes, so each entry carries an
     // expiry and is dropped instead of being replayed as a guaranteed 403.
     private class CachedUri(val uri: String, val expiresAtMs: Long)
-    private val uriCache = ConcurrentHashMap<String, CachedUri>()
+    private val uriCache = java.util.Collections.synchronizedMap(
+        BoundedLruMap<String, CachedUri>(MAX_RESOLVED_URI_ENTRIES)
+    )
 
     // Per-song playback error retries. Kept separate from uriCache and reset
     // on successful playback so a song can't permanently exhaust its budget
@@ -145,8 +155,11 @@ class MusicService : MediaLibraryService() {
 
     // Songs whose stream head has been (or is being) written into the disk
     // cache this session, so each prefetch round doesn't re-warm them.
-    private val warmedIds =
-        java.util.Collections.newSetFromMap(ConcurrentHashMap<String, Boolean>())
+    private val warmedIds = java.util.Collections.newSetFromMap(
+        java.util.Collections.synchronizedMap(
+            BoundedLruMap<String, Boolean>(MAX_WARMED_IDS)
+        )
+    )
     private val profilingIds =
         java.util.Collections.newSetFromMap(ConcurrentHashMap<String, Boolean>())
     private val prefetchingIds =
@@ -215,6 +228,8 @@ class MusicService : MediaLibraryService() {
     companion object {
         private const val TAG = "MusicService"
         private const val PREFETCH_AHEAD_COUNT = 3
+        private const val MAX_RESOLVED_URI_ENTRIES = 128
+        private const val MAX_WARMED_IDS = 256
         // Covers the maintained NewPipe extraction and the direct InnerTube
         // fallback; their individual requests are also bounded by OkHttp.
         private const val RESOLVE_TIMEOUT_MS = 20_000L
@@ -2892,7 +2907,11 @@ class MusicService : MediaLibraryService() {
                              liveUpdateArtworkRequested.add(artUrl)
                          ) {
                              serviceScope.launch {
-                                 NotificationArtworkLoader.load(this@MusicService, artUrl)
+                                 try {
+                                     NotificationArtworkLoader.load(this@MusicService, artUrl)
+                                 } finally {
+                                     liveUpdateArtworkRequested.remove(artUrl)
+                                 }
                              }
                          }
                          musicProgressLiveUpdate?.updateProgress(
