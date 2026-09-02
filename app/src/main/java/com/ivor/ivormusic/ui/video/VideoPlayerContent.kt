@@ -1450,7 +1450,7 @@ private fun PlayerSettingsSections(
     showVerticalLive: Boolean,
     onVerticalLiveClick: () -> Unit
 ) {
-    val optionColors = ToggleButtonDefaults.toggleButtonColors(
+    val optionColors = ToggleButtonDefaults.colors(
         containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
         contentColor = MaterialTheme.colorScheme.onSurfaceVariant
     )

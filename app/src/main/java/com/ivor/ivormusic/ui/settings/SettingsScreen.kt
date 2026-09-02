@@ -1369,7 +1369,7 @@ internal fun ExpressiveThemeSelectGroup(
                     onCheckedChange = { onModeSelected(mode) },
                     modifier = Modifier.weight(1f),
                     shapes = shapes,
-                    colors = ToggleButtonDefaults.toggleButtonColors(
+                    colors = ToggleButtonDefaults.colors(
                         containerColor = accentColor.copy(alpha = 0.1f),
                         checkedContainerColor = accentColor,
                         contentColor = textColor,
@@ -1550,7 +1550,7 @@ internal fun ExpressiveVideoModeToggleItem(
                             ButtonGroupDefaults.connectedTrailingButtonShapes()
                         else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
                     },
-                    colors = ToggleButtonDefaults.toggleButtonColors(
+                    colors = ToggleButtonDefaults.colors(
                         containerColor = accentColor.copy(alpha = 0.1f),
                         checkedContainerColor = accentColor,
                         contentColor = textColor,
