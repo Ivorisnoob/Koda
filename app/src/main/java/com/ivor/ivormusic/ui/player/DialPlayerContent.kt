@@ -185,10 +185,6 @@ fun DialPlayerSheetContent(
                             )
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            MusicCastIconButton(
-                                containerColor = chipColor,
-                                contentColor = ink
-                            )
                             EditorialCircleButton(
                                 onClick = sleepTimer.open,
                                 accent = if (sleepTimer.active) accent else chipColor,

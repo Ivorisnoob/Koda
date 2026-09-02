@@ -105,17 +105,6 @@
         
         <meta-data android:name="com.google.android.gms.car.application" android:resource="@xml/automotive_app_desc"/>
 
-        <!--
-            Cast configuration. Play services reads the provider class when Koda
-            lazily starts the Cast framework (the Cast sheet opens, or an active
-            receiver session is being restored) to learn which receiver app to
-            use; without this meta-data route discovery finds no cast routes.
-        -->
-        <meta-data
-            android:name="com.google.android.gms.cast.framework.OPTIONS_PROVIDER_CLASS_NAME"
-            android:value="com.ivor.ivormusic.service.CastOptionsProvider" />
-
-
         <service
             android:name=".service.MusicService"
             android:foregroundServiceType="mediaPlayback"

@@ -21,9 +21,6 @@ import com.ivor.ivormusic.data.LyricsResult
 import com.ivor.ivormusic.service.MusicService
 import com.ivor.ivormusic.service.EXTRA_QUEUE_ITEM_ID
 import com.ivor.ivormusic.service.toPlaybackMediaItem
-import com.ivor.ivormusic.ui.video.CastPlaybackKind
-import com.ivor.ivormusic.ui.video.CastRoute
-import com.ivor.ivormusic.ui.video.VideoCastManager
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -196,20 +193,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     val crossfadeEnabled = themePreferences.crossfadeEnabled
     val crossfadeDurationMs = themePreferences.crossfadeDurationMs
 
-    // Discovery lives with the screen; playback hand-off lives in MusicService.
-    // Both managers join the same framework session and are separated by the
-    // process-wide MUSIC/VIDEO ownership marker in VideoCastManager.
-    private val castManager = VideoCastManager(context, CastPlaybackKind.MUSIC)
-    val castAvailable: Boolean get() = castManager.available
-    val castReceivers: StateFlow<List<CastRoute>> = castManager.receivers
-    val castDeviceName: StateFlow<String?> = castManager.deviceName
-    val isCastConnecting: StateFlow<Boolean> = castManager.isConnecting
-    val isCasting: StateFlow<Boolean> = castManager.isSessionActive
-    private val _castUnavailableMessage = MutableStateFlow<String?>(null)
-    val castUnavailableMessage: StateFlow<String?> = _castUnavailableMessage.asStateFlow()
-
     init {
-        castManager.beginObservation()
         initializeController()
         startProgressUpdates()
         startBufferingWatchdog()
@@ -702,23 +686,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
 
         val requestedIndex = startIndex.coerceIn(queue.indices)
         val requestedItem = queue[requestedIndex]
-        if (isCasting.value &&
-            requestedItem.song.source == com.ivor.ivormusic.data.SongSource.LOCAL
-        ) {
-            val message = "Disconnect Cast to play files stored on this phone"
-            _castUnavailableMessage.value = message
-            android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show()
-            return
-        }
-
-        // The receiver cannot fetch content:// or file://. Remove local entries
-        // from both the controller timeline and the UI queue so their indices
-        // cannot drift after MusicService filters the same items.
-        val playbackQueue = if (isCasting.value) {
-            queue.filter { it.song.source != com.ivor.ivormusic.data.SongSource.LOCAL }
-        } else {
-            queue
-        }
+        val playbackQueue = queue
         val safeStartIndex = playbackQueue.indexOfFirst { it.id == requestedItem.id }
             .coerceAtLeast(0)
 
@@ -749,7 +717,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         pendingPlayRequest = null
         player.let {
             // 1. Set the target song first (triggers URL resolution in MusicService)
-            val startItem = createMediaItem(currentItem, castResolveNow = true)
+            val startItem = createMediaItem(currentItem)
             it.setMediaItem(startItem)
             
             // 2. Add the rest of the queue BEFORE prepare (so notification sees full queue)
@@ -982,18 +950,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
 
     fun addToQueue(song: Song) = addToQueue(listOf(song))
 
-    private fun songsForCurrentOutput(songs: List<Song>): List<Song> {
-        if (!isCasting.value) return songs
-        val accepted = songs.filter {
-            it.source != com.ivor.ivormusic.data.SongSource.LOCAL
-        }
-        if (accepted.size != songs.size) {
-            val message = "Files stored on this phone were left out of the Cast queue"
-            _castUnavailableMessage.value = message
-            android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show()
-        }
-        return accepted
-    }
+    private fun songsForCurrentOutput(songs: List<Song>): List<Song> = songs
 
     /** Where the playing song sits in [_currentQueue], or 0 if it is not in it. */
     private fun currentIndexInQueue(): Int {
@@ -1114,10 +1071,8 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         savePlaybackSession()
     }
 
-    private fun createMediaItem(
-        queueItem: MusicQueueItem,
-        castResolveNow: Boolean = false
-    ): MediaItem = queueItem.toPlaybackMediaItem(castResolveNow)
+    private fun createMediaItem(queueItem: MusicQueueItem): MediaItem =
+        queueItem.toPlaybackMediaItem()
 
     fun togglePlayPause() {
         controller?.let {
@@ -1485,42 +1440,10 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     }
 
     override fun onCleared() {
-        castManager.stopDiscovery()
-        castManager.endObservation()
         super.onCleared()
         controllerFuture?.let(MediaController::releaseFuture)
     }
 
-    fun startCastDiscovery() = castManager.startDiscovery()
-
-    fun stopCastDiscovery() = castManager.stopDiscovery()
-
-    fun startCast(routeId: String) {
-        val song = _currentSong.value ?: return
-        if (song.source == com.ivor.ivormusic.data.SongSource.LOCAL) {
-            _castUnavailableMessage.value = "Local files can only play on this phone"
-            return
-        }
-        _castUnavailableMessage.value = null
-        // The service needs an up-to-date durable queue if the activity is
-        // recreated while the TV owns the MediaSession timeline.
-        savePlaybackSession()
-        viewModelScope.launch {
-            if (castManager.connect(routeId)) {
-                val castableQueue = _currentQueue.value.filter {
-                    it.song.source != com.ivor.ivormusic.data.SongSource.LOCAL
-                }
-                if (castableQueue.size != _currentQueue.value.size) {
-                    // MusicService makes the same receiver-side filter. Keep
-                    // the displayed indices in lockstep with its CastPlayer
-                    // timeline once the connection has actually succeeded.
-                    _currentQueue.value = castableQueue
-                }
-            }
-        }
-    }
-
-    fun stopCasting() = castManager.endSession(stopOnReceiver = true)
     
     // --- Settings Actions ---
     

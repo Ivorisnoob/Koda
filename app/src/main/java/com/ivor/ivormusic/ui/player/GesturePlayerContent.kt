@@ -365,11 +365,6 @@ private fun GestureNowPlayingView(
                 }
                 
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    MusicCastIconButton(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        contentColor = MaterialTheme.colorScheme.onSurface,
-                        size = 48.dp
-                    )
                     FilledIconButton(
                         onClick = onShowQueue,
                         shape = CircleShape,

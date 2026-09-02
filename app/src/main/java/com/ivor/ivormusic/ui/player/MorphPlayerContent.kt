@@ -221,10 +221,6 @@ fun MorphPlayerSheetContent(
                             )
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            MusicCastIconButton(
-                                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                contentColor = MaterialTheme.colorScheme.onSurface
-                            )
                             MorphUtilityButton(
                                 onClick = sleepTimer.open,
                                 active = sleepTimer.active

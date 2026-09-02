@@ -13,7 +13,6 @@ import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.cast.CastPlayer
 import androidx.media3.datasource.HttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlaybackException
@@ -118,53 +117,6 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     private var _exoPlayer: ExoPlayer? = null
     val exoPlayer: ExoPlayer? get() = _exoPlayer
 
-    // ---------------- Chromecast ----------------
-
-    /**
-     * Cast session plumbing: route discovery, connect/disconnect and the two
-     * receiver-side events CastPlayer cannot express. See [VideoCastManager].
-     */
-    private val castManager = VideoCastManager(context)
-
-    /** Whether this device can cast at all (Play services present). */
-    val castAvailable: Boolean get() = castManager.available
-
-    /** Receivers currently visible on the network, for the device sheet. */
-    val castReceivers: StateFlow<List<CastRoute>> = castManager.receivers
-
-    /** Friendly name of the connected receiver, null when not casting. */
-    val castDeviceName: StateFlow<String?> = castManager.deviceName
-
-    /** True while a connect attempt to a receiver is in flight. */
-    val isCastConnecting: StateFlow<Boolean> = castManager.isConnecting
-
-    /**
-     * True while the video is on a Chromecast. The master switch for the
-     * active-player split below: every transport call routes by it, so nothing
-     * in the UI needs to know which pipeline is actually producing the media.
-     */
-    private val _isCasting = MutableStateFlow(false)
-    val isCasting: StateFlow<Boolean> = _isCasting.asStateFlow()
-
-    /**
-     * The receiver-side player. Non-null exactly while [_isCasting] is true;
-     * released - never left dangling - on disconnect, loss or close.
-     */
-    private var _castPlayer: CastPlayer? = null
-
-    /**
-     * The player transport commands go to.
-     *
-     * While casting this is the [CastPlayer]: play/pause, seek, speed, repeat
-     * and even end-of-queue autoplay are Player operations, and Media3's cast
-     * facade implements them against the receiver. Everything that is
-     * ExoPlayer-specific (media sources with merged audio, track-selection
-     * caps, surface rendering) stays guarded behind [_castPlayer] checks
-     * rather than being abstracted away, because pretending both players are
-     * identical is how silent no-ops happen.
-     */
-    private fun activePlayer(): Player? = _castPlayer ?: _exoPlayer
-
     // State
     private val _currentVideo = MutableStateFlow<VideoItem?>(null)
     val currentVideo: StateFlow<VideoItem?> = _currentVideo
@@ -259,16 +211,11 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     private val _availableQualities = MutableStateFlow<List<VideoQuality>>(emptyList())
     val availableQualities: StateFlow<List<VideoQuality>> = _availableQualities
 
-    /**
-     * What the quality menu may offer right now. While casting a live stream,
-     * only Auto: the receiver runs its own ABR inside the manifest and has no
-     * track-selector cap to pin a rung with, so every other row would be a
-     * control that does nothing - worse than no control.
-     */
+    /** What the quality menu may offer right now: one entry per visible label. */
     val selectableQualities: StateFlow<List<VideoQuality>> =
-        combine(_availableQualities, _isCasting) { qualities, casting ->
-            selectableVideoQualities(qualities, casting)
-        }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+        _availableQualities
+            .map(::localVideoQualityOptions)
+            .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     private val _currentQuality = MutableStateFlow<VideoQuality?>(null)
     val currentQuality: StateFlow<VideoQuality?> = _currentQuality
@@ -697,11 +644,8 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             themePreferences.setVideoRepeatEnabled(false)
         }
 
-        // Session listeners and route discovery are lightweight and must exist
-        // before a framework reconnect arrives. The codec/player stack itself
-        // is built lazily by ensureLocalPlayer only when a video is restored or
-        // explicitly opened.
-        attachCastObservation()
+        // The codec/player stack is built lazily by ensureLocalPlayer, only
+        // when a video is restored or explicitly opened.
         restoreVideoSession()
     }
 
@@ -776,11 +720,8 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     }
 
     /**
-     * The playback listener both players carry. The local ExoPlayer gets it at
-     * build time; the CastPlayer when a session starts. Keeping one
-     * implementation means cast playback drives the same buffering spinner,
-     * progress poll, retry budgets and end-of-video autoplay the local path
-     * does - with two differences below.
+     * The playback listener the local ExoPlayer carries: buffering spinner,
+     * progress poll, retry budgets and end-of-video autoplay.
      */
     private fun attachPlaybackListener(player: Player) {
         player.addListener(object : Player.Listener {
@@ -811,12 +752,6 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                     queueErrorSkipCount = 0
                 }
                 if (playbackState == Player.STATE_ENDED) {
-                    // CastPlayer maps a finished broadcast to STATE_IDLE, not
-                    // STATE_ENDED - the receiver's finish arrives through
-                    // VideoCastManager.onRemoteFinished instead. The guard
-                    // keeps the two paths from ever double-advancing the queue.
-                    if (_isCasting.value) return
-
                     // Repeat-one normally prevents STATE_ENDED entirely.
                     // The guard keeps a transient player/state mismatch
                     // from advancing away from a video meant to loop.
@@ -826,11 +761,6 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             }
 
             override fun onPlayerError(error: PlaybackException) {
-                // CastPlayer never reports errors at all (its getPlayerError is
-                // hardcoded null); receiver-side failures arrive through
-                // recoverFromCastFailure(). Everything below is the local
-                // player's story.
-
                 // A renderer/decoder failure is not a broken stream: the
                 // codec lost its surface or was reclaimed. Re-prepare in
                 // place (position is kept) instead of dead-ending the
@@ -916,12 +846,9 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     }
 
     /**
-     * One decision for "the video finished", shared by the local player's
-     * STATE_ENDED and the receiver's IDLE_REASON_FINISHED: autoplay is the
-     * master gate, a user-chosen playlist beats recommendations, and PiP may
-     * continue that playlist but never wanders into related videos. Routing
-     * the cast case through the same function is what makes casting a playlist
-     * advance exactly like watching it locally.
+     * One decision for "the video finished": autoplay is the master gate, a
+     * user-chosen playlist beats recommendations, and PiP may continue that
+     * playlist but never wanders into related videos.
      */
     private suspend fun handlePlaybackEnded() {
         val activeQueue = _queue.value
@@ -938,12 +865,12 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                 // STATE_ENDED is not always exposed as paused by media
                 // controls. Clear playWhenReady so the UI, PiP and
                 // notification all agree it stopped.
-                activePlayer()?.pause()
+                _exoPlayer?.pause()
                 CacheManager.setVideoPlaybackActive(VIDEO_CACHE_OWNER, false)
             }
 
             VideoEndAction.NEXT_IN_QUEUE -> {
-                if (activeQueue != null && activePlayer() != null) {
+                if (activeQueue != null && _exoPlayer != null) {
                     playQueueIndex(activeQueue.index + 1)
                 }
             }
@@ -951,254 +878,11 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             VideoEndAction.NEXT_RELATED -> {
                 // Use the filtered list: autoplaying something the viewer
                 // marked not interested is worse than stopping.
-                if (nextRelated != null && activePlayer() != null) {
+                if (nextRelated != null && _exoPlayer != null) {
                     playVideo(nextRelated)
                 }
             }
         }
-    }
-
-    // ---------------- Chromecast: session plumbing ----------------
-
-    private fun attachCastObservation() {
-        castManager.beginObservation()
-        castManager.onRemoteFinished = {
-            viewModelScope.launch { handlePlaybackEnded() }
-        }
-        castManager.onRemoteFailed = { recoverFromCastFailure() }
-        castManager.onSessionLost = { position -> resumeAfterCastLoss(position) }
-        viewModelScope.launch {
-            castManager.isSessionActive.collect { active ->
-                // A session that appeared without this ViewModel starting it -
-                // a framework reconnect after process death, or a receiver
-                // this phone was already joined to - is adopted rather than
-                // torn down: stopping someone's TV because they reopened the
-                // app is not what reopening means.
-                if (active && _castPlayer == null) adoptExistingCastSession()
-            }
-        }
-    }
-
-    /** Build the receiver-side player with Koda's load converter attached. */
-    private fun newCastPlayer(): CastPlayer? {
-        val player = castManager.createPlayer() ?: return null
-        attachPlaybackListener(player)
-        player.repeatMode =
-            if (_isLooping.value) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
-        return player
-    }
-
-    /**
-     * The user picked a receiver. Connect, then hand whatever is playing over
-     * to it at the current position - the whole existing load pipeline reruns
-     * with [_castPlayer] set, so stream resolution, quality choice, captions
-     * and the notification all behave exactly as they do locally.
-     */
-    fun startCast(routeId: String) {
-        if (!castManager.available) return
-        viewModelScope.launch {
-            val ok = castManager.connect(routeId)
-            if (!ok || _castPlayer != null) return@launch
-
-            val video = _currentVideo.value
-            val player = newCastPlayer()
-            if (player == null) {
-                castManager.endSession(stopOnReceiver = true)
-                return@launch
-            }
-
-            val localPos = deferredRestorePositionMs
-                ?: _exoPlayer?.currentPosition?.coerceAtLeast(0L)
-                ?: 0L
-            val wasPlaying = _exoPlayer?.isPlaying == true
-            // Pause the phone first: two devices playing the same audio for
-            // even a second is worse than a beat of silence while the TV spins up.
-            _exoPlayer?.pause()
-            _castPlayer = player
-            _isCasting.value = true
-
-            if (video == null) {
-                // Connected with nothing playing. Controls will route to the
-                // receiver the moment the user picks something; there is
-                // nothing to load now.
-                return@launch
-            }
-            if (_isLocalPlayback.value) {
-                // Offline files live on this device and cannot be fetched by a
-                // receiver. Casting wins: the download stays on the shelf.
-                leaveLocalPlayback()
-            }
-            startVideo(
-                video,
-                forceRestart = true,
-                resumePositionMs = localPos.takeIf { it > 0 },
-                resumePaused = !wasPlaying,
-                expand = _isExpanded.value
-            )
-        }
-    }
-
-    /** Route discovery for the device sheet. Cheap to start, costly to leave on. */
-    fun startCastDiscovery() = castManager.startDiscovery()
-
-    fun stopCastDiscovery() = castManager.stopDiscovery()
-
-    /** The user tapped Disconnect. The TV stops; the phone picks up where it was. */
-    fun stopCasting() {        val position = _castPlayer?.currentPosition?.coerceAtLeast(0L)
-            ?: castManager.remotePositionMs()
-        val wasPlaying = _castPlayer?.isPlaying == true
-        castManager.endSession(stopOnReceiver = true)
-        releaseCastPlayer()
-        _isCasting.value = false
-        val video = _currentVideo.value ?: return
-
-        // Fresh URLs for the local resume. Whatever the receiver had may be
-        // client-bound or expired by the time the phone needs it again, and
-        // replaying them is exactly what reresolveAndReload exists to avoid.
-        _isLoading.value = true
-        sourceRecoveryJob?.cancel()
-        sourceRecoveryJob = viewModelScope.launch {
-            if (!reresolveAndReload(video, playWhenReady = wasPlaying, seekToMs = position)) {
-                _playbackError.value = Exception("Unable to resume playback")
-                _isLoading.value = false
-            }
-        }
-    }
-
-    /**
-     * The session died without this app asking (receiver power-off, network
-     * loss, another sender taking over). Resume locally at the last position
-     * the receiver reported, playing if it was playing.
-     */
-    private fun resumeAfterCastLoss(positionMs: Long) {
-        releaseCastPlayer()
-        _isCasting.value = false
-        val video = _currentVideo.value ?: return
-
-        _isLoading.value = true
-        sourceRecoveryJob?.cancel()
-        sourceRecoveryJob = viewModelScope.launch {
-            val ok = reresolveAndReload(
-                video,
-                playWhenReady = true,
-                seekToMs = positionMs.takeIf { it > 0 }
-            )
-            if (!ok && _currentVideo.value?.videoId == video.videoId) {
-                _playbackError.value = Exception("Unable to resume playback")
-                _isLoading.value = false
-            }
-        }
-    }
-
-    /**
-     * A load or playback failure on the receiver. Same escalation ladder as
-     * the local source-error path: one bounded re-resolve-and-reload, then
-     * queue skipping, then the error overlay.
-     */
-    private fun recoverFromCastFailure() {
-        if (!_isCasting.value) return
-        if (sourceRetryCount < MAX_SOURCE_RETRIES) {
-            sourceRetryCount++
-            val video = _currentVideo.value ?: return
-            KLog.w(
-                "VideoPlayerVM",
-                "Cast playback failed (attempt $sourceRetryCount/$MAX_SOURCE_RETRIES); re-resolving"
-            )
-            _isLoading.value = true
-            sourceRecoveryJob?.cancel()
-            sourceRecoveryJob = viewModelScope.launch {
-                if (!reresolveAndReload(video)) {
-                    _playbackError.value = Exception("Unable to cast this video")
-                    _isLoading.value = false
-                }
-            }
-            return
-        }
-
-        val activeQueue = _queue.value
-        if (activeQueue != null && activeQueue.hasNext &&
-            queueErrorSkipCount < MAX_QUEUE_ERROR_SKIPS
-        ) {
-            queueErrorSkipCount++
-            viewModelScope.launch { playQueueIndex(activeQueue.index + 1) }
-            return
-        }
-
-        _playbackError.value = Exception("Unable to play this video on the cast device")
-        _isBuffering.value = false
-    }
-
-    /**
-     * Join a cast session that already exists when this ViewModel is built -
-     * the framework reconnects automatically after process death, so "reopen
-     * the app" mid-cast has to land back on the TV, not on a phone that
-     * forgot it was casting.
-     */
-    private fun adoptExistingCastSession() {
-        val player = newCastPlayer() ?: return
-        _castPlayer = player
-        _isCasting.value = true
-
-        val status = try {
-            castManager.currentMediaStatus()
-        } catch (_: Exception) {
-            null
-        }
-        val remoteInfo = status?.mediaInfo
-        if (remoteInfo != null) {
-            // The receiver is already showing something. If it is not the
-            // video this process knows about, the receiver wins: it is the
-            // thing visibly playing in the room. Rebuild just enough of the
-            // item for chrome, history gating and transport to make sense;
-            // the queue does not survive the trip.
-            val knownId = _currentVideo.value?.videoId
-            if (remoteInfo.contentId != knownId) {
-                val md = remoteInfo.metadata
-                _currentVideo.value = VideoItem(
-                    videoId = remoteInfo.contentId ?: "",
-                    title = md?.getString(com.google.android.gms.cast.MediaMetadata.KEY_TITLE)
-                        ?: "",
-                    channelName = md?.getString(com.google.android.gms.cast.MediaMetadata.KEY_ARTIST)
-                        ?: "",
-                    thumbnailUrl = md?.images?.firstOrNull()?.url?.toString(),
-                    duration = ((remoteInfo.streamDuration.takeIf { it > 0 } ?: 0L) / 1000L),
-                    viewCount = ""
-                )
-                _queue.value = null
-                _isExpanded.value = false
-            }
-        } else if (_currentVideo.value != null && !_isLocalPlayback.value) {
-            // Joined to an idle receiver while a video sits open here: move
-            // that video onto the TV where the session says the user is
-            // watching, paused or playing as it was on the phone.
-            val video = _currentVideo.value!!
-            val pos = deferredRestorePositionMs
-                ?: _exoPlayer?.currentPosition?.coerceAtLeast(0L)
-                ?: 0L
-            val wasPlaying = _exoPlayer?.isPlaying == true
-            _exoPlayer?.pause()
-            startVideo(
-                video,
-                forceRestart = true,
-                resumePositionMs = pos.takeIf { it > 0 },
-                resumePaused = !wasPlaying,
-                expand = _isExpanded.value
-            )
-        }
-        // Republish to the system's media controls so lock-screen buttons
-        // drive the receiver from a fresh process too.
-        com.ivor.ivormusic.service.VideoPlaybackService.start(context, player)
-    }
-
-    private fun releaseCastPlayer() {
-        _castPlayer?.let { player ->
-            try {
-                player.release()
-            } catch (e: Exception) {
-                KLog.w("VideoPlayerVM", "Releasing CastPlayer failed", e)
-            }
-        }
-        _castPlayer = null
     }
 
     /**
@@ -1296,11 +980,8 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         // progress poll from briefly persisting a broadcast as a resumable
         // VOD. startVideo() clears the prior snapshot once per broadcast.
         if (_isLive.value || video.isLive) return
-        // Read off whichever player is producing the media: while casting the
-        // position lives on the receiver, and a snapshot of the phone's stale
-        // local position would resurrect the wrong moment on restore.
         val position = deferredRestorePositionMs
-            ?: activePlayer()?.currentPosition?.coerceAtLeast(0L)
+            ?: _exoPlayer?.currentPosition?.coerceAtLeast(0L)
             ?: return
         val activeQueue = _queue.value
 
@@ -1365,11 +1046,6 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         // whether or not the track was already suspended, so it belongs above
         // that guard rather than inside it.
         saveVideoPlaybackSession()
-        // Nothing is decoding locally while casting - the receiver owns the
-        // media, the phone has no surface to tear down, and suspending its
-        // (idle) video track would be bookkeeping for nobody. Playback itself
-        // continues server-side regardless of this process.
-        if (_isCasting.value) return
         if (isVideoSuspended || _currentVideo.value == null) return
         isVideoSuspended = true
         player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
@@ -1398,11 +1074,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         progressJob?.cancel()
         progressJob = viewModelScope.launch {
             while (isActive) {
-                // The poll reads whichever player is producing the media. For
-                // the CastPlayer this is the receiver's reported position,
-                // refreshed over its own progress channel - the seek bar and
-                // chapter chip keep working unchanged on a cast.
-                activePlayer()?.let { player ->
+                _exoPlayer?.let { player ->
                     // A non-positive duration means "not known yet" (and is the
                     // normal case for a live stream), so leave the last good
                     // values alone rather than dividing by it.
@@ -1545,7 +1217,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     /** The Manual-category button in the chrome. */
     fun skipCurrentSegment() {
         val segment = _manualSegment.value ?: return
-        val player = activePlayer() ?: return
+        val player = _exoPlayer ?: return
         performSkip(player, segment, automatic = false)
     }
 
@@ -1561,7 +1233,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         skipNoticeJob?.cancel()
         _skipNotice.value = null
         // Exact: an undo returns to the moment the skip took them from.
-        activePlayer()?.let { seekPlayerTo(it, notice.returnToMs, precise = true) }
+        _exoPlayer?.let { seekPlayerTo(it, notice.returnToMs, precise = true) }
         _positionMs.value = notice.returnToMs
     }
 
@@ -1640,13 +1312,9 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      * Re-resolve [video]'s stream URLs and rebuild the media source, keeping
      * the quality the user was watching when it is still on offer.
      *
-     * @param playWhenReady whether the rebuilt source should play. Recovery
-     * from an error wants playback to continue; the post-cast resume honours
-     * what the receiver was doing at hand-off instead of assuming.
+     * @param playWhenReady whether the rebuilt source should play.
      * @param seekToMs explicit target position. Null means "wherever the
-     * active player is now" - which is only meaningful while that player still
-     * exists, so the cast teardown paths pass a captured value rather than
-     * trusting a released CastPlayer's last word.
+     * player is now".
      *
      * Returns false when resolution yielded nothing usable, so the caller can
      * surface an error; true also covers "the user moved on mid-flight", where
@@ -1657,7 +1325,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         playWhenReady: Boolean = true,
         seekToMs: Long? = null
     ): Boolean {
-        if (_exoPlayer == null && _castPlayer == null) return false
+        if (_exoPlayer == null) return false
         youtubeRepository.invalidateVideoStreamResult(video.videoId)
         val qualities = try {
             youtubeRepository.getVideoStreamQualities(video.videoId)
@@ -1678,15 +1346,11 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
         _availableQualities.value = qualities
         val previousLabel = _currentQuality.value?.resolution
-        val chosen = if (_castPlayer != null) {
-            pickDefaultCastReceiverQuality(qualities, previousLabel) ?: return false
-        } else {
-            localVideoQualityOptions(qualities)
-                .firstOrNull { it.resolution == previousLabel }
-                ?: pickDefaultQuality(qualities)
-        }
+        val chosen = localVideoQualityOptions(qualities)
+            .firstOrNull { it.resolution == previousLabel }
+            ?: pickDefaultQuality(qualities)
 
-        val player = activePlayer() ?: return false
+        val player = _exoPlayer ?: return false
         val position = seekToMs ?: player.currentPosition
 
         // Remove any existing quality change listener to prevent leaks
@@ -1780,20 +1444,19 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
     private fun setLooping(enabled: Boolean) {
         _isLooping.value = enabled
-        activePlayer()?.repeatMode = if (enabled) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
+        _exoPlayer?.repeatMode = if (enabled) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
         themePreferences.setVideoRepeatEnabled(enabled)
     }
 
     /** Set the playback speed for the current video. Resets to 1x on video change. */
     fun setPlaybackSpeed(speed: Float) {
         _playbackSpeed.value = speed
-        // CastPlayer forwards this as a playback-rate change on the receiver.
-        activePlayer()?.setPlaybackSpeed(speed)
+        _exoPlayer?.setPlaybackSpeed(speed)
     }
 
     /** Jump to a chapter's start position. */
     fun seekToChapter(chapter: com.ivor.ivormusic.data.VideoChapter) {
-        activePlayer()?.let { seekPlayerTo(it, chapter.startMs, precise = true) }
+        _exoPlayer?.let { seekPlayerTo(it, chapter.startMs, precise = true) }
     }
 
     /**
@@ -1971,13 +1634,10 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     }
 
     /**
-     * @param resumePositionMs set by [restoreVideoSession] and the cast
-     * hand-off: seek here once the stream is ready instead of starting from
-     * zero.
+     * @param resumePositionMs set by [restoreVideoSession]: seek here once
+     * the stream is ready instead of starting from zero.
      * @param resumePaused whether a [resumePositionMs] seek lands paused. True
-     * for the cold-process restore - the user decides when to jump back in -
-     * false for the cast hand-off, where the phone was playing and the TV
-     * should simply carry on.
+     * for the cold-process restore - the user decides when to jump back in.
      * @param expand false only for a cold-process restore, where popping
      * straight into a fullscreen player would be a jump-scare rather than the
      * "you left this running" cue a mini player gives.
@@ -2085,7 +1745,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
         // Speed is per-video, like YouTube
         _playbackSpeed.value = 1f
-        activePlayer()?.setPlaybackSpeed(1f)
+        _exoPlayer?.setPlaybackSpeed(1f)
 
         if (deferStreamLoad) {
             val position = resumePositionMs?.coerceAtLeast(0L) ?: 0L
@@ -2113,23 +1773,12 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
         // Publish to the system's media controls. Started here, from a user tap,
         // because a foreground service may not be started from the background;
-        // repeat calls once it is up are no-ops. The session wraps whichever
-        // player is producing the media, so lock-screen buttons drive the TV
-        // while casting.
-        activePlayer()?.let {
+        // repeat calls once it is up are no-ops.
+        _exoPlayer?.let {
             com.ivor.ivormusic.service.VideoPlaybackService.start(context, it)
         }
 
         if (localDownload != null) {
-            // Offline files cannot be cast: the receiver has no access to this
-            // device's storage. An explicit tap on a download while connected
-            // means "play it here", so the session ends (stopping the TV) and
-            // playback continues on the phone - predictable, not silent.
-            if (_castPlayer != null) {
-                castManager.endSession(stopOnReceiver = true)
-                releaseCastPlayer()
-                _isCasting.value = false
-            }
             playbackReportJob?.cancel()
             clearVideoPlaybackSession()
             try {
@@ -2166,13 +1815,8 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         streamLoadJob = viewModelScope.launch {
             try {
                 if (!isCurrentVideoLoad(video.videoId, loadGeneration)) return@launch
-                // While casting the local player is left exactly as it was -
-                // paused, holding nothing that matters - because disconnecting
-                // rebuilds its source from fresh URLs anyway.
-                if (_castPlayer == null) {
-                    _exoPlayer?.stop()
-                    _exoPlayer?.clearMediaItems()
-                }
+                _exoPlayer?.stop()
+                _exoPlayer?.clearMediaItems()
                 
                 // NewPipe's fetchPage() is blocking. A coroutine withTimeout
                 // cannot interrupt it; when extraction took 17-21 seconds it
@@ -2204,21 +1848,10 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                     if (_isLive.value) startLiveMetadataPolling(video.videoId)
 
                     if (qualities.isNotEmpty()) {
-                        // A receiver cannot merge a video-only file with its
-                        // audio twin the way MergingMediaSource does locally,
-                        // so while casting the choice is narrowed to sources it
-                        // can play whole: live HLS (its own ABR inside) or a
-                        // self-contained progressive VOD. VOD DASH is excluded
-                        // because affected receivers can select video without
-                        // the matching audio adaptation set.
-                        val chosen = if (_castPlayer != null) {
-                            pickDefaultCastReceiverQuality(qualities)
-                        } else {
-                            pickDefaultQuality(qualities)
-                        }
+                        val chosen = pickDefaultQuality(qualities)
                         if (chosen == null) {
                             _playbackError.value =
-                                Exception("This stream cannot be cast")
+                                Exception("Unable to load video stream")
                             _isLoading.value = false
                             return@resolve
                         }
@@ -2235,20 +1868,16 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                                 isDASH = false,
                                 audioUrl = null
                             )
-                            if (_castPlayer != null) {
-                                loadQuality(_currentQuality.value!!)
-                            } else {
-                                val source = ProgressiveMediaSource.Factory(streamDataSourceFactory)
-                                    .createMediaSource(
-                                        cachedProgressiveMediaItem(
-                                            uri = streamUrl,
-                                            stream = VideoPlaybackCacheStream.MUXED,
-                                            fallbackVariant = "auto-muxed",
-                                        )
+                            val source = ProgressiveMediaSource.Factory(streamDataSourceFactory)
+                                .createMediaSource(
+                                    cachedProgressiveMediaItem(
+                                        uri = streamUrl,
+                                        stream = VideoPlaybackCacheStream.MUXED,
+                                        fallbackVariant = "auto-muxed",
                                     )
-                                _exoPlayer?.setMediaSource(source)
-                                _exoPlayer?.prepare()
-                            }
+                                )
+                            _exoPlayer?.setMediaSource(source)
+                            _exoPlayer?.prepare()
                             seekAndResumeAfterLoad(resumePositionMs, resumePaused)
                         } else {
                             _playbackError.value = Exception("Unable to load video stream")
@@ -2357,13 +1986,10 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         videoLoadGeneration == generation && _currentVideo.value?.videoId == videoId
 
     /**
-     * Seek-and-resume tail shared by every load path. Lives here rather than
-     * inline because both players need it: for the CastPlayer the seek lands
-     * once the receiver reports its timeline, which is exactly when
-     * STATE_READY fires on the facade too.
+     * Seek-and-resume tail shared by every load path.
      */
     private fun seekAndResumeAfterLoad(resumePositionMs: Long?, resumePaused: Boolean) {
-        val player = activePlayer() ?: run {
+        val player = _exoPlayer ?: run {
             _isLoading.value = false
             return
         }
@@ -2424,33 +2050,13 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      * this only ever deals with video and audio.
      */
     private fun loadQuality(quality: VideoQuality) {
-        if (_castPlayer != null && !quality.isDefaultCastReceiverCompatible) {
-            // Playback code must never bypass the same policy that drives the
-            // quality sheet. Failing closed here prevents a future caller from
-            // handing the receiver a video-only URL and recreating silent TV
-            // playback.
-            KLog.w(
-                "VideoPlayerVM",
-                "Rejected non-Cast-compatible ${quality.delivery} source for ${quality.resolution}"
-            )
-            _playbackError.value = Exception("This video quality cannot be cast with audio")
-            _isLoading.value = false
-            return
-        }
         _currentQuality.value = quality
 
-        // The receiver runs its own ABR; the local track-selector cap has no
-        // counterpart there (see pickDefaultCastReceiverQuality).
-        if (_castPlayer == null && quality.isLive) {
+        if (quality.isLive) {
             // The whole ladder is one manifest, so the cap has to be applied
             // alongside preparing it - loadQuality is the only entry point that
             // runs for the initial pick.
             applyLiveQualityCap(quality)
-        }
-
-        if (_castPlayer != null) {
-            loadOnCast(quality)
-            return
         }
 
         if (quality.isDASH) {
@@ -2503,57 +2109,6 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             _exoPlayer?.setMediaSource(primarySource)
         }
         _exoPlayer?.prepare()
-    }
-
-    /**
-     * Load [quality] onto the receiver.
-     *
-     * The MediaItem must carry a MIME type (the cast converter refuses
-     * anything else) and, for a live broadcast, the tag the converter reads to
-     * declare STREAM_TYPE_LIVE - without it a broadcast presents on the TV as
-     * a finite video with a broken seek bar. The selected caption track rides
-     * along as a WebVTT text track; the Default Receiver renders it natively,
-     * which is why the phone-side cue overlay stands down while casting.
-     */
-    private fun loadOnCast(quality: VideoQuality) {
-        val player = _castPlayer ?: return
-        KLog.i(
-            "VideoPlayerVM",
-            "Loading Cast source delivery=${quality.delivery} " +
-                "format=${quality.format ?: "unknown"} quality=${quality.resolution} " +
-                "live=${quality.isLive}"
-        )
-        val mime = if (quality.isDASH) {
-            adaptiveMimeType(quality)
-        } else {
-            // The source policy only admits self-contained progressive files
-            // here. format carries NewPipe's container suffix ("mp4",
-            // "webm", "3gpp"), not a MIME type, so it is translated.
-            when (quality.format?.lowercase()) {
-                "webm" -> "video/webm"
-                "3gpp" -> "video/3gpp"
-                else -> "video/mp4"
-            }
-        }
-        val builder = nowPlayingMediaItem(quality.url)
-            .buildUpon()
-            .setMimeType(mime)
-        if (quality.isLive) builder.setTag(CAST_LIVE_TAG)
-
-        _selectedCaption.value?.let { track ->
-            builder.setSubtitleConfigurations(
-                listOf(
-                    MediaItem.SubtitleConfiguration.Builder(android.net.Uri.parse(track.vttUrl))
-                        .setMimeType(MimeTypes.TEXT_VTT)
-                        .setLanguage(track.languageCode)
-                        .setLabel(track.name)
-                        .build()
-                )
-            )
-        }
-
-        player.setMediaItem(builder.build())
-        player.prepare()
     }
 
     /**
@@ -2662,33 +2217,11 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         // Rebuilding the source here would also drop the viewer back to the
         // live edge and throw away the DVR buffer.
         if (quality.isLive) {
-            // The receiver owns ABR while casting - its player has no
-            // track-selector cap to reach. The UI only offers Auto in this
-            // state (selectableQualities), so reaching here with a rung means
-            // a stale sheet; ignoring it beats pretending.
-            if (_castPlayer != null) return
             _currentQuality.value = quality
             applyLiveQualityCap(quality)
             return
         }
-        val selected = if (_castPlayer != null) {
-            defaultCastReceiverQualityOptions(_availableQualities.value)
-                .firstOrNull { it.resolution == quality.resolution }
-                ?: run {
-                    // A sheet that was open while the session connected may
-                    // still deliver a local-only row. Ignore that stale tap;
-                    // interrupting valid playback with a fallback quality is
-                    // more surprising than leaving the current stream alone.
-                    KLog.w(
-                        "VideoPlayerVM",
-                        "Ignored stale non-Cast quality selection ${quality.resolution}"
-                    )
-                    return
-                }
-        } else {
-            quality
-        }
-        reloadPreservingPosition(selected)
+        reloadPreservingPosition(quality)
     }
 
     /**
@@ -2723,7 +2256,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      * seek back on READY.
      */
     private fun reloadPreservingPosition(quality: VideoQuality) {
-        val player = activePlayer() ?: return
+        val player = _exoPlayer ?: return
         val position = player.currentPosition
 
         // Remove any existing quality change listener to prevent leaks
@@ -2808,16 +2341,6 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         themePreferences.setCaptionLanguageCode(track?.languageCode)
 
         captionCuesJob?.cancel()
-        if (_castPlayer != null) {
-            // The receiver renders captions from the text track attached to
-            // the load, so a toggle rebuilds that load at the current
-            // position. Heavier than the local cue swap, but it is what makes
-            // subtitles exist on the TV at all - and quality switches already
-            // pay the same price there.
-            _currentQuality.value?.let { reloadPreservingPosition(it) }
-            if (track == null) _captionCues.value = emptyList()
-            return
-        }
         if (track == null) {
             _captionCues.value = emptyList()
             return
@@ -2843,16 +2366,8 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
     fun closePlayer() {
         // Remove quality change listener to prevent leaks if player closed before STATE_READY
-        qualityChangeListener?.let { activePlayer()?.removeListener(it) }
+        qualityChangeListener?.let { _exoPlayer?.removeListener(it) }
         qualityChangeListener = null
-        // Ending the session before releasing the player: CastPlayer.release()
-        // itself ends the session with stopOnReceiver=false, which would leave
-        // the TV sitting on a paused poster. An explicit close means "stop".
-        if (_castPlayer != null) {
-            castManager.endSession(stopOnReceiver = true)
-            releaseCastPlayer()
-            _isCasting.value = false
-        }
         _exoPlayer?.stop()
         progressJob?.cancel()
         progressJob = null
@@ -2887,7 +2402,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             )
             return
         }
-        val player = activePlayer() ?: return
+        val player = _exoPlayer ?: return
         if (_isPlaying.value) {
             player.pause()
         } else {
@@ -2921,7 +2436,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             }
             return
         }
-        val player = activePlayer() ?: return
+        val player = _exoPlayer ?: return
         val duration = player.duration
         val upperBound = if (duration > 0) duration else Long.MAX_VALUE
         seekPlayerTo(player, (player.currentPosition + deltaMs).coerceIn(0L, upperBound), precise = false)
@@ -2945,7 +2460,6 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      * [precise] and keep exact seeking.
      */
     private fun seekPlayerTo(player: Player, positionMs: Long, precise: Boolean) {
-        // Cast playback is driven by the receiver and has no seek parameters.
         (player as? ExoPlayer)?.setSeekParameters(
             if (precise) SeekParameters.EXACT else SeekParameters.CLOSEST_SYNC
         )
@@ -2966,12 +2480,12 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             }
             return
         }
-        activePlayer()?.let { seekPlayerTo(it, positionMs.coerceAtLeast(0L), precise) }
+        _exoPlayer?.let { seekPlayerTo(it, positionMs.coerceAtLeast(0L), precise) }
     }
 
     /** Pause without closing the player (music or Shorts playback started). */
     fun pause() {
-        activePlayer()?.pause()
+        _exoPlayer?.pause()
     }
 
     /** External play/pause entry points (the system PiP window's buttons). */
@@ -2987,7 +2501,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             )
             return
         }
-        val player = activePlayer() ?: return
+        val player = _exoPlayer ?: return
         if (player.playbackState == Player.STATE_ENDED) player.seekToDefaultPosition()
         player.play()
     }
@@ -3697,16 +3211,6 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         progressJob?.cancel()
         progressJob = null
         stopLivePolling()
-        // Cast teardown before the local player's: the receiver must be told
-        // to stop (an explicit close is not "keep playing"), and the session
-        // listener detached so its loss callback cannot fire into a dying
-        // ViewModel.
-        if (_castPlayer != null) {
-            castManager.endSession(stopOnReceiver = true)
-            releaseCastPlayer()
-            _isCasting.value = false
-        }
-        castManager.endObservation()
         // Before the release below, not after: stop() drops the MediaSession
         // synchronously on this thread, and a session outliving the player it
         // wraps crashes the next time Media3 reads state off it.

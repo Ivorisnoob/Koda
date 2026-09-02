@@ -4867,8 +4867,8 @@ class YouTubeRepository(private val context: Context) {
             it.audioTrackType != null && it.audioTrackType != AudioTrackType.ORIGINAL
         }
         val qualities = mutableListOf<VideoQuality>()
-        // Live progressive endpoints are unusable and the Default Cast
-        // Receiver needs the HLS master playlist, including its audio
+        // Live progressive endpoints are unusable: a live broadcast is only
+        // playable through its HLS master playlist, including its audio
         // rendition. Never let a live DASH URL win merely because NewPipe
         // happened to expose both manifest fields.
         val manifest = if (isLiveStream) {
@@ -4956,7 +4956,7 @@ class YouTubeRepository(private val context: Context) {
 
         // NewPipe exposes several codecs and delivery types for the same
         // visible label. Collapse codec alternatives, but retain both a split
-        // local-playback entry and a muxed Cast entry when both exist.
+        // local-playback entry and a muxed download entry when both exist.
         return VideoStreamResult(deduplicateVideoQualityVariants(qualities), seekPreview)
     }
 
@@ -5132,9 +5132,8 @@ class YouTubeRepository(private val context: Context) {
             }
         }
 
-        // Keep muxed and split variants distinct so local playback, downloads
-        // and the Default Cast Receiver can each choose a source they can
-        // actually consume.
+        // Keep muxed and split variants distinct so local playback and
+        // download selection can each choose a source they can consume.
         return deduplicateVideoQualityVariants(qualities)
     }
 

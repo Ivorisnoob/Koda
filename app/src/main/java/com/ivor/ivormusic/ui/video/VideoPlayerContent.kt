@@ -185,10 +185,6 @@ fun VideoPlayerContent(
     val liveChatMaxLength by viewModel.liveChatMaxLength.collectAsState()
     val liveChatRestriction by viewModel.liveChatRestriction.collectAsState()
 
-    // Cast state. The video card, both chromes and the settings sheet all
-    // need to know where the media actually is.
-    val isCasting by viewModel.isCasting.collectAsState()
-    val castDeviceName by viewModel.castDeviceName.collectAsState()
     val selectableQualities by viewModel.selectableQualities.collectAsState()
 
     // Local UI State
@@ -209,18 +205,6 @@ fun VideoPlayerContent(
         mutableStateOf(false)
     }
     var showLiveChat by remember { mutableStateOf(false) }
-    var showCastSheet by remember { mutableStateOf(false) }
-
-    // Discovery is a radio cost, not a background service: it runs exactly
-    // while the device sheet is open and stops the moment it closes.
-    LaunchedEffect(showCastSheet) {
-        if (showCastSheet) {
-            viewModel.startCastDiscovery()
-        } else {
-            viewModel.stopCastDiscovery()
-        }
-    }
-
     // A portrait live stream opens full-bleed: the standard layout gives a 9:16
     // frame about a third of the width and pillarboxes the rest, which is the
     // worst presentation of the one thing the user opened. Leaving for the
@@ -624,16 +608,12 @@ fun VideoPlayerContent(
                 chapters = chapters,
                 sponsorSegments = sponsorSegments,
                 onOpenChapters = { showChaptersSheet = true },
-                casting = isCasting,
-                castDeviceName = castDeviceName,
-                castingArtworkUrl = currentVideo.thumbnailUrl,
-                onCastClick = { showCastSheet = true },
                 captionsActive = selectedCaption != null,
                 onCaptionsClick = {
                     viewModel.ensureCaptionsLoaded()
                     showCaptionsSheet = true
                 },
-                captionCues = if (isCasting) emptyList() else captionCues,
+                captionCues = captionCues,
                 captionTextSize = captionTextSize,
                 captionTextColor = captionTextColor,
                 captionBackground = captionBackground,
@@ -818,8 +798,6 @@ fun VideoPlayerContent(
                     // engagement.isSubscribed only knows about the account.
                     isSubscribed = isSubscribedToChannel,
                     likeStatus = engagement?.likeStatus ?: LikeStatus.INDIFFERENT,
-                    casting = isCasting,
-                    castDeviceName = castDeviceName,
                     onPlayPause = { viewModel.togglePlayPause() },
                     onSeek = { newProgress -> viewModel.seekTo((newProgress * duration).toLong()) },
                     onScrubbingChanged = { isSeekScrubbing = it },
@@ -833,7 +811,6 @@ fun VideoPlayerContent(
                         viewModel.ensureCaptionsLoaded()
                         showCaptionsSheet = true
                     },
-                    onCastClick = { showCastSheet = true },
                     onSettings = { showPlaybackSettings = true },
                     onSubscribeClick = { requireSubscribeLogin { viewModel.toggleSubscribe() } },
                     onLikeClick = { requireLogin { viewModel.toggleLike() } },
@@ -941,16 +918,12 @@ fun VideoPlayerContent(
                         chapters = chapters,
                         sponsorSegments = sponsorSegments,
                         onOpenChapters = { showChaptersSheet = true },
-                        casting = isCasting,
-                        castDeviceName = castDeviceName,
-                        castingArtworkUrl = currentVideo.thumbnailUrl,
-                        onCastClick = { showCastSheet = true },
                         captionsActive = selectedCaption != null,
                         onCaptionsClick = {
                             viewModel.ensureCaptionsLoaded()
                             showCaptionsSheet = true
                         },
-                        captionCues = if (isCasting) emptyList() else captionCues,
+                        captionCues = captionCues,
                         captionTextSize = captionTextSize,
                         captionTextColor = captionTextColor,
                         captionBackground = captionBackground,
@@ -1244,14 +1217,6 @@ fun VideoPlayerContent(
         )
     }
 
-    // Cast device sheet
-    if (showCastSheet) {
-        CastSheet(
-            viewModel = viewModel,
-            onDismiss = { showCastSheet = false }
-        )
-    }
-
     // Sign-in dialog for like/dislike/subscribe when logged out
     if (showSignInDialog) {
         com.ivor.ivormusic.ui.auth.YouTubeAuthDialog(
@@ -1281,10 +1246,7 @@ fun VideoPlayerContent(
             onLoopChanged = { enabled ->
                 if (enabled != isLooping) viewModel.toggleLooping()
             },
-            // Nothing local renders while casting, so there is no window to
-            // shrink into a PiP card - the entry point would open a picture of
-            // the casting card, which helps nobody.
-            showPip = pipSupported && !isCasting,
+            showPip = pipSupported,
             onPipClick = {
                 showPlaybackSettings = false
                 val host = activity as? androidx.activity.ComponentActivity

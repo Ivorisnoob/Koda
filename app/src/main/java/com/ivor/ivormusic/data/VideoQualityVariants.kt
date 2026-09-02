@@ -9,9 +9,9 @@ enum class VideoStreamDelivery {
 /**
  * Collapse codec/container alternatives without collapsing delivery types.
  * A muxed 360p file and a video-only 360p file are not interchangeable: local
- * playback can merge the latter with [VideoQuality.audioUrl], while the
- * Default Cast Receiver needs the former. Keeping one of each is what lets the
- * two playback pipelines choose safely without weakening download selection.
+ * playback merges the latter with [VideoQuality.audioUrl], while a download
+ * wants the self-contained file. Keeping one of each is what lets playback and
+ * download selection each choose safely.
  */
 internal fun deduplicateVideoQualityVariants(
     qualities: List<VideoQuality>
