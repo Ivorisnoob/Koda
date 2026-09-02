@@ -35,14 +35,17 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
@@ -102,6 +105,11 @@ import androidx.compose.material.icons.rounded.ThumbUp
 import androidx.compose.material.icons.rounded.ToggleOn
 import androidx.compose.material.icons.rounded.ChatBubble
 import androidx.compose.material.icons.rounded.CloudOff
+import androidx.compose.material.icons.rounded.BugReport
+import androidx.compose.material.icons.rounded.Code
+import androidx.compose.material.icons.rounded.Gavel
+import androidx.compose.material.icons.rounded.OpenInNew
+import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material3.AlertDialog
@@ -131,6 +139,7 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -158,6 +167,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.util.lerp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
@@ -170,6 +180,8 @@ import androidx.compose.ui.unit.sp
 import androidx.graphics.shapes.RoundedPolygon
 import androidx.graphics.shapes.toPath
 import coil.compose.AsyncImage
+import coil.request.CachePolicy
+import coil.request.ImageRequest
 import com.ivor.ivormusic.BuildConfig
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -193,6 +205,8 @@ import com.ivor.ivormusic.ui.theme.ThemeMode
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 
 // Helper to convert Expressive Polygons to a Compose Shape
 // Based on official Android Shapes snippets
@@ -1916,168 +1930,262 @@ private fun ExpressiveAboutDialog(
     onNavigateToUpdate: () -> Unit
 ) {
     val context = LocalContext.current
-    val primaryColor = MaterialTheme.colorScheme.primary
-    val backgroundColor = MaterialTheme.colorScheme.surfaceContainerHigh
-    val textColor = MaterialTheme.colorScheme.onSurface
-    val secondaryTextColor = MaterialTheme.colorScheme.onSurfaceVariant
-    
     val githubUrl = "https://github.com/${BuildConfig.GITHUB_REPO}"
+    val developerUrl = "https://github.com/${BuildConfig.GITHUB_USERNAME}"
     val developerAvatarUrl = "https://github.com/${BuildConfig.GITHUB_USERNAME}.png"
-    
-    // Dialog entry animation
-    var dialogVisible by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        dialogVisible = true
-    }
-    
-    AnimatedVisibility(
-        visible = dialogVisible,
-        enter = scaleIn(
-            initialScale = 0.8f,
-            animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy)
-        ) + fadeIn(tween(200)),
-        exit = scaleOut(targetScale = 0.8f) + fadeOut(tween(150))
+    // Local Only means the app does not reach the network, and a profile photo
+    // is not the exception that proves the rule. The placeholder below is the
+    // whole card in that state.
+    val localOnly = remember { ThemePreferences.isLocalOnly(context) }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
-        AlertDialog(
-            onDismissRequest = onDismiss,
-            containerColor = backgroundColor,
-            shape = RoundedCornerShape(32.dp),
-            icon = {
-                // Developer avatar in an organic Clover4Leaf shape
-                val cloverShape = remember { PolygonShape(MaterialShapes.Clover4Leaf) }
-                Box(
+        Surface(
+            modifier = Modifier
+                .padding(16.dp)
+                .fillMaxWidth()
+                .fillMaxHeight(0.92f),
+            shape = RoundedCornerShape(36.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            tonalElevation = 6.dp,
+        ) {
+            Column {
+                Row(
                     modifier = Modifier
-                        .size(96.dp)
-                        .clip(cloverShape)
-                        .background(primaryColor.copy(alpha = 0.15f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    AsyncImage(
-                        model = developerAvatarUrl,
-                        contentDescription = stringResource(R.string.cd_developer_avatar),
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .clip(cloverShape),
-                        contentScale = ContentScale.Crop
-                    )
-                }
-            },
-            title = {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.fillMaxWidth()
+                        .fillMaxWidth()
+                        .padding(start = 24.dp, top = 16.dp, end = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = stringResource(R.string.app_name),
-                        color = textColor,
-                        fontSize = 24.sp,
+                        text = stringResource(R.string.about_title),
+                        style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
-                        textAlign = TextAlign.Center
+                        modifier = Modifier.weight(1f),
                     )
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Surface(
-                        shape = RoundedCornerShape(50),
-                        color = primaryColor.copy(alpha = 0.15f)
-                    ) {
-                        Text(
-                            text = "v${BuildConfig.VERSION_NAME}",
-                            color = primaryColor,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 5.dp)
-                        )
+                    IconButton(onClick = onDismiss, shapes = IconButtonDefaults.shapes()) {
+                        Icon(Icons.Rounded.Close, contentDescription = stringResource(R.string.action_close))
                     }
                 }
-            },
-            text = {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.fillMaxWidth()
+
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth().weight(1f),
+                    contentPadding = PaddingValues(20.dp, 12.dp, 20.dp, 24.dp),
+                    verticalArrangement = Arrangement.spacedBy(20.dp),
                 ) {
-                    Text(
-                        text = stringResource(R.string.about_tagline),
-                        color = secondaryTextColor,
-                        fontSize = 14.sp,
-                        textAlign = TextAlign.Center,
-                        lineHeight = 20.sp,
-                        modifier = Modifier.padding(bottom = 16.dp)
-                    )
-                    
-                    // Version details card
-                    Surface(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(20.dp),
-                        color = MaterialTheme.colorScheme.surfaceContainer
-                    ) {
+                    item {
                         Column(
-                            modifier = Modifier.padding(18.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
-                            AboutDetailRow(
-                                label = stringResource(R.string.about_version),
-                                value = BuildConfig.VERSION_NAME,
-                                textColor = textColor,
-                                labelColor = secondaryTextColor
+                            Box(
+                                modifier = Modifier
+                                    .size(112.dp)
+                                    .clip(MaterialShapes.SoftBurst.toShape())
+                                    .background(MaterialTheme.colorScheme.primaryContainer),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                androidx.compose.foundation.Image(
+                                    painter = painterResource(R.drawable.ic_launcher_foreground),
+                                    contentDescription = stringResource(R.string.app_name),
+                                    modifier = Modifier.fillMaxSize(),
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(14.dp))
+                            Text(
+                                text = stringResource(R.string.app_name),
+                                style = MaterialTheme.typography.headlineMedium,
+                                fontWeight = FontWeight.Bold,
                             )
-                            AboutDetailRow(
-                                label = stringResource(R.string.about_build),
-                                value = BuildConfig.VERSION_CODE.toString(),
-                                textColor = textColor,
-                                labelColor = secondaryTextColor
+                            Text(
+                                text = stringResource(R.string.about_tagline),
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.padding(top = 6.dp, start = 8.dp, end = 8.dp),
                             )
-                            AboutDetailRow(
-                                label = stringResource(R.string.about_build_type),
-                                value = if (BuildConfig.DEBUG) "Debug" else "Release",
-                                textColor = textColor,
-                                labelColor = secondaryTextColor
-                            )
-                            AboutDetailRow(
-                                label = stringResource(R.string.about_developer),
-                                value = "ivorisnoob",
-                                textColor = textColor,
-                                labelColor = secondaryTextColor
-                            )
+                            Surface(
+                                shape = RoundedCornerShape(100),
+                                color = MaterialTheme.colorScheme.primaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.padding(top = 12.dp),
+                            ) {
+                                Text(
+                                    text = stringResource(
+                                        R.string.settings_version_subtitle,
+                                        BuildConfig.VERSION_NAME,
+                                        BuildConfig.VERSION_CODE,
+                                    ),
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
+                                )
+                            }
+                        }
+                    }
+
+                    item {
+                        SettingsSection(title = stringResource(R.string.about_build_details)) {
+                            SettingsCard {
+                                AboutDetailRow(stringResource(R.string.about_version), BuildConfig.VERSION_NAME)
+                                SettingsDivider()
+                                AboutDetailRow(stringResource(R.string.about_build), BuildConfig.VERSION_CODE.toString())
+                                SettingsDivider()
+                                AboutDetailRow(
+                                    stringResource(R.string.about_build_type),
+                                    if (BuildConfig.DEBUG) stringResource(R.string.about_debug)
+                                    else stringResource(R.string.about_release),
+                                )
+                                SettingsDivider()
+                                AboutDetailRow(stringResource(R.string.about_package), BuildConfig.APPLICATION_ID)
+                                SettingsDivider()
+                                AboutDetailRow(
+                                    stringResource(R.string.about_device),
+                                    "Android ${android.os.Build.VERSION.RELEASE} · API ${android.os.Build.VERSION.SDK_INT}",
+                                )
+                            }
+                        }
+                    }
+
+                    item {
+                        SettingsSection(title = stringResource(R.string.about_developer)) {
+                            Surface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(24.dp))
+                                    .clickable { context.openAboutLink(developerUrl) },
+                                shape = RoundedCornerShape(24.dp),
+                                color = MaterialTheme.colorScheme.secondaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(18.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                ) {
+                                    // The placeholder is drawn first and never
+                                    // waits on anything, so the card is
+                                    // complete the frame it appears. The avatar
+                                    // crossfades over it out of Coil's shared
+                                    // disk cache, which makes every visit after
+                                    // the first a local read rather than a
+                                    // round trip to GitHub.
+                                    Box(
+                                        modifier = Modifier
+                                            .size(58.dp)
+                                            .clip(MaterialShapes.Clover4Leaf.toShape())
+                                            .background(MaterialTheme.colorScheme.secondary),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Icon(
+                                            Icons.Rounded.Person,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.onSecondary,
+                                        )
+                                        if (!localOnly) {
+                                            AsyncImage(
+                                                model = ImageRequest.Builder(context)
+                                                    .data(developerAvatarUrl)
+                                                    .memoryCachePolicy(CachePolicy.ENABLED)
+                                                    .diskCachePolicy(CachePolicy.ENABLED)
+                                                    // GitHub serves this path
+                                                    // with redirects and rotating
+                                                    // query strings; keying on the
+                                                    // stable URL keeps one entry
+                                                    // rather than one per redirect.
+                                                    .memoryCacheKey(developerAvatarUrl)
+                                                    .diskCacheKey(developerAvatarUrl)
+                                                    .crossfade(true)
+                                                    .build(),
+                                                contentDescription = null,
+                                                contentScale = ContentScale.Crop,
+                                                modifier = Modifier.fillMaxSize(),
+                                            )
+                                        }
+                                    }
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = BuildConfig.GITHUB_USERNAME,
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold,
+                                        )
+                                        Text(
+                                            text = stringResource(R.string.about_developer_subtitle),
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.78f),
+                                        )
+                                    }
+                                    Icon(Icons.Rounded.OpenInNew, contentDescription = null)
+                                }
+                            }
+                        }
+                    }
+
+                    item {
+                        SettingsSection(title = stringResource(R.string.about_project)) {
+                            SettingsCard {
+                                SettingsRow(
+                                    icon = Icons.Rounded.SystemUpdate,
+                                    title = stringResource(R.string.action_check_updates),
+                                    subtitle = stringResource(R.string.about_update_subtitle),
+                                    onClick = {
+                                        onDismiss()
+                                        onNavigateToUpdate()
+                                    },
+                                    showChevron = true,
+                                )
+                                SettingsDivider()
+                                SettingsRow(
+                                    icon = Icons.Rounded.Code,
+                                    title = stringResource(R.string.about_source_code),
+                                    subtitle = stringResource(R.string.about_source_subtitle),
+                                    onClick = { context.openAboutLink(githubUrl) },
+                                    showChevron = true,
+                                )
+                                SettingsDivider()
+                                SettingsRow(
+                                    icon = Icons.Rounded.Gavel,
+                                    title = stringResource(R.string.about_license),
+                                    subtitle = stringResource(R.string.about_license_subtitle),
+                                    onClick = { context.openAboutLink("$githubUrl/blob/main/LICENSE") },
+                                    showChevron = true,
+                                )
+                                SettingsDivider()
+                                SettingsRow(
+                                    icon = Icons.Rounded.BugReport,
+                                    title = stringResource(R.string.sp_report_bug),
+                                    subtitle = stringResource(R.string.about_report_issue_subtitle),
+                                    onClick = { context.openAboutLink("$githubUrl/issues/new") },
+                                    showChevron = true,
+                                )
+                            }
+                        }
+                    }
+
+                    item {
+                        Surface(
+                            shape = RoundedCornerShape(24.dp),
+                            color = MaterialTheme.colorScheme.tertiaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(18.dp),
+                                verticalAlignment = Alignment.Top,
+                                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                            ) {
+                                Icon(Icons.Rounded.Info, contentDescription = null)
+                                Text(
+                                    text = stringResource(R.string.about_open_source_note),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
                         }
                     }
                 }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        onDismiss()
-                        onNavigateToUpdate()
-                    },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = primaryColor
-                    ),
-                    shape = RoundedCornerShape(16.dp),
-                    modifier = Modifier.height(48.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.SystemUpdate,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Text(
-                        text = stringResource(R.string.action_check_updates),
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-            },
-            dismissButton = {
-                OutlinedButton(
-                    onClick = onDismiss,
-                    shape = RoundedCornerShape(16.dp),
-                    modifier = Modifier.height(48.dp)
-                ) {
-                    Text(
-                        text = stringResource(R.string.action_close),
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
             }
-        )
+        }
     }
 }
 
@@ -2085,27 +2193,43 @@ private fun ExpressiveAboutDialog(
 private fun AboutDetailRow(
     label: String,
     value: String,
-    textColor: Color,
-    labelColor: Color
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+    BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 10.dp)
     ) {
-        Text(
-            text = label,
-            color = labelColor,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Medium
-        )
-        Text(
-            text = value,
-            color = textColor,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.SemiBold
-        )
+        if (maxWidth < 300.dp) {
+            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(text = value, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+            }
+        } else {
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.Top) {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(0.4f),
+                )
+                Text(
+                    text = value,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.End,
+                    modifier = Modifier.weight(0.6f),
+                )
+            }
+        }
     }
+}
+
+private fun android.content.Context.openAboutLink(url: String) {
+    runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
 }
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
