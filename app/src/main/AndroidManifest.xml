@@ -12,7 +12,6 @@
     <!-- Metered-network detection for the per-network stream quality settings -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
-    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Android 16+ Live Updates (Live Activities) -->
     <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
@@ -152,13 +151,6 @@
             android:name=".service.DownloadService"
             android:foregroundServiceType="dataSync"
             android:exported="false" />
-
-        <!-- Persisted six-hour upload checks; JobScheduler supplies the wake
-             lock and binds only callers holding its signature permission. -->
-        <service
-            android:name=".work.UploadCheckJobService"
-            android:exported="true"
-            android:permission="android.permission.BIND_JOB_SERVICE" />
 
         <!--
             Quick Settings playback tile. A pure session client: it binds a

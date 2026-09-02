@@ -3,7 +3,6 @@ package com.ivor.ivormusic.data
 import android.content.Context
 import android.content.SharedPreferences
 import com.ivor.ivormusic.ui.theme.ThemeMode
-import com.ivor.ivormusic.work.UploadCheckJobService
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -1364,7 +1363,7 @@ class ThemePreferences(context: Context) {
     /**
      * Whether the background check may notify about new uploads from channels
      * followed on this device. Off by default: it is a battery-and-attention
-     * commitment, and its periodic system job is canceled while this is false.
+     * commitment, and the worker no-ops (cheaply) when this is false.
      */
     fun getUploadNotificationsEnabled(): Boolean =
         prefs.getBoolean(KEY_UPLOAD_NOTIFICATIONS_ENABLED, false)
@@ -1375,7 +1374,6 @@ class ThemePreferences(context: Context) {
     fun setUploadNotificationsEnabled(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_UPLOAD_NOTIFICATIONS_ENABLED, enabled).apply()
         _uploadNotificationsEnabled.value = enabled
-        UploadCheckJobService.setEnabled(appContext, enabled)
     }
 
     /**
