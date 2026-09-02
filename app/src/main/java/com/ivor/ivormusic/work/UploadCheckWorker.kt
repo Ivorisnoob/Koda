@@ -21,6 +21,7 @@ import com.ivor.ivormusic.data.UploadCheckRepository
 import com.ivor.ivormusic.data.YouTubeRateLimit
 import com.ivor.ivormusic.data.YouTubeRepository
 import com.ivor.ivormusic.util.KLog
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -75,7 +76,6 @@ class UploadCheckWorker(
         // path caps at FEED_CONCURRENCY precisely because mobile radios handle
         // it badly and it reads as a scrape from the other end.
         val gate = Semaphore(FEED_CONCURRENCY)
-        var notifiedAny = false
         coroutineScope {
             channels.map { channel ->
                 async {
@@ -100,7 +100,8 @@ class UploadCheckWorker(
                         val fresh = feed.filter { (it.publishedAtMs ?: 0L) > seenUpTo }
                         notifyNewUploads(channel.name, channel.channelId, fresh.take(MAX_PER_CHANNEL))
                         uploadCheck.markSeen(channel.channelId, newest)
-                        notifiedAny = true
+                    } catch (e: CancellationException) {
+                        throw e
                     } catch (e: Exception) {
                         // One bad channel must not cost the rest of the round;
                         // its last-seen stays put, so nothing is lost, only deferred.
@@ -182,12 +183,17 @@ class UploadCheckWorker(
          */
         private const val FEED_CONCURRENCY = 6
 
-        /**
-         * Schedule or re-schedule the periodic check. Idempotent (KEEP): called
-         * from Application.onCreate so an install, an update or a reboot all
-         * converge on exactly one running job.
-         */
-        fun schedule(context: Context) {
+        /** Keep exactly one periodic check while the user has opted in. */
+        fun sync(context: Context) {
+            setEnabled(context, ThemePreferences(context).getUploadNotificationsEnabled())
+        }
+
+        fun setEnabled(context: Context, enabled: Boolean) {
+            if (!enabled) {
+                WorkManager.getInstance(context).cancelUniqueWork(UNIQUE_WORK_NAME)
+                return
+            }
+
             val request = PeriodicWorkRequestBuilder<UploadCheckWorker>(6, TimeUnit.HOURS)
                 .setConstraints(
                     androidx.work.Constraints.Builder()
