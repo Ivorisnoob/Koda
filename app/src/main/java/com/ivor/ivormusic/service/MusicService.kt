@@ -332,6 +332,7 @@ class MusicService : MediaLibraryService() {
         // Initialize the cache directly at the persisted size instead of the
         // default; the size and toggle stay live via observePreferences().
         CacheManager.initialize(this, themePreferences.maxCacheSizeMb.value)
+        CacheManager.removeLegacyVideoEntries()
         youtubeRepository = YouTubeRepository(this)
         downloadRepository = DownloadRepository.getInstance(this)
         audioProfileStore = AudioProfileStore(this)
@@ -364,17 +365,14 @@ class MusicService : MediaLibraryService() {
         // on whether the now-playing Compose screen happens to exist.
         initializeCast()
 
-        // 6. Pre-warm caches
-        preWarmAutoCache()
-
-        // 7. Warm the visitorData token so the first stream resolution of a
+        // 6. Warm the visitorData token so the first stream resolution of a
         // session doesn't pay for the mint on its critical path. Music-first
         // sessions (and Android Auto) never construct VideoPlayerViewModel,
         // which was the only other place that prefetched it.
         resolveScope.launch { youtubeRepository.prefetchVisitorData() }
         resolveScope.launch { audioProfileStore.warm() }
 
-        // 8. React to the user switching profile.
+        // 7. React to the user switching profile.
         observeProfileSwitches()
     }
 
@@ -472,7 +470,6 @@ class MusicService : MediaLibraryService() {
             release()
             mediaLibrarySession = null
         }
-        CacheManager.release()
         activeResolutions.clear()
         uriCache.clear()
         retryCounts.clear()
@@ -521,9 +518,9 @@ class MusicService : MediaLibraryService() {
         // client (?c=IOS, ?c=TVHTML5_SIMPLY_EMBEDDED, ...) and YouTube answers
         // 403 if the playback UA doesn't match. CacheManager.createPerClientHttpFactory()
         // picks the UA per request.
-        val defaultDataSourceFactory = DefaultDataSource.Factory(this, CacheManager.createPerClientHttpFactory())
+        val defaultDataSourceFactory = DefaultDataSource.Factory(this, CacheManager.createPerClientHttpFactory(this))
         // Null when cache init failed — playback then always goes direct.
-        val cacheDataSourceFactory = CacheManager.createCacheDataSourceFactory(null)
+        val cacheDataSourceFactory = CacheManager.createCacheDataSourceFactory(this, null)
         this.cacheDataSourceFactory = cacheDataSourceFactory
 
         val smartDataSourceFactory = DataSource.Factory {
@@ -2379,26 +2376,6 @@ class MusicService : MediaLibraryService() {
     }
 
     // --- Helpers ---
-
-    private fun preWarmAutoCache() {
-        serviceScope.launch(Dispatchers.IO) {
-            try {
-                if (cachedRecommendations == null) {
-                    val recs = youtubeRepository.getRecommendations()
-                    if (recs.isNotEmpty()) {
-                        cachedRecommendations = recs
-                        lastBrowseCacheTime = System.currentTimeMillis()
-                    }
-                }
-                if (cachedPlaylists == null) {
-                    val playlists = youtubeRepository.getUserPlaylists()
-                    if (playlists.isNotEmpty()) cachedPlaylists = playlists
-                }
-            } catch (e: Exception) {
-                KLog.e(TAG, "Failed to pre-warm cache", e)
-            }
-        }
-    }
 
     // --- Sleep timer ---
     //

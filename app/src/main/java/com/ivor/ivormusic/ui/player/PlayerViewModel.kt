@@ -669,7 +669,10 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                     
                     lastPosition = currentPos
                 }
-                delay(1000)
+                // A controller with no media only needs to notice an external
+                // session adoption eventually; waking once a second forever
+                // on the Home screen buys no visible progress update.
+                delay(if ((controller?.mediaItemCount ?: 0) > 0) 1000 else 5000)
             }
         }
     }

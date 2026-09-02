@@ -687,10 +687,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         // MusicService used to be the cache's only initializer. Video owns a
         // separate player and can run without that service, so it must make the
         // shared process cache available before constructing its data source.
-        CacheManager.initialize(context, themePreferences.maxCacheSizeMb.value)
-        CacheManager.createPlaybackDataSourceFactory(context) {
-            themePreferences.cacheEnabled.value
-        }
+        CacheManager.createVideoPlaybackDataSourceFactory(context)
     }
 
     init {
@@ -699,6 +696,17 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         if (!_isAutoplayEnabled.value && themePreferences.isVideoRepeatEnabled()) {
             themePreferences.setVideoRepeatEnabled(false)
         }
+
+        // Session listeners and route discovery are lightweight and must exist
+        // before a framework reconnect arrives. The codec/player stack itself
+        // is built lazily by ensureLocalPlayer only when a video is restored or
+        // explicitly opened.
+        attachCastObservation()
+        restoreVideoSession()
+    }
+
+    private fun ensureLocalPlayer(): ExoPlayer {
+        _exoPlayer?.let { return it }
 
         // The sample queue this sizes IS the app's RAM cache for video: the
         // seek bar's pale segment is exactly `player.bufferedPosition`, so what
@@ -742,7 +750,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         // DefaultDataSource - no per-URL User-Agent, so googlevideo answers 403
         // and the video dead-ends on "Source error". Setting it here covers the
         // manifest, its segments, and any future setMediaItem call.
-        _exoPlayer = ExoPlayer.Builder(context)
+        return ExoPlayer.Builder(context)
             .setMediaSourceFactory(DefaultMediaSourceFactory(streamDataSourceFactory))
             .setLoadControl(loadControl)
             .setWakeMode(C.WAKE_MODE_NETWORK)
@@ -761,24 +769,10 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             // player silently auto-plays the next video instead of looping.
             repeatMode = if (_isLooping.value) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
             attachPlaybackListener(this)
+        }.also { player ->
+            _exoPlayer = player
+            startProgressUpdates()
         }
-
-        // Session listeners, remote finish/failure hooks and adoption of a
-        // cast session that already exists when this ViewModel is built.
-        attachCastObservation()
-
-        // The position poll runs for as long as the player exists. Started here
-        // rather than per video, so nothing has to remember to restart it.
-        startProgressUpdates()
-
-        // Warm the visitorData cache so the first playback doesn't pay for
-        // the youtube.com bootstrap download on its critical path.
-        viewModelScope.launch { youtubeRepository.prefetchVisitorData() }
-
-        // Only meaningful the moment this ViewModel is freshly (re)created,
-        // which is exactly the guard below - restoreVideoSession() itself
-        // does nothing once something is already playing.
-        restoreVideoSession()
     }
 
     /**
@@ -852,6 +846,30 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                     return
                 }
 
+                // CacheDataSource serves every contiguous byte it has before
+                // asking upstream. If that upstream is unavailable, keep the
+                // current item, surface and controls intact: the cached part
+                // was valid playback, and throwing it away turns a temporary
+                // connection loss into a blank player. Retry later re-resolves
+                // and continues from this exact position.
+                if (isRecoverableSourceError(error) && !networkPlaybackAllowed()) {
+                    val hadPlayableBytes = (_exoPlayer?.currentPosition ?: 0L) > 0L ||
+                        (_exoPlayer?.bufferedPosition ?: 0L) > 0L
+                    _exoPlayer?.pause()
+                    _playbackError.value = Exception(
+                        context.getString(
+                            if (hadPlayableBytes) {
+                                com.ivor.ivormusic.R.string.video_cached_portion_ended
+                            } else {
+                                com.ivor.ivormusic.R.string.video_not_cached_offline
+                            }
+                        )
+                    )
+                    _isBuffering.value = false
+                    _isLoading.value = false
+                    return
+                }
+
                 // A source failure means the URL is dead, not the video:
                 // re-resolving is the only thing that can help, and
                 // re-preparing the same URL never will.
@@ -921,6 +939,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                 // controls. Clear playWhenReady so the UI, PiP and
                 // notification all agree it stopped.
                 activePlayer()?.pause()
+                CacheManager.setVideoPlaybackActive(VIDEO_CACHE_OWNER, false)
             }
 
             VideoEndAction.NEXT_IN_QUEUE -> {
@@ -1705,6 +1724,16 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         return error.errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS
     }
 
+    private fun networkPlaybackAllowed(): Boolean {
+        if (ThemePreferences.isLocalOnly(context)) return false
+        val connectivity = context.getSystemService(Context.CONNECTIVITY_SERVICE)
+            as? android.net.ConnectivityManager ?: return false
+        val capabilities = connectivity.getNetworkCapabilities(connectivity.activeNetwork)
+            ?: return false
+        return capabilities.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+            capabilities.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+    }
+
     /** HTTP status behind a source error, or null when it was not an HTTP failure. */
     private fun httpResponseCode(error: PlaybackException): Int? {
         var cause: Throwable? = error.cause
@@ -1962,6 +1991,8 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         expand: Boolean = true,
         deferStreamLoad: Boolean = false
     ) {
+        CacheManager.setVideoPlaybackActive(VIDEO_CACHE_OWNER, true)
+        ensureLocalPlayer()
         if (!forceRestart && _currentVideo.value?.videoId == video.videoId) {
             // Already playing this video, just expand
             _isExpanded.value = true
@@ -2822,6 +2853,8 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             _isCasting.value = false
         }
         _exoPlayer?.stop()
+        progressJob?.cancel()
+        progressJob = null
         // Track selection outlives media items: a player closed while the video
         // track is suspended would come back audio-only on the next video.
         onEnterForeground()
@@ -2838,6 +2871,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         // of what the resume snapshot is for, so it must not reappear next
         // launch.
         clearVideoPlaybackSession()
+        CacheManager.setVideoPlaybackActive(VIDEO_CACHE_OWNER, false)
     }
 
     fun togglePlayPause() {
@@ -2856,6 +2890,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         if (_isPlaying.value) {
             player.pause()
         } else {
+            CacheManager.setVideoPlaybackActive(VIDEO_CACHE_OWNER, true)
             // After autoplay deliberately stops at the end, Play means replay
             // this video. ExoPlayer does not leave STATE_ENDED on play() alone.
             if (player.playbackState == Player.STATE_ENDED) {
@@ -3552,6 +3587,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     }
 
     companion object {
+        private const val VIDEO_CACHE_OWNER = "video"
         private val TIMESTAMP_REGEX = Regex("""(?<!\d)(?:(\d{1,2}):)?(\d{1,2}):(\d{2})(?!\d)""")
 
         /** Speeds offered in the player's speed menu. */
@@ -3676,6 +3712,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         com.ivor.ivormusic.service.VideoPlaybackService.stop(context)
         _exoPlayer?.release()
         _exoPlayer = null
+        CacheManager.setVideoPlaybackActive(VIDEO_CACHE_OWNER, false)
     }
 }
 

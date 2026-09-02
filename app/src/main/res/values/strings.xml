@@ -59,6 +59,8 @@
     <string name="action_edit">Edit</string>
     <string name="action_share">Share</string>
     <string name="action_retry">Retry</string>
+    <string name="video_cached_portion_ended">You reached the end of the cached video. Reconnect to continue.</string>
+    <string name="video_not_cached_offline">This part of the video is not cached. Reconnect to continue.</string>
     <string name="action_see_all">See all</string>
     <string name="action_play_all">Play all</string>
     <string name="action_show_more">Show More</string>

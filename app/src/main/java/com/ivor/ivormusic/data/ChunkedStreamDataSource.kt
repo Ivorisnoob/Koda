@@ -34,9 +34,12 @@ import androidx.media3.datasource.TransferListener
 @UnstableApi
 class ChunkedStreamDataSource private constructor(
     private val delegate: DefaultHttpDataSource,
+    private val allowNetwork: () -> Boolean,
 ) : DataSource {
 
-    class Factory : DataSource.Factory {
+    class Factory(
+        private val allowNetwork: () -> Boolean = { true },
+    ) : DataSource.Factory {
         override fun createDataSource(): DataSource = ChunkedStreamDataSource(
             // No factory-level setUserAgent: DefaultHttpDataSource applies the
             // userAgent field last and would overwrite the per-request
@@ -45,7 +48,8 @@ class ChunkedStreamDataSource private constructor(
                 .setConnectTimeoutMs(CONNECT_TIMEOUT_MS)
                 .setReadTimeoutMs(READ_TIMEOUT_MS)
                 .setAllowCrossProtocolRedirects(true)
-                .createDataSource()
+                .createDataSource(),
+            allowNetwork = allowNetwork,
         )
     }
 
@@ -105,6 +109,9 @@ class ChunkedStreamDataSource private constructor(
     }
 
     override fun open(dataSpec: DataSpec): Long {
+        if (!allowNetwork()) {
+            throw java.io.IOException("Local only mode is on: network disabled")
+        }
         delegate.setRequestProperty(
             "User-Agent",
             YouTubeRepository.uaForPlaybackUri(dataSpec.uri)
