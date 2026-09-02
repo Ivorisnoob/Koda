@@ -85,6 +85,7 @@ import com.ivor.ivormusic.ui.artist.ArtistScreen
 import com.ivor.ivormusic.ui.components.ExpressivePullToRefresh
 import com.ivor.ivormusic.ui.components.KodaListRow
 import com.ivor.ivormusic.ui.components.KodaRowArtwork
+import com.ivor.ivormusic.ui.components.KodaSongRow
 import com.ivor.ivormusic.ui.downloads.MusicPlaylistDownloadAction
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.runtime.mutableFloatStateOf
@@ -993,7 +994,7 @@ fun AllSongsList(
                 )
             }
         } else {
-            items(songs, key = { it.id }) { song ->
+            itemsIndexed(songs, key = { _, song -> song.id }) { index, song ->
                 // Under a non-alphabetical sort the order looks arbitrary
                 // unless the value it sorted on is visible, so surface it in
                 // place of the duration.
@@ -1004,11 +1005,10 @@ fun AllSongsList(
                     LibrarySortOption.RecentlyAdded -> song.dateAdded?.let { formatRelativeDate(it, todayLabel, yesterdayLabel) }
                     else -> null
                 }
-                SongListItem(
+                KodaSongRow(
                     song = song,
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                    shape = RoundedCornerShape(20.dp),
-                    tonalElevation = 2.dp,
+                    index = index,
+                    count = songs.size,
                     isLiked = song.id in likedIds,
                     isDownloaded = song.id in downloadedIds,
                     showDuration = sortLabel == null,
@@ -1856,91 +1856,6 @@ private fun EditPlaylistDialog(
             TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
         }
     )
-}
-
-@Composable
-fun SongListItem(
-    song: Song,
-    modifier: Modifier = Modifier,
-    containerColor: Color = Color.Transparent,
-    tonalElevation: Dp = 0.dp,
-    shadowElevation: Dp = 0.dp,
-    shape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(0.dp),
-    isLiked: Boolean = false,
-    isDownloaded: Boolean = false,
-    showDuration: Boolean = false,
-    /** Short metric shown where the duration normally sits (e.g. "12 plays"). */
-    trailingLabel: String? = null,
-    trailingContent: (@Composable () -> Unit)? = null,
-    /** Opens the song options sheet. Null leaves the row tap-only. */
-    onLongClick: (() -> Unit)? = null,
-    onClick: () -> Unit
-) {
-    Surface(
-        modifier = modifier,
-        color = containerColor,
-        shape = shape,
-        tonalElevation = tonalElevation,
-        shadowElevation = shadowElevation
-    ) {
-        ListItem(
-            headlineContent = { Text(song.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold) },
-            supportingContent = { Text(song.artist, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-            leadingContent = {
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    modifier = Modifier.size(48.dp)
-                ) {
-                    if (song.albumArtUri != null || song.thumbnailUrl != null)
-                        AsyncImage(model = song.highResThumbnailUrl ?: song.albumArtUri ?: song.thumbnailUrl, contentDescription = null, contentScale = ContentScale.Crop)
-                    else
-                        Box(contentAlignment = Alignment.Center) { Icon(Icons.Rounded.MusicNote, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
-                }
-            },
-            trailingContent = trailingContent ?: if (isLiked || isDownloaded || showDuration || trailingLabel != null) {
-                {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        if (isDownloaded) {
-                            Icon(
-                                Icons.Rounded.DownloadDone,
-                                contentDescription = stringResource(R.string.song_options_downloaded),
-                                modifier = Modifier.size(16.dp),
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                        if (isLiked) {
-                            Icon(
-                                Icons.Rounded.Favorite,
-                                contentDescription = stringResource(R.string.cd_favorite),
-                                modifier = Modifier.size(16.dp),
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                        if (trailingLabel != null) {
-                            Text(
-                                trailingLabel,
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        } else if (showDuration && song.duration > 0) {
-                            Text(
-                                formatSongDuration(song.duration),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                }
-            } else null,
-            modifier = Modifier.songRowClick(onClick = onClick, onLongClick = onLongClick),
-            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-        )
-    }
 }
 
 /**
