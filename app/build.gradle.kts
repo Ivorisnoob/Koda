@@ -143,6 +143,15 @@ android {
 
 }
 
+androidComponents {
+    onVariants(selector().withBuildType("release")) { variant ->
+        // Direct-distribution APKs are the product here, so compress their DEX
+        // payload instead of using AGP's minSdk-28+ mmap-oriented default.
+        // Keep debug DEX uncompressed for the faster local install cycle.
+        variant.packaging.dex.useLegacyPackaging.set(true)
+    }
+}
+
 // AGP 9 removed the android.kotlinOptions {} block; Kotlin compiler settings live here now.
 // The two opt-ins are load-bearing: the M3 Expressive APIs used across the UI layer
 // (MaterialShapes, LoadingIndicator) are still experimental and will not compile without them.
