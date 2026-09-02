@@ -282,7 +282,6 @@ fun PosterPlayerSheetContent(
                             modifier = Modifier
                                 .fillMaxSize()
                                 .background(scrim.copy(alpha = 0.6f))
-                                .padding(horizontal = 16.dp)
                         ) {
                             SyncedLyricsView(
                                 lyricsResult = lyricsResult,

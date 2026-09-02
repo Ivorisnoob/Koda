@@ -233,21 +233,15 @@ fun DialPlayerSheetContent(
                     ) {
                         Crossfade(targetState = showLyrics, label = "DialLyrics") { lyricsVisible ->
                             if (lyricsVisible) {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .padding(horizontal = 24.dp)
-                                ) {
-                                    SyncedLyricsView(
-                                        lyricsResult = lyricsResult,
-                                        currentPositionMs = progress,
-                                        isPlaying = isPlaying,
-                                        onSeekTo = { viewModel.seekTo(it) },
-                                        primaryColor = accent,
-                                        onSurfaceColor = ink,
-                                        onSurfaceVariantColor = inkVariant
-                                    )
-                                }
+                                SyncedLyricsView(
+                                    lyricsResult = lyricsResult,
+                                    currentPositionMs = progress,
+                                    isPlaying = isPlaying,
+                                    onSeekTo = { viewModel.seekTo(it) },
+                                    primaryColor = accent,
+                                    onSurfaceColor = ink,
+                                    onSurfaceVariantColor = inkVariant
+                                )
                             } else {
                                 RotaryDial(
                                     currentSong = currentSong,

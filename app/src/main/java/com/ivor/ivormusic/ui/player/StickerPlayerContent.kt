@@ -271,21 +271,15 @@ fun StickerPlayerSheetContent(
                     ) {
                         Crossfade(targetState = showLyrics, label = "StickerLyrics") { lyricsVisible ->
                             if (lyricsVisible) {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .padding(horizontal = 24.dp)
-                                ) {
-                                    SyncedLyricsView(
-                                        lyricsResult = lyricsResult,
-                                        currentPositionMs = progress,
-                                        isPlaying = isPlaying,
-                                        onSeekTo = { viewModel.seekTo(it) },
-                                        primaryColor = accent,
-                                        onSurfaceColor = ink,
-                                        onSurfaceVariantColor = inkVariant
-                                    )
-                                }
+                                SyncedLyricsView(
+                                    lyricsResult = lyricsResult,
+                                    currentPositionMs = progress,
+                                    isPlaying = isPlaying,
+                                    onSeekTo = { viewModel.seekTo(it) },
+                                    primaryColor = accent,
+                                    onSurfaceColor = ink,
+                                    onSurfaceVariantColor = inkVariant
+                                )
                             } else {
                                 DraggableSticker(
                                     currentSong = currentSong,

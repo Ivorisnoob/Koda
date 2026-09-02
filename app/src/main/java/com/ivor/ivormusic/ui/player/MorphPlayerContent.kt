@@ -263,21 +263,15 @@ fun MorphPlayerSheetContent(
                     ) {
                         Crossfade(targetState = showLyrics, label = "MorphLyrics") { lyricsVisible ->
                             if (lyricsVisible) {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .padding(horizontal = 24.dp)
-                                ) {
-                                    SyncedLyricsView(
-                                        lyricsResult = lyricsResult,
-                                        currentPositionMs = progress,
-                                        isPlaying = isPlaying,
-                                        onSeekTo = { viewModel.seekTo(it) },
-                                        primaryColor = primaryColor,
-                                        onSurfaceColor = onSurfaceColor,
-                                        onSurfaceVariantColor = onSurfaceVariantColor
-                                    )
-                                }
+                                SyncedLyricsView(
+                                    lyricsResult = lyricsResult,
+                                    currentPositionMs = progress,
+                                    isPlaying = isPlaying,
+                                    onSeekTo = { viewModel.seekTo(it) },
+                                    primaryColor = primaryColor,
+                                    onSurfaceColor = onSurfaceColor,
+                                    onSurfaceVariantColor = onSurfaceVariantColor
+                                )
                             } else {
                                 MorphHero(
                                     currentSong = currentSong,

@@ -379,7 +379,6 @@ private fun ExpressiveNowPlayingView(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
-                .padding(horizontal = 24.dp)
                 // Off while lyrics are up: that view scrolls and seeks.
                 .swipeToSkip(swipeToSkip, enabled = !showLyrics),
             contentAlignment = Alignment.Center
@@ -399,7 +398,9 @@ private fun ExpressiveNowPlayingView(
                 } else {
                     // Album Art
                     BoxWithConstraints(
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 24.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         // Guard against invalid dimensions during transitions

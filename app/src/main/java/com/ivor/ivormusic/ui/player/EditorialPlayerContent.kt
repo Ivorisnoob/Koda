@@ -359,17 +359,15 @@ private fun EditorialNowPlayingView(
         ) {
             Crossfade(targetState = showLyrics, label = "EditorialArtLyrics") { lyricsVisible ->
                 if (lyricsVisible) {
-                    Box(modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp)) {
-                        SyncedLyricsView(
-                            lyricsResult = lyricsResult,
-                            currentPositionMs = progress,
-                            isPlaying = isPlaying,
-                            onSeekTo = onSeekTo,
-                            primaryColor = accent,
-                            onSurfaceColor = accent,
-                            onSurfaceVariantColor = accent.copy(alpha = 0.6f)
-                        )
-                    }
+                    SyncedLyricsView(
+                        lyricsResult = lyricsResult,
+                        currentPositionMs = progress,
+                        isPlaying = isPlaying,
+                        onSeekTo = onSeekTo,
+                        primaryColor = accent,
+                        onSurfaceColor = accent,
+                        onSurfaceVariantColor = accent.copy(alpha = 0.6f)
+                    )
                 } else {
                     Box(
                         modifier = Modifier.graphicsLayer {
