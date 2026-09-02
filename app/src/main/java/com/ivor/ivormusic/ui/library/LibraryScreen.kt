@@ -83,6 +83,8 @@ import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.data.ThemePreferences
 import com.ivor.ivormusic.ui.artist.ArtistScreen
 import com.ivor.ivormusic.ui.components.ExpressivePullToRefresh
+import com.ivor.ivormusic.ui.components.KodaListRow
+import com.ivor.ivormusic.ui.components.KodaRowArtwork
 import com.ivor.ivormusic.ui.downloads.MusicPlaylistDownloadAction
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.runtime.mutableFloatStateOf
@@ -2203,6 +2205,8 @@ internal fun TrackSkeletonList(rows: Int = 6) {
 @Composable
 private fun PlaylistTrackRow(
     song: Song,
+    index: Int,
+    count: Int,
     manageEnabled: Boolean,
     reorderEnabled: Boolean,
     isDragging: Boolean,
@@ -2216,19 +2220,23 @@ private fun PlaylistTrackRow(
         dampingRatio = Spring.DampingRatioNoBouncy,
         stiffness = Spring.StiffnessMediumLow
     )
+    // The row now rests inside a segmented container, so the lift no longer has
+    // to conjure one: it deepens the tone and raises the shadow instead of
+    // growing a shape out of a flat row. The corner animation is gone with it,
+    // because the corners are the group's and must not change while a row is
+    // being carried between them.
+    val segmentedColors = ListItemDefaults.segmentedColors()
     val containerColor by animateColorAsState(
         targetValue = if (isDragging) {
             MaterialTheme.colorScheme.secondaryContainer
         } else {
-            Color.Transparent
+            // The resting tone is read back off the defaults rather than named
+            // again here, so this list cannot drift away from every other
+            // segmented list in the app.
+            segmentedColors.containerColor
         },
         animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
         label = "trackContainer"
-    )
-    val cornerRadius by animateDpAsState(
-        targetValue = if (isDragging) 20.dp else 0.dp,
-        animationSpec = liftSpec,
-        label = "trackCorner"
     )
     val shadowElevation by animateDpAsState(
         targetValue = if (isDragging) 12.dp else 0.dp,
@@ -2244,98 +2252,71 @@ private fun PlaylistTrackRow(
         label = "trackLift"
     )
 
-    Surface(
+    KodaListRow(
+        index = index,
+        count = count,
+        // Manage mode owns the gesture: rows are being dragged and removed
+        // there, so neither a tap nor a long press may reach playback or the
+        // options sheet.
+        onClick = if (manageEnabled) null else onClick,
+        onLongClick = if (manageEnabled) null else onLongClick,
         modifier = modifier.graphicsLayer {
             scaleX = liftScale
             scaleY = liftScale
         },
-        color = containerColor,
-        shape = RoundedCornerShape(cornerRadius.coerceAtLeast(0.dp)),
-        shadowElevation = shadowElevation.coerceAtLeast(0.dp)
-    ) {
-        ListItem(
-            headlineContent = {
-                Text(
-                    song.title,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    fontWeight = FontWeight.SemiBold
-                )
-            },
-            supportingContent = {
-                Text(song.artist, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            },
-            leadingContent = {
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    modifier = Modifier.size(48.dp)
-                ) {
-                    if (song.albumArtUri != null || song.thumbnailUrl != null) {
-                        AsyncImage(
-                            model = song.highResThumbnailUrl ?: song.albumArtUri ?: song.thumbnailUrl,
-                            contentDescription = null,
-                            contentScale = ContentScale.Crop
+        colors = segmentedColors.copy(containerColor = containerColor),
+        elevation = ListItemDefaults.elevation(elevation = shadowElevation.coerceAtLeast(0.dp)),
+        headlineContent = {
+            Text(
+                song.title,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                fontWeight = FontWeight.SemiBold
+            )
+        },
+        supportingContent = {
+            Text(song.artist, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        },
+        leadingContent = { KodaRowArtwork(song) },
+        // A plain swap, not an AnimatedContent: one transition object per
+        // row is what made entering edit mode stutter, and the controls
+        // appearing is a content change rather than a moving surface.
+        trailingContent = {
+            if (manageEnabled) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = onRemove, enabled = !isDragging) {
+                        Icon(
+                            imageVector = Icons.Rounded.RemoveCircleOutline,
+                            contentDescription = stringResource(R.string.cd_remove_track, song.title),
+                            tint = MaterialTheme.colorScheme.error
                         )
-                    } else {
-                        Box(contentAlignment = Alignment.Center) {
+                    }
+                    if (reorderEnabled) {
+                        Box(
+                            modifier = dragHandleModifier.size(48.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
                             Icon(
-                                Icons.Rounded.MusicNote,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                imageVector = Icons.Rounded.DragIndicator,
+                                contentDescription = stringResource(R.string.cd_reorder_track, song.title),
+                                tint = if (isDragging) {
+                                    MaterialTheme.colorScheme.onSecondaryContainer
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                }
                             )
                         }
                     }
                 }
-            },
-            // A plain swap, not an AnimatedContent: one transition object per
-            // row is what made entering edit mode stutter, and the controls
-            // appearing is a content change rather than a moving surface.
-            trailingContent = {
-                if (manageEnabled) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(onClick = onRemove, enabled = !isDragging) {
-                            Icon(
-                                imageVector = Icons.Rounded.RemoveCircleOutline,
-                                contentDescription = "Remove ${song.title}",
-                                tint = MaterialTheme.colorScheme.error
-                            )
-                        }
-                        if (reorderEnabled) {
-                            Box(
-                                modifier = dragHandleModifier.size(48.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.DragIndicator,
-                                    contentDescription = "Reorder ${song.title}",
-                                    tint = if (isDragging) {
-                                        MaterialTheme.colorScheme.onSecondaryContainer
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurfaceVariant
-                                    }
-                                )
-                            }
-                        }
-                    }
-                } else if (song.duration > 0) {
-                    Text(
-                        formatSongDuration(song.duration),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            },
-            // Manage mode owns the gesture: rows are being dragged and removed
-            // there, so a long press must not open a sheet on top of it.
-            modifier = if (manageEnabled) {
-                Modifier
-            } else {
-                Modifier.songRowClick(onClick = onClick, onLongClick = onLongClick)
-            },
-            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-        )
-    }
+            } else if (song.duration > 0) {
+                Text(
+                    formatSongDuration(song.duration),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    )
 }
 
 /**
@@ -3237,7 +3218,7 @@ fun PlaylistDetailScreen(
                 else -> itemsIndexed(
                     items = filteredRows,
                     key = { _, row -> row.key }
-                ) { _, row ->
+                ) { rowIndex, row ->
                     val song = row.song
                     // Manage mode: song removal for local and YouTube playlists.
                     // Drag reordering works locally and on owned "PL" playlists
@@ -3279,6 +3260,8 @@ fun PlaylistDetailScreen(
 
                     PlaylistTrackRow(
                         song = song,
+                        index = rowIndex,
+                        count = filteredRows.size,
                         manageEnabled = manageEnabled,
                         reorderEnabled = reorderEnabled,
                         isDragging = isDragging,

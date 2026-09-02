@@ -14,6 +14,7 @@ import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItemColors
 import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material3.ListItemElevation
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SegmentedListItem
 import androidx.compose.material3.Surface
@@ -52,22 +53,44 @@ import com.ivor.ivormusic.data.Song
 fun KodaListRow(
     index: Int,
     count: Int,
-    onClick: () -> Unit,
+    onClick: (() -> Unit)?,
     modifier: Modifier = Modifier,
     headlineContent: @Composable () -> Unit,
     supportingContent: (@Composable () -> Unit)? = null,
     leadingContent: (@Composable () -> Unit)? = null,
     trailingContent: (@Composable () -> Unit)? = null,
     onLongClick: (() -> Unit)? = null,
-    colors: ListItemColors = ListItemDefaults.segmentedColors()
+    colors: ListItemColors = ListItemDefaults.segmentedColors(),
+    elevation: ListItemElevation = ListItemDefaults.elevation()
 ) {
     val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
+    val shapes = ListItemDefaults.segmentedShapes(index, count)
+    val rowModifier = modifier
+        .fillMaxWidth()
+        .padding(bottom = if (index < count - 1) ListItemDefaults.SegmentedGap else 0.dp)
+
+    // A null onClick takes the non-clickable overload rather than an enabled =
+    // false clickable one. They look different: disabling a list item greys its
+    // content, and a row that is inert because the screen is in edit mode is
+    // not a row that is unavailable.
+    if (onClick == null) {
+        SegmentedListItem(
+            shapes = shapes,
+            modifier = rowModifier,
+            content = headlineContent,
+            supportingContent = supportingContent,
+            leadingContent = leadingContent,
+            trailingContent = trailingContent,
+            colors = colors,
+            elevation = elevation
+        )
+        return
+    }
+
     SegmentedListItem(
         onClick = onClick,
-        shapes = ListItemDefaults.segmentedShapes(index, count),
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(bottom = if (index < count - 1) ListItemDefaults.SegmentedGap else 0.dp),
+        shapes = shapes,
+        modifier = rowModifier,
         // The long press opens the options sheet. Passing null leaves the row
         // tap-only: SegmentedListItem, like combinedClickable, still consumes a
         // long press it was given a handler for, so a no-op lambda would swallow
@@ -82,7 +105,8 @@ fun KodaListRow(
         supportingContent = supportingContent,
         leadingContent = leadingContent,
         trailingContent = trailingContent,
-        colors = colors
+        colors = colors,
+        elevation = elevation
     )
 }
 

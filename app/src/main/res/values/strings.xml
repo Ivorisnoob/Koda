@@ -773,6 +773,10 @@
     <string name="ab_tracks">Tracks</string>
     <!-- Shown in place of an album track's title when the title is missing. %1$d is the track number. -->
     <string name="album_track_fallback">Track %1$d</string>
+    <!-- Screen reader label for the button that removes a track from a playlist. %1$s is the song title. -->
+    <string name="cd_remove_track">Remove %1$s</string>
+    <!-- Screen reader label for the handle that drags a track to a new position. %1$s is the song title. -->
+    <string name="cd_reorder_track">Reorder %1$s</string>
     <string name="ab_download_all">Download all</string>
 
     <!-- Video player -->
