@@ -18,6 +18,8 @@ import com.ivor.ivormusic.data.PlaylistPageInfo
 import com.ivor.ivormusic.data.VideoPlaylist
 import com.ivor.ivormusic.data.YouTubeRepository
 import com.ivor.ivormusic.data.LikedSongsRepository
+import com.ivor.ivormusic.data.HomeRecommendationCache
+import com.ivor.ivormusic.data.usableHomeRecommendations
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -48,6 +50,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val sessionManager = SessionManager(application)
     private val searchHistoryRepository = com.ivor.ivormusic.data.SearchHistoryRepository(application)
     private val recommendationEngine = com.ivor.ivormusic.data.RecommendationEngine(application, youtubeRepository)
+    private val homeRecommendationCache = HomeRecommendationCache(application)
     private val videoHistoryRepository = com.ivor.ivormusic.data.VideoHistoryRepository(application)
     private val themePreferences = com.ivor.ivormusic.data.ThemePreferences(application)
 
@@ -125,7 +128,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val _searchHistory = MutableStateFlow(searchHistoryRepository.getHistory())
     val searchHistory: StateFlow<List<String>> = _searchHistory.asStateFlow()
 
-    private val _youtubeSongs = MutableStateFlow<List<Song>>(emptyList())
+    private val _youtubeSongs = MutableStateFlow(homeRecommendationCache.load())
     val youtubeSongs: StateFlow<List<Song>> = _youtubeSongs.asStateFlow()
     
 
@@ -693,7 +696,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         _userName.value = sessionManager.getUserName()
         _isYouTubeConnected.value = sessionManager.isLoggedIn()
 
-        _youtubeSongs.value = emptyList()
+        _youtubeSongs.value = homeRecommendationCache.load()
         _likedSongs.value = emptyList()
         _youtubePlaylists.value = emptyList()
         _accountChannels.value = emptyList()
@@ -1444,17 +1447,23 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             _isLoading.value = true
             try {
                 if (sessionManager.isLoggedIn()) {
-                    val recs = youtubeRepository.getRecommendations()
+                    val recs = usableHomeRecommendations(
+                        listOf(youtubeRepository.getRecommendations())
+                    )
                     if (recs.isNotEmpty()) {
                         _youtubeSongs.value = recs
+                        homeRecommendationCache.save(recs)
                     }
                 } else {
                     // Not logged in: personalize from the local taste profile
                     // (play history, likes, searches). Falls back to trending
                     // internally when there's no listening data yet.
-                    val recs = recommendationEngine.getHomeRecommendations()
+                    val recs = usableHomeRecommendations(
+                        listOf(recommendationEngine.getHomeRecommendations())
+                    )
                     if (recs.isNotEmpty()) {
                         _youtubeSongs.value = recs
+                        homeRecommendationCache.save(recs)
                     }
                 }
             } catch (e: Exception) {
@@ -1590,6 +1599,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         _isYouTubeConnected.value = false
         _userAvatar.value = null
         _userName.value = null
+        homeRecommendationCache.clear()
         _youtubeSongs.value = emptyList()
         _likedSongs.value = emptyList()
         _youtubePlaylists.value = emptyList()
@@ -1599,6 +1609,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         _accountChannels.value = emptyList()
         _subscriptionFeed.value = emptyList()
         loadSubscriptionFeed(force = true)
+        loadYouTubeRecommendations()
     }
 
     fun refresh(excludedFolders: Set<String> = emptySet(), manualScan: Boolean = false) {
@@ -1612,9 +1623,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     _userAvatar.value = sessionManager.getUserAvatar()
                     
                     // Fetch personalized recommendations (order preserved from YTM)
-                    val recs = youtubeRepository.getRecommendations()
+                    val recs = usableHomeRecommendations(
+                        listOf(youtubeRepository.getRecommendations())
+                    )
                     if (recs.isNotEmpty()) {
                         _youtubeSongs.value = recs
+                        homeRecommendationCache.save(recs)
                     }
                     
                     // Update library data
@@ -1627,6 +1641,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     val recs = recommendationEngine.getHomeRecommendations()
                     if (recs.isNotEmpty()) {
                         _youtubeSongs.value = recs
+                        homeRecommendationCache.save(recs)
                     }
                 }
                 // Reload local songs with exclusions and playlists

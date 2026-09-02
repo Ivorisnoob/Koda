@@ -1167,33 +1167,51 @@ class YouTubeRepository(private val context: Context) {
             
             if (jsonResponse.isEmpty()) {
                 KLog.e("YouTubeRepo", "Empty response from FEmusic_home")
-                // Try liked music as fallback
-                val likedSongs = getLikedMusic()
-                if (likedSongs.isNotEmpty()) return@withContext likedSongs
-                return@withContext search("trending music 2024", FILTER_SONGS)
+                return@withContext fillHomeRecommendations(emptyList())
             }
             
             // Parse songs from the home page response
-            val items = parseSongsFromInternalJson(jsonResponse)
+            val items = usableHomeRecommendations(
+                listOf(parseSongsFromInternalJson(jsonResponse))
+            )
             KLog.d("YouTubeRepo", "Parsed ${items.size} songs from recommendations")
-            
-            if (items.isNotEmpty()) return@withContext items
-            
-            // Fallback to liked music if home parsing failed
-            KLog.d("YouTubeRepo", "Recommendations empty, trying liked music")
-            val likedSongs = getLikedMusic()
-            if (likedSongs.isNotEmpty()) return@withContext likedSongs
-            
-            // Last resort: search
-            search("trending music 2026", FILTER_SONGS)
+
+            // Classic Home needs three valid entries for its three artwork
+            // shapes. A partially parsed response is still useful, but it must
+            // be filled rather than accepted as complete.
+            fillHomeRecommendations(items)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             KLog.e("YouTubeRepo", "Error fetching recommendations", e)
-            try {
-                getLikedMusic()
-            } catch (e2: Exception) {
-                search("trending music 2026", FILTER_SONGS)
-            }
+            fillHomeRecommendations(emptyList())
         }
+    }
+
+    private suspend fun fillHomeRecommendations(primary: List<Song>): List<Song> {
+        if (primary.size >= 3) return primary
+
+        KLog.d("YouTubeRepo", "Home has ${primary.size} usable songs; filling from library")
+        val liked = try {
+            getLikedMusic()
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (e: Exception) {
+            KLog.w("YouTubeRepo", "Could not use liked songs as Home fallback", e)
+            emptyList()
+        }
+        val withLiked = usableHomeRecommendations(listOf(primary, liked))
+        if (withLiked.size >= 3) return withLiked
+
+        val trending = try {
+            search("trending music 2026", FILTER_SONGS)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (e: Exception) {
+            KLog.w("YouTubeRepo", "Could not use search as Home fallback", e)
+            emptyList()
+        }
+        return usableHomeRecommendations(listOf(withLiked, trending))
     }
 
     /**
