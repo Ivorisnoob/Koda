@@ -34,6 +34,7 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
     val shortsHiddenActions: StateFlow<Set<String>> = themePreferences.shortsHiddenActions
     val videoQualityWifi: StateFlow<String> = themePreferences.videoQualityWifi
     val videoQualityMobile: StateFlow<String> = themePreferences.videoQualityMobile
+    val preferHdr: StateFlow<Boolean> = themePreferences.preferHdr
     val musicQualityWifi: StateFlow<String> = themePreferences.musicQualityWifi
     val musicQualityMobile: StateFlow<String> = themePreferences.musicQualityMobile
     val spotlightHome: StateFlow<Boolean> = themePreferences.spotlightHome
@@ -158,6 +159,10 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setVideoQualityMobile(quality: String) {
         themePreferences.setVideoQualityMobile(quality)
+    }
+
+    fun setPreferHdr(enabled: Boolean) {
+        themePreferences.setPreferHdr(enabled)
     }
 
     fun setMusicQualityWifi(quality: String) {

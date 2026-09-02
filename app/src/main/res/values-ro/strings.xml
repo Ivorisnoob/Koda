@@ -147,6 +147,8 @@
     <string name="settings_advanced_value_xiaomi">Recomandate pe acest dispozitiv</string>
     <string name="settings_advanced_value_other">Corecții de scanare și baterie</string>
     <string name="settings_version_subtitle">Versiunea %1$s (%2$d)</string>
+    <string name="sp_prefer_hdr">Preferă videoclipurile HDR</string>
+    <string name="sp_prefer_hdr_sub">Folosește HDR numai dacă ecranul și decodorul îl acceptă</string>
 
     <string name="profiles_title">Profile</string>
     <string name="profiles_description">Abonamentele și recomandările ascunse sunt păstrate per profil. Playlisturile, melodiile favorite și descărcările sunt comune.</string>

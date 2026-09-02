@@ -16,12 +16,8 @@ enum class VideoStreamDelivery {
 internal fun deduplicateVideoQualityVariants(
     qualities: List<VideoQuality>
 ): List<VideoQuality> {
-    fun height(label: String): Int = label.takeWhile(Char::isDigit).toIntOrNull() ?: 0
-    fun fps(label: String): Int =
-        label.substringAfter('p', "").takeWhile(Char::isDigit).toIntOrNull() ?: 30
-
     return qualities
-        .groupBy { it.resolution to it.delivery }
+        .groupBy { Triple(it.resolution, it.delivery, it.dynamicRange) }
         .mapNotNull { (_, variants) ->
             variants.maxWithOrNull(
                 compareBy<VideoQuality>(
@@ -31,8 +27,9 @@ internal fun deduplicateVideoQualityVariants(
             )
         }
         .sortedWith(
-            compareByDescending<VideoQuality> { height(it.resolution) }
-                .thenByDescending { fps(it.resolution) }
+            compareByDescending<VideoQuality>(VideoQuality::resolutionHeight)
+                .thenByDescending(VideoQuality::resolutionFrameRate)
+                .thenByDescending { if (it.isHdr) 1 else 0 }
                 // Keep the higher-fidelity split entry first for local playback
                 // when two delivery types share the same visible label.
                 .thenByDescending {

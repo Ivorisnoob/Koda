@@ -294,6 +294,8 @@ fun SettingsScreen(
     onVideoQualityWifiChange: (String) -> Unit,
     videoQualityMobile: String,
     onVideoQualityMobileChange: (String) -> Unit,
+    preferHdr: Boolean,
+    onPreferHdrToggle: (Boolean) -> Unit,
     musicQualityWifi: String,
     onMusicQualityWifiChange: (String) -> Unit,
     musicQualityMobile: String,
@@ -785,6 +787,8 @@ fun SettingsScreen(
                     musicQualityMobile = musicQualityMobile,
                     videoQualityWifi = videoQualityWifi,
                     videoQualityMobile = videoQualityMobile,
+                    preferHdr = preferHdr,
+                    onPreferHdrToggle = onPreferHdrToggle,
                     onOpenQualityPicker = { qualityDialogTarget = it },
                     onBack = { page = SettingsPage.HUB }
                 )

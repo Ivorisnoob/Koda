@@ -1539,7 +1539,7 @@ private fun PlayerSettingsSections(
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                     }
-                    Text(quality.resolution)
+                    Text(quality.displayLabel)
                 }
             }
         }

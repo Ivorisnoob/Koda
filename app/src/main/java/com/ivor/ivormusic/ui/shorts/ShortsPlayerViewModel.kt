@@ -19,6 +19,7 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.MergingMediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import com.ivor.ivormusic.data.CommentItem
+import com.ivor.ivormusic.data.HdrVideoSupport
 import com.ivor.ivormusic.data.LikeStatus
 import com.ivor.ivormusic.data.ShortsItem
 import com.ivor.ivormusic.data.ThemePreferences
@@ -26,6 +27,7 @@ import com.ivor.ivormusic.data.VideoEngagement
 import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.data.VideoQuality
 import com.ivor.ivormusic.data.YouTubeRepository
+import com.ivor.ivormusic.data.bestSdrFallback
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -42,9 +44,10 @@ import kotlinx.coroutines.launch
  * VideoPlayerViewModel) so Shorts, regular video and music playback stay
  * independent — audio focus keeps them from playing over each other.
  *
- * Streams resolve through the same ANDROID_VR /player pipeline as regular
- * videos (Shorts are ordinary videos server-side), and engagement, metadata
- * and comments come from the same single watch-next call per Short.
+ * Streams resolve through the same NewPipe-first pipeline as regular videos,
+ * including the hardware-gated visionOS HDR supplement when enabled (Shorts
+ * are ordinary videos server-side). Engagement, metadata and comments come
+ * from the same single watch-next call per Short.
  */
 @UnstableApi
 class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewModel(application) {
@@ -52,6 +55,7 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
     private val context: Context get() = getApplication()
     private val youtubeRepository = YouTubeRepository(context)
     private val themePreferences = ThemePreferences(context)
+    private val hdrVideoSupport = HdrVideoSupport(context)
     private val videoHistoryRepository = com.ivor.ivormusic.data.VideoHistoryRepository(context)
 
     private var _exoPlayer: ExoPlayer? = null
@@ -172,6 +176,8 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
     // Retry budgets for the current Short, reset by playIndex - see handlePlayerError.
     private var rendererRetryCount = 0
     private var sourceRetryCount = 0
+    private var currentQuality: VideoQuality? = null
+    private var hdrFallbackUsed = false
 
     // ---------------- Background prefetch ----------------
     // Swiping must not show a loading spinner, so stream URLs for the next
@@ -240,7 +246,7 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
                     try {
                         // Skip if a later prefetch/playback already filled it
                         if (cachedQualities(id) == null) {
-                            cacheQualities(id, youtubeRepository.getVideoStreamQualities(id), epoch)
+                            cacheQualities(id, resolvePlayableQualities(id), epoch)
                         }
                     } finally {
                         prefetchSemaphore.release()
@@ -347,6 +353,14 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
 
     init {
         observeProfileSwitches()
+        viewModelScope.launch {
+            themePreferences.preferHdr.drop(1).distinctUntilChanged().collect {
+                synchronized(qualitiesCache) {
+                    qualitiesEpoch++
+                    qualitiesCache.clear()
+                }
+            }
+        }
 
         // First frame after ~1s buffered, like the video player. Shorts are
         // under a minute, so the 60s max buffer already covers the whole clip
@@ -466,6 +480,7 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
         _exoPlayer?.stop()
         _exoPlayer?.clearMediaItems()
         _currentVideo.value = null
+        currentQuality = null
         _playbackError.value = null
     }
 
@@ -506,6 +521,8 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
      * dead and only re-resolving can help.
      */
     private fun handlePlayerError(error: PlaybackException) {
+        if (fallbackFromHdr(error)) return
+
         if (isTransientRendererError(error) && rendererRetryCount < MAX_RENDERER_RETRIES) {
             rendererRetryCount++
             KLog.w(
@@ -530,6 +547,46 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
 
         _playbackError.value = error
         _isBuffering.value = false
+    }
+
+    private suspend fun resolvePlayableQualities(videoId: String): List<VideoQuality> {
+        val includeHdr = themePreferences.isPreferHdrEnabled() && hdrVideoSupport.hasHdrDisplay
+        val qualities = youtubeRepository.getVideoStreamQualities(videoId, includeHdr)
+        return if (includeHdr) {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                hdrVideoSupport.filterSupported(qualities)
+            }
+        } else {
+            qualities.filterNot(VideoQuality::isHdr)
+        }
+    }
+
+    private fun fallbackFromHdr(error: PlaybackException): Boolean {
+        val failed = currentQuality ?: return false
+        if (!failed.isHdr || hdrFallbackUsed) return false
+        val item = currentItem() ?: return false
+        val qualities = cachedQualities(item.videoId).orEmpty()
+        val fallback = bestSdrFallback(qualities, failed) ?: return false
+
+        hdrFallbackUsed = true
+        val position = _exoPlayer?.currentPosition?.coerceAtLeast(0L) ?: 0L
+        KLog.w(
+            "ShortsPlayerVM",
+            "HDR ${failed.displayLabel} failed; falling back to ${fallback.displayLabel}",
+            error,
+        )
+        if (httpResponseCode(error) == 403) {
+            synchronized(qualitiesCache) {
+                qualitiesEpoch++
+                qualitiesCache.clear()
+            }
+            viewModelScope.launch {
+                youtubeRepository.refreshVisitorDataAfterPlaybackFailure()
+            }
+        }
+        loadQuality(fallback, startAtMs = position)
+        _exoPlayer?.play()
+        return true
     }
 
     /**
@@ -565,7 +622,7 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
                     synchronized(qualitiesCache) { qualitiesCache.remove(item.videoId) }
                 }
                 val qualities = kotlinx.coroutines.withTimeout(15_000L) {
-                    youtubeRepository.getVideoStreamQualities(item.videoId)
+                    resolvePlayableQualities(item.videoId)
                 }
                 // The user swiped on while we were resolving; that Short owns
                 // the player now and this recovery has nothing left to fix.
@@ -640,6 +697,8 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
         // exhaust the budget for the one the user is actually watching.
         rendererRetryCount = 0
         sourceRetryCount = 0
+        hdrFallbackUsed = false
+        currentQuality = null
 
         _playbackError.value = null
         _currentVideo.value = item.toVideoItem()
@@ -654,7 +713,7 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
                 _exoPlayer?.clearMediaItems()
                 kotlinx.coroutines.withTimeout(15_000L) {
                     val qualities = cachedQualities(item.videoId)
-                        ?: youtubeRepository.getVideoStreamQualities(item.videoId)
+                        ?: resolvePlayableQualities(item.videoId)
                             .also { cacheQualities(item.videoId, it) }
                     if (_currentIndex.value != index) return@withTimeout
                     // Live arrived in the reel feed: hand it to the video
@@ -781,6 +840,7 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
      * from the top.
      */
     private fun loadQuality(quality: VideoQuality, startAtMs: Long = 0L) {
+        currentQuality = quality
         // Adaptive manifests carry no progressive URL to wrap: hand the
         // MediaItem to the player and let its MediaSource factory build the
         // DASH/HLS source. Feeding a manifest to ProgressiveMediaSource (what

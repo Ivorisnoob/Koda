@@ -315,6 +315,11 @@ internal fun buildSettingsSearchIndex(
         listOf("resolution", "cellular", "data", "1080p", "720p", "roaming")
     ) { onOpenQualityPicker(QualityDialogTarget.VIDEO_MOBILE) }
     entry(
+        "prefer_hdr", stringResource(R.string.sp_prefer_hdr), stringResource(R.string.settings_playback_and_quality),
+        Icons.Rounded.HdrOn,
+        listOf("hdr", "hdr10", "high dynamic range", "10 bit", "bt2020", "vp9 profile 2")
+    ) { onOpenPage(SettingsPage.PLAYBACK) }
+    entry(
         "video_brightness", "Remember fullscreen brightness", "Playback and quality",
         Icons.Rounded.BrightnessMedium,
         listOf(

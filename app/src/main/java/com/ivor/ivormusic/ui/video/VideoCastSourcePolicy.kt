@@ -26,10 +26,10 @@ internal fun selectableVideoQualities(
     }.take(1)
 }
 
-/** One local-playback entry per visible label, preferring the split source. */
+/** One local-playback entry per label and dynamic range, preferring split. */
 internal fun localVideoQualityOptions(qualities: List<VideoQuality>): List<VideoQuality> =
     qualities
-        .groupBy(VideoQuality::resolution)
+        .groupBy { it.resolution to it.dynamicRange }
         .mapNotNull { (_, variants) ->
             variants.maxWithOrNull(
                 compareBy<VideoQuality> {

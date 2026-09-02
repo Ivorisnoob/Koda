@@ -207,6 +207,13 @@ data class VideoItem(
     }
 }
 
+/** Dynamic range carried by one video rendition. */
+enum class VideoDynamicRange {
+    SDR,
+    HDR10,
+    HLG,
+}
+
 /**
  * Represents a video stream quality option.
  */
@@ -241,7 +248,19 @@ data class VideoQuality(
     val sourceAspectRatio: Float? = null,
     /** Codec reported by the stream provider, for example avc1, vp9 or av01. */
     val codec: String? = null,
+    /** SDR, HDR10/PQ or HLG as declared by the issuing player response. */
+    val dynamicRange: VideoDynamicRange = VideoDynamicRange.SDR,
+    /** Encoded dimensions and frame rate, used for an exact decoder capability check. */
+    val width: Int = 0,
+    val height: Int = 0,
+    val frameRate: Int = 0,
 ) {
+    val isHdr: Boolean get() = dynamicRange != VideoDynamicRange.SDR
+
+    /** The quality sheet keeps the resolution compact while making HDR explicit. */
+    val displayLabel: String
+        get() = if (isHdr) "$resolution HDR" else resolution
+
     /**
      * How this entry reaches a player. This is derived rather than supplied by
      * every resolver so the meaning of the older isDASH/audioUrl fields stays
@@ -268,6 +287,7 @@ data class VideoQuality(
      */
     val isDefaultCastReceiverCompatible: Boolean
         get() = when {
+            isHdr -> false
             isLive -> isHlsManifest
             else -> delivery == VideoStreamDelivery.MUXED_PROGRESSIVE
         }

@@ -1,5 +1,6 @@
 package com.ivor.ivormusic.ui.video
 
+import com.ivor.ivormusic.data.VideoDynamicRange
 import com.ivor.ivormusic.data.VideoQuality
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -16,6 +17,28 @@ class VideoCastSourcePolicyTest {
 
         assertEquals(listOf(split), selectableVideoQualities(qualities, isCasting = false))
         assertEquals(listOf(muxed), selectableVideoQualities(qualities, isCasting = true))
+    }
+
+    @Test
+    fun `local menu keeps HDR beside SDR while cast excludes HDR`() {
+        val sdr = splitQuality("1080p60")
+        val hdr = VideoQuality(
+            resolution = "1080p60",
+            url = "video-1080p60-hdr",
+            format = "webm",
+            audioUrl = "audio-1080p60-hdr",
+            codec = "vp09.02.51.10",
+            dynamicRange = VideoDynamicRange.HDR10,
+        )
+
+        assertEquals(
+            listOf(sdr, hdr),
+            selectableVideoQualities(listOf(sdr, hdr), isCasting = false),
+        )
+        assertEquals(
+            emptyList<VideoQuality>(),
+            selectableVideoQualities(listOf(hdr), isCasting = true),
+        )
     }
 
     @Test

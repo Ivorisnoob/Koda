@@ -86,6 +86,7 @@ Official builds are published only on GitHub and in the [Telegram community](htt
 - A personalized video home feed, plus local recommendations when signed out.
 - Search videos, channels, and playlists with date, duration, and sorting filters.
 - Video quality controls with available resolutions up to 2160p60.
+- Optional HDR playback on displays and hardware decoders that support it, with automatic SDR fallback.
 - Captions with remembered language and on/off state, plus adjustable size, color, and background.
 - Chapters, storyboard seek previews, playback speed, double-tap seeking, and hold-to-2x.
 - Fullscreen brightness and volume gestures, with an option to remember fullscreen brightness.

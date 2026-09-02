@@ -156,7 +156,9 @@ class YouTubeRepository(private val context: Context) {
         // User-Agent belongs to a different client family.
         private const val NEWPIPE_ANDROID_USER_AGENT =
             "com.google.android.youtube/21.03.36 (Linux; U; Android 15; GB) gzip"
-        private const val NEWPIPE_VISIONOS_USER_AGENT =
+        private const val VISIONOS_CLIENT_VERSION = "1.02"
+        private const val VISIONOS_CLIENT_ID = 101
+        private const val VISIONOS_USER_AGENT =
             "com.google.visionos.youtube/1.02(RealityDevice14,1; U; CPU visionOS " +
                 "25_6_0 like Mac OS X; GB)"
 
@@ -173,7 +175,7 @@ class YouTubeRepository(private val context: Context) {
                 "ANDROID_VR" -> ANDROID_VR_USER_AGENT
                 "ANDROID", "ANDROID_TESTSUITE", "ANDROID_MUSIC" ->
                     NEWPIPE_ANDROID_USER_AGENT
-                "VISIONOS" -> NEWPIPE_VISIONOS_USER_AGENT
+                "VISIONOS" -> VISIONOS_USER_AGENT
                 "TVHTML5_SIMPLY_EMBEDDED_PLAYER", "TVHTML5_SIMPLY_EMBEDDED", "TVHTML5" ->
                     TV_EMBED_USER_AGENT
                 "WEB_EMBEDDED_PLAYER", "WEB", "WEB_REMIX" -> BROWSER_USER_AGENT
@@ -1910,6 +1912,56 @@ class YouTubeRepository(private val context: Context) {
         put("osVersion", "18.1.0.22B83")
     }
 
+    /** Fields pinned by NewPipeExtractor v0.26.5 for its working visionOS fallback. */
+    private fun visionOsClientFields(): org.json.JSONObject = org.json.JSONObject().apply {
+        put("clientScreen", "WATCH")
+        put("platform", "MOBILE")
+        put("deviceMake", "Apple")
+        put("deviceModel", "RealityDevice14,1")
+        put("osName", "visionOS")
+        put("osVersion", "25.6.0.23O471")
+    }
+
+    private fun nativeClientNonce(length: Int): String {
+        val alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+        val random = java.security.SecureRandom()
+        return buildString(length) {
+            repeat(length) { append(alphabet[random.nextInt(alphabet.length)]) }
+        }
+    }
+
+    /**
+     * Resolve the direct visionOS response used only to augment an otherwise
+     * successful NewPipe extraction with HDR formats. [verified September
+     * 2026] Its VP9.2 HDR URLs served bounded ranges at the start, quarters and
+     * final byte of 1080p60 and 2160p60 samples; Android VR failed at 64 MiB.
+     */
+    private suspend fun resolveVisionOsStreamingData(videoId: String): org.json.JSONObject? {
+        val visitorData = getVisitorData()
+        val first = fetchVisionOsPlayerResponse(videoId, visitorData)
+        first.streamingData?.let { return it }
+        if (!first.visitorDataSuspect) return null
+
+        val fresh = remintVisitorData(flagged = visitorData) ?: return null
+        if (fresh == visitorData) return null
+        return fetchVisionOsPlayerResponse(videoId, fresh).streamingData
+    }
+
+    private suspend fun fetchVisionOsPlayerResponse(
+        videoId: String,
+        visitorData: String,
+    ): PlayerResponse = fetchPlayerResponse(
+        videoId = videoId,
+        clientName = "VISIONOS",
+        clientVersion = VISIONOS_CLIENT_VERSION,
+        clientNameId = VISIONOS_CLIENT_ID,
+        userAgent = VISIONOS_USER_AGENT,
+        visitorData = visitorData,
+        extraClientFields = visionOsClientFields(),
+        contentPlaybackNonce = nativeClientNonce(16),
+        mobileTParameter = nativeClientNonce(12),
+    )
+
     private suspend fun runPlayerClientChain(videoId: String, visitorData: String): PlayerResponse {
         val vr = fetchPlayerResponse(
             videoId = videoId,
@@ -2031,6 +2083,8 @@ class YouTubeRepository(private val context: Context) {
         userAgent: String,
         visitorData: String,
         extraClientFields: org.json.JSONObject = org.json.JSONObject(),
+        contentPlaybackNonce: String? = null,
+        mobileTParameter: String? = null,
     ): PlayerResponse = withContext(Dispatchers.IO) {
         try {
             val clientObj = org.json.JSONObject().apply {
@@ -2049,16 +2103,23 @@ class YouTubeRepository(private val context: Context) {
             val contextObj = org.json.JSONObject().put("client", clientObj)
             // No playbackContext.signatureTimestamp: that field is the player-JS
             // "sts" value, which only matters for ciphered WEB streams. The
-            // native clients used here (ANDROID_VR / IOS) return unciphered
-            // URLs and don't need it.
+            // native clients used here (ANDROID_VR / IOS / VISIONOS) return
+            // unciphered URLs and don't need it.
             val jsonBody = org.json.JSONObject().apply {
                 put("videoId", videoId)
+                contentPlaybackNonce?.let { put("cpn", it) }
                 put("context", contextObj)
                 put("contentCheckOk", true)
                 put("racyCheckOk", true)
             }.toString()
 
-            val url = "https://youtubei.googleapis.com/youtubei/v1/player?key=$INNER_TUBE_API_KEY&prettyPrint=false"
+            val url = buildString {
+                append("https://youtubei.googleapis.com/youtubei/v1/player")
+                append("?key=$INNER_TUBE_API_KEY&prettyPrint=false")
+                if (mobileTParameter != null) {
+                    append("&t=$mobileTParameter&id=$videoId")
+                }
+            }
 
             val requestBuilder = okhttp3.Request.Builder()
                 .url(url)
@@ -4735,15 +4796,40 @@ class YouTubeRepository(private val context: Context) {
      * Does NOT fetch channel avatar, related videos, or extra metadata.
      * Use this to start playback ASAP, then call getVideoDetails() for the rest.
      */
-    suspend fun getVideoStreamQualities(videoId: String): List<VideoQuality> =
-        getVideoStreamResult(videoId).qualities
+    suspend fun getVideoStreamQualities(
+        videoId: String,
+        includeHdr: Boolean = false,
+    ): List<VideoQuality> = getVideoStreamResult(videoId, includeHdr).qualities
 
     /**
      * Resolve the quality ladder and the storyboard harvested by that exact
      * extraction as one value. Callers that render a scrub preview must use
      * this API instead of trying to coordinate two independently mutable reads.
      */
-    suspend fun getVideoStreamResult(videoId: String): VideoStreamResult = withContext(Dispatchers.IO) {
+    suspend fun getVideoStreamResult(
+        videoId: String,
+        includeHdr: Boolean = false,
+    ): VideoStreamResult = withContext(Dispatchers.IO) {
+        // NewPipe already performs this visionOS call internally, but v0.26.5
+        // drops HDR itags 330-337 because they are absent from its ItagItem
+        // table. Only opted-in, display-capable callers pay for the parallel
+        // raw response that recovers those otherwise discarded formats.
+        val visionOsResult = if (includeHdr) {
+            async {
+                try {
+                    resolveVisionOsStreamingData(videoId)
+                        ?.let { parseQualitiesFromStreamingData(it, includeHdr = true) }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    KLog.w("YouTubeRepo", "visionOS HDR resolution failed for $videoId", e)
+                    null
+                }
+            }
+        } else {
+            null
+        }
+
         // NewPipe 0.26.3+ deliberately resolves VOD streams through Android's
         // reel endpoint and a visionOS fallback, both of which avoid the WEB
         // client's SABR-only response. Keep that maintained client selection in
@@ -4754,11 +4840,27 @@ class YouTubeRepository(private val context: Context) {
         try {
             val extracted = getVideoStreamsFromNewPipe(videoId)
             if (extracted.qualities.isNotEmpty()) {
+                val hdrQualities = if (extracted.qualities.any { it.isLive }) {
+                    visionOsResult?.cancel()
+                    emptyList()
+                } else {
+                    visionOsResult?.await().orEmpty().filter(VideoQuality::isHdr)
+                }
+                val merged = if (hdrQualities.isEmpty()) {
+                    extracted
+                } else {
+                    extracted.copy(
+                        qualities = deduplicateVideoQualityVariants(
+                            extracted.qualities + hdrQualities
+                        )
+                    )
+                }
                 KLog.i(
                     "YouTubeRepo",
-                    "Video qualities via NewPipe: ${extracted.qualities.size} for $videoId"
+                    "Video qualities via NewPipe: ${merged.qualities.size} for $videoId " +
+                        "(HDR=${hdrQualities.size})"
                 )
-                return@withContext extracted
+                return@withContext merged
             }
         } catch (e: CancellationException) {
             throw e
@@ -4768,6 +4870,12 @@ class YouTubeRepository(private val context: Context) {
                 "NewPipe quality resolution failed, falling back to direct InnerTube",
                 e,
             )
+        }
+
+        // If NewPipe itself failed, the already-running visionOS request is a
+        // complete fallback ladder, not merely an HDR supplement.
+        visionOsResult?.await()?.takeIf { it.isNotEmpty() }?.let {
+            return@withContext VideoStreamResult(it)
         }
 
         // Last-resort fallback. It is still useful for a client-specific edge
@@ -4890,14 +4998,19 @@ class YouTubeRepository(private val context: Context) {
                 .filter { it.isUrl }
                 .mapNotNull { stream ->
                     stream.resolution?.takeIf { it.isNotBlank() }?.let { resolution ->
+                        val dynamicRange = youtubeVideoDynamicRange(resolution, null)
                         VideoQuality(
-                            resolution = resolution,
+                            resolution = normalizedVideoQualityLabel(resolution),
                             url = stream.content,
                             format = stream.format?.suffix,
                             isDASH = false,
                             audioUrl = bestAudio.content,
                             sourceAspectRatio = sourceAspect,
                             codec = stream.codec,
+                            dynamicRange = dynamicRange,
+                            width = stream.width,
+                            height = stream.height,
+                            frameRate = stream.fps,
                         )
                     }
                 }
@@ -4909,13 +5022,18 @@ class YouTubeRepository(private val context: Context) {
                 .filter { it.isUrl }
                 .mapNotNull { stream ->
                     stream.resolution?.takeIf { it.isNotBlank() }?.let { resolution ->
+                        val dynamicRange = youtubeVideoDynamicRange(resolution, null)
                         VideoQuality(
-                            resolution = resolution,
+                            resolution = normalizedVideoQualityLabel(resolution),
                             url = stream.content,
                             format = stream.format?.suffix,
                             isDASH = false,
                             sourceAspectRatio = sourceAspect,
                             codec = stream.codec,
+                            dynamicRange = dynamicRange,
+                            width = stream.width,
+                            height = stream.height,
+                            frameRate = stream.fps,
                         )
                     }
                 }
@@ -4936,175 +5054,13 @@ class YouTubeRepository(private val context: Context) {
      */
     private suspend fun getVideoQualitiesFromInnerTube(videoId: String): List<VideoQuality> {
         val streamingData = resolvePlayerStreamingData(videoId) ?: return emptyList()
-        return parseQualitiesFromStreamingData(streamingData)
+        return parseQualitiesFromStreamingData(streamingData, includeHdr = false)
     }
 
-    private fun parseQualitiesFromStreamingData(streamingData: org.json.JSONObject): List<VideoQuality> {
-        fun org.json.JSONArray.objects(): List<org.json.JSONObject> =
-            (0 until length()).mapNotNull { optJSONObject(it) }
-
-        val adaptive = streamingData.optJSONArray("adaptiveFormats")?.objects() ?: emptyList()
-        val muxed = streamingData.optJSONArray("formats")?.objects() ?: emptyList()
-
-        // Source shape, taken from the largest video format that declares both
-        // dimensions. A vertical live stream is an ordinary broadcast with a
-        // 9:16 encode - nothing in the response labels it as such, and
-        // /shorts/<id> resolves straight back to /watch?v= (verified August
-        // 2026), so the frame dimensions are the only signal there is.
-        //
-        // Read here rather than from the player so any layout that sizes itself
-        // from the video is right on the first composition instead of snapping
-        // into place once the first frame decodes.
-        val sourceAspect = (adaptive + muxed)
-            .filter { it.optInt("width") > 0 && it.optInt("height") > 0 }
-            .maxByOrNull { it.optInt("height") }
-            ?.let { it.optInt("width").toFloat() / it.optInt("height").toFloat() }
-
-        // The direct InnerTube resolver is only a last-resort fallback and its
-        // HDR URLs currently fail during playback. Keep those variants out so
-        // a fallback can never reintroduce the source-error path removed from
-        // the primary NewPipe flow.
-        fun isHdrFormat(f: org.json.JSONObject): Boolean {
-            if (f.optString("qualityLabel").contains("HDR", ignoreCase = true)) return true
-            val transfer = f.optJSONObject("colorInfo")
-                ?.optString("transferCharacteristics").orEmpty()
-            return transfer == "COLOR_TRANSFER_CHARACTERISTICS_SMPTE2084" ||
-                transfer == "COLOR_TRANSFER_CHARACTERISTICS_ARIB_STD_B67"
-        }
-        fun labelHeight(label: String): Int = label.takeWhile { it.isDigit() }.toIntOrNull() ?: 0
-        fun labelFps(label: String): Int =
-            label.substringAfter("p", "").takeWhile { it.isDigit() }.toIntOrNull() ?: 30
-
-        // A live broadcast is the one case where the progressive URLs in
-        // adaptiveFormats are unusable: they are segment endpoints (live=1,
-        // noclen=1, targetDurationSec=2), so an unbounded GET returns one ~2s
-        // segment and then EOF, and the bounded ranged GET ChunkedStreamDataSource
-        // issues blocks until it times out - the "live video opens but never
-        // plays" failure. The HLS variant playlist is the only sane source:
-        // media3-exoplayer-hls handles the segment protocol, the DVR window and
-        // ABR itself. hlsManifestUrl is present on live /player responses and
-        // absent on VODs (verified against ANDROID_VR, August 2026), so it is
-        // also the live signal.
-        //
-        // Every rendition lives inside that one manifest, so the ladder here is
-        // labels only: each entry carries the same URL, and picking one caps the
-        // track selector instead of swapping the media source (see
-        // VideoPlayerViewModel.setQuality). That keeps ABR working under the cap
-        // and makes a quality change free - no re-prepare, no rebuffer, which
-        // matters more on live than anywhere else. The labels come from the same
-        // /player response the manifest did, so building the ladder costs no
-        // extra network call.
-        val hlsManifestUrl = streamingData.optString("hlsManifestUrl").takeIf { it.isNotBlank() }
-        if (hlsManifestUrl != null) {
-            fun liveEntry(label: String) = VideoQuality(
-                label, hlsManifestUrl, "HLS",
-                isDASH = true, isLive = true, sourceAspectRatio = sourceAspect
-            )
-
-            val ladder = adaptive
-                .filter {
-                    it.optString("mimeType").startsWith("video/") &&
-                        !isHdrFormat(it)
-                }
-                .mapNotNull { it.optString("qualityLabel").takeIf { label -> label.isNotEmpty() } }
-                .distinct()
-                .sortedWith(
-                    compareByDescending<String> { labelHeight(it) }
-                        .thenByDescending { labelFps(it) }
-                )
-
-            return listOf(liveEntry("Auto")) + ladder.map(::liveEntry)
-        }
-
-        // Best separate audio track; prefer AAC (mp4a) for broad hardware support,
-        // then highest bitrate.
-        val directAudioFormats = adaptive.filter {
-            it.optString("mimeType").startsWith("audio/") &&
-                it.optString("url").isNotEmpty()
-        }
-        val hasAlternateAudioTracks = directAudioFormats.any {
-            val type = audioTrackType(it)
-            type != null && type != AudioTrackType.ORIGINAL
-        }
-        val bestAudioUrl = originalTrackAudioFormats(directAudioFormats)
-            .maxWithOrNull(
-                compareBy(
-                    { if (it.optString("mimeType").contains("mp4a")) 1 else 0 },
-                    { it.optInt("bitrate") }
-                )
-            )
-            ?.optString("url")?.takeIf { it.isNotEmpty() }
-
-        // Codec preference for the video track: H.264 decodes everywhere,
-        // VP9 is widely supported, AV1 only on recent chipsets.
-        fun codecRank(mimeType: String): Int = when {
-            mimeType.contains("avc1") -> 3
-            mimeType.contains("vp9") || mimeType.contains("vp09") -> 2
-            else -> 1
-        }
-
-        fun container(mimeType: String): String =
-            mimeType.substringAfter("video/").substringBefore(";").ifEmpty { "mp4" }
-
-        fun codec(mimeType: String): String? =
-            mimeType.substringAfter("codecs=\"", "")
-                .substringBefore('"')
-                .takeIf { it.isNotBlank() }
-
-        val qualities = mutableListOf<VideoQuality>()
-
-        // Video-only adaptive formats, one entry per quality label, merged with
-        // the best audio track at playback time.
-        if (bestAudioUrl != null) {
-            adaptive
-                .filter {
-                    it.optString("mimeType").startsWith("video/") &&
-                        it.optString("url").isNotEmpty() &&
-                        it.optString("qualityLabel").isNotEmpty() &&
-                        !isHdrFormat(it)
-                }
-                .groupBy { it.optString("qualityLabel") }
-                .forEach { (label, formats) ->
-                    val best = formats.maxWithOrNull(
-                        compareBy({ codecRank(it.optString("mimeType")) }, { it.optInt("bitrate") })
-                    ) ?: return@forEach
-                    qualities.add(
-                        VideoQuality(
-                            resolution = label,
-                            url = best.optString("url"),
-                            format = container(best.optString("mimeType")),
-                            isDASH = false,
-                            audioUrl = bestAudioUrl,
-                            sourceAspectRatio = sourceAspect,
-                            codec = codec(best.optString("mimeType")),
-                        )
-                    )
-                }
-        }
-
-        // Muxed formats (itag 18 etc.) fill in labels not already covered and
-        // keep playback possible when no audio-only track exists.
-        if (!hasAlternateAudioTracks || bestAudioUrl == null) {
-            muxed.forEach { f ->
-                val label = f.optString("qualityLabel")
-                val url = f.optString("url")
-                if (label.isNotEmpty() && url.isNotEmpty()) {
-                    qualities.add(
-                        VideoQuality(
-                            label, url, container(f.optString("mimeType")), false,
-                            sourceAspectRatio = sourceAspect,
-                            codec = codec(f.optString("mimeType")),
-                        )
-                    )
-                }
-            }
-        }
-
-        // Keep muxed and split variants distinct so local playback, downloads
-        // and the Default Cast Receiver can each choose a source they can
-        // actually consume.
-        return deduplicateVideoQualityVariants(qualities)
-    }
+    private fun parseQualitiesFromStreamingData(
+        streamingData: org.json.JSONObject,
+        includeHdr: Boolean,
+    ): List<VideoQuality> = parseDirectVideoQualities(streamingData, includeHdr)
 
     /**
      * Get video details including qualities and related videos.

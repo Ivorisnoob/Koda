@@ -28,6 +28,7 @@ import com.ivor.ivormusic.data.CaptionTrack
 import com.ivor.ivormusic.data.CacheManager
 import com.ivor.ivormusic.data.CommentItem
 import com.ivor.ivormusic.data.DownloadedVideo
+import com.ivor.ivormusic.data.HdrVideoSupport
 import com.ivor.ivormusic.data.LikeStatus
 import com.ivor.ivormusic.data.SegmentAction
 import com.ivor.ivormusic.data.SponsorBlockRepository
@@ -46,12 +47,15 @@ import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.data.VideoQuality
 import com.ivor.ivormusic.data.VideoPlaybackCacheStream
 import com.ivor.ivormusic.data.VideoSeekPreview
+import com.ivor.ivormusic.data.VideoStreamResult
 import com.ivor.ivormusic.data.VttCue
 import com.ivor.ivormusic.data.YouTubeRepository
 import com.ivor.ivormusic.data.ThemePreferences
 import com.ivor.ivormusic.data.videoPlaybackCacheKey
+import com.ivor.ivormusic.data.bestSdrFallback
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
@@ -98,6 +102,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     private val context: Context get() = getApplication()
     private val youtubeRepository = YouTubeRepository(context)
     private val themePreferences = ThemePreferences(context)
+    private val hdrVideoSupport = HdrVideoSupport(context)
     private val videoHistoryRepository = com.ivor.ivormusic.data.VideoHistoryRepository(context)
 
     // Device-held video playlists. Its state is process-wide, so a save taken
@@ -476,6 +481,13 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     private var sourceRetryCount = 0
     private var sourceRecoveryJob: kotlinx.coroutines.Job? = null
 
+    // A bad HDR source or an optimistic vendor codec declaration gets one
+    // deterministic SDR escape before the generic retry machinery. The mini
+    // player also uses SDR because its TextureView cannot present true HDR;
+    // the chosen HDR rung is restored when the SurfaceView expands again.
+    private var hdrFallbackUsed = false
+    private var hdrQualityToRestoreAfterMini: VideoQuality? = null
+
     // Videos skipped in a row because they would not play at all. Playlists
     // collect deleted, private and region-blocked entries over time, and one of
     // those must not end the run - but a network that has gone away fails every
@@ -836,6 +848,8 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                 // hardcoded null); receiver-side failures arrive through
                 // recoverFromCastFailure(). Everything below is the local
                 // player's story.
+
+                if (fallbackFromHdr(error)) return
 
                 // A renderer/decoder failure is not a broken stream: the
                 // codec lost its surface or was reclaimed. Re-prepare in
@@ -1618,6 +1632,53 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     }
 
     /**
+     * Resolve HDR only when the user opted in, the active output is local and
+     * the display advertises an HDR transfer. The exact decoder check happens
+     * after format metadata arrives and removes unsupported rungs before the
+     * starting-quality decision or quality sheet can see them.
+     */
+    private suspend fun resolvePlayableStreamResult(videoId: String): VideoStreamResult {
+        val includeHdr = _castPlayer == null &&
+            themePreferences.isPreferHdrEnabled() &&
+            hdrVideoSupport.hasHdrDisplay
+        val result = youtubeRepository.getVideoStreamResult(videoId, includeHdr)
+        val qualities = if (includeHdr) {
+            kotlinx.coroutines.withContext(Dispatchers.Default) {
+                hdrVideoSupport.filterSupported(result.qualities)
+            }
+        } else {
+            result.qualities.filterNot(VideoQuality::isHdr)
+        }
+        return result.copy(qualities = qualities)
+    }
+
+    private suspend fun resolvePlayableQualities(videoId: String): List<VideoQuality> =
+        resolvePlayableStreamResult(videoId).qualities
+
+    /** One-shot HDR-to-SDR recovery shared by source and decoder failures. */
+    private fun fallbackFromHdr(error: PlaybackException): Boolean {
+        val failed = _currentQuality.value ?: return false
+        if (!failed.isHdr || hdrFallbackUsed || _castPlayer != null) return false
+        val fallback = bestSdrFallback(localVideoQualityOptions(_availableQualities.value), failed)
+            ?: return false
+
+        hdrFallbackUsed = true
+        hdrQualityToRestoreAfterMini = null
+        KLog.w(
+            "VideoPlayerVM",
+            "HDR ${failed.displayLabel} failed; falling back to ${fallback.displayLabel}",
+            error,
+        )
+        if (httpResponseCode(error) == 403) {
+            viewModelScope.launch {
+                youtubeRepository.refreshVisitorDataAfterPlaybackFailure()
+            }
+        }
+        reloadPreservingPosition(fallback)
+        return true
+    }
+
+    /**
      * Re-resolve [video]'s stream URLs and rebuild the media source, keeping
      * the quality the user was watching when it is still on offer.
      *
@@ -1640,7 +1701,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     ): Boolean {
         if (_exoPlayer == null && _castPlayer == null) return false
         val qualities = try {
-            youtubeRepository.getVideoStreamQualities(video.videoId)
+            resolvePlayableQualities(video.videoId)
         } catch (e: kotlinx.coroutines.CancellationException) {
             // playVideo() cancels this job when the user moves on. Swallowing
             // that would let a dead recovery keep writing loading/error state
@@ -1657,12 +1718,15 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         if (qualities.isEmpty()) return false
 
         _availableQualities.value = qualities
-        val previousLabel = _currentQuality.value?.resolution
+        val previousQuality = _currentQuality.value
         val chosen = if (_castPlayer != null) {
-            pickDefaultCastReceiverQuality(qualities, previousLabel) ?: return false
+            pickDefaultCastReceiverQuality(qualities, previousQuality?.resolution) ?: return false
         } else {
             localVideoQualityOptions(qualities)
-                .firstOrNull { it.resolution == previousLabel }
+                .firstOrNull {
+                    it.resolution == previousQuality?.resolution &&
+                        it.dynamicRange == previousQuality.dynamicRange
+                }
                 ?: pickDefaultQuality(qualities)
         }
 
@@ -1805,7 +1869,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         queueErrorSkipCount = 0
         val target = normalized.current ?: return
         if (_currentVideo.value?.videoId == target.videoId) {
-            _isExpanded.value = true
+            setExpanded(true)
             return
         }
         startVideo(target)
@@ -1964,7 +2028,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     ) {
         if (!forceRestart && _currentVideo.value?.videoId == video.videoId) {
             // Already playing this video, just expand
-            _isExpanded.value = true
+            setExpanded(true)
             return
         }
 
@@ -1994,6 +2058,8 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         resetSponsorBlock()
         _availableQualities.value = emptyList()
         _currentQuality.value = null
+        hdrFallbackUsed = false
+        hdrQualityToRestoreAfterMini = null
         _relatedVideos.value = emptyList() // Clear previous related
         _chapters.value = emptyList() // Clear previous chapters
         _seekPreview.value = null // Never show a frame from the previous video
@@ -2130,7 +2196,8 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         }
 
         // ========== PHASE 1: START PLAYBACK ASAP (fast) ==========
-        // Uses lightweight getVideoStreamQualities() which ONLY fetches stream URLs
+        // Lightweight stream/storyboard resolution only; watch metadata stays
+        // in the parallel phase below.
         streamLoadJob = viewModelScope.launch {
             try {
                 if (!isCurrentVideoLoad(video.videoId, loadGeneration)) return@launch
@@ -2150,7 +2217,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                 // prevent a cancelled load from touching a newer video.
                 run resolve@ {
                     // FAST: Get stream URLs only (no metadata, no related, no channel avatar)
-                    val streamResult = youtubeRepository.getVideoStreamResult(video.videoId)
+                    val streamResult = resolvePlayableStreamResult(video.videoId)
                     if (!isCurrentVideoLoad(video.videoId, loadGeneration)) return@resolve
                     val qualities = streamResult.qualities
                     _availableQualities.value = qualities
@@ -2352,10 +2419,9 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      * Pick the starting quality based on the Settings preference for the
      * current network (Wi-Fi vs mobile data). Fresh pref read because Settings
      * toggles through its own ThemePreferences instance.
-     * The list from getVideoStreamQualities() is sorted highest-first with
-     * 60fps variants before 30fps, so the first label at or below the target
-     * height is the best match; if the video has nothing at or below it, take
-     * the lowest available.
+     * The resolved list is sorted highest-first with 60fps variants before
+     * 30fps, so the first label at or below the target height is the best
+     * match; if the video has nothing at or below it, take the lowest available.
      */
     private fun pickDefaultQuality(qualities: List<VideoQuality>): VideoQuality {
         fun height(label: String): Int = label.takeWhile { it.isDigit() }.toIntOrNull() ?: 0
@@ -2373,13 +2439,25 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                 ?: options.first()
         }
 
-        if (preferred == ThemePreferences.VIDEO_QUALITY_AUTO) {
-            return options.firstOrNull { height(it.resolution) > 0 } ?: options.first()
+        val chosen = if (preferred == ThemePreferences.VIDEO_QUALITY_AUTO) {
+            options.firstOrNull { height(it.resolution) > 0 } ?: options.first()
+        } else {
+            val targetHeight = height(preferred)
+            options.firstOrNull { height(it.resolution) in 1..targetHeight }
+                ?: options.lastOrNull { height(it.resolution) > 0 }
+                ?: options.first()
         }
-        val targetHeight = height(preferred)
-        return options.firstOrNull { height(it.resolution) in 1..targetHeight }
-            ?: options.lastOrNull { height(it.resolution) > 0 }
-            ?: options.first()
+
+        // The mini player is intentionally a TextureView for rounded clipping.
+        // Android tone-maps HDR through that surface and can clip/band it, so a
+        // cold restore or an in-app minimise uses the matching SDR rung and
+        // remembers what to restore on the full player's SurfaceView.
+        if (!_isExpanded.value && chosen.isHdr) {
+            hdrQualityToRestoreAfterMini = chosen
+            return bestSdrFallback(options, chosen) ?: chosen
+        }
+        if (_isExpanded.value) hdrQualityToRestoreAfterMini = null
+        return chosen
     }
 
     /**
@@ -2584,7 +2662,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     }
 
     private val VideoQuality.cacheVariant: String
-        get() = listOfNotNull(resolution, format, codec)
+        get() = listOfNotNull(resolution, dynamicRange.name, format, codec)
             .joinToString("-")
 
     /**
@@ -2656,6 +2734,8 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         } else {
             quality
         }
+        hdrQualityToRestoreAfterMini = null
+        if (selected.isHdr) hdrFallbackUsed = false
         reloadPreservingPosition(selected)
     }
 
@@ -2806,7 +2886,29 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     }
 
     fun setExpanded(expanded: Boolean) {
+        if (_isExpanded.value == expanded) return
         _isExpanded.value = expanded
+        if (_isLocalPlayback.value || _castPlayer != null || _isLive.value) return
+
+        val current = _currentQuality.value ?: return
+        if (!expanded && current.isHdr) {
+            val fallback = bestSdrFallback(localVideoQualityOptions(_availableQualities.value), current)
+                ?: return
+            hdrQualityToRestoreAfterMini = current
+            reloadPreservingPosition(fallback)
+            return
+        }
+
+        if (expanded && !current.isHdr) {
+            val remembered = hdrQualityToRestoreAfterMini ?: return
+            hdrQualityToRestoreAfterMini = null
+            if (!themePreferences.isPreferHdrEnabled()) return
+            val restored = localVideoQualityOptions(_availableQualities.value).firstOrNull {
+                it.isHdr && it.resolution == remembered.resolution &&
+                    it.dynamicRange == remembered.dynamicRange
+            } ?: return
+            reloadPreservingPosition(restored)
+        }
     }
 
     fun closePlayer() {
@@ -2832,6 +2934,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         deferredRestorePositionMs = null
         leaveLocalPlayback()
         _isExpanded.value = false
+        hdrQualityToRestoreAfterMini = null
         // Nothing is playing any more, so nothing should be on the lock screen.
         com.ivor.ivormusic.service.VideoPlaybackService.stop(context)
         // An explicit close means "I'm done with this video" - the opposite

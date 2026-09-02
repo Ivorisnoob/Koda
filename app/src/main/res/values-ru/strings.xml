@@ -147,6 +147,8 @@
     <string name="settings_advanced_value_xiaomi">Рекомендуется на этом устройстве</string>
     <string name="settings_advanced_value_other">Исправления сканирования и батареи</string>
     <string name="settings_version_subtitle">Версия %1$s (%2$d)</string>
+    <string name="sp_prefer_hdr">Предпочитать HDR-видео</string>
+    <string name="sp_prefer_hdr_sub">Использовать HDR, только если экран и декодер его поддерживают</string>
 
     <string name="profiles_title">Профили</string>
     <string name="profiles_description">Подписки и скрытые рекомендации хранятся отдельно для каждого профиля. Плейлисты, понравившиеся песни и загрузки общие.</string>

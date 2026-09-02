@@ -72,6 +72,9 @@ class ThemePreferences(context: Context) {
     private val _videoQualityMobile = MutableStateFlow(getVideoQualityMobilePreference())
     val videoQualityMobile: StateFlow<String> = _videoQualityMobile.asStateFlow()
 
+    private val _preferHdr = MutableStateFlow(getPreferHdrPreference())
+    val preferHdr: StateFlow<Boolean> = _preferHdr.asStateFlow()
+
     private val _captionTextSize = MutableStateFlow(getCaptionTextSizePreference())
     val captionTextSize: StateFlow<Float> = _captionTextSize.asStateFlow()
 
@@ -226,6 +229,7 @@ class ThemePreferences(context: Context) {
             KEY_SHORTS_HIDDEN_ACTIONS -> _shortsHiddenActions.value = getShortsHiddenActionsPreference()
             KEY_VIDEO_QUALITY_WIFI -> _videoQualityWifi.value = getVideoQualityWifiPreference()
             KEY_VIDEO_QUALITY_MOBILE -> _videoQualityMobile.value = getVideoQualityMobilePreference()
+            KEY_PREFER_HDR -> _preferHdr.value = getPreferHdrPreference()
             KEY_CAPTION_TEXT_SIZE -> _captionTextSize.value = getCaptionTextSizePreference()
             KEY_CAPTION_TEXT_COLOR -> _captionTextColor.value = getCaptionTextColorPreference()
             KEY_CAPTION_BACKGROUND -> _captionBackground.value = getCaptionBackgroundPreference()
@@ -377,6 +381,7 @@ class ThemePreferences(context: Context) {
 
         private const val KEY_VIDEO_QUALITY_WIFI = "video_quality_wifi"
         private const val KEY_VIDEO_QUALITY_MOBILE = "video_quality_mobile"
+        private const val KEY_PREFER_HDR = "prefer_hdr_video"
         private const val KEY_CAPTION_TEXT_SIZE = "caption_text_size"
         private const val KEY_CAPTION_TEXT_COLOR = "caption_text_color"
         private const val KEY_CAPTION_BACKGROUND = "caption_background"
@@ -392,6 +397,11 @@ class ThemePreferences(context: Context) {
         )
         private const val DEFAULT_VIDEO_QUALITY_WIFI = "1080p"
         private const val DEFAULT_VIDEO_QUALITY_MOBILE = "720p"
+
+        /** Fresh read used by both video players at stream-resolution time. */
+        fun isPreferHdrEnabled(context: Context): Boolean =
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getBoolean(KEY_PREFER_HDR, false)
 
         // ---------------- Subscriptions ----------------
 
@@ -1037,6 +1047,16 @@ class ThemePreferences(context: Context) {
     fun setVideoQualityMobile(quality: String) {
         prefs.edit().putString(KEY_VIDEO_QUALITY_MOBILE, quality).apply()
         _videoQualityMobile.value = quality
+    }
+
+    private fun getPreferHdrPreference(): Boolean =
+        prefs.getBoolean(KEY_PREFER_HDR, false)
+
+    fun isPreferHdrEnabled(): Boolean = getPreferHdrPreference()
+
+    fun setPreferHdr(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_PREFER_HDR, enabled).apply()
+        _preferHdr.value = enabled
     }
 
     private fun getCaptionTextSizePreference(): Float =
