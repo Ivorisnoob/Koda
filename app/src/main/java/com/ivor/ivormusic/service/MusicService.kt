@@ -1633,7 +1633,7 @@ class MusicService : MediaLibraryService() {
     
     private inner class LibrarySessionCallback : MediaLibrarySession.Callback {
         /**
-         * Media3 1.5 resolves HEADSETHOOK triples as Next followed by a delayed
+         * Media3's stock gesture resolver treats a HEADSETHOOK triple as Next followed by a delayed
          * Play/Pause. Replace only that raw one-button gesture; devices that
          * emit explicit media keys continue through Media3 unchanged.
          */

@@ -47,7 +47,7 @@ const val CAST_PLAYBACK_KIND_KEY = "kodaPlaybackKind"
  *   [DefaultMediaItemConverter] reads back, because CastPlayer's timeline
  *   tracker re-derives its [androidx.media3.common.Timeline] from the
  *   receiver's queue items through `toMediaItem`. Incoming queue entries are
- *   guarded as well: Media3 1.5 assumes they all came from its own converter,
+ *   guarded as well: the stock converter assumes they all came from itself,
  *   while real receivers can publish transient or foreign entries without
  *   MediaInfo/customData.
  * - **Captions ride the load.** The item's SubtitleConfigurations become
@@ -64,7 +64,7 @@ class KodaCastMediaItemConverter(
     override fun toMediaItem(mediaQueueItem: MediaQueueItem): MediaItem {
         val mediaInfo = mediaQueueItem.media ?: return MediaItem.EMPTY
 
-        // Media3 1.5.0's DefaultMediaItemConverter asserts that both MediaInfo
+        // DefaultMediaItemConverter asserts that both MediaInfo
         // and its customData are non-null. Those assumptions do not hold for a
         // real Cast session: a receiver may briefly publish a queue entry with
         // no MediaInfo while replacing a load, and an item left by another
