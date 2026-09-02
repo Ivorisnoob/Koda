@@ -100,6 +100,7 @@ import coil.compose.AsyncImage
 import com.ivor.ivormusic.data.LocalVideoPlaylistsRepository
 import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.data.VideoPlaylist
+import com.ivor.ivormusic.ui.components.KodaListRow
 import com.ivor.ivormusic.ui.components.ExpressivePullToRefresh
 import com.ivor.ivormusic.ui.components.PlaylistRowSkeleton
 import com.ivor.ivormusic.ui.components.SkeletonList
@@ -435,9 +436,13 @@ private fun LibraryRoot(
             // the user's own, but deliberately kept, so they belong above the
             // account's list rather than lost at the end of it. They are also
             // the half that survives being signed out.
-            items(savedPlaylists, key = { "saved_${it.playlistId}" }) { playlist ->
+            // Kept and owned are two segmented groups, not one: they are
+            // different kinds of thing, and the actions behind them differ.
+            itemsIndexed(savedPlaylists, key = { _, it -> "saved_${it.playlistId}" }) { index, playlist ->
                 PlaylistRow(
                     playlist = playlist,
+                    index = index,
+                    count = savedPlaylists.size,
                     onClick = { onOpenPlaylist(playlist) },
                     isSaved = true,
                     onRemoveSaved = { onRemoveSavedPlaylist(playlist) },
@@ -471,10 +476,12 @@ private fun LibraryRoot(
                     }
                 }
 
-                else -> items(playlists, key = { it.playlistId }) { playlist ->
+                else -> itemsIndexed(playlists, key = { _, it -> it.playlistId }) { index, playlist ->
                     val isLocal = LocalVideoPlaylistsRepository.isLocal(playlist.playlistId)
                     PlaylistRow(
                         playlist = playlist,
+                        index = index,
+                        count = playlists.size,
                         onClick = { onOpenPlaylist(playlist) },
                         onDelete = { onDeletePlaylist(playlist) },
                         isLocal = isLocal,
@@ -777,6 +784,8 @@ private fun HistoryPreviewCard(
 @Composable
 private fun PlaylistRow(
     playlist: VideoPlaylist,
+    index: Int,
+    count: Int,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     onDelete: (() -> Unit)? = null,
@@ -839,18 +848,16 @@ private fun PlaylistRow(
         )
     }
 
-    Surface(
-        // Clip before the click handler so the ripple follows the card's corners
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surfaceContainer,
-        tonalElevation = 1.dp
+    // Like PlaylistVideoRow, this lays out a 16:9 cover far wider than a list
+    // item's leading slot, so the whole row goes in the content slot.
+    KodaListRow(
+        index = index,
+        count = count,
+        onClick = onClick,
+        modifier = modifier,
+        contentPadding = PaddingValues(12.dp)
     ) {
         Row(
-            modifier = Modifier.padding(12.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
@@ -1309,6 +1316,8 @@ fun VideoPlaylistDetail(
                 itemsIndexed(videos, key = { index, video -> "${video.videoId}_$index" }) { index, video ->
                     PlaylistVideoRow(
                         video = video,
+                        index = index,
+                        count = videos.size,
                         onClick = {
                             // The list is snapshotted at the tap: `videos` is
                             // HomeViewModel state that the next playlist the
@@ -1352,6 +1361,8 @@ fun VideoPlaylistDetail(
 @Composable
 private fun PlaylistVideoRow(
     video: VideoItem,
+    index: Int,
+    count: Int,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     onLongClick: (() -> Unit)? = null,
@@ -1360,18 +1371,18 @@ private fun PlaylistVideoRow(
 ) {
     var showMenu by remember { mutableStateOf(false) }
 
-    Surface(
-        // Clip before the click handler so the ripple follows the card's corners
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
-        shape = RoundedCornerShape(14.dp),
-        color = MaterialTheme.colorScheme.surfaceContainer,
-        tonalElevation = 1.dp
+    // This row lays out its own 16:9 thumbnail, which is far wider than a list
+    // item's leading slot is meant to hold, so it goes in the content slot with
+    // the inset tightened rather than being forced into leadingContent.
+    KodaListRow(
+        index = index,
+        count = count,
+        onClick = onClick,
+        onLongClick = onLongClick,
+        modifier = modifier,
+        contentPadding = PaddingValues(10.dp)
     ) {
         Row(
-            modifier = Modifier.padding(10.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Box(

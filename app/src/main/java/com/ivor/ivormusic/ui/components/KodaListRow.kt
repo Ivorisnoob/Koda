@@ -1,6 +1,7 @@
 package com.ivor.ivormusic.ui.components
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -59,13 +60,19 @@ fun KodaListRow(
     count: Int,
     onClick: (() -> Unit)?,
     modifier: Modifier = Modifier,
-    headlineContent: @Composable () -> Unit,
     supportingContent: (@Composable () -> Unit)? = null,
     leadingContent: (@Composable () -> Unit)? = null,
     trailingContent: (@Composable () -> Unit)? = null,
     onLongClick: (() -> Unit)? = null,
     colors: ListItemColors = ListItemDefaults.segmentedColors(),
-    elevation: ListItemElevation = ListItemDefaults.elevation()
+    elevation: ListItemElevation = ListItemDefaults.elevation(),
+    /**
+     * Tighten this for a row that lays out its own content - a video row with a
+     * 16:9 thumbnail fills the width itself and does not want the inset a
+     * text-and-icon list item needs.
+     */
+    contentPadding: PaddingValues = ListItemDefaults.ContentPadding,
+    headlineContent: @Composable () -> Unit
 ) {
     val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
     val shapes = ListItemDefaults.segmentedShapes(index, count)
@@ -86,7 +93,8 @@ fun KodaListRow(
             leadingContent = leadingContent,
             trailingContent = trailingContent,
             colors = colors,
-            elevation = elevation
+            elevation = elevation,
+            contentPadding = contentPadding
         )
         return
     }
@@ -110,7 +118,8 @@ fun KodaListRow(
         leadingContent = leadingContent,
         trailingContent = trailingContent,
         colors = colors,
-        elevation = elevation
+        elevation = elevation,
+        contentPadding = contentPadding
     )
 }
 
