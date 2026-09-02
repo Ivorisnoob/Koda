@@ -209,7 +209,11 @@ dependencies {
     implementation(libs.androidx.palette)
 
     // YouTube Music Integration
-    implementation(libs.newpipe.extractor)
+    implementation(libs.newpipe.extractor) {
+        // NewPipe calls Rhino's core API directly; its optional javax.script
+        // adapter has no call sites in either the extractor or Koda.
+        exclude(group = "org.mozilla", module = "rhino-engine")
+    }
     implementation(libs.okhttp)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.androidx.security.crypto)
