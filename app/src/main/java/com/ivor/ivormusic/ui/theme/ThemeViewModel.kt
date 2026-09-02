@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.launch
 import com.ivor.ivormusic.data.ThemePreferences
 import com.ivor.ivormusic.data.PlayerStyle
+import com.ivor.ivormusic.work.UploadCheckWorker
 import kotlinx.coroutines.flow.StateFlow
 
 /**
@@ -280,6 +281,7 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setUploadNotificationsEnabled(enabled: Boolean) {
         themePreferences.setUploadNotificationsEnabled(enabled)
+        UploadCheckWorker.setEnabled(getApplication<Application>(), enabled)
     }
     
     fun setCrossfadeDuration(durationMs: Int) {

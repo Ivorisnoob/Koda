@@ -123,6 +123,14 @@ android {
         buildConfig = true
     }
 
+    packaging {
+        resources {
+            // Protobuf ships its schema sources for tooling; the generated
+            // runtime messages in the APK do not read them.
+            excludes += "/google/protobuf/*.proto"
+        }
+    }
+
     testOptions {
         unitTests {
             // android.util.Log is a stub in JVM unit tests and throws
@@ -133,6 +141,15 @@ android {
         }
     }
 
+}
+
+androidComponents {
+    onVariants(selector().withBuildType("release")) { variant ->
+        // Direct-distribution APKs are the product here, so compress their DEX
+        // payload instead of using AGP's minSdk-28+ mmap-oriented default.
+        // Keep debug DEX uncompressed for the faster local install cycle.
+        variant.packaging.dex.useLegacyPackaging.set(true)
+    }
 }
 
 // AGP 9 removed the android.kotlinOptions {} block; Kotlin compiler settings live here now.
@@ -164,7 +181,6 @@ dependencies {
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.graphics)
-    implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.media3.exoplayer)
     // DefaultMediaSourceFactory loads DashMediaSource / HlsMediaSource
@@ -199,10 +215,14 @@ dependencies {
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.androidx.graphics.shapes)
     implementation(libs.androidx.ui.text.google.fonts)
-    implementation(libs.androidx.palette.ktx)
+    implementation(libs.androidx.palette)
 
     // YouTube Music Integration
-    implementation(libs.newpipe.extractor)
+    implementation(libs.newpipe.extractor) {
+        // NewPipe calls Rhino's core API directly; its optional javax.script
+        // adapter has no call sites in either the extractor or Koda.
+        exclude(group = "org.mozilla", module = "rhino-engine")
+    }
     implementation(libs.okhttp)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.androidx.security.crypto)

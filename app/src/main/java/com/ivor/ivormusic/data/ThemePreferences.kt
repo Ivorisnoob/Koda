@@ -1363,7 +1363,7 @@ class ThemePreferences(context: Context) {
     /**
      * Whether the background check may notify about new uploads from channels
      * followed on this device. Off by default: it is a battery-and-attention
-     * commitment, and the worker no-ops (cheaply) when this is false.
+     * commitment, and its periodic work is canceled while this is false.
      */
     fun getUploadNotificationsEnabled(): Boolean =
         prefs.getBoolean(KEY_UPLOAD_NOTIFICATIONS_ENABLED, false)
