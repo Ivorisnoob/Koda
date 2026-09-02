@@ -15,27 +15,30 @@ import androidx.compose.ui.text.googlefonts.R as GoogleFontsR
 import androidx.compose.ui.text.style.TextGeometricTransform
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
-import com.ivor.ivormusic.R
 
 // Material 3 Expressive Typography using Roboto Flex Variable Font
 // Using FontVariation.width() for wider/condensed text styles
-
-// Standard width (100f) - for body text and regular content
-val RobotoFlex = FontFamily(
-    androidx.compose.ui.text.font.Font(
-        resId = R.font.roboto_flex,
-        variationSettings = FontVariation.Settings(
-            FontVariation.width(100f),
-            FontVariation.weight(400)
-        )
-    )
-)
 
 // Google Font Provider
 val provider = GoogleFont.Provider(
     providerAuthority = "com.google.android.gms.fonts",
     providerPackage = "com.google.android.gms",
     certificates = GoogleFontsR.array.com_google_android_gms_fonts_certs
+)
+
+val RobotoFlexFont = GoogleFont("Roboto Flex")
+
+// Standard width (100f) - for body text and regular content
+val RobotoFlex = FontFamily(
+    Font(
+        googleFont = RobotoFlexFont,
+        fontProvider = provider,
+        weight = FontWeight.Normal,
+        variationSettings = FontVariation.Settings(
+            FontVariation.width(100f),
+            FontVariation.weight(400)
+        )
+    )
 )
 
 val MontserratFont = GoogleFont("Montserrat")
@@ -52,8 +55,10 @@ val MontserratFamily = FontFamily(
 
 // Medium width (110f) - for section headers
 val RobotoFlexMediumWidth = FontFamily(
-    androidx.compose.ui.text.font.Font(
-        resId = R.font.roboto_flex,
+    Font(
+        googleFont = RobotoFlexFont,
+        fontProvider = provider,
+        weight = FontWeight.SemiBold,
         variationSettings = FontVariation.Settings(
             FontVariation.width(110f),
             FontVariation.weight(600)
