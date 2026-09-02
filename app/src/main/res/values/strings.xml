@@ -771,6 +771,8 @@
     <string name="ar_start_radio">Start radio</string>
     <string name="unknown_album">Unknown Album</string>
     <string name="ab_tracks">Tracks</string>
+    <!-- Shown in place of an album track's title when the title is missing. %1$d is the track number. -->
+    <string name="album_track_fallback">Track %1$d</string>
     <string name="ab_download_all">Download all</string>
 
     <!-- Video player -->

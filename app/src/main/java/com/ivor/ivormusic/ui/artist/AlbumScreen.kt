@@ -6,7 +6,6 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -39,11 +38,8 @@ import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledIconButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -61,8 +57,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Matrix
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.RectangleShape
-import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.asComposePath
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
@@ -77,30 +71,22 @@ import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.toShape
 import coil.compose.AsyncImage
 import com.ivor.ivormusic.data.Song
-
-/**
- * Segmented list shape helper for Expressive design
- */
-@Composable
-private fun getSegmentedShape(index: Int, count: Int, cornerSize: androidx.compose.ui.unit.Dp = 28.dp): Shape {
-    return when {
-        count == 1 -> RoundedCornerShape(cornerSize)
-        index == 0 -> RoundedCornerShape(topStart = cornerSize, topEnd = cornerSize)
-        index == count - 1 -> RoundedCornerShape(bottomStart = cornerSize, bottomEnd = cornerSize)
-        else -> RectangleShape
-    }
-}
+import com.ivor.ivormusic.ui.components.KodaListRow
+import com.ivor.ivormusic.ui.components.formatRowDuration
 
 // Note: PolygonShape is shared from ArtistScreen.kt (internal visibility)
 
 /**
- * 🌟 Material 3 Expressive Album Screen
- * 
- * Design Features:
- * - Large album artwork with organic decorative shapes
- * - Big centered 8-sided play button
- * - Premium segmented song list
- * - Gradient background
+ * The album page: hero artwork, a play button cut from a polygon, and the
+ * track list.
+ *
+ * The track list used to hand-roll its own segmentation - a private
+ * getSegmentedShape that rounded the first and last rows and returned
+ * RectangleShape between them, with a hairline divider drawn in the seam. It
+ * had the right idea and none of the parts Expressive supplies: no gap between
+ * containers, no shape morph on press, and a tonal colour picked by hand. It is
+ * now [KodaListRow], which is the same treatment every other list in the app
+ * gets.
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -114,7 +100,6 @@ fun AlbumScreen(
 ) {
     // Theme colors
     val backgroundColor = MaterialTheme.colorScheme.background
-    val cardColor = MaterialTheme.colorScheme.surfaceContainer
     val textColor = MaterialTheme.colorScheme.onBackground
     val secondaryTextColor = MaterialTheme.colorScheme.onSurfaceVariant
     val primaryColor = MaterialTheme.colorScheme.primary
@@ -182,25 +167,17 @@ fun AlbumScreen(
                 Spacer(modifier = Modifier.height(12.dp))
             }
             
-            // Song list with segmented card design
+            // One segmented group: the gap between rows is the separator, so
+            // there is no divider to draw in between.
             itemsIndexed(songs) { index, song ->
-                AlbumSongCard(
+                AlbumTrackRow(
                     song = song,
                     trackNumber = index + 1,
+                    index = index,
+                    count = songs.size,
                     onClick = { onPlayQueue(songs, song) },
-                    cardColor = cardColor,
-                    textColor = textColor,
-                    secondaryTextColor = secondaryTextColor,
-                    primaryColor = primaryColor,
-                    shape = getSegmentedShape(index, songs.size),
                     modifier = Modifier.padding(horizontal = 20.dp)
                 )
-                if (index < songs.size - 1) {
-                    HorizontalDivider(
-                        modifier = Modifier.padding(horizontal = 44.dp),
-                        color = textColor.copy(alpha = 0.06f)
-                    )
-                }
             }
         }
         
@@ -447,87 +424,68 @@ private fun DownloadAllButton(
 }
 
 /**
- * Song card for album song list
+ * One track on the album page.
+ *
+ * A number, a title and a duration - which is the whole of what an album track
+ * row has to say, since every track shares the album's artist and the row is
+ * itself the play affordance. The previous version carried a play arrow on
+ * every row and put the duration on a supporting line: the arrow was decoration
+ * on an already-tappable row, and the supporting line spent a second line of
+ * height on four characters.
+ *
+ * The number sits in a fixed-width box rather than the tinted circle it used to
+ * have. That circle was doing the work of separating one row from the next, and
+ * the segmented container does that now - keeping it would stack a tinted shape
+ * inside a tonal shape, which reads as muddle rather than hierarchy.
  */
 @Composable
-private fun AlbumSongCard(
+private fun AlbumTrackRow(
     song: Song,
     trackNumber: Int,
+    index: Int,
+    count: Int,
     onClick: () -> Unit,
-    cardColor: Color,
-    textColor: Color,
-    secondaryTextColor: Color,
-    primaryColor: Color,
-    shape: Shape,
     modifier: Modifier = Modifier
 ) {
-    Surface(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(shape)
-            .clickable(onClick = onClick),
-        shape = shape,
-        color = cardColor,
-        tonalElevation = 1.dp
-    ) {
-        ListItem(
-            headlineContent = {
-                Text(
-                    text = song.title.takeIf { !it.isNullOrBlank() && !it.startsWith("Unknown", ignoreCase = true) } ?: "Track $trackNumber",
-                    color = textColor,
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            },
-            supportingContent = {
-                // Format duration if available
-                val durationText = if (song.duration > 0) {
-                    val minutes = song.duration / 60000
-                    val seconds = (song.duration % 60000) / 1000
-                    "$minutes:${seconds.toString().padStart(2, '0')}"
-                } else null
-                
-                durationText?.let {
-                    Text(
-                        text = it,
-                        color = secondaryTextColor,
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                }
-            },
-            leadingContent = {
-                // Track number in a nice circle
-                Surface(
-                    modifier = Modifier.size(40.dp),
-                    shape = CircleShape,
-                    color = primaryColor.copy(alpha = 0.1f)
-                ) {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            "$trackNumber",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = primaryColor
-                        )
-                    }
-                }
-            },
-            trailingContent = {
-                Icon(
-                    Icons.Rounded.PlayArrow,
-                    contentDescription = stringResource(R.string.cd_play),
-                    tint = primaryColor,
-                    modifier = Modifier.size(24.dp)
-                )
-            },
-            colors = ListItemDefaults.colors(
-                containerColor = Color.Transparent
+    KodaListRow(
+        index = index,
+        count = count,
+        onClick = onClick,
+        modifier = modifier,
+        headlineContent = {
+            Text(
+                text = song.title
+                    .takeIf { it.isNotBlank() && !it.startsWith("Unknown", ignoreCase = true) }
+                    ?: stringResource(R.string.album_track_fallback, trackNumber),
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
-        )
-    }
+        },
+        leadingContent = {
+            Box(
+                modifier = Modifier.width(TRACK_NUMBER_WIDTH),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "$trackNumber",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
+        trailingContent = song.duration.takeIf { it > 0 }?.let { duration ->
+            {
+                Text(
+                    text = formatRowDuration(duration),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    )
 }
+
+/** Wide enough for a three-digit track number without the titles stepping. */
+private val TRACK_NUMBER_WIDTH = 32.dp
