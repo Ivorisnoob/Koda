@@ -2,6 +2,7 @@ package com.ivor.ivormusic.data
 
 import android.content.ContentUris
 import android.content.Context
+import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.provider.MediaStore
 import kotlinx.coroutines.Dispatchers
@@ -37,7 +38,10 @@ class SongRepository(private val context: Context) {
             MediaStore.Audio.Media.DURATION,
             MediaStore.Audio.Media.ALBUM_ID,
             MediaStore.Audio.Media.DATA, // File path for folder filtering
-            MediaStore.Audio.Media.DATE_ADDED // Seconds since epoch, for "Recently added"
+            MediaStore.Audio.Media.DATE_ADDED, // Seconds since epoch, for "Recently added"
+            MediaStore.Audio.Media.TRACK,
+            MediaStore.Audio.Media.CD_TRACK_NUMBER,
+            MediaStore.Audio.Media.DISC_NUMBER
         )
 
         val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0"
@@ -58,6 +62,9 @@ class SongRepository(private val context: Context) {
             val albumIdColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM_ID)
             val dataColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA)
             val dateAddedColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_ADDED)
+            val trackColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TRACK)
+            val cdTrackColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.CD_TRACK_NUMBER)
+            val discColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DISC_NUMBER)
 
             while (cursor.moveToNext()) {
                 val id = cursor.getLong(idColumn)
@@ -70,6 +77,11 @@ class SongRepository(private val context: Context) {
                 // DATE_ADDED is seconds, not millis. 0 means the provider had
                 // nothing, which is "unknown" rather than 1970.
                 val dateAdded = cursor.getLong(dateAddedColumn).takeIf { it > 0 }?.times(1000L)
+                val position = albumPosition(
+                    encodedTrack = cursor.getInt(trackColumn).takeIf { !cursor.isNull(trackColumn) },
+                    cdTrackNumber = cursor.getString(cdTrackColumn),
+                    discNumber = cursor.getString(discColumn)
+                )
 
                 // Check if this song's folder is excluded
                 val parentFolder = File(filePath).parent ?: ""
@@ -89,7 +101,21 @@ class SongRepository(private val context: Context) {
                     albumId
                 )
 
-                songs.add(Song.fromLocal(id, title, artist, album, duration, contentUri, albumArtUri, filePath, dateAdded))
+                songs.add(
+                    Song.fromLocal(
+                        id = id,
+                        title = title,
+                        artist = artist,
+                        album = album,
+                        duration = duration,
+                        uri = contentUri,
+                        albumArtUri = albumArtUri,
+                        filePath = filePath,
+                        dateAdded = dateAdded,
+                        trackNumber = position.track,
+                        discNumber = position.disc
+                    )
+                )
             }
         }
         songs
@@ -180,21 +206,63 @@ class SongRepository(private val context: Context) {
             } else if (file.isFile) {
                 val ext = file.extension.lowercase()
                 if (ext in extensions) {
+                    val metadata = readManualMetadata(file)
                     val song = Song(
                         id = file.absolutePath.hashCode().toString(),
-                        title = file.nameWithoutExtension,
-                        artist = "Unknown Artist",
-                        album = dir.name,
-                        duration = 0L, // Hard to get without MediaStore or extra parsing
+                        title = metadata?.title ?: file.nameWithoutExtension,
+                        artist = metadata?.artist ?: "Unknown Artist",
+                        album = metadata?.album ?: dir.name,
+                        duration = metadata?.durationMs ?: 0L,
                         uri = Uri.fromFile(file),
                         source = SongSource.LOCAL,
                         filePath = file.absolutePath,
                         // No MediaStore here, so mtime is the best proxy available
-                        dateAdded = file.lastModified().takeIf { it > 0 }
+                        dateAdded = file.lastModified().takeIf { it > 0 },
+                        trackNumber = metadata?.position?.track,
+                        discNumber = metadata?.position?.disc
                     )
                     results.add(song)
                 }
             }
+        }
+    }
+
+    private data class ManualAudioMetadata(
+        val title: String?,
+        val artist: String?,
+        val album: String?,
+        val durationMs: Long?,
+        val position: AlbumPosition
+    )
+
+    private fun readManualMetadata(file: File): ManualAudioMetadata? {
+        val retriever = MediaMetadataRetriever()
+        return try {
+            retriever.setDataSource(file.absolutePath)
+            ManualAudioMetadata(
+                title = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)
+                    ?.takeIf { it.isNotBlank() },
+                artist = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST)
+                    ?.takeIf { it.isNotBlank() },
+                album = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM)
+                    ?.takeIf { it.isNotBlank() },
+                durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                    ?.toLongOrNull()
+                    ?.takeIf { it > 0 },
+                position = albumPosition(
+                    encodedTrack = null,
+                    cdTrackNumber = retriever.extractMetadata(
+                        MediaMetadataRetriever.METADATA_KEY_CD_TRACK_NUMBER
+                    ),
+                    discNumber = retriever.extractMetadata(
+                        MediaMetadataRetriever.METADATA_KEY_DISC_NUMBER
+                    )
+                )
+            )
+        } catch (_: RuntimeException) {
+            null
+        } finally {
+            retriever.release()
         }
     }
 }
@@ -207,4 +275,3 @@ data class FolderInfo(
     val displayName: String,
     val songCount: Int
 )
-

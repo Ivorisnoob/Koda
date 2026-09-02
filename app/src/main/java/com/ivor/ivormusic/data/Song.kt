@@ -35,7 +35,11 @@ data class Song(
     // stamps its own notion of "added": MediaStore DATE_ADDED for device
     // files, download completion time for downloads, like time for likes.
     // Null means unknown (sorts last), never zero.
-    val dateAdded: Long? = null
+    val dateAdded: Long? = null,
+    // Device-library album position. Null means the file/provider supplied no
+    // usable tag; album views sort those deterministically after tagged tracks.
+    val trackNumber: Int? = null,
+    val discNumber: Int? = null
 ) {
     val highResThumbnailUrl: String?
         get() = thumbnailUrl?.let { url ->
@@ -75,7 +79,9 @@ data class Song(
             uri: Uri,
             albumArtUri: Uri?,
             filePath: String? = null,
-            dateAdded: Long? = null
+            dateAdded: Long? = null,
+            trackNumber: Int? = null,
+            discNumber: Int? = null
         ): Song = Song(
             id = id.toString(),
             title = title,
@@ -86,7 +92,9 @@ data class Song(
             albumArtUri = albumArtUri,
             source = SongSource.LOCAL,
             filePath = filePath,
-            dateAdded = dateAdded
+            dateAdded = dateAdded,
+            trackNumber = trackNumber,
+            discNumber = discNumber
         )
 
         /**

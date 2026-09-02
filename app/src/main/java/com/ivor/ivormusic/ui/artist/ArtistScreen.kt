@@ -78,6 +78,7 @@ import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.toShape
 import coil.compose.AsyncImage
 import com.ivor.ivormusic.data.Song
+import com.ivor.ivormusic.data.sortedInAlbumOrder
 import com.ivor.ivormusic.ui.library.songRowClick
 import com.ivor.ivormusic.ui.channel.CreatorHeader
 import com.ivor.ivormusic.ui.channel.creatorMetadata
@@ -380,7 +381,9 @@ fun ArtistScreen(
                             val validAlbums = albums.filter { it.isNotBlank() && !it.startsWith("Unknown") }
                             items(validAlbums.size) { index ->
                                 val albumName = validAlbums[index]
-                                val albumSongs = if (hasLocalSongs) artistSongs.filter { it.album == albumName } else emptyList()
+                                val albumSongs = if (hasLocalSongs) {
+                                    artistSongs.filter { it.album == albumName }.sortedInAlbumOrder()
+                                } else emptyList()
                                 
                                 val fetchedAlbum = fetchedAlbums.find { it.name == albumName }
                                 val albumSubtitle = if (hasLocalSongs) {

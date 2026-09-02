@@ -81,6 +81,7 @@ import com.ivor.ivormusic.ui.components.PredictiveBackStack
 import com.ivor.ivormusic.data.PlaylistDisplayItem
 import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.data.ThemePreferences
+import com.ivor.ivormusic.data.sortedInAlbumOrder
 import com.ivor.ivormusic.ui.artist.ArtistScreen
 import com.ivor.ivormusic.ui.components.ExpressivePullToRefresh
 import com.ivor.ivormusic.ui.downloads.MusicPlaylistDownloadAction
@@ -2417,7 +2418,10 @@ fun PlaylistDetailScreen(
 
     val trackKeyPrefix = "playlist_${resolvedPlaylist.id}"
     var songRows by remember(resolvedPlaylist.id) {
-        mutableStateOf(playlistSongRows(preloadedSongs ?: emptyList(), trackKeyPrefix))
+        val initialSongs = preloadedSongs
+            ?.let { if (isAlbum) it.sortedInAlbumOrder() else it }
+            .orEmpty()
+        mutableStateOf(playlistSongRows(initialSongs, trackKeyPrefix))
     }
     val songs = remember(songRows) { songRows.map { it.song } }
     val isFetching = remember { mutableStateOf(songs.isEmpty()) }

@@ -77,6 +77,7 @@ import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.toShape
 import coil.compose.AsyncImage
 import com.ivor.ivormusic.data.Song
+import com.ivor.ivormusic.data.sortedInAlbumOrder
 
 /**
  * Segmented list shape helper for Expressive design
@@ -112,6 +113,7 @@ fun AlbumScreen(
     onPlayQueue: (List<Song>, Song?) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val orderedSongs = remember(songs) { songs.sortedInAlbumOrder() }
     // Theme colors
     val backgroundColor = MaterialTheme.colorScheme.background
     val cardColor = MaterialTheme.colorScheme.surfaceContainer
@@ -122,8 +124,8 @@ fun AlbumScreen(
     val tertiaryContainerColor = MaterialTheme.colorScheme.tertiaryContainer
     
     // Get album art from first song
-    val albumArt = remember(songs) {
-        songs.firstOrNull()?.let { 
+    val albumArt = remember(orderedSongs) {
+        orderedSongs.firstOrNull()?.let {
             it.highResThumbnailUrl ?: it.thumbnailUrl ?: it.albumArtUri?.toString() 
         }
     }
@@ -146,7 +148,7 @@ fun AlbumScreen(
                 AlbumHeroHeader(
                     albumName = albumName,
                     artistName = artistName,
-                    songCount = songs.size,
+                    songCount = orderedSongs.size,
                     albumArt = albumArt,
                     primaryColor = primaryColor,
                     primaryContainerColor = primaryContainerColor,
@@ -154,7 +156,7 @@ fun AlbumScreen(
                     textColor = textColor,
                     secondaryTextColor = secondaryTextColor,
                     onBack = onBack,
-                    onPlayAll = { onPlayQueue(songs, null) }
+                    onPlayAll = { onPlayQueue(orderedSongs, null) }
                 )
             }
             
@@ -175,7 +177,7 @@ fun AlbumScreen(
                         color = textColor
                     )
                     DownloadAllButton(
-                        songs = songs,
+                        songs = orderedSongs,
                         primaryColor = primaryColor
                     )
                 }
@@ -183,19 +185,19 @@ fun AlbumScreen(
             }
             
             // Song list with segmented card design
-            itemsIndexed(songs) { index, song ->
+            itemsIndexed(orderedSongs) { index, song ->
                 AlbumSongCard(
                     song = song,
                     trackNumber = index + 1,
-                    onClick = { onPlayQueue(songs, song) },
+                    onClick = { onPlayQueue(orderedSongs, song) },
                     cardColor = cardColor,
                     textColor = textColor,
                     secondaryTextColor = secondaryTextColor,
                     primaryColor = primaryColor,
-                    shape = getSegmentedShape(index, songs.size),
+                    shape = getSegmentedShape(index, orderedSongs.size),
                     modifier = Modifier.padding(horizontal = 20.dp)
                 )
-                if (index < songs.size - 1) {
+                if (index < orderedSongs.size - 1) {
                     HorizontalDivider(
                         modifier = Modifier.padding(horizontal = 44.dp),
                         color = textColor.copy(alpha = 0.06f)

@@ -397,6 +397,7 @@ Realistically it shares the data layer and almost nothing else. That makes it th
 
 The milestones behind us, kept here so the direction of travel is visible.
 
+- Local albums now play and display in disc/track order instead of inheriting the device library's alphabetical query. Both MediaStore and the manual OEM scan retain modern fraction tags and Android's legacy disc-encoded track number; missing or duplicate positions fall back deterministically without changing the user's All songs sort.
 - Playlist download counts now distinguish playlist entries from files. A 117-entry playlist stays labelled 117 even when repeated video ids or existing downloads mean only 106 new files are needed; the confirmation sheet names already-offline, repeated and remaining counts, and repeated entries retain their positions while sharing one offline file.
 - Video Search now gives its empty focused field the same recent-search surface as music mode, with segmented Material rows, per-query removal and Clear all. The hard-coded Explore category chips are gone; clearing focus returns to Trending rather than making a second search taxonomy compete with the field.
 - The playback stack moved from Media3 1.5 to 1.11 as one aligned dependency family. Koda's custom Live Update notification provider now delegates Media3's notification-channel description alongside the notification itself, retaining one playback channel while adopting the current session, ExoPlayer, DASH, HLS, UI and Cast fixes.
