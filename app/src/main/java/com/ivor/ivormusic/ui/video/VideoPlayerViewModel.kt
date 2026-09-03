@@ -650,6 +650,15 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     }
 
     private fun ensureLocalPlayer(): ExoPlayer {
+        // Restarted here rather than only at construction. [scar] closePlayer()
+        // cancels the poll and deliberately keeps the player, so the reuse path
+        // below handed back a live player with a dead poll: every video after
+        // the first played with a frozen seek bar, no 15s session checkpoint
+        // and no SponsorBlock skips, while the video itself ran normally.
+        // startProgressUpdates() replaces any run already going, and its loop
+        // reads _exoPlayer per tick, so calling it before the build below is
+        // safe.
+        startProgressUpdates()
         _exoPlayer?.let { return it }
 
         // The sample queue this sizes IS the app's RAM cache for video: the
@@ -715,7 +724,6 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             attachPlaybackListener(this)
         }.also { player ->
             _exoPlayer = player
-            startProgressUpdates()
         }
     }
 
