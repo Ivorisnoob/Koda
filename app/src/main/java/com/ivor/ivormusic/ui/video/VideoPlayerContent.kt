@@ -1487,6 +1487,7 @@ private fun PlayerSettingsSections(
                 // would light up the whole ladder at once.
                 val selected = currentQuality != null &&
                     quality.resolution == currentQuality.resolution &&
+                    quality.dynamicRange == currentQuality.dynamicRange &&
                     quality.url == currentQuality.url
                 ToggleButton(
                     checked = selected,
@@ -1501,7 +1502,7 @@ private fun PlayerSettingsSections(
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                     }
-                    Text(quality.resolution)
+                    Text(quality.displayLabel)
                 }
             }
         }

@@ -147,6 +147,8 @@
     <string name="settings_advanced_value_xiaomi">이 기기에서 권장됨</string>
     <string name="settings_advanced_value_other">스캔·배터리 수정</string>
     <string name="settings_version_subtitle">버전 %1$s (%2$d)</string>
+    <string name="sp_prefer_hdr">HDR 동영상 우선</string>
+    <string name="sp_prefer_hdr_sub">디스플레이와 디코더가 모두 지원하는 경우에만 HDR 사용</string>
 
     <string name="profiles_title">프로필</string>
     <string name="profiles_description">구독과 숨긴 추천은 프로필별로 유지돼요. 재생목록, 좋아요 표시한 곡, 다운로드는 공통이에요.</string>

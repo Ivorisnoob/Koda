@@ -15,7 +15,7 @@ import com.ivor.ivormusic.data.VideoStreamDelivery
  */
 internal fun localVideoQualityOptions(qualities: List<VideoQuality>): List<VideoQuality> =
     qualities
-        .groupBy(VideoQuality::resolution)
+        .groupBy { it.resolution to it.dynamicRange }
         .mapNotNull { (_, variants) ->
             variants.maxWithOrNull(
                 compareBy<VideoQuality> {

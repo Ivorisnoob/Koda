@@ -39,18 +39,20 @@ internal object VideoStreamResolutionCache {
 
     suspend fun getOrResolve(
         videoId: String,
+        includeHdr: Boolean = false,
         resolver: suspend () -> VideoStreamResult,
     ): VideoStreamResult {
+        val cacheKey = if (includeHdr) "$videoId:hdr" else videoId
         var shouldStart = false
         val deferred = synchronized(lock) {
             val now = System.currentTimeMillis()
-            cached[videoId]?.let { entry ->
+            cached[cacheKey]?.let { entry ->
                 if (entry.expiresAtMs > now) {
                     return entry.result
                 }
-                cached.remove(videoId)
+                cached.remove(cacheKey)
             }
-            active[videoId] ?: run {
+            active[cacheKey] ?: run {
                 val startEpoch = epoch.get()
                 scope.async(start = CoroutineStart.LAZY) {
                     val result = resolver()
@@ -67,16 +69,16 @@ internal object VideoStreamResolutionCache {
                     ) {
                         synchronized(lock) {
                             if (epoch.get() == startEpoch) {
-                                cached[videoId] = Entry(result, expiresAtMs)
+                                cached[cacheKey] = Entry(result, expiresAtMs)
                             }
                         }
                     }
                     result
                 }.also { created ->
-                    active[videoId] = created
+                    active[cacheKey] = created
                     created.invokeOnCompletion {
                         synchronized(lock) {
-                            if (active[videoId] === created) active.remove(videoId)
+                            if (active[cacheKey] === created) active.remove(cacheKey)
                         }
                     }
                     shouldStart = true
@@ -88,11 +90,15 @@ internal object VideoStreamResolutionCache {
     }
 
     fun invalidate(videoId: String) {
-        val activeResolution = synchronized(lock) {
+        val activeResolutions = synchronized(lock) {
             cached.remove(videoId)
-            active.remove(videoId)
+            cached.remove("$videoId:hdr")
+            listOfNotNull(
+                active.remove(videoId),
+                active.remove("$videoId:hdr")
+            )
         }
-        activeResolution?.cancel()
+        activeResolutions.forEach { it.cancel() }
     }
 
     fun clear() {

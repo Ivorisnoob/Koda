@@ -421,6 +421,8 @@ internal fun PlaybackSettingsPage(
     musicQualityMobile: String,
     videoQualityWifi: String,
     videoQualityMobile: String,
+    preferHdr: Boolean,
+    onPreferHdrToggle: (Boolean) -> Unit,
     onOpenQualityPicker: (QualityDialogTarget) -> Unit,
     onBack: () -> Unit
 ) {
@@ -692,6 +694,16 @@ internal fun PlaybackSettingsPage(
                             )
                         },
                         showChevron = true
+                    )
+
+                    SettingsDivider()
+
+                    SettingsToggleRow(
+                        icon = Icons.Rounded.HdrOn,
+                        title = stringResource(R.string.sp_prefer_hdr),
+                        subtitle = stringResource(R.string.sp_prefer_hdr_sub),
+                        enabled = preferHdr,
+                        onToggle = onPreferHdrToggle
                     )
                 }
             }

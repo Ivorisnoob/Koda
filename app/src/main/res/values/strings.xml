@@ -335,6 +335,8 @@
     <string name="sp_quality_network_hint">Koda picks these based on the connection in use</string>
     <string name="sp_music_quality">Music quality</string>
     <string name="sp_video_quality">Video quality</string>
+    <string name="sp_prefer_hdr">Prefer HDR video</string>
+    <string name="sp_prefer_hdr_sub">Use HDR only when the display and decoder support it</string>
     <string name="sp_mode">Mode</string>
     <string name="sp_local_only">Local Only</string>
     <string name="sp_home_mode_toggle">Home Screen Mode Toggle</string>
