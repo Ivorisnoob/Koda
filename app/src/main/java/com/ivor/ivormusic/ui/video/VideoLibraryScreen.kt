@@ -73,6 +73,10 @@ import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -93,12 +97,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.ivor.ivormusic.ui.components.VideoThumbnail
 import com.ivor.ivormusic.data.LocalVideoPlaylistsRepository
 import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.data.VideoPlaylist
@@ -205,6 +211,26 @@ fun VideoLibraryContent(
 
     var page by remember { mutableStateOf<LibraryPage>(LibraryPage.Root) }
 
+    // Long press on the root's history row. Hosted at this level rather than
+    // inside LibraryRoot because the sheet acts on the ViewModel, which the
+    // root composable deliberately does not take.
+    val context = LocalContext.current
+    var rootOptionsTarget by remember { mutableStateOf<VideoItem?>(null) }
+    val rootRemoval by viewModel.lastHistoryRemoval.collectAsState()
+    val rootRemovalSnackbar = remember { SnackbarHostState() }
+    rootOptionsTarget?.let { video ->
+        VideoOptionsSheetHost(
+            video = video,
+            viewModel = viewModel,
+            onDismiss = { rootOptionsTarget = null },
+            onEnqueue = onEnqueueVideo?.let { enqueue -> { next -> enqueue(video, next) } },
+            // The preview row is history, so removing an entry has the same
+            // visible meaning here as on the history page itself.
+            onRemoveFromHistory = { viewModel.removeVideoFromHistory(video) },
+            onOpenChannel = onOpenChannel
+        )
+    }
+
     LaunchedEffect(isYouTubeConnected) {
         if (historyVideos.isEmpty()) viewModel.loadYouTubeHistory()
         if (isYouTubeConnected) viewModel.loadVideoPlaylists()
@@ -231,6 +257,7 @@ fun VideoLibraryContent(
         childOpen = page != LibraryPage.Root,
         onBack = { page = LibraryPage.Root },
         background = {
+            Box(modifier = Modifier.fillMaxSize()) {
             LibraryRoot(
                 isLoggedIn = isYouTubeConnected,
                 historyVideos = historyVideos,
@@ -238,6 +265,7 @@ fun VideoLibraryContent(
                 savedPlaylists = savedPlaylists,
                 isPlaylistsLoading = isPlaylistsLoading,
                 onVideoClick = onVideoClick,
+                onVideoLongPress = { rootOptionsTarget = it },
                 onLoginClick = onLoginClick,
                 onOpenHistory = { page = LibraryPage.History },
                 deviceVideoCount = if (videoAccess.isReadable && hasScannedDeviceVideos) {
@@ -265,6 +293,35 @@ fun VideoLibraryContent(
                 },
                 contentPadding = contentPadding
             )
+
+            // Undo for a removal taken from the root's history row. Hosted here
+            // rather than app-wide because the action exists on exactly one
+            // page, and gated on that page because the history page composes its
+            // own host over the same flow - both alive would show it twice.
+            LaunchedEffect(rootRemoval?.id, page) {
+                val removal = rootRemoval?.takeIf { page == LibraryPage.Root }
+                    ?: return@LaunchedEffect
+                val result = rootRemovalSnackbar.showSnackbar(
+                    message = context.getString(R.string.vh_removed_from_history),
+                    actionLabel = context.getString(R.string.undo),
+                    withDismissAction = false,
+                    duration = SnackbarDuration.Short
+                )
+                if (result == SnackbarResult.ActionPerformed) {
+                    viewModel.undoHistoryRemoval()
+                } else {
+                    viewModel.clearHistoryRemoval()
+                }
+            }
+            SnackbarHost(
+                hostState = rootRemovalSnackbar,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    // Clear of whatever the host puts at the bottom - the nav
+                    // bar, the mini player when one is up.
+                    .padding(bottom = contentPadding.calculateBottomPadding())
+            )
+            }
         }
     ) { committedByGesture ->
     AnimatedContent(
@@ -395,6 +452,12 @@ private fun LibraryRoot(
     savedPlaylists: List<VideoPlaylist>,
     isPlaylistsLoading: Boolean,
     onVideoClick: (VideoItem) -> Unit,
+    /**
+     * Long press on a history card. Same sheet as every other video card in the
+     * app - the preview row is a history list, not a decoration, so a card here
+     * has exactly as much to act on as one on the history page itself.
+     */
+    onVideoLongPress: (VideoItem) -> Unit,
     onLoginClick: () -> Unit,
     onOpenHistory: () -> Unit,
     /**
@@ -523,7 +586,11 @@ private fun LibraryRoot(
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         items(historyVideos.take(12)) { video ->
-                            HistoryPreviewCard(video = video, onClick = { onVideoClick(video) })
+                            HistoryPreviewCard(
+                                video = video,
+                                onClick = { onVideoClick(video) },
+                                onLongClick = { onVideoLongPress(video) }
+                            )
                         }
                     }
                 }
@@ -951,12 +1018,13 @@ private fun DeviceVideosLibraryCard(
 @Composable
 private fun HistoryPreviewCard(
     video: VideoItem,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null
 ) {
     Column(
         modifier = Modifier
             .width(160.dp)
-            .clickable(onClick = onClick)
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
     ) {
         Box(
             modifier = Modifier
@@ -965,11 +1033,11 @@ private fun HistoryPreviewCard(
                 .clip(RoundedCornerShape(12.dp))
                 .background(MaterialTheme.colorScheme.surfaceContainerHighest)
         ) {
-            AsyncImage(
-                model = video.thumbnailUrl,
+            VideoThumbnail(
+                thumbnailUrl = video.thumbnailUrl,
                 contentDescription = video.title,
                 modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop
+                indicatorSize = 26.dp
             )
             if (!video.isLive && video.duration > 0) {
                 Surface(
@@ -1613,11 +1681,11 @@ private fun PlaylistVideoRow(
                     .clip(RoundedCornerShape(10.dp))
                     .background(MaterialTheme.colorScheme.surfaceContainerHighest)
             ) {
-                AsyncImage(
-                    model = video.thumbnailUrl,
+                VideoThumbnail(
+                    thumbnailUrl = video.thumbnailUrl,
                     contentDescription = video.title,
                     modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
+                    indicatorSize = 24.dp
                 )
                 if (!video.isLive && video.duration > 0) {
                     Surface(

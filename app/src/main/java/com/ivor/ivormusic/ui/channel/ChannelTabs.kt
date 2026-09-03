@@ -66,6 +66,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.ivor.ivormusic.ui.components.VideoThumbnail
 import com.ivor.ivormusic.data.ChannelAbout
 import com.ivor.ivormusic.data.ChannelPost
 import com.ivor.ivormusic.data.ChannelShelf
@@ -325,11 +326,9 @@ private fun FeaturedVideoCard(
                     .fillMaxWidth()
                     .aspectRatio(16f / 9f)
             ) {
-                AsyncImage(
-                    model = video.highResThumbnailUrl ?: video.thumbnailUrl,
-                    contentDescription = video.title,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
+                VideoThumbnail(
+                    video = video,
+                    modifier = Modifier.fillMaxSize()
                 )
                 Box(
                     modifier = Modifier
@@ -467,11 +466,11 @@ private fun ShelfVideoCard(
                 .clip(RoundedCornerShape(14.dp))
                 .background(MaterialTheme.colorScheme.surfaceContainerHighest)
         ) {
-            AsyncImage(
-                model = video.thumbnailUrl,
+            VideoThumbnail(
+                thumbnailUrl = video.thumbnailUrl,
                 contentDescription = video.title,
                 modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop
+                indicatorSize = 28.dp
             )
             if (video.duration > 0) {
                 DurationBadge(

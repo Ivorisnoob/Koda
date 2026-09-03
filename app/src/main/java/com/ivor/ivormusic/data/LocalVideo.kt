@@ -1,6 +1,8 @@
 package com.ivor.ivormusic.data
 
+import android.content.ContentUris
 import android.net.Uri
+import android.provider.MediaStore
 
 /**
  * A video file on the device, as MediaStore describes it.
@@ -65,6 +67,42 @@ data class LocalVideo(
         /** True for ids minted by [playbackId]. */
         fun isDeviceVideoId(videoId: String?): Boolean =
             videoId?.startsWith(ID_PREFIX) == true
+
+        /**
+         * The content URI a [playbackId] addresses, or null if it is not one.
+         *
+         * The id is deliberately reversible: watch history stores a
+         * [VideoItem] and nothing else, so replaying a device entry - and
+         * drawing its frame - has to get back to the file from the id alone.
+         * The row may no longer exist, which the resolver reports in its own
+         * way; this only rebuilds the address.
+         */
+        fun uriFor(videoId: String?): Uri? {
+            if (!isDeviceVideoId(videoId)) return null
+            val rowId = videoId!!.removePrefix(ID_PREFIX).toLongOrNull() ?: return null
+            return ContentUris.withAppendedId(
+                MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL),
+                rowId
+            )
+        }
+
+        /**
+         * The playback id for a MediaStore video URI, or null when the URI is
+         * not one.
+         *
+         * An "open with" hand-off usually arrives as a `content://media/...`
+         * URI, and one that resolves back to a MediaStore row is a device video
+         * like any other - recordable in history, replayable later. A URI from
+         * some other provider is a one-off grant that dies with the task, so it
+         * gets no id and is deliberately not remembered.
+         */
+        fun playbackIdFor(uri: Uri): String? {
+            if (uri.scheme != "content") return null
+            if (uri.authority != MediaStore.AUTHORITY) return null
+            val rowId = runCatching { ContentUris.parseId(uri) }.getOrNull() ?: return null
+            if (rowId < 0) return null
+            return "$ID_PREFIX$rowId"
+        }
     }
 }
 

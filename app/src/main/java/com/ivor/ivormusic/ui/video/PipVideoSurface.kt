@@ -52,6 +52,7 @@ fun PipVideoSurface(
                 PlayerView(ctx).apply {
                     player = exoPlayer
                     useController = false
+                    disableBuiltInSubtitles()
                     resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
                     // The PiP window is the video; a shutter over it during the
                     // hand-off from the full player's surface just reads as a

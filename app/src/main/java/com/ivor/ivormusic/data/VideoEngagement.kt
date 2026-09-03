@@ -13,7 +13,14 @@ data class VideoEngagement(
     val channelId: String?,          // canonical UC... id (needed for subscribe)
     val isSubscribed: Boolean,
     val subscriberCountText: String?,
-    val commentsToken: String?       // continuation token for the first comments page
+    val commentsToken: String?,      // continuation token for the first comments page
+    /**
+     * Every channel credited on a collaboration video, in the order YouTube
+     * lists them - so the first is the uploader. Empty for the overwhelming
+     * majority of videos, which have one owner and describe it the ordinary
+     * way; see [VideoCollaborator] for why a collab describes none.
+     */
+    val collaborators: List<VideoCollaborator> = emptyList()
 )
 
 enum class LikeStatus { LIKE, DISLIKE, INDIFFERENT }

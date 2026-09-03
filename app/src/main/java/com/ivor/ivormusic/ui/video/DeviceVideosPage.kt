@@ -23,6 +23,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Folder
@@ -521,6 +522,7 @@ private fun DeviceFolderCard(folder: LocalVideoFolder, onClick: () -> Unit) {
 
 @Composable
 private fun DeviceVideoRow(video: LocalVideo, onClick: () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -583,6 +585,19 @@ private fun DeviceVideoRow(video: LocalVideo, onClick: () -> Unit) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+            )
+        }
+        // The hand-off to whatever else on the phone can open a video. Koda
+        // deliberately offers no delete of its own: that belongs to a file
+        // manager or gallery, which already has the system's confirmation and
+        // the user's own trash behind it - see openVideoWithExternalApp.
+        androidx.compose.material3.IconButton(
+            onClick = { openVideoWithExternalApp(context, video.uri, video.mimeType) }
+        ) {
+            Icon(
+                Icons.AutoMirrored.Rounded.OpenInNew,
+                contentDescription = stringResource(R.string.dv_open_with),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }

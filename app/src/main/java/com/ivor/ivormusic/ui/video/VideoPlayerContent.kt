@@ -562,6 +562,14 @@ fun VideoPlayerContent(
             }
     ) {
         if (isFullscreen) {
+            // Clearance for anything floating over the frame above the bottom
+            // bar. Portrait's bar is taller and further off the edge, so the
+            // landscape figure would put the SponsorBlock chip behind it.
+            val fullscreenOverlayBottom = if (fullscreenIsPortrait) {
+                FULLSCREEN_COMPACT_BOTTOM_BAR
+            } else {
+                104.dp
+            }
             // Fullscreen Layout - ensure it fills entire screen including cutout areas
             Box(
                 modifier = Modifier
@@ -653,7 +661,11 @@ fun VideoPlayerContent(
                         positionMs = currentPosition,
                         modifier = Modifier
                             .align(Alignment.BottomStart)
-                            .padding(start = 24.dp, end = 24.dp, bottom = 104.dp)
+                            .padding(
+                                start = 24.dp,
+                                end = 24.dp,
+                                bottom = fullscreenOverlayBottom
+                            )
                     )
                 }
 
@@ -667,7 +679,7 @@ fun VideoPlayerContent(
                     onSkipSegment = { viewModel.skipCurrentSegment() },
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
-                        .padding(end = 24.dp, bottom = 104.dp)
+                        .padding(end = 24.dp, bottom = fullscreenOverlayBottom)
                 )
 
                 // Regular comments stay inside immersive landscape as a
@@ -1021,6 +1033,7 @@ fun VideoPlayerContent(
                             val channelId = engagement?.channelId ?: currentVideo.channelId
                             if (channelId != null) onOpenChannel(channelId)
                         },
+                        onOpenChannelId = onOpenChannel,
                         onSeekTo = { seconds -> viewModel.seekTo(seconds * 1000L, precise = true) },
                         isOffline = isLocalPlayback,
                         onRelatedLongPress = { related ->

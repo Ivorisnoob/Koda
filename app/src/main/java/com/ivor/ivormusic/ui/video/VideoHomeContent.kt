@@ -73,6 +73,7 @@ import androidx.compose.material3.carousel.HorizontalMultiBrowseCarousel
 import androidx.compose.material3.carousel.rememberCarouselState
 import androidx.compose.material3.toShape
 import coil.compose.AsyncImage
+import com.ivor.ivormusic.ui.components.VideoThumbnail
 import com.ivor.ivormusic.data.DownloadedVideo
 import com.ivor.ivormusic.data.ShortsItem
 import com.ivor.ivormusic.data.VideoItem
@@ -656,13 +657,11 @@ fun VideoCard(
                     .aspectRatio(16f / 9f)
                     .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
             ) {
-                AsyncImage(
-                    model = video.highResThumbnailUrl ?: video.thumbnailUrl,
-                    contentDescription = video.title,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
+                VideoThumbnail(
+                    video = video,
+                    modifier = Modifier.fillMaxSize()
                 )
-                
+
                 // Gradient overlay at bottom for duration
                 Box(
                     modifier = Modifier

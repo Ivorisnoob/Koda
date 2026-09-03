@@ -820,6 +820,7 @@
 
     <!-- Video player -->
     <string name="vp_captions">Captions</string>
+    <string name="vp_collaborators">Collaborators</string>
     <string name="vp_rewind">Rewind 10 seconds</string>
     <string name="vp_forward">Forward 10 seconds</string>
     <string name="vp_chapters">Chapters</string>
@@ -860,6 +861,10 @@
 
     <!-- Device videos in the video-mode Library -->
     <string name="dv_on_this_device">On this device</string>
+    <string name="dv_open_with">Open with</string>
+    <string name="dv_open_with_subtitle">Rename, move or delete it in another app</string>
+    <string name="dv_open_with_none">No app on this device can open this video</string>
+    <string name="dv_opened_externally">Opened from another app</string>
     <string name="dv_card_subtitle">Videos stored on your phone</string>
     <string name="dv_all_videos">All videos</string>
     <string name="dv_one_video">1 video</string>
@@ -1037,6 +1042,10 @@
     <plurals name="n_channels">
         <item quantity="one">%1$d channel</item>
         <item quantity="other">%1$d channels</item>
+    </plurals>
+    <plurals name="vp_collaborators_count">
+        <item quantity="one">%1$d channel shares this video</item>
+        <item quantity="other">%1$d channels share this video</item>
     </plurals>
 
     <!-- Profile switcher -->

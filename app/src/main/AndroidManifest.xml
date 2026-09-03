@@ -110,6 +110,36 @@
                 <data android:pathPrefix="/embed/" />
                 <data android:pathPrefix="/v/" />
             </intent-filter>
+
+            <!--
+                "Open with" for video files, so Koda is offered alongside the
+                gallery and other players. Both halves are needed: a file
+                manager sends ACTION_VIEW with the file in the data URI, while a
+                gallery's share sheet sends ACTION_SEND with it in EXTRA_STREAM.
+
+                The filters match by mime type only. Matching by extension as
+                well would need a pathPattern per container and would still miss
+                the many providers that serve a content URI with no name at all,
+                so the intent is checked again at handling time
+                (Intent.externalVideoUri) rather than trusted from the filter.
+            -->
+            <intent-filter android:label="@string/app_name">
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:mimeType="video/*" />
+            </intent-filter>
+            <intent-filter android:label="@string/app_name">
+                <action android:name="android.intent.action.SEND" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+
+                <data android:mimeType="video/*" />
+            </intent-filter>
         </activity>
         
         <meta-data android:name="com.google.android.gms.car.application" android:resource="@xml/automotive_app_desc"/>

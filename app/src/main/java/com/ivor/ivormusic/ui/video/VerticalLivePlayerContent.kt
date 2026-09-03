@@ -243,6 +243,7 @@ fun VerticalLivePlayerContent(
                     PlayerView(ctx).apply {
                         player = exoPlayer
                         useController = false
+                        disableBuiltInSubtitles()
                         layoutParams = FrameLayout.LayoutParams(
                             ViewGroup.LayoutParams.MATCH_PARENT,
                             ViewGroup.LayoutParams.MATCH_PARENT

@@ -1605,6 +1605,16 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      * the retry path - tapping the same video otherwise only re-expands.
      */
     fun playVideo(video: VideoItem, forceRestart: Boolean = false) {
+        // A device video reaching the ordinary entry point is a watch-history
+        // row being replayed: history stores VideoItems and nothing else, so a
+        // file on this phone comes back through the same door a YouTube video
+        // does. Routed here rather than at the surfaces that open a video,
+        // because there are several of them and every one would have to
+        // remember - the same reason addVideoToPlaylist owns its own routing.
+        if (LocalVideo.isDeviceVideoId(video.videoId)) {
+            playDeviceVideoItem(video)
+            return
+        }
         leaveLocalPlayback()
         _queue.value = null
         // The queue this belonged to is gone, so restoring into the next one
@@ -1688,6 +1698,76 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             },
             index = index,
             title = selected.folderName,
+        )
+    }
+
+    /**
+     * Replay one device file addressed only by its playback id.
+     *
+     * The URI is rebuilt from the id rather than carried on the item, because
+     * the item may have come out of watch history, where nothing but a
+     * [VideoItem] was ever stored. A row whose file has since been deleted or
+     * moved fails at prepare and lands on the player's ordinary error overlay,
+     * which is the honest answer - there is no way to know it is gone without
+     * asking the provider, and asking costs a query on every tap.
+     */
+    private fun playDeviceVideoItem(video: VideoItem) {
+        val uri = LocalVideo.uriFor(video.videoId) ?: return
+        startLocalQueue(
+            items = listOf(video),
+            sources = mapOf(
+                video.videoId to LocalPlaybackSource(
+                    uri = uri,
+                    // Replaced by the real label, HDR included, on the first
+                    // onTracksChanged - the same placeholder the folder path uses.
+                    label = "On this device",
+                    allowsTrackSelection = true,
+                )
+            ),
+            index = 0,
+            title = video.channelName,
+        )
+    }
+
+    /**
+     * Play a video file handed to Koda from outside - an "open with", or a
+     * video shared into the app.
+     *
+     * A URI that resolves back to a MediaStore row is treated as an ordinary
+     * device video, id and all, so it lands in history and can be replayed
+     * later. Anything else plays under a one-off id: the read grant came with
+     * the intent and dies with the task, so remembering it would leave a row
+     * that can never be opened again.
+     */
+    fun playExternalVideo(uri: android.net.Uri, displayTitle: String?) {
+        val externalSourceLabel = context.getString(com.ivor.ivormusic.R.string.dv_opened_externally)
+        // A URI with no MediaStore row gets an id that is deliberately NOT a
+        // device id, so nothing downstream tries to rebuild a file address from
+        // it and history leaves it out (see recordLocalWatch).
+        val id = LocalVideo.playbackIdFor(uri) ?: "external:${uri.hashCode()}"
+        val title = displayTitle?.takeIf { it.isNotBlank() }
+            ?: uri.lastPathSegment?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
+            ?: "Video"
+        startLocalQueue(
+            items = listOf(
+                VideoItem(
+                    videoId = id,
+                    title = title,
+                    channelName = externalSourceLabel,
+                    thumbnailUrl = null,
+                    duration = 0L,
+                    viewCount = "",
+                )
+            ),
+            sources = mapOf(
+                id to LocalPlaybackSource(
+                    uri = uri,
+                    label = "On this device",
+                    allowsTrackSelection = true,
+                )
+            ),
+            index = 0,
+            title = externalSourceLabel,
         )
     }
 
@@ -2214,6 +2294,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                 _playbackError.value = e
                 _isLoading.value = false
             }
+            recordLocalWatch(video)
             return
         }
 
@@ -2386,6 +2467,54 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                 // register plain videos in YouTube watch history
                 youtubeRepository.reportVideoPlayback(video.videoId)
             }
+        }
+    }
+
+    /**
+     * Record a locally played video in Koda's own watch history.
+     *
+     * A file on the device is still something the user watched, and leaving it
+     * out made the history list quietly incomplete - a folder of holiday clips
+     * watched all evening left no trace, while the one YouTube video in between
+     * did. Nothing is told to YouTube: there is no id to report, and a device
+     * file is nobody's upload.
+     *
+     * The same 10s-of-actual-playback rule as the online path, so opening a
+     * file and immediately backing out does not record it, and the same fresh
+     * pref read, because the settings screen toggles through its own
+     * ThemePreferences instance. Incognito and the profile scope are enforced
+     * inside [VideoHistoryRepository.addVideo], which is the whole reason that
+     * gate lives there rather than at each call site.
+     *
+     * Deliberately not extended to an externally opened one-off URI: a grant
+     * from another app dies with the task, so the entry would be a row that
+     * cannot be replayed. [LocalVideo.playbackIdFor] is what decides whether an
+     * incoming file is a MediaStore row worth remembering.
+     */
+    private fun recordLocalWatch(video: VideoItem) {
+        // Only entries that can be opened again. A downloaded video keeps its
+        // real YouTube id, a gallery file keeps a device id the URI is rebuilt
+        // from, and a one-off external grant keeps neither - a row for that
+        // would be a dead link the moment the task ends.
+        val replayable = LocalVideo.uriFor(video.videoId) != null ||
+            !video.videoId.startsWith("external:")
+        if (!replayable) return
+        playbackReportJob?.cancel()
+        playbackReportJob = viewModelScope.launch {
+            kotlinx.coroutines.delay(10000)
+            var waitedMs = 0
+            while (!_isPlaying.value && waitedMs < 60_000) {
+                kotlinx.coroutines.delay(1000)
+                waitedMs += 1000
+            }
+            if (!_isPlaying.value) return@launch
+            if (_currentVideo.value?.videoId != video.videoId) return@launch
+            if (!themePreferences.isSaveVideoHistoryEnabled()) return@launch
+            // Prefer the current state: a device file's row is renamed from the
+            // decoder on the first onTracksChanged, so the enriched item is the
+            // one worth keeping.
+            val watched = _currentVideo.value?.takeIf { it.videoId == video.videoId } ?: video
+            videoHistoryRepository.addVideo(watched)
         }
     }
 

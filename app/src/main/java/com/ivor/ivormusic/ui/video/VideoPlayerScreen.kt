@@ -9,6 +9,7 @@ import android.graphics.Bitmap
 import android.media.AudioManager
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.FrameLayout
@@ -65,6 +66,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.Chat
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.rounded.Comment
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material.icons.outlined.ThumbDown
@@ -116,6 +118,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -419,7 +422,13 @@ fun FullscreenPlayerContent(
     // bottom bar while the controls are up.
     val navBarInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val captionLift = animateDpAsState(
-        targetValue = if (showControls) maxOf(112.dp, navBarInset + 24.dp) else navBarInset + 24.dp,
+        // Portrait's bottom bar is a line taller and sits further off the edge,
+        // so the clearance the landscape band needs is not enough here.
+        targetValue = if (showControls) {
+            maxOf(if (compactChrome) FULLSCREEN_COMPACT_BOTTOM_BAR else 112.dp, navBarInset + 24.dp)
+        } else {
+            navBarInset + 24.dp
+        },
         animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
         label = "captionLift"
     )
@@ -453,6 +462,7 @@ fun FullscreenPlayerContent(
                 PlayerView(ctx).apply {
                     player = exoPlayer
                     useController = false
+                    disableBuiltInSubtitles()
                     layoutParams = FrameLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.MATCH_PARENT
@@ -624,14 +634,44 @@ fun FullscreenPlayerContent(
                                 listOf(Color.Transparent, Color.Black.copy(alpha = 0.72f))
                             )
                         )
-                        .padding(horizontal = 24.dp, vertical = 18.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                        .padding(
+                            // A phone's short edge has no width to give away, so
+                            // the gutter narrows with the chrome.
+                            start = if (compactChrome) 16.dp else 24.dp,
+                            end = if (compactChrome) 16.dp else 24.dp,
+                            top = 18.dp,
+                            // System bars are hidden here, so the navigationBars
+                            // inset reads zero and the row would otherwise sit on
+                            // the very bottom edge - underneath the gesture bar
+                            // on the taller portrait window, where the thumb
+                            // reaching for the seek bar swipes the app away.
+                            bottom = if (compactChrome) 32.dp else 18.dp
+                        ),
+                    verticalArrangement = Arrangement.spacedBy(if (compactChrome) 4.dp else 8.dp)
                 ) {
-                    if (chapters.isNotEmpty()) {
+                    if (compactChrome) {
+                        // Portrait: the readout takes a line of its own so the
+                        // seek bar can have the full width. Flanking labels cost
+                        // it roughly two fifths of a phone's short edge, which
+                        // left the bar too short to scrub accurately and pushed
+                        // the total hard against the end of the track.
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
+                            if (!isLive) {
+                                Text(
+                                    text = if (duration > 0L) {
+                                        "${formatDuration(currentPosition)} / ${formatDuration(duration)}"
+                                    } else {
+                                        formatDuration(currentPosition)
+                                    },
+                                    color = Color.White,
+                                    style = MaterialTheme.typography.labelLarge
+                                )
+                            }
+                            Spacer(Modifier.weight(1f))
                             if (chapters.isNotEmpty()) {
                                 ChapterTitleChip(
                                     chapters = chapters,
@@ -639,19 +679,12 @@ fun FullscreenPlayerContent(
                                     onClick = onOpenChapters
                                 )
                             }
-                            Spacer(Modifier.weight(1f))
-                        }
-                    }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        // A live stream's position is an offset into the DVR
-                        // window, not a place in a video, so the elapsed
-                        // readout means nothing to the viewer.
-                        if (!isLive) {
-                            Text(formatDuration(currentPosition), color = Color.White, style = MaterialTheme.typography.labelLarge)
+                            if (isLive) {
+                                LiveEdgeChip(
+                                    atLiveEdge = duration <= 0L || progress >= LIVE_EDGE_THRESHOLD,
+                                    onClick = onSeekToLive
+                                )
+                            }
                         }
 
                         PlayerSeekBar(
@@ -659,7 +692,7 @@ fun FullscreenPlayerContent(
                             progress = progress,
                             bufferedProgress = bufferedProgress,
                             onSeek = onSeek,
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.fillMaxWidth(),
                             chapters = chapters,
                             sponsorSegments = sponsorSegments,
                             durationMs = duration,
@@ -667,19 +700,58 @@ fun FullscreenPlayerContent(
                             showSeekPreview = !isLive,
                             onScrubbingChanged = onScrubbingChanged,
                         )
+                    } else {
+                        if (chapters.isNotEmpty()) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                ChapterTitleChip(
+                                    chapters = chapters,
+                                    currentPositionMs = currentPosition,
+                                    onClick = onOpenChapters
+                                )
+                                Spacer(Modifier.weight(1f))
+                            }
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            // A live stream's position is an offset into the DVR
+                            // window, not a place in a video, so the elapsed
+                            // readout means nothing to the viewer.
+                            if (!isLive) {
+                                Text(formatDuration(currentPosition), color = Color.White, style = MaterialTheme.typography.labelLarge)
+                            }
 
-                        if (isLive) {
-                            LiveEdgeChip(
-                                // A stream without a DVR window reports no
-                                // duration, so there is nowhere to be behind.
-                                atLiveEdge = duration <= 0L || progress >= LIVE_EDGE_THRESHOLD,
-                                onClick = onSeekToLive
+                            PlayerSeekBar(
+                                mediaId = videoId,
+                                progress = progress,
+                                bufferedProgress = bufferedProgress,
+                                onSeek = onSeek,
+                                modifier = Modifier.weight(1f),
+                                chapters = chapters,
+                                sponsorSegments = sponsorSegments,
+                                durationMs = duration,
+                                seekPreview = seekPreview,
+                                showSeekPreview = !isLive,
+                                onScrubbingChanged = onScrubbingChanged,
                             )
-                        } else {
-                            Text(formatDuration(duration), color = Color.White, style = MaterialTheme.typography.labelLarge)
+
+                            if (isLive) {
+                                LiveEdgeChip(
+                                    // A stream without a DVR window reports no
+                                    // duration, so there is nowhere to be behind.
+                                    atLiveEdge = duration <= 0L || progress >= LIVE_EDGE_THRESHOLD,
+                                    onClick = onSeekToLive
+                                )
+                            } else {
+                                Text(formatDuration(duration), color = Color.White, style = MaterialTheme.typography.labelLarge)
+                            }
                         }
                     }
-
                 }
             }
         }
@@ -782,6 +854,7 @@ fun PortraitPlayerContent(
                 PlayerView(ctx).apply {
                     player = exoPlayer
                     useController = false
+                    disableBuiltInSubtitles()
                     layoutParams = FrameLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.MATCH_PARENT
@@ -1478,6 +1551,34 @@ private fun ChapterTitleChip(
     }
 }
 
+/**
+ * Turns off PlayerView's own subtitle rendering, because Koda draws captions
+ * itself.
+ *
+ * [scar] YouTube captions are fetched as timedtext and parsed into [VttCue]s
+ * rather than merged into the Media3 source, so the view's SubtitleView had
+ * nothing to draw and the duplication never showed. A device video's subtitles
+ * are *inside the file*: selecting one puts real cues on the player, and both
+ * renderers then drew the same line at once - PlayerView's in the platform's
+ * caption style, Koda's in the user's chosen size, colour and background. Every
+ * surface that composes [CaptionOverlay] over a PlayerView must call this.
+ */
+@kotlin.OptIn(UnstableApi::class)
+internal fun PlayerView.disableBuiltInSubtitles() {
+    subtitleView?.visibility = View.GONE
+}
+
+/**
+ * Height to keep clear above the portrait fullscreen bottom bar.
+ *
+ * The bar is taller there than in landscape - the readout has a line of its own
+ * so the seek bar can span the width - and it stands further off the bottom
+ * edge to clear the gesture bar. Anything floating over the frame (captions, the
+ * SponsorBlock chip, timed comments) measures its clearance from here rather
+ * than repeating a literal, so the three cannot drift apart from the bar.
+ */
+internal val FULLSCREEN_COMPACT_BOTTOM_BAR = 140.dp
+
 /** Seconds jumped per double-tap on either edge of the video surface. */
 private const val DOUBLE_TAP_SEEK_SECONDS = 10
 
@@ -2119,6 +2220,13 @@ fun VideoInfoSection(
     onSaveClick: () -> Unit = {},
     onDownloadClick: () -> Unit = {},
     onChannelClick: () -> Unit = {},
+    /**
+     * Open a named channel, for the collaborators sheet. Distinct from
+     * [onChannelClick], which opens *the* channel: a collab video has no single
+     * one, so the row leads to a list and each entry navigates itself. Null
+     * leaves the row on its ordinary behaviour.
+     */
+    onOpenChannelId: ((String) -> Unit)? = null,
     onRelatedLongPress: ((VideoItem) -> Unit)? = null,
     /**
      * The playlist this video is being watched through, when there is one. Null
@@ -2209,11 +2317,31 @@ fun VideoInfoSection(
         }
 
         // Channel Info Surface (tap navigates to the channel)
+        //
+        // A collab video is the exception: it credits several channels and
+        // names none of them as the owner, so there is no channel to navigate
+        // to and nothing for Subscribe to act on - the row becomes the way into
+        // the list instead. Only ever entered when the response actually
+        // carried collaborators, so an ordinary video is untouched.
+        val collaborators = engagement?.collaborators.orEmpty()
+        val isCollab = collaborators.size > 1 && onOpenChannelId != null
+        var showCollaborators by remember(video.videoId) { mutableStateOf(false) }
+        if (showCollaborators && isCollab) {
+            CollaboratorsSheet(
+                collaborators = collaborators,
+                onOpenChannel = { channelId -> onOpenChannelId?.invoke(channelId) },
+                onDismiss = { showCollaborators = false }
+            )
+        }
         if (!isOffline) Surface(
             shape = RoundedCornerShape(16.dp),
             color = MaterialTheme.colorScheme.surfaceContainer,
             modifier = Modifier.fillMaxWidth(),
-            onClick = onChannelClick
+            onClick = if (isCollab) {
+                { showCollaborators = true }
+            } else {
+                onChannelClick
+            }
         ) {
             ListItem(
                 headlineContent = {
@@ -2227,12 +2355,22 @@ fun VideoInfoSection(
                 },
                 supportingContent = {
                     Text(
-                         text = engagement?.subscriberCountText ?: video.subscriberCount ?: "",
+                         text = if (isCollab) {
+                             pluralStringResource(
+                                 R.plurals.vp_collaborators_count,
+                                 collaborators.size,
+                                 collaborators.size
+                             )
+                         } else {
+                             engagement?.subscriberCountText ?: video.subscriberCount ?: ""
+                         },
                          style = MaterialTheme.typography.bodySmall
                     )
                 },
                 leadingContent = {
-                    if (!video.channelIconUrl.isNullOrBlank()) {
+                    if (isCollab) {
+                        CollaboratorAvatarStack(collaborators = collaborators)
+                    } else if (!video.channelIconUrl.isNullOrBlank()) {
                         AsyncImage(
                             model = video.channelIconUrl,
                             contentDescription = null,
@@ -2258,16 +2396,30 @@ fun VideoInfoSection(
                     }
                 },
                 trailingContent = {
-                    Button(
-                        onClick = onSubscribeClick,
-                        enabled = engagement?.channelId != null,
-                        colors = if (isSubscribed) {
-                            ButtonDefaults.filledTonalButtonColors()
-                        } else {
-                            ButtonDefaults.buttonColors()
+                    if (isCollab) {
+                        // No Subscribe here on purpose: subscribing to "KSI and
+                        // 2 more" is ambiguous, and a button permanently
+                        // disabled because the response carried no channel id
+                        // is worse than one that is not offered. Each row in
+                        // the sheet opens a channel page, which has a working
+                        // one that routes through SubscriptionActions.
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        Button(
+                            onClick = onSubscribeClick,
+                            enabled = engagement?.channelId != null,
+                            colors = if (isSubscribed) {
+                                ButtonDefaults.filledTonalButtonColors()
+                            } else {
+                                ButtonDefaults.buttonColors()
+                            }
+                        ) {
+                            Text(if (isSubscribed) stringResource(R.string.subscribed) else stringResource(R.string.subscribe))
                         }
-                    ) {
-                        Text(if (isSubscribed) stringResource(R.string.subscribed) else stringResource(R.string.subscribe))
                     }
                 },
                 colors = ListItemDefaults.colors(
