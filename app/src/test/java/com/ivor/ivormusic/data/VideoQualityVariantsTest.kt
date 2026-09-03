@@ -26,16 +26,35 @@ class VideoQualityVariantsTest {
         )
     }
 
+    @Test
+    fun `deduplication preserves SDR and HDR at the same resolution`() {
+        val sdr = splitQuality("1080p60")
+        val hdr = splitQuality(
+            "1080p60",
+            format = "webm",
+            codec = "vp9.2",
+            dynamicRange = VideoDynamicRange.HDR10,
+        )
+
+        assertEquals(
+            listOf(hdr, sdr),
+            deduplicateVideoQualityVariants(listOf(sdr, hdr))
+        )
+        assertEquals("1080p60 HDR", hdr.displayLabel)
+    }
+
     private fun splitQuality(
         resolution: String,
         format: String = "mp4",
         codec: String = "avc1.4d401f",
+        dynamicRange: VideoDynamicRange = VideoDynamicRange.SDR,
     ) = VideoQuality(
         resolution = resolution,
         url = "video-$resolution-$format",
         format = format,
         audioUrl = "audio-$resolution",
         codec = codec,
+        dynamicRange = dynamicRange,
     )
 
     private fun muxedQuality(resolution: String) = VideoQuality(

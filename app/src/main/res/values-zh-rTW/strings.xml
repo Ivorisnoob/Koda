@@ -147,6 +147,8 @@
     <string name="settings_advanced_value_xiaomi">建議在此裝置上啟用</string>
     <string name="settings_advanced_value_other">掃描與電池修正</string>
     <string name="settings_version_subtitle">版本 %1$s (%2$d)</string>
+    <string name="sp_prefer_hdr">優先播放 HDR 影片</string>
+    <string name="sp_prefer_hdr_sub">僅在顯示器和解碼器均支援時使用 HDR</string>
 
     <string name="profiles_title">個人資料</string>
     <string name="profiles_description">訂閱項目與隱藏的推薦內容會依個人資料分開保存。播放清單、喜歡的歌曲和下載內容則為共用。</string>

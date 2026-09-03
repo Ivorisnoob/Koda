@@ -38,6 +38,8 @@ import com.ivor.ivormusic.data.SubscriptionActions
 import com.ivor.ivormusic.data.SubscriptionStore
 import com.ivor.ivormusic.data.LiveChatBanner
 import com.ivor.ivormusic.data.LiveChatMessage
+import com.ivor.ivormusic.data.VideoStreamResult
+import com.ivor.ivormusic.data.bestSdrFallback
 import com.ivor.ivormusic.data.LiveChatPage
 import com.ivor.ivormusic.data.TimedComment
 import com.ivor.ivormusic.data.VideoEngagement
@@ -415,6 +417,8 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     // reclaimed by another app). Retry in place a couple of times before the
     // error reaches the UI; reset on every successful playback start.
     private var rendererRetryCount = 0
+    private var hdrFallbackUsed = false
+    private var hdrQualityToRestoreAfterMini: VideoQuality? = null
 
     // Source failures (googlevideo 403 on a flagged token, an expired URL, a
     // network blip) are recovered by re-resolving the stream rather than by
@@ -640,6 +644,21 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     init {
         observeProfileSwitches()
 
+        viewModelScope.launch {
+            themePreferences.preferHdr.drop(1).distinctUntilChanged().collect { enabled ->
+                val current = _currentQuality.value ?: return@collect
+                val video = _currentVideo.value ?: return@collect
+                if (_isLocalPlayback.value || _isLive.value) return@collect
+                if (!enabled && current.isHdr) {
+                    val fallback = bestSdrFallback(localVideoQualityOptions(_availableQualities.value), current)
+                    if (fallback != null) reloadPreservingPosition(fallback)
+                } else if (enabled && !current.isHdr) {
+                    val streamResult = resolvePlayableStreamResult(video.videoId)
+                    _availableQualities.value = streamResult.qualities
+                }
+            }
+        }
+
         if (!_isAutoplayEnabled.value && themePreferences.isVideoRepeatEnabled()) {
             themePreferences.setVideoRepeatEnabled(false)
         }
@@ -769,6 +788,8 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             }
 
             override fun onPlayerError(error: PlaybackException) {
+                if (fallbackFromHdr(error)) return
+
                 // A renderer/decoder failure is not a broken stream: the
                 // codec lost its surface or was reclaimed. Re-prepare in
                 // place (position is kept) instead of dead-ending the
@@ -1336,7 +1357,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         if (_exoPlayer == null) return false
         youtubeRepository.invalidateVideoStreamResult(video.videoId)
         val qualities = try {
-            youtubeRepository.getVideoStreamQualities(video.videoId)
+            resolvePlayableQualities(video.videoId)
         } catch (e: kotlinx.coroutines.CancellationException) {
             // playVideo() cancels this job when the user moves on. Swallowing
             // that would let a dead recovery keep writing loading/error state
@@ -1706,6 +1727,8 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         _playbackError.value = null // Clear previous error
         rendererRetryCount = 0
         sourceRetryCount = 0
+        hdrFallbackUsed = false
+        hdrQualityToRestoreAfterMini = null
         // A recovery still in flight belongs to the previous video
         sourceRecoveryJob?.cancel()
         sourceRecoveryJob = null
@@ -1834,7 +1857,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                 // prevent a cancelled load from touching a newer video.
                 run resolve@ {
                     // FAST: Get stream URLs only (no metadata, no related, no channel avatar)
-                    val streamResult = youtubeRepository.getVideoStreamResult(video.videoId)
+                    val streamResult = resolvePlayableStreamResult(video.videoId)
                     if (!isCurrentVideoLoad(video.videoId, loadGeneration)) return@resolve
                     val qualities = streamResult.qualities
                     _availableQualities.value = qualities
@@ -2025,7 +2048,12 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      */
     private fun pickDefaultQuality(qualities: List<VideoQuality>): VideoQuality {
         fun height(label: String): Int = label.takeWhile { it.isDigit() }.toIntOrNull() ?: 0
-        val options = localVideoQualityOptions(qualities)
+        val baseOptions = localVideoQualityOptions(qualities)
+        val options = if (!_isExpanded.value) {
+            baseOptions.filterNot(VideoQuality::isHdr).ifEmpty { baseOptions }
+        } else {
+            baseOptions
+        }
         val preferred = themePreferences.getDefaultVideoQuality()
 
         // The live ladder leads with an "Auto" entry (height 0) that the VOD
@@ -2286,6 +2314,43 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         player.addListener(listener)
     }
 
+    private suspend fun resolvePlayableStreamResult(videoId: String): VideoStreamResult {
+        val includeHdr = themePreferences.isPreferHdrEnabled()
+        val result = youtubeRepository.getVideoStreamResult(videoId, includeHdr)
+        val qualities = if (includeHdr) {
+            result.qualities
+        } else {
+            result.qualities.filterNot(VideoQuality::isHdr)
+        }
+        return result.copy(qualities = qualities)
+    }
+
+    private suspend fun resolvePlayableQualities(videoId: String): List<VideoQuality> =
+        resolvePlayableStreamResult(videoId).qualities
+
+    /** One-shot HDR-to-SDR recovery shared by source and decoder failures. */
+    private fun fallbackFromHdr(error: PlaybackException): Boolean {
+        val failed = _currentQuality.value ?: return false
+        if (!failed.isHdr || hdrFallbackUsed) return false
+        val fallback = bestSdrFallback(localVideoQualityOptions(_availableQualities.value), failed)
+            ?: return false
+
+        hdrFallbackUsed = true
+        hdrQualityToRestoreAfterMini = null
+        KLog.w(
+            "VideoPlayerVM",
+            "HDR ${failed.displayLabel} failed; falling back to ${fallback.displayLabel}",
+            error,
+        )
+        if (httpResponseCode(error) == 403) {
+            viewModelScope.launch {
+                youtubeRepository.refreshVisitorDataAfterPlaybackFailure()
+            }
+        }
+        reloadPreservingPosition(fallback)
+        return true
+    }
+
     /** Load the caption track list for the current video, once, on demand. */
     fun ensureCaptionsLoaded() {
         if (_isLocalPlayback.value) return
@@ -2369,7 +2434,29 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     }
 
     fun setExpanded(expanded: Boolean) {
+        if (_isExpanded.value == expanded) return
         _isExpanded.value = expanded
+        if (_isLocalPlayback.value || _isLive.value) return
+
+        val current = _currentQuality.value ?: return
+        if (!expanded && current.isHdr) {
+            val fallback = bestSdrFallback(localVideoQualityOptions(_availableQualities.value), current)
+                ?: return
+            hdrQualityToRestoreAfterMini = current
+            reloadPreservingPosition(fallback)
+            return
+        }
+
+        if (expanded && !current.isHdr) {
+            val remembered = hdrQualityToRestoreAfterMini ?: return
+            hdrQualityToRestoreAfterMini = null
+            if (!themePreferences.isPreferHdrEnabled()) return
+            val restored = localVideoQualityOptions(_availableQualities.value).firstOrNull {
+                it.isHdr && it.resolution == remembered.resolution &&
+                    it.dynamicRange == remembered.dynamicRange
+            } ?: return
+            reloadPreservingPosition(restored)
+        }
     }
 
     fun closePlayer() {
@@ -2379,6 +2466,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         _exoPlayer?.stop()
         progressJob?.cancel()
         progressJob = null
+        hdrQualityToRestoreAfterMini = null
         // Track selection outlives media items: a player closed while the video
         // track is suspended would come back audio-only on the next video.
         onEnterForeground()

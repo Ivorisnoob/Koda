@@ -21,7 +21,7 @@ internal fun deduplicateVideoQualityVariants(
         label.substringAfter('p', "").takeWhile(Char::isDigit).toIntOrNull() ?: 30
 
     return qualities
-        .groupBy { it.resolution to it.delivery }
+        .groupBy { Triple(it.resolution, it.delivery, it.dynamicRange) }
         .mapNotNull { (_, variants) ->
             variants.maxWithOrNull(
                 compareBy<VideoQuality>(
@@ -33,6 +33,7 @@ internal fun deduplicateVideoQualityVariants(
         .sortedWith(
             compareByDescending<VideoQuality> { height(it.resolution) }
                 .thenByDescending { fps(it.resolution) }
+                .thenByDescending { if (it.isHdr) 1 else 0 }
                 // Keep the higher-fidelity split entry first for local playback
                 // when two delivery types share the same visible label.
                 .thenByDescending {

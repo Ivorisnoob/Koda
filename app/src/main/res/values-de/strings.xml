@@ -147,6 +147,8 @@
     <string name="settings_advanced_value_xiaomi">Auf diesem Gerät empfohlen</string>
     <string name="settings_advanced_value_other">Scan- und Akku-Korrekturen</string>
     <string name="settings_version_subtitle">Version %1$s (%2$d)</string>
+    <string name="sp_prefer_hdr">HDR-Video bevorzugen</string>
+    <string name="sp_prefer_hdr_sub">HDR nur verwenden, wenn Display und Decoder es unterstützen</string>
 
     <string name="profiles_title">Profile</string>
     <string name="profiles_description">Abos und ausgeblendete Empfehlungen werden pro Profil gespeichert. Playlists, „Gefällt mir“-Songs und Downloads werden geteilt.</string>

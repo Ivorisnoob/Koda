@@ -147,6 +147,8 @@
     <string name="settings_advanced_value_xiaomi">इस डिवाइस पर अनुशंसित</string>
     <string name="settings_advanced_value_other">स्कैन और बैटरी सुधार</string>
     <string name="settings_version_subtitle">वर्शन %1$s (%2$d)</string>
+    <string name="sp_prefer_hdr">HDR वीडियो को प्राथमिकता दें</string>
+    <string name="sp_prefer_hdr_sub">HDR का उपयोग केवल तभी करें जब डिस्प्ले और डिकोडर इसका समर्थन करते हों</string>
 
     <string name="profiles_title">प्रोफ़ाइल</string>
     <string name="profiles_description">सब्सक्रिप्शन और छिपाई गई सिफ़ारिशें हर प्रोफ़ाइल के लिए अलग हैं। प्लेलिस्ट, पसंदीदा गाने और डाउनलोड साझा हैं।</string>
