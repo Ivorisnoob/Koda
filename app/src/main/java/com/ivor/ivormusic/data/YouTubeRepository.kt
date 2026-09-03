@@ -2828,6 +2828,10 @@ class YouTubeRepository(private val context: Context) {
      */
     suspend fun reportPlayback(videoId: String) = withContext(Dispatchers.IO) {
         if (!sessionManager.isLoggedIn()) return@withContext
+        // Incognito covers the account's own history too, not only Koda's.
+        // Gated here rather than at the call sites so nothing that starts
+        // playback later has to remember.
+        if (IncognitoMode.isEnabled(context)) return@withContext
 
         try {
             val cookies = sessionManager.getCookies() ?: return@withContext
@@ -6802,6 +6806,7 @@ class YouTubeRepository(private val context: Context) {
      */
     suspend fun reportVideoPlayback(videoId: String) = withContext(Dispatchers.IO) {
         if (!sessionManager.isLoggedIn()) return@withContext
+        if (IncognitoMode.isEnabled(context)) return@withContext
         try {
             val cpn = generateCpn()
             val raw = postWatchApi(

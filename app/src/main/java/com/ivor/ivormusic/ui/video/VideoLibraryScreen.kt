@@ -49,9 +49,11 @@ import androidx.compose.material.icons.rounded.BookmarkAdded
 import androidx.compose.material.icons.rounded.BookmarkRemove
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Login
+import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.ThumbUp
@@ -128,6 +130,13 @@ private sealed interface LibraryPage {
     data object Root : LibraryPage
     data object History : LibraryPage
     data class Playlist(val playlist: VideoPlaylist) : LibraryPage
+
+    /**
+     * The device's own videos. One page rather than two, because the step in
+     * to a folder is owned by DeviceVideosScreen - which local-only mode hosts
+     * directly, with no Library around it.
+     */
+    data object DeviceVideos : LibraryPage
 }
 
 /**
@@ -148,6 +157,15 @@ fun VideoLibraryContent(
      * really is a one-off video.
      */
     onPlayQueue: ((com.ivor.ivormusic.data.VideoQueue) -> Unit)? = null,
+    /**
+     * Play a file from the device, with the list it was tapped in as the queue.
+     *
+     * Separate from [onPlayQueue] because a device video is not a [VideoItem]
+     * the rest of the app can act on - there is no id to resolve, no channel
+     * and nothing to fetch - so the player is handed the files themselves and
+     * builds its own queue over local sources.
+     */
+    onPlayDeviceVideos: ((List<com.ivor.ivormusic.data.LocalVideo>, com.ivor.ivormusic.data.LocalVideo) -> Unit)? = null,
     onLoginClick: () -> Unit,
     contentPadding: PaddingValues,
     /** Queue a video from the history or playlist pages. */
@@ -176,11 +194,27 @@ fun VideoLibraryContent(
     // the account's own they are there signed out.
     val savedPlaylists by viewModel.savedVideoPlaylists.collectAsState()
 
+    val deviceVideos by viewModel.deviceVideos.collectAsState()
+    val deviceFolders by viewModel.deviceVideoFolders.collectAsState()
+    val isDeviceVideosLoading by viewModel.isDeviceVideosLoading.collectAsState()
+    val hasScannedDeviceVideos by viewModel.hasScannedDeviceVideos.collectAsState()
+    val videoAccess = com.ivor.ivormusic.ui.components.rememberVideoMediaAccessState()
+    // Sort belongs to the session rather than to a page, so walking between
+    // folders keeps the order the user chose instead of resetting each time.
+    var deviceSort by remember { mutableStateOf(com.ivor.ivormusic.data.LocalVideoSort.RECENT) }
+
     var page by remember { mutableStateOf<LibraryPage>(LibraryPage.Root) }
 
     LaunchedEffect(isYouTubeConnected) {
         if (historyVideos.isEmpty()) viewModel.loadYouTubeHistory()
         if (isYouTubeConnected) viewModel.loadVideoPlaylists()
+    }
+
+    // Scanned only once the section is actually open, and re-scanned whenever
+    // access widens - a partial grant extended through the picker returns more
+    // files, and nothing else would tell the list to look again.
+    LaunchedEffect(page, videoAccess.access) {
+        if (page == LibraryPage.DeviceVideos && videoAccess.isReadable) viewModel.loadDeviceVideos()
     }
 
     // Handed a playlist from outside the tab. Loads its videos the same way
@@ -206,6 +240,10 @@ fun VideoLibraryContent(
                 onVideoClick = onVideoClick,
                 onLoginClick = onLoginClick,
                 onOpenHistory = { page = LibraryPage.History },
+                deviceVideoCount = if (videoAccess.isReadable && hasScannedDeviceVideos) {
+                    deviceVideos.size
+                } else null,
+                onOpenDeviceVideos = { page = LibraryPage.DeviceVideos },
                 onOpenPlaylist = { playlist ->
                     viewModel.loadPlaylistVideos(playlist.playlistId)
                     page = LibraryPage.Playlist(playlist)
@@ -258,7 +296,33 @@ fun VideoLibraryContent(
                     .fillMaxSize()
                     .background(MaterialTheme.colorScheme.background)
             ) {
-                SubPageTopBar(title = stringResource(R.string.vl_watch_history), onBack = { page = LibraryPage.Root })
+                var confirmClearHistory by remember { mutableStateOf(false) }
+                if (confirmClearHistory) {
+                    ClearHistoryDialog(
+                        onDismiss = { confirmClearHistory = false },
+                        onConfirm = {
+                            viewModel.clearVideoHistory()
+                            confirmClearHistory = false
+                        }
+                    )
+                }
+                SubPageTopBar(
+                    title = stringResource(R.string.vl_watch_history),
+                    onBack = { page = LibraryPage.Root },
+                    actions = {
+                        // Only offered when there is something to clear, so the
+                        // control never promises an action that would do nothing.
+                        if (historyVideos.isNotEmpty()) {
+                            IconButton(onClick = { confirmClearHistory = true }) {
+                                Icon(
+                                    Icons.Rounded.DeleteSweep,
+                                    contentDescription = stringResource(R.string.vh_clear_history),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                )
                 VideoHistoryContent(
                     viewModel = viewModel,
                     onVideoClick = onVideoClick,
@@ -269,6 +333,34 @@ fun VideoLibraryContent(
                     onOpenChannel = onOpenChannel
                 )
             }
+
+            is LibraryPage.DeviceVideos -> DeviceVideosScreen(
+                videos = deviceVideos,
+                folders = deviceFolders,
+                access = videoAccess.access,
+                isLoading = isDeviceVideosLoading,
+                hasScanned = hasScannedDeviceVideos,
+                sort = deviceSort,
+                onSortChange = { deviceSort = it },
+                onRequestAccess = { videoAccess.launchRequest() },
+                onRefresh = { viewModel.loadDeviceVideos() },
+                onPlay = { ordered, video -> onPlayDeviceVideos?.invoke(ordered, video) },
+                // SubPageTopBar above already sits in the status bar area, so
+                // the grid must not take the top inset a second time - the same
+                // split VideoHistoryContent makes between its embedded and
+                // standalone forms.
+                contentPadding = PaddingValues(
+                    bottom = contentPadding.calculateBottomPadding()
+                ),
+                topBar = {
+                    SubPageTopBar(
+                        title = stringResource(R.string.dv_on_this_device),
+                        onBack = { page = LibraryPage.Root }
+                    )
+                },
+                folderTopBar = { title, onBack -> SubPageTopBar(title = title, onBack = onBack) },
+                modifier = Modifier.background(MaterialTheme.colorScheme.background)
+            )
 
             is LibraryPage.Playlist -> VideoPlaylistDetail(
                 playlist = target.playlist,
@@ -305,6 +397,13 @@ private fun LibraryRoot(
     onVideoClick: (VideoItem) -> Unit,
     onLoginClick: () -> Unit,
     onOpenHistory: () -> Unit,
+    /**
+     * How many videos the device holds, or null until a scan has run - which
+     * is also the signed-off state, since nothing is scanned before the
+     * section is opened for the first time.
+     */
+    deviceVideoCount: Int?,
+    onOpenDeviceVideos: () -> Unit,
     onOpenPlaylist: (VideoPlaylist) -> Unit,
     /** Name, and whether it goes on the device rather than to the account. */
     onCreatePlaylist: (String, Boolean) -> Unit,
@@ -394,6 +493,19 @@ private fun LibraryRoot(
                         )
                     }
                 }
+            }
+
+            // The device's own videos. Sits with the pinned account feeds
+            // rather than below the playlists because it is the same kind of
+            // thing - a place videos live - and unlike those two it is there
+            // whether or not anyone is signed in, which is the whole point of
+            // it in a tab that is otherwise all account content.
+            item {
+                DeviceVideosLibraryCard(
+                    videoCount = deviceVideoCount,
+                    onClick = onOpenDeviceVideos,
+                    modifier = Modifier.padding(horizontal = 16.dp)
+                )
             }
 
             // History preview
@@ -496,6 +608,55 @@ private fun LibraryRoot(
             item { Spacer(modifier = Modifier.height(32.dp)) }
         }
     }
+}
+
+/**
+ * Confirmation for emptying the watch history.
+ *
+ * The body names the limit rather than leaving it to be discovered: this clears
+ * Koda's own history, and someone signed in would otherwise reasonably read the
+ * control as deleting their YouTube history too.
+ */
+@Composable
+private fun ClearHistoryDialog(
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = RoundedCornerShape(32.dp),
+        icon = {
+            Box(
+                modifier = Modifier
+                    .size(64.dp)
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(MaterialTheme.colorScheme.errorContainer),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Rounded.DeleteSweep,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onErrorContainer
+                )
+            }
+        },
+        title = { Text(stringResource(R.string.vh_clear_history)) },
+        text = { Text(stringResource(R.string.vh_clear_history_body)) },
+        confirmButton = {
+            TextButton(
+                onClick = onConfirm,
+                colors = ButtonDefaults.textButtonColors(
+                    contentColor = MaterialTheme.colorScheme.error
+                )
+            ) {
+                Text(stringResource(R.string.vh_clear_history_confirm))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
+        }
+    )
 }
 
 @Composable
@@ -711,6 +872,77 @@ private fun PinnedLibraryCard(
                 color = MaterialTheme.colorScheme.onBackground,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+/**
+ * The Library's entry to the device's own videos.
+ *
+ * A full-width row rather than a third pinned card: Watch Later and Liked are a
+ * pair by construction and splitting the row three ways would leave three
+ * cramped cards, while this one has a count to show and is not tied to an
+ * account.
+ */
+@Composable
+private fun DeviceVideosLibraryCard(
+    videoCount: Int?,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        tonalElevation = 1.dp
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.12f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.PhoneAndroid,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+            Spacer(modifier = Modifier.width(14.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.dv_on_this_device),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+                Text(
+                    // Before the first scan the count is genuinely unknown, and
+                    // a "0 videos" that later turns into 84 is worse than not
+                    // claiming a number at all.
+                    text = when {
+                        videoCount == null -> stringResource(R.string.dv_card_subtitle)
+                        videoCount == 1 -> stringResource(R.string.dv_one_video)
+                        else -> stringResource(R.string.dv_many_videos, videoCount)
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Icon(
+                Icons.Rounded.ChevronRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }

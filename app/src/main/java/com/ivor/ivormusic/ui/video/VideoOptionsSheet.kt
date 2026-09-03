@@ -44,6 +44,7 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.ErrorOutline
+import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.NotInterested
 import androidx.compose.material.icons.rounded.PlaylistAdd
 import androidx.compose.material.icons.rounded.RemoveCircleOutline
@@ -159,6 +160,15 @@ fun VideoOptionsSheet(
     onDismiss: () -> Unit,
     onNotInterested: (() -> Unit)? = null,
     onBlockChannel: (() -> Unit)? = null,
+    /**
+     * Take this video out of the watch history.
+     *
+     * Supplied only by the surfaces that show history, because everywhere else
+     * the row would be an offer to edit a list the user is not looking at - and
+     * on a feed it reads as "hide this", which is what "Not interested" already
+     * means and does something quite different.
+     */
+    onRemoveFromHistory: (() -> Unit)? = null,
     /**
      * True when there is no YouTube session, which changes what the Watch later
      * row promises: it is then the device's own list rather than the account's,
@@ -310,6 +320,15 @@ fun VideoOptionsSheet(
                             onDismiss()
                         }
                     },
+                    // Same treatment: the row removes an entry from the list
+                    // behind this sheet, so the sheet has to get out of the way
+                    // for the undo snackbar to be reachable.
+                    onRemoveFromHistory = onRemoveFromHistory?.let { action ->
+                        {
+                            action()
+                            onDismiss()
+                        }
+                    },
                     // Terminal: the sheet is over a screen the channel page is
                     // about to replace, and leaving it open would put it on top
                     // of the destination.
@@ -358,6 +377,7 @@ private fun ActionsPane(
     onDownload: () -> Unit,
     onNotInterested: (() -> Unit)?,
     onBlockChannel: (() -> Unit)?,
+    onRemoveFromHistory: (() -> Unit)?,
     onOpenChannel: (() -> Unit)?
 ) {
     val context = LocalContext.current
@@ -460,13 +480,22 @@ private fun ActionsPane(
             )
         }
 
-        if (onNotInterested != null || onBlockChannel != null) {
+        if (onNotInterested != null || onBlockChannel != null || onRemoveFromHistory != null) {
             Spacer(modifier = Modifier.height(12.dp))
 
             // Its own group, in the muted tone the rows above are not. These
             // are destructive in a small way and share a surface with Save, so
             // they should never be the thing a thumb lands on by accident.
             OptionGroup {
+                onRemoveFromHistory?.let { action ->
+                    OptionRow(
+                        icon = Icons.Rounded.DeleteOutline,
+                        title = stringResource(R.string.video_options_remove_from_history),
+                        muted = true,
+                        onClick = action
+                    )
+                    if (onNotInterested != null || onBlockChannel != null) OptionRowDivider()
+                }
                 onNotInterested?.let { action ->
                     OptionRow(
                         icon = Icons.Rounded.NotInterested,
@@ -1012,6 +1041,11 @@ fun VideoOptionsSheetHost(
      */
     allowBlockChannel: Boolean = true,
     /**
+     * Offered only by the history surfaces. Null everywhere else, which is what
+     * keeps the row off feeds where it would have nothing to act on.
+     */
+    onRemoveFromHistory: (() -> Unit)? = null,
+    /**
      * Open this video's creator. Threaded from the screen because it is a
      * navigation, which no sheet can perform on its own; a call site that
      * leaves it null simply has no channel row.
@@ -1070,6 +1104,7 @@ fun VideoOptionsSheetHost(
         onBlockChannel = if (allowBlockChannel) {
             { viewModel.blockChannelFor(video) }
         } else null,
+        onRemoveFromHistory = onRemoveFromHistory,
         isSignedOut = !isConnected,
         onCreatePlaylist = { name, onCreated ->
             viewModel.createLocalVideoPlaylist(name, onCreated)

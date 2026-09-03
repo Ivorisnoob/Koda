@@ -3,6 +3,15 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+    <!--
+        Android 14 lets someone grant access to a chosen subset of their media
+        rather than all of it. Without this the picker offers no such choice and
+        the only answers are "all videos" or "none"; with it, a partial grant
+        denies READ_MEDIA_VIDEO while still returning the selected files, which
+        LocalVideoAccess.PARTIAL is what surfaces.
+    -->
+    <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" tools:ignore="ScopedStorage" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />

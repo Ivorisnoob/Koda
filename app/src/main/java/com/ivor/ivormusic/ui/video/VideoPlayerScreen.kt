@@ -210,19 +210,31 @@ internal fun CaptionOverlay(
     textSize: Float,
     textColor: CaptionTextColor,
     background: CaptionBackground,
+    /**
+     * The cue currently due from a subtitle track inside the media itself.
+     *
+     * A device file's subtitles have no document to step through - the
+     * extractor emits each cue when it is due and withdraws it after - so they
+     * arrive already timed and simply replace the polled path below. Everything
+     * about how they are drawn, and every appearance setting, is shared.
+     */
+    embeddedCueText: String? = null,
     modifier: Modifier = Modifier
 ) {
-    if (cues.isEmpty()) return
+    val hasEmbedded = embeddedCueText != null
+    if (cues.isEmpty() && !hasEmbedded) return
 
     // Polled off the player rather than the surrounding 500ms progress ticker:
     // at that rate a cue visibly lands after the words it belongs to.
-    var text by remember(cues) { mutableStateOf<String?>(null) }
-    LaunchedEffect(cues, player) {
+    var polled by remember(cues) { mutableStateOf<String?>(null) }
+    LaunchedEffect(cues, player, hasEmbedded) {
+        if (hasEmbedded) return@LaunchedEffect
         while (isActive) {
-            text = WebVttParser.cueAt(cues, player.currentPosition)?.text
+            polled = WebVttParser.cueAt(cues, player.currentPosition)?.text
             delay(100)
         }
     }
+    val text = embeddedCueText ?: polled
 
     Box(
         modifier = modifier.fillMaxSize(),
@@ -316,6 +328,7 @@ fun FullscreenPlayerContent(
     captionsActive: Boolean = false,
     onCaptionsClick: () -> Unit = {},
     captionCues: List<VttCue> = emptyList(),
+    embeddedCueText: String? = null,
     captionTextSize: Float = CAPTION_TEXT_SCALE_DEFAULT,
     captionTextColor: CaptionTextColor = CaptionTextColor.WHITE,
     captionBackground: CaptionBackground = CaptionBackground.TRANSLUCENT,
@@ -464,6 +477,7 @@ fun FullscreenPlayerContent(
 
         CaptionOverlay(
             cues = captionCues,
+            embeddedCueText = embeddedCueText,
             player = exoPlayer,
             bottomPadding = captionLift.value,
             compact = false,
@@ -704,6 +718,7 @@ fun PortraitPlayerContent(
     captionsActive: Boolean = false,
     onCaptionsClick: () -> Unit = {},
     captionCues: List<VttCue> = emptyList(),
+    embeddedCueText: String? = null,
     captionTextSize: Float = CAPTION_TEXT_SCALE_DEFAULT,
     captionTextColor: CaptionTextColor = CaptionTextColor.WHITE,
     captionBackground: CaptionBackground = CaptionBackground.TRANSLUCENT,
@@ -784,6 +799,7 @@ fun PortraitPlayerContent(
 
         CaptionOverlay(
             cues = captionCues,
+            embeddedCueText = embeddedCueText,
             player = exoPlayer,
             bottomPadding = captionLift.value,
             compact = true,

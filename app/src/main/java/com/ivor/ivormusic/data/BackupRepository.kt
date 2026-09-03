@@ -82,14 +82,17 @@ class BackupRepository(context: Context) {
          *  - `koda_download_migration` is a one-time "already migrated" flag.
          *    Restoring a true onto an install that never ran the migration
          *    would skip it permanently.
-         *  - `local_subscriptions` and `not_interested` are profile-scoped and
-         *    travel structurally instead (see [collectProfileData]).
+         *  - `local_subscriptions`, `not_interested` and `video_history` are
+         *    profile-scoped and travel structurally instead (see
+         *    [collectProfileData]).
+         *  - `koda_incognito` describes a session rather than a preference,
+         *    and restoring one onto another device would silently stop it
+         *    recording history for reasons its owner never asked for.
          */
         private val PREFERENCE_FILES = listOf(
             "ivor_music_theme_prefs",   // every setting, palette and player style
             "ivor_music_liked_songs",   // liked song ids
             "saved_playlists",          // playlists kept as references, both modes
-            "video_history",            // local watch history
             "search_history",
             "ivor_track_loudness"       // measured per-track gain
         )
@@ -275,6 +278,10 @@ class BackupRepository(context: Context) {
         val legacyId = ProfileManager.legacyProfileId(appContext)
         val subs = appContext.getSharedPreferences("local_subscriptions", Context.MODE_PRIVATE)
         val blocklist = appContext.getSharedPreferences("not_interested", Context.MODE_PRIVATE)
+        val history = appContext.getSharedPreferences(
+            VideoHistoryRepository.PREFS_NAME,
+            Context.MODE_PRIVATE
+        )
 
         fun scoped(base: String, profileId: String) =
             ProfileManager.profileScopedKey(base, profileId, legacyId)
@@ -284,7 +291,15 @@ class BackupRepository(context: Context) {
                 subscriptions = subs.getString(scoped("subscriptions", profile.id), null),
                 subscriptionGroups = subs.getString(scoped("groups", profile.id), null),
                 hiddenVideos = blocklist.getString(scoped("hidden_videos", profile.id), null),
-                blockedChannels = blocklist.getString(scoped("blocked_channels", profile.id), null)
+                blockedChannels = blocklist.getString(scoped("blocked_channels", profile.id), null),
+                watchHistory = history.getString(
+                    scoped(VideoHistoryRepository.KEY_HISTORY, profile.id),
+                    null
+                ),
+                removedFromHistory = history.getStringSet(
+                    scoped(VideoHistoryRepository.KEY_HIDDEN, profile.id),
+                    null
+                )?.takeIf { it.isNotEmpty() }
             )
         }.filterValues { !it.isEmpty }
     }
@@ -339,9 +354,10 @@ class BackupRepository(context: Context) {
                 files.firstOrNull { it.path == "play_history.json" }
                     ?.bytes?.toString(Charsets.UTF_8)
             ),
-            COUNT_WATCH_HISTORY to arrayLength(
-                (preferences["video_history"]?.get("history_list") as? PreferenceValue.Text)?.value
-            ),
+            // Summed across profiles now that history is per-profile, the same
+            // way subscriptions and the blocklist already were. Reading it out
+            // of the raw preference map would silently report zero.
+            COUNT_WATCH_HISTORY to profileData.values.sumOf { arrayLength(it.watchHistory) },
             COUNT_SUBSCRIPTIONS to profileData.values.sumOf { arrayLength(it.subscriptions) },
             COUNT_BLOCKED to profileData.values.sumOf { arrayLength(it.blockedChannels) },
             COUNT_HIDDEN to profileData.values.sumOf { arrayLength(it.hiddenVideos) },
@@ -513,9 +529,14 @@ class BackupRepository(context: Context) {
         val legacyId = ProfileManager.legacyProfileId(appContext)
         val subs = appContext.getSharedPreferences("local_subscriptions", Context.MODE_PRIVATE)
         val blocklist = appContext.getSharedPreferences("not_interested", Context.MODE_PRIVATE)
+        val history = appContext.getSharedPreferences(
+            VideoHistoryRepository.PREFS_NAME,
+            Context.MODE_PRIVATE
+        )
 
         val subsEditor = subs.edit().clear()
         val blocklistEditor = blocklist.edit().clear()
+        val historyEditor = history.edit().clear()
 
         for ((backupId, data) in snapshot.profileData) {
             val localId = profileMap[backupId] ?: continue
@@ -524,10 +545,17 @@ class BackupRepository(context: Context) {
             data.subscriptionGroups?.let { subsEditor.putString(key("groups"), it) }
             data.hiddenVideos?.let { blocklistEditor.putString(key("hidden_videos"), it) }
             data.blockedChannels?.let { blocklistEditor.putString(key("blocked_channels"), it) }
+            data.watchHistory?.let {
+                historyEditor.putString(key(VideoHistoryRepository.KEY_HISTORY), it)
+            }
+            data.removedFromHistory?.let {
+                historyEditor.putStringSet(key(VideoHistoryRepository.KEY_HIDDEN), it)
+            }
         }
 
         subsEditor.commit()
         blocklistEditor.commit()
+        historyEditor.commit()
     }
 
     /**

@@ -73,6 +73,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
+import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.Surface
 import androidx.compose.material3.carousel.HorizontalMultiBrowseCarousel
 import androidx.compose.material3.carousel.rememberCarouselState
@@ -163,6 +164,11 @@ fun HomeScreen(
     onPlayDownloadedVideos: (
         List<com.ivor.ivormusic.data.DownloadedVideo>,
         com.ivor.ivormusic.data.DownloadedVideo
+    ) -> Unit = { _, _ -> },
+    /** The same, for the device's own video files from the Library tab. */
+    onPlayDeviceVideos: (
+        List<com.ivor.ivormusic.data.LocalVideo>,
+        com.ivor.ivormusic.data.LocalVideo
     ) -> Unit = { _, _ -> },
     /**
      * Open the video player on a whole playlist rather than one video, so the
@@ -769,9 +775,62 @@ fun HomeScreen(
                         // Video mode only: Library (playlists, Watch Later,
                         // liked videos, watch history)
                         if (videoMode && localOnly) {
-                            com.ivor.ivormusic.ui.components.LocalOnlyNotice(
-                                subtitle = stringResource(R.string.local_only_video_library_subtitle),
-                                onOpenSettings = onNavigateToSettings
+                            // With YouTube switched off the video Library is
+                            // the device's own videos: playlists, history and
+                            // the pinned account feeds all need a network the
+                            // user has turned off, and the notice that used to
+                            // stand here explained that while offering nothing.
+                            val deviceVideos by viewModel.deviceVideos.collectAsState()
+                            val deviceFolders by viewModel.deviceVideoFolders.collectAsState()
+                            val isDeviceLoading by viewModel.isDeviceVideosLoading.collectAsState()
+                            val hasScanned by viewModel.hasScannedDeviceVideos.collectAsState()
+                            val videoAccess =
+                                com.ivor.ivormusic.ui.components.rememberVideoMediaAccessState()
+                            var deviceSort by remember {
+                                mutableStateOf(com.ivor.ivormusic.data.LocalVideoSort.RECENT)
+                            }
+                            LaunchedEffect(videoAccess.access) {
+                                if (videoAccess.isReadable) viewModel.loadDeviceVideos()
+                            }
+                            com.ivor.ivormusic.ui.video.DeviceVideosScreen(
+                                videos = deviceVideos,
+                                folders = deviceFolders,
+                                access = videoAccess.access,
+                                isLoading = isDeviceLoading,
+                                hasScanned = hasScanned,
+                                sort = deviceSort,
+                                onSortChange = { deviceSort = it },
+                                onRequestAccess = { videoAccess.launchRequest() },
+                                onRefresh = { viewModel.loadDeviceVideos() },
+                                onPlay = onPlayDeviceVideos,
+                                // The top inset is spent by the header below,
+                                // so the list must not pay it a second time.
+                                contentPadding = PaddingValues(
+                                    bottom = listContentPadding.calculateBottomPadding()
+                                ),
+                                topBar = {
+                                    Text(
+                                        text = stringResource(R.string.dv_on_this_device),
+                                        style = MaterialTheme.typography.headlineSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onBackground,
+                                        modifier = Modifier.padding(
+                                            start = 20.dp,
+                                            end = 20.dp,
+                                            top = listContentPadding.calculateTopPadding(),
+                                            bottom = 8.dp
+                                        )
+                                    )
+                                },
+                                folderTopBar = { title, onBack ->
+                                    com.ivor.ivormusic.ui.video.DeviceFolderTopBar(
+                                        title = title,
+                                        onBack = onBack,
+                                        modifier = Modifier.padding(
+                                            top = listContentPadding.calculateTopPadding()
+                                        )
+                                    )
+                                }
                             )
                         } else if (videoMode) {
                             com.ivor.ivormusic.ui.video.VideoLibraryContent(
@@ -781,6 +840,7 @@ fun HomeScreen(
                                     onNavigateToVideoPlayer(video)
                                 },
                                 onPlayQueue = onPlayVideoQueue,
+                                onPlayDeviceVideos = onPlayDeviceVideos,
                                 onLoginClick = { showAuthDialog = true },
                                 contentPadding = listContentPadding,
                                 onEnqueueVideo = onEnqueueVideo,
@@ -1319,6 +1379,7 @@ fun TopBarSection(
             com.ivor.ivormusic.data.AccountSwitcher(context)
         }
         val isSwitching by accountSwitcher.switching.collectAsState()
+        val incognito by com.ivor.ivormusic.data.IncognitoMode.enabled(context).collectAsState()
         Box(
             modifier = Modifier
                 .size(44.dp)
@@ -1367,6 +1428,46 @@ fun TopBarSection(
                     strokeWidth = 2.dp,
                     color = MaterialTheme.colorScheme.primary
                 )
+            }
+        }
+
+        // Incognito has to be visible from anywhere it is in force, and it
+        // rides the avatar because that is both where it was turned on and the
+        // one control on this bar that is about identity. A mode that silently
+        // stops recording history is a promise, and a promise the user cannot
+        // see the state of is one they will assume is off at the wrong moment.
+        androidx.compose.animation.AnimatedVisibility(
+            visible = incognito,
+            enter = androidx.compose.animation.fadeIn() +
+                androidx.compose.animation.expandHorizontally(),
+            exit = androidx.compose.animation.fadeOut() +
+                androidx.compose.animation.shrinkHorizontally()
+        ) {
+            Surface(
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.secondaryContainer,
+                modifier = Modifier
+                    .padding(start = 10.dp)
+                    .clip(CircleShape)
+                    .clickable(onClick = onProfileClick)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.VisibilityOff,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = stringResource(R.string.incognito_title),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                    )
+                }
             }
         }
         

@@ -147,6 +147,7 @@ fun VerticalLivePlayerContent(
     canSendChat: Boolean,
     captionsActive: Boolean,
     captionCues: List<VttCue>,
+    embeddedCueText: String? = null,
     captionTextSize: Float,
     captionTextColor: CaptionTextColor,
     captionBackground: CaptionBackground,
@@ -290,6 +291,7 @@ fun VerticalLivePlayerContent(
             // middle of the frame would be the only trace left of it.
             CaptionOverlay(
                 cues = captionCues,
+                embeddedCueText = embeddedCueText,
                 player = exoPlayer,
                 bottomPadding = captionBottomPadding,
                 compact = true,
