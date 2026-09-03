@@ -113,6 +113,110 @@ class HdrVideoSupportTest {
         assertTrue(sdrOnly.none(VideoQuality::isHdr))
     }
 
+    @Test
+    fun `an Apple-client VOD carrying an HLS manifest is not treated as live`() {
+        // [verified September 2026] visionOS and IOS return hlsManifestUrl on
+        // every ordinary VOD; ANDROID_VR does not. Gating live detection on the
+        // key alone made the visionOS HDR augmentation return an SDR-only live
+        // ladder for every video, which is what made the HDR setting a no-op.
+        val streamingData = vodStreamingData()
+            .put("hlsManifestUrl", "https://manifest.example/hls.m3u8")
+
+        val qualities = parseDirectVideoQualities(streamingData, includeHdr = true)
+
+        assertTrue(qualities.none(VideoQuality::isLive))
+        assertTrue(qualities.any { it.dynamicRange == VideoDynamicRange.HDR10 })
+        assertEquals(
+            "2160p60 HDR",
+            qualities.first { it.isHdr }.displayLabel,
+        )
+    }
+
+    @Test
+    fun `a genuine live response still resolves to the HLS ladder`() {
+        // Live renditions are segment endpoints: no contentLength, live=1 in
+        // the URL. The progressive path must never be offered for them.
+        val streamingData = JSONObject()
+            .put("formats", JSONArray())
+            .put("hlsManifestUrl", "https://manifest.example/live.m3u8")
+            .put(
+                "adaptiveFormats",
+                JSONArray()
+                    .put(
+                        JSONObject()
+                            .put("itag", 140)
+                            .put("mimeType", "audio/mp4; codecs=\"mp4a.40.2\"")
+                            .put("bitrate", 129_000)
+                            .put("url", "https://audio.example/140?live=1&noclen=1")
+                    )
+                    .put(
+                        JSONObject()
+                            .put("itag", 299)
+                            .put("qualityLabel", "1080p60")
+                            .put("mimeType", "video/mp4; codecs=\"avc1.64002a\"")
+                            .put("bitrate", 5_000_000)
+                            .put("url", "https://video.example/299?live=1&noclen=1")
+                            .put("width", 1920)
+                            .put("height", 1080)
+                            .put("fps", 60)
+                    )
+            )
+
+        val qualities = parseDirectVideoQualities(streamingData, includeHdr = true)
+
+        assertTrue(qualities.isNotEmpty())
+        assertTrue(qualities.all(VideoQuality::isLive))
+        assertEquals("Auto", qualities.first().resolution)
+        assertTrue(qualities.all { it.url == "https://manifest.example/live.m3u8" })
+    }
+
+    /** A VOD ladder in the shape a live visionOS response actually returns. */
+    private fun vodStreamingData(): JSONObject = JSONObject()
+        .put("formats", JSONArray())
+        .put(
+            "adaptiveFormats",
+            JSONArray()
+                .put(
+                    JSONObject()
+                        .put("itag", 140)
+                        .put("mimeType", "audio/mp4; codecs=\"mp4a.40.2\"")
+                        .put("bitrate", 129_000)
+                        .put("contentLength", "5061566")
+                        .put("url", "https://audio.example/140")
+                )
+                .put(
+                    JSONObject()
+                        .put("itag", 299)
+                        .put("qualityLabel", "1080p60")
+                        .put("mimeType", "video/mp4; codecs=\"avc1.64002a\"")
+                        .put("bitrate", 5_000_000)
+                        .put("contentLength", "196093632")
+                        .put("url", "https://video.example/299")
+                        .put("width", 1920)
+                        .put("height", 1080)
+                        .put("fps", 60)
+                )
+                .put(
+                    JSONObject()
+                        .put("itag", 337)
+                        .put("qualityLabel", "2160p60 HDR")
+                        .put("mimeType", "video/webm; codecs=\"vp9.2\"")
+                        .put("bitrate", 20_000_000)
+                        .put("contentLength", "942927341")
+                        .put("url", "https://video.example/337")
+                        .put("width", 3840)
+                        .put("height", 2160)
+                        .put("fps", 60)
+                        .put(
+                            "colorInfo",
+                            JSONObject().put(
+                                "transferCharacteristics",
+                                "COLOR_TRANSFER_CHARACTERISTICS_SMPTEST2084",
+                            )
+                        )
+                )
+        )
+
     private fun quality(
         resolution: String,
         dynamicRange: VideoDynamicRange = VideoDynamicRange.SDR,

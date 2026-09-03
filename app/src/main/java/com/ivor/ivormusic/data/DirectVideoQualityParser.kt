@@ -46,10 +46,27 @@ internal fun parseDirectVideoQualities(
     fun labelFps(label: String): Int =
         label.substringAfter("p", "").takeWhile(Char::isDigit).toIntOrNull() ?: 30
 
-    // Progressive live endpoints are single segments. Live playback must stay
-    // on the HLS manifest, and the manifest owns its own HDR/SDR adaptation.
+    // A VOD rendition describes a whole file: it declares contentLength and its
+    // URL is an ordinary ranged endpoint. A live rendition is a segment endpoint
+    // (`live=1`, `noclen=1`) carrying neither, which is why live playback must
+    // stay on the HLS manifest and the manifest owns its own HDR/SDR adaptation.
+    //
+    // [scar] The presence of hlsManifestUrl alone is NOT a live signal. That was
+    // verified against ANDROID_VR, which omits the key on VODs - but the Apple
+    // clients do not. [verified September 2026] visionOS and IOS return
+    // hlsManifestUrl on every ordinary VOD, so gating on the key alone made the
+    // visionOS HDR augmentation classify every video as live, return an all-SDR
+    // HLS ladder, and silently reduce the whole HDR feature to a no-op. The
+    // discriminator is the formats, not the manifest.
+    fun isVodFormat(format: JSONObject): Boolean {
+        val url = format.optString("url")
+        return url.isNotEmpty() &&
+            format.optString("contentLength").isNotBlank() &&
+            !url.contains("live=1")
+    }
+
     val hlsManifestUrl = streamingData.optString("hlsManifestUrl").takeIf(String::isNotBlank)
-    if (hlsManifestUrl != null) {
+    if (hlsManifestUrl != null && (adaptive + muxed).none(::isVodFormat)) {
         fun liveEntry(label: String) = VideoQuality(
             resolution = label,
             url = hlsManifestUrl,
