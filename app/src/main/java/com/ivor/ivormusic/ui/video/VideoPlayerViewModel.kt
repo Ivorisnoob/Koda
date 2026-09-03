@@ -647,10 +647,14 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         viewModelScope.launch {
             themePreferences.preferHdr.drop(1).distinctUntilChanged().collect { enabled ->
                 val current = _currentQuality.value ?: return@collect
+                val video = _currentVideo.value ?: return@collect
                 if (_isLocalPlayback.value || _isLive.value) return@collect
                 if (!enabled && current.isHdr) {
                     val fallback = bestSdrFallback(localVideoQualityOptions(_availableQualities.value), current)
                     if (fallback != null) reloadPreservingPosition(fallback)
+                } else if (enabled && !current.isHdr) {
+                    val streamResult = resolvePlayableStreamResult(video.videoId)
+                    _availableQualities.value = streamResult.qualities
                 }
             }
         }
