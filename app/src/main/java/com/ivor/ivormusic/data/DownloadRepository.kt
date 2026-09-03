@@ -747,6 +747,9 @@ class DownloadRepository private constructor(private val context: Context) {
                     KLog.w(TAG, "googlevideo refused the media; re-minting visitorData before retry")
                     youtubeRepository.refreshVisitorDataAfterPlaybackFailure()
                 }
+                if (request.isVideo) {
+                    youtubeRepository.invalidateVideoStreamResult(request.id)
+                }
                 kotlinx.coroutines.delay(RETRY_BACKOFF_MS * attempt)
             }
         }

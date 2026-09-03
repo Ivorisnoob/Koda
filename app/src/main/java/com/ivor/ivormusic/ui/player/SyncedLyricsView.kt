@@ -12,6 +12,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -26,7 +27,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
@@ -48,6 +48,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Constraints
 import com.ivor.ivormusic.data.LrcContentSpan
 import com.ivor.ivormusic.data.LrcLine
 import com.ivor.ivormusic.data.LyricsResult
@@ -116,15 +117,19 @@ fun SyncedLyricsView(
                 ErrorState(lyricsResult.message, onSurfaceVariantColor)
             }
             is LyricsResult.Success -> {
-                LyricsContent(
-                    lines = lyricsResult.lines,
-                    syncType = lyricsResult.syncType,
-                    currentPositionMs = renderedPositionMs,
-                    onSeekTo = onSeekTo,
-                    primaryColor = primaryColor,
-                    onSurfaceColor = onSurfaceColor,
-                    motionEnabled = lyricsMotionEnabled
-                )
+                if (lyricsResult.lines.isEmpty()) {
+                    NoLyricsState(onSurfaceVariantColor)
+                } else {
+                    LyricsContent(
+                        lines = lyricsResult.lines,
+                        syncType = lyricsResult.syncType,
+                        currentPositionMs = renderedPositionMs,
+                        onSeekTo = onSeekTo,
+                        primaryColor = primaryColor,
+                        onSurfaceColor = onSurfaceColor,
+                        motionEnabled = lyricsMotionEnabled
+                    )
+                }
             }
         }
     }
@@ -152,24 +157,40 @@ private fun LyricsContent(
         }
     }
 
-    // Auto-scroll to current line
+    // Auto-scroll to the visual centre, using the item's measured height. A
+    // fixed scroll offset is wrong as soon as a line wraps or font scale grows.
     LaunchedEffect(currentLineIndex, lines) {
         if (isSynced && currentLineIndex >= 0 && lines.isNotEmpty()) {
-            // Animate scroll to the current line to keep it centered
             try {
-                listState.animateScrollToItem(
-                    index = currentLineIndex.coerceAtLeast(0),
-                    scrollOffset = 0
-                )
-            } catch (e: Exception) {
-                // Ignore scroll errors during rapid updates
+                if (listState.layoutInfo.visibleItemsInfo.none { it.index == currentLineIndex }) {
+                    listState.scrollToItem(currentLineIndex)
+                    withFrameNanos { }
+                }
+                val layout = listState.layoutInfo
+                val item = layout.visibleItemsInfo.firstOrNull { it.index == currentLineIndex }
+                if (item != null) {
+                    val viewportCenter = (layout.viewportStartOffset + layout.viewportEndOffset) / 2
+                    val itemCenter = item.offset + item.size / 2
+                    listState.animateScrollBy((itemCenter - viewportCenter).toFloat())
+                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                // A rapid song/line replacement can invalidate a measured row.
             }
         }
     }
     
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-        // Calculate padding to center the content
-        val centerPadding = maxHeight / 2
+        // UI scale and system font scale both reduce the available dp width.
+        // Shrink the gutter before shrinking the lyric itself.
+        val horizontalPadding = when {
+            maxWidth < 280.dp -> 12.dp
+            maxWidth < 360.dp -> 16.dp
+            else -> 24.dp
+        }
+        val centerPadding = (maxHeight / 2 - 36.dp).coerceAtLeast(12.dp)
+        val lineSpacing = if (maxHeight < 420.dp) 20.dp else 28.dp
         
         LazyColumn(
             state = listState,
@@ -193,10 +214,10 @@ private fun LyricsContent(
             contentPadding = PaddingValues(
                 top = centerPadding,
                 bottom = centerPadding,
-                start = 32.dp,
-                end = 32.dp
+                start = horizontalPadding,
+                end = horizontalPadding
             ),
-            verticalArrangement = Arrangement.spacedBy(32.dp),
+            verticalArrangement = Arrangement.spacedBy(lineSpacing),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             itemsIndexed(lines, key = { index, line -> "${index}_${line.timeMs}" }) { index, line ->
@@ -226,16 +247,6 @@ private fun LyricLine(
     motionEnabled: Boolean,
     currentPositionMs: Long = 0L
 ) {
-    // Animate scale for current line emphasis
-    val scale by animateFloatAsState(
-        targetValue = if (isSynced && isCurrent) 1.25f else 1.0f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioLowBouncy,
-            stiffness = Spring.StiffnessLow
-        ),
-        label = "LyricScale"
-    )
-    
     // Animate alpha for past/future lines
     val alpha by animateFloatAsState(
         targetValue = if (!isSynced || isCurrent) 1f else 0.35f,
@@ -257,7 +268,6 @@ private fun LyricLine(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .scale(scale)
             .alpha(alpha)
             .then(tapModifier)
             .padding(vertical = 8.dp),
@@ -372,22 +382,28 @@ private fun KaraokeWordFlow(
         runCatching { (textStyle.fontSize.toPx() * 0.26f).toDp() }.getOrDefault(6.dp)
     }
 
-    CenteredLyricFlow(
-        tokens = tokens,
-        horizontalSpacing = wordSpacing,
-        verticalSpacing = 8.dp,
-        modifier = modifier.clearAndSetSemantics {
-            text = androidx.compose.ui.text.AnnotatedString(lineText)
+    BoxWithConstraints(modifier = modifier) {
+        val maxWordWidthPx = with(density) { maxWidth.roundToPx() }.coerceAtLeast(1)
+        CenteredLyricFlow(
+            tokens = tokens,
+            horizontalSpacing = wordSpacing,
+            verticalSpacing = 8.dp,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clearAndSetSemantics {
+                    text = androidx.compose.ui.text.AnnotatedString(lineText)
+                }
+        ) { token ->
+            KaraokeWord(
+                token = token,
+                currentPositionProvider = currentPositionProvider,
+                primaryColor = primaryColor,
+                unsungColor = unsungColor,
+                motionEnabled = motionEnabled,
+                textStyle = textStyle,
+                maxWidthPx = maxWordWidthPx
+            )
         }
-    ) { token ->
-        KaraokeWord(
-            token = token,
-            currentPositionProvider = currentPositionProvider,
-            primaryColor = primaryColor,
-            unsungColor = unsungColor,
-            motionEnabled = motionEnabled,
-            textStyle = textStyle
-        )
     }
 }
 
@@ -398,18 +414,29 @@ private fun KaraokeWord(
     primaryColor: Color,
     unsungColor: Color,
     motionEnabled: Boolean,
-    textStyle: androidx.compose.ui.text.TextStyle
+    textStyle: androidx.compose.ui.text.TextStyle,
+    maxWidthPx: Int
 ) {
     val density = LocalDensity.current
     val textMeasurer = rememberTextMeasurer(cacheSize = token.graphemes.size + 1)
     val liftPx = with(density) { 6.dp.toPx() }
-    val topInsetPx = with(density) { 8.dp.toPx() }
-    val measuredWord = remember(token, textStyle, textMeasurer, topInsetPx) {
+    val topInsetPx = with(density) { 10.dp.toPx() }
+    val sideInsetPx = with(density) { 6.dp.toPx() }
+    val measuredWord = remember(
+        token,
+        textStyle,
+        textMeasurer,
+        topInsetPx,
+        sideInsetPx,
+        maxWidthPx
+    ) {
         measureLyricWord(
             token = token,
             textStyle = textStyle,
             textMeasurer = textMeasurer,
-            topInsetPx = topInsetPx
+            topInsetPx = topInsetPx,
+            sideInsetPx = sideInsetPx,
+            maxWidthPx = maxWidthPx
         )
     }
     val canvasWidth = with(density) { measuredWord.widthPx.toDp() }
@@ -480,14 +507,19 @@ private fun measureLyricWord(
     token: TimedLyricToken,
     textStyle: androidx.compose.ui.text.TextStyle,
     textMeasurer: TextMeasurer,
-    topInsetPx: Float
+    topInsetPx: Float,
+    sideInsetPx: Float,
+    maxWidthPx: Int
 ): MeasuredLyricWord {
     val wordText = token.graphemes.joinToString(separator = "") { it.text }
+    val horizontalInsets = (sideInsetPx * 2f).toInt()
     val wordLayout = textMeasurer.measure(
         text = wordText,
-        style = textStyle,
-        maxLines = 1,
-        softWrap = false
+        style = textStyle.copy(textAlign = TextAlign.Center),
+        softWrap = true,
+        constraints = Constraints(
+            maxWidth = (maxWidthPx - horizontalInsets).coerceAtLeast(1)
+        )
     )
     var textOffset = 0
     val measuredGraphemes = token.graphemes.map { grapheme ->
@@ -504,12 +536,16 @@ private fun measureLyricWord(
         val left = boxes.minOfOrNull { it.left } ?: 0f
         val right = boxes.maxOfOrNull { it.right }
             ?: (left + graphemeLayout.size.width)
+        val top = boxes.minOfOrNull { it.top } ?: 0f
+        val bottom = boxes.maxOfOrNull { it.bottom }
+            ?: (top + graphemeLayout.size.height)
         val originalWidth = (right - left).coerceAtLeast(0f)
-        val x = left + (originalWidth - graphemeLayout.size.width) / 2f
-        val y = topInsetPx + wordLayout.firstBaseline - graphemeLayout.firstBaseline
+        val originalHeight = (bottom - top).coerceAtLeast(0f)
+        val x = sideInsetPx + left + (originalWidth - graphemeLayout.size.width) / 2f
+        val y = topInsetPx + top + (originalHeight - graphemeLayout.size.height) / 2f
         val position = Offset(x = x, y = y)
         val pivot = Offset(
-            x = left + originalWidth / 2f,
+            x = sideInsetPx + left + originalWidth / 2f,
             y = y + graphemeLayout.size.height
         )
         textOffset = endOffset
@@ -522,7 +558,7 @@ private fun measureLyricWord(
     }
 
     return MeasuredLyricWord(
-        widthPx = wordLayout.size.width.coerceAtLeast(1),
+        widthPx = (wordLayout.size.width + horizontalInsets).coerceIn(1, maxWidthPx),
         heightPx = ((wordLayout.size.height + topInsetPx * 2f).toInt() + 1).coerceAtLeast(1),
         graphemes = measuredGraphemes
     )
@@ -640,12 +676,14 @@ private fun buildTimedLyricTokens(
     }
     if (timedGraphemes.isEmpty()) return emptyList()
 
-    val lineGraphemes = splitIntoGraphemes(lineText)
-    val layoutGraphemes = if (lineGraphemes.count { it.isNotBlank() } == timedGraphemes.size) {
-        lineGraphemes
-    } else {
-        spans.flatMap { splitIntoGraphemes(it.text) }
-    }
+    // The displayed line is authoritative. Providers occasionally omit final
+    // punctuation from timed spans; falling back to span text dropped the last
+    // visible characters entirely. When counts differ, map the available
+    // timings proportionally so every grapheme remains present and highlighted.
+    val layoutGraphemes = splitIntoGraphemes(lineText)
+        .takeIf { graphemes -> graphemes.any { it.isNotBlank() } }
+        ?: spans.flatMap { splitIntoGraphemes(it.text) }
+    val visibleLayoutCount = layoutGraphemes.count { it.isNotBlank() }.coerceAtLeast(1)
 
     val tokens = mutableListOf<TimedLyricToken>()
     var current = mutableListOf<TimedLyricGrapheme>()
@@ -667,7 +705,13 @@ private fun buildTimedLyricTokens(
             return@forEach
         }
 
-        val timing = timedGraphemes.getOrNull(timedIndex++) ?: return@forEach
+        val timingIndex = lyricTimingIndex(
+            displayIndex = timedIndex,
+            displayCount = visibleLayoutCount,
+            timingCount = timedGraphemes.size
+        )
+        val timing = timedGraphemes[timingIndex]
+        timedIndex++
         val grapheme = timing.copy(text = text)
         if (isCjkGrapheme(text)) {
             commitToken()
@@ -681,6 +725,17 @@ private fun buildTimedLyricTokens(
     }
     commitToken()
     return tokens
+}
+
+internal fun lyricTimingIndex(
+    displayIndex: Int,
+    displayCount: Int,
+    timingCount: Int
+): Int {
+    if (displayCount <= 1 || timingCount <= 1) return 0
+    return (displayIndex.toLong() * (timingCount - 1) / (displayCount - 1))
+        .toInt()
+        .coerceIn(0, timingCount - 1)
 }
 
 private fun isCjkGrapheme(text: String): Boolean {

@@ -136,4 +136,7 @@ class LiveUpdateMediaNotificationProvider(
     ): Boolean {
         return defaultProvider.handleCustomCommand(session, action, extras)
     }
+
+    override fun getNotificationChannelInfo(): MediaNotification.Provider.NotificationChannelInfo =
+        defaultProvider.notificationChannelInfo
 }

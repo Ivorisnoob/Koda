@@ -26,6 +26,8 @@ import org.schabi.newpipe.extractor.channel.ChannelInfoItem
 import org.schabi.newpipe.extractor.ListExtractor
 import org.schabi.newpipe.extractor.Page
 import okhttp3.OkHttpClient
+import okhttp3.ConnectionPool
+import okhttp3.Dispatcher
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 
@@ -43,7 +45,8 @@ class YouTubeRepository(private val context: Context) {
 
     companion object {
         private const val YT_MUSIC_BASE_URL = "https://music.youtube.com"
-        private var isInitialized = false
+        @Volatile private var isInitialized = false
+        private val newPipeInitLock = Any()
 
         // ServiceList eagerly constructs every extractor NewPipe supports. Koda
         // only uses YouTube, so keep the equivalent service instance directly
@@ -217,6 +220,20 @@ class YouTubeRepository(private val context: Context) {
         @Volatile private var sharedHttpCache: okhttp3.Cache? = null
         private val httpCacheLock = Any()
 
+        // Repository instances retain their own cookie jars and Local Only
+        // interceptors, but sockets and dispatcher threads are transport
+        // resources rather than account state. Sharing both avoids building a
+        // fresh connection pool and executor for every ViewModel.
+        private val sharedHttpDispatcher = Dispatcher().apply {
+            maxRequests = 32
+            maxRequestsPerHost = 8
+        }
+        private val sharedConnectionPool = ConnectionPool(
+            maxIdleConnections = 8,
+            keepAliveDuration = 5,
+            timeUnit = TimeUnit.MINUTES,
+        )
+
         private fun httpCache(context: Context): okhttp3.Cache? {
             sharedHttpCache?.let { return it }
             return synchronized(httpCacheLock) {
@@ -283,6 +300,7 @@ class YouTubeRepository(private val context: Context) {
         fun invalidateSessionScopedCaches(context: Context, commitNow: Boolean = false) {
             cachedVisitorData = null
             visitorDataFetchedAt = 0L
+            VideoStreamResolutionCache.clear()
             val editor = context.applicationContext
                 .getSharedPreferences("ivor_visitor_data", Context.MODE_PRIVATE)
                 .edit().remove("visitor_data").remove("visitor_data_at")
@@ -294,6 +312,8 @@ class YouTubeRepository(private val context: Context) {
     // needs no restart. newBuilder() copies interceptors, so this also guards
     // streamResolveClient and the NewPipe downloader (same client instance).
     private val okHttpClient = OkHttpClient.Builder()
+        .dispatcher(sharedHttpDispatcher)
+        .connectionPool(sharedConnectionPool)
         .addInterceptor { chain ->
             if (ThemePreferences.isLocalOnly(context)) {
                 throw java.io.IOException("Local only mode is on: network disabled")
@@ -337,12 +357,15 @@ class YouTubeRepository(private val context: Context) {
     }
 
     private fun initializeNewPipe() {
-        if (!isInitialized) {
-            try {
-                NewPipe.init(NewPipeDownloaderImpl(okHttpClient, sessionManager))
-                isInitialized = true
-            } catch (e: Exception) {
-                // Already initialized
+        if (isInitialized) return
+        synchronized(newPipeInitLock) {
+            if (!isInitialized) {
+                try {
+                    NewPipe.init(NewPipeDownloaderImpl(okHttpClient, sessionManager))
+                } catch (_: Exception) {
+                    // NewPipe may already have been initialized by another
+                    // process entry point. Its singleton is still usable.
+                }
                 isInitialized = true
             }
         }
@@ -999,6 +1022,10 @@ class YouTubeRepository(private val context: Context) {
      * Safe to call speculatively; a no-op when there is no token to replace.
      */
     suspend fun refreshVisitorDataAfterPlaybackFailure() {
+        // Every cached ladder contains signed URLs minted before the failure.
+        // They must not win the retry after identity or network conditions
+        // change, even when there is no persisted visitor token to replace.
+        VideoStreamResolutionCache.clear()
         val flagged = cachedVisitorData ?: loadPersistedVisitorData() ?: return
         try {
             remintVisitorData(flagged)
@@ -1167,33 +1194,51 @@ class YouTubeRepository(private val context: Context) {
             
             if (jsonResponse.isEmpty()) {
                 KLog.e("YouTubeRepo", "Empty response from FEmusic_home")
-                // Try liked music as fallback
-                val likedSongs = getLikedMusic()
-                if (likedSongs.isNotEmpty()) return@withContext likedSongs
-                return@withContext search("trending music 2024", FILTER_SONGS)
+                return@withContext fillHomeRecommendations(emptyList())
             }
             
             // Parse songs from the home page response
-            val items = parseSongsFromInternalJson(jsonResponse)
+            val items = usableHomeRecommendations(
+                listOf(parseSongsFromInternalJson(jsonResponse))
+            )
             KLog.d("YouTubeRepo", "Parsed ${items.size} songs from recommendations")
-            
-            if (items.isNotEmpty()) return@withContext items
-            
-            // Fallback to liked music if home parsing failed
-            KLog.d("YouTubeRepo", "Recommendations empty, trying liked music")
-            val likedSongs = getLikedMusic()
-            if (likedSongs.isNotEmpty()) return@withContext likedSongs
-            
-            // Last resort: search
-            search("trending music 2026", FILTER_SONGS)
+
+            // Classic Home needs three valid entries for its three artwork
+            // shapes. A partially parsed response is still useful, but it must
+            // be filled rather than accepted as complete.
+            fillHomeRecommendations(items)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             KLog.e("YouTubeRepo", "Error fetching recommendations", e)
-            try {
-                getLikedMusic()
-            } catch (e2: Exception) {
-                search("trending music 2026", FILTER_SONGS)
-            }
+            fillHomeRecommendations(emptyList())
         }
+    }
+
+    private suspend fun fillHomeRecommendations(primary: List<Song>): List<Song> {
+        if (primary.size >= 3) return primary
+
+        KLog.d("YouTubeRepo", "Home has ${primary.size} usable songs; filling from library")
+        val liked = try {
+            getLikedMusic()
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (e: Exception) {
+            KLog.w("YouTubeRepo", "Could not use liked songs as Home fallback", e)
+            emptyList()
+        }
+        val withLiked = usableHomeRecommendations(listOf(primary, liked))
+        if (withLiked.size >= 3) return withLiked
+
+        val trending = try {
+            search("trending music 2026", FILTER_SONGS)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (e: Exception) {
+            KLog.w("YouTubeRepo", "Could not use search as Home fallback", e)
+            emptyList()
+        }
+        return usableHomeRecommendations(listOf(withLiked, trending))
     }
 
     /**
@@ -4722,7 +4767,17 @@ class YouTubeRepository(private val context: Context) {
      * extraction as one value. Callers that render a scrub preview must use
      * this API instead of trying to coordinate two independently mutable reads.
      */
-    suspend fun getVideoStreamResult(videoId: String): VideoStreamResult = withContext(Dispatchers.IO) {
+    suspend fun getVideoStreamResult(videoId: String): VideoStreamResult =
+        VideoStreamResolutionCache.getOrResolve(videoId) {
+            resolveVideoStreamResult(videoId)
+        }
+
+    /** Forget a failed ladder before retrying the same video. */
+    fun invalidateVideoStreamResult(videoId: String) {
+        VideoStreamResolutionCache.invalidate(videoId)
+    }
+
+    private suspend fun resolveVideoStreamResult(videoId: String): VideoStreamResult = withContext(Dispatchers.IO) {
         // NewPipe 0.26.3+ deliberately resolves VOD streams through Android's
         // reel endpoint and a visionOS fallback, both of which avoid the WEB
         // client's SABR-only response. Keep that maintained client selection in
@@ -4812,8 +4867,8 @@ class YouTubeRepository(private val context: Context) {
             it.audioTrackType != null && it.audioTrackType != AudioTrackType.ORIGINAL
         }
         val qualities = mutableListOf<VideoQuality>()
-        // Live progressive endpoints are unusable and the Default Cast
-        // Receiver needs the HLS master playlist, including its audio
+        // Live progressive endpoints are unusable: a live broadcast is only
+        // playable through its HLS master playlist, including its audio
         // rendition. Never let a live DASH URL win merely because NewPipe
         // happened to expose both manifest fields.
         val manifest = if (isLiveStream) {
@@ -4901,7 +4956,7 @@ class YouTubeRepository(private val context: Context) {
 
         // NewPipe exposes several codecs and delivery types for the same
         // visible label. Collapse codec alternatives, but retain both a split
-        // local-playback entry and a muxed Cast entry when both exist.
+        // local-playback entry and a muxed download entry when both exist.
         return VideoStreamResult(deduplicateVideoQualityVariants(qualities), seekPreview)
     }
 
@@ -5077,9 +5132,8 @@ class YouTubeRepository(private val context: Context) {
             }
         }
 
-        // Keep muxed and split variants distinct so local playback, downloads
-        // and the Default Cast Receiver can each choose a source they can
-        // actually consume.
+        // Keep muxed and split variants distinct so local playback and
+        // download selection can each choose a source they can consume.
         return deduplicateVideoQualityVariants(qualities)
     }
 

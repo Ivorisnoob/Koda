@@ -214,12 +214,6 @@ fun BentoPlayerSheetContent(
                                 )
                             }
                         }
-                        MusicCastIconButton(
-                            containerColor = tileColor,
-                            contentColor = onTile,
-                            size = 56.dp,
-                            shape = RoundedCornerShape(18.dp)
-                        )
                         BentoTile(
                             onClick = sleepTimer.open,
                             color = if (sleepTimer.active) {
@@ -295,17 +289,15 @@ fun BentoPlayerSheetContent(
                     ) {
                         Crossfade(targetState = showLyrics, label = "BentoArtLyrics") { lyricsVisible ->
                             if (lyricsVisible) {
-                                Box(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-                                    SyncedLyricsView(
-                                        lyricsResult = lyricsResult,
-                                        currentPositionMs = progress,
-                                        isPlaying = isPlaying,
-                                        onSeekTo = { viewModel.seekTo(it) },
-                                        primaryColor = MaterialTheme.colorScheme.primary,
-                                        onSurfaceColor = onTile,
-                                        onSurfaceVariantColor = onTileVariant
-                                    )
-                                }
+                                SyncedLyricsView(
+                                    lyricsResult = lyricsResult,
+                                    currentPositionMs = progress,
+                                    isPlaying = isPlaying,
+                                    onSeekTo = { viewModel.seekTo(it) },
+                                    primaryColor = MaterialTheme.colorScheme.primary,
+                                    onSurfaceColor = onTile,
+                                    onSurfaceVariantColor = onTileVariant
+                                )
                             } else {
                                 val artSong = currentSong?.takeIf { it.thumbnailUrl != null || it.albumArtUri != null }
                                 if (artSong != null) {

@@ -97,7 +97,8 @@ private data class PlaylistDownloadSnapshot(
     val active: Map<String, DownloadProgress>,
     val failedIds: Set<String>,
     val localOfflineCount: Int,
-    val skippedCount: Int
+    val skippedCount: Int,
+    val repeatedEntryCount: Int
 ) {
     val completedCount: Int get() = completedIds.size + localOfflineCount
     val activeCount: Int get() = active.size
@@ -124,9 +125,10 @@ private data class PlaylistDownloadSnapshot(
 /**
  * Download entry point for a music playlist or album.
  *
- * Device-local songs are already offline, while YouTube songs are deduplicated
- * by id before they reach the worker. The visible count is therefore the number
- * of files still needed, not the number of repeated rows in the playlist.
+ * Device-local songs are already offline, while repeated YouTube ids share one
+ * downloaded file. The action still names the playlist's full row count; file
+ * deduplication is explained inside the sheet instead of leaking a smaller,
+ * apparently incorrect number into the playlist header.
  */
 @Composable
 fun MusicPlaylistDownloadAction(
@@ -153,7 +155,10 @@ fun MusicPlaylistDownloadAction(
             it.request.type == DownloadMediaType.MUSIC && it.request.id in eligibleIds
         }.associateBy { it.request.id }
     }
-    val snapshot = remember(eligibleIds, downloadedIds, relevantProgress) {
+    val downloadableEntryCount = remember(songs) {
+        songs.count { it.source == SongSource.YOUTUBE && it.id.isNotBlank() }
+    }
+    val snapshot = remember(eligibleIds, downloadedIds, relevantProgress, songs) {
         PlaylistDownloadSnapshot(
             eligibleIds = eligibleIds,
             completedIds = downloadedIds,
@@ -162,13 +167,15 @@ fun MusicPlaylistDownloadAction(
             },
             failedIds = relevantProgress.filterValues { it.status == DownloadStatus.FAILED }.keys,
             localOfflineCount = songs.count { it.source == SongSource.LOCAL },
-            skippedCount = songs.count { it.source == SongSource.YOUTUBE && it.id.isBlank() }
+            skippedCount = songs.count { it.source == SongSource.YOUTUBE && it.id.isBlank() },
+            repeatedEntryCount = (downloadableEntryCount - eligibleSongs.size).coerceAtLeast(0)
         )
     }
 
     PlaylistDownloadButton(
         kind = PlaylistDownloadKind.MUSIC,
         snapshot = snapshot,
+        totalItemCount = songs.size,
         enabled = songs.isNotEmpty(),
         onClick = { showSheet = true },
         modifier = modifier
@@ -225,13 +232,17 @@ fun VideoPlaylistDownloadAction(
             },
             failedIds = relevantProgress.filterValues { it.status == DownloadStatus.FAILED }.keys,
             localOfflineCount = 0,
-            skippedCount = videos.count { it.isLive || it.videoId.isBlank() }
+            skippedCount = videos.count { it.isLive || it.videoId.isBlank() },
+            repeatedEntryCount = (
+                videos.count { !it.isLive && it.videoId.isNotBlank() } - eligibleVideos.size
+            ).coerceAtLeast(0)
         )
     }
 
     PlaylistDownloadButton(
         kind = PlaylistDownloadKind.VIDEO,
         snapshot = snapshot,
+        totalItemCount = videos.size,
         enabled = videos.isNotEmpty(),
         onClick = { showSheet = true },
         modifier = modifier
@@ -259,6 +270,7 @@ fun VideoPlaylistDownloadAction(
 private fun PlaylistDownloadButton(
     kind: PlaylistDownloadKind,
     snapshot: PlaylistDownloadSnapshot,
+    totalItemCount: Int,
     enabled: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
@@ -271,7 +283,7 @@ private fun PlaylistDownloadButton(
         snapshot.remainingCount > 0 && snapshot.remainingIds.all { it in snapshot.failedIds } ->
             "Retry ${snapshot.remainingCount}"
         snapshot.remainingCount > 0 && kind == PlaylistDownloadKind.VIDEO -> stringResource(R.string.pd_download_playlist)
-        snapshot.remainingCount > 0 -> "Download ${snapshot.remainingCount}"
+        snapshot.remainingCount > 0 -> "Download $totalItemCount"
         snapshot.skippedCount > 0 -> stringResource(R.string.pd_unavailable_offline)
         else -> "Download ${kind.itemNamePlural}"
     }
@@ -454,10 +466,23 @@ private fun PlaylistDownloadSheet(
                                     stringResource(R.string.pd_already_offline),
                                     itemCountLabel(snapshot.completedCount, kind)
                                 )
+                                if (snapshot.repeatedEntryCount > 0) {
+                                    DownloadSummaryRow(
+                                        stringResource(R.string.pd_repeated_entries),
+                                        itemCountLabel(snapshot.repeatedEntryCount, kind)
+                                    )
+                                }
                                 DownloadSummaryRow(
                                     stringResource(R.string.pd_to_download),
                                     itemCountLabel(snapshot.remainingCount, kind)
                                 )
+                                if (snapshot.repeatedEntryCount > 0) {
+                                    Text(
+                                        text = stringResource(R.string.pd_repeated_entries_note),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                             }
                             if (snapshot.activeCount > 0) {
                                 DownloadSummaryRow(
@@ -669,8 +694,7 @@ private fun PlaylistDownloadSheet(
                         snapshot.remainingCount == 0 && snapshot.activeCount > 0 -> stringResource(R.string.dl_preparing)
                         snapshot.remainingIds.all { it in snapshot.failedIds } ->
                             "Retry ${itemCountLabel(snapshot.remainingCount, kind)}"
-                        kind == PlaylistDownloadKind.VIDEO -> stringResource(R.string.pd_download_full)
-                        else -> "Download ${itemCountLabel(snapshot.remainingCount, kind)}"
+                        else -> stringResource(R.string.pd_download_full)
                     }
                     if (queueing) {
                         LoadingIndicator(modifier = Modifier.size(22.dp))

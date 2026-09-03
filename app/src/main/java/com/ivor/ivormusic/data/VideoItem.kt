@@ -254,24 +254,6 @@ data class VideoQuality(
             else -> VideoStreamDelivery.MUXED_PROGRESSIVE
         }
 
-    val isHlsManifest: Boolean
-        get() = delivery == VideoStreamDelivery.ADAPTIVE_MANIFEST &&
-            format.equals("HLS", ignoreCase = true)
-
-    /**
-     * The Default Cast Receiver accepts one media URL. Koda can therefore send
-     * a self-contained progressive VOD, or the HLS master playlist used by a
-     * live broadcast. A split video/audio pair needs MergingMediaSource on the
-     * phone and cannot be represented by the Default Receiver; VOD DASH is
-     * deliberately excluded because affected Cast firmware can select its
-     * video adaptation set without an audio adaptation set.
-     */
-    val isDefaultCastReceiverCompatible: Boolean
-        get() = when {
-            isLive -> isHlsManifest
-            else -> delivery == VideoStreamDelivery.MUXED_PROGRESSIVE
-        }
-
     /** Taller than it is wide. Unknown dimensions read as landscape. */
     val isPortrait: Boolean get() = sourceAspectRatio?.let { it > 0f && it < 1f } ?: false
 

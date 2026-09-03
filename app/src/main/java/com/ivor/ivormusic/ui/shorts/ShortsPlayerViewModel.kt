@@ -12,6 +12,7 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.DataSpec
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlaybackException
 import androidx.media3.exoplayer.ExoPlayer
@@ -27,6 +28,8 @@ import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.data.VideoQuality
 import com.ivor.ivormusic.data.YouTubeRepository
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
@@ -227,6 +230,7 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
      */
     private fun prefetchAround(index: Int) {
         val list = _shorts.value
+        val nextId = list.getOrNull(index + 1)?.videoId
         val streamTargets =
             ((index + 1)..(index + STREAM_PREFETCH_AHEAD)).mapNotNull { list.getOrNull(it) } +
                 listOfNotNull(list.getOrNull(index - 1))
@@ -240,7 +244,9 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
                     try {
                         // Skip if a later prefetch/playback already filled it
                         if (cachedQualities(id) == null) {
-                            cacheQualities(id, youtubeRepository.getVideoStreamQualities(id), epoch)
+                            val qualities = youtubeRepository.getVideoStreamQualities(id)
+                            cacheQualities(id, qualities, epoch)
+                            if (id == nextId) warmPlayableHead(qualities)
                         }
                     } finally {
                         prefetchSemaphore.release()
@@ -274,6 +280,36 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
                     prefetchingIds.remove("w:$id")
                 }
             }
+        }
+    }
+
+    /**
+     * Put actual playable bytes behind the next swipe, not just an expiring
+     * URL. Only the immediate next Short is warmed; farther speculative media
+     * costs battery and data without improving the next gesture. Adaptive and
+     * live manifests are left to Media3 because their segments are not
+     * byte-addressable progressive files.
+     */
+    private suspend fun warmPlayableHead(qualities: List<VideoQuality>) {
+        if (qualities.isEmpty()) return
+        val quality = pickDefaultQuality(qualities)
+        if (quality.isDASH || quality.isLive) return
+        val videoBytes = if (ThemePreferences.isNetworkMetered(context)) {
+            SHORTS_METERED_WARM_BYTES
+        } else {
+            SHORTS_UNMETERED_WARM_BYTES
+        }
+        withContext(Dispatchers.IO) {
+            fun warm(uri: String, bytes: Long) {
+                val spec = DataSpec.Builder()
+                    .setUri(uri)
+                    .setPosition(0)
+                    .setLength(bytes)
+                    .build()
+                com.ivor.ivormusic.data.CacheManager.cacheVideoRange(context, spec)
+            }
+            warm(quality.url, videoBytes)
+            quality.audioUrl?.let { warm(it, SHORTS_AUDIO_WARM_BYTES) }
         }
     }
 
@@ -343,10 +379,14 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
      * the class would still be an uninitialised delegate at that point.
      */
     private val streamDataSourceFactory =
-        DefaultDataSource.Factory(context, com.ivor.ivormusic.data.ChunkedStreamDataSource.Factory())
+        com.ivor.ivormusic.data.CacheManager.createVideoPlaybackDataSourceFactory(context)
 
     init {
         observeProfileSwitches()
+    }
+
+    private fun ensurePlayer(): ExoPlayer {
+        _exoPlayer?.let { return it }
 
         // First frame after ~1s buffered, like the video player. Shorts are
         // under a minute, so the 60s max buffer already covers the whole clip
@@ -363,7 +403,7 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
         // progressive/merged paths, but the adaptive branch hands the player a
         // bare MediaItem, which would otherwise be served by Media3's stock
         // DefaultDataSource - no per-URL User-Agent, so googlevideo answers 403.
-        _exoPlayer = ExoPlayer.Builder(context)
+        return ExoPlayer.Builder(context)
             .setMediaSourceFactory(DefaultMediaSourceFactory(streamDataSourceFactory))
             .setLoadControl(loadControl)
             .setWakeMode(C.WAKE_MODE_NETWORK)
@@ -386,7 +426,7 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
                         handlePlayerError(error)
                     }
                 })
-            }
+            }.also { _exoPlayer = it }
     }
 
     /**
@@ -396,6 +436,8 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
      */
     fun open(items: List<ShortsItem>, startIndex: Int) {
         if (items.isEmpty()) return
+        com.ivor.ivormusic.data.CacheManager.setVideoPlaybackActive(SHORTS_CACHE_OWNER, true)
+        ensurePlayer()
         // Keep the tapped Short even if it is hidden - the user asked for this
         // one explicitly, and opening onto a different video would be baffling.
         val tapped = items.getOrNull(startIndex.coerceIn(0, items.size - 1))
@@ -467,6 +509,7 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
         _exoPlayer?.clearMediaItems()
         _currentVideo.value = null
         _playbackError.value = null
+        com.ivor.ivormusic.data.CacheManager.setVideoPlaybackActive(SHORTS_CACHE_OWNER, false)
     }
 
     fun togglePlayPause() {
@@ -564,6 +607,7 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
                 } else {
                     synchronized(qualitiesCache) { qualitiesCache.remove(item.videoId) }
                 }
+                youtubeRepository.invalidateVideoStreamResult(item.videoId)
                 val qualities = kotlinx.coroutines.withTimeout(15_000L) {
                     youtubeRepository.getVideoStreamQualities(item.videoId)
                 }
@@ -1042,11 +1086,16 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
     }
 
     companion object {
+        private const val SHORTS_CACHE_OWNER = "shorts"
         /** Stream URLs resolved ahead of the current Short (plus one behind). */
-        private const val STREAM_PREFETCH_AHEAD = 5
+        private const val STREAM_PREFETCH_AHEAD = 2
 
         /** Watch-next payloads (metadata + engagement) warmed ahead. */
-        private const val WATCH_NEXT_PREFETCH_AHEAD = 2
+        private const val WATCH_NEXT_PREFETCH_AHEAD = 1
+
+        private const val SHORTS_METERED_WARM_BYTES = 512L * 1024
+        private const val SHORTS_UNMETERED_WARM_BYTES = 2L * 1024 * 1024
+        private const val SHORTS_AUDIO_WARM_BYTES = 256L * 1024
 
         /** Silent re-prepare attempts before a renderer error reaches the UI. */
         private const val MAX_RENDERER_RETRIES = 2
@@ -1064,5 +1113,6 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
         super.onCleared()
         _exoPlayer?.release()
         _exoPlayer = null
+        com.ivor.ivormusic.data.CacheManager.setVideoPlaybackActive(SHORTS_CACHE_OWNER, false)
     }
 }

@@ -5,6 +5,8 @@ import com.ivor.ivormusic.util.KLog
 import android.os.Build
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
@@ -16,14 +18,8 @@ import java.util.concurrent.TimeUnit
  * Supports ABI-aware APK matching for split builds.
  */
 class UpdateRepository {
-    
-    private val TAG = "UpdateRepository"
-    private val GITHUB_API_BASE = "https://api.github.com/repos"
-    
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(10, TimeUnit.SECONDS)
-        .build()
+
+    private val tag = "UpdateRepository"
     
     /**
      * Check if an update is available.
@@ -33,89 +29,114 @@ class UpdateRepository {
      */
     suspend fun checkForUpdate(
         repoPath: String,
-        currentVersion: String
+        currentVersion: String,
+        forceRefresh: Boolean = false,
     ): UpdateResult = withContext(Dispatchers.IO) {
+        val cacheKey = "$repoPath|$currentVersion"
+        if (!forceRefresh) {
+            cachedCheck?.takeIf {
+                it.key == cacheKey && System.currentTimeMillis() - it.checkedAtMs < CHECK_TTL_MS
+            }?.let { return@withContext it.result }
+        }
+
+        checkMutex.withLock {
+            if (!forceRefresh) {
+                cachedCheck?.takeIf {
+                    it.key == cacheKey && System.currentTimeMillis() - it.checkedAtMs < CHECK_TTL_MS
+                }?.let { return@withLock it.result }
+            }
+
+            val result = fetchLatestRelease(repoPath, currentVersion)
+            if (result !is UpdateResult.Error) {
+                cachedCheck = CachedCheck(cacheKey, result, System.currentTimeMillis())
+            }
+            result
+        }
+    }
+
+    private fun fetchLatestRelease(repoPath: String, currentVersion: String): UpdateResult {
         try {
             val url = "$GITHUB_API_BASE/$repoPath/releases/latest"
-            
-            KLog.d(TAG, "Checking for updates at: $url")
-            
+
+            KLog.d(tag, "Checking for updates at: $url")
+
             val request = Request.Builder()
                 .url(url)
                 .header("Accept", "application/vnd.github.v3+json")
-                .header("User-Agent", "IvorMusic")
+                .header("User-Agent", "Koda-Android")
                 .build()
-            
-            val response = client.newCall(request).execute()
-            
-            when (response.code) {
-                200 -> {
-                    val json = response.body?.string() ?: return@withContext UpdateResult.Error("Empty response")
-                    val jsonObject = JSONObject(json)
-                    
-                    val tagName = jsonObject.optString("tag_name", "")
-                    val releaseName = jsonObject.optString("name", tagName)
-                    val releaseNotes = jsonObject.optString("body", "")
-                    val htmlUrl = jsonObject.optString("html_url", "")
-                    val publishedAt = jsonObject.optString("published_at", "")
-                    
-                    // Parse ALL APK assets
-                    val apkAssets = mutableListOf<ApkAsset>()
-                    val assets = jsonObject.optJSONArray("assets")
-                    if (assets != null) {
-                        for (i in 0 until assets.length()) {
-                            val asset = assets.getJSONObject(i)
-                            val name = asset.optString("name", "")
-                            if (name.endsWith(".apk")) {
-                                apkAssets.add(
-                                    ApkAsset(
-                                        name = name,
-                                        downloadUrl = asset.optString("browser_download_url"),
-                                        size = asset.optLong("size", 0L)
+
+            return client.newCall(request).execute().use { response ->
+                when (response.code) {
+                    200 -> {
+                        val json = response.body?.string()
+                            ?: return@use UpdateResult.Error("GitHub returned an empty response")
+                        val jsonObject = JSONObject(json)
+
+                        val tagName = jsonObject.optString("tag_name", "")
+                        val releaseName = jsonObject.optString("name", tagName)
+                        val releaseNotes = jsonObject.optString("body", "")
+                        val htmlUrl = jsonObject.optString("html_url", "")
+                        val publishedAt = jsonObject.optString("published_at", "")
+
+                        val apkAssets = mutableListOf<ApkAsset>()
+                        val assets = jsonObject.optJSONArray("assets")
+                        if (assets != null) {
+                            for (i in 0 until assets.length()) {
+                                val asset = assets.getJSONObject(i)
+                                val name = asset.optString("name", "")
+                                if (name.endsWith(".apk")) {
+                                    apkAssets.add(
+                                        ApkAsset(
+                                            name = name,
+                                            downloadUrl = asset.optString("browser_download_url"),
+                                            size = asset.optLong("size", 0L)
+                                        )
                                     )
-                                )
+                                }
                             }
                         }
+                        val latestVersion = tagName.removePrefix("v").removePrefix("V")
+                        val cleanCurrentVersion = currentVersion.removePrefix("v").removePrefix("V")
+
+                        KLog.d(tag, "Latest version: $latestVersion, Current: $cleanCurrentVersion")
+
+                        val isUpdateAvailable = isNewerVersion(latestVersion, cleanCurrentVersion)
+
+                        if (isUpdateAvailable) {
+                            UpdateResult.UpdateAvailable(
+                                latestVersion = latestVersion,
+                                releaseName = releaseName,
+                                releaseNotes = releaseNotes,
+                                htmlUrl = htmlUrl,
+                                apkAssets = apkAssets,
+                                apkDownloadUrl = findBestApk(apkAssets)?.downloadUrl,
+                                publishedAt = publishedAt,
+                            )
+                        } else {
+                            UpdateResult.UpToDate(
+                                currentVersion = cleanCurrentVersion,
+                                latestVersion = latestVersion,
+                                releaseName = releaseName,
+                                releaseNotes = releaseNotes,
+                                htmlUrl = htmlUrl,
+                                publishedAt = publishedAt,
+                            )
+                        }
                     }
-                    
-                    // Parse images from release body (markdown image syntax)
-                    val releaseImages = parseImagesFromMarkdown(releaseNotes)
-                    
-                    // Clean version strings for comparison (remove 'v' prefix if present)
-                    val latestVersion = tagName.removePrefix("v").removePrefix("V")
-                    val cleanCurrentVersion = currentVersion.removePrefix("v").removePrefix("V")
-                    
-                    KLog.d(TAG, "Latest version: $latestVersion, Current: $cleanCurrentVersion")
-                    
-                    val isUpdateAvailable = isNewerVersion(latestVersion, cleanCurrentVersion)
-                    
-                    if (isUpdateAvailable) {
-                        UpdateResult.UpdateAvailable(
-                            latestVersion = latestVersion,
-                            releaseName = releaseName,
-                            releaseNotes = releaseNotes,
-                            htmlUrl = htmlUrl,
-                            apkAssets = apkAssets,
-                            apkDownloadUrl = findBestApk(apkAssets)?.downloadUrl,
-                            publishedAt = publishedAt,
-                            releaseImages = releaseImages
-                        )
-                    } else {
-                        UpdateResult.UpToDate(currentVersion = cleanCurrentVersion)
+                    404 -> {
+                        KLog.w(tag, "No releases found for $repoPath")
+                        UpdateResult.NoReleases
                     }
-                }
-                404 -> {
-                    KLog.w(TAG, "No releases found for $repoPath")
-                    UpdateResult.NoReleases
-                }
-                else -> {
-                    KLog.e(TAG, "API error ${response.code}: ${response.message}")
-                    UpdateResult.Error("GitHub API error (${response.code})")
+                    else -> {
+                        KLog.e(tag, "API error ${response.code}: ${response.message}")
+                        UpdateResult.Error("GitHub API error (${response.code})")
+                    }
                 }
             }
         } catch (e: Exception) {
-            KLog.e(TAG, "Error checking for updates", e)
-            UpdateResult.Error(e.message ?: "Unknown error")
+            KLog.e(tag, "Error checking for updates", e)
+            return UpdateResult.Error(e.message ?: "Could not reach GitHub")
         }
     }
     
@@ -123,69 +144,35 @@ class UpdateRepository {
      * Compare version strings to determine if latest is newer than current.
      * Handles formats like "1.4", "1.4.1", "2.0"
      */
-    private fun isNewerVersion(latest: String, current: String): Boolean {
-        try {
-            val latestParts = latest.split(".").map { it.toIntOrNull() ?: 0 }
-            val currentParts = current.split(".").map { it.toIntOrNull() ?: 0 }
-            
-            // Pad with zeros to same length
-            val maxLength = maxOf(latestParts.size, currentParts.size)
-            val paddedLatest = latestParts + List(maxLength - latestParts.size) { 0 }
-            val paddedCurrent = currentParts + List(maxLength - currentParts.size) { 0 }
-            
-            // Compare each part
-            for (i in 0 until maxLength) {
-                if (paddedLatest[i] > paddedCurrent[i]) return true
-                if (paddedLatest[i] < paddedCurrent[i]) return false
-            }
-            
-            return false // Versions are equal
-        } catch (e: Exception) {
-            KLog.e(TAG, "Version comparison failed", e)
-            return false
+    internal fun isNewerVersion(latest: String, current: String): Boolean {
+        val latestParts = Regex("\\d+").findAll(latest).map { it.value.toInt() }.toList()
+        val currentParts = Regex("\\d+").findAll(current).map { it.value.toInt() }.toList()
+        if (latestParts.isEmpty() || currentParts.isEmpty()) return false
+        val maxLength = maxOf(latestParts.size, currentParts.size)
+        for (index in 0 until maxLength) {
+            val latestPart = latestParts.getOrElse(index) { 0 }
+            val currentPart = currentParts.getOrElse(index) { 0 }
+            if (latestPart != currentPart) return latestPart > currentPart
         }
+        return false
     }
-    
-    /**
-     * Extract image URLs from markdown-formatted release notes
-     */
-    private fun parseImagesFromMarkdown(markdown: String): List<String> {
-        val images = mutableListOf<String>()
-        
-        // 1. Match markdown image syntax: ![alt](url)
-        val mdRegex = Regex("""!\[.*?]\((.*?)\)""")
-        mdRegex.findAll(markdown).forEach { match ->
-            match.groupValues.getOrNull(1)?.let { url ->
-                if (url.startsWith("http") && url !in images) images.add(url)
-            }
-        }
-        
-        // 2. Match HTML image syntax: <img ... src="url" ... />
-        val htmlRegex = Regex("""<img\s+[^>]*src=["']([^"']+)["'][^>]*>""")
-        htmlRegex.findAll(markdown).forEach { match ->
-            match.groupValues.getOrNull(1)?.let { url ->
-                if (url.startsWith("http") && url !in images) images.add(url)
-            }
-        }
-        
-        // 3. Match raw image URLs (common extensions)
-        val rawUrlRegex = Regex("""(https://(?:user-images\.githubusercontent\.com|github\.com)[^\s)\"]+\.(?:png|jpg|jpeg|gif|webp))""", RegexOption.IGNORE_CASE)
-        rawUrlRegex.findAll(markdown).forEach { match ->
-            val url = match.groupValues[0]
-            if (url !in images) images.add(url)
-        }
-        
-        // 4. Match GitHub user-attachments (no extension)
-        val attachmentRegex = Regex("""https://github\.com/user-attachments/assets/[a-f0-9\-]+""")
-        attachmentRegex.findAll(markdown).forEach { match ->
-            val url = match.groupValues[0]
-            if (url !in images) images.add(url)
-        }
-        
-        return images
-    }
-    
+
     companion object DeviceInfo {
+        private const val GITHUB_API_BASE = "https://api.github.com/repos"
+        private const val CHECK_TTL_MS = 10 * 60 * 1000L
+        private val checkMutex = Mutex()
+        private data class CachedCheck(
+            val key: String,
+            val result: UpdateResult,
+            val checkedAtMs: Long,
+        )
+        @Volatile private var cachedCheck: CachedCheck? = null
+        private val client = OkHttpClient.Builder()
+            .connectTimeout(10, TimeUnit.SECONDS)
+            .readTimeout(10, TimeUnit.SECONDS)
+            .callTimeout(15, TimeUnit.SECONDS)
+            .build()
+
         /**
          * Get the device's primary ABI
          */
@@ -216,9 +203,9 @@ class UpdateRepository {
             }
             if (simplified != null) return simplified
             
-            // Fallback: universal APK or first available
+            // Never return an APK for a different architecture. A universal
+            // build is safe; an arbitrary first asset may simply not install.
             return assets.find { it.name.contains("universal", ignoreCase = true) }
-                ?: assets.firstOrNull()
         }
     }
 }
@@ -244,14 +231,30 @@ sealed class UpdateResult {
         val apkAssets: List<ApkAsset> = emptyList(),
         val apkDownloadUrl: String?,
         val publishedAt: String,
-        val releaseImages: List<String> = emptyList()
     ) : UpdateResult()
     
-    data class UpToDate(val currentVersion: String) : UpdateResult()
+    data class UpToDate(
+        val currentVersion: String,
+        val latestVersion: String,
+        val releaseName: String,
+        val releaseNotes: String,
+        val htmlUrl: String,
+        val publishedAt: String,
+    ) : UpdateResult()
     
     object NoReleases : UpdateResult()
-    
+
     data class Error(val message: String) : UpdateResult()
-    
+
     object Checking : UpdateResult()
+
+    /**
+     * Local Only mode is on, so no release check was made.
+     *
+     * The repository never returns this - it has no Context to read the
+     * preference from. The update screen decides it before calling, which is
+     * what keeps the check itself honest: Local Only means the app does not
+     * reach the network, and a "small" metadata request is still a request.
+     */
+    object LocalOnly : UpdateResult()
 }

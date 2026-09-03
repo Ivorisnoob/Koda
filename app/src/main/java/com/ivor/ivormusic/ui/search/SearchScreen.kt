@@ -71,18 +71,10 @@ import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.Bookmark
 import androidx.compose.material.icons.rounded.BookmarkBorder
-import androidx.compose.material.icons.rounded.LiveTv
-import androidx.compose.material.icons.rounded.Movie
-import androidx.compose.material.icons.rounded.Newspaper
-import androidx.compose.material.icons.rounded.Podcasts
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.QueueMusic
-import androidx.compose.material.icons.rounded.School
-import androidx.compose.material.icons.rounded.Science
 import androidx.compose.material.icons.rounded.SmartDisplay
-import androidx.compose.material.icons.rounded.SportsBasketball
-import androidx.compose.material.icons.rounded.SportsEsports
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -159,19 +151,6 @@ import com.ivor.ivormusic.ui.video.VideoCard
 import com.ivor.ivormusic.ui.video.VideoOptionsSheetHost
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-
-// Quick-search topics shown on the video mode explore state
-private val VIDEO_EXPLORE_TOPICS = listOf(
-    "Gaming" to Icons.Rounded.SportsEsports,
-    "Music" to Icons.Rounded.MusicNote,
-    "News" to Icons.Rounded.Newspaper,
-    "Live" to Icons.Rounded.LiveTv,
-    "Podcasts" to Icons.Rounded.Podcasts,
-    "Movies" to Icons.Rounded.Movie,
-    "Tech" to Icons.Rounded.Science,
-    "Sports" to Icons.Rounded.SportsBasketball,
-    "Learning" to Icons.Rounded.School
-)
 
 /**
  * Segmented list shape helper for Expressive design
@@ -720,10 +699,11 @@ fun SearchScreen(
                     }
                 }
 
-                // Show search history if focused and query is empty. Skipped in
-                // video mode so the field auto-focusing on entry doesn't hide the
-                // video Explore browse behind the recent-searches list.
-                !videoMode && isSearchFocused && query.isEmpty() && searchHistory.isNotEmpty() -> {
+                // Search history belongs to the field, not to either media
+                // mode. While it has focus, keep recent queries in the same
+                // predictable place and reveal the mode's browse surface again
+                // as soon as focus clears.
+                isSearchFocused && query.isEmpty() && searchHistory.isNotEmpty() -> {
                     item {
                         SearchHistoryList(
                             history = searchHistory,
@@ -734,8 +714,7 @@ fun SearchScreen(
                             onRemoveClick = { viewModel.removeFromSearchHistory(it) },
                             onClearAll = { viewModel.clearSearchHistory() },
                             textColor = textColor,
-                            secondaryTextColor = secondaryTextColor,
-                            surfaceColor = surfaceColor
+                            secondaryTextColor = secondaryTextColor
                         )
                     }
                 }
@@ -771,56 +750,10 @@ fun SearchScreen(
                     }
                 }
                 
-                // Video mode browse: explore topics + trending instead of the music library
+                // Video mode browse: trending instead of the music library.
+                // The old hard-coded category chips duplicated search and made
+                // this state read like an Explore page rather than history.
                 videoMode && query.isEmpty() -> {
-                    item {
-                        Text(
-                            stringResource(R.string.search_explore_title),
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = textColor,
-                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
-                        )
-                    }
-
-                    // Topic chips: one tap starts a search
-                    item {
-                        LazyRow(
-                            contentPadding = PaddingValues(horizontal = 20.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            items(VIDEO_EXPLORE_TOPICS) { (topic, icon) ->
-                                Surface(
-                                    onClick = {
-                                        query = topic
-                                        focusManager.clearFocus()
-                                    },
-                                    shape = CircleShape,
-                                    color = cardColor,
-                                    tonalElevation = 1.dp
-                                ) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
-                                    ) {
-                                        Icon(
-                                            icon,
-                                            contentDescription = null,
-                                            tint = primaryColor,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                         Text(
-                                             exploreTopicLabel(topic),
-                                             style = MaterialTheme.typography.labelLarge,
-                                             color = textColor
-                                         )
-                                    }
-                                }
-                            }
-                        }
-                    }
-
                     item {
                         Text(
                             stringResource(R.string.trending_now),
@@ -2128,8 +2061,7 @@ fun SearchHistoryList(
     onRemoveClick: (String) -> Unit,
     onClearAll: () -> Unit,
     textColor: Color,
-    secondaryTextColor: Color,
-    surfaceColor: Color
+    secondaryTextColor: Color
 ) {
     Column(
         modifier = Modifier
@@ -2156,15 +2088,16 @@ fun SearchHistoryList(
             }
         }
         
-        history.forEach { query ->
+        history.forEachIndexed { index, query ->
+            val rowShape = getSegmentedShape(index, history.size, cornerSize = 22.dp)
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 4.dp)
-                    .clip(RoundedCornerShape(16.dp))
+                    .padding(vertical = 1.dp)
+                    .clip(rowShape)
                     .clickable { onHistoryClick(query) },
-                color = surfaceColor.copy(alpha = 0.5f),
-                shape = RoundedCornerShape(16.dp)
+                color = MaterialTheme.colorScheme.surfaceContainer,
+                shape = rowShape
             ) {
                 Row(
                     modifier = Modifier
@@ -2201,7 +2134,6 @@ fun SearchHistoryList(
         }
     }
 }
-
 // ============================================================
 // Pasted YouTube link UI
 // ============================================================
@@ -3070,18 +3002,4 @@ private fun ChannelResultRow(
             )
         }
     }
-}
-
-
-@Composable
-private fun exploreTopicLabel(topic: String): String = when (topic) {
-    "Gaming" -> stringResource(R.string.topic_gaming)
-    "Music" -> stringResource(R.string.topic_music)
-    "News" -> stringResource(R.string.topic_news)
-    "Live" -> stringResource(R.string.topic_live)
-    "Podcasts" -> stringResource(R.string.topic_podcasts)
-    "Movies" -> stringResource(R.string.topic_movies)
-    "Tech" -> stringResource(R.string.topic_tech)
-    "Sports" -> stringResource(R.string.topic_sports)
-    else -> stringResource(R.string.topic_learning)
 }

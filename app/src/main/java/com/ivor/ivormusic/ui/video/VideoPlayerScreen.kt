@@ -54,6 +54,7 @@ import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -69,13 +70,11 @@ import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material.icons.outlined.ThumbDown
 import androidx.compose.material.icons.outlined.ThumbUp
 import androidx.compose.material.icons.rounded.CheckCircle
-import androidx.compose.material.icons.rounded.Cast
-import androidx.compose.material.icons.rounded.CastConnected
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ClosedCaption
 import androidx.compose.material.icons.rounded.ClosedCaptionOff
+import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.Download
-import androidx.compose.material.icons.rounded.Error
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Forward10
 import androidx.compose.material.icons.rounded.Fullscreen
@@ -316,11 +315,6 @@ fun FullscreenPlayerContent(
     onOpenChapters: () -> Unit = {},
     captionsActive: Boolean = false,
     onCaptionsClick: () -> Unit = {},
-    /** True while playback is on a Chromecast; the local surface shows a card. */
-    casting: Boolean = false,
-    castDeviceName: String? = null,
-    castingArtworkUrl: String? = null,
-    onCastClick: () -> Unit = {},
     captionCues: List<VttCue> = emptyList(),
     captionTextSize: Float = CAPTION_TEXT_SCALE_DEFAULT,
     captionTextColor: CaptionTextColor = CaptionTextColor.WHITE,
@@ -365,21 +359,6 @@ fun FullscreenPlayerContent(
     // on a line of their own. Only immediate viewing controls live over the
     // moving frame; everything secondary is in Playback settings.
     val topBarActions: @Composable RowScope.() -> Unit = {
-        FilledTonalIconButton(
-            onClick = onCastClick,
-            colors = IconButtonDefaults.filledTonalIconButtonColors(
-                containerColor = if (casting) MaterialTheme.colorScheme.primary else Color.Black.copy(0.5f),
-                contentColor = if (casting) MaterialTheme.colorScheme.onPrimary else Color.White
-            ),
-            shapes = stableShapes
-        ) {
-            Icon(
-                if (casting) Icons.Rounded.CastConnected else Icons.Rounded.Cast,
-                contentDescription =
-                    if (casting) "Connected to $castDeviceName" else "Cast"
-            )
-        }
-
         FilledTonalIconButton(
             onClick = onCaptionsClick,
             colors = IconButtonDefaults.filledTonalIconButtonColors(
@@ -478,18 +457,6 @@ fun FullscreenPlayerContent(
             // Hand the surface back before this view is destroyed - the same
             // ExoPlayer is also rendered by the mini and PiP PlayerViews.
             onRelease = { playerView -> playerView.player = null },
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(end = chatInsetAnimated)
-        )
-
-        // While casting, nothing decodes into this surface - the receiver owns
-        // the picture. A card saying so beats a black rectangle that looks
-        // like a broken player.
-        CastingOverlay(
-            visible = casting,
-            deviceName = castDeviceName,
-            artworkUrl = castingArtworkUrl,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(end = chatInsetAnimated)
@@ -736,11 +703,6 @@ fun PortraitPlayerContent(
     onOpenChapters: () -> Unit = {},
     captionsActive: Boolean = false,
     onCaptionsClick: () -> Unit = {},
-    /** True while playback is on a Chromecast; the local surface shows a card. */
-    casting: Boolean = false,
-    castDeviceName: String? = null,
-    castingArtworkUrl: String? = null,
-    onCastClick: () -> Unit = {},
     captionCues: List<VttCue> = emptyList(),
     captionTextSize: Float = CAPTION_TEXT_SCALE_DEFAULT,
     captionTextColor: CaptionTextColor = CaptionTextColor.WHITE,
@@ -820,15 +782,6 @@ fun PortraitPlayerContent(
             modifier = Modifier.fillMaxSize()
         )
 
-        // While casting, nothing decodes into this surface - see the
-        // fullscreen variant for why a card beats a black rectangle.
-        CastingOverlay(
-            visible = casting,
-            deviceName = castDeviceName,
-            artworkUrl = castingArtworkUrl,
-            modifier = Modifier.fillMaxSize()
-        )
-
         CaptionOverlay(
             cues = captionCues,
             player = exoPlayer,
@@ -876,20 +829,6 @@ fun PortraitPlayerContent(
                     }
                     
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilledTonalIconButton(
-                            onClick = onCastClick,
-                            colors = IconButtonDefaults.filledTonalIconButtonColors(
-                                containerColor = if (casting) MaterialTheme.colorScheme.primary else Color.Black.copy(0.5f),
-                                contentColor = if (casting) MaterialTheme.colorScheme.onPrimary else Color.White
-                            ),
-                            shapes = stableShapes
-                        ) {
-                            Icon(
-                                if (casting) Icons.Rounded.CastConnected else Icons.Rounded.Cast,
-                                contentDescription =
-                                    if (casting) "Connected to $castDeviceName" else "Cast"
-                            )
-                        }
                         FilledTonalIconButton(
                             onClick = onCaptionsClick,
                             colors = IconButtonDefaults.filledTonalIconButtonColors(
@@ -2974,23 +2913,40 @@ fun ExpressivePlayPauseButton(
 fun ErrorOverlay(message: String, onRetry: (() -> Unit)? = null) {
     Box(
         modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black),
+            .fillMaxSize(),
         contentAlignment = Alignment.Center
     ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.padding(horizontal = 32.dp)
+        Surface(
+            color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.94f),
+            contentColor = MaterialTheme.colorScheme.onSurface,
+            shape = RoundedCornerShape(28.dp),
+            modifier = Modifier
+                .padding(horizontal = 32.dp)
+                .widthIn(max = 420.dp)
         ) {
-            Icon(Icons.Rounded.Error, contentDescription = "Error", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(64.dp))
-            Spacer(Modifier.height(16.dp))
-            Text(message, color = Color.White, textAlign = TextAlign.Center)
-            if (onRetry != null) {
-                Spacer(Modifier.height(20.dp))
-                Button(onClick = onRetry) {
-                    Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.action_retry))
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.padding(horizontal = 28.dp, vertical = 24.dp)
+            ) {
+                Icon(
+                    Icons.Rounded.CloudOff,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(44.dp)
+                )
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    message,
+                    style = MaterialTheme.typography.bodyLarge,
+                    textAlign = TextAlign.Center
+                )
+                if (onRetry != null) {
+                    Spacer(Modifier.height(18.dp))
+                    Button(onClick = onRetry) {
+                        Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(stringResource(R.string.action_retry))
+                    }
                 }
             }
         }
@@ -3006,65 +2962,3 @@ private fun formatDuration(millis: Long): String {
     return if (h > 0) String.format(Locale.US, "%d:%02d:%02d", h, m, s) else String.format(Locale.US, "%d:%02d", m, s)
 }
 
-/**
- * The card shown over the video surface while playback is on a Chromecast.
- *
- * The local player has nothing to render - the receiver owns the picture - and
- * a bare black box reads as a broken player. The video's own artwork behind a
- * scrim, with the connected device named, says exactly what is happening and
- * where it is happening. Fades in over the last local frame so the hand-off
- * does not flash.
- */
-@Composable
-private fun CastingOverlay(
-    visible: Boolean,
-    deviceName: String?,
-    artworkUrl: String?,
-    modifier: Modifier = Modifier
-) {
-    AnimatedVisibility(
-        visible = visible,
-        enter = fadeIn(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)),
-        exit = fadeOut(),
-        modifier = modifier
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black),
-            contentAlignment = Alignment.Center
-        ) {
-            artworkUrl?.let { url ->
-                coil.compose.AsyncImage(
-                    model = url,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
-                )
-            }
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.62f))
-            )
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.padding(horizontal = 24.dp)
-            ) {
-                Icon(
-                    Icons.Rounded.CastConnected,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(48.dp)
-                )
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    text = if (deviceName != null) "Casting to $deviceName" else "Casting",
-                    color = Color.White,
-                    style = MaterialTheme.typography.titleMedium,
-                    textAlign = TextAlign.Center
-                )
-            }
-        }
-    }
-}

@@ -1131,15 +1131,14 @@ fun MusicApp(
                 popEnterTransition = { slideInHorizontally(initialOffsetX = { -it / 3 }) + fadeIn() },
                 popExitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut() }
             ) {
-                if (localOnlyMode) {
-                    com.ivor.ivormusic.ui.components.LocalOnlyNotice(
-                        subtitle = stringResource(R.string.local_only_update_subtitle)
-                    )
-                } else {
-                    com.ivor.ivormusic.ui.settings.UpdateScreen(
-                        onBack = { navController.popBackStack() }
-                    )
-                }
+                // Local Only is handled inside the screen rather than by
+                // replacing it. The installed version, build, ABI and Android
+                // version are on the device already, and the full-screen notice
+                // hid all of it behind a page with no visible way back.
+                com.ivor.ivormusic.ui.settings.UpdateScreen(
+                    onBack = { navController.popBackStack() },
+                    localOnlyMode = localOnlyMode
+                )
             }
             composable(
                 route = "report",

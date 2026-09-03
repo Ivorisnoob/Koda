@@ -1,8 +1,6 @@
 package com.ivor.ivormusic.data
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class VideoQualityVariantsTest {
@@ -25,24 +23,6 @@ class VideoQualityVariantsTest {
         assertEquals(
             listOf(mp4),
             deduplicateVideoQualityVariants(listOf(webm, mp4))
-        )
-    }
-
-    @Test
-    fun `only muxed vod and live hls are Default Receiver compatible`() {
-        assertTrue(muxedQuality("360p").isDefaultCastReceiverCompatible)
-        assertFalse(splitQuality("1080p").isDefaultCastReceiverCompatible)
-        assertFalse(
-            VideoQuality("Auto", "dash", "DASH", isDASH = true)
-                .isDefaultCastReceiverCompatible
-        )
-        assertTrue(
-            VideoQuality("Auto", "hls", "HLS", isDASH = true, isLive = true)
-                .isDefaultCastReceiverCompatible
-        )
-        assertFalse(
-            VideoQuality("Auto", "dash", "DASH", isDASH = true, isLive = true)
-                .isDefaultCastReceiverCompatible
         )
     }
 

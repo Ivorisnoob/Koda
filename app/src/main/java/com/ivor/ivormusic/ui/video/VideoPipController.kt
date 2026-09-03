@@ -47,7 +47,6 @@ fun VideoPipController(viewModel: VideoPlayerViewModel) {
     val currentVideo by viewModel.currentVideo.collectAsState()
     val isPlaying by viewModel.isPlaying.collectAsState()
     val isExpanded by viewModel.isExpanded.collectAsState()
-    val isCasting by viewModel.isCasting.collectAsState()
     val videoAspectRatio by viewModel.videoAspectRatio.collectAsState()
     val videoBounds by viewModel.videoSurfaceBounds.collectAsState()
 
@@ -60,8 +59,6 @@ fun VideoPipController(viewModel: VideoPlayerViewModel) {
         val receiver = object : android.content.BroadcastReceiver() {
             override fun onReceive(ctx: android.content.Context?, intent: Intent?) {
                 when (intent?.action) {
-                    // Routed through the ViewModel, not straight at exoPlayer:
-                    // while casting these buttons drive the receiver.
                     "$packageName.$ACTION_PLAY" -> viewModel.playFromExternal()
                     "$packageName.$ACTION_PAUSE" -> viewModel.pause()
                     "$packageName.$ACTION_REWIND" ->
@@ -98,21 +95,17 @@ fun VideoPipController(viewModel: VideoPlayerViewModel) {
         currentVideo?.videoId,
         isPlaying,
         isExpanded,
-        isCasting,
         videoAspectRatio,
         videoBounds
     ) {
         val builder = PictureInPictureParams.Builder()
         val validBounds = videoBounds?.takeIf { !it.isEmpty }
-        // Casting disarms PiP entirely: the picture lives on the receiver and
-        // a PiP window would show only the casting card.
-        val autoEnterEligible = currentVideo != null && isExpanded && !isCasting
-        val hasContent = currentVideo != null && !isCasting
+        val autoEnterEligible = currentVideo != null && isExpanded
+        val hasContent = currentVideo != null
 
         if (!hasContent) {
-            // No local video: disarm. Auto-enter is sticky, so leaving it armed
-            // through a cast would open a window onto the casting card when the
-            // user swiped home.
+            // No video: disarm. Auto-enter is sticky, so leaving it armed
+            // would open a PiP window onto nothing when the user swiped home.
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 builder.setAutoEnterEnabled(false)
             }

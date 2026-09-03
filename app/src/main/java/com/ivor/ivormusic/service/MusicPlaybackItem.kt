@@ -14,13 +14,10 @@ internal const val EXTRA_QUEUE_ITEM_ID = "com.ivor.ivormusic.QUEUE_ITEM_ID"
  * playback resumption. Keeping this in one place prevents a restored queue
  * from losing local URIs, occurrence IDs, or artwork metadata.
  */
-internal fun MusicQueueItem.toPlaybackMediaItem(
-    castResolveNow: Boolean = false,
-): MediaItem {
+internal fun MusicQueueItem.toPlaybackMediaItem(): MediaItem {
     val extras = Bundle().apply {
         putString(EXTRA_QUEUE_ITEM_ID, id)
         putString(MusicService.EXTRA_SONG_SOURCE, song.source.name)
-        if (castResolveNow) putBoolean(MusicService.EXTRA_CAST_RESOLVE_NOW, true)
     }
     val metadata = MediaMetadata.Builder()
         .setTitle(song.title)

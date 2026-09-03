@@ -79,6 +79,7 @@ import androidx.compose.material3.carousel.rememberCarouselState
 import androidx.compose.material3.carousel.CarouselState
 import androidx.compose.material3.HorizontalFloatingToolbar
 import androidx.compose.material3.FloatingToolbarDefaults
+import androidx.compose.material3.FloatingToolbarExitDirection
 import androidx.compose.material3.IconToggleButton
 import com.ivor.ivormusic.ui.components.ExpressivePullToRefresh
 import androidx.activity.compose.BackHandler
@@ -103,6 +104,7 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
@@ -326,6 +328,13 @@ fun HomeScreen(
     // while the music/video home content cross-fades underneath it
     val modeToggleState = rememberMusicVideoToggleState(videoMode)
 
+    // Material owns both the offset range and the settle/fling behavior. The
+    // toolbar is bottom-centred, so its exit direction is down and the Home
+    // shell only needs to forward nested scroll from whichever tab is active.
+    val floatingToolbarScrollBehavior = FloatingToolbarDefaults.exitAlwaysScrollBehavior(
+        exitDirection = FloatingToolbarExitDirection.Bottom
+    )
+
     // Handle back button to return to Home tab if on Search or Library
     BackHandler(enabled = selectedTab != 0) {
         selectedTab = 0
@@ -481,6 +490,10 @@ fun HomeScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(backgroundColor)
+            .then(
+                if (nonExpressiveNavigationBar) Modifier
+                else Modifier.nestedScroll(floatingToolbarScrollBehavior)
+            )
     ) {
         // Main content
         if (!loadLocalSongs || permissionState.isGranted) {
@@ -861,6 +874,7 @@ fun HomeScreen(
         } else {
             HorizontalFloatingToolbar(
                 expanded = true,
+                scrollBehavior = floatingToolbarScrollBehavior,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .navigationBarsPadding()

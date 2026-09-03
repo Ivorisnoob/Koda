@@ -192,15 +192,6 @@ dependencies {
     implementation(libs.androidx.media3.exoplayer.hls)
     implementation(libs.androidx.media3.ui)
     implementation(libs.androidx.media3.session)
-    // Chromecast: CastPlayer is a Player facade over a Chromecast session, so
-    // video mode's transport controls drive either the local ExoPlayer or the
-    // receiver through the same interface.
-    implementation(libs.androidx.media3.cast)
-    // Route discovery for the in-app cast device sheet.
-    implementation(libs.androidx.mediarouter)
-    // Core Cast classes (RemoteMediaClient, MediaStatus). media3-cast only
-    // brings the -framework artifact, which is not enough on its own.
-    implementation(libs.play.services.cast)
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.compose.material.icons.extended)

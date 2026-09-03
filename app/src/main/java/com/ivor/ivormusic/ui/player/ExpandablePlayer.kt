@@ -33,7 +33,6 @@ import com.ivor.ivormusic.data.PlayerStyle
 import com.ivor.ivormusic.ui.components.MiniPlayerContent
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
-import com.ivor.ivormusic.ui.video.MusicCastSheet
 import kotlin.math.absoluteValue
 import kotlin.math.roundToInt
 
@@ -45,19 +44,6 @@ import kotlin.math.roundToInt
  * to do.
  */
 private const val PLAYER_BACK_PEEK = 0.72f
-
-/**
- * Shared Cast action for the eight music-player styles. Keeping the action in
- * a CompositionLocal lets every style place it inside its own top action row
- * without threading four Cast parameters through each player API.
- */
-internal data class MusicCastAction(
-    val isCasting: Boolean,
-    val deviceName: String?,
-    val onClick: () -> Unit
-)
-
-internal val LocalMusicCastAction = staticCompositionLocalOf<MusicCastAction?> { null }
 
 /**
  * A container that expands from a MiniPlayer (floating pill) to a Full Screen Player.
@@ -92,20 +78,6 @@ fun ExpandablePlayer(
     modifier: Modifier = Modifier
 ) {
     if (currentSong == null) return
-
-    val isCasting by viewModel.isCasting.collectAsState()
-    val castDeviceName by viewModel.castDeviceName.collectAsState()
-    var showCastSheet by remember { mutableStateOf(false) }
-    LaunchedEffect(showCastSheet) {
-        if (showCastSheet) {
-            viewModel.startCastDiscovery()
-            try {
-                kotlinx.coroutines.awaitCancellation()
-            } finally {
-                viewModel.stopCastDiscovery()
-            }
-        }
-    }
 
     // Long-pressing the artwork in any style summons the style wheel; it
     // lives here, above whichever style is active, so the player can morph
@@ -344,8 +316,6 @@ fun ExpandablePlayer(
                             progress = progress,
                             onPlayPauseClick = onPlayPauseClick,
                             onNextClick = onNextClick,
-                            isCasting = isCasting,
-                            castDeviceName = castDeviceName,
                             onClick = { onExpandChange(true) }
                         )
                     }
@@ -389,12 +359,7 @@ fun ExpandablePlayer(
                         // Any artwork can host the wheel's hold gesture
                         // through this local, without per-style plumbing.
                         CompositionLocalProvider(
-                            LocalPlayerStyleWheelController provides styleWheel,
-                            LocalMusicCastAction provides MusicCastAction(
-                                isCasting = isCasting,
-                                deviceName = castDeviceName,
-                                onClick = { showCastSheet = true }
-                            )
+                            LocalPlayerStyleWheelController provides styleWheel
                         ) {
                         // Crossfade makes a live style swap (from the style
                         // wheel or Settings) a soft morph instead of a cut.
@@ -516,10 +481,4 @@ fun ExpandablePlayer(
         }
     }
 
-    if (showCastSheet) {
-        MusicCastSheet(
-            viewModel = viewModel,
-            onDismiss = { showCastSheet = false }
-        )
-    }
 }

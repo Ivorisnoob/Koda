@@ -1,602 +1,197 @@
 package com.ivor.ivormusic.ui.settings
-import androidx.compose.ui.res.stringResource
-import com.ivor.ivormusic.R
 
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import androidx.compose.animation.*
-import androidx.compose.animation.core.*
+import android.os.Build
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.rounded.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.automirrored.rounded.ArrowForward
+import androidx.compose.material.icons.rounded.Android
+import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.CloudOff
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Memory
+import androidx.compose.material.icons.rounded.NewReleases
+import androidx.compose.material.icons.rounded.OpenInNew
+import androidx.compose.material.icons.rounded.PhoneAndroid
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.SystemUpdate
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.LoadingIndicator
+import androidx.compose.material3.MaterialShapes
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.toShape
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
-import coil.compose.AsyncImage
+import androidx.compose.ui.unit.dp
 import com.ivor.ivormusic.BuildConfig
+import com.ivor.ivormusic.R
+import com.ivor.ivormusic.data.ApkAsset
 import com.ivor.ivormusic.data.UpdateRepository
 import com.ivor.ivormusic.data.UpdateResult
-import kotlinx.coroutines.delay
+import java.time.OffsetDateTime
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 
-/**
- * 🌟 Premium Update Screen
- * 
- * A beautiful, Material You-styled update experience with:
- * - Animated hero section with version info
- * - Rich release notes with markdown rendering
- * - Release image gallery
- * - Smart ABI-aware download button
- * - Smooth micro-animations throughout
- */
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun UpdateScreen(
     onBack: () -> Unit,
-    contentPadding: PaddingValues = PaddingValues()
+    localOnlyMode: Boolean = false,
+    contentPadding: PaddingValues = PaddingValues(),
 ) {
-    val context = LocalContext.current
-    val updateRepository = remember { UpdateRepository() }
-    var updateResult by remember { mutableStateOf<UpdateResult>(UpdateResult.Checking) }
-    
-    // Colors
-    val backgroundColor = MaterialTheme.colorScheme.background
-    val surfaceColor = MaterialTheme.colorScheme.surfaceContainer
-    val textColor = MaterialTheme.colorScheme.onBackground
-    val secondaryTextColor = MaterialTheme.colorScheme.onSurfaceVariant
-    val primaryColor = MaterialTheme.colorScheme.primary
-    val tertiaryColor = MaterialTheme.colorScheme.tertiary
-    
-    // Stagger animation
-    var isVisible by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        isVisible = true
-    }
+    val repository = remember { UpdateRepository() }
+    var result by remember { mutableStateOf<UpdateResult>(UpdateResult.Checking) }
+    var checkRequest by remember { mutableIntStateOf(0) }
 
-    LaunchedEffect(updateResult) {
-        if (updateResult is UpdateResult.Checking) {
-            updateResult = updateRepository.checkForUpdate(
-                repoPath = BuildConfig.GITHUB_REPO,
-                currentVersion = BuildConfig.VERSION_NAME
-            )
+    // Local Only is a key rather than an early return: turning it off in
+    // another window has to start the check that was refused, and turning it
+    // on has to stop showing a release the user can no longer download.
+    LaunchedEffect(checkRequest, localOnlyMode) {
+        if (localOnlyMode) {
+            result = UpdateResult.LocalOnly
+            return@LaunchedEffect
         }
-    }
-    
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(backgroundColor)
-    ) {
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .windowInsetsPadding(WindowInsets.statusBars),
-            contentPadding = PaddingValues(
-                bottom = contentPadding.calculateBottomPadding() + 100.dp
-            )
-        ) {
-            // ===== TOP BAR =====
-            item {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 8.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            Icons.AutoMirrored.Rounded.ArrowBack,
-                            contentDescription = stringResource(R.string.cd_back),
-                            tint = textColor
-                        )
-                    }
-                    Spacer(modifier = Modifier.weight(1f))
-                    Text(
-                        stringResource(R.string.us_title),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = textColor
-                    )
-                    Spacer(modifier = Modifier.weight(1f))
-                    // Placeholder for symmetry
-                    Spacer(modifier = Modifier.size(48.dp))
-                }
-            }
-            
-            // ===== HERO SECTION =====
-            item {
-                UpdateHeroSection(
-                    updateResult = updateResult,
-                    primaryColor = primaryColor,
-                    tertiaryColor = tertiaryColor,
-                    textColor = textColor,
-                    secondaryTextColor = secondaryTextColor,
-                    isVisible = isVisible
-                )
-            }
-            
-            // ===== CONTENT BASED ON STATE =====
-            when (val result = updateResult) {
-                is UpdateResult.Checking -> {
-                    item {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(200.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                LoadingIndicator(
-                                    modifier = Modifier.size(48.dp),
-                                    color = primaryColor
-                                )
-                                Spacer(modifier = Modifier.height(16.dp))
-                                Text(
-                                    stringResource(R.string.us_checking),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = secondaryTextColor
-                                )
-                            }
-                        }
-                    }
-                }
-                
-                is UpdateResult.UpdateAvailable -> {
-                    
-                    // What's New Section
-                    item {
-                        AnimatedVisibility(
-                            visible = isVisible,
-                            enter = fadeIn(tween(400, delayMillis = 300)) + slideInVertically(
-                                initialOffsetY = { 60 },
-                                animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy)
-                            )
-                        ) {
-                            WhatsNewSection(
-                                releaseNotes = result.releaseNotes,
-                                surfaceColor = surfaceColor,
-                                textColor = textColor,
-                                secondaryTextColor = secondaryTextColor,
-                                primaryColor = primaryColor
-                            )
-                        }
-                    }
-                    
-                    // Download Section
-                    item {
-                        AnimatedVisibility(
-                            visible = isVisible,
-                            enter = fadeIn(tween(400, delayMillis = 400)) + slideInVertically(
-                                initialOffsetY = { 60 },
-                                animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy)
-                            )
-                        ) {
-                            DownloadSection(
-                                result = result,
-                                primaryColor = primaryColor,
-                                surfaceColor = surfaceColor,
-                                textColor = textColor,
-                                secondaryTextColor = secondaryTextColor
-                            )
-                        }
-                    }
-                }
-                
-                is UpdateResult.UpToDate -> {
-                    item {
-                        UpToDateSection(
-                            version = result.currentVersion,
-                            primaryColor = primaryColor,
-                            surfaceColor = surfaceColor,
-                            textColor = textColor,
-                            secondaryTextColor = secondaryTextColor
-                        )
-                    }
-                }
-                
-                is UpdateResult.Error -> {
-                    item {
-                        ErrorSection(
-                            message = result.message,
-                            onRetry = {
-                                updateResult = UpdateResult.Checking
-                            },
-                            surfaceColor = surfaceColor,
-                            textColor = textColor,
-                            secondaryTextColor = secondaryTextColor,
-                            primaryColor = primaryColor
-                        )
-                    }
-
-                }
-                
-                is UpdateResult.NoReleases -> {
-                    item {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(32.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                stringResource(R.string.us_no_releases),
-                                color = secondaryTextColor,
-                                style = MaterialTheme.typography.bodyLarge,
-                                textAlign = TextAlign.Center
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-// ===========================
-// HERO SECTION
-// ===========================
-
-@Composable
-private fun UpdateHeroSection(
-    updateResult: UpdateResult,
-    primaryColor: Color,
-    tertiaryColor: Color,
-    textColor: Color,
-    secondaryTextColor: Color,
-    isVisible: Boolean
-) {
-    val infiniteTransition = rememberInfiniteTransition(label = "hero")
-    val gradientOffset by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(6000, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "gradientShift"
-    )
-    
-    val isUpdateAvailable = updateResult is UpdateResult.UpdateAvailable
-    val isUpToDate = updateResult is UpdateResult.UpToDate
-    
-    val heroColor = when {
-        isUpdateAvailable -> primaryColor
-        isUpToDate -> Color(0xFF4CAF50)
-        else -> secondaryTextColor
-    }
-    
-    AnimatedVisibility(
-        visible = isVisible,
-        enter = fadeIn(tween(500)) + slideInVertically(
-            initialOffsetY = { -40 },
-            animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy)
+        result = UpdateResult.Checking
+        result = repository.checkForUpdate(
+            repoPath = BuildConfig.GITHUB_REPO,
+            currentVersion = BuildConfig.VERSION_NAME,
+            forceRefresh = checkRequest > 0,
         )
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(20.dp)
-                .clip(RoundedCornerShape(32.dp))
-                .drawBehind {
-                    val brush = Brush.linearGradient(
-                        colors = listOf(
-                            heroColor.copy(alpha = 0.15f),
-                            tertiaryColor.copy(alpha = 0.08f),
-                            heroColor.copy(alpha = 0.12f)
-                        ),
-                        start = Offset(
-                            size.width * gradientOffset,
-                            0f
-                        ),
-                        end = Offset(
-                            size.width * (1f - gradientOffset),
-                            size.height
-                        )
-                    )
-                    drawRect(brush)
-                }
-                .padding(32.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                // Animated Icon
-                val iconScale by animateFloatAsState(
-                    targetValue = if (isVisible) 1f else 0.5f,
-                    animationSpec = spring(
-                        dampingRatio = Spring.DampingRatioMediumBouncy,
-                        stiffness = Spring.StiffnessLow
-                    ),
-                    label = "iconScale"
-                )
-                
-                Box(
-                    modifier = Modifier
-                        .size(80.dp)
-                        .graphicsLayer {
-                            scaleX = iconScale
-                            scaleY = iconScale
-                        }
-                        .clip(CircleShape)
-                        .background(heroColor.copy(alpha = 0.15f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = when {
-                            isUpdateAvailable -> Icons.Rounded.SystemUpdate
-                            isUpToDate -> Icons.Rounded.CheckCircle
-                            updateResult is UpdateResult.Checking -> Icons.Rounded.Sync
-                            else -> Icons.Rounded.Info
-                        },
-                        contentDescription = null,
-                        tint = heroColor,
-                        modifier = Modifier.size(40.dp)
-                    )
-                }
-                
-                Spacer(modifier = Modifier.height(20.dp))
-                
-                // Status Text
-                Text(
-                    text = when (updateResult) {
-                        is UpdateResult.UpdateAvailable -> stringResource(R.string.us_available)
-                        is UpdateResult.UpToDate -> stringResource(R.string.us_up_to_date)
-                        is UpdateResult.Checking -> stringResource(R.string.us_checking_short)
-                        is UpdateResult.Error -> stringResource(R.string.us_error)
-                        is UpdateResult.NoReleases -> stringResource(R.string.us_no_releases_short)
-                    },
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = textColor,
-                    textAlign = TextAlign.Center
-                )
-                
-                Spacer(modifier = Modifier.height(8.dp))
-                
-                // Version Info
-                if (updateResult is UpdateResult.UpdateAvailable) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center
-                    ) {
-                        Surface(
-                            shape = RoundedCornerShape(50),
-                            color = secondaryTextColor.copy(alpha = 0.1f)
-                        ) {
-                            Text(
-                                text = "v${BuildConfig.VERSION_NAME}",
-                                color = secondaryTextColor,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Medium,
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Icon(
-                            Icons.Rounded.ArrowForward,
-                            contentDescription = null,
-                            tint = heroColor,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Surface(
-                            shape = RoundedCornerShape(50),
-                            color = heroColor.copy(alpha = 0.15f)
-                        ) {
-                            Text(
-                                text = "v${(updateResult as UpdateResult.UpdateAvailable).latestVersion}",
-                                color = heroColor,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
-                            )
-                        }
-                    }
-                } else if (updateResult is UpdateResult.UpToDate) {
-                    Surface(
-                        shape = RoundedCornerShape(50),
-                        color = heroColor.copy(alpha = 0.15f)
-                    ) {
-                        Text(
-                            text = "v${BuildConfig.VERSION_NAME}",
-                            color = heroColor,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 5.dp)
-                        )
-                    }
-                }
-                
-                // Release name
-                if (updateResult is UpdateResult.UpdateAvailable) {
-                    val result = updateResult as UpdateResult.UpdateAvailable
-                    if (result.releaseName.isNotBlank() && result.releaseName != result.latestVersion) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = result.releaseName,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = secondaryTextColor,
-                            textAlign = TextAlign.Center
-                        )
-                    }
-                }
-            }
-        }
     }
-}
 
-
-// ===========================
-// WHAT'S NEW SECTION
-// ===========================
-
-// Markdown Item Types
-sealed class MarkdownItem {
-    data class Header(val text: String, val level: Int) : MarkdownItem()
-    data class Bullet(val content: AnnotatedString) : MarkdownItem()
-    data class Paragraph(val content: AnnotatedString) : MarkdownItem()
-    data class Image(val url: String) : MarkdownItem()
-}
-
-@Composable
-private fun WhatsNewSection(
-    releaseNotes: String,
-    surfaceColor: Color,
-    textColor: Color,
-    secondaryTextColor: Color,
-    primaryColor: Color
-) {
-    var isExpanded by remember { mutableStateOf(false) }
-    
-    // Comprehensive parsing logic
-    val markdownItems = remember(releaseNotes) {
-        val items = mutableListOf<MarkdownItem>()
-        val lines = releaseNotes.lines()
-        
-        lines.forEach { line ->
-            val trimmedLine = line.trim()
-            if (trimmedLine.isEmpty()) return@forEach
-
-            // Check for Markdown Images: ![alt](url)
-            val mdImageMatch = Regex("""!\[.*?]\((.*?)\)""").find(trimmedLine)
-            if (mdImageMatch != null) {
-                items.add(MarkdownItem.Image(mdImageMatch.groupValues[1]))
-                return@forEach
-            }
-
-            // Check for HTML Images: <img ... src="url" ... />
-            val htmlImageMatch = Regex("""<img\s+[^>]*src=["']([^"']+)["'][^>]*>""").find(trimmedLine)
-            if (htmlImageMatch != null) {
-                items.add(MarkdownItem.Image(htmlImageMatch.groupValues[1]))
-                return@forEach
-            }
-
-            // Check for RAW GitHub Attachment URLs (often used in releases)
-            val rawAttachmentMatch = Regex("""https://github\.com/user-attachments/assets/[a-f0-9\-]+""").find(trimmedLine)
-            if (rawAttachmentMatch != null && !trimmedLine.contains("![") && !trimmedLine.contains("<img")) {
-                items.add(MarkdownItem.Image(rawAttachmentMatch.groupValues[0]))
-                return@forEach
-            }
-
-            // Check for Headers: #, ##, ###, ####
-            val headerMatch = Regex("""^(#{1,4})\s+(.*)$""").find(trimmedLine)
-            if (headerMatch != null) {
-                items.add(MarkdownItem.Header(headerMatch.groupValues[2], headerMatch.groupValues[1].length))
-                return@forEach
-            }
-
-            // Check for Bullets: -, *, +
-            val bulletMatch = Regex("""^[\-\*\+]\s+(.*)$""").find(trimmedLine)
-            if (bulletMatch != null) {
-                items.add(MarkdownItem.Bullet(parseMarkdownInline(bulletMatch.groupValues[1])))
-                return@forEach
-            }
-
-            // Default: Paragraph
-            items.add(MarkdownItem.Paragraph(parseMarkdownInline(trimmedLine)))
-        }
-        items
-    }
-    
     Column(
         modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 8.dp)
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
     ) {
-        // Section Header
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                Icons.Rounded.NewReleases,
-                contentDescription = null,
-                tint = primaryColor,
-                modifier = Modifier.size(22.dp)
-            )
-            Spacer(modifier = Modifier.width(10.dp))
-            Text(
-                stringResource(R.string.us_whats_new),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = textColor
-            )
-        }
-        
-        Spacer(modifier = Modifier.height(12.dp))
-        
-        // Release Notes Card
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(24.dp),
-            color = surfaceColor,
-            tonalElevation = 1.dp
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(20.dp)
-                    .animateContentSize(
-                        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy)
+        TopAppBar(
+            title = {
+                Text(
+                    text = stringResource(R.string.us_title),
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                )
+            },
+            navigationIcon = {
+                IconButton(
+                    onClick = onBack,
+                    shapes = IconButtonDefaults.shapes(),
+                    colors = IconButtonDefaults.iconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    ),
+                    modifier = Modifier.padding(start = 8.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                        contentDescription = stringResource(R.string.cd_back),
                     )
-            ) {
-                val displayItems = if (isExpanded) markdownItems else markdownItems.take(12)
-                
-                displayItems.forEachIndexed { index, item ->
-                    RenderMarkdownItem(
-                        item = item,
-                        textColor = textColor,
-                        secondaryTextColor = secondaryTextColor,
-                        primaryColor = primaryColor
-                    )
-                    if (index < displayItems.size - 1) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                    }
                 }
-                
-                if (markdownItems.size > 12 && !isExpanded) {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    TextButton(
-                        onClick = { isExpanded = true },
-                        modifier = Modifier.align(Alignment.CenterHorizontally)
-                    ) {
-                        Icon(
-                            Icons.Rounded.ExpandMore,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
+            },
+            actions = {
+                IconButton(
+                    onClick = { checkRequest++ },
+                    enabled = result !is UpdateResult.Checking && !localOnlyMode,
+                    shapes = IconButtonDefaults.shapes(),
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Refresh,
+                        contentDescription = stringResource(R.string.us_check_again),
+                    )
+                }
+            },
+            colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
+            modifier = Modifier.windowInsetsPadding(WindowInsets.statusBars),
+        )
+
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(
+                start = 16.dp,
+                top = 8.dp,
+                end = 16.dp,
+                bottom = contentPadding.calculateBottomPadding() + 32.dp,
+            ),
+            verticalArrangement = Arrangement.spacedBy(20.dp),
+        ) {
+            item { UpdateStatusHero(result) }
+            item { InstalledBuildCard() }
+            item {
+                AnimatedContent(
+                    targetState = result,
+                    transitionSpec = { fadeIn() togetherWith fadeOut() },
+                    label = "UpdateResult",
+                ) { state ->
+                    when (state) {
+                        is UpdateResult.Checking -> CheckingCard()
+                        is UpdateResult.UpdateAvailable -> AvailableUpdateContent(state)
+                        is UpdateResult.UpToDate -> CurrentReleaseContent(state)
+                        is UpdateResult.Error -> UpdateErrorCard(
+                            message = state.message,
+                            onRetry = { checkRequest++ },
                         )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            stringResource(R.string.action_show_more),
-                            fontWeight = FontWeight.SemiBold
-                        )
+                        is UpdateResult.NoReleases -> NoReleasesCard()
+                        is UpdateResult.LocalOnly -> LocalOnlyUpdateCard()
                     }
                 }
             }
@@ -604,534 +199,634 @@ private fun WhatsNewSection(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun RenderMarkdownItem(
-    item: MarkdownItem,
-    textColor: Color,
-    secondaryTextColor: Color,
-    primaryColor: Color
-) {
-    when (item) {
-        is MarkdownItem.Header -> {
-            Spacer(modifier = Modifier.height(if (item.level == 1) 12.dp else 6.dp))
-            Text(
-                text = item.text,
-                style = when (item.level) {
-                    1 -> MaterialTheme.typography.titleLarge
-                    2 -> MaterialTheme.typography.titleMedium
-                    else -> MaterialTheme.typography.titleSmall
-                },
-                fontWeight = FontWeight.Bold,
-                color = if (item.level <= 2) primaryColor else textColor
-            )
+private fun UpdateStatusHero(result: UpdateResult) {
+    val colors = MaterialTheme.colorScheme
+    val (container, content, icon) = when (result) {
+        is UpdateResult.UpdateAvailable -> Triple(colors.primaryContainer, colors.onPrimaryContainer, Icons.Rounded.SystemUpdate)
+        is UpdateResult.UpToDate -> Triple(colors.secondaryContainer, colors.onSecondaryContainer, Icons.Rounded.CheckCircle)
+        is UpdateResult.Error -> Triple(colors.errorContainer, colors.onErrorContainer, Icons.Rounded.CloudOff)
+        // Local Only is a setting the user chose, not a failure, so it reads as
+        // a neutral surface rather than borrowing the error colours.
+        is UpdateResult.LocalOnly -> Triple(colors.tertiaryContainer, colors.onTertiaryContainer, Icons.Rounded.CloudOff)
+        else -> Triple(colors.surfaceContainerHigh, colors.onSurface, Icons.Rounded.Info)
+    }
+    val title = when (result) {
+        is UpdateResult.UpdateAvailable -> stringResource(R.string.us_available)
+        is UpdateResult.UpToDate -> stringResource(R.string.us_up_to_date)
+        is UpdateResult.Checking -> stringResource(R.string.us_checking_short)
+        is UpdateResult.Error -> stringResource(R.string.us_error)
+        is UpdateResult.NoReleases -> stringResource(R.string.us_no_releases_short)
+        is UpdateResult.LocalOnly -> stringResource(R.string.local_only_title)
+    }
+    val subtitle = when (result) {
+        is UpdateResult.UpdateAvailable -> result.releaseName.ifBlank {
+            stringResource(R.string.us_version_label, result.latestVersion)
         }
-        is MarkdownItem.Bullet -> {
+        is UpdateResult.UpToDate -> stringResource(R.string.us_latest_body)
+        is UpdateResult.Checking -> stringResource(R.string.us_installed_visible_while_checking)
+        is UpdateResult.Error -> stringResource(R.string.us_check_failed_body)
+        is UpdateResult.NoReleases -> stringResource(R.string.us_no_releases)
+        is UpdateResult.LocalOnly -> stringResource(R.string.us_local_only_hero)
+    }
+
+    Surface(
+        shape = RoundedCornerShape(36.dp),
+        color = container,
+        contentColor = content,
+    ) {
+        Column(
+            modifier = Modifier.padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(18.dp),
+        ) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.Top
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(18.dp),
             ) {
                 Box(
                     modifier = Modifier
-                        .padding(top = 9.dp)
-                        .size(6.dp)
-                        .clip(CircleShape)
-                        .background(primaryColor)
-                )
-                Spacer(modifier = Modifier.width(12.dp))
-                Text(
-                    text = item.content,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = textColor,
-                    lineHeight = 22.sp
-                )
+                        .size(72.dp)
+                        .clip(MaterialShapes.SoftBurst.toShape())
+                        .background(content.copy(alpha = 0.12f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (result is UpdateResult.Checking) {
+                        LoadingIndicator(modifier = Modifier.size(42.dp), color = content)
+                    } else {
+                        Icon(imageVector = icon, contentDescription = null, modifier = Modifier.size(36.dp))
+                    }
+                }
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = content.copy(alpha = 0.78f),
+                    )
+                }
             }
-        }
-        is MarkdownItem.Paragraph -> {
-            Text(
-                text = item.content,
-                style = MaterialTheme.typography.bodyMedium,
-                color = textColor,
-                lineHeight = 22.sp
-            )
-        }
-        is MarkdownItem.Image -> {
-            androidx.compose.material3.Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 240.dp)
-                    .clip(RoundedCornerShape(16.dp)),
-                color = Color.Black.copy(alpha = 0.05f)
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                AsyncImage(
-                    model = item.url,
-                    contentDescription = stringResource(R.string.us_release_image),
-                    modifier = Modifier.fillMaxWidth(),
-                    contentScale = ContentScale.Fit
+                VersionChip(
+                    text = stringResource(R.string.us_installed_version, BuildConfig.VERSION_NAME),
+                    container = content.copy(alpha = 0.1f),
+                    content = content,
+                )
+                if (result is UpdateResult.UpdateAvailable) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Rounded.ArrowForward,
+                        contentDescription = null,
+                        modifier = Modifier
+                            .align(Alignment.CenterVertically)
+                            .size(20.dp),
+                    )
+                    VersionChip(
+                        text = stringResource(R.string.us_available_version, result.latestVersion),
+                        container = content.copy(alpha = 0.16f),
+                        content = content,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun VersionChip(text: String, container: Color, content: Color) {
+    Surface(shape = RoundedCornerShape(100), color = container, contentColor = content) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+        )
+    }
+}
+
+@Composable
+private fun InstalledBuildCard() {
+    val abi = remember { UpdateRepository.getDeviceAbi() }
+    UpdateSection(
+        title = stringResource(R.string.us_installed_on_device),
+        icon = Icons.Rounded.PhoneAndroid,
+    ) {
+        DetailRow(stringResource(R.string.about_version), BuildConfig.VERSION_NAME)
+        DetailDivider()
+        DetailRow(stringResource(R.string.about_build), BuildConfig.VERSION_CODE.toString())
+        DetailDivider()
+        DetailRow(
+            stringResource(R.string.about_build_type),
+            if (BuildConfig.DEBUG) stringResource(R.string.about_debug) else stringResource(R.string.about_release),
+        )
+        DetailDivider()
+        DetailRow(stringResource(R.string.us_android_api), "${Build.VERSION.RELEASE} · API ${Build.VERSION.SDK_INT}")
+        DetailDivider()
+        DetailRow(stringResource(R.string.us_architecture), abi)
+    }
+}
+
+@Composable
+private fun CheckingCard() {
+    Surface(shape = RoundedCornerShape(28.dp), color = MaterialTheme.colorScheme.surfaceContainer) {
+        Row(
+            modifier = Modifier.padding(20.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            LoadingIndicator(modifier = Modifier.size(36.dp), color = MaterialTheme.colorScheme.primary)
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.us_contacting_github),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = stringResource(R.string.us_checking_background),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun AvailableUpdateContent(result: UpdateResult.UpdateAvailable) {
+    val context = LocalContext.current
+    val bestApk = remember(result.apkAssets) { UpdateRepository.findBestApk(result.apkAssets) }
+
+    // Koda hands the asset URL to the system browser and always has: it holds
+    // no REQUEST_INSTALL_PACKAGES permission and never writes an APK itself, so
+    // the download and the install prompt stay with the components the user
+    // already trusts. What was missing was any acknowledgement that the tap did
+    // anything - and, when no app could take the intent, the failure was
+    // swallowed and the button looked dead.
+    var handoff by remember(result.htmlUrl) { mutableStateOf<DownloadHandoff?>(null) }
+    fun handOff(url: String, label: String) {
+        handoff = if (context.openExternal(url)) {
+            DownloadHandoff.Started(label)
+        } else {
+            DownloadHandoff.NoHandler
+        }
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
+        UpdateSection(title = stringResource(R.string.us_ready_to_download), icon = Icons.Rounded.Download) {
+            DetailRow(stringResource(R.string.us_latest_version), result.latestVersion)
+            formatReleaseDate(result.publishedAt)?.let {
+                DetailDivider()
+                DetailRow(stringResource(R.string.us_published), it)
+            }
+            if (bestApk != null) {
+                DetailDivider()
+                DetailRow(stringResource(R.string.us_apk), bestApk.name)
+                if (bestApk.size > 0L) {
+                    DetailDivider()
+                    DetailRow(stringResource(R.string.us_download_size), formatFileSize(bestApk.size))
+                }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Button(
+                onClick = {
+                    if (bestApk != null) {
+                        handOff(bestApk.downloadUrl, bestApk.name)
+                    } else {
+                        handOff(result.htmlUrl, result.latestVersion)
+                    }
+                },
+                modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
+                shape = RoundedCornerShape(20.dp),
+            ) {
+                Icon(
+                    imageVector = if (bestApk != null) Icons.Rounded.Download else Icons.Rounded.OpenInNew,
+                    contentDescription = null,
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Text(
+                    text = if (bestApk != null) {
+                        stringResource(R.string.us_download_for, UpdateRepository.getDeviceAbi())
+                    } else {
+                        stringResource(R.string.us_view_release_short)
+                    },
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            OutlinedButton(
+                onClick = { handOff(result.htmlUrl, result.latestVersion) },
+                modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
+                shape = RoundedCornerShape(18.dp),
+            ) {
+                Icon(Icons.Rounded.OpenInNew, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(stringResource(R.string.us_view_release))
+            }
+            handoff?.let {
+                Spacer(modifier = Modifier.height(14.dp))
+                DownloadHandoffNotice(it)
+            }
+        }
+        ReleaseNotesCard(result.releaseNotes)
+        if (result.apkAssets.size > 1) {
+            ApkVariantsCard(result.apkAssets, bestApk) { asset -> handOff(asset.downloadUrl, asset.name) }
         }
     }
 }
 
 /**
- * Basic inline markdown parser for bold (**text**)
+ * What happened to the last download tap. Koda cannot report progress it does
+ * not own, so it reports the hand-off honestly instead of inventing a
+ * percentage for a transfer running in another app.
  */
-private fun parseMarkdownInline(text: String): AnnotatedString {
-    return buildAnnotatedString {
-        var cursor = 0
-        val boldRegex = Regex("""\*\*(.*?)\*\*""")
-        
-        boldRegex.findAll(text).forEach { match ->
-            // Append text before the match
-            append(text.substring(cursor, match.range.first))
-            
-            // Append bold text
-            withStyle(
-                SpanStyle(fontWeight = FontWeight.Bold)
-            ) {
-                append(match.groupValues[1])
+private sealed interface DownloadHandoff {
+    data class Started(val label: String) : DownloadHandoff
+    data object NoHandler : DownloadHandoff
+}
+
+@Composable
+private fun DownloadHandoffNotice(handoff: DownloadHandoff) {
+    val started = handoff is DownloadHandoff.Started
+    Surface(
+        shape = RoundedCornerShape(20.dp),
+        color = if (started) {
+            MaterialTheme.colorScheme.tertiaryContainer
+        } else {
+            MaterialTheme.colorScheme.errorContainer
+        },
+        contentColor = if (started) {
+            MaterialTheme.colorScheme.onTertiaryContainer
+        } else {
+            MaterialTheme.colorScheme.onErrorContainer
+        },
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.Top,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Icon(
+                imageVector = if (started) Icons.Rounded.Download else Icons.Rounded.CloudOff,
+                contentDescription = null,
+            )
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(
+                    text = if (started) {
+                        stringResource(R.string.us_handoff_started)
+                    } else {
+                        stringResource(R.string.us_handoff_no_handler)
+                    },
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    text = when (handoff) {
+                        is DownloadHandoff.Started ->
+                            stringResource(R.string.us_handoff_started_body, handoff.label)
+                        DownloadHandoff.NoHandler ->
+                            stringResource(R.string.us_handoff_no_handler_body)
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                )
             }
-            
-            cursor = match.range.last + 1
-        }
-        
-        // Append remaining text
-        if (cursor < text.length) {
-            append(text.substring(cursor))
         }
     }
 }
 
-
-
-// ===========================
-// DOWNLOAD SECTION
-// ===========================
-
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun DownloadSection(
-    result: UpdateResult.UpdateAvailable,
-    primaryColor: Color,
-    surfaceColor: Color,
-    textColor: Color,
-    secondaryTextColor: Color
-) {
+private fun LocalOnlyUpdateCard() {
+    UpdateSection(
+        title = stringResource(R.string.local_only_title),
+        icon = Icons.Rounded.CloudOff,
+    ) {
+        Text(
+            text = stringResource(R.string.local_only_update_subtitle),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(modifier = Modifier.height(10.dp))
+        Text(
+            text = stringResource(R.string.us_local_only_body),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun CurrentReleaseContent(result: UpdateResult.UpToDate) {
     val context = LocalContext.current
-    val deviceAbi = remember { UpdateRepository.getDeviceAbi() }
-    val bestApk = remember(result.apkAssets) { UpdateRepository.findBestApk(result.apkAssets) }
-    
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 8.dp)
+    Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
+        UpdateSection(title = stringResource(R.string.us_current_release), icon = Icons.Rounded.NewReleases) {
+            DetailRow(stringResource(R.string.us_latest_version), result.latestVersion)
+            formatReleaseDate(result.publishedAt)?.let {
+                DetailDivider()
+                DetailRow(stringResource(R.string.us_published), it)
+            }
+            if (result.releaseName.isNotBlank() && result.releaseName != result.latestVersion) {
+                DetailDivider()
+                DetailRow(stringResource(R.string.us_release_name), result.releaseName)
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            TextButton(onClick = { context.openExternal(result.htmlUrl) }, modifier = Modifier.align(Alignment.End)) {
+                Text(stringResource(R.string.us_view_release_short))
+                Spacer(modifier = Modifier.width(6.dp))
+                Icon(Icons.Rounded.OpenInNew, contentDescription = null)
+            }
+        }
+        ReleaseNotesCard(result.releaseNotes)
+    }
+}
+
+@Composable
+private fun UpdateErrorCard(message: String, onRetry: () -> Unit) {
+    Surface(
+        shape = RoundedCornerShape(28.dp),
+        color = MaterialTheme.colorScheme.errorContainer,
+        contentColor = MaterialTheme.colorScheme.onErrorContainer,
     ) {
-        // Device info chip
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
-            color = surfaceColor,
-            tonalElevation = 1.dp
+        Column(modifier = Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(
+                text = stringResource(R.string.us_couldnt_check),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f),
+            )
+            Button(
+                onClick = onRetry,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error,
+                    contentColor = MaterialTheme.colorScheme.onError,
+                ),
+                modifier = Modifier.heightIn(min = 48.dp),
+            ) {
+                Icon(Icons.Rounded.Refresh, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(stringResource(R.string.action_retry))
+            }
+        }
+    }
+}
+
+@Composable
+private fun NoReleasesCard() {
+    Surface(shape = RoundedCornerShape(28.dp), color = MaterialTheme.colorScheme.surfaceContainer) {
+        Text(
+            text = stringResource(R.string.us_no_releases),
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth().padding(28.dp),
+        )
+    }
+}
+
+@Composable
+private fun ReleaseNotesCard(releaseNotes: String) {
+    val notes = remember(releaseNotes) { parseReleaseNotes(releaseNotes) }
+    var expanded by remember(releaseNotes) { mutableStateOf(false) }
+    val visibleNotes = if (expanded) notes else notes.take(10)
+
+    UpdateSection(title = stringResource(R.string.us_whats_new), icon = Icons.Rounded.NewReleases) {
+        if (visibleNotes.isEmpty()) {
+            Text(
+                text = stringResource(R.string.us_notes_on_github),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(12.dp),
+            )
+        } else {
+            visibleNotes.forEachIndexed { index, note ->
+                ReleaseNoteRow(note)
+                if (index != visibleNotes.lastIndex) Spacer(modifier = Modifier.height(10.dp))
+            }
+        }
+        if (notes.size > 10) {
+            TextButton(onClick = { expanded = !expanded }, modifier = Modifier.align(Alignment.End)) {
+                Text(stringResource(if (expanded) R.string.action_show_less else R.string.action_show_more))
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReleaseNoteRow(note: ReleaseNote) {
+    when (note) {
+        is ReleaseNote.Heading -> Text(
+            text = note.text,
+            style = if (note.level <= 2) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+        )
+        is ReleaseNote.Bullet -> Row(
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.Top,
         ) {
-            Column(
+            Box(
+                modifier = Modifier
+                    .padding(top = 8.dp)
+                    .size(7.dp)
+                    .clip(MaterialShapes.Circle.toShape())
+                    .background(MaterialTheme.colorScheme.primary)
+            )
+            Text(
+                text = note.text,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.weight(1f),
+            )
+        }
+        is ReleaseNote.Paragraph -> Text(
+            text = note.text,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun ApkVariantsCard(assets: List<ApkAsset>, bestApk: ApkAsset?, onOpen: (ApkAsset) -> Unit) {
+    UpdateSection(title = stringResource(R.string.us_all_variants), icon = Icons.Rounded.Memory) {
+        assets.forEachIndexed { index, asset ->
+            val recommended = asset == bestApk
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(20.dp)
+                    .clip(RoundedCornerShape(18.dp))
+                    .clickable { onOpen(asset) }
+                    .padding(horizontal = 12.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Icons.Rounded.PhoneAndroid,
-                        contentDescription = null,
-                        tint = primaryColor,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(10.dp))
+                Icon(
+                    imageVector = Icons.Rounded.Android,
+                    contentDescription = null,
+                    tint = if (recommended) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        stringResource(R.string.us_your_device),
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = textColor
+                        text = asset.name,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = if (recommended) FontWeight.Bold else FontWeight.Medium,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
                     )
-                }
-                
-                Spacer(modifier = Modifier.height(12.dp))
-                
-                // Device details
-                DeviceDetailRow(stringResource(R.string.us_architecture), deviceAbi, textColor, secondaryTextColor)
-                Spacer(modifier = Modifier.height(6.dp))
-                DeviceDetailRow("Android", "API ${android.os.Build.VERSION.SDK_INT}", textColor, secondaryTextColor)
-                
-                if (bestApk != null) {
-                    Spacer(modifier = Modifier.height(6.dp))
-                    DeviceDetailRow(
-                        stringResource(R.string.us_apk),
-                        bestApk.name,
-                        textColor,
-                        secondaryTextColor
-                    )
-                    if (bestApk.size > 0) {
-                        Spacer(modifier = Modifier.height(6.dp))
-                        DeviceDetailRow(
-                            stringResource(R.string.us_size),
-                            formatFileSize(bestApk.size),
-                            textColor,
-                            secondaryTextColor
+                    val secondary = listOfNotNull(
+                        formatFileSize(asset.size).takeIf { asset.size > 0L },
+                        stringResource(R.string.us_recommended).takeIf { recommended },
+                    ).joinToString(" · ")
+                    if (secondary.isNotEmpty()) {
+                        Text(
+                            text = secondary,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
+                Icon(Icons.Rounded.Download, contentDescription = stringResource(R.string.song_options_download))
             }
+            if (index != assets.lastIndex) DetailDivider()
         }
-        
-        Spacer(modifier = Modifier.height(16.dp))
-        
-        // Download Button
-        Button(
-            onClick = {
-                val downloadUrl = bestApk?.downloadUrl ?: result.htmlUrl
-                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(downloadUrl))
-                context.startActivity(intent)
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(56.dp),
-            shape = RoundedCornerShape(20.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = primaryColor
-            )
+    }
+}
+
+@Composable
+private fun UpdateSection(
+    title: String,
+    icon: ImageVector,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(
+            modifier = Modifier.padding(horizontal = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Icon(
-                Icons.Rounded.Download,
-                contentDescription = null,
-                modifier = Modifier.size(22.dp)
-            )
-            Spacer(modifier = Modifier.width(12.dp))
-            Text(
-                text = if (bestApk != null) "Download for $deviceAbi" else "View on GitHub",
-                fontWeight = FontWeight.Bold,
-                fontSize = 16.sp
-            )
+            Icon(imageVector = icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+            Text(text = title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         }
-        
-        Spacer(modifier = Modifier.height(8.dp))
-        
-        // View on GitHub link
-        OutlinedButton(
-            onClick = {
-                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(result.htmlUrl))
-                context.startActivity(intent)
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(48.dp),
-            shape = RoundedCornerShape(16.dp)
+        Surface(
+            shape = RoundedCornerShape(28.dp),
+            color = MaterialTheme.colorScheme.surfaceContainer,
+            tonalElevation = 1.dp,
         ) {
-            Icon(
-                Icons.Rounded.OpenInNew,
-                contentDescription = null,
-                modifier = Modifier.size(18.dp)
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                stringResource(R.string.us_view_release),
-                fontWeight = FontWeight.SemiBold
-            )
+            Column(modifier = Modifier.padding(16.dp), content = content)
         }
-        
-        // All APK variants
-        if (result.apkAssets.size > 1) {
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            Text(
-                stringResource(R.string.us_all_variants),
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.Bold,
-                color = secondaryTextColor,
-                modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
-            )
-            
-            result.apkAssets.forEach { apk ->
-                val isBest = apk == bestApk
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .clickable {
-                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(apk.downloadUrl))
-                            context.startActivity(intent)
-                        },
-                    shape = RoundedCornerShape(16.dp),
-                    color = if (isBest) primaryColor.copy(alpha = 0.1f) else surfaceColor,
-                    tonalElevation = 1.dp
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(14.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            Icons.Rounded.Android,
-                            contentDescription = null,
-                            tint = if (isBest) primaryColor else secondaryTextColor,
-                            modifier = Modifier.size(22.dp)
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = apk.name,
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = if (isBest) FontWeight.Bold else FontWeight.Normal,
-                                color = textColor,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            if (apk.size > 0) {
-                                Text(
-                                    text = formatFileSize(apk.size),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = secondaryTextColor
-                                )
-                            }
-                        }
-                        if (isBest) {
-                            Surface(
-                                shape = RoundedCornerShape(50),
-                                color = primaryColor.copy(alpha = 0.15f)
-                            ) {
-                                Text(
-                                    stringResource(R.string.settings_advanced_value_xiaomi),
-                                    color = primaryColor,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp)
-                                )
-                            }
-                        }
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Icon(
-                            Icons.Rounded.Download,
-                            contentDescription = stringResource(R.string.song_options_download),
-                            tint = if (isBest) primaryColor else secondaryTextColor,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                }
+    }
+}
+
+@Composable
+private fun DetailRow(label: String, value: String) {
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        if (maxWidth < 300.dp) {
+            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(text = value, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+            }
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.Top,
+            ) {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(0.42f),
+                )
+                Text(
+                    text = value,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.End,
+                    modifier = Modifier.weight(0.58f),
+                )
             }
         }
     }
 }
 
 @Composable
-private fun DeviceDetailRow(
-    label: String,
-    value: String,
-    textColor: Color,
-    secondaryTextColor: Color
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodySmall,
-            color = secondaryTextColor,
-            fontWeight = FontWeight.Medium
-        )
-        Text(
-            text = value,
-            style = MaterialTheme.typography.bodySmall,
-            color = textColor,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.widthIn(max = 200.dp)
-        )
-    }
-}
-
-// ===========================
-// UP TO DATE SECTION
-// ===========================
-
-@Composable
-private fun UpToDateSection(
-    version: String,
-    primaryColor: Color,
-    surfaceColor: Color,
-    textColor: Color,
-    secondaryTextColor: Color
-) {
-    val greenColor = Color(0xFF4CAF50)
-    
-    Column(
+private fun DetailDivider() {
+    Spacer(modifier = Modifier.height(11.dp))
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(24.dp),
-            color = surfaceColor,
-            tonalElevation = 1.dp
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(32.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Surface(
-                    modifier = Modifier.size(72.dp),
-                    shape = CircleShape,
-                    color = greenColor.copy(alpha = 0.12f)
-                ) {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            Icons.Rounded.Verified,
-                            contentDescription = null,
-                            tint = greenColor,
-                            modifier = Modifier.size(36.dp)
-                        )
-                    }
-                }
-                
-                Spacer(modifier = Modifier.height(20.dp))
-                
-                Text(
-                    stringResource(R.string.us_all_good),
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = textColor,
-                    textAlign = TextAlign.Center
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    stringResource(R.string.us_latest_body),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = secondaryTextColor,
-                    textAlign = TextAlign.Center
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    "Version $version • Build ${BuildConfig.VERSION_CODE}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = secondaryTextColor.copy(alpha = 0.7f),
-                    textAlign = TextAlign.Center
-                )
-            }
+            .height(1.dp)
+            .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f))
+    )
+    Spacer(modifier = Modifier.height(11.dp))
+}
+
+private sealed interface ReleaseNote {
+    data class Heading(val text: String, val level: Int) : ReleaseNote
+    data class Bullet(val text: AnnotatedString) : ReleaseNote
+    data class Paragraph(val text: AnnotatedString) : ReleaseNote
+}
+
+private fun parseReleaseNotes(markdown: String): List<ReleaseNote> = buildList {
+    markdown.lineSequence().forEach { source ->
+        val line = source.trim()
+        if (line.isBlank() || line.startsWith("![") || line.startsWith("<img", true) ||
+            line.startsWith("https://github.com/user-attachments/")
+        ) return@forEach
+        val heading = Regex("^(#{1,4})\\s+(.*)$").find(line)
+        if (heading != null) {
+            add(ReleaseNote.Heading(heading.groupValues[2], heading.groupValues[1].length))
+            return@forEach
+        }
+        val bullet = Regex("^[-*+]\\s+(.*)$").find(line)
+        if (bullet != null) {
+            add(ReleaseNote.Bullet(parseInlineMarkdown(bullet.groupValues[1])))
+        } else {
+            add(ReleaseNote.Paragraph(parseInlineMarkdown(line)))
         }
     }
 }
 
-// ===========================
-// ERROR SECTION
-// ===========================
-
-@Composable
-private fun ErrorSection(
-    message: String,
-    onRetry: () -> Unit,
-    surfaceColor: Color,
-    textColor: Color,
-    secondaryTextColor: Color,
-    primaryColor: Color
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(24.dp),
-            color = surfaceColor,
-            tonalElevation = 1.dp
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(32.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Surface(
-                    modifier = Modifier.size(72.dp),
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.error.copy(alpha = 0.12f)
-                ) {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            Icons.Rounded.WifiOff,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.size(36.dp)
-                        )
-                    }
-                }
-                
-                Spacer(modifier = Modifier.height(20.dp))
-                
-                Text(
-                    stringResource(R.string.us_couldnt_check),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = textColor,
-                    textAlign = TextAlign.Center
-                )
-                
-                Spacer(modifier = Modifier.height(8.dp))
-                
-                Text(
-                    message,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = secondaryTextColor,
-                    textAlign = TextAlign.Center
-                )
-                
-                Spacer(modifier = Modifier.height(20.dp))
-                
-                Button(
-                    onClick = onRetry,
-                    shape = RoundedCornerShape(16.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = primaryColor
-                    )
-                ) {
-                    Icon(
-                        Icons.Rounded.Refresh,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(stringResource(R.string.action_retry), fontWeight = FontWeight.SemiBold)
-                }
-            }
-        }
+private fun parseInlineMarkdown(text: String): AnnotatedString = buildAnnotatedString {
+    var cursor = 0
+    Regex("\\*\\*(.*?)\\*\\*").findAll(text).forEach { match ->
+        append(text.substring(cursor, match.range.first))
+        withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(match.groupValues[1]) }
+        cursor = match.range.last + 1
     }
+    if (cursor < text.length) append(text.substring(cursor))
 }
 
-// ===========================
-// UTILITY
-// ===========================
+private fun formatReleaseDate(value: String): String? = runCatching {
+    OffsetDateTime.parse(value).format(DateTimeFormatter.ofPattern("d MMM yyyy", Locale.getDefault()))
+}.getOrNull()
 
-private fun formatFileSize(sizeBytes: Long): String {
-    return when {
-        sizeBytes >= 1_000_000_000 -> "%.1f GB".format(sizeBytes / 1_000_000_000.0)
-        sizeBytes >= 1_000_000 -> "%.1f MB".format(sizeBytes / 1_000_000.0)
-        sizeBytes >= 1_000 -> "%.1f KB".format(sizeBytes / 1_000.0)
-        else -> "$sizeBytes B"
-    }
+private fun formatFileSize(sizeBytes: Long): String = when {
+    sizeBytes >= 1_000_000_000 -> "%.1f GB".format(Locale.getDefault(), sizeBytes / 1_000_000_000.0)
+    sizeBytes >= 1_000_000 -> "%.1f MB".format(Locale.getDefault(), sizeBytes / 1_000_000.0)
+    sizeBytes >= 1_000 -> "%.1f KB".format(Locale.getDefault(), sizeBytes / 1_000.0)
+    else -> "$sizeBytes B"
+}
+
+/**
+ * Hand a release URL to whatever the user browses with, and say whether that
+ * worked. The old version swallowed the failure, so a device with no activity
+ * for `ACTION_VIEW` had a download button that did nothing at all.
+ */
+private fun Context.openExternal(url: String): Boolean {
+    if (url.isBlank()) return false
+    return runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }.isSuccess
 }

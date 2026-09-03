@@ -14,22 +14,37 @@ import androidx.media3.datasource.cache.Cache
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.CacheEvictor
 import androidx.media3.datasource.cache.CacheSpan
+import androidx.media3.datasource.cache.CacheWriter
+import androidx.media3.datasource.cache.NoOpCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import java.io.File
 import java.util.TreeSet
 
 /**
- * Singleton manager for ExoPlayer's SimpleCache.
- * Handles persistent caching of playback streams for fast replay and seeking.
+ * Process-owned playback caches.
+ *
+ * Music uses the user's size-bounded LRU because complete songs become the
+ * Ready offline library. Video uses a separate transient cache with no
+ * configured byte ceiling: a high-bitrate 4K stream must not evict music or
+ * stop caching halfway through merely because the music limit is 2 GB. The
+ * video cache is cleared five minutes after every video surface closes.
  */
 @UnstableApi
 object CacheManager {
 
     private const val TAG = "CacheManager"
     private const val CACHE_DIR_NAME = "ivor_music_cache"
+    private const val VIDEO_CACHE_DIR_NAME = "ivor_video_playback_cache"
+    private const val VIDEO_CACHE_IDLE_CLEAR_MS = 5 * 60 * 1000L
 
     // Default 512MB cache
     const val DEFAULT_CACHE_SIZE_MB = 512L
@@ -45,6 +60,13 @@ object CacheManager {
     val currentCacheSizeBytes: StateFlow<Long> = _currentCacheSizeBytes.asStateFlow()
 
     private var cacheDir: File? = null
+
+    private var videoCache: SimpleCache? = null
+    private var videoDatabaseProvider: StandaloneDatabaseProvider? = null
+    private var videoCacheDir: File? = null
+    private val activeVideoOwners = mutableSetOf<String>()
+    private val cacheScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var videoCleanupJob: Job? = null
 
     /**
      * LRU evictor whose size limit can be changed while the cache is live.
@@ -192,6 +214,71 @@ object CacheManager {
     fun getCache(): SimpleCache? = simpleCache
 
     /**
+     * Mark one player surface as using the transient video cache.
+     *
+     * Owners are names rather than a count so repeated play/open calls from a
+     * single ViewModel cannot leak an acquisition. A new video cancels a
+     * pending idle clear; closing the last surface starts the five-minute grace
+     * period requested for quick reopen and swipe-back.
+     */
+    @Synchronized
+    fun setVideoPlaybackActive(owner: String, active: Boolean) {
+        if (active) {
+            activeVideoOwners.add(owner)
+            videoCleanupJob?.cancel()
+            videoCleanupJob = null
+        } else {
+            activeVideoOwners.remove(owner)
+            if (activeVideoOwners.isEmpty()) scheduleVideoCacheClear()
+        }
+    }
+
+    @Synchronized
+    private fun scheduleVideoCacheClear() {
+        videoCleanupJob?.cancel()
+        videoCleanupJob = cacheScope.launch {
+            delay(VIDEO_CACHE_IDLE_CLEAR_MS)
+            val shouldClear = synchronized(this@CacheManager) {
+                activeVideoOwners.isEmpty()
+            }
+            if (shouldClear) clearVideoCache()
+        }
+    }
+
+    /** Clear transient video bytes only. Music and permanent downloads stay. */
+    @Synchronized
+    fun clearVideoCache() {
+        try {
+            val cache = videoCache ?: return
+            val keys = cache.keys.toList()
+            keys.forEach(cache::removeResource)
+            KLog.d(TAG, "Transient video cache cleared: removed ${keys.size} items")
+        } catch (e: Exception) {
+            KLog.e(TAG, "Error clearing transient video cache", e)
+        }
+    }
+
+    /**
+     * One-time-compatible cleanup for builds that stored video in the music
+     * LRU. Safe to call on every start; after migration the key scan is empty.
+     */
+    fun removeLegacyVideoEntries() {
+        cacheScope.launch {
+            try {
+                val cache = simpleCache ?: return@launch
+                val keys = cache.keys.filter(::isNonMusicPlaybackCacheKey)
+                keys.forEach(cache::removeResource)
+                if (keys.isNotEmpty()) {
+                    updateCacheSize()
+                    KLog.i(TAG, "Removed ${keys.size} legacy video entries from the music cache")
+                }
+            } catch (e: Exception) {
+                KLog.w(TAG, "Could not remove legacy video cache entries", e)
+            }
+        }
+    }
+
+    /**
      * Create a CacheDataSource.Factory for use with ExoPlayer.
      * If cache is unavailable or corrupted, returns null to fallback to non-cached playback.
      *
@@ -199,7 +286,10 @@ object CacheManager {
      *   for cache misses. Use DefaultDataSource.Factory to support all URI schemes (file://,
      *   content://, http(s)://). If null, defaults to HTTP-only factory.
      */
-    fun createCacheDataSourceFactory(upstreamFactory: DataSource.Factory? = null): CacheDataSource.Factory? {
+    fun createCacheDataSourceFactory(
+        context: Context,
+        upstreamFactory: DataSource.Factory? = null,
+    ): CacheDataSource.Factory? {
         val cache = simpleCache ?: return null
 
         try {
@@ -207,7 +297,7 @@ object CacheManager {
             // (?c=IOS, ?c=TVHTML5_SIMPLY_EMBEDDED, etc.) and YouTube 403s the
             // playback if our UA doesn't match. createPerClientHttpFactory()
             // inspects each request's URI and sets the right UA dynamically.
-            val upstream = upstreamFactory ?: createPerClientHttpFactory()
+            val upstream = upstreamFactory ?: createPerClientHttpFactory(context)
 
             return CacheDataSource.Factory()
                 .setCache(cache)
@@ -242,14 +332,86 @@ object CacheManager {
         context: Context,
         isCacheEnabled: () -> Boolean,
     ): DataSource.Factory {
-        val directFactory = DefaultDataSource.Factory(context, createPerClientHttpFactory())
-        val cacheFactory = createCacheDataSourceFactory()
+        val directFactory = DefaultDataSource.Factory(context, createPerClientHttpFactory(context))
+        val cacheFactory = createCacheDataSourceFactory(context)
         return DataSource.Factory {
             SwitchingPlaybackDataSource(
                 direct = directFactory.createDataSource(),
                 cached = cacheFactory?.createDataSource(),
                 isCacheEnabled = isCacheEnabled,
             )
+        }
+    }
+
+    /**
+     * Player factory for online video and Shorts.
+     *
+     * This cache deliberately ignores the music cache preference and size:
+     * it is temporary playback state, not a promise of offline availability.
+     * Cache failures (including a full disk) fall through to upstream so the
+     * act of caching can never stop an otherwise playable video.
+     */
+    @Synchronized
+    fun createVideoPlaybackDataSourceFactory(context: Context): DataSource.Factory {
+        initializeVideoCache(context.applicationContext)
+        val directFactory = DefaultDataSource.Factory(
+            context,
+            createPerClientHttpFactory(context),
+        )
+        val cacheFactory = createVideoCacheDataSourceFactory(context)
+        return DataSource.Factory {
+            SwitchingPlaybackDataSource(
+                direct = directFactory.createDataSource(),
+                cached = cacheFactory?.createDataSource(),
+                isCacheEnabled = { true },
+            )
+        }
+    }
+
+    /** Blocking range warm for the immediate-next Shorts item. Call on IO. */
+    fun cacheVideoRange(context: Context, dataSpec: DataSpec) {
+        val factory = synchronized(this) {
+            initializeVideoCache(context.applicationContext)
+            createVideoCacheDataSourceFactory(context)
+        } ?: return
+        CacheWriter(factory.createDataSource(), dataSpec, null, null).cache()
+    }
+
+    private fun createVideoCacheDataSourceFactory(context: Context): CacheDataSource.Factory? =
+        videoCache?.let { cache ->
+            CacheDataSource.Factory()
+                .setCache(cache)
+                .setUpstreamDataSourceFactory(createPerClientHttpFactory(context))
+                .setCacheKeyFactory { dataSpec ->
+                    dataSpec.key ?: opaquePlaybackCacheKey(dataSpec.uri.toString())
+                }
+                .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+        }
+
+    @Synchronized
+    private fun initializeVideoCache(context: Context) {
+        if (videoCache != null) return
+        videoCacheDir = File(context.cacheDir, VIDEO_CACHE_DIR_NAME)
+        videoDatabaseProvider = StandaloneDatabaseProvider(context)
+        try {
+            videoCache = SimpleCache(
+                checkNotNull(videoCacheDir),
+                NoOpCacheEvictor(),
+                checkNotNull(videoDatabaseProvider),
+            )
+        } catch (e: Exception) {
+            KLog.e(TAG, "Video cache initialization failed, attempting recovery", e)
+            runCatching { videoCacheDir?.deleteRecursively() }
+            videoDatabaseProvider = StandaloneDatabaseProvider(context)
+            videoCache = runCatching {
+                SimpleCache(
+                    checkNotNull(videoCacheDir),
+                    NoOpCacheEvictor(),
+                    checkNotNull(videoDatabaseProvider),
+                )
+            }.onFailure {
+                KLog.e(TAG, "Video cache recovery failed; playback will stay direct", it)
+            }.getOrNull()
         }
     }
 
@@ -263,7 +425,10 @@ object CacheManager {
      * Used as the upstream for the playback cache, and from MusicService for
      * non-cache HTTP fallback.
      */
-    fun createPerClientHttpFactory(): DataSource.Factory = ChunkedStreamDataSource.Factory()
+    fun createPerClientHttpFactory(context: Context): DataSource.Factory =
+        ChunkedStreamDataSource.Factory {
+            !ThemePreferences.isLocalOnly(context)
+        }
 
     /**
      * Update the current cache size state.
@@ -302,15 +467,18 @@ object CacheManager {
         }
     }
 
-    /**
-     * Release the cache. Call when the app is being destroyed.
-     */
+    /** Release process-owned caches. Tests/process teardown only. */
     @Synchronized
     fun release() {
         try {
             simpleCache?.release()
             simpleCache = null
+            videoCleanupJob?.cancel()
+            videoCleanupJob = null
+            videoCache?.release()
+            videoCache = null
             databaseProvider = null
+            videoDatabaseProvider = null
             evictor = null
             KLog.d(TAG, "Cache released")
         } catch (e: Exception) {

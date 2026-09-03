@@ -221,10 +221,6 @@ fun MorphPlayerSheetContent(
                             )
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            MusicCastIconButton(
-                                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                contentColor = MaterialTheme.colorScheme.onSurface
-                            )
                             MorphUtilityButton(
                                 onClick = sleepTimer.open,
                                 active = sleepTimer.active
@@ -263,21 +259,15 @@ fun MorphPlayerSheetContent(
                     ) {
                         Crossfade(targetState = showLyrics, label = "MorphLyrics") { lyricsVisible ->
                             if (lyricsVisible) {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .padding(horizontal = 24.dp)
-                                ) {
-                                    SyncedLyricsView(
-                                        lyricsResult = lyricsResult,
-                                        currentPositionMs = progress,
-                                        isPlaying = isPlaying,
-                                        onSeekTo = { viewModel.seekTo(it) },
-                                        primaryColor = primaryColor,
-                                        onSurfaceColor = onSurfaceColor,
-                                        onSurfaceVariantColor = onSurfaceVariantColor
-                                    )
-                                }
+                                SyncedLyricsView(
+                                    lyricsResult = lyricsResult,
+                                    currentPositionMs = progress,
+                                    isPlaying = isPlaying,
+                                    onSeekTo = { viewModel.seekTo(it) },
+                                    primaryColor = primaryColor,
+                                    onSurfaceColor = onSurfaceColor,
+                                    onSurfaceVariantColor = onSurfaceVariantColor
+                                )
                             } else {
                                 MorphHero(
                                     currentSong = currentSong,
